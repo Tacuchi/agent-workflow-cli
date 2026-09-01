@@ -1,9 +1,17 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname } from "node:path";
 import {
   type McpConnectionRef,
-  normalizeDsnVarName,
-  normalizeMcpInstance,
   validateDsnVarName,
   validateMcpInstance,
 } from "../domain/mcp-entry.js";
@@ -11,14 +19,27 @@ import type { EnvPort } from "../ports/env.js";
 import { readDsnFile } from "./dsn-reader-service.js";
 import type { PathsService } from "./paths-service.js";
 
-export interface StoredMcpConnection extends McpConnectionRef {}
+export type McpConnectionProvider = "postgres";
+
+/** A corrupt registry is never silently treated as an empty registry. */
+export class McpConnectionsError extends Error {
+  constructor(message = "mcp-connections.json no contiene una forma válida de registro MCP.") {
+    super(message);
+    this.name = "McpConnectionsError";
+  }
+}
+
+/** The persisted v2 shape always names its provider explicitly. */
+export interface StoredMcpConnection extends McpConnectionRef {
+  provider: McpConnectionProvider;
+}
 
 export interface McpConnection extends StoredMcpConnection {
   dsnPresent: boolean;
 }
 
-interface McpConnectionsFile {
-  version: 1;
+interface McpConnectionsFileV2 {
+  version: 2;
   connections: StoredMcpConnection[];
 }
 
@@ -80,7 +101,15 @@ export function resolveMcpConnectionSelection(
     );
   }
 
-  const connections = readStoredConnections(paths);
+  let connections: StoredMcpConnection[];
+  try {
+    connections = readStoredConnections(paths);
+  } catch (error) {
+    if (error instanceof McpConnectionsError) {
+      return selectionFailure("MCP_CONNECTION_INVALID", error.message);
+    }
+    throw error;
+  }
   if (connections.length === 0) {
     return selectionFailure(
       "NO_MCP_CONNECTIONS",
@@ -112,41 +141,56 @@ export function resolveMcpConnectionSelection(
 
 export function upsertMcpConnection(
   paths: PathsService,
-  input: { name: string; dsnVar: string },
+  input: { name: string; dsnVar: string; provider?: McpConnectionProvider },
 ): McpConnectionWriteResult {
-  const connection = normalizeConnection(input);
-  const existing = readStoredConnections(paths);
-  const byName = new Map(existing.map((item) => [item.name, item]));
-  byName.set(connection.name, connection);
-  writeStoredConnections(paths, [...byName.values()].sort(compareConnections));
-  return { path: paths.userMcpConnectionsFile(), connection };
+  return withConnectionsLock(paths, () => {
+    const connection = normalizeConnection(input);
+    const existing = readStoredConnections(paths);
+    const byName = new Map(existing.map((item) => [item.name, item]));
+    byName.set(connection.name, connection);
+    writeStoredConnections(paths, [...byName.values()].sort(compareConnections));
+    return { path: paths.userMcpConnectionsFile(), connection };
+  });
 }
 
 export function deleteMcpConnection(
   paths: PathsService,
   input: { name: string },
 ): McpConnectionDeleteResult {
-  const validation = validateMcpInstance(input.name);
-  if (!validation.ok) throw new Error(validation.error);
-  const name = validation.value;
-  const existing = readStoredConnections(paths);
-  const next = existing.filter((item) => item.name !== name);
-  writeStoredConnections(paths, next);
-  return { path: paths.userMcpConnectionsFile(), removed: next.length !== existing.length };
+  return withConnectionsLock(paths, () => {
+    const validation = validateMcpInstance(input.name);
+    if (!validation.ok) throw new Error(validation.error);
+    const name = validation.value;
+    const existing = readStoredConnections(paths);
+    const next = existing.filter((item) => item.name !== name);
+    writeStoredConnections(paths, next);
+    return { path: paths.userMcpConnectionsFile(), removed: next.length !== existing.length };
+  });
 }
 
 export function validateMcpConnectionInput(input: {
   name: string;
   dsnVar: string;
+  provider?: string;
 }): { ok: true; value: StoredMcpConnection } | { ok: false; error: string } {
   const name = validateMcpInstance(input.name);
   if (!name.ok) return name;
   const dsnVar = validateDsnVarName(input.dsnVar);
   if (!dsnVar.ok) return dsnVar;
-  return { ok: true, value: { name: name.value, dsnVar: dsnVar.value } };
+  if (input.provider !== undefined && input.provider !== "postgres") {
+    return {
+      ok: false,
+      error: `provider MCP inválido: '${input.provider}'. V1 sólo admite postgres.`,
+    };
+  }
+  return { ok: true, value: { name: name.value, dsnVar: dsnVar.value, provider: "postgres" } };
 }
 
-function normalizeConnection(input: { name: string; dsnVar: string }): StoredMcpConnection {
+function normalizeConnection(input: {
+  name: string;
+  dsnVar: string;
+  provider?: McpConnectionProvider;
+}): StoredMcpConnection {
   const validation = validateMcpConnectionInput(input);
   if (!validation.ok) throw new Error(validation.error);
   return validation.value;
@@ -163,47 +207,97 @@ function readStoredConnections(paths: PathsService): StoredMcpConnection[] {
   const file = paths.userMcpConnectionsFile();
   if (!existsSync(file)) return [];
   const raw = readFileSync(file, "utf-8");
-  if (raw.trim().length === 0) return [];
-  const parsed = JSON.parse(raw) as Partial<McpConnectionsFile>;
-  if (!Array.isArray(parsed.connections)) return [];
-  const out: StoredMcpConnection[] = [];
-  for (const item of parsed.connections) {
-    if (!isConnectionLike(item)) continue;
-    const validation = validateMcpConnectionInput(item);
-    if (validation.ok) out.push(validation.value);
+  if (raw.trim().length === 0) throw new McpConnectionsError();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new McpConnectionsError();
   }
-  return dedupeConnections(out);
+  if (!isRecord(parsed) || !Array.isArray(parsed.connections)) throw new McpConnectionsError();
+  const version = parsed.version;
+  if (version !== 1 && version !== 2 && version !== undefined) throw new McpConnectionsError();
+  const out: StoredMcpConnection[] = [];
+  const names = new Set<string>();
+  for (const item of parsed.connections) {
+    if (!isStoredConnectionForVersion(item, version)) throw new McpConnectionsError();
+    const validation = validateMcpConnectionInput(item);
+    if (!validation.ok) throw new McpConnectionsError();
+    if (names.has(validation.value.name)) throw new McpConnectionsError();
+    names.add(validation.value.name);
+    out.push(validation.value);
+  }
+  return out.sort(compareConnections);
 }
 
 function writeStoredConnections(paths: PathsService, connections: StoredMcpConnection[]): void {
   const file = paths.userMcpConnectionsFile();
   mkdirSync(dirname(file), { recursive: true });
-  const payload: McpConnectionsFile = { version: 1, connections };
-  writeFileSync(file, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+  const payload: McpConnectionsFileV2 = { version: 2, connections };
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
   try {
-    chmodSync(file, 0o600);
+    chmodSync(temporary, 0o600);
   } catch {
     // ignore chmod failures
   }
+  renameSync(temporary, file);
 }
 
-function dedupeConnections(connections: StoredMcpConnection[]): StoredMcpConnection[] {
-  const byName = new Map<string, StoredMcpConnection>();
-  for (const connection of connections) {
-    byName.set(normalizeMcpInstance(connection.name), {
-      name: normalizeMcpInstance(connection.name),
-      dsnVar: normalizeDsnVarName(connection.dsnVar),
-    });
+/** Serialize registry read-modify-write rather than risking a silent lost alias. */
+function withConnectionsLock<T>(paths: PathsService, work: () => T): T {
+  const file = paths.userMcpConnectionsFile();
+  const lock = `${file}.lock`;
+  mkdirSync(dirname(file), { recursive: true });
+  let descriptor: number;
+  try {
+    descriptor = openSync(lock, "wx", 0o600);
+  } catch (error) {
+    const code =
+      error !== null && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+    if (code === "EEXIST") {
+      throw new Error(
+        "Otro proceso está actualizando mcp-connections.json; reintentá la operación.",
+      );
+    }
+    throw error;
   }
-  return [...byName.values()].sort(compareConnections);
+  try {
+    return work();
+  } finally {
+    try {
+      closeSync(descriptor);
+    } finally {
+      try {
+        unlinkSync(lock);
+      } catch {
+        // Fail closed on the next write instead of assuming a concurrent lock is stale.
+      }
+    }
+  }
 }
 
 function compareConnections(a: StoredMcpConnection, b: StoredMcpConnection): number {
   return a.name.localeCompare(b.name);
 }
 
-function isConnectionLike(value: unknown): value is { name: string; dsnVar: string } {
+function isStoredConnectionForVersion(
+  value: unknown,
+  version: unknown,
+): value is { name: string; dsnVar: string; provider?: string } {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
-  return typeof record.name === "string" && typeof record.dsnVar === "string";
+  const keys = Object.keys(record).sort();
+  const expected = version === 2 ? ["dsnVar", "name", "provider"] : ["dsnVar", "name"];
+  return (
+    keys.length === expected.length &&
+    keys.every((key, index) => key === expected[index]) &&
+    typeof record.name === "string" &&
+    typeof record.dsnVar === "string" &&
+    (version === 2 ? record.provider === "postgres" : record.provider === undefined)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

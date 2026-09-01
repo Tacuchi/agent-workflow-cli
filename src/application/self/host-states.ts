@@ -104,10 +104,11 @@ export interface HostStateReport {
   workline: { installed: boolean; path: string };
   capabilities: HostCapability[];
   /**
-   * La vía MCP en este host, con disponibilidad y oferta por separado.
+   * La vía MCP en este host, con disponibilidad y acreditación del descriptor por separado.
    *
    * Aparte de `capabilities` porque ahí cada capacidad tiene UN estado, y acá lo
-   * que la persona necesita saber cuál de esas dos condiciones falta.
+   * que la persona necesita saber cuál de esas dos condiciones falta. Una entrada
+   * histórica de elicitation no acredita que un host la haya cargado.
    */
   mcp_via: McpViaState;
   status: HostStatus;

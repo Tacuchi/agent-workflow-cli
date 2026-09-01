@@ -3364,6 +3364,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "release-data", reason: "datos de release del paquete" },
   { command: "hook", reason: "punto de entrada de los hooks del host" },
   { command: "mcp", reason: "configuración de servidores MCP" },
+  {
+    command: "tool",
+    reason:
+      "ejecutor directo de tools registradas: valida y llama el catálogo sin abrir un recorrido",
+  },
   { command: "self", reason: "instalación y mantenimiento del propio CLI" },
   { command: "harness", reason: "dev-only: inspección del harness" },
   { command: "profiles", reason: "dev-only: perfiles de ejecución" },

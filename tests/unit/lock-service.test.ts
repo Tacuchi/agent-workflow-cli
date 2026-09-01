@@ -118,14 +118,14 @@ describe("acquireLock — corrupt lock", () => {
 });
 
 describe("release", () => {
-  it("writes empty marker enabling next acquire", async () => {
+  it("removes its lock, enabling the next exclusive acquire", async () => {
     const fs = new MemFs();
     const handle = await acquireLock(LOCK_PATH, fs, {
       pid: 100,
       now: () => 1700000000000,
     });
     await handle.release();
-    expect(fs.writes.get(LOCK_PATH)).toBe("");
+    expect(await fs.exists(LOCK_PATH)).toBe(false);
 
     const next = await acquireLock(LOCK_PATH, fs, {
       pid: 200,
@@ -142,6 +142,22 @@ describe("release", () => {
     });
     await handle.release();
     await expect(handle.release()).resolves.toBeUndefined();
+  });
+
+  it("never removes a newer holder after its own lease was replaced", async () => {
+    const fs = new MemFs();
+    const now = () => 1700000000000;
+    const first = await acquireLock(LOCK_PATH, fs, { pid: 100, now });
+
+    // Model a stale takeover between the old holder's work and its eventual
+    // finally block. The token makes an identical pid/timestamp distinguishable.
+    await fs.remove(LOCK_PATH);
+    const second = await acquireLock(LOCK_PATH, fs, { pid: 100, now });
+    await first.release();
+
+    const raw = await fs.readText(LOCK_PATH);
+    expect(JSON.parse(raw).token).toBeDefined();
+    await second.release();
   });
 });
 

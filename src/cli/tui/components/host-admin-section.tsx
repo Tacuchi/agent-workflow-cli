@@ -77,48 +77,6 @@ type SkillAction = "install-full" | "uninstall-full" | "clean-cache" | "clean-le
 
 type Mode = { kind: "list" } | { kind: "detail" } | { kind: "confirm-uninstall"; row: TargetRow };
 
-/**
- * The install/uninstall actions may complete their file work while safely
- * refusing a same-named foreign MCP server. The normal error only says that a
- * step failed; the TUI must retain the actionable host-level conflict instead
- * of turning a partial result into an opaque failure toast.
- */
-export function mcpPartialDetail(data: unknown): string | undefined {
-  if (!isRecord(data) || data.status !== "partial" || !Array.isArray(data.mcp_server)) {
-    return undefined;
-  }
-
-  const problems = data.mcp_server.filter(isMcpProblem);
-  if (problems.length === 0) return "Files changed, but MCP setup is partial.";
-
-  const conflicts = problems.filter((problem) => problem.state === "conflict").map((p) => p.host);
-  const failed = problems
-    .filter((problem) => problem.state === "failed")
-    .map((problem) => `${problem.host}${problem.error ? ` (${problem.error})` : ""}`);
-  const detail = [
-    ...(conflicts.length > 0
-      ? [`MCP conflict on ${conflicts.join(", ")}: the same-named foreign entry was preserved.`]
-      : []),
-    ...(failed.length > 0 ? [`MCP write failed on ${failed.join(", ")}.`] : []),
-  ];
-  return `Files changed; ${detail.join(" ")}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isMcpProblem(
-  value: unknown,
-): value is { host: string; state: "conflict" | "failed"; error?: string } {
-  return (
-    isRecord(value) &&
-    typeof value.host === "string" &&
-    (value.state === "conflict" || value.state === "failed") &&
-    (value.error === undefined || typeof value.error === "string")
-  );
-}
-
 // Derived from the backend's own target map so the section can't drift from what
 // `self install/uninstall-skill` actually supports (clean-legacy v14.5.1 lesson).
 const BACKED_INSTALL_TARGETS: ReadonlySet<string> = new Set(Object.keys(TARGET_ROOTS));
@@ -275,19 +233,9 @@ export function HostAdminSection({
           const result = await ACTION_DEF[step].run(buildArgsFor(step, target), ctx);
           if (!result.ok) {
             const failMsg = result.error?.message;
-            const partialDetail = mcpPartialDetail(result.data);
-            const body = [partialDetail, failMsg]
-              .filter((part): part is string => part !== undefined)
-              .join(" ");
             onToast?.(
-              body.length > 0
-                ? {
-                    tone: "err",
-                    title: partialDetail
-                      ? `Step ${step} partially completed`
-                      : `Step ${step} failed`,
-                    body,
-                  }
+              failMsg !== undefined
+                ? { tone: "err", title: `Step ${step} failed`, body: failMsg }
                 : { tone: "err", title: `Step ${step} failed` },
             );
             // The err toast is mirrored to the log by the notification-center

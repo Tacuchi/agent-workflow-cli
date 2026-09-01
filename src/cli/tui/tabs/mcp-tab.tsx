@@ -30,10 +30,10 @@ import { useOnMount } from "../use-on-mount.js";
 import {
   INSTALLABLE_MCP_HOSTS,
   buildArgs,
-  installActionLabel,
   installDestination,
-  installStatusPill,
   mcpHostLabel,
+  mcpRuntimeAggregatePill,
+  mcpRuntimeStateSummary,
   suggestDsnVar,
 } from "./mcp-tab-helpers.js";
 
@@ -95,6 +95,7 @@ function safeDsnVisible(ctx: CliContext, dsnVar: string): boolean {
 
 export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabProps) {
   const [connections, setConnections] = useState<SelfMcpConnectionView[]>([]);
+  const [registryIssue, setRegistryIssue] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const { stdout } = useStdout();
 
@@ -137,8 +138,14 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
       if (mode.kind !== "confirm-delete") return;
       if (!yes) return setMode({ kind: "detail" });
       const name = mode.name;
-      void runRawAction("remove", name, `removing ${name}…`).then(async (ok) => {
-        if (ok) onToast?.({ tone: "ok", title: `Connection '${name}' removed` });
+      void runRawAction("remove", name, `removing ${name}…`).then(async (summary) => {
+        if (summary !== null) {
+          onToast?.({
+            tone: "ok",
+            title: `Connection '${name}' removed`,
+            ...(summary.length === 0 ? {} : { body: summary }),
+          });
+        }
         await refresh();
         setMode({ kind: "list" });
       });
@@ -176,8 +183,19 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
   const refresh = useCallback(async () => {
     try {
       const result = await selfMcpConfig(buildArgs("list"), ctx);
-      const next = result.ok ? (result.data?.connections ?? []) : [];
+      if (!result.ok) {
+        const recovery =
+          result.data?.registry_error?.recovery ??
+          result.error?.message ??
+          "MCP registry requires repair.";
+        setConnections([]);
+        setRegistryIssue(recovery);
+        onToast?.({ tone: "err", title: "MCP registry needs repair", body: recovery });
+        return;
+      }
+      const next = result.data?.connections ?? [];
       setConnections(next);
+      setRegistryIssue(null);
       setCursor((c) => Math.min(Math.max(0, c), Math.max(0, next.length - 1)));
     } catch (err) {
       onToast?.({ tone: "err", title: "Error loading MCP", body: (err as Error).message });
@@ -189,7 +207,7 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
   const current = connections[cursor] ?? null;
 
   const runRawAction = useCallback(
-    async (action: string, name: string, label: string): Promise<boolean> => {
+    async (action: string, name: string, label: string): Promise<string | null> => {
       setMode({ kind: "busy", label });
       try {
         const result: CommandResult<SelfMcpConfigData> = await selfMcpConfig(
@@ -199,27 +217,22 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
         if (!result.ok) {
           const summary = result.error?.message ?? "failed";
           onToast?.({ tone: "err", title: `Step ${action} failed`, body: summary });
-          return false;
+          return null;
         }
         void ctx.logger?.info(formatTuiEvent(`mcp ${action} ${name}`, "ok"));
-        return true;
+        return result.data?.summary ?? "";
       } catch (err) {
         onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
-        return false;
+        return null;
       }
     },
     [ctx, onToast],
   );
 
-  /**
-   * Test connection — runs `npx -y @bytebase/dbhub` with the resolved DSN.
-   * If dbhub starts without fatal errors within 5s, the connection to the
-   * data engine is assumed OK. If dbhub fails fast (invalid DSN, unreachable
-   * host, bad credentials), the stderr is reported.
-   */
+  /** Test connection executes a read-only PostgreSQL SELECT 1. */
   const runTestConnection = useCallback(
     async (name: string, dsnVar: string) => {
-      setMode({ kind: "busy", label: `testing ${name} → dbhub…` });
+      setMode({ kind: "busy", label: `testing ${name} → PostgreSQL…` });
       try {
         const result = await testMcpConnection({
           dsnVar,
@@ -231,14 +244,14 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
           onToast?.({
             tone: "ok",
             title: `Connection OK · ${name}`,
-            body: `dbhub conectó usando ${dsnVar} (${result.source ?? "unknown"})`,
+            body: `PostgreSQL respondió SELECT 1 usando ${dsnVar} (${result.source ?? "unknown"})`,
           });
           void ctx.logger?.info(formatTuiEvent(`mcp test ${name}`, "ok"));
         } else {
           onToast?.({
             tone: "err",
             title: `Test failed · ${name}`,
-            body: result.error ?? "dbhub no pudo conectar",
+            body: result.error ?? "PostgreSQL no pudo conectar",
           });
         }
       } catch (err) {
@@ -300,19 +313,19 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
     [current, runTestConnection],
   );
 
-  // Detail panel actions (Install/Test/Edit/Remove). `Install` adapts its label
-  // to the user-scope status: install · update (on drift) · reinstall.
+  // Detail panel actions (Install/Test/Edit/Remove). Install always starts with
+  // an explicit host picker; a row can represent several independent hosts.
   const detailActions: DetailAction[] = current
     ? [
         {
-          name: installActionLabel(current.instalado.claude),
-          description: `Write the dbhub entry to ${installDestination("claude")} (user scope).`,
+          name: "Install in host…",
+          description: "Choose a user-scope host for the reliable Workline PostgreSQL server.",
         },
-        { name: "Test connection", description: "Run dbhub with DSN (SELECT 1 smoke test)." },
+        { name: "Test connection", description: "Run a read-only PostgreSQL SELECT 1." },
         { name: "Edit connection", description: "Alias / DSN env var." },
         {
           name: "Remove connection",
-          description: "Delete dbhub entries from every host's user config + local registry.",
+          description: "Delete Workline PostgreSQL entries from user configs + local registry.",
           danger: true,
         },
       ]
@@ -384,33 +397,45 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
 
           {connections.length === 0 && mode.kind === "list" ? (
             <Box marginLeft={2} marginTop={1} flexDirection="column">
-              <Text color={colors.dim}>No MCP connections yet.</Text>
-              <Text color={colors.dim}>
-                Register a DSN to let skills query your DB. Press{" "}
-                <Text color={colors.accent} bold>
-                  a
-                </Text>{" "}
-                to start.
-              </Text>
+              {registryIssue ? (
+                <>
+                  <Text color={colors.err}>MCP registry needs repair.</Text>
+                  <Text color={colors.dim}>{registryIssue}</Text>
+                </>
+              ) : (
+                <>
+                  <Text color={colors.dim}>No MCP connections yet.</Text>
+                  <Text color={colors.dim}>
+                    Register a DSN to let skills query your DB. Press{" "}
+                    <Text color={colors.accent} bold>
+                      a
+                    </Text>{" "}
+                    to start.
+                  </Text>
+                </>
+              )}
             </Box>
           ) : (
             <Box marginTop={0} flexDirection="column">
               {connections
                 .slice(listWindow.start, listWindow.start + listWindow.visible)
-                .map((c, i) => (
-                  <ListRow
-                    key={c.nombre}
-                    icon={icons.diamond}
-                    iconActive={true}
-                    title={c.nombre}
-                    subtitle={`${c.dsn_var} · ${c.server_name}`}
-                    state={installStatusPill(c.instalado.claude)}
-                    chevron
-                    active={listWindow.start + i === cursor}
-                    dimmed={inWizard}
-                    widthHint={rowWidth(stdout?.columns, overlayOpen)}
-                  />
-                ))}
+                .map((connection, i) => {
+                  const states = hostRuntimeStates(connection);
+                  return (
+                    <ListRow
+                      key={connection.nombre}
+                      icon={icons.diamond}
+                      iconActive={true}
+                      title={connection.nombre}
+                      subtitle={`${connection.dsn_var} · ${connection.server_name} · ${mcpRuntimeStateSummary(states)}`}
+                      state={mcpRuntimeAggregatePill(states)}
+                      chevron
+                      active={listWindow.start + i === cursor}
+                      dimmed={inWizard}
+                      widthHint={rowWidth(stdout?.columns, overlayOpen)}
+                    />
+                  );
+                })}
             </Box>
           )}
 
@@ -561,16 +586,16 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
             bordered
             header={{
               name: current.nombre,
-              meta: `${current.server_name} · ${current.dsn_var}\nlast test: —`,
+              meta: connectionDetailMeta(current),
             }}
-            statePill={{ label: "registered", tone: "ok" }}
+            statePill={mcpRuntimeAggregatePill(hostRuntimeStates(current))}
             actions={detailActions}
             focusedAction={actionCursor}
             banner={
               mode.kind === "confirm-delete" ? (
                 <ConfirmBanner
                   title={`× Remove ${mode.name}?`}
-                  body={`This removes '${mode.name}' (dbhub entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Not reversible.`}
+                  body={`This removes '${mode.name}' (Workline PostgreSQL entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Not reversible.`}
                 />
               ) : null
             }
@@ -628,7 +653,7 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
                 <Text color={colors.borderFaint}>{"─".repeat(36)}</Text>
                 <Text color={colors.faint}>
                   {mode.kind === "wizard-review"
-                    ? "⏎ save+install · s save · t test"
+                    ? "⏎ save · choose host · s save · t test"
                     : "⏎ next · esc cancel"}
                 </Text>
               </Box>
@@ -670,29 +695,26 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
   }
 
   async function saveAndInstall(name: string, dsnVar: string) {
+    let choosingHost = false;
     setMode({ kind: "busy", label: `saving ${name}…` });
     try {
       const saved = await saveConnection(name, dsnVar);
       if (saved) {
-        setMode({ kind: "busy", label: `installing ${name} → ${installDestination("claude")}…` });
-        const install = await selfMcpConfig(buildArgs("install-claude", { name }), ctx);
-        onToast?.({
-          tone: install.ok ? "ok" : "err",
-          title: install.ok ? `Installed · ${name}` : `Install failed · ${name}`,
-          body: install.data?.summary ?? install.error?.message ?? "",
-        });
-        if (install.ok) void ctx.logger?.info(formatTuiEvent(`mcp install ${name}`, "ok"));
+        choosingHost = true;
+        await refresh();
+        setMode({ kind: "select-host", name, cursor: 0 });
+        return;
       }
       await refresh();
     } catch (err) {
       onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
     } finally {
-      setMode({ kind: "list" });
+      if (!choosingHost) setMode({ kind: "list" });
     }
   }
 
   async function runWizardTest(review: Extract<Mode, { kind: "wizard-review" }>) {
-    setMode({ kind: "busy", label: `testing ${review.dsnVar} → dbhub…` });
+    setMode({ kind: "busy", label: `testing ${review.dsnVar} → PostgreSQL…` });
     try {
       const result = await testMcpConnection({
         dsnVar: review.dsnVar,
@@ -705,14 +727,71 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
         test: {
           ok: result.ok,
           msg: result.ok
-            ? `dbhub connected (${result.source ?? "env"})`
-            : (result.error ?? "dbhub could not connect"),
+            ? `PostgreSQL SELECT 1 (${result.source ?? "env"})`
+            : (result.error ?? "PostgreSQL could not connect"),
         },
       });
     } catch (err) {
       setMode({ ...review, test: { ok: false, msg: (err as Error).message } });
     }
   }
+}
+
+function connectionDetailMeta(connection: SelfMcpConnectionView): string {
+  const hostStates = HOST_CHOICES.map((host) => {
+    const state = connection.host_status[host];
+    const receiptFailure =
+      state.receipt_failure === undefined
+        ? ""
+        : ` (${state.receipt_failure.phase}/${state.receipt_failure.code})`;
+    const nativeFailure =
+      state.native_check_failure === undefined
+        ? ""
+        : ` (native/${state.native_check_failure.code} @ ${state.native_check_failure.observed_at})`;
+    return `${mcpHostLabel(host)}: ${state.state}${receiptFailure}${nativeFailure}`;
+  });
+  const probes = HOST_CHOICES.flatMap((host) => {
+    const state = connection.host_status[host];
+    return state.last_probe === undefined
+      ? []
+      : [`${mcpHostLabel(host)} ${state.last_probe.outcome} (${state.last_probe.phase})`];
+  });
+  const reloadHints: string[] = [];
+  if (connection.host_status.claude.reload_required) {
+    reloadHints.push("Claude: /mcp → Reconnect o nueva sesión");
+  }
+  if (connection.host_status.codex.reload_required) {
+    reloadHints.push("Codex: /mcp → Restart");
+  }
+  const receiptRecovery = HOST_CHOICES.some(
+    (host) => connection.host_status[host].receipt_failure !== undefined,
+  )
+    ? ["Acción: reinstalá cada host con evidencia de recibo fallida."]
+    : [];
+  const nativeRecovery = HOST_CHOICES.some(
+    (host) => connection.host_status[host].native_check_failure !== undefined,
+  )
+    ? ["Acción: revisá el check nativo MCP del host antes de confiar en su carga."]
+    : [];
+  const fallback =
+    connection.host_status.codex.state === "host-load-observed"
+      ? []
+      : [
+          `Fallback directo de Codex (MCP opcional): agent-workflow tool call execute_sql --connection ${connection.nombre} --input-json -`,
+        ];
+  return [
+    `${connection.server_name} · ${connection.dsn_var}`,
+    ...hostStates,
+    ...(probes.length === 0 ? ["last probe: —"] : probes.map((probe) => `last probe: ${probe}`)),
+    ...receiptRecovery,
+    ...nativeRecovery,
+    ...reloadHints,
+    ...fallback,
+  ].join("\n");
+}
+
+function hostRuntimeStates(connection: SelfMcpConnectionView) {
+  return HOST_CHOICES.map((host) => connection.host_status[host].state);
 }
 
 function WizardStep({

@@ -461,7 +461,7 @@ describe("runWorkspaceInit", () => {
     expect(result.error).toBe("duplicate_alias");
   });
 
-  it("configurar fuentes preserva scaffold legacy; no poda docs, sesiones ni locks", async () => {
+  it("configurar fuentes preserva scaffold legacy; no poda docs ni sesiones y consume el marker legacy", async () => {
     // Workspace from the upfront-scaffold era: empty taxonomy with .gitkeep + one folder with content.
     for (const f of ["manuals", "diagrams", "scripts", "designs"]) {
       mkdirSync(join(workspace, "docs", f), { recursive: true });
@@ -473,7 +473,8 @@ describe("runWorkspaceInit", () => {
     mkdirSync(join(workspace, "docs", "logs"), { recursive: true });
     mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
     writeFileSync(join(workspace, ".workflow", "sessions", ".gitkeep"), "");
-    writeFileSync(join(workspace, ".workflow", ".lock"), ""); // released marker (0 bytes)
+    // Estado de una versión anterior: el acquire consume este marker liberado.
+    writeFileSync(join(workspace, ".workflow", ".lock"), "");
 
     const result = await init();
 
@@ -486,7 +487,9 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(join(workspace, "docs", "specs", ".gitkeep"))).toBe(true);
     expect(existsSync(join(workspace, "docs", "logs"))).toBe(true);
     expect(existsSync(join(workspace, ".workflow", "sessions", ".gitkeep"))).toBe(true);
-    expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(true);
+    // La release actual usa unlink; el marcador vacío histórico no sobrevive al
+    // acquire. No es una poda del scaffold, sino una limpieza del protocolo lock.
+    expect(existsSync(join(workspace, ".workflow", ".lock"))).toBe(false);
     expect(result.scaffold.pruned).toEqual([]);
   });
 

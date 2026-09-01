@@ -13,6 +13,9 @@ import { Logger } from "../application/logging/logger.js";
 import { PathsService } from "../application/paths-service.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
 import { MaterializingWorkspaceFileSystem } from "../application/workspace-materialization-service.js";
+import { encodeToolResponse, toolFailure } from "../domain/database-tools.js";
+import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
+import type { ResolvedSkills } from "../domain/skills.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
 import {
@@ -21,6 +24,7 @@ import {
   type WorklineDirectory,
   WorklineDirectoryError,
 } from "../runtime/namespace-resolver.js";
+import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
 import { ALL_COMMANDS, commandDescribes } from "./commands/index.js";
 import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
@@ -33,6 +37,7 @@ import {
   fail,
   formatArgvError,
   formatUnknownCommand,
+  redactErrorEnvelope,
   renderHumanError,
   renderRaw,
   writeStdout,
@@ -45,84 +50,130 @@ async function run(argv: string[]): Promise<ExitCode> {
   const env = new NodeEnv();
   const proc = new NodeProcess();
   const git = new GitCliAdapter(proc);
+  const prepared = prepareInvocation(argv);
+  if (typeof prepared === "number") return prepared;
+  const initialized = await initializeCliContext(prepared.parsed, fs, env, proc, git);
+  if (initialized === null) return transportExitCode(prepared.parsed);
 
-  // ALL_COMMANDS (commands/index.ts) is the single source of truth for which
-  // commands exist; its order drives the grouped `--help` listing.
-  const registry = new CommandRegistry();
-  for (const command of ALL_COMMANDS) registry.register(command);
+  return await dispatchParsedCommand({
+    ...prepared,
+    ctx: initialized.ctx,
+    registry: commandRegistry(),
+    workspaceFs: initialized.workspaceFs,
+  });
+}
 
+interface PreparedInvocation {
+  parsed: ParsedArgs;
+  isTTY: boolean;
+  hasHelp: boolean;
+  output: OutputMode;
+}
+
+function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
   const parsed = parseCli(argv);
-  if (parsed === null) return 1;
-
+  if (parsed === null) return rawTransportExitCode(argv);
+  const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
+  if (isMcpStdioInvocation(parsed) && (parsed.flags.has("--version") || hasHelp)) {
+    process.stderr.write("aw mcp: --version y --help no son válidos para un servidor stdio\n");
+    return 2;
+  }
   if (parsed.flags.has("--version")) {
     writeStdout(`${readPackageVersion()}\n`);
     return 0;
   }
-
   const isTTY = process.stdout.isTTY === true;
-  const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
-
   const output = resolveOutputMode(parsed, isTTY);
-  if (!output.ok) {
-    emitError(formatArgvError(output.message));
-    return 1;
+  if (output.ok) return { parsed, isTTY, hasHelp, output: output.mode };
+  return outputModeFailure(parsed, output.message);
+}
+
+function rawTransportExitCode(argv: readonly string[]): ExitCode {
+  return looksLikeMcpStdioInvocation(argv) || looksLikeToolInvocation(argv) ? 2 : 1;
+}
+
+function outputModeFailure(parsed: ParsedArgs, message: string): ExitCode {
+  if (parsed.command === "tool") {
+    emitToolEarlyFailure("INVALID_INPUT", message);
+    return 2;
   }
+  if (isMcpStdioInvocation(parsed)) {
+    process.stderr.write("aw mcp: argumentos de salida inválidos para un servidor stdio\n");
+    return 2;
+  }
+  emitError(formatArgvError(message));
+  return 1;
+}
 
-  const namespaceResolver = new NamespaceResolver(fs, env);
-  const directory = await resolveWorklineDirectory(namespaceResolver, parsed);
-  if (directory === null) return 1;
+function commandRegistry(): CommandRegistry {
+  // ALL_COMMANDS (commands/index.ts) is the single source of truth for which
+  // commands exist; its order drives the grouped `--help` listing.
+  const registry = new CommandRegistry();
+  for (const command of ALL_COMMANDS) registry.register(command);
+  return registry;
+}
+
+async function initializeCliContext(
+  parsed: ParsedArgs,
+  fs: NodeFileSystem,
+  env: NodeEnv,
+  proc: NodeProcess,
+  git: GitCliAdapter,
+): Promise<{ ctx: CliContext; workspaceFs: MaterializingWorkspaceFileSystem } | null> {
+  const directory = await resolveWorklineDirectory(new NamespaceResolver(fs, env), parsed);
+  if (directory === null) return null;
   const namespace = { namespace: directory.namespace, source: directory.namespaceSource };
-
-  // All workspace-scoped services receive the same root.  In a virgin folder it
-  // is exactly the invoked cwd; in a materialized workspace it is its nearest
-  // canonical marker's parent — never a guessed repository root.
   const paths = new PathsService(namespace.namespace, env.homeDir(), directory.root);
-  // Direct writers are spread across the command surface.  Guard their first
-  // workspace-scoped write here so no command can create docs/state before the
-  // canonical sessions marker exists.  The two services that already own their
-  // materialization receipt receive the raw port below, avoiding a duplicate
-  // materialization whose receipt would look merely "existing".
   const workspaceFs = new MaterializingWorkspaceFileSystem(fs, paths);
-
-  const runtimeService = new RuntimeConfigService(fs, env, paths);
-  const runtime = await runtimeService.resolveRuntime();
-
-  // Operational logger → global user-level daily log. Best-effort; never throws.
-  // Built before ctx so the TUI (and its tabs, via ctx.logger) can log too.
-  // `status` and `resume` are strict filesystem reads. Their operational trace
-  // must not create even the global daily log when invoked from a virgin folder.
-  const logger = new Logger({ fs, paths, enabled: !isStrictReadCommand(parsed.command) });
-
-  const skillsResolution = await resolveSkills(fs, paths);
-  const ctx: CliContext = {
-    fs: workspaceFs,
-    rawFs: fs,
-    env,
-    git,
-    process: proc,
-    runtime,
-    namespace,
-    directory,
-    paths,
-    skills: skillsResolution.skills,
-    logger,
-  };
-
-  return await dispatchParsedCommand({
-    parsed,
-    ctx,
-    registry,
-    isTTY,
-    hasHelp,
-    output: output.mode,
+  const standaloneTransport = parsed.command === "tool" || isMcpStdioInvocation(parsed);
+  const runtime = standaloneTransport
+    ? defaultStandaloneRuntime()
+    : await new RuntimeConfigService(fs, env, paths).resolveRuntime();
+  const skills = standaloneTransport
+    ? ({} as ResolvedSkills)
+    : (await resolveSkills(fs, paths)).skills;
+  return {
     workspaceFs,
-  });
+    ctx: {
+      fs: workspaceFs,
+      rawFs: fs,
+      env,
+      git,
+      process: proc,
+      runtime,
+      namespace,
+      directory,
+      paths,
+      skills,
+      logger: new Logger({ fs, paths, enabled: !isStrictReadCommand(parsed.command) }),
+    },
+  };
+}
+
+function defaultStandaloneRuntime() {
+  return {
+    packageName: DEFAULT_RUNTIME_CONFIG.packageName,
+    binName: DEFAULT_RUNTIME_CONFIG.binName,
+    source: "default" as const,
+  };
+}
+
+function transportExitCode(parsed: ParsedArgs): ExitCode {
+  return parsed.command === "tool" || isMcpStdioInvocation(parsed) ? 2 : 1;
 }
 
 function parseCli(argv: string[]): ParsedArgs | null {
   try {
     return parseArgv(argv);
   } catch (err) {
+    if (looksLikeMcpStdioInvocation(argv)) {
+      process.stderr.write("aw mcp: argumentos del servidor stdio no son válidos\n");
+      return null;
+    }
+    if (looksLikeToolInvocation(argv)) {
+      emitToolEarlyFailure("INVALID_INPUT", "Los argumentos de tool no son válidos.");
+      return null;
+    }
     emitError(formatArgvError((err as Error).message));
     return null;
   }
@@ -135,7 +186,28 @@ async function resolveWorklineDirectory(
   try {
     return await resolver.resolveDirectory(parsed.values.get("namespace"));
   } catch (err) {
-    if (!(err instanceof WorklineDirectoryError)) throw err;
+    if (!(err instanceof WorklineDirectoryError)) {
+      if (parsed.command === "tool") {
+        emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
+        return null;
+      }
+      if (isMcpStdioInvocation(parsed)) {
+        process.stderr.write("aw mcp: no se pudo preparar el servidor stdio\n");
+        return null;
+      }
+      throw err;
+    }
+    if (parsed.command === "tool") {
+      emitToolEarlyFailure(
+        "WORKLINE_NAMESPACE_AMBIGUOUS",
+        "No se pudo resolver el namespace de la tool.",
+      );
+      return null;
+    }
+    if (isMcpStdioInvocation(parsed)) {
+      process.stderr.write("aw mcp: no se pudo resolver el namespace del servidor stdio\n");
+      return null;
+    }
     emitError({
       code: err.code,
       message: err.message,
@@ -143,6 +215,53 @@ async function resolveWorklineDirectory(
     });
     return null;
   }
+}
+
+function emitToolEarlyFailure(code: string, message: string): void {
+  writeStdout(encodeToolResponse(toolFailure(code, message)));
+}
+
+function looksLikeToolInvocation(argv: readonly string[]): boolean {
+  return !looksLikeMcpStdioInvocation(argv) && firstCommandToken(argv) === "tool";
+}
+
+function looksLikeMcpStdioInvocation(argv: readonly string[]): boolean {
+  const index = argv.indexOf("mcp");
+  if (index < 0) return false;
+  const subcommand = argv[index + 1];
+  return subcommand === "serve" || subcommand === "serve-db" || subcommand === "dbhub";
+}
+
+function firstCommandToken(argv: readonly string[]): string | undefined {
+  const globalOptionsWithValue = new Set([
+    "--namespace",
+    "--plugin-root",
+    "--plugin-version",
+    "--compat",
+    // `tool` always renders its own raw JSON, but this global projection flag
+    // can precede it. Skip its value while detecting a parse-time tool error so
+    // the CLI never falls back to the generic `{ ok, error }` envelope.
+    "--format",
+  ]);
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === undefined) return undefined;
+    if (globalOptionsWithValue.has(token)) {
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("--namespace=") || token.startsWith("--plugin-")) continue;
+    if (token.startsWith("-")) continue;
+    return token;
+  }
+  return undefined;
+}
+
+function isMcpStdioInvocation(parsed: ParsedArgs): boolean {
+  return (
+    parsed.command === "mcp" &&
+    (parsed.rest[0] === "serve" || parsed.rest[0] === "serve-db" || parsed.rest[0] === "dbhub")
+  );
 }
 
 interface ParsedCommandDispatch {
@@ -213,7 +332,11 @@ async function executeCommand(
     return result.exitCode;
   } catch (err) {
     await ctx.logger?.error(formatCommandError(command.name, err));
-    const message = err instanceof Error ? err.message : String(err);
+    if (isMcpStdioInvocation(parsed)) {
+      process.stderr.write("aw mcp: el servidor stdio no pudo iniciar\n");
+      return 1;
+    }
+    const message = redactSensitiveText(err instanceof Error ? err.message : String(err));
     emit(fail("UNHANDLED", message), command, output);
     return 1;
   }
@@ -253,6 +376,11 @@ function isStrictReadCommand(command: string | undefined): boolean {
 }
 
 function emit(result: CommandResult, command: CliCommand, mode: OutputMode): void {
+  if (result.suppressOutput) return;
+  if (command.renderRawJson !== undefined) {
+    writeStdout(command.renderRawJson(result));
+    return;
+  }
   if (result.ok && result.data === undefined) {
     // Command already wrote stdout itself (custom rendering); nothing more to emit.
     return;
@@ -290,9 +418,11 @@ function emitJson(result: CommandResult): void {
   }
   const payload: { ok: boolean; error: typeof result.error; data?: unknown } = {
     ok: result.ok,
-    error: result.error,
+    error: redactErrorEnvelope(
+      result.error ?? { code: "UNKNOWN", message: "el comando falló sin detallar la causa" },
+    ),
   };
-  if (result.data !== undefined) payload.data = result.data;
+  if (result.data !== undefined) payload.data = redactSensitiveValue(result.data);
   writeStdout(renderRaw(payload));
 }
 
@@ -354,6 +484,25 @@ function printCommandHelp(command: CliCommand): void {
   writeStdout(`${commandHelpText(command)}\n`);
 }
 
-run(process.argv.slice(2)).then((code) => {
-  process.exit(code);
-});
+// Do not force-exit after writing JSON: a piped 4 MiB tool response may still
+// be draining under stdout backpressure. `exitCode` preserves the contract
+// while allowing Node to flush stdio naturally.
+void run(process.argv.slice(2))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch(() => {
+    const argv = process.argv.slice(2);
+    if (looksLikeMcpStdioInvocation(argv)) {
+      process.stderr.write("aw mcp: el servidor stdio no pudo iniciar\n");
+      process.exitCode = 2;
+      return;
+    }
+    if (looksLikeToolInvocation(argv)) {
+      emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
+      process.exitCode = 1;
+      return;
+    }
+    process.stderr.write("agent-workflow: fallo fatal no recuperable\n");
+    process.exitCode = 1;
+  });

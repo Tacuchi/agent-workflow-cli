@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "../../domain/redaction.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
 
@@ -59,6 +60,5 @@ export class Logger {
  * conservative: it targets named secret flags + Bearer tokens.
  */
 export function redactSecrets(text: string): string {
-  const SECRET_FLAG = /(--?(?:token|secret|password|passwd|pwd|api[-_]?key|key|auth)[=\s]+)(\S+)/gi;
-  return text.replace(SECRET_FLAG, "$1***").replace(/\bBearer\s+\S+/gi, "Bearer ***");
+  return redactSensitiveText(text);
 }

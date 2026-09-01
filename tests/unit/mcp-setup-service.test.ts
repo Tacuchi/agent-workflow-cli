@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runMcpSetup } from "../../src/application/mcp-setup-service.js";
+import { mcpEntryShapeForHost } from "../../src/domain/mcp-entry.js";
+import { worklineMcpEntry } from "../../src/domain/workline-mcp-entry.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 const ALPHA = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
@@ -90,6 +92,29 @@ describe("runMcpSetup", () => {
     expect(result.conflicts).toHaveLength(1);
     expect(result.conflicts[0]?.action).toBe("conflict");
     expect(readFileSync(file, "utf-8")).toBe(foreign);
+  });
+
+  it("no reemplaza el servidor legacy de elicitation sin la migración explícita", () => {
+    const file = join(workspace, ".mcp.json");
+    const legacy = worklineMcpEntry("claude");
+    const original = `${JSON.stringify(
+      { mcpServers: { "agent-workflow": mcpEntryShapeForHost("claude", legacy) } },
+      null,
+      2,
+    )}\n`;
+    writeFileSync(file, original);
+
+    const result = runMcpSetup(env, {
+      hosts: ["claude"],
+      connections: [{ name: "agent-workflow", dsnVar: "WORKLINE_DATABASE_URL" }],
+      scope: "workspace",
+      workspace,
+    });
+
+    if ("ok" in result) throw new Error("did not expect refusal");
+    expect(result.applied).toEqual([]);
+    expect(result.conflicts).toEqual([expect.objectContaining({ action: "conflict" })]);
+    expect(readFileSync(file, "utf-8")).toBe(original);
   });
 
   it("acepta conexiones custom y normaliza el nombre del server", () => {

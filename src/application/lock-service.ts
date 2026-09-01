@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
@@ -5,6 +6,12 @@ import type { PathsService } from "./paths-service.js";
 export interface LockFileContent {
   pid: number;
   ts: string;
+  /**
+   * Identifies one acquisition by one process.  `pid` and `ts` alone can repeat
+   * when a process releases and re-acquires a lock within the same millisecond;
+   * a late release must never remove that newer holder.
+   */
+  token?: string;
 }
 
 export interface LockHandle {
@@ -33,10 +40,9 @@ export interface LockOptions {
   /** Poll step while waiting for a busy lock. */
   waitStepMs?: number;
   /**
-   * Remove the lock on release instead of leaving the historical empty marker.
-   * Used by first-workspace materialization so a virgin write creates only its
-   * declared runtime effects. Existing callers retain the release-marker
-   * protocol by default.
+   * Retained for source compatibility. Releases now always remove their own
+   * lock rather than writing the historical empty marker: a marker let two
+   * waiters each clear the path after a third had acquired it.
    */
   removeOnRelease?: boolean;
 }
@@ -53,29 +59,99 @@ export class LockBusyError extends Error {
 
 export const DEFAULT_LOCK_TTL_MS = 5 * 60 * 1000;
 
-const RELEASED_MARKER = "";
-
 const MAX_CLAIM_RETRIES = 3;
 
 const DEFAULT_WAIT_STEP_MS = 15;
 
-export async function acquireLock(
-  lockPath: string,
+/**
+ * Serializes the small read/create/cleanup window for callers in this Node
+ * process. The filesystem lock remains the inter-process arbiter for live
+ * holders; this queue closes the same-process window where multiple async
+ * callers observed and cleared the same released marker.
+ */
+const localLockTails = new Map<string, Promise<void>>();
+
+async function underLocalLock<T>(path: string, operation: () => Promise<T>): Promise<T> {
+  const previous = localLockTails.get(path) ?? Promise.resolve();
+  let release: (() => void) | undefined;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => current);
+  localLockTails.set(path, tail);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release?.();
+    if (localLockTails.get(path) === tail) localLockTails.delete(path);
+  }
+}
+
+type AcquisitionStep =
+  | { kind: "acquired" }
+  | { kind: "held"; holder: LockFileContent }
+  | { kind: "retry"; lastSeen: LockFileContent | null };
+
+async function tryAcquireStep(
   fs: FileSystemPort,
-  options: LockOptions = {},
-): Promise<LockHandle> {
-  const ttlMs = options.ttlMs ?? DEFAULT_LOCK_TTL_MS;
-  const pid = options.pid ?? process.pid;
+  lockPath: string,
+  serialized: string,
+  nowMs: number,
+  ttlMs: number,
+): Promise<AcquisitionStep> {
+  return await underLocalLock(lockPath, async () => {
+    const result = await fs.writeTextExclusive(lockPath, serialized);
+    if (result.created) return { kind: "acquired" };
+
+    const slot = await readSlot(fs, lockPath, nowMs, ttlMs);
+    if (slot.held) return { kind: "held", holder: slot.holder };
+
+    // A missing path is already available for a fresh exclusive create. Do not
+    // remove it: another process can have acquired it between the failed create
+    // and the read. Free legacy/stale contents are cleared while the local queue
+    // owns the inspection, then the next loop creates afresh.
+    if (slot.present) await fs.remove(lockPath);
+    return { kind: "retry", lastSeen: slot.holder };
+  });
+}
+
+interface LockRequest {
+  ttlMs: number;
+  pid: number;
+  now: () => number;
+  ts: number;
+  deadline: number;
+  waitStepMs: number;
+}
+
+function lockRequest(options: LockOptions): LockRequest {
   const now = options.now ?? Date.now;
   const ts = now();
-  const waitMs = options.waitMs ?? 0;
-  const waitStepMs = options.waitStepMs ?? DEFAULT_WAIT_STEP_MS;
-  const deadline = ts + waitMs;
+  return {
+    ttlMs: options.ttlMs ?? DEFAULT_LOCK_TTL_MS,
+    pid: options.pid ?? process.pid,
+    now,
+    ts,
+    deadline: ts + (options.waitMs ?? 0),
+    waitStepMs: options.waitStepMs ?? DEFAULT_WAIT_STEP_MS,
+  };
+}
 
-  await fs.mkdirp(dirname(lockPath));
-  const content: LockFileContent = { pid, ts: new Date(ts).toISOString() };
-  const serialized = JSON.stringify(content);
+function serializedLock(request: LockRequest): string {
+  return JSON.stringify({
+    pid: request.pid,
+    ts: new Date(request.ts).toISOString(),
+    token: randomUUID(),
+  } satisfies LockFileContent);
+}
 
+async function waitForLock(
+  fs: FileSystemPort,
+  lockPath: string,
+  serialized: string,
+  request: LockRequest,
+): Promise<LockHandle> {
   let lastSeen: LockFileContent | null = null;
   // Two budgets, and conflating them breaks either one. `steals` bounds how often
   // a competing claimer may take the slot we just cleared — the fail-fast caller's
@@ -85,33 +161,42 @@ export async function acquireLock(
   // each and all report "busy" over a lock nobody holds.
   let steals = 0;
   while (steals < MAX_CLAIM_RETRIES) {
-    const result = await fs.writeTextExclusive(lockPath, serialized);
-    if (result.created) {
-      return makeHandle(fs, lockPath, pid, ts, options.removeOnRelease === true);
+    const step = await tryAcquireStep(fs, lockPath, serialized, request.now(), request.ttlMs);
+    if (step.kind === "acquired") {
+      return makeHandle(fs, lockPath, request.pid, request.ts, serialized);
     }
 
-    const slot = await readSlot(fs, lockPath, now(), ttlMs);
-    if (slot.holder !== null) lastSeen = slot.holder;
-
-    if (slot.held) {
-      if (await keepWaiting(now, deadline, waitStepMs)) continue;
-      throw new LockBusyError(lockPath, slot.holder);
+    if (step.kind === "held") {
+      if (await keepWaiting(request.now, request.deadline, request.waitStepMs)) continue;
+      throw new LockBusyError(lockPath, step.holder);
     }
+    if (step.lastSeen !== null) lastSeen = step.lastSeen;
 
-    // Stale, release marker, corrupted or already gone: clear it and race again.
-    await fs.remove(lockPath);
-    if (await keepWaiting(now, deadline, 0)) continue;
+    // Stale, release marker, corrupt or already gone: the local section either
+    // cleared the old content or observed an already-free path. Yield before
+    // retrying so a just-released in-process holder cannot be starved.
+    if (await keepWaiting(request.now, request.deadline, 0)) continue;
     steals++;
   }
 
   // Exceeded retries — another claimer kept stealing the slot. Surface as busy.
-  throw new LockBusyError(lockPath, lastSeen ?? { pid: 0, ts: new Date(ts).toISOString() });
+  throw new LockBusyError(lockPath, lastSeen ?? { pid: 0, ts: new Date(request.ts).toISOString() });
+}
+
+export async function acquireLock(
+  lockPath: string,
+  fs: FileSystemPort,
+  options: LockOptions = {},
+): Promise<LockHandle> {
+  const request = lockRequest(options);
+  await fs.mkdirp(dirname(lockPath));
+  return await waitForLock(fs, lockPath, serializedLock(request), request);
 }
 
 /** A live holder, or a slot free for the taking (stale, released, corrupt, gone). */
 type Slot =
   | { held: true; holder: LockFileContent }
-  | { held: false; holder: LockFileContent | null };
+  | { held: false; holder: LockFileContent | null; present: boolean };
 
 async function readSlot(
   fs: FileSystemPort,
@@ -124,13 +209,13 @@ async function readSlot(
     raw = await fs.readText(lockPath);
   } catch {
     // Removed between the EEXIST and this read: the slot is free again.
-    return { held: false, holder: null };
+    return { held: false, holder: null, present: false };
   }
   const existing = parseLock(raw);
   if (existing !== null && !isExpired(existing, nowMs, ttlMs)) {
     return { held: true, holder: existing };
   }
-  return { held: false, holder: existing };
+  return { held: false, holder: existing, present: true };
 }
 
 /**
@@ -155,7 +240,7 @@ function makeHandle(
   lockPath: string,
   pid: number,
   ts: number,
-  removeOnRelease: boolean,
+  serialized: string,
 ): LockHandle {
   let released = false;
   return {
@@ -166,10 +251,19 @@ function makeHandle(
       if (released) return;
       released = true;
       try {
-        if (removeOnRelease) await fs.remove(lockPath);
-        else await fs.writeText(lockPath, RELEASED_MARKER);
+        await underLocalLock(lockPath, async () => {
+          let current: string;
+          try {
+            current = await fs.readText(lockPath);
+          } catch {
+            return;
+          }
+          // A stale holder may wake up after a new process acquired the same
+          // pathname. It can only release the bytes it created itself.
+          if (current === serialized) await fs.remove(lockPath);
+        });
       } catch {
-        // best-effort: stale lock will auto-expire via ttl
+        // Best effort: a stale lock can still be recovered after its TTL.
       }
     },
   };

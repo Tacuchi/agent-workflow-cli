@@ -1,6 +1,9 @@
 import {
+  closeSync,
   existsSync,
+  fchmodSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   unlinkSync,
@@ -29,22 +32,75 @@ export interface ScopeInput {
 // Atomic replace: stage to a tmp sibling and rename over the target. At global
 // scope the targets are live user files (~/.claude.json is rewritten by any
 // running Claude Code session); rename keeps a concurrent reader from seeing a
-// truncated/half-written file. Lost-update between two writers remains possible
-// (would need locking) — accepted residual risk.
-let atomicWriteCounter = 0;
+// truncated/half-written file. `withHostConfigLock` serializes Workline
+// writers; an external host can still race, so every caller must read back.
+const MAX_ATOMIC_TEMP_ATTEMPTS = 64;
+
 function atomicWriteFileSync(path: string, content: string): void {
-  const tmp = `${path}.${process.pid}.${++atomicWriteCounter}.tmp`;
+  let descriptor: number | undefined;
+  let tmp: string | undefined;
   try {
-    writeFileSync(tmp, content, "utf-8");
-    renameSync(tmp, path);
-  } catch (err) {
+    const staged = reserveAtomicTempFile(path);
+    descriptor = staged.descriptor;
+    tmp = staged.path;
+    // The temporary file is exclusively created with 0600. Tighten it again
+    // where POSIX permissions exist; Windows ACL filesystems can reject
+    // fchmod, and that must not turn an otherwise safe atomic replacement
+    // into a platform-specific setup failure.
     try {
-      unlinkSync(tmp);
+      fchmodSync(descriptor, 0o600);
     } catch {
-      // tmp may not exist if writeFileSync failed before creating it
+      // The exclusive create mode above remains the only portable guarantee.
     }
+    writeFileSync(descriptor, content, "utf-8");
+    closeSync(descriptor);
+    descriptor = undefined;
+    renameSync(tmp, path);
+    tmp = undefined;
+  } catch (err) {
+    if (descriptor !== undefined) closeAtomicTempFile(descriptor);
+    if (tmp !== undefined) discardAtomicTempFile(tmp);
     throw err;
   }
+}
+
+function reserveAtomicTempFile(path: string): { path: string; descriptor: number } {
+  for (let attempt = 0; attempt < MAX_ATOMIC_TEMP_ATTEMPTS; attempt += 1) {
+    const tmp = `${path}.${process.pid}.${attempt + 1}.tmp`;
+    try {
+      return { path: tmp, descriptor: openSync(tmp, "wx", 0o600) };
+    } catch (error) {
+      if (filesystemErrorCode(error) === "EEXIST") continue;
+      throw error;
+    }
+  }
+  throw new McpWriterError(
+    "no se pudo reservar un archivo temporal seguro para la configuración MCP",
+    path,
+  );
+}
+
+function closeAtomicTempFile(descriptor: number): void {
+  try {
+    closeSync(descriptor);
+  } catch {
+    // The failed write is reported below; cleanup is best-effort.
+  }
+}
+
+function discardAtomicTempFile(path: string): void {
+  try {
+    unlinkSync(path);
+  } catch {
+    // Only an exclusively-created temp reaches this branch. It may already
+    // have been removed by the filesystem after a failed write.
+  }
+}
+
+function filesystemErrorCode(error: unknown): string | undefined {
+  if (error === null || typeof error !== "object") return undefined;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
 }
 
 function claudeMcpFile(scope: ScopeInput): string {
@@ -77,6 +133,7 @@ type LegacyClaudeEntryInspection =
 function inspectLegacyClaudeMcpEntry(
   scope: ScopeInput,
   entry: McpEntry,
+  replaceLegacy?: McpEntry,
 ): LegacyClaudeEntryInspection {
   const target = legacyClaudeSettingsFile(scope);
   if (!existsSync(target)) return { state: "absent", target };
@@ -96,15 +153,26 @@ function inspectLegacyClaudeMcpEntry(
   if (current === undefined) return { state: "absent", target };
   if (!isRecord(current)) return { state: "conflict", target };
   if (!(entry.name in current)) return { state: "absent", target };
-  if (!isDeepStrictEqual(current[entry.name], mcpEntryShapeForHost("claude", entry))) {
+  const expected = mcpEntryShapeForHost("claude", entry);
+  const legacy =
+    replaceLegacy === undefined ? undefined : mcpEntryShapeForHost("claude", replaceLegacy);
+  if (
+    !isDeepStrictEqual(current[entry.name], expected) &&
+    !isDeepStrictEqual(current[entry.name], legacy)
+  ) {
     return { state: "conflict", target };
   }
   return { state: "owned", target, data, servers: current };
 }
 
-function cleanupLegacyClaudeMcpEntry(scope: ScopeInput, entry: McpEntry, dryRun: boolean): void {
+function cleanupLegacyClaudeMcpEntry(
+  scope: ScopeInput,
+  entry: McpEntry,
+  dryRun: boolean,
+  replaceLegacy?: McpEntry,
+): void {
   if (dryRun) return;
-  const legacy = inspectLegacyClaudeMcpEntry(scope, entry);
+  const legacy = inspectLegacyClaudeMcpEntry(scope, entry, replaceLegacy);
   if (legacy.state !== "owned") return;
   legacy.servers[entry.name] = undefined;
   const remaining = Object.fromEntries(
@@ -125,7 +193,6 @@ export class McpWriterError extends Error {
   constructor(
     message: string,
     public readonly target: string,
-    public override readonly cause?: string,
   ) {
     super(message);
     this.name = "McpWriterError";
@@ -145,6 +212,30 @@ export function writeMcpEntry(
   entry: McpEntry,
   scope: ScopeInput,
   opts: McpWriteOpts = {},
+): McpWriteResult {
+  if (opts.dryRun) return writeMcpEntryUnlocked(host, entry, scope, opts);
+  return withHostConfigLock(hostConfigTarget(host, scope), () =>
+    writeMcpEntryUnlocked(host, entry, scope, opts),
+  );
+}
+
+export function removeMcpEntry(
+  host: McpHost,
+  entry: McpEntry,
+  scope: ScopeInput,
+  opts: McpWriteOpts = {},
+): McpWriteResult {
+  if (opts.dryRun) return removeMcpEntryUnlocked(host, entry, scope, opts);
+  return withHostConfigLock(hostConfigTarget(host, scope), () =>
+    removeMcpEntryUnlocked(host, entry, scope, opts),
+  );
+}
+
+function writeMcpEntryUnlocked(
+  host: McpHost,
+  entry: McpEntry,
+  scope: ScopeInput,
+  opts: McpWriteOpts,
 ): McpWriteResult {
   switch (host) {
     case "claude":
@@ -166,11 +257,11 @@ export function writeMcpEntry(
   }
 }
 
-export function removeMcpEntry(
+function removeMcpEntryUnlocked(
   host: McpHost,
   entry: McpEntry,
   scope: ScopeInput,
-  opts: McpWriteOpts = {},
+  opts: McpWriteOpts,
 ): McpWriteResult {
   switch (host) {
     case "claude":
@@ -189,6 +280,63 @@ export function removeMcpEntry(
       return removeJsonMcpEntry("crush", crushMcpFile(scope), "mcp", entry, opts);
     default:
       return assertNeverHost(host);
+  }
+}
+
+function hostConfigTarget(host: McpHost, scope: ScopeInput): string {
+  switch (host) {
+    case "claude":
+      return claudeMcpFile(scope);
+    case "codex":
+      return join(scope.scopeDir, ".codex", "config.toml");
+    case "warp":
+      return warpMcpFile(scope);
+    case "gemini":
+      return geminiMcpFile(scope);
+    case "kimi":
+      return kimiMcpFile(scope);
+    case "opencode":
+      return opencodeMcpFile(scope);
+    case "crush":
+      return crushMcpFile(scope);
+    default:
+      return assertNeverHost(host);
+  }
+}
+
+/**
+ * Serializes the whole read-modify-write window, not merely the final rename.
+ * A competing writer fails explicitly instead of silently dropping one host
+ * entry. A stale lock is intentionally not guessed away: removing it requires
+ * an operator decision because it may belong to another live process.
+ */
+function withHostConfigLock<T>(target: string, work: () => T): T {
+  const lock = `${target}.agent-workflow.lock`;
+  mkdirSync(dirname(lock), { recursive: true });
+  let descriptor: number;
+  try {
+    descriptor = openSync(lock, "wx", 0o600);
+  } catch (error) {
+    if (filesystemErrorCode(error) === "EEXIST") {
+      throw new McpWriterError(
+        "otro proceso está actualizando esta configuración MCP; reintentá cuando termine",
+        target,
+      );
+    }
+    throw error;
+  }
+  try {
+    return work();
+  } finally {
+    try {
+      closeSync(descriptor);
+    } finally {
+      try {
+        unlinkSync(lock);
+      } catch {
+        // A remaining lock is safer than claiming a concurrent write succeeded.
+      }
+    }
   }
 }
 
@@ -239,13 +387,15 @@ function writeJsonMcpEntry(
   const bag = recordContainer(data, topKey, file) ?? {};
   const existing = bag[entry.name];
   const expected = mcpEntryShapeForHost(host, entry);
+  const legacy =
+    opts.replaceLegacy === undefined ? undefined : mcpEntryShapeForHost(host, opts.replaceLegacy);
 
   if (isDeepStrictEqual(existing, expected)) {
     return resultSkipped(host, file, entry.name);
   }
   // A matching name is not enough to establish ownership. Replacing a server
   // whose shape differs would overwrite somebody else's configuration.
-  if (existing !== undefined) {
+  if (existing !== undefined && !isDeepStrictEqual(existing, legacy)) {
     return resultConflict(host, file, entry.name);
   }
 
@@ -254,7 +404,9 @@ function writeJsonMcpEntry(
   const newJson = `${JSON.stringify(data, null, 2)}\n`;
 
   if (opts.dryRun) {
-    return resultDryRun(host, file, entry.name, [`${topKey}.${entry.name}: add`]);
+    return resultDryRun(host, file, entry.name, [
+      `${topKey}.${entry.name}: ${existing === undefined ? "add" : "replace known legacy"}`,
+    ]);
   }
 
   mkdirSync(dirname(file), { recursive: true });
@@ -277,10 +429,12 @@ function removeJsonMcpEntry(
   if (bag === undefined) return resultSkipped(host, file, entry.name);
   const existing = bag[entry.name];
   const expected = mcpEntryShapeForHost(host, entry);
+  const legacy =
+    opts.replaceLegacy === undefined ? undefined : mcpEntryShapeForHost(host, opts.replaceLegacy);
   if (existing === undefined) {
     return resultSkipped(host, file, entry.name);
   }
-  if (!isDeepStrictEqual(existing, expected)) {
+  if (!isDeepStrictEqual(existing, expected) && !isDeepStrictEqual(existing, legacy)) {
     return resultConflict(host, file, entry.name);
   }
 
@@ -309,7 +463,7 @@ function writeClaudeMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
-  const legacy = inspectLegacyClaudeMcpEntry(scope, entry);
+  const legacy = inspectLegacyClaudeMcpEntry(scope, entry, opts.replaceLegacy);
   if (legacy.state === "conflict") return resultConflict("claude", legacy.target, entry.name);
   const res = writeJsonMcpEntry("claude", claudeMcpFile(scope), "mcpServers", entry, opts);
   // The canonical entry may already be present while the old location still
@@ -320,11 +474,24 @@ function writeClaudeMcpEntry(
       return resultDryRun("claude", legacy.target, entry.name, [
         `mcpServers.${entry.name}: remove legacy entry`,
       ]);
-    cleanupLegacyClaudeMcpEntry(scope, entry, false);
-    return resultWritten("claude", legacy.target, entry.name, null);
+    try {
+      cleanupLegacyClaudeMcpEntry(scope, entry, false, opts.replaceLegacy);
+      return resultWritten("claude", legacy.target, entry.name, null);
+    } catch {
+      return partialLegacyCleanup(res, legacy.target);
+    }
   }
-  if (legacy.state === "owned" && res.action === "written")
-    cleanupLegacyClaudeMcpEntry(scope, entry, false);
+  if (legacy.state === "owned" && res.action === "written") {
+    try {
+      cleanupLegacyClaudeMcpEntry(scope, entry, false, opts.replaceLegacy);
+    } catch {
+      // The primary descriptor is already durable. Do not hide that mutation
+      // or roll it back blindly: the old location might have been changed by a
+      // host meanwhile. The caller will fail readback, withhold the receipt,
+      // and a later explicit setup/migration can retry exact cleanup.
+      return partialLegacyCleanup(res, legacy.target);
+    }
+  }
   return res;
 }
 
@@ -339,11 +506,15 @@ function writeCodexMcpEntry(
   const mcpServers = recordContainer(parsed, "mcp_servers", configFile) ?? {};
   const existing = mcpServers[entry.name];
   const expected = mcpEntryShapeForHost("codex", entry);
+  const legacy =
+    opts.replaceLegacy === undefined
+      ? undefined
+      : mcpEntryShapeForHost("codex", opts.replaceLegacy);
 
   if (isDeepStrictEqual(existing, expected)) {
     return resultSkipped("codex", configFile, entry.name);
   }
-  if (existing !== undefined) {
+  if (existing !== undefined && !isDeepStrictEqual(existing, legacy)) {
     return resultConflict("codex", configFile, entry.name);
   }
 
@@ -356,7 +527,7 @@ function writeCodexMcpEntry(
 
   if (opts.dryRun) {
     return resultDryRun("codex", configFile, entry.name, [
-      `[mcp_servers.${entry.name}]: add`,
+      `[mcp_servers.${entry.name}]: ${existing === undefined ? "add" : "replace known legacy"}`,
       `[mcp_servers.${entry.name}.env]: add`,
     ]);
   }
@@ -374,7 +545,7 @@ function removeClaudeMcpEntry(
   scope: ScopeInput,
   opts: McpWriteOpts,
 ): McpWriteResult {
-  const legacy = inspectLegacyClaudeMcpEntry(scope, entry);
+  const legacy = inspectLegacyClaudeMcpEntry(scope, entry, opts.replaceLegacy);
   if (legacy.state === "conflict") return resultConflict("claude", legacy.target, entry.name);
   const res = removeJsonMcpEntry("claude", claudeMcpFile(scope), "mcpServers", entry, opts);
   // See the matching setup path above: removing an own entry left only in the
@@ -384,11 +555,23 @@ function removeClaudeMcpEntry(
       return resultDryRun("claude", legacy.target, entry.name, [
         `mcpServers.${entry.name}: remove legacy entry`,
       ]);
-    cleanupLegacyClaudeMcpEntry(scope, entry, false);
-    return resultRemoved("claude", legacy.target, entry.name, null);
+    try {
+      cleanupLegacyClaudeMcpEntry(scope, entry, false, opts.replaceLegacy);
+      return resultRemoved("claude", legacy.target, entry.name, null);
+    } catch {
+      return partialLegacyCleanup(res, legacy.target);
+    }
   }
-  if (legacy.state === "owned" && res.action === "removed")
-    cleanupLegacyClaudeMcpEntry(scope, entry, false);
+  if (legacy.state === "owned" && res.action === "removed") {
+    try {
+      cleanupLegacyClaudeMcpEntry(scope, entry, false, opts.replaceLegacy);
+    } catch {
+      // As in setup, the primary removal is real but legacy retirement is not
+      // complete. Keep the receipt and registry through the caller's partial
+      // error path so the next explicit remove can recover safely.
+      return partialLegacyCleanup(res, legacy.target);
+    }
+  }
   return res;
 }
 
@@ -406,7 +589,14 @@ function removeCodexMcpEntry(
   if (existing === undefined) {
     return resultSkipped("codex", configFile, entry.name);
   }
-  if (!isDeepStrictEqual(existing, mcpEntryShapeForHost("codex", entry))) {
+  const legacy =
+    opts.replaceLegacy === undefined
+      ? undefined
+      : mcpEntryShapeForHost("codex", opts.replaceLegacy);
+  if (
+    !isDeepStrictEqual(existing, mcpEntryShapeForHost("codex", entry)) &&
+    !isDeepStrictEqual(existing, legacy)
+  ) {
     return resultConflict("codex", configFile, entry.name);
   }
 
@@ -451,8 +641,8 @@ function readJsonFile(file: string): Record<string, unknown> {
     const parsed = JSON.parse(text);
     if (isRecord(parsed)) return parsed;
     throw new Error("contenido no es un objeto JSON");
-  } catch (err) {
-    throw new McpWriterError(`JSON inválido en ${file}`, file, (err as Error).message);
+  } catch {
+    throw new McpWriterError(`JSON inválido en ${file}`, file);
   }
 }
 
@@ -462,12 +652,8 @@ function parseCodexConfig(content: string, configFile: string): Record<string, u
     const parsed = parseToml(content);
     if (isRecord(parsed)) return parsed;
     throw new Error("contenido TOML no es un objeto");
-  } catch (err) {
-    throw new McpWriterError(
-      `config.toml inválido en ${configFile}`,
-      configFile,
-      (err as Error).message,
-    );
+  } catch {
+    throw new McpWriterError(`config.toml inválido en ${configFile}`, configFile);
   }
 }
 
@@ -532,6 +718,7 @@ export function appendCodexMcpBlocks(text: string, entry: McpEntry): string {
   buffer.push(`[mcp_servers.${entry.name}]`);
   buffer.push(`command = ${tomlString(entry.command)}`);
   buffer.push(`args = [${entry.args.map(tomlString).join(", ")}]`);
+  if (entry.optional) buffer.push("required = false");
   buffer.push("");
   buffer.push(`[mcp_servers.${entry.name}.env]`);
   for (const [k, v] of Object.entries(entry.env)) {
@@ -574,6 +761,18 @@ function resultDryRun(host: McpHost, target: string, name: string, diff: string[
 
 function resultConflict(host: McpHost, target: string, name: string): McpWriteResult {
   return action(host, target, name, "conflict", null);
+}
+
+function partialLegacyCleanup(result: McpWriteResult, target: string): McpWriteResult {
+  return {
+    ...result,
+    partial: {
+      code: "MCP_LEGACY_CLEANUP_FAILED",
+      target,
+      message:
+        "No se pudo retirar la ubicación legacy de Claude; no recargues el host y reintentá la operación.",
+    },
+  };
 }
 
 function action(

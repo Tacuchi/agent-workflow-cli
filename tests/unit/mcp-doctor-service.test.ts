@@ -92,8 +92,9 @@ describe("runMcpDoctor", () => {
     expect(result.reports[0]?.status).toBe("dsn-mismatch");
   });
 
-  it("status=extra-entry cuando entry existe pero shape difiere", () => {
+  it("status=foreign-entry cuando entry existe pero shape difiere y no expone una DSN embebida", () => {
     writeDsn(paths, { ALPHA_DATABASE_URL: "postgres://x" });
+    const embeddedDsn = "postgres://reader:secret@db.example.test:5432/app";
     writeFileSync(
       join(root, ".mcp.json"),
       JSON.stringify({
@@ -101,7 +102,7 @@ describe("runMcpDoctor", () => {
           alpha: {
             command: "node",
             args: ["custom.js"],
-            env: { CUSTOM: "true" },
+            env: { DSN: embeddedDsn },
           },
         },
       }),
@@ -112,8 +113,37 @@ describe("runMcpDoctor", () => {
       scope: "workspace",
       workspace: root,
     });
-    expect(result.summary.extra).toBe(1);
-    expect(result.reports[0]?.status).toBe("extra-entry");
+    expect(result.summary.foreign_entry).toBe(1);
+    expect(result.reports[0]?.status).toBe("foreign-entry");
+    expect(result.reports[0]?.detail).toContain("rotá esa credencial");
+    expect(result.reports[0]?.detail).not.toContain(embeddedDsn);
+  });
+
+  it("detecta una credencial opaca bajo una clave de entorno sensible", () => {
+    writeDsn(paths, { ALPHA_DATABASE_URL: "postgres://x" });
+    const embeddedPassword = "opaque-password";
+    writeFileSync(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          alpha: {
+            command: "node",
+            args: ["custom.js"],
+            env: { DB_PASSWORD: embeddedPassword },
+          },
+        },
+      }),
+    );
+
+    const result = runMcpDoctor(env, paths, {
+      hosts: ["claude"],
+      connections: [ALPHA],
+      scope: "workspace",
+      workspace: root,
+    });
+
+    expect(result.reports[0]?.detail).toContain("rotá esa credencial");
+    expect(result.reports[0]?.detail).not.toContain(embeddedPassword);
   });
 
   it("usa la variable DSN exacta registrada", () => {

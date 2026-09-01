@@ -63,7 +63,7 @@ export function toErrorRecord(
       host,
       instance,
       target: err.target,
-      message: `${err.message}${err.cause ? ` (${err.cause})` : ""}`,
+      message: err.message,
     };
   }
   return { host, instance, target: scopeDir, message: (err as Error).message };

@@ -288,12 +288,10 @@ async function buildDryRunResult(
 }
 
 /**
- * Remove a released/expired `.workflow/.lock` leftover. release() intentionally
- * leaves an empty marker file (lock-service protocol), so this must run at the
- * END of init — after the project-md upsert released its lock. A live lock
- * (non-empty, not expired) is never touched. Exported for direct unit tests of
- * the live-lock guard (unreachable through runWorkspaceInit: a busy lock makes
- * the upsert fail before this runs).
+ * Remove a historical released/expired `.workflow/.lock` leftover. Current
+ * release() unlinks the lock it owns; an empty file is only a legacy marker.
+ * A live lock (non-empty, not expired) is never touched. Exported for direct
+ * unit tests of the live-lock guard.
  */
 export async function pruneReleasedLock(
   fs: FileSystemPort,

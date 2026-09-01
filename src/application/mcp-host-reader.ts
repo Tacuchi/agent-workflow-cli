@@ -18,7 +18,13 @@ export interface McpEntrySnapshot {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  /** The named value has an MCP-shaped container but invalid field types. */
+  malformed?: boolean;
   raw?: unknown;
+  /** Claude entry came from the historical `.claude/settings.json` location. */
+  legacy_location?: boolean;
+  /** A second Claude location is occupied and must not be silently ignored. */
+  secondary?: McpEntrySnapshot;
 }
 
 export function readMcpEntry(
@@ -28,51 +34,67 @@ export function readMcpEntry(
   kind: ReaderScopeKind = "workspace",
 ): McpEntrySnapshot {
   const spec = harnessForMcpHost(host);
-  if (!spec) return { host, target: scopeDir, name, exists: false };
+  if (spec?.projectMcpPath === undefined) return missingSnapshot(host, scopeDir, name);
 
-  const projectPath = spec.projectMcpPath;
-  if (!projectPath) return { host, target: scopeDir, name, exists: false };
+  const hostSpecific = readHostSpecificEntry(host, scopeDir, name, kind);
+  if (hostSpecific !== undefined) return hostSpecific;
 
-  // Codex uses TOML with the mcp_servers key.
-  if (host === "codex") {
-    const target = join(scopeDir, ".codex", "config.toml");
-    return readTomlMcpEntry(host, target, name, "mcp_servers");
-  }
-
-  // OpenCode & Crush store the entry under the top-level `mcp` key (NOT `mcpServers`)
-  // with host-specific shapes — this mirrors the writer (mcp-host-writer.ts). Global
-  // scope resolves via mcp-host-paths.ts (XDG_CONFIG_HOME; crush win32 = LOCALAPPDATA),
-  // workspace scope is <host>.json at the project root.
-  if (host === "opencode" || host === "crush") {
-    const target =
-      kind === "global"
-        ? host === "opencode"
-          ? opencodeGlobalMcpFile(scopeDir)
-          : crushGlobalMcpFile(scopeDir)
-        : join(scopeDir, `${host}.json`);
-    return readMcpKeyEntry(host, target, name);
-  }
-
-  // JSON readers keyed by `mcpServers` (Claude shape): claude uses .mcp.json (workspace)
-  // or .claude.json (global); warp uses .warp/.mcp.json (workspace) or the per-platform
-  // global registry path (mirrors the writer — DEC-W3); gemini uses .gemini/settings.json;
-  // kimi uses .kimi-code/mcp.json, the SAME relative path in both scopes, so it needs no
-  // special case — its `projectMcpPath` already resolves both (verified vs v0.29.2).
-  if (host === "warp" && kind === "global") {
-    const globalPath = resolveWarpGlobalMcpPath(process.platform, () => scopeDir);
-    if (globalPath) return readJsonMcpEntry(host, globalPath, name);
-  }
-  const target =
-    host === "claude" && kind === "global"
-      ? join(scopeDir, ".claude.json")
-      : join(scopeDir, ...projectPath.split("/"));
+  const target = join(scopeDir, ...spec.projectMcpPath.split("/"));
   return readJsonMcpEntry(host, target, name);
+}
+
+function readHostSpecificEntry(
+  host: McpHost,
+  scopeDir: string,
+  name: string,
+  kind: ReaderScopeKind,
+): McpEntrySnapshot | undefined {
+  if (host === "codex") {
+    return readTomlMcpEntry(host, join(scopeDir, ".codex", "config.toml"), name, "mcp_servers");
+  }
+  if (host === "claude") return readClaudeMcpEntry(scopeDir, name, kind);
+  if (host === "opencode" || host === "crush") {
+    return readMcpKeyEntry(host, mcpKeyTarget(host, scopeDir, kind), name);
+  }
+  if (host !== "warp" || kind !== "global") return undefined;
+  const globalPath = resolveWarpGlobalMcpPath(process.platform, () => scopeDir);
+  return globalPath === null ? undefined : readJsonMcpEntry(host, globalPath, name);
+}
+
+// Claude historically accepted the same mcpServers object under
+// `.claude/settings.json`. Prefer the current `.mcp.json` / `.claude.json`
+// location, but surface an occupied historical location rather than hiding it
+// as absent: migration may only replace an exact known Workline shape.
+function readClaudeMcpEntry(
+  scopeDir: string,
+  name: string,
+  kind: ReaderScopeKind,
+): McpEntrySnapshot {
+  const primaryTarget = kind === "global" ? ".claude.json" : ".mcp.json";
+  const primary = readJsonMcpEntry("claude", join(scopeDir, primaryTarget), name);
+  const legacy = readJsonMcpEntry("claude", join(scopeDir, ".claude", "settings.json"), name);
+  if (primary.exists || primary.present) {
+    return legacy.exists || legacy.present ? { ...primary, secondary: legacy } : primary;
+  }
+  return legacy.exists || legacy.present ? { ...legacy, legacy_location: true } : primary;
+}
+
+function mcpKeyTarget(host: "opencode" | "crush", scopeDir: string, kind: ReaderScopeKind): string {
+  if (kind !== "global") return join(scopeDir, `${host}.json`);
+  return host === "opencode" ? opencodeGlobalMcpFile(scopeDir) : crushGlobalMcpFile(scopeDir);
+}
+
+function missingSnapshot(host: McpHost, target: string, name: string): McpEntrySnapshot {
+  return { host, target, name, exists: false };
 }
 
 type LoadedMcpEntry =
   | { state: "entry"; value: Record<string, unknown> }
   | { state: "foreign"; value: unknown }
+  | { state: "malformed" }
   | null;
+
+type DecodedMcpEntry = { snapshot: McpEntrySnapshot } | { entry: Record<string, unknown> };
 
 // Shared preamble: exists check → read → empty check → try-parse → key extract.
 // A same-named scalar is preserved as `foreign`: it is not a usable entry, but
@@ -90,11 +112,12 @@ function loadEntryObject(
   try {
     data = parse(text);
   } catch {
-    return null;
+    return { state: "malformed" };
   }
-  if (!isRecord(data)) return null;
+  if (!isRecord(data)) return { state: "malformed" };
   const servers = data[key];
-  if (!isRecord(servers)) return null;
+  if (servers === undefined) return null;
+  if (!isRecord(servers)) return { state: "malformed" };
   const entry = servers[name];
   if (entry === undefined) return null;
   if (!isRecord(entry)) return { state: "foreign", value: entry };
@@ -108,59 +131,75 @@ function stdSnapshot(
   name: string,
   e: Record<string, unknown>,
 ): McpEntrySnapshot {
+  const command = typeof e.command === "string" ? e.command : undefined;
+  const args = stringArray(e.args);
+  const env = e.env === undefined ? undefined : stringRecord(e.env);
+  const malformed =
+    command === undefined || args === undefined || (e.env !== undefined && env === undefined);
+
   return {
     host,
     target,
     name,
     exists: true,
-    ...(typeof e.command === "string" ? { command: e.command } : {}),
-    ...(Array.isArray(e.args)
-      ? { args: (e.args as unknown[]).filter((x): x is string => typeof x === "string") }
-      : {}),
-    ...(typeof e.env === "object" && e.env !== null ? { env: toStringRecord(e.env) } : {}),
+    ...(command === undefined ? {} : { command }),
+    ...(args === undefined ? {} : { args }),
+    ...(env === undefined ? {} : { env }),
+    ...(malformed ? { malformed: true } : {}),
     raw: e,
   };
 }
 
 function readJsonMcpEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
-  const loaded = loadEntryObject(target, JSON.parse, "mcpServers", name);
-  if (!loaded) return { host, target, name, exists: false };
-  if (loaded.state === "foreign")
-    return { host, target, name, exists: false, present: true, raw: loaded.value };
-  return stdSnapshot(host, target, name, loaded.value);
+  const decoded = decodeMcpEntry(
+    host,
+    target,
+    name,
+    loadEntryObject(target, JSON.parse, "mcpServers", name),
+  );
+  return "snapshot" in decoded ? decoded.snapshot : stdSnapshot(host, target, name, decoded.entry);
 }
 
 // Reader for hosts that store the MCP entry under the top-level `mcp` key.
-// OpenCode: { type:"local", command:[cmd, ...args], environment }. The dbhub
+// OpenCode: { type:"local", command:[cmd, ...args], environment }. The database
 // command is the first array element and args are the rest; env lives under
 // `environment`. Crush: { type:"stdio", command, args, env } (Claude-like fields).
 function readMcpKeyEntry(host: McpHost, target: string, name: string): McpEntrySnapshot {
-  const loaded = loadEntryObject(target, JSON.parse, "mcp", name);
-  if (!loaded) return { host, target, name, exists: false };
-  if (loaded.state === "foreign")
-    return { host, target, name, exists: false, present: true, raw: loaded.value };
-  const e = loaded.value;
+  const decoded = decodeMcpEntry(
+    host,
+    target,
+    name,
+    loadEntryObject(target, JSON.parse, "mcp", name),
+  );
+  if ("snapshot" in decoded) return decoded.snapshot;
+  return host === "opencode"
+    ? openCodeSnapshot(host, target, name, decoded.entry)
+    : stdSnapshot(host, target, name, decoded.entry);
+}
 
-  if (host === "opencode") {
-    const cmd = Array.isArray(e.command)
-      ? (e.command as unknown[]).filter((x): x is string => typeof x === "string")
-      : [];
-    return {
-      host,
-      target,
-      name,
-      exists: true,
-      ...(cmd.length > 0 ? { command: cmd[0] } : {}),
-      args: cmd.slice(1),
-      ...(typeof e.environment === "object" && e.environment !== null
-        ? { env: toStringRecord(e.environment) }
-        : {}),
-      raw: e,
-    };
-  }
-
-  // crush: standard command/args/env fields under the `mcp` key.
-  return stdSnapshot(host, target, name, e);
+function openCodeSnapshot(
+  host: "opencode",
+  target: string,
+  name: string,
+  entry: Record<string, unknown>,
+): McpEntrySnapshot {
+  const command = stringArray(entry.command);
+  const env = entry.environment === undefined ? undefined : stringRecord(entry.environment);
+  const malformed =
+    command === undefined ||
+    command.length === 0 ||
+    (entry.environment !== undefined && env === undefined);
+  return {
+    host,
+    target,
+    name,
+    exists: true,
+    ...(command === undefined || command.length === 0 ? {} : { command: command[0] }),
+    ...(command === undefined ? {} : { args: command.slice(1) }),
+    ...(env === undefined ? {} : { env }),
+    ...(malformed ? { malformed: true } : {}),
+    raw: entry,
+  };
 }
 
 function readTomlMcpEntry(
@@ -169,22 +208,43 @@ function readTomlMcpEntry(
   name: string,
   serversKey: string,
 ): McpEntrySnapshot {
-  const loaded = loadEntryObject(target, parseToml, serversKey, name);
-  if (!loaded) return { host, target, name, exists: false };
-  if (loaded.state === "foreign")
-    return { host, target, name, exists: false, present: true, raw: loaded.value };
-  return stdSnapshot(host, target, name, loaded.value);
+  const decoded = decodeMcpEntry(
+    host,
+    target,
+    name,
+    loadEntryObject(target, parseToml, serversKey, name),
+  );
+  return "snapshot" in decoded ? decoded.snapshot : stdSnapshot(host, target, name, decoded.entry);
+}
+
+function decodeMcpEntry(
+  host: McpHost,
+  target: string,
+  name: string,
+  loaded: LoadedMcpEntry,
+): DecodedMcpEntry {
+  if (loaded === null) return { snapshot: missingSnapshot(host, target, name) };
+  if (loaded.state === "malformed") {
+    return { snapshot: { host, target, name, exists: false, present: true } };
+  }
+  if (loaded.state === "foreign") {
+    return { snapshot: { host, target, name, exists: false, present: true, raw: loaded.value } };
+  }
+  return { entry: loaded.value };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function toStringRecord(obj: unknown): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!obj || typeof obj !== "object") return out;
-  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
-    if (typeof v === "string") out[k] = v;
-  }
-  return out;
+function stringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) return undefined;
+  return [...value] as string[];
+}
+
+function stringRecord(value: unknown): Record<string, string> | undefined {
+  if (!isRecord(value)) return undefined;
+  const entries = Object.entries(value);
+  if (entries.some(([, item]) => typeof item !== "string")) return undefined;
+  return Object.fromEntries(entries) as Record<string, string>;
 }

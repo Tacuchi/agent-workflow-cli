@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { TARGET_ROOTS } from "../../src/application/self/install-targets.js";
-import { offerWorklineServer } from "../../src/application/self/mcp-offer.js";
 import { selfUninstallSkill } from "../../src/application/self/uninstall-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -188,18 +187,22 @@ describe("selfUninstallSkill", () => {
     expect(lockAfter.skills.w).toBeDefined(); // preserved
   });
 
-  it("retira también el servidor MCP propio del host seleccionado", async () => {
+  it("no retira ni modifica una configuración MCP global existente", async () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
     await seedTarget(home, "codex", "w");
-    offerWorklineServer({ targets: ["codex"], scopeDir: home });
+    await mkdir(join(home, ".codex"), { recursive: true });
+    const configPath = join(home, ".codex", "config.toml");
+    const existing = '[mcp_servers.agent-workflow]\ncommand = "node"\nargs = ["legacy.js"]\n';
+    await writeFile(configPath, existing, "utf8");
 
     const result = await selfUninstallSkill(buildArgs({ target: "codex" }, []), ctx);
 
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
-      expect(result.data.mcp_server).toEqual([{ host: "codex", state: "withdrawn" }]);
+      expect("mcp_server" in result.data).toBe(false);
     }
+    expect(await fs.readText(configPath)).toBe(existing);
   });
 
   it("covers gemini/opencode/crush: single target and --target=all (install↔uninstall round-trip)", async () => {

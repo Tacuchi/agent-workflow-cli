@@ -1,8 +1,9 @@
-import { isDeepStrictEqual } from "node:util";
+import { existsSync, readFileSync } from "node:fs";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import { MCP_FILE_HOSTS, harnessForMcpHost } from "../../domain/harnesses.js";
 import {
+  type McpEntryState,
   type McpHost,
   type McpInstance,
   buildMcpEntry,
@@ -15,14 +16,31 @@ import type { CommandResult } from "../../domain/types.js";
 import { dsnKeyForInstance, readDsnFile } from "../dsn-reader-service.js";
 import {
   type McpConnection,
+  McpConnectionsError,
   deleteMcpConnection,
   readMcpConnections,
   upsertMcpConnection,
 } from "../mcp-connections-service.js";
 import { type McpDoctorResult, runMcpDoctor } from "../mcp-doctor-service.js";
+import { classifyMcpEntry } from "../mcp-entry-classification.js";
 import { readMcpEntry } from "../mcp-host-reader.js";
-import { type McpRemoveResult, runMcpRemove } from "../mcp-remove-service.js";
-import { type McpSetupResult, runMcpSetup } from "../mcp-setup-service.js";
+import {
+  type McpHostReceipt,
+  McpHostReceiptError,
+  type McpNativeHostCheckFailureCode,
+  digestMcpReceiptDescriptor,
+  parseMcpHostReceiptBook,
+} from "../mcp-host-receipt-service.js";
+import { mcpHostReceiptFile } from "../mcp-host-receipt-store.js";
+import { probePersistedMcpSetupEntries } from "../mcp-launch-probe-service.js";
+import {
+  checkNativeMcpHosts,
+  recordNativeMcpHostChecks,
+} from "../mcp-native-host-check-service.js";
+import { registerMcpSetupReceipts } from "../mcp-receipt-registration-service.js";
+import { removeMcpRemoveReceipts } from "../mcp-receipt-removal-service.js";
+import { type McpRemoveInput, type McpRemoveResult, runMcpRemove } from "../mcp-remove-service.js";
+import { type McpSetupInput, type McpSetupResult, runMcpSetup } from "../mcp-setup-service.js";
 import {
   type WarpPostInstallHint,
   buildWarpPostInstallHint,
@@ -101,7 +119,51 @@ export interface SelfMcpConnectionView {
   dsn_var: string;
   dsn_visible: boolean;
   instalado: Record<McpHost, InstallStatus>;
+  host_status: Record<McpHost, SelfMcpHostStatus>;
 }
+
+export type McpHostRuntimeState =
+  | "registered"
+  | "configured"
+  | "launchable"
+  | "host-load-observed"
+  | "reload-required"
+  | "legacy"
+  | "conflict"
+  | "failed";
+
+export interface SelfMcpHostStatus {
+  state: McpHostRuntimeState;
+  entry_state: McpEntryState;
+  launchable: boolean;
+  reload_required: boolean;
+  last_probe?: { outcome: "passed" | "failed"; phase: string; observed_at: string };
+  last_host_load_observed?: string;
+  /** Failure-only result of the host's native MCP inspection. */
+  native_check_failure?: { code: McpNativeHostCheckFailureCode; observed_at: string };
+  /** A corrupt receipt ledger invalidates lifecycle evidence without hiding the descriptor. */
+  receipt_failure?: { phase: "receipt" | "descriptor"; code: string };
+}
+
+interface HostReceiptLedger {
+  receipts: readonly McpHostReceipt[];
+  failure?: { code: string };
+}
+
+interface McpRegistryIssue {
+  code: "MCP_CONNECTION_INVALID";
+  path: string;
+  recovery: string;
+}
+
+type ConnectionViewsResult =
+  | { kind: "ok"; connections: SelfMcpConnectionView[] }
+  | { kind: "invalid"; issue: McpRegistryIssue };
+
+type RegisteredConnectionResult =
+  | { kind: "found"; connection: McpConnection }
+  | { kind: "none" }
+  | { kind: "invalid"; issue: McpRegistryIssue };
 
 export interface SelfMcpConfigData {
   action: SelfMcpAction;
@@ -109,6 +171,7 @@ export interface SelfMcpConfigData {
   connections?: SelfMcpConnectionView[];
   table?: string;
   registry?: { path: string; changed: boolean };
+  registry_error?: McpRegistryIssue;
   setup?: McpSetupResult;
   remove?: McpRemoveResult;
   /** Hosts whose same-named global entry is NOT ours (remove leaves it intact). */
@@ -137,27 +200,38 @@ export async function selfMcpConfig(
   const prompt = prompts ?? (await loadPrompts());
   const resolved = await resolveAction(args, prompt);
 
-  switch (resolved.action) {
-    case "list":
-      return resolved.fromArgs ? listConnections(ctx) : listConnectionsMenu(args, ctx, prompt);
-    case "use-env":
-      return useExistingDsnVar(args, ctx, prompt);
-    case "create-env":
-      return createDsnEnvHelp(args, prompt);
-    case "cancel":
-      return {
-        ok: true,
-        data: { action: "cancel", connection: null, summary: "Operación cancelada." },
-        exitCode: 0,
-      };
-    default:
-      // install-<host> | doctor | remove — all operate on a registered connection.
-      return runConnectionAction(args, ctx, prompt, resolved.action);
+  try {
+    switch (resolved.action) {
+      case "list":
+        return resolved.fromArgs
+          ? listConnections(ctx)
+          : await listConnectionsMenu(args, ctx, prompt);
+      case "use-env":
+        return await useExistingDsnVar(args, ctx, prompt);
+      case "create-env":
+        return await createDsnEnvHelp(args, prompt);
+      case "cancel":
+        return {
+          ok: true,
+          data: { action: "cancel", connection: null, summary: "Operación cancelada." },
+          exitCode: 0,
+        };
+      default:
+        // install-<host> | doctor | remove — all operate on a registered connection.
+        return await runConnectionAction(args, ctx, prompt, resolved.action);
+    }
+  } catch (error) {
+    if (error instanceof McpConnectionsError) {
+      return invalidRegistryResult(resolved.action, mcpRegistryIssue(ctx));
+    }
+    throw error;
   }
 }
 
 function listConnections(ctx: CliContext): CommandResult<SelfMcpConfigData> {
-  const connections = connectionViews(ctx);
+  const views = connectionViews(ctx);
+  if (views.kind === "invalid") return invalidRegistryResult("list", views.issue);
+  const { connections } = views;
   return {
     ok: true,
     data: {
@@ -179,7 +253,9 @@ async function listConnectionsMenu(
   ctx: CliContext,
   prompts: SelfMcpPrompts,
 ): Promise<CommandResult<SelfMcpConfigData>> {
-  const connections = connectionViews(ctx);
+  const views = connectionViews(ctx);
+  if (views.kind === "invalid") return invalidRegistryResult("list", views.issue);
+  const { connections } = views;
   if (connections.length === 0) {
     return {
       ok: true,
@@ -254,15 +330,18 @@ async function useExistingDsnVar(
   const connection = connectionView(ctx, {
     name: write.connection.name,
     dsnVar: write.connection.dsnVar,
+    provider: write.connection.provider,
     dsnPresent: true,
   });
+  const views = connectionViews(ctx);
+  if (views.kind === "invalid") return invalidRegistryResult("use-env", views.issue);
   return {
     ok: true,
     data: {
       action: "use-env",
       connection,
-      connections: connectionViews(ctx),
-      table: formatConnectionsTable(connectionViews(ctx)),
+      connections: views.connections,
+      table: formatConnectionsTable(views.connections),
       registry: { path: write.path, changed: true },
       summary: `Conexión '${connection.nombre}' registrada con ${connection.dsn_var}.`,
     },
@@ -294,8 +373,9 @@ async function runConnectionAction(
   prompts: SelfMcpPrompts,
   action: Exclude<SelfMcpAction, "list" | "use-env" | "create-env" | "cancel">,
 ): Promise<CommandResult<SelfMcpConfigData>> {
-  const connection = await resolveRegisteredConnection(args, ctx, prompts);
-  if (connection === null) {
+  const resolved = await resolveRegisteredConnection(args, ctx, prompts);
+  if (resolved.kind === "invalid") return invalidRegistryResult(action, resolved.issue);
+  if (resolved.kind === "none") {
     return {
       ok: false,
       error: {
@@ -306,6 +386,7 @@ async function runConnectionAction(
       exitCode: 1,
     };
   }
+  const { connection } = resolved;
 
   switch (action) {
     case "doctor":
@@ -318,24 +399,28 @@ async function runConnectionAction(
   }
 }
 
-function installConnection(
+async function installConnection(
   args: ParsedArgs,
   ctx: CliContext,
   connection: McpConnection,
   host: McpHost,
-): CommandResult<SelfMcpConfigData> {
+): Promise<CommandResult<SelfMcpConfigData>> {
   // The explicit install action (CLI/TUI) carries its own narrow global consent;
   // it is not the public broad `--force` escape hatch.
-  const setup = runMcpSetup(ctx.env, {
+  const setupInput: McpSetupInput = {
     hosts: [host],
     connections: [connection],
+    namespace: ctx.paths.namespace,
     scope: "global",
     globalApproval: "explicit-self-action",
     dryRun: args.flags.has("--dry-run"),
-  });
+  };
+  const setup = await runGlobalSetupWithEvidence(ctx, setupInput);
   if ("ok" in setup) return refusal(hostAction(host), connectionView(ctx, connection), setup.hint);
   const doctor = runDoctor(ctx, connection, [host]);
   const hasProblems = setup.errors.length > 0 || setup.conflicts.length > 0;
+  const views = connectionViews(ctx);
+  if (views.kind === "invalid") return invalidRegistryResult(hostAction(host), views.issue);
   // The hint cites the file actually written (per-platform global path).
   const warpTarget = [...setup.applied, ...setup.skipped].find((r) => r.host === "warp")?.target;
   const warpHint =
@@ -347,8 +432,8 @@ function installConnection(
     data: {
       action: hostAction(host),
       connection: connectionView(ctx, connection),
-      connections: connectionViews(ctx),
-      table: formatConnectionsTable(connectionViews(ctx)),
+      connections: views.connections,
+      table: formatConnectionsTable(views.connections),
       setup,
       doctor,
       ...(warpHint ? { warp_hint: warpHint } : {}),
@@ -365,6 +450,59 @@ function installConnection(
         }
       : {}),
     exitCode: hasProblems ? 1 : 0,
+  };
+}
+
+/**
+ * The self wizard writes user-scope descriptors, so it must finish the same
+ * durable lifecycle as `mcp setup --global`: receipt, exact persisted launch
+ * probe, then native host visibility. Keeping that sequence behind one local
+ * boundary prevents a future wizard branch from treating a file write as host
+ * readiness.
+ */
+async function runGlobalSetupWithEvidence(
+  ctx: CliContext,
+  input: McpSetupInput,
+): Promise<ReturnType<typeof runMcpSetup>> {
+  const setup = runMcpSetup(ctx.env, input);
+  if ("ok" in setup) return setup;
+
+  const receiptRegistration = await registerMcpSetupReceipts(ctx.paths, input, setup);
+  const withReceipts: McpSetupResult = {
+    ...setup,
+    errors: [...setup.errors, ...receiptRegistration.errors],
+    ...(receiptRegistration.registered.length === 0
+      ? {}
+      : { receipts: receiptRegistration.registered }),
+  };
+  const launch = await probePersistedMcpSetupEntries(
+    ctx.paths,
+    withReceipts,
+    receiptRegistration.probeTargets,
+  );
+  const native = await checkNativeMcpHosts(receiptRegistration.probeTargets);
+  await recordNativeMcpHostChecks({
+    paths: ctx.paths,
+    scope: withReceipts.scope,
+    scopeDir: withReceipts.scope_dir,
+    targets: receiptRegistration.probeTargets,
+    checks: native.checks,
+  });
+  if (
+    receiptRegistration.registered.length === 0 &&
+    receiptRegistration.errors.length === 0 &&
+    launch.probes.length === 0 &&
+    launch.errors.length === 0 &&
+    native.checks.length === 0 &&
+    native.errors.length === 0
+  ) {
+    return setup;
+  }
+  return {
+    ...withReceipts,
+    errors: [...withReceipts.errors, ...launch.errors, ...native.errors],
+    ...(launch.probes.length === 0 ? {} : { launch_probes: launch.probes }),
+    ...(native.checks.length === 0 ? {} : { native_checks: native.checks }),
   };
 }
 
@@ -394,52 +532,65 @@ function doctorConnection(
   };
 }
 
-function removeConnection(
+async function removeConnection(
   args: ParsedArgs,
   ctx: CliContext,
   connection: McpConnection,
-): CommandResult<SelfMcpConfigData> {
+): Promise<CommandResult<SelfMcpConfigData>> {
   const dryRun = args.flags.has("--dry-run");
   // The explicit remove action carries its own narrow global consent.
   // The writer verifies exact ownership per host and returns a conflict for an
   // homonymous foreign entry, so this never has to infer ownership from a word
   // in the command line.
-  const remove = runMcpRemove(ctx.env, {
+  const removeInput: McpRemoveInput = {
     hosts: [...FILE_HOSTS],
     connections: [connection],
+    namespace: ctx.paths.namespace,
     scope: "global",
     globalApproval: "explicit-self-action",
     dryRun,
-  });
+  };
+  const remove = runMcpRemove(ctx.env, removeInput);
   if ("ok" in remove) return refusal("remove", connectionView(ctx, connection), remove.hint);
-  const hasProblems = remove.errors.length > 0 || remove.conflicts.length > 0;
-  const preservedForeign = [...new Set(remove.conflicts.map((conflict) => conflict.host))];
+  const receiptErrors = await removeMcpRemoveReceipts(ctx.paths, removeInput, remove);
+  const removeWithReceipts: McpRemoveResult = {
+    ...remove,
+    errors: [...remove.errors, ...receiptErrors],
+  };
+  const hasProblems =
+    removeWithReceipts.errors.length > 0 || removeWithReceipts.conflicts.length > 0;
+  const preservedForeign = [
+    ...new Set(removeWithReceipts.conflicts.map((conflict) => conflict.host)),
+  ];
   const deleted = !dryRun && !hasProblems ? deleteMcpConnection(ctx.paths, connection) : null;
   const preservedNote =
     preservedForeign.length > 0
       ? ` Se conservó la entrada ajena homónima en: ${preservedForeign.join(", ")}.`
       : "";
+  const reloadNotice = removalReloadNotice(removeWithReceipts);
+  const views = connectionViews(ctx);
+  if (views.kind === "invalid") return invalidRegistryResult("remove", views.issue);
   return {
     ok: !hasProblems,
     data: {
       action: "remove",
       connection: connectionView(ctx, connection),
-      connections: connectionViews(ctx),
-      table: formatConnectionsTable(connectionViews(ctx)),
-      remove,
+      connections: views.connections,
+      table: formatConnectionsTable(views.connections),
+      remove: removeWithReceipts,
       ...(preservedForeign.length > 0 ? { preserved_foreign: preservedForeign } : {}),
       ...(deleted ? { registry: { path: deleted.path, changed: deleted.removed } } : {}),
       summary: dryRun
         ? `Previsualización de eliminación para '${connection.name}'.${preservedNote}`
         : hasProblems
-          ? `Eliminación parcial de '${connection.name}'.${preservedNote}`
-          : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.${preservedNote}`,
+          ? `Eliminación parcial de '${connection.name}'.${preservedNote}${reloadNotice}`
+          : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.${preservedNote}${reloadNotice}`,
     },
     ...(hasProblems
       ? {
           error: {
             code: "MCP_REMOVE_PARTIAL",
-            message: `${remove.errors.length} error(es) y ${remove.conflicts.length} conflicto(s) durante remove; ver data.remove.errors y data.remove.conflicts`,
+            message: `${removeWithReceipts.errors.length} error(es) y ${removeWithReceipts.conflicts.length} conflicto(s) durante remove; ver data.remove.errors y data.remove.conflicts`,
           },
         }
       : {}),
@@ -447,40 +598,282 @@ function removeConnection(
   };
 }
 
+function removalReloadNotice(remove: McpRemoveResult): string {
+  const requirements = remove.reload_required ?? [];
+  if (requirements.length === 0) return "";
+  return ` Recarga requerida: ${requirements
+    .map((requirement) => `${hostLabel(requirement.host)}: ${requirement.next_step}`)
+    .join(" ")}`;
+}
+
 function runDoctor(ctx: CliContext, connection: McpConnection, hosts: McpHost[]): McpDoctorResult {
   return runMcpDoctor(ctx.env, ctx.paths, {
     hosts,
     connections: [connection],
+    namespace: ctx.paths.namespace,
     scope: "global",
   });
 }
 
-function connectionViews(ctx: CliContext): SelfMcpConnectionView[] {
-  return readMcpConnections(ctx.paths, ctx.env).map((connection) =>
-    connectionView(ctx, connection),
-  );
+function connectionViews(ctx: CliContext): ConnectionViewsResult {
+  try {
+    const receiptLedger = readHostReceipts(ctx);
+    return {
+      kind: "ok",
+      connections: readMcpConnections(ctx.paths, ctx.env).map((connection) =>
+        connectionView(ctx, connection, receiptLedger),
+      ),
+    };
+  } catch (error) {
+    if (error instanceof McpConnectionsError) {
+      return { kind: "invalid", issue: mcpRegistryIssue(ctx) };
+    }
+    throw error;
+  }
 }
 
-function connectionView(ctx: CliContext, connection: McpConnection): SelfMcpConnectionView {
+function mcpRegistryIssue(ctx: CliContext): McpRegistryIssue {
+  return {
+    code: "MCP_CONNECTION_INVALID",
+    path: ctx.paths.userMcpConnectionsFile(),
+    recovery:
+      "Restaurá mcp-connections.json desde una copia válida o corregí su forma antes de volver a operar.",
+  };
+}
+
+function invalidRegistryResult(
+  action: SelfMcpAction,
+  issue: McpRegistryIssue,
+): CommandResult<SelfMcpConfigData> {
+  return {
+    ok: false,
+    error: {
+      code: issue.code,
+      message: "El registro MCP local no es válido y requiere reparación antes de operar.",
+    },
+    data: {
+      action,
+      connection: null,
+      connections: [],
+      table: formatConnectionsTable([]),
+      registry_error: issue,
+      summary: issue.recovery,
+    },
+    exitCode: 2,
+  };
+}
+
+function connectionView(
+  ctx: CliContext,
+  connection: McpConnection,
+  receiptLedger: HostReceiptLedger = readHostReceipts(ctx),
+): SelfMcpConnectionView {
+  const hostStatus = Object.fromEntries(
+    FILE_HOSTS.map((host) => [host, installStatus(ctx, connection, host, receiptLedger)]),
+  ) as Record<McpHost, SelfMcpHostStatus>;
   return {
     nombre: connection.name,
     server_name: mcpEntryNameFor(connection.name),
     dsn_var: connection.dsnVar,
     dsn_visible: isDsnVisible(ctx, connection.dsnVar),
     instalado: Object.fromEntries(
-      FILE_HOSTS.map((h) => [h, installStatus(ctx, connection, h)]),
+      FILE_HOSTS.map((host) => [host, installMark(hostStatus[host])]),
     ) as Record<McpHost, InstallStatus>,
+    host_status: hostStatus,
   };
 }
 
-function installStatus(ctx: CliContext, connection: McpConnection, host: McpHost): InstallStatus {
-  const entry = buildMcpEntry(connection.name, connection.dsnVar);
+/**
+ * Status must be derived from the exact descriptor that this host would load,
+ * not from a host-agnostic default. Global descriptors carry the resolved
+ * namespace and host identity in their argv, so both are part of ownership.
+ */
+function installStatus(
+  ctx: CliContext,
+  connection: McpConnection,
+  host: McpHost,
+  receiptLedger: HostReceiptLedger,
+): SelfMcpHostStatus {
+  const entry = buildMcpEntry(connection.name, connection.dsnVar, {
+    host,
+    scope: "global",
+    namespace: ctx.paths.namespace,
+  });
   const snapshot = readMcpEntry(host, ctx.env.homeDir(), entry.name, "global");
-  if (!snapshot.exists) return "no";
-  if (snapshot.command !== entry.command) return "drift";
-  if (!isDeepStrictEqual(snapshot.args ?? [], entry.args)) return "drift";
-  if (!isDeepStrictEqual(snapshot.env ?? {}, entry.env)) return "drift";
-  return "si";
+  const classification = classifyMcpEntry(host, snapshot, entry, connection);
+  const ledgerFailure = receiptLedgerFailureStatus(classification.state, receiptLedger);
+  if (ledgerFailure !== undefined) return ledgerFailure;
+  const entryStatus = nonCurrentEntryStatus(classification.state);
+  if (entryStatus !== undefined) return entryStatus;
+
+  const receipt = receiptLedger.receipts.find(
+    (candidate) =>
+      candidate.host === host &&
+      candidate.scope === "global" &&
+      candidate.connection === connection.name,
+  );
+  if (receipt !== undefined && !receiptMatchesDescriptor(receipt, snapshot)) {
+    return staleReceiptStatus(classification.state);
+  }
+  return currentDescriptorStatus(classification.state, receipt);
+}
+
+function receiptLedgerFailureStatus(
+  entryState: McpEntryState,
+  receiptLedger: HostReceiptLedger,
+): SelfMcpHostStatus | undefined {
+  if (receiptLedger.failure === undefined) return undefined;
+  return {
+    state: "failed",
+    entry_state: entryState,
+    launchable: false,
+    reload_required: false,
+    receipt_failure: { phase: "receipt", code: receiptLedger.failure.code },
+  };
+}
+
+function nonCurrentEntryStatus(entryState: McpEntryState): SelfMcpHostStatus | undefined {
+  switch (entryState) {
+    case "missing":
+      return {
+        state: "registered",
+        entry_state: entryState,
+        launchable: false,
+        reload_required: false,
+      };
+    case "known-legacy":
+      return {
+        state: "legacy",
+        entry_state: entryState,
+        launchable: false,
+        reload_required: true,
+      };
+    case "foreign":
+      return {
+        state: "conflict",
+        entry_state: entryState,
+        launchable: false,
+        reload_required: false,
+      };
+    case "malformed":
+      return {
+        state: "failed",
+        entry_state: entryState,
+        launchable: false,
+        reload_required: false,
+      };
+    case "current":
+      return undefined;
+  }
+}
+
+function staleReceiptStatus(entryState: McpEntryState): SelfMcpHostStatus {
+  return {
+    state: "failed",
+    entry_state: entryState,
+    launchable: false,
+    reload_required: true,
+    receipt_failure: { phase: "descriptor", code: "MCP_RECEIPT_DESCRIPTOR_STALE" },
+  };
+}
+
+function currentDescriptorStatus(
+  entryState: McpEntryState,
+  receipt: McpHostReceipt | undefined,
+): SelfMcpHostStatus {
+  // A current descriptor without a receipt may be the aftermath of a busy
+  // receipt ledger after the host file was already written. It has no durable
+  // descriptor digest, lifecycle evidence, or way for a later host reload to
+  // clear reload_required, so presenting it as merely configured would hide
+  // the required recovery action.
+  if (receipt === undefined) {
+    return {
+      state: "failed",
+      entry_state: entryState,
+      launchable: false,
+      reload_required: true,
+      receipt_failure: { phase: "receipt", code: "MCP_RECEIPT_NOT_FOUND" },
+    };
+  }
+  const lastProbe = receipt?.last_launch_probe;
+  const nativeCheckFailure = receipt?.last_native_check_failure;
+  const launchable = lastProbe?.outcome === "passed";
+  const reloadRequired = receipt?.reload_required ?? false;
+  const evidence = {
+    entry_state: entryState,
+    launchable,
+    reload_required: reloadRequired,
+    ...(lastProbe === undefined
+      ? {}
+      : {
+          last_probe: {
+            outcome: lastProbe.outcome,
+            phase: lastProbe.phase,
+            observed_at: lastProbe.observed_at,
+          },
+        }),
+    ...(receipt?.last_host_load_observed === undefined
+      ? {}
+      : { last_host_load_observed: receipt.last_host_load_observed.observed_at }),
+    ...(nativeCheckFailure === undefined
+      ? {}
+      : {
+          native_check_failure: {
+            code: nativeCheckFailure.code,
+            observed_at: nativeCheckFailure.observed_at,
+          },
+        }),
+  };
+  if (lastProbe?.outcome === "failed" || nativeCheckFailure !== undefined) {
+    return { state: "failed", ...evidence };
+  }
+  if (receipt?.last_host_load_observed !== undefined && !reloadRequired) {
+    return { state: "host-load-observed", ...evidence };
+  }
+  if (reloadRequired) return { state: "reload-required", ...evidence };
+  if (launchable) return { state: "launchable", ...evidence };
+  return { state: "configured", ...evidence };
+}
+
+function receiptMatchesDescriptor(
+  receipt: McpHostReceipt,
+  snapshot: ReturnType<typeof readMcpEntry>,
+): boolean {
+  if (snapshot.command === undefined || snapshot.args === undefined) return false;
+  try {
+    return (
+      receipt.descriptor_digest ===
+      digestMcpReceiptDescriptor({ command: snapshot.command, args: snapshot.args })
+    );
+  } catch {
+    return false;
+  }
+}
+
+function installMark(status: SelfMcpHostStatus): InstallStatus {
+  return status.entry_state === "missing"
+    ? "no"
+    : status.entry_state === "current"
+      ? "si"
+      : "drift";
+}
+
+function readHostReceipts(ctx: CliContext): HostReceiptLedger {
+  const file = mcpHostReceiptFile(ctx.paths);
+  if (!existsSync(file)) return { receipts: [] };
+  try {
+    return { receipts: parseMcpHostReceiptBook(readFileSync(file, "utf8")).receipts };
+  } catch (error) {
+    // The registry remains readable, but no lifecycle claim survives a corrupt
+    // receipt ledger. Every host becomes explicitly actionable rather than
+    // quietly falling back to an unproven "configured" state.
+    return {
+      receipts: [],
+      failure: {
+        code: error instanceof McpHostReceiptError ? error.code : "MCP_RECEIPT_UNREADABLE",
+      },
+    };
+  }
 }
 
 export function isDsnVisible(ctx: CliContext, dsnVar: string): boolean {
@@ -542,9 +935,17 @@ async function resolveRegisteredConnection(
   args: ParsedArgs,
   ctx: CliContext,
   prompts: SelfMcpPrompts,
-): Promise<McpConnection | null> {
-  const connections = readMcpConnections(ctx.paths, ctx.env);
-  if (connections.length === 0) return null;
+): Promise<RegisteredConnectionResult> {
+  let connections: McpConnection[];
+  try {
+    connections = readMcpConnections(ctx.paths, ctx.env);
+  } catch (error) {
+    if (error instanceof McpConnectionsError) {
+      return { kind: "invalid", issue: mcpRegistryIssue(ctx) };
+    }
+    throw error;
+  }
+  if (connections.length === 0) return { kind: "none" };
   const raw = args.values.get("name") ?? args.values.get("instance");
   if (raw !== undefined) {
     const validation = validateMcpInstance(raw);
@@ -553,7 +954,7 @@ async function resolveRegisteredConnection(
     if (found === undefined) {
       throw new Error(`conexión MCP no registrada: '${validation.value}'`);
     }
-    return found;
+    return { kind: "found", connection: found };
   }
   const defaultConnection = connections[0]?.name;
   const selected = await prompts.select<McpInstance>({
@@ -564,7 +965,8 @@ async function resolveRegisteredConnection(
       value: item.name,
     })),
   });
-  return connections.find((item) => item.name === selected) ?? null;
+  const connection = connections.find((item) => item.name === selected);
+  return connection === undefined ? { kind: "none" } : { kind: "found", connection };
 }
 
 async function resolveConnectionName(
@@ -675,7 +1077,7 @@ async function resolveAction(args: ParsedArgs, prompts: SelfMcpPrompts): Promise
   if (isAction(raw)) return { action: raw, fromArgs: true };
   return {
     action: await prompts.select<SelfMcpAction>({
-      message: "Configurar MCP database (dbhub)",
+      message: "Configurar MCP database (PostgreSQL Workline)",
       default: "list",
       choices: [
         { type: "separator", separator: "── Conexiones existentes ──" },

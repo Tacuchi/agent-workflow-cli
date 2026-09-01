@@ -39,7 +39,7 @@ export interface DsnResolution {
 }
 
 /**
- * Single resolution path shared by the dbhub launcher and the connection
+ * Single resolution path shared by the database tool catalog and the connection
  * tester. The caller supplies the exact variable registered for the connection;
  * the environment wins over the local dsn.env file for that one name only.
  *

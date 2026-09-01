@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { upsertMcpConnection } from "../../src/application/mcp-connections-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { mcpCommand } from "../../src/cli/commands/mcp.js";
+import { mcpCommand, safetyFromRoleOutcome } from "../../src/cli/commands/mcp.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -118,5 +118,39 @@ describe("mcp commands use the resolved Workline root", () => {
         ]),
       }),
     );
+  });
+});
+
+describe("doctor PostgreSQL safety", () => {
+  it("marca warning cuando el rol puede usar o asumir un rol de servidor peligroso", () => {
+    expect(
+      safetyFromRoleOutcome({
+        superuser: false,
+        canCreateRole: false,
+        canCreateDatabase: false,
+        canWrite: false,
+        unsafeServerRole: true,
+        transactionReadOnly: true,
+      }),
+    ).toEqual({
+      status: "warning",
+      superuser: false,
+      write_capable: false,
+      create_role: false,
+      create_database: false,
+      unsafe_server_role: true,
+    });
+  });
+
+  it("conserva superuser como blocked aun si no hay otro riesgo reportado", () => {
+    expect(
+      safetyFromRoleOutcome({
+        superuser: true,
+        canCreateRole: false,
+        canCreateDatabase: false,
+        canWrite: false,
+        transactionReadOnly: true,
+      }),
+    ).toMatchObject({ status: "blocked", unsafe_server_role: false });
   });
 });

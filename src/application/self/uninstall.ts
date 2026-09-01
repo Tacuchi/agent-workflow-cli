@@ -34,7 +34,6 @@ import {
   LEGACY_SKILL_ROOTS_BY_TARGET,
   SHARED_INSTALL_TARGETS,
 } from "./install-targets.js";
-import { type McpOfferOutcome, withdrawWorklineServer } from "./mcp-offer.js";
 import {
   OPENCODE_PLUGIN_FILE,
   isOurOpencodePlugin,
@@ -63,8 +62,6 @@ export interface UninstallStep {
 export interface SelfUninstallData {
   status: "removed" | "dry-run" | "noop" | "partial";
   steps: UninstallStep[];
-  /** Resultado de retirar el servidor MCP propio de los hosts seleccionados. */
-  mcp_server?: McpOfferOutcome[];
   lock_updated: boolean;
   lock_path?: string;
   lock_warning?: string;
@@ -180,19 +177,10 @@ export async function selfUninstall(
     ? await updateAgentsLock(ctx, home, flags.includeLegacy, flags.dryRun)
     : { updated: false };
 
-  // `self uninstall` es también la ruta de la TUI. Retira el mismo servidor
-  // que ofrecieron `self install` e `install-skill`, y conserva una entrada
-  // homónima ajena como conflicto en vez de deducir que es nuestra.
-  const mcpServer = withdrawWorklineServer({
-    targets,
-    scopeDir: home,
-    dryRun: flags.dryRun,
-  });
   return buildUninstallResult({
     dryRun: flags.dryRun,
     targetArg,
     steps,
-    mcpServer,
     lockUpdated: lockResult.updated,
     lockPath: lockResult.path,
     lockWarning: lockResult.warning,
@@ -203,7 +191,6 @@ interface UninstallResultInput {
   dryRun: boolean;
   targetArg: UninstallTargetChoice;
   steps: UninstallStep[];
-  mcpServer: McpOfferOutcome[];
   lockUpdated: boolean;
   lockPath: string | undefined;
   lockWarning: string | undefined;
@@ -213,7 +200,6 @@ function buildUninstallResult({
   dryRun,
   targetArg,
   steps,
-  mcpServer,
   lockUpdated,
   lockPath,
   lockWarning,
@@ -224,23 +210,12 @@ function buildUninstallResult({
     : removedCount === 0
       ? "noop"
       : "removed";
-  const hasMcpProblems = mcpServer.some(
-    (outcome) => outcome.state === "conflict" || outcome.state === "failed",
-  );
-  const error = hasMcpProblems
-    ? {
-        code: "MCP_WITHDRAW_PARTIAL",
-        message:
-          "La desinstalación retiró sus archivos, pero no el servidor MCP de todos los hosts.",
-      }
-    : undefined;
 
   return {
-    ok: !hasMcpProblems,
+    ok: true,
     data: {
-      status: hasMcpProblems ? "partial" : status,
+      status,
       steps,
-      ...(mcpServer.length === 0 ? {} : { mcp_server: mcpServer }),
       lock_updated: lockUpdated,
       ...(lockPath ? { lock_path: lockPath } : {}),
       ...(lockWarning ? { lock_warning: lockWarning } : {}),
@@ -250,8 +225,7 @@ function buildUninstallResult({
           }
         : {}),
     },
-    ...(error === undefined ? {} : { error }),
-    exitCode: hasMcpProblems ? 1 : 0,
+    exitCode: 0,
   };
 }
 

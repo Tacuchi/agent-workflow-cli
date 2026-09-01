@@ -603,7 +603,7 @@ describe("selfInstallSkill", () => {
       expect(result.data.status).toBe("dry-run");
       expect(result.data.dests).toHaveLength(HOST_INSTALL_TARGETS.length);
       expect(result.data.dests.every((d) => d.status === "dry-run")).toBe(true);
-      expect(result.data.mcp_server).toEqual([{ host: "codex", state: "dry-run" }]);
+      expect("mcp_server" in result.data).toBe(false);
     }
 
     expect(await fs.exists(join(home, ".claude/skills", SKILL_DIR_NAME))).toBe(false);
@@ -611,7 +611,7 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".codex", "config.toml"))).toBe(false);
   });
 
-  it("declara instalación parcial cuando una entrada MCP homónima es ajena", async () => {
+  it("instala la skill sin tocar una entrada MCP homónima ajena", async () => {
     const fs = new RealFs();
     const ctx = buildCtx(home, fs, new FakeProcess());
     await mkdir(join(home, ".codex"), { recursive: true });
@@ -620,10 +620,8 @@ describe("selfInstallSkill", () => {
 
     const result = await selfInstallSkill(buildArgs({ from: source, target: "codex" }, []), ctx);
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected partial failure");
-    expect(result.error.code).toBe("MCP_OFFER_PARTIAL");
-    expect(result.data.mcp_server).toEqual([{ host: "codex", state: "conflict" }]);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.data) expect("mcp_server" in result.data).toBe(false);
     expect(await fs.exists(join(home, ".codex", "skills", SKILL_DIR_NAME))).toBe(true);
     expect(await readFile(join(home, ".codex", "config.toml"), "utf8")).toBe(foreign);
   });

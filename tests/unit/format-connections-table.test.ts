@@ -28,6 +28,17 @@ function view(
       McpHost,
       Status
     >,
+    host_status: Object.fromEntries(
+      MCP_FILE_HOSTS.map((host) => [
+        host,
+        {
+          state: "registered",
+          entry_state: "missing",
+          launchable: false,
+          reload_required: false,
+        },
+      ]),
+    ) as SelfMcpConnectionView["host_status"],
   };
 }
 

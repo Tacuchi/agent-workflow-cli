@@ -2,9 +2,9 @@
  * Qué puede decir la persona sobre la vía MCP en SU host, sin adivinar nada.
  *
  * Son DOS preguntas distintas y por eso van separadas: una vía puede estar
- * disponible sin estar ofrecida —el catálogo la declara pero nadie la instaló—.
- * Que el selector vaya a ser aceptado o no sólo se conoce al intentarlo, y no se
- * representa como un estado especulativo de lectura.
+ * disponible sin tener un descriptor acreditado. `self install` nunca instala
+ * esa configuración global; que el selector vaya a ser aceptado o no sólo se
+ * conoce al intentarlo, y no se representa como un estado especulativo de lectura.
  */
 
 import { isDeepStrictEqual } from "node:util";
@@ -21,6 +21,7 @@ export interface ViaAnswer {
 
 export interface McpViaState {
   available: ViaAnswer;
+  /** Compatibilidad de salida: sólo un descriptor actual y acreditado sería `true`. */
   offered: ViaAnswer;
 }
 
@@ -39,7 +40,7 @@ export function readMcpViaState(spec: HarnessSpec, scopeDir: string): McpViaStat
 
   const available: ViaAnswer = { yes: true, reason: via.evidence };
   if (spec.mcpHostId === null) {
-    const reason = "este host no tiene una configuración MCP que el CLI sepa escribir";
+    const reason = "este host no tiene una configuración MCP que el CLI escriba automáticamente";
     return { available, offered: { yes: false, reason } };
   }
 
@@ -54,7 +55,7 @@ export function readMcpViaState(spec: HarnessSpec, scopeDir: string): McpViaStat
         },
       };
     }
-    const reason = `la entrada '${WORKLINE_MCP_ENTRY_NAME}' no está en la configuración MCP de este host; la instalación de superficies la deja ofrecida`;
+    const reason = `la entrada '${WORKLINE_MCP_ENTRY_NAME}' no está en la configuración MCP de este host; self install no la instala automáticamente`;
     return { available, offered: { yes: false, reason } };
   }
 
@@ -71,6 +72,9 @@ export function readMcpViaState(spec: HarnessSpec, scopeDir: string): McpViaStat
 
   return {
     available,
-    offered: { yes: true, reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' está registrada` },
+    offered: {
+      yes: false,
+      reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' coincide con el descriptor histórico de Workline, pero es legado y no acredita una vía cargada`,
+    },
   };
 }

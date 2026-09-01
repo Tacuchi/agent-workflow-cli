@@ -1,13 +1,11 @@
 /**
- * La entrada con la que un host ofrece el servidor propio de Workline.
+ * La entrada histórica con la que un host ofrecía el servidor de elicitation.
  *
- * Se construye acá y no en cada sitio que la necesita porque la instalación, la
- * retirada y la observación tienen que hablar de LA MISMA entrada: si el nombre o
- * el comando difirieran entre ellas, instalar dejaría una que retirar no encuentra
- * y observar informaría sobre otra.
+ * Se conserva para reconocer esa forma con exactitud. La instalación de skills no
+ * vuelve a escribirla: un descriptor MCP global requiere una acción explícita.
  *
  * El comando es el propio binario del CLI, con el envoltorio de Windows que
- * `buildMcpEntry` ya resolvió para el lanzador de dbhub: allá el bin global es un
+ * `buildMcpEntry` ya resolvió para el servidor de base de datos: allá el bin global es un
  * `.cmd`, y un host que lo lanza sin shell falla con ENOENT. Repetir el criterio
  * es reusar una decisión ya probada, no copiar código.
  */
@@ -24,9 +22,8 @@ import type { McpEntry } from "./mcp-entry.js";
 export const WORKLINE_MCP_ENTRY_NAME = "agent-workflow";
 
 /**
- * El host viaja en los argumentos porque el servidor no puede detectarlo desde
- * adentro: lo lanza el host por entrada y salida estándar, sin variable que lo
- * identifique. Así habilita sólo una vía de elicitation observada para ese host.
+ * El host viajaba en los argumentos porque el servidor no podía detectarlo desde
+ * adentro. Esta forma existe sólo como firma de una configuración legacy.
  */
 export function worklineMcpEntry(host: string, platform: string = process.platform): McpEntry {
   const isWin = platform === "win32";

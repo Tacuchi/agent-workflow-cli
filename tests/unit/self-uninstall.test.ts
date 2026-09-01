@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +9,6 @@ import {
   TARGET_ROOTS,
 } from "../../src/application/self/install-skill.js";
 import type { InstallTarget } from "../../src/application/self/install-skill.js";
-import { offerWorklineServer } from "../../src/application/self/mcp-offer.js";
 import { selfUninstall } from "../../src/application/self/uninstall.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -113,17 +112,21 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
     }
   });
 
-  it("la ruta de uninstall que usa la TUI retira el servidor MCP propio", async () => {
+  it("la ruta de uninstall que usa la TUI no modifica la configuración MCP global", async () => {
     const ctx = buildCtx(home, fs);
     await seedDir(skillDir(home, "codex"));
-    offerWorklineServer({ targets: ["codex"], scopeDir: home });
+    await mkdir(join(home, ".codex"), { recursive: true });
+    const configPath = join(home, ".codex", "config.toml");
+    const existing = '[mcp_servers.agent-workflow]\ncommand = "node"\nargs = ["legacy.js"]\n';
+    await writeFile(configPath, existing, "utf8");
 
     const result = await selfUninstall(buildArgs({ target: "codex" }, []), ctx);
 
     expect(result.ok).toBe(true);
     if (result.ok && result.data) {
-      expect(result.data.mcp_server).toEqual([{ host: "codex", state: "withdrawn" }]);
+      expect("mcp_server" in result.data).toBe(false);
     }
+    expect(await readFile(configPath, "utf8")).toBe(existing);
   });
 
   it("`--target all` NO alcanza el destino compartido salvo que se pida explícito", async () => {

@@ -1,8 +1,5 @@
-// Real MCP connection test: runs `npx -y @bytebase/dbhub` with the DSN
-// resolved from the shell env or the local dsn.env file. If dbhub starts without
-// fatal errors (it sits waiting for MCP input on stdio), the connection is
-// considered valid. If dbhub fails quickly with stderr, the test fails with the detail.
-import { spawn } from "node:child_process";
+import { PostgresReadonlyTools } from "../adapters/postgres-readonly-tools.js";
+import { PostgresToolError } from "../ports/postgres-tools.js";
 import { type DsnResolution, resolveExactDsn } from "./dsn-reader-service.js";
 import type { PathsService } from "./paths-service.js";
 
@@ -11,8 +8,9 @@ export interface McpTestConnectionInput {
   dsnVar: string;
   env: Record<string, string | undefined>;
   paths: PathsService;
+  /** Retained for source compatibility; PostgreSQL owns its explicit timeouts. */
   platform: NodeJS.Platform;
-  /** Timeout in ms to assume dbhub started OK. Default: 5000. */
+  /** Retained for source compatibility; PostgreSQL uses the 10s/30s contract. */
   timeoutMs?: number;
 }
 
@@ -20,13 +18,20 @@ export interface McpTestConnectionResult {
   ok: boolean;
   /** Where the DSN was resolved from. `null` when it could not be resolved. */
   source: "env" | "dsn.env" | null;
-  /** Error detail when `ok=false`. */
+  /** Safe diagnostic when `ok=false`; never a DSN or driver message. */
   error?: string;
 }
 
+/**
+ * A real read-only `SELECT 1`, replacing the old five-second DBHub liveness
+ * heuristic. MCP lifecycle probing lives in `mcp doctor --probe`; this check is
+ * intentionally a direct database health signal for the TUI connection wizard.
+ */
 export async function testMcpConnection(
   input: McpTestConnectionInput,
 ): Promise<McpTestConnectionResult> {
+  void input.platform;
+  void input.timeoutMs;
   const resolved = resolveDsnString(input);
   if (!resolved) {
     return {
@@ -35,55 +40,21 @@ export async function testMcpConnection(
       error: `${input.dsnVar} no está exportada en el shell ni en ${input.paths.userDsnFile()}`,
     };
   }
-  return spawnDbhub(resolved.dsn, resolved.source, input);
+  try {
+    await new PostgresReadonlyTools().execute("SELECT 1 AS ok", resolved.dsn);
+    return { ok: true, source: resolved.source };
+  } catch (error) {
+    if (error instanceof PostgresToolError) {
+      return { ok: false, source: resolved.source, error: error.message };
+    }
+    return {
+      ok: false,
+      source: resolved.source,
+      error: "No se pudo verificar la conexión PostgreSQL.",
+    };
+  }
 }
 
 function resolveDsnString(input: McpTestConnectionInput): DsnResolution | null {
-  // The caller supplies the exact variable declared by the registry.
   return resolveExactDsn(input.dsnVar, input.env, input.paths);
-}
-
-function spawnDbhub(
-  dsn: string,
-  source: "env" | "dsn.env",
-  input: McpTestConnectionInput,
-): Promise<McpTestConnectionResult> {
-  const timeoutMs = input.timeoutMs ?? 5000;
-  const isWin = input.platform === "win32";
-  const cmd = isWin ? "npx.cmd" : "npx";
-  return new Promise((resolve) => {
-    const child = spawn(cmd, ["-y", "@bytebase/dbhub"], {
-      env: { ...input.env, DSN: dsn },
-      stdio: ["pipe", "pipe", "pipe"],
-      shell: isWin,
-    });
-    // Chunks stay as bytes: decoding each one splits multibyte characters at the
-    // pipe boundary and garbles the very message the caller is about to show.
-    const stderr: Buffer[] = [];
-    let settled = false;
-    const settle = (result: McpTestConnectionResult): void => {
-      if (settled) return;
-      settled = true;
-      if (!child.killed) child.kill("SIGTERM");
-      resolve(result);
-    };
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr.push(chunk);
-    });
-    child.on("error", (err) => settle({ ok: false, source, error: err.message }));
-    child.on("exit", (code) => {
-      if (code === 0 || code === null) {
-        settle({ ok: true, source });
-      } else {
-        settle({
-          ok: false,
-          source,
-          error: Buffer.concat(stderr).toString("utf8").trim() || `dbhub salió con código ${code}`,
-        });
-      }
-    });
-    // If dbhub is still running after the timeout, assume it started OK
-    // (it connected and is waiting for MCP input on stdio). Kill it and report OK.
-    setTimeout(() => settle({ ok: true, source }), timeoutMs);
-  });
 }

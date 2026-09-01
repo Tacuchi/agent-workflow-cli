@@ -20,4 +20,6 @@ export interface CommandResult<T = unknown> {
   data?: T;
   error?: CliError;
   exitCode: ExitCode;
+  /** A stdio protocol command reserves stdout for protocol frames only. */
+  suppressOutput?: boolean;
 }

@@ -6,41 +6,62 @@ import { describe, expect, it, vi } from "vitest";
 // real profile.json. `selfMcpConfig` is the only runtime import the tab uses for
 // data; `list` (refresh) is the only action these tests exercise.
 vi.mock("../../src/application/self/mcp-config.js", () => ({
-  selfMcpConfig: vi.fn(async () => ({
-    ok: true,
-    data: {
-      connections: [
-        {
-          nombre: "alpha",
-          server_name: "alpha",
-          dsn_var: "ALPHA_DATABASE_URL",
-          dsn_visible: true,
-          instalado: {
-            claude: "no",
-            codex: "no",
-            warp: "no",
-            gemini: "no",
-            opencode: "no",
-            crush: "no",
+  selfMcpConfig: vi.fn(async () => {
+    const status = (state: string) => ({
+      state,
+      entry_state: state === "registered" ? "missing" : "current",
+      launchable: state === "launchable" || state === "host-load-observed",
+      reload_required: false,
+    });
+    const hostStatus = (claude = "registered") => ({
+      claude: status(claude),
+      codex: status("registered"),
+      warp: status("registered"),
+      gemini: status("registered"),
+      opencode: status("registered"),
+      crush: status("registered"),
+      kimi: status("registered"),
+    });
+    return {
+      ok: true,
+      data: {
+        connections: [
+          {
+            nombre: "alpha",
+            server_name: "alpha",
+            dsn_var: "ALPHA_DATABASE_URL",
+            dsn_visible: true,
+            instalado: {
+              claude: "no",
+              codex: "no",
+              warp: "no",
+              gemini: "no",
+              opencode: "no",
+              crush: "no",
+              kimi: "no",
+            },
+            host_status: hostStatus(),
           },
-        },
-        {
-          nombre: "beta",
-          server_name: "beta",
-          dsn_var: "BETA_DATABASE_URL",
-          dsn_visible: true,
-          instalado: {
-            claude: "si",
-            codex: "no",
-            warp: "no",
-            gemini: "no",
-            opencode: "no",
-            crush: "no",
+          {
+            nombre: "beta",
+            server_name: "beta",
+            dsn_var: "BETA_DATABASE_URL",
+            dsn_visible: true,
+            instalado: {
+              claude: "si",
+              codex: "no",
+              warp: "no",
+              gemini: "no",
+              opencode: "no",
+              crush: "no",
+              kimi: "no",
+            },
+            host_status: hostStatus("host-load-observed"),
           },
-        },
-      ],
-    },
-  })),
+        ],
+      },
+    };
+  }),
 }));
 
 import { selfMcpConfig } from "../../src/application/self/mcp-config.js";
@@ -53,23 +74,82 @@ const ENTER = "\r";
 const DOWN = "\x1B[B";
 const tick = () => new Promise((r) => setTimeout(r, 80));
 
+function registeredHostStatus() {
+  return {
+    claude: {
+      state: "registered",
+      entry_state: "missing",
+      launchable: false,
+      reload_required: false,
+    },
+    codex: {
+      state: "registered",
+      entry_state: "missing",
+      launchable: false,
+      reload_required: false,
+    },
+    warp: {
+      state: "registered",
+      entry_state: "missing",
+      launchable: false,
+      reload_required: false,
+    },
+    gemini: {
+      state: "registered",
+      entry_state: "missing",
+      launchable: false,
+      reload_required: false,
+    },
+    opencode: {
+      state: "registered",
+      entry_state: "missing",
+      launchable: false,
+      reload_required: false,
+    },
+    crush: {
+      state: "registered",
+      entry_state: "missing",
+      launchable: false,
+      reload_required: false,
+    },
+    kimi: {
+      state: "registered",
+      entry_state: "missing",
+      launchable: false,
+      reload_required: false,
+    },
+  };
+}
+
 describe("McpTab — user-scope install", () => {
-  it("shows the real per-connection user-scope install status (not a static pill)", async () => {
+  it("agrega el estado de todos los hosts, no sólo el de Codex", async () => {
     const { lastFrame } = render(<McpTab ctx={ctx} isActive />);
     await tick();
     const frame = lastFrame() ?? "";
     expect(frame).toContain("alpha");
     expect(frame).toContain("beta");
-    // beta is installed in the user-scope ~/.claude.json → "installed" pill.
-    expect(frame).toContain("installed");
+    expect(frame).toContain("host loaded 1/7");
+    expect(frame).toContain("1 host loaded · 6 registered");
   });
 
-  it("offers 'Install → user scope' in the detail panel of an uninstalled connection", async () => {
+  it("offers the host picker in the detail panel of an uninstalled connection", async () => {
     const { lastFrame, stdin } = render(<McpTab ctx={ctx} isActive />);
     await tick();
     stdin.write(ENTER); // open detail on the focused (first) row = alpha, status "no"
     await tick();
-    expect(lastFrame() ?? "").toContain("Install → user scope");
+    expect(lastFrame() ?? "").toContain("Install in host…");
+  });
+
+  it("marca el fallback directo como específico de Codex", async () => {
+    const { lastFrame, stdin } = render(<McpTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const frame = (lastFrame() ?? "").replace(/[│]/g, "").replace(/\s+/g, " ");
+    expect(frame).toContain("Fallback directo de Codex (MCP opcional)");
+    expect(frame).toContain(
+      "agent-workflow tool call execute_sql --connection alpha --input-json -",
+    );
   });
 
   it("guides add → alias → DSN (suggested) → review with save+install before committing", async () => {
@@ -105,6 +185,7 @@ describe("McpTab — user-scope install", () => {
         crush: "no",
         kimi: "no",
       },
+      host_status: registeredHostStatus(),
     }));
     // One-shot override of the module mock above — consumed by the mount refresh.
     vi.mocked(selfMcpConfig).mockResolvedValueOnce({

@@ -1,6 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   crushGlobalMcpFile,
@@ -16,6 +16,18 @@ import { HARNESSES, MCP_FILE_HOSTS } from "../../src/domain/harnesses.js";
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 const HOME = "/home/u";
+const TEST_NODE = "/opt/workline/node";
+const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
+
+function testEntry(host: "opencode" | "crush" | "warp") {
+  return buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
+    nodePath: TEST_NODE,
+    entrypoint: TEST_ENTRYPOINT,
+    host,
+    scope: "global",
+    namespace: "tenant-a",
+  });
+}
 
 describe("mcp-host-paths — global config resolution (writer/reader/detect single source)", () => {
   it("xdgConfigBase honors XDG_CONFIG_HOME and falls back to ~/.config", () => {
@@ -55,15 +67,59 @@ describe("mcp-host-paths — global config resolution (writer/reader/detect sing
   });
 });
 
-describe("buildMcpEntry — Windows cmd shim", () => {
-  it("posix keeps the plain bin; win32 wraps in cmd /c (npm bin is a .cmd shim)", () => {
-    const posix = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
-    expect(posix.command).toBe("agent-workflow");
-    expect(posix.args).toEqual(["mcp", "dbhub", "--instance", "alpha"]);
+describe("buildMcpEntry — descriptor fiable", () => {
+  it("usa Node y entrypoint absolutos, sin PATH, shell, npx ni DSN", () => {
+    const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
+      nodePath: TEST_NODE,
+      entrypoint: TEST_ENTRYPOINT,
+      host: "codex",
+      scope: "global",
+      namespace: "tenant-a",
+      descriptorGeneration: "23.0.0",
+    });
 
-    const win = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "win32");
-    expect(win.command).toBe("cmd");
-    expect(win.args).toEqual(["/c", "agent-workflow", "mcp", "dbhub", "--instance", "alpha"]);
+    expect(entry.command).toBe(TEST_NODE);
+    expect(isAbsolute(entry.command)).toBe(true);
+    expect(entry.args).toEqual([
+      TEST_ENTRYPOINT,
+      "mcp",
+      "serve-db",
+      "--namespace",
+      "tenant-a",
+      "--instance",
+      "alpha",
+      "--host",
+      "codex",
+      "--scope",
+      "global",
+      "--descriptor-generation",
+      "23.0.0",
+    ]);
+    expect(isAbsolute(entry.args[0] ?? "")).toBe(true);
+    expect(entry.env).toEqual({});
+    expect(entry.optional).toBe(true);
+    expect(entry.command).not.toContain("npx");
+    expect(entry.args).not.toContain("dbhub");
+  });
+
+  it("mantiene el descriptor workspace portable dependiente de PATH en Windows", () => {
+    const workspaceEntry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "win32");
+    expect(workspaceEntry.command).toBe("cmd");
+    expect(workspaceEntry.args).toEqual(
+      expect.arrayContaining(["/c", "agent-workflow", "mcp", "serve-db", "--scope", "workspace"]),
+    );
+    expect(workspaceEntry.args[0]).not.toBe(TEST_ENTRYPOINT);
+  });
+
+  it("rechaza rutas relativas en un descriptor global", () => {
+    expect(() =>
+      buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
+        nodePath: "node",
+        entrypoint: "dist/cli/main.js",
+        host: "codex",
+        scope: "global",
+      }),
+    ).toThrow("requieren Node y entrypoint absolutos");
   });
 });
 
@@ -90,7 +146,7 @@ describe("global-scope round-trip write↔read (opencode/crush with XDG)", () =>
 
   it("opencode global honors XDG_CONFIG_HOME end-to-end (writer and reader agree)", () => {
     process.env.XDG_CONFIG_HOME = join(scopeDir, "xdg");
-    const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
+    const entry = testEntry("opencode");
     const result = writeMcpEntry("opencode", entry, { scopeDir, kind: "global" });
     expect(result.action).toBe("written");
     expect(result.target).toBe(join(scopeDir, "xdg", "opencode", "opencode.json"));
@@ -101,7 +157,7 @@ describe("global-scope round-trip write↔read (opencode/crush with XDG)", () =>
   });
 
   it("crush global (unix default path) round-trips writer↔reader", () => {
-    const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
+    const entry = testEntry("crush");
     const result = writeMcpEntry("crush", entry, { scopeDir, kind: "global" });
     expect(result.target).toBe(join(scopeDir, ".config", "crush", "crush.json"));
     expect(JSON.parse(readFileSync(result.target, "utf8")).mcp[entry.name]).toBeTruthy();
@@ -111,7 +167,7 @@ describe("global-scope round-trip write↔read (opencode/crush with XDG)", () =>
   });
 
   it("warp global round-trips writer↔reader on the registry path for this platform", () => {
-    const entry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "darwin");
+    const entry = testEntry("warp");
     const result = writeMcpEntry("warp", entry, { scopeDir, kind: "global" });
     const snapshot = readMcpEntry("warp", scopeDir, entry.name, "global");
     expect(snapshot.target).toBe(result.target);

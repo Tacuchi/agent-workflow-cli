@@ -15,6 +15,23 @@ import type { MetaTone } from "../components/list-row.js";
  *  Mirror of the (unexported) `InstallStatus` in `self/mcp-config.ts`. */
 export type HostInstallStatus = "si" | "no" | "drift";
 
+/** User-facing state of a single host descriptor and its receipt evidence. */
+export type HostMcpRuntimeState =
+  | "registered"
+  | "configured"
+  | "launchable"
+  | "host-load-observed"
+  | "reload-required"
+  | "legacy"
+  | "conflict"
+  | "failed";
+
+export interface McpRuntimeStateAggregate {
+  state: HostMcpRuntimeState;
+  count: number;
+  total: number;
+}
+
 /** `ParsedArgs` skeleton to drive `selfMcpConfig` actions from the TUI. */
 export function buildArgs(action: string, values: Record<string, string> = {}): ParsedArgs {
   return {
@@ -56,6 +73,88 @@ export function installStatusPill(status: HostInstallStatus): {
     case "no":
       return { label: "registered", tone: "dim" };
   }
+}
+
+/** Compact, actionable host state rather than conflating config with loading. */
+export function mcpRuntimeStatePill(state: HostMcpRuntimeState): {
+  label: string;
+  tone: MetaTone;
+} {
+  switch (state) {
+    case "registered":
+      return { label: "registered", tone: "dim" };
+    case "configured":
+      return { label: "configured", tone: "accent" };
+    case "launchable":
+      return { label: "launchable", tone: "ok" };
+    case "host-load-observed":
+      return { label: "host loaded", tone: "ok" };
+    case "reload-required":
+      return { label: "reload required", tone: "warn" };
+    case "legacy":
+      return { label: "legacy", tone: "warn" };
+    case "conflict":
+      return { label: "conflict", tone: "err" };
+    case "failed":
+      return { label: "failed", tone: "err" };
+  }
+}
+
+/**
+ * The list row represents all host descriptors, never an arbitrarily selected
+ * host. Errors win; otherwise the most advanced observed lifecycle state wins.
+ */
+export function aggregateMcpRuntimeStates(
+  states: readonly HostMcpRuntimeState[],
+): McpRuntimeStateAggregate {
+  const total = states.length;
+  const priorities: readonly HostMcpRuntimeState[] = [
+    "failed",
+    "conflict",
+    "legacy",
+    "reload-required",
+    "host-load-observed",
+    "launchable",
+    "configured",
+    "registered",
+  ];
+  for (const state of priorities) {
+    const count = states.filter((candidate) => candidate === state).length;
+    if (count > 0) return { state, count, total };
+  }
+  return { state: "registered", count: 0, total };
+}
+
+/** A compact status pill for the aggregate result, including its host coverage. */
+export function mcpRuntimeAggregatePill(states: readonly HostMcpRuntimeState[]): {
+  label: string;
+  tone: MetaTone;
+} {
+  const aggregate = aggregateMcpRuntimeStates(states);
+  const base = mcpRuntimeStatePill(aggregate.state);
+  return {
+    ...base,
+    label: `${base.label} ${aggregate.count}/${aggregate.total}`,
+  };
+}
+
+/** Human-readable host distribution used in the compact connection row. */
+export function mcpRuntimeStateSummary(states: readonly HostMcpRuntimeState[]): string {
+  const priorities: readonly HostMcpRuntimeState[] = [
+    "failed",
+    "conflict",
+    "legacy",
+    "reload-required",
+    "host-load-observed",
+    "launchable",
+    "configured",
+    "registered",
+  ];
+  return priorities
+    .map((state) => ({ state, count: states.filter((candidate) => candidate === state).length }))
+    .filter((entry) => entry.count > 0)
+    .map((entry) => `${entry.count} ${mcpRuntimeStatePill(entry.state).label}`)
+    .join(" · ");
 }
 
 /** Detail-panel install action label, adapting to the current install status. */

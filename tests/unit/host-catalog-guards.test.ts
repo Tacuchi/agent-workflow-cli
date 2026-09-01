@@ -214,6 +214,8 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
 });
 
 describe("escritor MCP: un archivo distinto por host", () => {
+  const TEST_NODE = "/opt/workline/node";
+  const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
   let scopeDir: string;
   beforeAll(() => {
     scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-guard-"));
@@ -226,19 +228,28 @@ describe("escritor MCP: un archivo distinto por host", () => {
   // host nuevo sin rama escribía en crush.json sin error alguno. Con dos hosts
   // apuntando al mismo archivo este test falla.
   it("ningún host escribe en el archivo de otro (global)", () => {
-    const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", "darwin");
-    const targets = MCP_FILE_HOSTS.map(
-      (host) => writeMcpEntry(host, entry, { scopeDir, kind: "global" }, { dryRun: true }).target,
-    );
+    const targets = MCP_FILE_HOSTS.map((host) => {
+      const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", {
+        nodePath: TEST_NODE,
+        entrypoint: TEST_ENTRYPOINT,
+        host,
+        scope: "global",
+      });
+      return writeMcpEntry(host, entry, { scopeDir, kind: "global" }, { dryRun: true }).target;
+    });
     expect(new Set(targets).size, `targets: ${targets.join(", ")}`).toBe(MCP_FILE_HOSTS.length);
   });
 
   it("ningún host escribe en el archivo de otro (workspace)", () => {
-    const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", "darwin");
-    const targets = MCP_FILE_HOSTS.map(
-      (host) =>
-        writeMcpEntry(host, entry, { scopeDir, kind: "workspace" }, { dryRun: true }).target,
-    );
+    const targets = MCP_FILE_HOSTS.map((host) => {
+      const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", {
+        nodePath: TEST_NODE,
+        entrypoint: TEST_ENTRYPOINT,
+        host,
+        scope: "workspace",
+      });
+      return writeMcpEntry(host, entry, { scopeDir, kind: "workspace" }, { dryRun: true }).target;
+    });
     expect(new Set(targets).size, `targets: ${targets.join(", ")}`).toBe(MCP_FILE_HOSTS.length);
   });
 

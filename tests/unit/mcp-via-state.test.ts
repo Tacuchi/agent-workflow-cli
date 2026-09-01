@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { offerWorklineServer } from "../../src/application/self/mcp-offer.js";
 import { readMcpViaState } from "../../src/application/self/mcp-via-state.js";
 import { type HarnessId, harnessById } from "../../src/domain/harnesses.js";
 
@@ -32,16 +31,22 @@ describe("el estado de la vía MCP en un host", () => {
     expect(state.available.yes).toBe(true);
     expect(state.available.reason).toContain("2026-08-22");
     expect(state.offered.yes).toBe(false);
-    expect(state.offered.reason).toContain("instalación de superficies");
+    expect(state.offered.reason).toContain("no la instala automáticamente");
   });
 
-  it("una vez ofrecida, disponibilidad y oferta contestan sin estado especulativo", () => {
-    offerWorklineServer({ targets: ["codex"], scopeDir: home });
+  it("una entrada histórica exacta es legado y no acredita que la vía esté ofrecida", () => {
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.agent-workflow]\ncommand = "agent-workflow"\nargs = ["mcp", "serve", "--host", "codex"]\n\n[mcp_servers.agent-workflow.env]\n',
+      "utf8",
+    );
 
     const state = readMcpViaState(specOf("codex"), home);
 
     expect(state.available.yes).toBe(true);
-    expect(state.offered.yes).toBe(true);
+    expect(state.offered.yes).toBe(false);
+    expect(state.offered.reason).toContain("legado");
+    expect(state.offered.reason).toContain("no acredita");
     expect("usable" in state).toBe(false);
   });
 

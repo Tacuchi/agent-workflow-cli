@@ -1205,10 +1205,9 @@ describe("la revisión y su consumidor se publican en un único lote", () => {
 
   it("un fallo al escribir el consumidor restaura también el package", async () => {
     const fs = workspace();
-    // El lock liberado es estado operacional preexistente, no parte del lote de
-    // publicación. Sembrarlo hace que el snapshot compruebe el rollback de los
-    // artefactos sin atribuirle una creación normal de la capa de lock.
-    fs.file(`${WS}/.workflow/.lock`, "");
+    // El directorio runtime ya existía antes del lote; la release actual deja
+    // el directorio intacto y elimina sólo el archivo lock que adquirió.
+    fs.dir(`${WS}/.workflow`);
     fs.file(`${WS}/${CONSUMER_PATH}`, CONSUMER_BEFORE);
     const consumer = await consumerFor(fs);
     const before = await snapshot(fs, WS);

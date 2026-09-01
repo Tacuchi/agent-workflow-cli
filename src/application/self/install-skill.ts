@@ -26,8 +26,6 @@ import {
 } from "./install-targets.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
-import { type McpOfferOutcome, offerWorklineServer } from "./mcp-offer.js";
-
 export const SKILL_DIR_NAME = "w";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;
 
@@ -76,14 +74,6 @@ export interface SelfInstallSkillData {
   source: string;
   source_kind: "path" | "bundled";
   dests: SelfInstallTargetResult[];
-  /**
-   * El servidor MCP propio, por host donde la vía se declara disponible.
-   *
-   * Se informa aunque no haya cambiado nada: una instalación que toca la
-   * configuración MCP de alguien y no lo dice es un efecto silencioso sobre un
-   * archivo que la persona también edita a mano.
-   */
-  mcp_server?: McpOfferOutcome[];
 }
 
 const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [...INSTALL_TARGETS, "all"];
@@ -370,11 +360,6 @@ export async function selfInstallSkill(
   }
 
   if (dryRun) {
-    const mcpServer = offerWorklineServer({
-      targets: existingTargets.map((t) => t.target),
-      scopeDir: ctx.env.homeDir(),
-      dryRun: true,
-    });
     return buildInstallResult({
       dryRun: true,
       source: sourceArg,
@@ -385,7 +370,6 @@ export async function selfInstallSkill(
         status: "dry-run",
         overwrote_existing: t.exists,
       })),
-      mcpServer,
     });
   }
 
@@ -404,20 +388,11 @@ export async function selfInstallSkill(
     results.push(entry);
   }
 
-  // Después de las superficies, no antes: si la instalación de una superficie
-  // falla, no queda ofrecido un servidor para un host que no tiene el estampado
-  // que le dice al agente cuándo alcanzarlo.
-  const mcpServer = offerWorklineServer({
-    targets: existingTargets.map((t) => t.target),
-    scopeDir: ctx.env.homeDir(),
-    dryRun,
-  });
   return buildInstallResult({
     dryRun: false,
     source: sourceArg,
     sourceKind,
     dests: results,
-    mcpServer,
   });
 }
 
@@ -426,7 +401,6 @@ interface InstallResultInput {
   source: string;
   sourceKind: SelfInstallSkillData["source_kind"];
   dests: SelfInstallTargetResult[];
-  mcpServer: McpOfferOutcome[];
 }
 
 function buildInstallResult({
@@ -434,34 +408,17 @@ function buildInstallResult({
   source,
   sourceKind,
   dests,
-  mcpServer,
 }: InstallResultInput): CommandResult<SelfInstallSkillData> {
-  const hasMcpProblems = hasMcpServerProblems(mcpServer);
-  const error = hasMcpProblems
-    ? {
-        code: "MCP_OFFER_PARTIAL",
-        message: dryRun
-          ? "La previsualización detectó un conflicto o fallo al ofrecer el servidor MCP."
-          : "La skill se instaló, pero el servidor MCP no se pudo ofrecer en todos los hosts.",
-      }
-    : undefined;
-
   return {
-    ok: !hasMcpProblems,
+    ok: true,
     data: {
-      status: dryRun ? "dry-run" : hasMcpProblems ? "partial" : "installed",
+      status: dryRun ? "dry-run" : "installed",
       source,
       source_kind: sourceKind,
       dests,
-      ...(mcpServer.length === 0 ? {} : { mcp_server: mcpServer }),
     },
-    ...(error === undefined ? {} : { error }),
-    exitCode: hasMcpProblems ? 1 : 0,
+    exitCode: 0,
   };
-}
-
-function hasMcpServerProblems(outcomes: readonly McpOfferOutcome[]): boolean {
-  return outcomes.some((outcome) => outcome.state === "conflict" || outcome.state === "failed");
 }
 
 type Resolved<T> =

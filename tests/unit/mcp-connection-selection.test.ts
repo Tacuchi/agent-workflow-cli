@@ -33,7 +33,7 @@ describe("MCP connection selection", () => {
     const result = resolveMcpConnectionSelection(paths);
     expect(result).toEqual({
       ok: true,
-      connections: [{ name: "alpha", dsnVar: "ALPHA_DATABASE_URL" }],
+      connections: [{ name: "alpha", dsnVar: "ALPHA_DATABASE_URL", provider: "postgres" }],
     });
   });
 
@@ -47,7 +47,7 @@ describe("MCP connection selection", () => {
     const selected = resolveMcpConnectionSelection(paths, { instance: "beta" });
     expect(selected).toEqual({
       ok: true,
-      connections: [{ name: "beta", dsnVar: "BETA_DATABASE_URL" }],
+      connections: [{ name: "beta", dsnVar: "BETA_DATABASE_URL", provider: "postgres" }],
     });
   });
 
@@ -58,8 +58,8 @@ describe("MCP connection selection", () => {
     expect(result).toEqual({
       ok: true,
       connections: [
-        { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" },
-        { name: "beta", dsnVar: "BETA_DATABASE_URL" },
+        { name: "alpha", dsnVar: "ALPHA_DATABASE_URL", provider: "postgres" },
+        { name: "beta", dsnVar: "BETA_DATABASE_URL", provider: "postgres" },
       ],
     });
   });

@@ -1,4 +1,5 @@
 import type { SessionResolutionError } from "../application/session-resolver.js";
+import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
 import type { CliError, CommandResult } from "../domain/types.js";
 
 export interface ErrorEnvelope {
@@ -77,7 +78,10 @@ export function renderRaw(payload: unknown): string {
  */
 export function renderHumanError(error: CliError | undefined, data?: unknown): string {
   const code = error?.code ?? "UNKNOWN";
-  const lines = [`✗ ${code}`, error?.message ?? "el comando falló sin detallar la causa"];
+  const lines = [
+    `✗ ${code}`,
+    redactSensitiveText(error?.message ?? "el comando falló sin detallar la causa"),
+  ];
   const action = readNextAction(data);
   if (action !== undefined) lines.push("", `Siguiente acción: ${action}`);
   return `${lines.join("\n")}\n`;
@@ -90,7 +94,7 @@ function readNextAction(data: unknown): string | undefined {
 }
 
 export function renderError(error: ErrorEnvelope): string {
-  return `${JSON.stringify({ ok: false, error }, null, 2)}\n`;
+  return `${JSON.stringify({ ok: false, error: redactErrorEnvelope(error) }, null, 2)}\n`;
 }
 
 export function writeStdout(text: string): void {
@@ -108,6 +112,16 @@ export function writeStderr(text: string): void {
 
 export function emitError(error: ErrorEnvelope): void {
   writeStdout(renderError(error));
+}
+
+export function redactErrorEnvelope(error: ErrorEnvelope): ErrorEnvelope {
+  return {
+    code: error.code,
+    message: redactSensitiveText(error.message),
+    ...(error.details === undefined
+      ? {}
+      : { details: redactSensitiveValue(error.details) as Record<string, unknown> }),
+  };
 }
 
 export function formatUnknownCommand(command: string, availableCommands: string[]): ErrorEnvelope {

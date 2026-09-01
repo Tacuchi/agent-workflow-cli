@@ -108,7 +108,7 @@ const GROUPS: readonly CommandGroup[] = [
     ],
   },
   { name: "Hooks", commands: ["hook"] },
-  { name: "MCP", commands: ["mcp"] },
+  { name: "MCP", commands: ["mcp", "tool"] },
   { name: "Dev-only", commands: ["harness", "profiles", "logs"] },
   { name: "Self", commands: ["self"] },
 ];

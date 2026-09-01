@@ -249,9 +249,13 @@ function consumeOptionFlag(state: ParseState, token: string): boolean {
   }
   const name = token.slice(2);
   const next = state.argv[state.index + 1];
+  // `tool call --input-json -` is an explicit stdin marker, not another flag.
+  // Keep this exception narrow: accepting arbitrary dash-prefixed values would
+  // make a missing flag value silently consume the next option.
+  const acceptsStdinMarker = name === "input-json" && next === "-";
   if (
     next !== undefined &&
-    !next.startsWith("-") &&
+    (!next.startsWith("-") || acceptsStdinMarker) &&
     !PLUGIN_FLAG_KEYS.has(token) &&
     !BOOLEAN_FLAGS.has(name)
   ) {

@@ -124,9 +124,45 @@ Running `agent-workflow` (or `aw`) with no arguments opens the tab-based TUI:
 | **Status** | Doctor dashboard: CLI / hosts / hooks / MCP tiles + daily operational logs. The hosts tile jumps to [Workline]. |
 | **Workline** | Per-host administration of the bundled `w` SKILL (install / reinstall / uninstall, `hooks armed` state) plus a compact flows overview. |
 | **Project** | Workspace sources, branches and git-flow actions. |
-| **MCP** | dbhub connections. `mcp-connections.json` is the only authority for connection names and exact DSN variables: register with `aw self mcp use-env --name alpha --dsn-var ALPHA_DATABASE_URL`. Direct MCP operations select the sole connection, require `--instance <name>` when several exist, or use an explicit `--all-connections` fan-out. **Install writes the host's user-scope config** (e.g. `~/.claude.json`, `~/.codex/config.toml`) — never the project `.mcp.json`; `aw mcp setup` remains the workspace-capable path (workspace by default; `--workspace <dir>` / `--global --force`). |
+| **MCP** | Tools PostgreSQL de solo lectura. `mcp-connections.json` v2 es la única autoridad de alias, provider y variable DSN: registrá con `aw self mcp use-env --name alpha --dsn-var ALPHA_DATABASE_URL`. La TUI instala descriptores absolutos en user scope; `aw mcp setup` conserva además el modo workspace portable dependiente de `PATH`. Cada host muestra configuración, launchability, recarga pendiente y carga observada; Codex queda opcional porque existe el fallback local `aw tool call`. |
 | **Skills** | Standalone third-party skills manager (skills.sh model): register from `owner/repo`, a git URL (`#ref` supported) or an absolute local path; install materializes a canonical copy in `~/.agents/skills/<name>` (the open-standard dir every non-Claude host scans) plus a symlink replica in `~/.claude/skills/<name>` (copy fallback where symlinks are unavailable). Seeded with the recommended external skills from the companion marketplace README — keep both lists in sync. |
 | **Config** | Namespace, host-targeting preferences, and the workspace branch defaults (written to the WORKSPACE block). |
+
+### PostgreSQL MCP y fallback local
+
+V1 publica sólo `execute_sql` y `search_objects` para PostgreSQL. Ambas rutas usan el
+mismo catálogo y el mismo JSON canónico: el servidor MCP devuelve ese JSON en
+`content[0].text`, y el CLI lo imprime directamente, sin el envelope general.
+
+```sh
+aw tool list --connection qtc-cert
+aw tool call execute_sql --connection qtc-cert --input-json '{"sql":"SELECT 1"}'
+printf '%s' '{"object_type":"table","pattern":"user%"}' \
+  | aw tool call search_objects --connection qtc-cert --input-json -
+```
+
+`execute_sql` acepta una sola sentencia de lectura y ejecuta cada llamada en una conexión
+nueva, transacción `READ ONLY`, timeout de 30 s y rollback final. El resultado se limita a
+1.000 filas y 4 MiB; la entrada JSON se limita a 1 MiB. Nunca pongas un DSN, SQL ni resultados
+en los archivos de host, recibos u logs operativos.
+
+`search_objects` conserva el envelope de DBHub 1.2.1: `object_type`, `pattern`, filtros
+opcionales, `detail_level`, `count`, `results` y `truncated`. Sus siete tipos y tres niveles
+mantienen los campos de descubrimiento de DBHub; `truncated` sólo vale `true` cuando se observó
+una fila adicional que quedó fuera del límite.
+
+`READ ONLY` no reemplaza una cuenta PostgreSQL de mínimo privilegio: no uses superuser, permisos
+de escritura/creación, ni membresía o vía `SET ROLE` hacia `pg_signal_backend`,
+`pg_signal_autovacuum_worker`, `pg_read_server_files`, `pg_write_server_files` o
+`pg_execute_server_program`. El ejecutor rechaza superuser y esos roles de servidor; con
+`aw mcp doctor --probe data`, los demás privilegios de escritura se informan como advertencia y la
+conexión no queda marcada como segura. Tampoco concedas `EXECUTE` sobre extensiones o funciones con
+efectos externos.
+
+`aw mcp serve-db --instance <nombre>` es el servidor stdio; `aw mcp dbhub` sigue durante una
+versión como alias deprecado. `aw mcp doctor --probe launch` comprueba `initialize → initialized
+→ tools/list`; `--probe data` añade `SELECT 1 AS ok`. `aw mcp migrate` sólo muestra preview;
+escribir requiere `--apply --force` y no se ejecuta automáticamente.
 
 ## Namespace resolution
 

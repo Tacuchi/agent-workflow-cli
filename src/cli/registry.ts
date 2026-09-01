@@ -20,6 +20,12 @@ export interface CliCommand<O = unknown> {
    * as they do today, in a terminal and in a pipe alike.
    */
   renderHuman?(result: CommandResult<O>, context: HumanRenderContext): string;
+  /**
+   * Optional machine projection for a command whose public contract is not the
+   * CLI-wide `{ ok, error }` envelope. It receives both success and failure so
+   * a transport-neutral encoder can remain byte-identical to an MCP response.
+   */
+  renderRawJson?(result: CommandResult<O>): string;
 }
 
 export class CommandRegistry {

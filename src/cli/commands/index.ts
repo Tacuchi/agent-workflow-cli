@@ -52,6 +52,7 @@ import { skillsCommand } from "./skills.js";
 import { sourcesCommand } from "./sources.js";
 import { stackCommand } from "./stack.js";
 import { statusCommand } from "./status.js";
+import { toolCommand } from "./tool.js";
 import { visibilityCommand } from "./visibility.js";
 import { workspaceInitCommand } from "./workspace-init.js";
 import { workspaceMigrateCommand } from "./workspace-migrate.js";
@@ -94,6 +95,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   autoCompactOnCloseCommand,
   hookCommand,
   mcpCommand,
+  toolCommand,
   visibilityCommand,
   worktreeCommand,
   harnessCommand,
