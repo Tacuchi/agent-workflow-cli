@@ -4,6 +4,43 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.0.0] — 2026-09-01
+
+**La spec vuelve a ser el «qué» funcional y el plan el «cómo» técnico: cambiar el plan ya no obliga a tocar la spec.** El sello `> Baseline:` digiere el contenido funcional de la spec en vez de sus bytes, los criterios `AC-nn` pasan a ser direccionables, un plan puede nacer de la conversación sin spec, la compactación ya no se retiene nunca, y el quick declara qué va a tocar antes de tocarlo.
+
+### Added
+
+- **`aw reseal prepare|apply <plan>` cierra una divergencia de baseline legítima sin rehacer el linaje.** `prepare` es de sólo lectura y devuelve la línea que escribiría con su digest; `apply` exige ese digest en `--approval`, recomputa toda la preparación bajo el lock del workspace y reescribe únicamente la línea del sello. Es transversal: no abre flujo ni crea sesión. Aprobar AFIRMA que una persona revisó el plan contra la spec vigente; el rediseño sigue siendo `/w:plan-refine`.
+- **Un plan sin spec (`> Standalone: <origen>`) es ciudadano de primera.** Se planifica desde la conversación, no sella baseline, el tablero reporta su propio modo `standalone` sin aviso de no-sellado, y sus desviaciones se anotan en el `DECISION.md` de la sesión en vez de en una nota de contrato.
+- **El quick declara un preview del arreglo antes de ejecutarlo** —archivos, intención y forma esperada del diff— proporcional a la tarea. Por encima del mismo umbral que dispara el gate de entrada una persona lo aprueba (`Ejecutar tal cual` · `Ajustar el enfoque` · `Escalar a spec`); por debajo no hay parada humana. Fronteras `quick.fix-preview` y `quick.fix-preview-approval`, rechazo `FLOW_PREVIEW_INVALID`, y el preview aprobado queda durable en el estado de la corrida: el sobre de `aw flow` lo expone en esa frontera (`fix_preview`), sobrevive a una compactación y viaja en el paquete de escalación.
+- **La compactación degradada deja un refugio.** Cuando la sesión no se resuelve, el PreCompact aparca un `CHECKPOINT` en `.workflow/sessions/.refuge/` con su motivo, sus candidatos y su salida. `resume-summary` lo reporta en `refuge`, y el primer `checkpoint-write` que sí resuelve la sesión lo pliega en su `CHECKPOINT.md` y lo borra.
+- **Una fence sin cerrar en la spec se nombra en vez de degradar en silencio.** El tablero informa la línea abierta y `aw reseal prepare` la rechaza con `RESEAL_SPEC_FENCE_UNCLOSED`, porque con el payload vacío el sello cae al byte-exacto y cualquier edición vuelve a divergir.
+
+### Changed
+
+- **El sello `> Baseline:` digiere el payload funcional de la spec, no sus bytes.** Entran `Requirement`, `Scope`, `Acceptance criteria`, `Scenarios`, `Behavioral changes` y `Affected capabilities` —sólo en `##`—, así que editar `## Context` o corregir una coma ya no divergen un plan. La alineación es **dual**: un sello viejo byte-exacto sigue alineando, y la nota de contrato acepta las dos formas. Con el payload vacío se cae al digest byte-exacto.
+- **Los criterios de aceptación son direccionables.** Se rotulan `- [ ] AC-nn` y el CLI **deriva** el id `S{NNN}/AC-nn` del rótulo más el número del archivo; escribir el id completo se lee igual, nunca dos veces. Un criterio sin rótulo es lo que queda inalcanzable.
+- **La spec no lleva validaciones, tests ni estrategia de verificación**: eso vive en el `## Validations` del plan y en la `Validación de fase` de cada fase, y los gates de `plan-new`/`plan-refine` verifican que cada criterio tenga evidencia. La superficie visible del producto —comandos y flags de un CLI, endpoints de una API, mensajes y formatos observables— es comportamiento funcional, no mecánica de verificación.
+- **El gate de desviación de `plan-exec` tiene cuatro salidas, no dos.** Una divergencia técnica que deja la promesa intacta registra una nota sobre `S{NNN}/AC-nn` y la ejecución sigue; sólo se vuelve a `spec-refine` cuando se mueve el resultado que un criterio promete.
+- Dentro de una fence el **fin de línea** deja de contar: un checkout con `core.autocrlf` ya no mueve el sello.
+
+### Removed
+
+- **El PreCompact ya no retiene una compactación.** Se retira el outcome `blocked` del destino de ciclo de vida de `checkpoint-write` y su exit 2: siempre sale 0 y degrada con refugio. (El `kind: "blocked"` de una frontera de flujo no tiene que ver y sigue en uso.) `--can-pause` se sigue aceptando y ya no hace nada, para no romper los hooks ya instalados.
+- **La configuración `[compaction]` con modos `confirm | auto`**, que ningún código leyó nunca. La doctrina y el registro de flujo describen ahora la única degradación que existe de verdad.
+
+### Fixed
+
+- **El sello se estampaba con un límite de cabecera distinto del que lo lee.** En un plan cuyas fases son `###`, la línea `> Baseline:` aterrizaba dentro del bloque de una fase y se releía `absent`: el plan quedaba divergente para siempre y `aw reseal` lo rechazaba como si no tuviera cabecera.
+- **La adopción del refugio podía perderlo.** Ahora se comprueba que el bloque quedó escrito antes de borrar el refugio, y ningún fallo de `fs` durante la adopción puede escapar: una excepción salía con exit 1, que es exactamente cómo un host retiene su compactación.
+- Un enlace relativo roto en `modules/PROMPT-CONTINUITY.md`, con un guard nuevo que recorre los enlaces de toda la doctrina y exige cero rotos.
+
+### Migration
+
+- **Corré `aw self install-hooks` después de actualizar.** El PreCompact instalado sigue funcionando, pero el prompt de PostCompact viejo nunca menciona el `refuge`, así que una compactación degradada no te muestra dónde quedó aparcado el estado.
+- **No mezcles 24.x y 25.x sobre el mismo workspace.** Un plan sellado por 25.x se lee **DIVERGENTE** bajo 24.x, que sólo compara el digest byte-exacto. Al revés sí funciona: la alineación es dual y los sellos viejos siguen valiendo.
+- Las filas nuevas del registro de flujo tapian una corrida **quick en vuelo** parada en o después de `quick.deliverable-authoring` (`FLOW_RUN_AHEAD_OF_JOURNEY`, y `aw flow advance --adopt` no la recupera). Cerrá o descartá esas corridas antes de actualizar.
+
 ## [24.0.0] — 2026-09-01
 
 **El runtime MCP deja de depender de DBHub, `npx`, la red y el `PATH` para servir PostgreSQL.** Workline publica un catálogo único de tools de lectura, verificable por protocolo, con la misma vía local directa cuando el host todavía no cargó MCP.
