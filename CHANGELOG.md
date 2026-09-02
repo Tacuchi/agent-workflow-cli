@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.1.2] — 2026-09-02
+
+### Fixed
+
+- **Actualizar el CLI ya no convierte en ajenos los descriptores MCP que Workline mismo escribió.** Cada descriptor global lleva la versión que lo publicó, y la clasificación sólo reconocía como propia la de la versión vigente: tras un `npm i -g`, las entradas quedaban en «conflict», `install` las rechazaba y `remove` borraba la conexión del registro dejando el descriptor en la configuración del host. Ahora una entrada idéntica salvo esa versión se reconoce propia y reemplazable, y `install` la actualiza en el lugar. El sello de release sigue cumpliendo su función: un binario que quedó atrás tampoco ahora puede confirmar que un host cargó su descriptor.
+- **Cada clase de entrada anticuada dice cómo se arregla.** El detalle de la pestaña MCP distingue un descriptor de otra versión (se arregla reinstalando desde el panel) de una forma histórica (sólo la reemplaza `agent-workflow mcp migrate`, que previsualiza lo que pisa), nombra el archivo de cada uno y los hosts afectados. `install` refresca únicamente la primera clase: no migra formas históricas en silencio.
+- **Un `install` rechazado deja de anunciarse como exitoso.** El resumen decía «Conexión 'x' instalada en …» aunque no se hubiera escrito nada; ahora dice que no se instaló y nombra el host y el archivo que lo impide.
+
 ## [25.1.1] — 2026-09-02
 
 ### Fixed
