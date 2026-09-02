@@ -33,6 +33,7 @@ import {
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
@@ -249,6 +250,7 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
       executor,
     });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
     for (let step = 0; step < 40; step += 1) {
       const { resolved } = await current();
       if (resolved.stopped === null) throw new Error("el recorrido terminó sin pedir confirmación");

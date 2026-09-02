@@ -82,7 +82,7 @@ quick-loop(prompt):
     produce the deliverable: edit code (minimal change) OR author the analysis/design
     if fixture/ephemeral DB check → run it from the checkout + capture its proof
     if DB change (DDL/DML) → SCRIPTS.sql (session artifact, DO NOT execute)
-    if non-obvious decision → DECISION
+    if route exception → DECISION + CHECKPOINT
     if doubt/gap → inline research, a probe OR structured-choice   # chassis § Proof of concept
     if the task GROWS → declare the signals again; if the CLI asks and the user accepts:
         PLAN → handoff (progress stays; BACKLOG→seeded plan — resume there, deferred) → goto finalize

@@ -34,6 +34,15 @@ import type { LocalProposal } from "../proposal.js";
 import type { PlanReconciliation } from "../reconciliation.js";
 import type { FlowChoiceOutcome, FlowDecision } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
+import {
+  type AssuranceStatus,
+  type RouteDecision,
+  type RouteProposal,
+  type RouteSubstitution,
+  assuranceForRoute,
+  isAssuranceStatus,
+  isRouteDisposition,
+} from "./route.js";
 
 /**
  * The version this CLI WRITES. Every state it persists carries it.
@@ -46,7 +55,7 @@ import type { EffectGrant } from "./authorization.js";
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 10;
+export const FLOW_RUN_STATE_VERSION = 11;
 
 /**
  * The versions this CLI READS, newest first.
@@ -57,7 +66,7 @@ export const FLOW_RUN_STATE_VERSION = 10;
  * changing `version` would invent a batch boundary the old run never declared.
  * An active legacy run must be adopted explicitly before any mutation.
  */
-export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 9, 8, 7];
+export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 10, 9, 8, 7];
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -795,6 +804,12 @@ export interface FlowRunState {
    * never as "nothing is owed".
    */
   continuation?: FlowContinuation | null;
+  /** The one preview the agent prepared before the route can be accepted. */
+  route_proposal: RouteProposal | null;
+  /** Human-approved dispositions; `null` means this v11 run has not accepted a route yet. */
+  route_decisions: RouteDecision[] | null;
+  /** Evidence quality is independent of whether the journey reached completion. */
+  assurance: AssuranceStatus;
   /** Seal over every field above. */
   digest: string;
 }
@@ -843,6 +858,9 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     handoff: null,
     selected_choice: null,
     decision_preparation: null,
+    route_proposal: null,
+    route_decisions: null,
+    assurance: "verified",
   });
 }
 
@@ -859,9 +877,11 @@ export function applyTransition(
   decisionId: string,
   effects: readonly EffectClass[] = [],
 ): FlowRunState {
+  const applied = [...state.applied, decisionId];
   return sealRunState({
     ...withoutSeal(state),
-    applied: [...state.applied, decisionId],
+    applied,
+    assurance: assuranceForRoute(state.route_decisions ?? [], applied),
     // planned before applied, always: an effect that shows up as applied without
     // ever having been planned is the lie `buildReceipt` refuses, and the
     // directive refuses it too.
@@ -980,6 +1000,34 @@ export function atCurrentVersion(state: FlowRunState): FlowRunState {
     handoff: null,
     selected_choice: null,
     decision_preparation: null,
+    route_proposal: null,
+    route_decisions: null,
+    assurance: "verified",
+  });
+}
+
+/** Keep the sealed preview the person is choosing over; no cursor moves here. */
+export function withRouteProposal(
+  state: FlowRunState,
+  proposal: RouteProposal | null,
+): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    route_proposal: proposal,
+    route_decisions: null,
+    assurance: "verified",
+  });
+}
+
+/** Persist the accepted route and derive its assurance without claiming missing proof passed. */
+export function withRouteDecisions(
+  state: FlowRunState,
+  decisions: readonly RouteDecision[],
+): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    route_decisions: [...decisions],
+    assurance: assuranceForRoute(decisions, state.applied),
   });
 }
 
@@ -1588,9 +1636,13 @@ function checkRecordShape(
 ): CapabilityFailure | null {
   const common = checkCommonRecordShape(parsed, invalid);
   if (common !== null) return common;
-  if (parsed.version === FLOW_RUN_STATE_VERSION) {
+  if (parsed.version === FLOW_RUN_STATE_VERSION || parsed.version === 10) {
     const v10 = checkV10RecordShape(parsed, invalid);
     if (v10 !== null) return v10;
+  }
+  if (parsed.version === FLOW_RUN_STATE_VERSION) {
+    const v11 = checkV11RecordShape(parsed, invalid);
+    if (v11 !== null) return v11;
   }
   if (typeof parsed.digest !== "string") return invalid("no trae su sello");
   return null;
@@ -1664,12 +1716,100 @@ function checkV10RecordShape(
   return null;
 }
 
+/** Fields introduced by v11; v10 remains readable until a person adopts it. */
+function checkV11RecordShape(
+  parsed: Record<string, unknown>,
+  invalid: (why: string) => CapabilityFailure,
+): CapabilityFailure | null {
+  if (!isRouteProposal(parsed.route_proposal)) {
+    return invalid("declara una propuesta de ruta sin controles o consecuencias trazables");
+  }
+  if (!isRouteDecisionArray(parsed.route_decisions)) {
+    return invalid("declara decisiones de ruta sin una disposición o sustitución válida");
+  }
+  if (!isAssuranceStatus(parsed.assurance)) {
+    return invalid("declara un assurance que no representa su evidencia");
+  }
+  const decisions = parsed.route_decisions;
+  if (decisions !== null && parsed.assurance !== assuranceForRoute(decisions as RouteDecision[])) {
+    return invalid("declara un assurance que no corresponde a su ruta aceptada");
+  }
+  return null;
+}
+
 function refuse(code: string, message: string, action: string): FlowRunRead {
   return { ok: false, failure: { code, message, action } };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isRouteSubstitution(value: unknown): value is RouteSubstitution {
+  return isRecord(value) && isNonEmptyString(value.validation) && isNonEmptyString(value.risk);
+}
+
+function isRouteProposal(value: unknown): value is RouteProposal | null {
+  if (value === null) return true;
+  if (!isRecord(value) || !isRecord(value.basis) || !Array.isArray(value.controls)) return false;
+  if (
+    !isNonEmptyString(value.basis.intention) ||
+    !isNonEmptyString(value.basis.checkout) ||
+    !isNonEmptyString(value.basis.conventions) ||
+    !isNonEmptyString(value.basis.adopted_decisions)
+  ) {
+    return false;
+  }
+  const transitions = new Set<string>();
+  return value.controls.every((control) => {
+    if (
+      !isRecord(control) ||
+      !isNonEmptyString(control.transition) ||
+      transitions.has(control.transition)
+    ) {
+      return false;
+    }
+    transitions.add(control.transition);
+    if (
+      !isNonEmptyString(control.title) ||
+      !isRouteDisposition(control.disposition) ||
+      !isRouteDisposition(control.recommendation) ||
+      !isRecord(control.alternatives) ||
+      !isNonEmptyString(control.alternatives.apply) ||
+      !isNonEmptyString(control.alternatives.omit) ||
+      !isNonEmptyString(control.alternatives.substitute) ||
+      !isNonEmptyString(control.consequence) ||
+      !isNonEmptyString(control.risk) ||
+      !isNonEmptyString(control.reason)
+    ) {
+      return false;
+    }
+    if (control.disposition === "substitute") return isRouteSubstitution(control.substitution);
+    return control.substitution === null;
+  });
+}
+
+function isRouteDecisionArray(value: unknown): value is RouteDecision[] | null {
+  if (value === null) return true;
+  if (!Array.isArray(value)) return false;
+  const transitions = new Set<string>();
+  return value.every((decision) => {
+    if (
+      !isRecord(decision) ||
+      !isNonEmptyString(decision.transition) ||
+      transitions.has(decision.transition) ||
+      !isRouteDisposition(decision.disposition)
+    ) {
+      return false;
+    }
+    transitions.add(decision.transition);
+    if (decision.disposition === "substitute") return isRouteSubstitution(decision.substitution);
+    return decision.substitution === null;
+  });
 }
 
 function isStringArray(value: unknown): value is string[] {

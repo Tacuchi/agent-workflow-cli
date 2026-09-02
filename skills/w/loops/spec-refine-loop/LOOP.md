@@ -115,6 +115,8 @@ The exact package, baseline hint and digest — never the design itself. See [`d
 
 ## Decisions              ← ADDED — the material decisions, NOT the run's history
 The choices a reader needs in order to interpret the contract, each with its why.
+Technical restrictions already decided stay minimal here and are marked as PLAN input;
+technical implementation choices still open go to `## Open questions`, never Scope or criteria.
 
 ## Open questions         (each entry declares its destination; OMIT the section when empty)
 ```

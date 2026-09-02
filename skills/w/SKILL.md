@@ -83,7 +83,7 @@ Before any loop, the AI resolves the **workspace root** on every prompt (closest
 |---|---|
 | **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → materializes if needed, creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
 | **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit its `SCRIPTS.sql` (no new session) |
-| **prompt with no command** (unrelated / no session) | **no flow**: direct work → writes into `docs/` by convention + numbering (`aw next-number`). To persist work already done in this conversation, `/w:persist` classifies and routes it (`docs/research` · spec draft · plan adoption) |
+| **prompt with no command** (unrelated / no session) | recommend **QUICK**, **SPEC→PLAN** or **PLAN directo** from size and uncertainty; direct no-flow work remains possible only when no workflow is warranted. An explicit flow command keeps authority. `spec-new` is brief capture; deep research belongs to `spec-refine`. |
 
 **Continuity rule** (single source — the chassis and the loops reference here):
 

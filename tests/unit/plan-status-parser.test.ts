@@ -22,13 +22,19 @@ describe("parsePlanStatus — the plan's own state, told apart by position", () 
       declared: "absent",
       closure: null,
       legacy: false,
+      assurance: null,
     });
   });
 
   it("reads the normalized pair: a bare value plus its own closure line", () => {
     expect(
       parsePlanStatus(planWithPreamble("> Estado: done", "> Cierre: 2026-07-27 · sesión 123")),
-    ).toEqual({ declared: "done", closure: "2026-07-27 · sesión 123", legacy: false });
+    ).toEqual({
+      declared: "done",
+      closure: "2026-07-27 · sesión 123",
+      legacy: false,
+      assurance: null,
+    });
   });
 
   it("reads the legacy one-line form and flags it for migration", () => {
@@ -38,6 +44,7 @@ describe("parsePlanStatus — the plan's own state, told apart by position", () 
       declared: "done",
       closure: "2026-07-27 · sesión 123",
       legacy: true,
+      assurance: null,
     });
   });
 
@@ -82,6 +89,23 @@ describe("parsePlanStatus — the plan's own state, told apart by position", () 
       "",
       "## Tasks",
     ].join("\n");
-    expect(parsePlanStatus(doc)).toEqual({ declared: "absent", closure: null, legacy: false });
+    expect(parsePlanStatus(doc)).toEqual({
+      declared: "absent",
+      closure: null,
+      legacy: false,
+      assurance: null,
+    });
+  });
+
+  it("reads assurance separately from the done declaration", () => {
+    expect(
+      parsePlanStatus(
+        planWithPreamble(
+          "> Estado: done",
+          "> Cierre: evidencia omitida por aceptación humana",
+          "> Assurance: unverified_accepted",
+        ),
+      ).assurance,
+    ).toBe("unverified_accepted");
   });
 });

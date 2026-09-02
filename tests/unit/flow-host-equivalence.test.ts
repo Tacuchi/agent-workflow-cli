@@ -184,15 +184,27 @@ function answerFor(
         // valida: sin las tres partes del preview el recorrido se detendría acá y
         // la equivalencia se mediría sobre medio camino.
         decisions:
-          stopped.id === FIX_PREVIEW_TRANSITION
+          stopped.id === "chassis.route-evaluation"
             ? {
-                preview: {
-                  files: ["src/dominio/cosa.ts"],
-                  intent: "cerrar el borde que el test rojo reproduce",
-                  diff: "una guarda nueva y su caso rojo",
+                route: {
+                  basis: {
+                    intention: "equivalencia",
+                    checkout: "fixture",
+                    conventions: "fixture",
+                    adopted_decisions: "fixture",
+                  },
+                  controls: [],
                 },
               }
-            : { paso: stopped.id },
+            : stopped.id === FIX_PREVIEW_TRANSITION
+              ? {
+                  preview: {
+                    files: ["src/dominio/cosa.ts"],
+                    intent: "cerrar el borde que el test rojo reproduce",
+                    diff: "una guarda nueva y su caso rojo",
+                  },
+                }
+              : { paso: stopped.id },
       },
       approval: null,
     };

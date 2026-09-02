@@ -36,8 +36,10 @@ import {
   alternativesOf,
   effectsOf,
   internalActionOf,
+  isRouteEvaluation,
   proposalContractOf,
   publishApprovalOf,
+  routeControlOf,
 } from "../../domain/flow/authority.js";
 import {
   type SealedSubject,
@@ -57,6 +59,7 @@ import {
   skippedStepOf,
   stepOf,
 } from "../../domain/flow/directive.js";
+import { ROUTE_ACCEPT_LABEL, ROUTE_ADJUST_LABEL, dispositionOf } from "../../domain/flow/route.js";
 import {
   type RunBinding,
   bindAction,
@@ -217,6 +220,7 @@ function passOver(
   journey: readonly FlowDecision[],
 ): { state: FlowRunState; step: FlowStep } | null {
   const conditional =
+    routeSkipReason(state, decision) ??
     skipReason(decision, journey, state.observations, currentBatchIteration(state, decision.id)) ??
     nothingToPublish(state, decision);
   const degraded = conditional === null ? exhaustionSkip(state, decision) : null;
@@ -229,6 +233,16 @@ function passOver(
         : degradeTransition(state, decision.id, degraded),
     step: skippedStepOf(decision, reason),
   };
+}
+
+/** A route can alter only a transition that opted in through the registry. */
+function routeSkipReason(state: FlowRunState, decision: FlowDecision): string | null {
+  if (routeControlOf(decision) === null) return null;
+  const accepted = dispositionOf(state.route_decisions, decision.id);
+  if (accepted?.disposition === "omit") {
+    return "omitida por la ruta aprobada: la evidencia no se ejecutó ni se presenta como aprobada";
+  }
+  return null;
 }
 
 /**
@@ -652,8 +666,13 @@ export function resolveBoundary(
   // continue and here is why" is never worth degrading into a question nobody can
   // answer.
   const blocked = blockedCause(state, stopped, emitted);
+  const routeReview = isRouteEvaluation(stopped) && state.route_proposal !== null;
   const kind =
-    blocked === null ? boundaryKind(stopped, (authorization?.missing.length ?? 0) > 0) : "blocked";
+    blocked === null
+      ? routeReview
+        ? "human"
+        : boundaryKind(stopped, (authorization?.missing.length ?? 0) > 0)
+      : "blocked";
   return {
     stopped,
     kind,
@@ -661,7 +680,7 @@ export function resolveBoundary(
     request: kind === "semantic" ? boundaryRequest(stopped, state) : null,
     action: kind === "execution" ? emitted.action : null,
     proposal: subject === null ? null : previewOfState(state),
-    choices: choicesFor(kind, stopped, authorization, state),
+    choices: routeReview ? routeChoices() : choicesFor(kind, stopped, authorization, state),
     pending,
     seal: boundarySeal(state, stopped),
     error: blocked,
@@ -786,7 +805,10 @@ export function directiveFor(
       : {
           kind: resolved.kind,
           transition: resolved.stopped.id,
-          authority: resolved.stopped.authority,
+          authority:
+            isRouteEvaluation(resolved.stopped) && state.route_proposal !== null
+              ? "human"
+              : resolved.stopped.authority,
           ownership: resolved.stopped.ownership,
           title: resolved.stopped.title,
           document: resolved.stopped.document,
@@ -811,6 +833,11 @@ export function directiveFor(
     // very thing the person is being asked to approve.
     fixPreview:
       resolved.stopped?.id === "quick.fix-preview-approval" ? (state.fix_preview ?? null) : null,
+    route: {
+      proposal: state.route_proposal,
+      decisions: state.route_decisions ?? [],
+      assurance: state.assurance,
+    },
     authorizations: resolved.authorization?.covered ?? [],
     // The cause of a block travels with the boundary that declares it: a
     // `blocked` directive without its error is refused at construction.
@@ -875,7 +902,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera. ${taxonomy}${authoring}${decisionDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí basis (intention, checkout, conventions, adopted_decisions) y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:
@@ -960,6 +987,27 @@ function humanChoices(decision: FlowDecision, state: FlowRunState): FlowDirectiv
   return [...resolve, ...flowControlChoices()];
 }
 
+/** The only route decision: accept the complete sealed preview or request changes. */
+function routeChoices(): FlowDirective["choices"] {
+  return [
+    {
+      label: ROUTE_ACCEPT_LABEL,
+      consequence:
+        "se persiste cada control de la ruta y el recorrido continúa con sus disposiciones acordadas",
+      recommended: true,
+      outcome: { kind: "continue" },
+    },
+    {
+      label: ROUTE_ADJUST_LABEL,
+      consequence:
+        "no avanza el cursor ni aplica efectos; se solicita una propuesta revisada que requiere nueva aceptación",
+      recommended: false,
+      outcome: { kind: "continue" },
+    },
+    ...flowControlChoices(),
+  ];
+}
+
 /** What registering a decision really leaves behind when the plan is standalone. */
 const STANDALONE_REGISTRATION_CONSEQUENCE =
   "no hay nota de contrato: la decisión queda en la traza de la corrida y la anotás en el DECISION.md de la sesión; la ejecución sigue desde su punto de reanudación";
@@ -1032,7 +1080,11 @@ function choicesFor(
  */
 function finalAction(state: FlowRunState): string {
   const degraded = state.degraded ?? [];
-  if (degraded.length === 0) return "no queda trabajo pendiente en este recorrido";
+  if (degraded.length === 0) {
+    return state.assurance === "verified"
+      ? "recorrido terminado · verified"
+      : `recorrido terminado · ${state.assurance}: la evidencia omitida o sustituida no se presenta como verde`;
+  }
   const names = degraded.map((one) => `'${one.transition}'`).join(", ");
   return `el recorrido terminó dejando degradadas ${names}: nadie las resolvió y el estado declara la causa de cada una — ${DEGRADE_ACTION}`;
 }

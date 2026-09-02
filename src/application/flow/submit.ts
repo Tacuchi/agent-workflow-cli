@@ -45,8 +45,10 @@ import {
   approvalGrantOf,
   effectsOf,
   internalActionOf,
+  isRouteEvaluation,
   proposalContractOf,
   publishApprovalOf,
+  routeControlOf,
   scopesSources,
 } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
@@ -57,6 +59,13 @@ import {
   stepOf,
 } from "../../domain/flow/directive.js";
 import { type ExecutionRefusal, executionVerdict } from "../../domain/flow/execution-result.js";
+import {
+  ROUTE_ACCEPT_LABEL,
+  ROUTE_ADJUST_LABEL,
+  type RouteProposal,
+  type RouteSubstitution,
+  isRouteDisposition,
+} from "../../domain/flow/route.js";
 import {
   type FlowDecisionPreparation,
   type FlowFixPreview,
@@ -78,6 +87,8 @@ import {
   withObservation,
   withPlanExecBatchStageForTransition,
   withProposal,
+  withRouteDecisions,
+  withRouteProposal,
   withScope,
   withSelectedChoice,
 } from "../../domain/flow/run-state.js";
@@ -582,6 +593,18 @@ async function decide(
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
 
+  const route = routeAnswer(state, resolved.stopped, journey, parsed.answer);
+  if (route.kind === "failure") {
+    return reject(state, resolved, route.failure.message, route.failure, cost);
+  }
+  if (route.kind === "proposal") {
+    return holdRouteProposal(state, journey, identity, route.proposal);
+  }
+  if (route.kind === "adjust") {
+    return adjustRouteProposal(state, journey);
+  }
+  const routed = route.kind === "accept" ? withRouteDecisions(state, route.decisions) : state;
+
   // The registry, not the Spanish consequence text, owns what a selected
   // alternative does. A handoff must stop before any later plan-exec row can
   // mark work, validate or commit; a decision selection is durably recorded
@@ -618,7 +641,7 @@ async function decide(
   // classic one over an effect class named by a boundary, and the one this phase
   // added — a single `Aprobar y guardar` that grants over the exact proposal the
   // preview showed. Neither ever applies the step by itself.
-  const scoped = scopeFrom(state, resolved.stopped, parsed.answer, snapshot.scope);
+  const scoped = scopeFrom(routed, resolved.stopped, parsed.answer, snapshot.scope);
   if ("failure" in scoped) {
     return reject(
       state,
@@ -771,6 +794,202 @@ function checkFixPreview(
       intent: (declared.intent as string).trim(),
       diff: (declared.diff as string).trim(),
     },
+  };
+}
+
+type RouteAnswer =
+  | { kind: "none" }
+  | { kind: "proposal"; proposal: RouteProposal }
+  | { kind: "accept"; decisions: RouteProposal["controls"] }
+  | { kind: "adjust" }
+  | { kind: "failure"; failure: CapabilityFailure };
+
+/**
+ * Turn the agent's compact route input into the registry-backed preview.
+ *
+ * The input can name only controls the registry explicitly classifies.  A row
+ * without that classification is a hard gate by definition, so attempting to
+ * omit it is refused here before a cursor or an effect can move.
+ */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: rejection precedence is the route's hard-gate contract.
+function routeAnswer(
+  state: FlowRunState,
+  stopped: FlowDecision,
+  journey: readonly FlowDecision[],
+  answer: FlowAnswer,
+): RouteAnswer {
+  if (!isRouteEvaluation(stopped)) return { kind: "none" };
+  if (state.route_proposal !== null) {
+    if (answer.choice === ROUTE_ADJUST_LABEL) return { kind: "adjust" };
+    if (answer.choice === ROUTE_ACCEPT_LABEL) {
+      return {
+        kind: "accept",
+        decisions: state.route_proposal.controls,
+      };
+    }
+    return {
+      kind: "failure",
+      failure: {
+        code: "FLOW_ROUTE_DECISION_INVALID",
+        message: "la ruta propuesta sólo puede aceptarse completa o ajustarse",
+        action: `elegí '${ROUTE_ACCEPT_LABEL}' o '${ROUTE_ADJUST_LABEL}'; ajustar no aplica efectos ni avanza el cursor`,
+      },
+    };
+  }
+  const candidate = answer.decisions.route;
+  if (!isRecord(candidate) || !isRecord(candidate.basis) || !Array.isArray(candidate.controls)) {
+    return {
+      kind: "failure",
+      failure: {
+        code: "FLOW_ROUTE_PROPOSAL_INVALID",
+        message: "la evaluación de ruta no trae basis y controls",
+        action:
+          "devolvé decisions.route con basis { intention, checkout, conventions, adopted_decisions } y controls relevantes",
+      },
+    };
+  }
+  const basis = candidate.basis;
+  const basisFields = ["intention", "checkout", "conventions", "adopted_decisions"] as const;
+  if (basisFields.some((field) => !nonBlank(basis[field]))) {
+    return {
+      kind: "failure",
+      failure: {
+        code: "FLOW_ROUTE_PROPOSAL_INVALID",
+        message: "la ruta no explica intención, checkout, convenciones y decisiones adoptadas",
+        action: "completá cada campo de decisions.route.basis con una observación concreta",
+      },
+    };
+  }
+  const declaredBasis = basis as Record<(typeof basisFields)[number], string>;
+  const configured = new Map(
+    journey.flatMap((decision) => {
+      const control = routeControlOf(decision);
+      return control === null ? [] : [[decision.id, { decision, control }] as const];
+    }),
+  );
+  const controls: RouteProposal["controls"] = [];
+  const named = new Set<string>();
+  for (const raw of candidate.controls) {
+    if (!isRecord(raw) || !nonBlank(raw.transition) || !isRouteDisposition(raw.disposition)) {
+      return {
+        kind: "failure",
+        failure: {
+          code: "FLOW_ROUTE_PROPOSAL_INVALID",
+          message: "un control de ruta no nombra transición o disposición válida",
+          action: "cada control declara transition, disposition apply|omit|substitute y reason",
+        },
+      };
+    }
+    if (!nonBlank(raw.reason) || named.has(raw.transition)) {
+      return {
+        kind: "failure",
+        failure: {
+          code: "FLOW_ROUTE_PROPOSAL_INVALID",
+          message: "la ruta repite un control o no justifica su disposición",
+          action: "nombrá cada control una vez y explicá por qué es relevante para este trabajo",
+        },
+      };
+    }
+    named.add(raw.transition);
+    const configuredControl = configured.get(raw.transition);
+    if (configuredControl === undefined) {
+      return {
+        kind: "failure",
+        failure: {
+          code: "FLOW_ROUTE_HARD_GATE",
+          message: `'${raw.transition}' no es un control de ruta configurable: sigue siendo un gate duro`,
+          action:
+            "no intentes omitir autorización, seguridad, privacidad, secretos, trust boundaries, custodia, stale/CAS ni recuperación; sólo proponé controles marcados por el registro",
+        },
+      };
+    }
+    const substitution = routeSubstitution(raw.disposition, raw.substitution);
+    if ("failure" in substitution) return { kind: "failure", failure: substitution.failure };
+    const { decision, control } = configuredControl;
+    controls.push({
+      transition: decision.id,
+      title: decision.title,
+      disposition: raw.disposition,
+      recommendation: control.recommendation,
+      alternatives: control.consequences,
+      consequence: control.consequences[raw.disposition],
+      risk: control.risk,
+      reason: raw.reason.trim(),
+      substitution: substitution.value,
+    });
+  }
+  return {
+    kind: "proposal",
+    proposal: {
+      basis: {
+        intention: declaredBasis.intention.trim(),
+        checkout: declaredBasis.checkout.trim(),
+        conventions: declaredBasis.conventions.trim(),
+        adopted_decisions: declaredBasis.adopted_decisions.trim(),
+      },
+      controls,
+    },
+  };
+}
+
+function routeSubstitution(
+  disposition: "apply" | "omit" | "substitute",
+  raw: unknown,
+): { value: RouteSubstitution | null } | { failure: CapabilityFailure } {
+  if (disposition !== "substitute") {
+    return raw === undefined || raw === null
+      ? { value: null }
+      : {
+          failure: {
+            code: "FLOW_ROUTE_PROPOSAL_INVALID",
+            message: "un control apply u omit no lleva una sustitución",
+            action: "dejá substitution en null salvo que disposition sea substitute",
+          },
+        };
+  }
+  if (!isRecord(raw) || !nonBlank(raw.validation) || !nonBlank(raw.risk)) {
+    return {
+      failure: {
+        code: "FLOW_ROUTE_SUBSTITUTION_INVALID",
+        message: "una sustitución no declara la validación ni el riesgo aceptado",
+        action:
+          "incluí substitution { validation, risk }; la ruta quedará parcialmente verificada, nunca verde por omisión",
+      },
+    };
+  }
+  return { value: { validation: raw.validation.trim(), risk: raw.risk.trim() } };
+}
+
+function nonBlank(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/** The proposal is persisted before human review; it is not a cursor transition. */
+function holdRouteProposal(
+  state: FlowRunState,
+  journey: readonly FlowDecision[],
+  identity: FlowRunAttempt,
+  proposal: RouteProposal,
+): SubmitDecision {
+  const held = advanceFlowRun({
+    state: withAttempt(withRouteProposal(state, proposal), identity),
+    journey,
+  });
+  if (!held.ok) return { ok: false, failure: held.failure };
+  return { ok: true, state: held.state, value: { directive: held.directive, advanced: false } };
+}
+
+/** Adjustment reopens the same agent boundary with no effects and no cursor movement. */
+function adjustRouteProposal(
+  state: FlowRunState,
+  journey: readonly FlowDecision[],
+): SubmitDecision {
+  const reopened = advanceFlowRun({ state: withRouteProposal(state, null), journey });
+  if (!reopened.ok) return { ok: false, failure: reopened.failure };
+  return {
+    ok: true,
+    state: reopened.state,
+    value: { directive: reopened.directive, advanced: false },
   };
 }
 

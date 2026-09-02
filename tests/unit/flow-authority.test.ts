@@ -71,6 +71,9 @@ describe("registro de autoridad — forma y unicidad", () => {
       (decision) => decision.ownership === "cli-owned" && decision.authority !== "cli",
     );
     expect(migratedJudgment.map((decision) => decision.id)).toEqual([
+      // The adaptive route evaluates the relevant optional controls before a
+      // flow begins; it is still the agent's judgment, never a CLI rule.
+      "chassis.route-evaluation",
       // The transversal three, and they are the sharpest case the guard makes:
       // migrating a rule moved WHEN it is asked, never WHO answers. Detecting a
       // gap and weighing a deliverable are still judgment; the flow control is

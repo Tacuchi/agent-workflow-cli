@@ -20,6 +20,7 @@ import {
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import { FLOW_BOUNDARY_KINDS } from "../../src/domain/flow/directive.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -276,6 +277,7 @@ describe("la corrida real de SPEC llega al final, que antes era imposible", () =
   it("cruza el gate de división y termina, sin remitir a ningún documento", async () => {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
 
     const crossed: string[] = [];
     for (let step = 0; step < 40; step += 1) {

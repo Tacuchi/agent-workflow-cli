@@ -76,6 +76,10 @@ Assumed facts.
 Pending doubts. ← the spec-refine-loop closes them.
 ```
 
+Technical constraints already settled stay minimal in `## Decisions` (inserted by
+refinement) as PLAN input; technical choices still pending belong in `## Open questions`
+with PLAN as destination. Neither belongs in Scope or acceptance criteria.
+
 > **`Open questions` goes last** — the refined spec **inserts before `Open questions`** `## Design references` (if there is UI) + `## Decisions`, and may add `## Affected capabilities` / `## Behavioral changes` right after `Context` when the change touches behavior that already exists (refined schema in the [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md); the refine drops `Open questions` when it empties). Draft and refined spec share the same skeleton and order.
 
 **Filling notes:**

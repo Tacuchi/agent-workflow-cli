@@ -21,6 +21,7 @@ import { authorizeTransition, effectApprovalDigest } from "../../src/domain/flow
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { FLOW_RUN_STATE_FILE, newRunState } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
@@ -245,7 +246,8 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
   async function walkToAuthorization(): Promise<FlowDirective> {
     const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    let directive = adopted.directive;
+    const routed = await acceptAdaptiveRoute(fs, paths, SESSION);
+    let directive = routed ?? adopted.directive;
     for (let step = 0; step < 20 && directive.boundary.kind !== "authorization"; step += 1) {
       const resolved = await current();
       directive = await answer(JSON.stringify(bodyFor(resolved)));

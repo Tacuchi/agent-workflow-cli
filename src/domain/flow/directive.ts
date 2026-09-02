@@ -45,9 +45,10 @@ import {
   type TransitionOwnership,
   trancheOfFlow,
 } from "./authority.js";
+import type { AssuranceStatus, RouteDecision, RouteProposal } from "./route.js";
 import type { AttemptAccounting, FlowFixPreview } from "./run-state.js";
 
-export const FLOW_DIRECTIVE_VERSION = 1;
+export const FLOW_DIRECTIVE_VERSION = 2;
 
 /**
  * The reasons a deterministic advance stops. They are the spec's own list, and
@@ -228,6 +229,12 @@ export interface FlowDirective {
    * being asked about.
    */
   fix_preview: FlowFixPreview | null;
+  /** The route preview or acceptance behind this run, never inferred from prose. */
+  route: {
+    proposal: RouteProposal | null;
+    decisions: RouteDecision[];
+    assurance: AssuranceStatus;
+  };
   effects: EffectLedger;
   /**
    * Effect classes covered AT THE BOUNDARY IN FORCE — never a run-wide permit.
@@ -279,6 +286,7 @@ export const FLOW_DIRECTIVE_KEYS = [
   "proposal",
   "decision_preview",
   "fix_preview",
+  "route",
   "effects",
   "authorizations",
   "degradations",
@@ -335,6 +343,11 @@ export interface BuildDirectiveInput {
   proposal?: DirectiveProposal | null;
   decisionPreview?: DecisionPreview | null;
   fixPreview?: FlowFixPreview | null;
+  route?: {
+    proposal: RouteProposal | null;
+    decisions: readonly RouteDecision[];
+    assurance: AssuranceStatus;
+  };
   effects?: Partial<EffectLedger>;
   authorizations?: readonly EffectClass[];
   degradations?: readonly Degradation[];
@@ -347,6 +360,7 @@ export type DirectiveBuild =
   | { ok: true; directive: FlowDirective }
   | { ok: false; failure: CapabilityFailure };
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the single constructor is the closed directive contract.
 export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
   const directive: FlowDirective = {
     version: FLOW_DIRECTIVE_VERSION,
@@ -364,6 +378,11 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
     proposal: input.proposal ?? null,
     decision_preview: input.decisionPreview ?? null,
     fix_preview: input.fixPreview ?? null,
+    route: {
+      proposal: input.route?.proposal ?? null,
+      decisions: [...(input.route?.decisions ?? [])],
+      assurance: input.route?.assurance ?? "verified",
+    },
     effects: {
       planned: [...(input.effects?.planned ?? [])],
       approved: [...(input.effects?.approved ?? [])],
@@ -731,6 +750,21 @@ function askLines(directive: FlowDirective): string[] {
     lines.push(`contrato de respuesta: ${directive.request.contract}`);
     lines.push(`read_set visible: ${directive.request.read_set.join(", ") || "ninguno"}`);
   }
+  if (directive.route.proposal !== null) {
+    const proposal = directive.route.proposal;
+    lines.push(
+      `ruta evaluada: intención ${proposal.basis.intention}; checkout ${proposal.basis.checkout}; convenciones ${proposal.basis.conventions}; decisiones ${proposal.basis.adopted_decisions}`,
+    );
+    for (const control of proposal.controls) {
+      const substitute =
+        control.substitution === null
+          ? ""
+          : `; sustitución: ${control.substitution.validation}; riesgo aceptado: ${control.substitution.risk}`;
+      lines.push(
+        `control de ruta ${control.transition}: ${control.disposition} (recomendado: ${control.recommendation}) — ${control.consequence}; riesgo: ${control.risk}${substitute}`,
+      );
+    }
+  }
   if (directive.action !== null) {
     const call = directive.action.invocation;
     lines.push(`ejecutar: ${[call.program, ...call.args].join(" ")}`);
@@ -781,6 +815,7 @@ function askLines(directive: FlowDirective): string[] {
 
 function effectLines(directive: FlowDirective): string[] {
   const lines: string[] = [];
+  lines.push(`assurance: ${directive.route.assurance}`);
   if (directive.authorizations.length > 0) {
     lines.push(`efectos permitidos: ${directive.authorizations.join(", ")}`);
   }

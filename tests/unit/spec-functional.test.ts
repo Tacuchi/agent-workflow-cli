@@ -48,6 +48,7 @@ import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import { alignSpecBaseline, specBaselineDigest } from "../../src/domain/lineage.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
@@ -1036,6 +1037,7 @@ describe("la ida completa de la válvula, sobre una corrida real", () => {
   async function walkTo(id: string, decision: unknown = null): Promise<void> {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "plan-exec", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
     for (let taken = 0; taken < 40; taken += 1) {
       const { resolved } = await current();
       if (resolved.stopped === null || resolved.stopped.id === id) return;

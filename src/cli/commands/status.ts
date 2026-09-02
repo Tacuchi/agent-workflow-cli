@@ -43,6 +43,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
     // silent, and the one case that actually needs a person to decide — an
     // ownerless legacy placeholder — had no trace outside `aw claims`.
     lines.push(...renderReservations(data, lines.at(-1)));
+    lines.push(...renderAssuranceAlerts(data, lines.at(-1)));
     // An implicit Workline root is still a valid read-only workspace.  Empty
     // means exactly no pending work; it never suggests a mandatory init gate.
     if (lines.length === 2) {
@@ -177,6 +178,21 @@ function renderLooseSessions(data: StatusOutput, before: string | undefined): st
   return lines;
 }
 
+/** A closed plan is not pending, but accepted missing evidence must stay visible. */
+function renderAssuranceAlerts(data: StatusOutput, before: string | undefined): string[] {
+  const accepted = data.plans.filter(
+    (plan) =>
+      plan.plan_state === "done" && plan.assurance !== null && plan.assurance !== "verified",
+  );
+  if (accepted.length === 0) return [];
+  const lines = before === "" ? [] : [""];
+  lines.push(`Planes cerrados sin verificación completa (${accepted.length})`);
+  for (const plan of accepted) {
+    lines.push(`  plan ${plan.number} — done · no verificado (${plan.assurance})`);
+  }
+  return lines;
+}
+
 /**
  * Only what needs a hand: a reference that moved, and one that no longer
  * resolves. `before` keeps the block one blank line away from whatever came
@@ -223,6 +239,9 @@ function renderDetail(data: StatusOutput): string[] {
     `Terminado: ${done.length} plan(es) done de ${data.plans.length}`,
     `Sesiones: ${data.counts.sessions_active} activa(s), ${data.counts.sessions_closed} cerrada(s)`,
   ];
+  for (const plan of done.filter((p) => p.assurance !== null && p.assurance !== "verified")) {
+    lines.push(`  · plan ${plan.number} — done · no verificado (${plan.assurance})`);
+  }
   for (const session of data.sessions.active) {
     lines.push(`  · ${session.folder} — ${session.summary} (${session.relative})`);
     // A run stopped at a boundary is what that session is actually waiting on,

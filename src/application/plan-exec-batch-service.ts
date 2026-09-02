@@ -10,6 +10,7 @@
 
 import { join } from "node:path";
 import type { CapabilityFailure } from "../domain/capability/protocol.js";
+import type { AssuranceStatus } from "../domain/flow/route.js";
 import {
   type FlowRunState,
   type PlanExecBatch,
@@ -35,6 +36,7 @@ const PHASE_STATE = /^\s*>\s*(?:\*\*)?Estado(?:\*\*)?\s*:\s*.*$/i;
 const PHASE_BLOCKER = /^\s*>\s*(?:\*\*)?Bloqueo(?:\*\*)?\s*:\s*.*$/i;
 const PLAN_STATUS = /^\s*>\s*Estado\s*:\s*.*$/i;
 const PLAN_CLOSURE = /^\s*>\s*Cierre\s*:\s*.*$/i;
+const PLAN_ASSURANCE = /^\s*>\s*Assurance\s*:\s*.*$/i;
 
 export interface BatchPhaseUpdate {
   phase: number;
@@ -237,6 +239,8 @@ export interface PreparePlanExecDoneSealInput {
   plan: string;
   /** The run evidence that the closure line records. */
   closure: string;
+  /** Defaulted only for callers from before adaptive routes existed. */
+  assurance?: AssuranceStatus;
 }
 
 export interface PreparedPlanExecDoneSeal {
@@ -295,14 +299,19 @@ export function preparePlanExecDoneSeal(
     );
   }
 
-  const next = rewritePlanDonePreamble(text, closure);
+  const assurance = input.assurance ?? "verified";
+  const next = rewritePlanDonePreamble(text, closure, assurance);
   return {
     ok: true,
     prepared: {
       before_digest: baseDigest(text),
       after_digest: baseDigest(next),
       content: next,
-      already_sealed: next === text && status.declared === "done" && status.closure === closure,
+      already_sealed:
+        next === text &&
+        status.declared === "done" &&
+        status.closure === closure &&
+        status.assurance === assurance,
     },
   };
 }
@@ -631,7 +640,11 @@ function rewritePhases(text: string, updates: readonly BatchPhaseUpdate[]): Batc
 
 /** Rewrite only the plan preamble — never a `> Estado:` owned by a phase. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: bounded Markdown scan/rewrite keeps plan and phase status surfaces separate.
-function rewritePlanDonePreamble(text: string, closure: string): string {
+function rewritePlanDonePreamble(
+  text: string,
+  closure: string,
+  assurance: AssuranceStatus,
+): string {
   const scanned = scanMarkdown(text);
   const [title, ...rest] = scanned.headings;
   const firstSection = title?.level === 1 ? rest[0] : title;
@@ -639,6 +652,7 @@ function rewritePlanDonePreamble(text: string, closure: string): string {
   const lines = [...scanned.lines];
   let stateAt = -1;
   let closureAt = -1;
+  let assuranceAt = -1;
   let lastQuote = -1;
   for (let index = 0; index < end; index += 1) {
     if (scanned.fenced[index]) continue;
@@ -647,6 +661,7 @@ function rewritePlanDonePreamble(text: string, closure: string): string {
     const bare = line.replace(/\*/g, "");
     if (stateAt < 0 && PLAN_STATUS.test(bare)) stateAt = index;
     if (closureAt < 0 && PLAN_CLOSURE.test(bare)) closureAt = index;
+    if (assuranceAt < 0 && PLAN_ASSURANCE.test(bare)) assuranceAt = index;
   }
 
   if (stateAt < 0) {
@@ -659,8 +674,15 @@ function rewritePlanDonePreamble(text: string, closure: string): string {
   }
   if (closureAt < 0) {
     lines.splice(stateAt + 1, 0, `> Cierre: ${closure}`);
+    if (assuranceAt >= stateAt + 1) assuranceAt += 1;
   } else {
     lines[closureAt] = `> Cierre: ${closure}`;
+  }
+  if (assuranceAt < 0) {
+    const afterClosure = closureAt < 0 ? stateAt + 2 : closureAt + 1;
+    lines.splice(afterClosure, 0, `> Assurance: ${assurance}`);
+  } else {
+    lines[assuranceAt] = `> Assurance: ${assurance}`;
   }
   return lines.join("\n");
 }

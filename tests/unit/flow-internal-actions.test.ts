@@ -29,6 +29,7 @@ import {
   serializeRunState,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
@@ -160,7 +161,9 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
       executor: over ?? executor,
     });
     if (!result.ok) throw new Error(`esperaba una directiva: ${JSON.stringify(result)}`);
-    return result.directive;
+    const routed = await acceptAdaptiveRoute(fs, paths, SESSION, { executor: over ?? executor });
+    if (routed === null) return result.directive;
+    return routed;
   }
 
   it("la lectura de artefactos se resuelve en proceso y el avance sigue hasta la frontera real", async () => {
@@ -197,7 +200,14 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
   });
 
   it("sin ejecutor la acción interna vuelve a ser la frontera que siempre fue", async () => {
-    const directive = await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: true });
+    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: true });
+    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
+    const directive = await advanceFlow(fs, paths, {
+      code: "001",
+      flow: "plan-exec",
+      adopt: false,
+    });
     if (!directive.ok) throw new Error("esperaba una directiva");
     // Degrada el MECANISMO, nunca el contrato: nada se acredita y la invocación
     // viaja para que la corra quien pueda.
@@ -240,10 +250,17 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
       );
       return executor(plan, run);
     };
-    const result = await advanceFlow(fs, paths, {
+    const adopted = await advanceFlow(fs, paths, {
       code: "001",
       flow: "plan-exec",
       adopt: true,
+    });
+    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
+    const result = await advanceFlow(fs, paths, {
+      code: "001",
+      flow: "plan-exec",
+      adopt: false,
       executor: racing,
     });
     if (result.ok) throw new Error("una carrera perdida no puede devolver una directiva aplicada");
@@ -256,7 +273,10 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     // Primera pasada: emite la frontera interna sin ejecutarla (sin ejecutor) y
     // deja anotado que ya se empezó — exactamente el estado que sobrevive a una
     // caída entre la intención y el efecto.
-    await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: true });
+    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: true });
+    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: false });
     const before = await state();
     const { digest: _seal, ...rest } = before;
     const pending = before.pending_action;
@@ -366,6 +386,9 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
       plugin: {},
     } as unknown as ParsedArgs;
 
+    const adopted = await flowCommand.execute(args, ctx);
+    expect(adopted.ok).toBe(true);
+    await acceptAdaptiveRoute(fs, paths, SESSION);
     const result = await flowCommand.execute(args, ctx);
     expect(result.ok).toBe(true);
     expect(result.data?.applied.map((step) => step.transition)).toContain("plan-exec.session");

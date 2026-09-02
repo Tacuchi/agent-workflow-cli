@@ -150,7 +150,10 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
       return {
         status: "invalid_target",
         target,
-        action: `el plan '${historical.file}' ya está cerrado: es histórico y no genera deuda de baseline; elegí un documento pendiente o consultá su evidencia`,
+        action:
+          historical.assurance !== null && historical.assurance !== "verified"
+            ? `el plan '${historical.file}' está complete · ${historical.assurance}: no es trabajo pendiente, pero su evidencia omitida o sustituta no se presenta como aprobada; consultá el riesgo aceptado`
+            : `el plan '${historical.file}' ya está cerrado: es histórico y no genera deuda de baseline; elegí un documento pendiente o consultá su evidencia`,
       };
     }
     return {

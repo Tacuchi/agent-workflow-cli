@@ -205,6 +205,13 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",
   FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "evaluated",
   FLOW_PROPOSAL_BASE_UNREADABLE: "evaluated",
+  // The adaptive route boundary read the proposal or the accepted disposition
+  // and rejected it: malformed route data, a replacement without its agreed
+  // validation/risk, or an attempt to make an unconfigured hard gate optional.
+  FLOW_ROUTE_DECISION_INVALID: "evaluated",
+  FLOW_ROUTE_PROPOSAL_INVALID: "evaluated",
+  FLOW_ROUTE_SUBSTITUTION_INVALID: "evaluated",
+  FLOW_ROUTE_HARD_GATE: "evaluated",
   FLOW_BOUNDARY_PAUSED: "control",
   FLOW_BOUNDARY_DECLINED: "control",
   FLOW_ANSWER_RESENT: "control",

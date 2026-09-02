@@ -28,6 +28,7 @@ import { join } from "node:path";
 import type { EffectClass } from "../../domain/capability/effects.js";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { InternalActionPlan } from "../../domain/flow/authority.js";
+import { dispositionOf } from "../../domain/flow/route.js";
 import {
   type FlowRunScope,
   type FlowRunState,
@@ -777,9 +778,11 @@ async function sealPlanDone(
       canonicalJson({ expected: run.state_digest, actual: live.state.digest }),
     );
   }
-  const missing = PLAN_DONE_REQUIRED_TRANSITIONS.filter(
-    (transition) => !live.state.applied.includes(transition),
-  );
+  const missing = PLAN_DONE_REQUIRED_TRANSITIONS.filter((transition) => {
+    if (live.state.applied.includes(transition)) return false;
+    const disposition = dispositionOf(live.state.route_decisions, transition)?.disposition;
+    return disposition !== "omit" && disposition !== "substitute";
+  });
   if (missing.length > 0) {
     return refusal(
       "plan-exec.plan-done",
@@ -813,8 +816,12 @@ async function sealPlanDone(
       canonicalJson({ code: "PLAN_EXEC_DONE_PLAN_UNREADABLE", plan: run.scope.plan }),
     );
   }
-  const closure = `validación final, commits e integración acreditados por la corrida ${run.session}`;
-  const prepared = preparePlanExecDoneSeal(text, { plan: run.scope.plan, closure });
+  const closure = planDoneClosure(live.state, run.session);
+  const prepared = preparePlanExecDoneSeal(text, {
+    plan: run.scope.plan,
+    closure,
+    assurance: live.state.assurance,
+  });
   if (!prepared.ok) {
     return refusal(
       "plan-exec.plan-done",
@@ -855,6 +862,7 @@ async function sealPlanDone(
     output: canonicalJson({
       plan: run.scope.plan,
       closure,
+      assurance: live.state.assurance,
       written: applied.result.written,
       already_applied: applied.result.already_applied,
     }),
@@ -862,6 +870,36 @@ async function sealPlanDone(
     // disk, like batch publication's already-applied path.
     effects: ["mutate_overwrite"],
   };
+}
+
+/** The plan seal says exactly which evidence was absent or substituted. */
+function planDoneClosure(state: FlowRunState, session: string): string {
+  const decisions = state.route_decisions ?? [];
+  const controls = new Map(
+    (state.route_proposal?.controls ?? []).map((control) => [control.transition, control]),
+  );
+  const omitted = decisions
+    .filter((decision) => decision.disposition === "omit")
+    .map((decision) => {
+      const control = controls.get(decision.transition);
+      return `${decision.transition}${control === undefined ? "" : ` (${control.reason}; riesgo: ${control.risk})`}`;
+    });
+  const substitutions = decisions
+    .filter((decision) => decision.disposition === "substitute")
+    .map((decision) => decision.substitution)
+    .filter(
+      (substitution): substitution is NonNullable<typeof substitution> => substitution !== null,
+    );
+  if (state.assurance === "unverified_accepted") {
+    return `evidencia omitida por ruta aceptada (${omitted.join("; ") || "sin detalle"}); commits e integración acreditados por la corrida ${session}; no se afirma que la validación pasó`;
+  }
+  if (state.assurance === "partially_verified") {
+    return `validación sustituta pendiente (${substitutions.map((substitution) => substitution.validation).join(", ") || "sin detalle"}); riesgo aceptado: ${substitutions.map((substitution) => substitution.risk).join(", ") || "assurance parcial"}; commits e integración acreditados por la corrida ${session}`;
+  }
+  if (substitutions.length > 0) {
+    return `validación sustituta ejecutada (${substitutions.map((substitution) => substitution.validation).join(", ")}); commits e integración acreditados por la corrida ${session}`;
+  }
+  return `validación final, commits e integración acreditados por la corrida ${session}`;
 }
 
 /** The documentary checks that must pass in the same critical section as done. */

@@ -59,6 +59,41 @@ const SESSION = "008-tramo-chassis-quick";
 const CODE = "008";
 const SRC = resolve(__dirname, "..", "..");
 
+/** Cross the new route boundary so legacy chassis cases exercise their own gate. */
+async function acceptDefaultRoute(paths: PathsService): Promise<void> {
+  const current = await readRun(fs, locateRun(paths, SESSION));
+  if (!current.ok) throw new Error(current.failure.code);
+  const initial = resolveBoundary(current.state, journeyOfFlow(current.state.flow));
+  const proposed = await submitFlow(fs, paths, {
+    code: CODE,
+    raw: JSON.stringify({
+      input_digest: initial.seal,
+      decisions: {
+        route: {
+          basis: {
+            intention: "fixture",
+            checkout: "fixture",
+            conventions: "fixture",
+            adopted_decisions: "fixture",
+          },
+          controls: [],
+        },
+      },
+    }),
+    approval: null,
+  });
+  if (!proposed.ok) throw new Error("esperaba propuesta de ruta");
+  const reviewed = await readRun(fs, locateRun(paths, SESSION));
+  if (!reviewed.ok) throw new Error(reviewed.failure.code);
+  const review = resolveBoundary(reviewed.state, journeyOfFlow(reviewed.state.flow));
+  const accepted = await submitFlow(fs, paths, {
+    code: CODE,
+    raw: JSON.stringify({ input_digest: review.seal, choice: "Aceptar ruta" }),
+    approval: null,
+  });
+  if (!accepted.ok) throw new Error("esperaba aceptación de ruta");
+}
+
 const transversal = decisionsOfScope(CHASSIS_SCOPE);
 
 describe("forma (a) — atravesada por el recorrido", () => {
@@ -66,6 +101,7 @@ describe("forma (a) — atravesada por el recorrido", () => {
     const placed = transversal.filter((row) => placementOf(row) !== null);
     expect(placed.map((row) => row.id)).toEqual([
       "chassis.docs-boundary",
+      "chassis.route-evaluation",
       "chassis.research-exhaustion",
       "chassis.finalize",
     ]);
@@ -83,6 +119,7 @@ describe("forma (a) — atravesada por el recorrido", () => {
       const first = at(own[0] as string);
       const last = at(own[own.length - 1] as string);
       expect(at("chassis.docs-boundary"), flow).toBeLessThan(first);
+      expect(at("chassis.route-evaluation"), flow).toBeLessThan(first);
       expect(at("chassis.research-exhaustion"), flow).toBeLessThan(first);
       // La carpeta escribible se fija ANTES de que se emita ningún paso que
       // escriba: resuelta después sería una regla contra escrituras ya hechas.
@@ -95,7 +132,7 @@ describe("forma (a) — atravesada por el recorrido", () => {
       const journey = journeyOfFlow(flow);
       const ids = journey.map((row) => row.id);
       expect(new Set(ids).size, flow).toBe(ids.length);
-      expect(journey).toHaveLength(decisionsOfScope(flow).length + 3);
+      expect(journey).toHaveLength(decisionsOfScope(flow).length + 4);
     }
   });
 
@@ -204,6 +241,7 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
     );
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptDefaultRoute(paths);
   });
 
   afterEach(async () => {
@@ -389,7 +427,7 @@ describe("forma (b) — atribuida al mecanismo que ya la realiza", () => {
     });
     expect(formless.map((row) => row.id)).toEqual([]);
     // Y que las tres formas existan de verdad, o la guarda pasaría vacía.
-    expect(transversal.filter((row) => placementOf(row) !== null)).toHaveLength(3);
+    expect(transversal.filter((row) => placementOf(row) !== null)).toHaveLength(4);
     // Once por esta fase, mas `chassis.session-numbering`, que ya era `cli-owned`
     // desde antes del plan y nombra la fila del comando que la instancia.
     expect(transversal.filter((row) => realizationOf(row) !== null)).toHaveLength(11);
@@ -533,6 +571,7 @@ describe("Compactar sobre una corrida real: pausa, no resuelve", () => {
       "utf8",
     );
     await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    await acceptDefaultRoute(paths);
   });
 
   afterEach(async () => {
@@ -624,19 +663,18 @@ describe("la corrida real cruza las filas transversales", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  it("adoptar ya aplicó las dos del prefijo antes de la primera frontera propia", async () => {
+  it("adoptar aplica los hard gates del prefijo y se detiene en la propuesta de ruta", async () => {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
     // Aplicadas de verdad, no declaradas: son el primer tramo del recorrido y el
     // motor las cruza sin preguntar nada, que es lo que hace observable la forma.
     const applied = adopted.directive.applied.map((step) => step.transition);
-    expect(applied.slice(0, 2)).toEqual(["chassis.docs-boundary", "chassis.research-exhaustion"]);
-    for (const step of adopted.directive.applied.slice(0, 2)) {
+    expect(applied).toEqual(["chassis.docs-boundary"]);
+    for (const step of adopted.directive.applied) {
       expect(step.outcome).toBe("applied");
       expect(step.ownership).toBe("cli-owned");
     }
-    // Y la frontera en pie ya es del flow, no del chasis.
-    expect(adopted.directive.boundary.transition).toBe("quick.entry-gate-signal");
+    expect(adopted.directive.boundary.transition).toBe("chassis.route-evaluation");
   });
 
   it("el cierre es el último paso pendiente de toda jornada", () => {

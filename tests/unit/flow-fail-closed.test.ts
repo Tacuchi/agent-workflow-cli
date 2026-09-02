@@ -15,6 +15,7 @@ import {
   serializeRunState,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
@@ -70,6 +71,7 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     );
     const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
   });
 
   afterEach(async () => {
@@ -103,6 +105,7 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     await rm(statePath());
     const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba re-adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
   };
 
   async function seal(): Promise<string> {
@@ -199,7 +202,7 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     if (!read.ok) throw new Error("esperaba leer la corrida");
     // One application, one recorded attempt — not two of either.
     expect(read.state.applied.filter((id) => id === "quick.entry-gate-signal")).toHaveLength(1);
-    expect(read.state.attempts).toHaveLength(1);
+    expect(read.state.attempts).toHaveLength(3);
   });
 
   it("reenviar una respuesta RECHAZADA no es un reenvío: vuelve el motivo real", async () => {
@@ -221,7 +224,7 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     // de dejar a quien contesta en un bucle con el mismo error.
     const read = await readRun(fs, locateRun(paths, SESSION));
     if (!read.ok) throw new Error("esperaba leer la corrida");
-    expect(read.state.attempts).toHaveLength(2);
+    expect(read.state.attempts).toHaveLength(4);
     expect(read.state.applied).not.toContain(read.state.boundary);
   });
 

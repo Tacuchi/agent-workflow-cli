@@ -20,7 +20,8 @@
     "detection": "the CLI's automatic detection was wrong or ambiguous",
     "scaffold": "the target has materialized runtime or needs its materialization/configuration contract",
     "classification": "in-conversation work has to be classified before it is written",
-    "authoring": "the deliverable's own notation, structure or ordering is not obvious from the material"
+    "authoring": "the deliverable's own notation, structure or ordering is not obvious from the material",
+    "route": "the flow is at its adaptive route evaluation boundary"
   },
   "$comment_flow_signals": "Vocabulary the AGENT may declare at a flow boundary — kept HERE, next to the context signals, so there is one catalog and not two that drift. The frontier is exact: recognizing a signal is judgment (the agent's), applying the threshold over the declared signals is a rule (the CLI's). A signal outside this vocabulary never advances a journey. Each id must be consumed by some transition of the authority registry, and every signal a transition consumes must appear here: the guard runs in both directions.",
   "flow_signals": {
@@ -208,6 +209,10 @@
         {
           "path": "modules/SESSION-NUMBERING.md",
           "signal": "sessions"
+        },
+        {
+          "path": "modules/ADAPTIVE-ROUTE.md",
+          "signal": "route"
         }
       ]
     },
@@ -264,6 +269,10 @@
         {
           "path": "modules/SESSION-NUMBERING.md",
           "signal": "sessions"
+        },
+        {
+          "path": "modules/ADAPTIVE-ROUTE.md",
+          "signal": "route"
         }
       ]
     },
@@ -337,6 +346,10 @@
         {
           "path": "modules/SESSION-NUMBERING.md",
           "signal": "sessions"
+        },
+        {
+          "path": "modules/ADAPTIVE-ROUTE.md",
+          "signal": "route"
         }
       ]
     },
@@ -386,6 +399,10 @@
         {
           "path": "modules/PROMPT-CONTINUITY.md",
           "signal": "resume"
+        },
+        {
+          "path": "modules/ADAPTIVE-ROUTE.md",
+          "signal": "route"
         }
       ]
     },
@@ -464,6 +481,10 @@
         {
           "path": "modules/SESSION-NUMBERING.md",
           "signal": "sessions"
+        },
+        {
+          "path": "modules/ADAPTIVE-ROUTE.md",
+          "signal": "route"
         }
       ]
     },

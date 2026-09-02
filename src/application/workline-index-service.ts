@@ -2,6 +2,7 @@ import { basename, join, relative } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives, isCorrelative } from "../domain/correlative.js";
 import type { DecisionNote } from "../domain/decision-note.js";
 import { type EffectiveContract, composeEffectiveContract } from "../domain/effective-contract.js";
+import type { AssuranceStatus } from "../domain/flow/route.js";
 import {
   type BaselineAlignment,
   type PlanBaselineSeal,
@@ -134,6 +135,8 @@ export interface IndexedPlan {
   phases_validated: number;
   /** the plan's third axis: closure, derived from the declaration AND the two counters */
   plan_state: PlanState;
+  /** Closure assurance, kept independent from the plan's done/open state. */
+  assurance: AssuranceStatus | null;
   /** phases whose exact mark is `> Estado: bloqueada` */
   phases_blocked: number;
   /** the blocked phases with what each one waits on */
@@ -636,6 +639,9 @@ function specItem(
 }
 
 function planSummary(plan: IndexedPlan): string {
+  if (plan.plan_state === "done" && plan.assurance !== null && plan.assurance !== "verified") {
+    return `plan ${plan.number} — done · no verificado (${plan.assurance})`;
+  }
   const phases =
     plan.phases_total > 0 ? `, fases ${plan.phases_validated}/${plan.phases_total}` : "";
   const blocked = plan.phases_blocked > 0 ? `, ${plan.phases_blocked} bloqueada(s)` : "";
@@ -678,6 +684,7 @@ export function planDetail(plan: IndexedPlan, designs: DesignGraph): PipelineIte
 }
 
 /** The one plan projection shared by the pipeline and direct `resume <plan>`. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one presentation keeps direct resume and status equivalent.
 export function planPresentation(
   plan: IndexedPlan,
   designs: DesignGraph,
@@ -692,10 +699,14 @@ export function planPresentation(
   // no baseline seal is not retroactively made owing or executable merely
   // because a direct `resume <plan>` bypassed the pipeline's done filter.
   if (plan.plan_state === "done") {
+    const assurance = plan.assurance;
     return {
       detail: {
         ...base,
-        next: "plan cerrado: es histórico y no genera deuda de baseline",
+        next:
+          assurance === null || assurance === "verified"
+            ? "plan cerrado: es histórico y no genera deuda de baseline"
+            : `plan cerrado · no verificado (${assurance}): evidencia omitida o sustituta aceptada, no aprobada`,
         obligation: false,
       },
       action: {
@@ -1168,12 +1179,8 @@ async function readPlans(
         chainOf,
         sealedDigests,
       );
-      const planState = derivePlanState(
-        parsePlanStatus(text).declared,
-        t,
-        p,
-        lineage.reconciliation,
-      );
+      const status = parsePlanStatus(text);
+      const planState = derivePlanState(status.declared, t, p, lineage.reconciliation);
       const ts = await resolveTimestamp(fs, f.path, undefined, now);
       out.push({
         file: relFromCwd(f.path, cwd),
@@ -1185,6 +1192,7 @@ async function readPlans(
         phases_total: p.total,
         phases_validated: p.validated,
         plan_state: planState,
+        assurance: status.assurance,
         phases_blocked: p.blocked,
         blocked_phases: p.items
           .filter((phase) => phase.state === "bloqueada")

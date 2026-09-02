@@ -1,3 +1,4 @@
+import type { AssuranceStatus } from "../../domain/flow/route.js";
 import { scanMarkdown } from "../markdown.js";
 
 export const PLAN_DECLARED_STATES = ["open", "done"] as const;
@@ -17,10 +18,13 @@ export interface ParsedPlanStatus {
   closure: string | null;
   /** the declaration used the legacy `done — YYYY-MM-DD · sesion NNN` shape */
   legacy: boolean;
+  /** Explicit evidence quality of a closed plan; absent plans predate this contract. */
+  assurance: AssuranceStatus | null;
 }
 
 const STATE_RE = /^>\s*Estado\s*:\s*(.+)$/i;
 const CLOSURE_RE = /^>\s*Cierre\s*:\s*(.+)$/i;
+const ASSURANCE_RE = /^>\s*Assurance\s*:\s*(.+)$/i;
 /** `done — 2026-07-27 · sesion 123` → value `done`, tail the rest. */
 const ANNOTATED_RE = /^(.*?)\s+[—–-]\s+(.+)$/;
 
@@ -41,6 +45,7 @@ const ANNOTATED_RE = /^(.*?)\s+[—–-]\s+(.+)$/;
  * Anything else reads `unknown`: an unreadable declaration is a contradiction
  * to surface, never a silent `open`.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one ordered preamble scan keeps status, closure and assurance in one authority.
 export function parsePlanStatus(text: string): ParsedPlanStatus {
   const { lines, fenced, headings } = scanMarkdown(text);
   // The preamble is the blockquote under the `# Plan PPP — <slug>` title: skip
@@ -52,6 +57,7 @@ export function parsePlanStatus(text: string): ParsedPlanStatus {
   let declared: ParsedPlanStatus["declared"] = "absent";
   let closure: string | null = null;
   let legacy = false;
+  let assurance: AssuranceStatus | null = null;
 
   for (let i = 0; i < end; i++) {
     if (fenced[i]) continue;
@@ -71,9 +77,19 @@ export function parsePlanStatus(text: string): ParsedPlanStatus {
       const cierre = CLOSURE_RE.exec(line)?.[1]?.trim();
       if (cierre) closure = cierre;
     }
+    if (assurance === null) {
+      const value = ASSURANCE_RE.exec(line)?.[1]?.trim();
+      if (
+        value === "verified" ||
+        value === "partially_verified" ||
+        value === "unverified_accepted"
+      ) {
+        assurance = value;
+      }
+    }
   }
 
-  return { declared, closure, legacy };
+  return { declared, closure, legacy, assurance };
 }
 
 function readDeclaration(raw: string): {

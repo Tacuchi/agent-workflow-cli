@@ -24,6 +24,7 @@ import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { sealProposal } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
@@ -194,6 +195,7 @@ describe("una propuesta se aprueba una vez y se publica entera", () => {
       executor,
     });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
     for (let step = 0; step < 30; step += 1) {
       const { resolved } = await current();
       if (resolved.stopped === null) throw new Error("el recorrido terminó sin pedir confirmación");

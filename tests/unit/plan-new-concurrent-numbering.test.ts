@@ -28,6 +28,7 @@ import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { reservationMarker } from "../../src/domain/reservation.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
@@ -222,7 +223,8 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
       executor,
     });
     if (!adopted.ok) throw new Error(`esperaba adoptar la corrida ${run.code}`);
-    let last: FlowDirective = adopted.directive;
+    let last: FlowDirective =
+      (await acceptAdaptiveRoute(fs, paths, run.folder, { executor })) ?? adopted.directive;
     for (let hop = 0; hop < 40; hop += 1) {
       const { resolved } = await current(run);
       if (resolved.stopped === null)

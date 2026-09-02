@@ -13,6 +13,7 @@
  */
 
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
+import type { AssuranceStatus } from "../../domain/flow/route.js";
 import {
   type FlowRunScope,
   checkAgainstJourney,
@@ -45,6 +46,8 @@ export interface FlowRunProjection {
    * what the run MAY edit, the other which trees it actually holds.
    */
   scope: FlowRunScope | null;
+  /** Null only when the persisted run is unreadable or still legacy. */
+  assurance: AssuranceStatus | null;
 }
 
 export async function projectRun(
@@ -69,6 +72,7 @@ export async function projectRun(
       // Unreadable means unreadable: a scope quoted off a state the engine
       // refuses would be the one field of this projection nobody could trust.
       scope: null,
+      assurance: null,
     };
   }
   if (legacyRunNeedsAdoption(read.state)) {
@@ -81,6 +85,7 @@ export async function projectRun(
       command: `aw flow advance --code ${folder} --flow ${read.state.flow} --adopt`,
       summary: `corrida legacy v${read.state.version}: requiere adopción explícita antes de continuar`,
       scope: read.state.scope,
+      assurance: null,
     };
   }
   const journey = journeyForRun(read.state);
@@ -95,6 +100,7 @@ export async function projectRun(
       command: `aw flow advance --code ${folder}`,
       summary: `${incoherent.message} — ${incoherent.action}`,
       scope: read.state.scope,
+      assurance: read.state.assurance,
     };
   }
   const resolved = resolveBoundary(read.state, journey);
@@ -107,8 +113,12 @@ export async function projectRun(
       title: null,
       invocation: null,
       command: `aw session-close --code ${folder}`,
-      summary: "el recorrido no tiene transiciones pendientes",
+      summary:
+        read.state.assurance === "verified"
+          ? "complete · verified"
+          : `complete · ${read.state.assurance}: la evidencia omitida o sustituida no se presenta como aprobada`,
       scope: read.state.scope,
+      assurance: read.state.assurance,
     };
   }
   const invocation =
@@ -130,5 +140,6 @@ export async function projectRun(
         ? `frontera ${resolved.kind} en ${stopped.id} — ${stopped.title}`
         : `frontera execution en ${stopped.id} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --code ${folder}'`,
     scope: read.state.scope,
+    assurance: read.state.assurance,
   };
 }

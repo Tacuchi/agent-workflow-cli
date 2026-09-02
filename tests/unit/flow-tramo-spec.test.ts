@@ -21,6 +21,7 @@ import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { thresholdFired } from "../../src/domain/flow/rules.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -263,6 +264,7 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
   async function walkTo(id: string, signals: string[]): Promise<void> {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
     for (let step = 0; step < 30; step += 1) {
       const { resolved } = await current();
       if (resolved.stopped === null || resolved.stopped.id === id) return;
@@ -283,19 +285,16 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
   it("la sesión de refinamiento no se da por abierta sin leerla", async () => {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    expect(adopted.directive.boundary.kind).toBe("execution");
-    expect(adopted.directive.boundary.transition).toBe("spec-refine.session");
-    expect(adopted.directive.action?.invocation.args).toEqual([
-      "session-artifacts",
-      "--code",
-      SESSION,
-    ]);
+    const started = (await acceptAdaptiveRoute(fs, paths, SESSION)) ?? adopted.directive;
+    expect(started.boundary.kind).toBe("execution");
+    expect(started.boundary.transition).toBe("spec-refine.session");
+    expect(started.action?.invocation.args).toEqual(["session-artifacts", "--code", SESSION]);
 
     // Una narración no es un resultado.
     const claimed = await answer({
-      input_digest: adopted.directive.state_digest,
+      input_digest: started.state_digest,
       outcome: "completed",
-      invocation: adopted.directive.action?.invocation,
+      invocation: started.action?.invocation,
       validations: [{ id: "spec.session-present", passed: true, detail: "  " }],
       effects: { planned: ["local_additive"], approved: [], applied: ["local_additive"] },
       output: null,
@@ -401,6 +400,7 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
   it("el recorrido llega al gate de división y lo pregunta él mismo, sin remitir a nada", async () => {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION);
     for (let step = 0; step < 12; step += 1) {
       const { resolved } = await current();
       if (resolved.stopped?.id === "spec-refine.split-signal") {

@@ -169,6 +169,10 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",
       FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "evaluated",
       FLOW_PROPOSAL_BASE_UNREADABLE: "evaluated",
+      FLOW_ROUTE_DECISION_INVALID: "evaluated",
+      FLOW_ROUTE_PROPOSAL_INVALID: "evaluated",
+      FLOW_ROUTE_SUBSTITUTION_INVALID: "evaluated",
+      FLOW_ROUTE_HARD_GATE: "evaluated",
       // Una respuesta real que no aplica nada, o la misma dos veces.
       FLOW_BOUNDARY_PAUSED: "control",
       FLOW_BOUNDARY_DECLINED: "control",
@@ -1062,7 +1066,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     it("el contrato persistido no se movió: una prueba lo fija", () => {
       // Las corridas v7-v9 se siguen leyendo, pero una corrida activa se adopta
       // explícitamente antes de escribir la semántica de batches de v10.
-      expect(FLOW_RUN_STATE_VERSION).toBe(10);
+      expect(FLOW_RUN_STATE_VERSION).toBe(11);
     });
 
     it("renumerar la cadena no devuelve intentos: el techo lo siguen fijando piso y grants", async () => {

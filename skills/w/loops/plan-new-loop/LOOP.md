@@ -54,13 +54,14 @@ Technical detail and roadmap stay inline:
 > Límite de ejecución: checkout
 
 ## Origin              source spec/prompt or adopted source + attribution
-## Solution            the how: brief AS-IS → TO-BE + closing "Final behavior" block (core)
-## Impacted            FE · BE · DB · APIs · integrations (core)
+## Solution            AS-IS → TO-BE + "Final behavior" block (core)
+## Impacted            sources (core)
 ## Dependencies        docs · sources · DBs · sessions · inter-plan order (opt.)
 ## Design references   the baselines this plan's roots pin (opt. — only with UI)
 ## Tasks               `### Fn` blocks: the ONLY source of phases (core)
 ## Execution batches   complete phase partition (core)
-## Validations         cross-cutting rules + the evidence derived from the spec (core)
+## Validations         proof (core)
+## Implementation decisions  decisions, controls, risk (when used)
 ## Risks / impact      technical risks and impacts (opt.)
 ## Assumptions         delta over the spec only (opt.)
 ## Open questions      pending; core when any exist; OMIT the section when empty

@@ -14,6 +14,7 @@ import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import type { GitPort } from "../../src/ports/git.js";
+import { acceptAdaptiveRoute } from "./accept-adaptive-route.js";
 
 /**
  * Drive a REAL `plan-exec` run over a real workspace, one boundary at a time.
@@ -177,6 +178,10 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
       executor: executor(),
     });
     if (!adopted.ok) throw new Error(`esperaba adoptar ${run.folder}`);
+    await acceptAdaptiveRoute(deps.fs, deps.paths, run.folder, {
+      executor: executor(),
+      git: deps.git,
+    });
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const { resolved } = await current(run.folder);
       if (resolved.stopped === null || resolved.stopped.id === id) return;

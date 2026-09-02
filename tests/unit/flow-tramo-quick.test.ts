@@ -31,6 +31,7 @@ import {
   withFixPreview,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -300,7 +301,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
   async function adopt(): Promise<FlowDirective> {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    return adopted.directive;
+    return (await acceptAdaptiveRoute(fs, paths, SESSION)) ?? adopted.directive;
   }
 
   async function answer(body: unknown, approval: string | null = null): Promise<FlowDirective> {
@@ -969,6 +970,9 @@ describe("resume y status proyectan la frontera vigente", () => {
     const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
 
+    const routed = await acceptAdaptiveRoute(fs, paths, SESSION);
+    if (routed === null) throw new Error("esperaba aceptar la ruta adaptativa");
+
     const semantic = await projectRun(fs, paths, SESSION);
     expect(semantic?.boundary).toBe("semantic");
     expect(semantic?.transition).toBe("quick.entry-gate-signal");
@@ -983,7 +987,7 @@ describe("resume y status proyectan la frontera vigente", () => {
     const submitted = await submitFlow(fs, paths, {
       code: CODE,
       raw: JSON.stringify({
-        input_digest: adopted.directive.state_digest,
+        input_digest: routed.state_digest,
         signals: [],
         decisions: { observadas: 0 },
       }),

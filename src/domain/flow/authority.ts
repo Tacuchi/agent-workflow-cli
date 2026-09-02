@@ -27,6 +27,7 @@ import { WORKLINE_FLOWS, type WorklineFlow } from "../../application/capability/
 import type { EffectClass } from "../capability/effects.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
+import type { RouteControlConfiguration } from "./route.js";
 
 const SPEC_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.spec;
 const PLAN_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.plan;
@@ -152,6 +153,13 @@ export interface FlowDecision {
    * claiming a decision nobody made. See {@link TransitionCondition}.
    */
   condition?: TransitionCondition;
+  /**
+   * An explicitly adaptable methodological control.  Its absence is meaningful:
+   * the transition remains a hard gate and follows the legacy path.
+   */
+  route_control?: RouteControlConfiguration;
+  /** The one prefix boundary where an agent prepares the route for this run. */
+  route_evaluation?: true;
   /**
    * The alternatives this boundary emits, when they are the row's own.
    *
@@ -596,6 +604,16 @@ export function conditionOf(decision: FlowDecision): TransitionCondition | null 
   return decision.condition ?? null;
 }
 
+/** An absent configuration is deliberately a hard gate, never an implicit opt-out. */
+export function routeControlOf(decision: FlowDecision): RouteControlConfiguration | null {
+  return decision.route_control ?? null;
+}
+
+/** Whether this is the single boundary that gathers and presents a route. */
+export function isRouteEvaluation(decision: FlowDecision): boolean {
+  return decision.route_evaluation === true;
+}
+
 /** The alternatives this row declares as its own, or `null` for the generic pair. */
 export function alternativesOf(decision: FlowDecision): readonly FlowChoice[] | null {
   return decision.alternatives ?? null;
@@ -834,6 +852,76 @@ const BATCH_ELIGIBILITY_SIGNALS = [
   "plan.not-one-reviewable-unit",
 ] as const;
 
+const ROUTE_RESEARCH: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: "se investiga sólo lo necesario para cerrar el gap actual",
+    omit: "se continúa sin esa investigación y queda su riesgo aceptado",
+    substitute: "se usa la validación sustituta declarada para este trabajo",
+  },
+  risk: "una lectura insuficiente puede dejar una decisión con contexto parcial",
+};
+
+const ROUTE_IDEATION: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: "se exploran alternativas cuando el espacio de solución realmente lo exige",
+    omit: "se conserva el enfoque actual sin abrir una ronda de ideación",
+    substitute: "se compara la alternativa declarada y su evidencia sustituta",
+  },
+  risk: "omitir ideación puede dejar alternativas relevantes sin comparar",
+};
+
+const ROUTE_SPLIT: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: "se evalúa si el trabajo debe dividirse según sus señales reales",
+    omit: "se conserva una sola unidad de trabajo con ese riesgo aceptado",
+    substitute: "se documenta una partición o límite alternativo verificable",
+  },
+  risk: "una unidad demasiado amplia puede ocultar dependencias o prioridades distintas",
+};
+
+const ROUTE_DESIGN: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: "se compone o reutiliza el diseño que el cambio requiere",
+    omit: "no se abre una revisión de diseño para este trabajo",
+    substitute: "se usa la evidencia de diseño sustituta declarada",
+  },
+  risk: "omitir diseño puede dejar una experiencia visible sin una decisión trazable",
+};
+
+const ROUTE_CONVENTIONS: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: "se sigue la convención vigente del checkout",
+    omit: "la excepción queda limitada a este trabajo y se declara su riesgo",
+    substitute: "se aplica la alternativa compatible declarada para este trabajo",
+  },
+  risk: "una excepción local puede aumentar el costo de mantenimiento si no queda acotada",
+};
+
+const ROUTE_VALIDATION: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: "se ejecuta la validación que el plan declara",
+    omit: "la evidencia queda omitida por aceptación humana, sin presentarse como verde",
+    substitute: "se ejecuta la validación sustituta declarada y se conserva su riesgo",
+  },
+  risk: "la ausencia o sustitución de evidencia reduce el assurance del cierre",
+};
+
+const ROUTE_REVIEW: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: "se revisan los hallazgos del cambio antes de continuar",
+    omit: "se continúa sin esa revisión y queda el riesgo aceptado",
+    substitute: "se usa la revisión o inspección sustituta declarada",
+  },
+  risk: "un cambio sin revisión puede conservar defectos o deuda innecesaria",
+};
+
 /** The five signals of the multi-plan split gate, shared by both plan loops. */
 const PLAN_SPLIT_SIGNALS = [
   "plan.independent-tranches",
@@ -869,6 +957,17 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // this run may write BEFORE any step that writes is even emitted. Resolved
     // afterwards it would be a rule checked against writes that already happened.
     placement: "prefix",
+  },
+  {
+    id: "chassis.route-evaluation",
+    scope: CHASSIS,
+    title: "proponer la ruta adaptativa relevante para esta corrida",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    placement: "prefix",
+    route_evaluation: true,
   },
   {
     id: "chassis.research-exhaustion",
@@ -1519,6 +1618,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
+    route_control: ROUTE_CONVENTIONS,
   },
   {
     id: "quick.commit-authorization",
@@ -1594,6 +1694,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: SPEC_LOOP,
     attribution: SPEC_ATTRIBUTION,
+    route_control: ROUTE_RESEARCH,
   },
   {
     id: "spec-refine.change-shape-gate",
@@ -1634,6 +1735,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CHANGE_SHAPE,
     attribution: SPEC_ATTRIBUTION,
+    route_control: ROUTE_SPLIT,
   },
   {
     id: "spec-refine.split-choice",
@@ -1709,6 +1811,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: IDEATION_GATE,
     attribution: SPEC_ATTRIBUTION,
+    route_control: ROUTE_IDEATION,
     // "Unexplored solution space is not a universal gap": the gate stays shut
     // unless the signal is declared. Offering it always would burn context on a
     // spec whose direction nobody doubts — the document's own words.
@@ -1777,6 +1880,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // front of whoever judges, so the question is asked over a real inventory
     // instead of a recollection.
     attribution: "`aw designs` lists what the workspace already has",
+    route_control: ROUTE_DESIGN,
   },
   {
     id: "spec-refine.design-publication",
@@ -1987,6 +2091,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_NEW_LOOP,
     attribution: PLAN_ATTRIBUTION,
+    route_control: ROUTE_RESEARCH,
   },
   {
     id: "plan-new.batch-eligibility-signal",
@@ -2043,6 +2148,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_SPLIT_GATE,
     attribution: PLAN_ATTRIBUTION,
+    route_control: ROUTE_SPLIT,
   },
   {
     id: "plan-new.split-choice",
@@ -2220,6 +2326,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
     attribution: PLAN_ATTRIBUTION,
+    route_control: ROUTE_RESEARCH,
   },
   {
     id: "plan-refine.preserve-validated",
@@ -2285,6 +2392,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_REFINE_LOOP,
     attribution: PLAN_ATTRIBUTION,
+    route_control: ROUTE_VALIDATION,
     action: {
       invocation: {
         program: "aw",
@@ -2784,6 +2892,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["execute"],
+    route_control: ROUTE_VALIDATION,
     // Running the proofs the plan itself declares is the run verifying its own
     // work: custody covers the `execute`, and the real output stays mandatory.
     custody: "run",
@@ -2826,6 +2935,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
+    route_control: ROUTE_REVIEW,
   },
   {
     id: "plan-exec.batch-close",
@@ -2863,6 +2973,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
+    route_control: ROUTE_VALIDATION,
     // BEFORE Git, and the real walk is what proved it: the registry had inherited
     // an order where the plan was committed and only then validated and stamped.
     // The document says the opposite — "last Batch also runs final validation

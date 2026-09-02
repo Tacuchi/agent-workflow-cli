@@ -200,14 +200,15 @@ describe("F4 — la escalación viaja con su paquete y el destino lo declara con
     ]);
   });
 
-  it("y cada uno es la PRIMERA fila de juicio de su recorrido: se adopta antes de re-derivar nada", () => {
+  it("y cada uno sigue al preview de ruta como la primera fila de juicio del dominio", () => {
     for (const [flow, id] of [
       ["plan-refine", "plan-refine.escalation-adoption"],
       ["spec-refine", "spec-refine.escalation-adoption"],
     ] as const) {
       const journey = journeyOfFlow(flow);
       const judgment = journey.filter((decision) => decision.authority === "agent");
-      expect(judgment[0]?.id).toBe(id);
+      expect(judgment[0]?.id).toBe("chassis.route-evaluation");
+      expect(judgment[1]?.id).toBe(id);
     }
   });
 });
