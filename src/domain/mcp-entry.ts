@@ -316,6 +316,38 @@ export function previousReliableMcpEntry(entry: McpEntry): McpEntry | undefined 
 }
 
 /**
+ * The same descriptor as this installation published under another release.
+ *
+ * A release only rebinds the trailing `--descriptor-generation` value, so an
+ * on-disk entry that differs from the current one in nothing else was written
+ * by this very install: same absolute launcher, same entrypoint, same
+ * namespace, instance, host and scope. Treating it as somebody else's server
+ * would make every upgrade orphan the entries Workline itself wrote.
+ *
+ * Returns the entry as it sits on disk — the exact shape a writer may replace
+ * or retire — or `undefined` when anything beyond that value differs. It is
+ * deliberately blind to which release is newer: the descriptor has to launch
+ * the binary that exists, and rewriting it is an explicit install either way.
+ */
+export function generationVariantMcpEntry(
+  entry: McpEntry,
+  observed: readonly string[],
+): McpEntry | undefined {
+  const flag = entry.args.length - 2;
+  if (flag < 0 || entry.args[flag] !== "--descriptor-generation") return undefined;
+  if (observed.length !== entry.args.length || observed[flag] !== "--descriptor-generation") {
+    return undefined;
+  }
+  const generation = observed[observed.length - 1];
+  if (generation === undefined || generation.length === 0) return undefined;
+  if (generation === entry.args[entry.args.length - 1]) return undefined;
+  if (observed.slice(0, flag).some((arg, index) => arg !== entry.args[index])) return undefined;
+  // Built from `entry`, never from the observation: name, command, env and
+  // `optional` must stay this install's own, and the prefix is already proven equal.
+  return { ...entry, args: [...entry.args.slice(0, -1), generation] };
+}
+
+/**
  * Exact historic Workline descriptors that the migration is allowed to own.
  * This deliberately does not include generic `npx @bytebase/dbhub` entries:
  * those are indistinguishable from a person's independently managed server.

@@ -5,9 +5,10 @@ import {
   type McpWriteOpts,
   type McpWriteResult,
   buildMcpEntry,
+  generationVariantMcpEntry,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
-import { classifyMcpEntry } from "./mcp-entry-classification.js";
+import { type McpEntryClassification, classifyMcpEntry } from "./mcp-entry-classification.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
 import { writeMcpEntry } from "./mcp-host-writer.js";
 import {
@@ -107,12 +108,47 @@ function applySetupEntry(
 ): void {
   const entry = setupEntry(host, connection, input);
   try {
-    const result = writeMcpEntry(host, entry, { scopeDir, kind: input.scope }, opts);
+    const writeOpts = setupWriteOptions(host, entry, connection, scopeDir, input.scope, opts);
+    const result = writeMcpEntry(host, entry, { scopeDir, kind: input.scope }, writeOpts);
     addSetupWrite(result, buckets);
     reportSetupWriteIssue(result, host, connection, entry, scopeDir, input.scope, buckets.errors);
   } catch (err) {
     buckets.errors.push(toErrorRecord(host, connection.name, scopeDir, err));
   }
+}
+
+/**
+ * Install refreshes a descriptor this install published under another release —
+ * same shape, other `--descriptor-generation` — and nothing else. Every other
+ * historic shape stays with `aw mcp migrate`, which previews what it replaces
+ * before touching a configuration a person may not recognize as ours.
+ *
+ * The classifier decides ownership; this only narrows which legacy install may
+ * overwrite. The writer repeats the whole comparison under its own read, so a
+ * file that changes in between is still a conflict rather than an overwrite —
+ * and an unreadable one has to reach the writer too, which degrades it to a
+ * typed conflict naming the exact file. This read is an optimization over what
+ * the writer re-derives anyway, so it is never allowed to be what fails.
+ */
+function setupWriteOptions(
+  host: McpHost,
+  entry: McpEntry,
+  connection: McpConnectionRef,
+  scopeDir: string,
+  scope: McpSetupInput["scope"],
+  opts: McpWriteOpts,
+): McpWriteOpts {
+  let classification: McpEntryClassification;
+  try {
+    const snapshot = readMcpEntry(host, scopeDir, entry.name, scope);
+    classification = classifyMcpEntry(host, snapshot, entry, connection);
+  } catch {
+    return opts;
+  }
+  if (classification.state !== "known-legacy" || classification.legacy === undefined) return opts;
+  return generationVariantMcpEntry(entry, classification.legacy.args) === undefined
+    ? opts
+    : { ...opts, replaceLegacy: classification.legacy };
 }
 
 function setupEntry(host: McpHost, connection: McpConnectionRef, input: McpSetupInput): McpEntry {

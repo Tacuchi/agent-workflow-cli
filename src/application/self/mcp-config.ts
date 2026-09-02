@@ -3,10 +3,12 @@ import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import { MCP_FILE_HOSTS, harnessForMcpHost } from "../../domain/harnesses.js";
 import {
+  type McpEntry,
   type McpEntryState,
   type McpHost,
   type McpInstance,
   buildMcpEntry,
+  generationVariantMcpEntry,
   mcpEntryNameFor,
   normalizeDsnVarName,
   validateDsnVarName,
@@ -23,7 +25,7 @@ import {
   upsertMcpConnection,
 } from "../mcp-connections-service.js";
 import { type McpDoctorResult, runMcpDoctor } from "../mcp-doctor-service.js";
-import { classifyMcpEntry } from "../mcp-entry-classification.js";
+import { type McpEntryClassification, classifyMcpEntry } from "../mcp-entry-classification.js";
 import { type McpEntrySnapshot, readMcpEntry } from "../mcp-host-reader.js";
 import {
   type McpHostReceipt,
@@ -142,6 +144,12 @@ export interface SelfMcpHostStatus {
   reload_required: boolean;
   /** Host config file holding the same-named entry (absent when nothing is registered there). */
   target?: string;
+  /**
+   * Which legacy a `known-legacy` entry is, because the remedy differs: an
+   * install refreshes a `generation` bump in place, while a `historic` shape is
+   * replaced only by `aw mcp migrate`, which previews what it overwrites.
+   */
+  legacy_kind?: "generation" | "historic";
   last_probe?: { outcome: "passed" | "failed"; phase: string; observed_at: string };
   last_host_load_observed?: string;
   /** Failure-only result of the host's native MCP inspection. */
@@ -444,7 +452,9 @@ async function installConnection(
       ...(warpHint ? { warp_hint: warpHint } : {}),
       summary: warpHint
         ? `Conexión '${connection.name}' escrita en ${warpHint.file}. Activá 'File-based MCP Servers' en Warp Settings para que la spawnee.`
-        : `Conexión '${connection.name}' instalada en ${hostLabel(host)}.`,
+        : hasProblems
+          ? `No se instaló '${connection.name}' en ${hostLabel(host)}.${setupProblemNote(setup, ctx.env.homeDir())}`
+          : `Conexión '${connection.name}' instalada en ${hostLabel(host)}.`,
     },
     ...(hasProblems
       ? {
@@ -681,6 +691,24 @@ async function purgeForeignReceipts(
   return errors;
 }
 
+/**
+ * Why an install did not land, in the sentence a surface actually shows. The
+ * summary is what the TUI puts in its toast, so leaving it at "instalada"
+ * turned a refusal into a success message under a failure title.
+ */
+function setupProblemNote(setup: McpSetupResult, home: string): string {
+  const conflicts = setup.conflicts.map(
+    (conflict) => `${hostLabel(conflict.host)} (${homeRelative(conflict.target, home)})`,
+  );
+  const conflictNote =
+    conflicts.length === 0
+      ? ""
+      : ` Ya hay una entrada con ese nombre que Workline no puede reemplazar en: ${conflicts.join(", ")}.`;
+  const errorNote =
+    setup.errors.length === 0 ? "" : ` ${setup.errors.length} error(es) de escritura.`;
+  return `${conflictNote}${errorNote}`;
+}
+
 function removalReloadNotice(remove: McpRemoveResult): string {
   const requirements = remove.reload_required ?? [];
   if (requirements.length === 0) return "";
@@ -785,11 +813,31 @@ function installStatus(
   const snapshot = readMcpEntry(host, ctx.env.homeDir(), entry.name, "global");
   const classification = classifyMcpEntry(host, snapshot, entry, connection);
   const status = lifecycleStatus(classification.state, snapshot, receiptLedger, host, connection);
+  const kind = legacyKindOf(entry, classification);
   // The file the entry was read from travels with the status, so a consumer can
   // point the person at it — for Claude that may be the historical settings file.
-  return classification.target === undefined
-    ? status
-    : { ...status, target: classification.target };
+  return {
+    ...status,
+    ...(classification.target === undefined ? {} : { target: classification.target }),
+    ...(kind === undefined ? {} : { legacy_kind: kind }),
+  };
+}
+
+/**
+ * Which legacy an owned entry is. Derived from the same predicate the install
+ * path uses to decide what it may replace, so what a surface tells the person
+ * and what a write actually does cannot drift apart.
+ */
+function legacyKindOf(
+  entry: McpEntry,
+  classification: McpEntryClassification,
+): SelfMcpHostStatus["legacy_kind"] {
+  if (classification.state !== "known-legacy" || classification.legacy === undefined) {
+    return undefined;
+  }
+  return generationVariantMcpEntry(entry, classification.legacy.args) === undefined
+    ? "historic"
+    : "generation";
 }
 
 function lifecycleStatus(

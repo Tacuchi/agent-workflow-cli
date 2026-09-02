@@ -8,6 +8,7 @@ import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
 import {
   type McpHost,
   buildMcpEntry,
+  generationVariantMcpEntry,
   knownLegacyMcpEntries,
   mcpEntryShapeForHost,
 } from "../../src/domain/mcp-entry.js";
@@ -34,6 +35,18 @@ function entryArgs(host: McpHost, instance: string, scope: "workspace" | "global
     ...(scope === "global" ? ["--descriptor-generation", "23.0.0"] : []),
   ];
   return scope === "global" ? [TEST_ENTRYPOINT, ...serveArgs] : serveArgs;
+}
+
+/** The same global descriptor as `testEntry`, as an earlier release wrote it. */
+function priorGenerationEntry(host: McpHost) {
+  return buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
+    nodePath: TEST_NODE,
+    entrypoint: TEST_ENTRYPOINT,
+    host,
+    scope: "global",
+    platform: "linux",
+    descriptorGeneration: "22.9.0",
+  });
 }
 
 function testEntry(host: McpHost, scope: "workspace" | "global" = "workspace") {
@@ -176,16 +189,14 @@ describe("readMcpEntry — Claude (global scope = ~/.claude.json)", () => {
     expect(snap.args).toEqual(entryArgs("claude", "alpha", "global"));
   });
 
-  it("no toma una generación de release no publicada como propia", () => {
+  // Superseded on purpose. This used to assert `foreign` for a descriptor from
+  // another release, which made every CLI upgrade turn Workline's own entries
+  // into somebody else's: install refused them and remove dropped the registry
+  // entry while the descriptor stayed on disk. Authorship is the shape plus the
+  // absolute launcher path, not the release that wrote it.
+  it("reconoce como propio, y reemplazable, un descriptor de otra generación de este mismo install", () => {
     const current = testEntry("claude", "global");
-    const prior = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
-      nodePath: TEST_NODE,
-      entrypoint: TEST_ENTRYPOINT,
-      host: "claude",
-      scope: "global",
-      platform: "linux",
-      descriptorGeneration: "22.9.0",
-    });
+    const prior = priorGenerationEntry("claude");
     writeFileSync(
       join(scopeDir, ".claude.json"),
       JSON.stringify({ mcpServers: { alpha: mcpEntryShapeForHost("claude", prior) } }),
@@ -197,8 +208,138 @@ describe("readMcpEntry — Claude (global scope = ~/.claude.json)", () => {
       dsnVar: "ALPHA_DATABASE_URL",
     });
 
+    expect(classified.state).toBe("known-legacy");
+    // The writer replaces or retires ONLY this exact shape, so the classifier
+    // must hand back the descriptor as it sits on disk.
+    expect(classified.legacy).toEqual(prior);
+  });
+
+  // The two guards that keep a stranger's descriptor from being claimed as ours
+  // are independent, so each needs a case that varies ONLY what it protects.
+  it("una generación distinta no alcanza: otro binario de node sigue siendo ajeno", () => {
+    const foreign = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
+      nodePath: "/opt/homebrew/bin/node",
+      entrypoint: TEST_ENTRYPOINT,
+      host: "claude",
+      scope: "global",
+      platform: "linux",
+      descriptorGeneration: "22.9.0",
+    });
+    writeFileSync(
+      join(scopeDir, ".claude.json"),
+      JSON.stringify({ mcpServers: { alpha: mcpEntryShapeForHost("claude", foreign) } }),
+    );
+
+    const snapshot = readMcpEntry("claude", scopeDir, "alpha", "global");
+    const classified = classifyMcpEntry("claude", snapshot, testEntry("claude", "global"), {
+      name: "alpha",
+      dsnVar: "ALPHA_DATABASE_URL",
+    });
+
+    // The command lives outside `args`, so only the shape deep-equal catches it.
     expect(classified.state).toBe("foreign");
   });
+
+  it("el prefijo de argumentos decide: otro entrypoint no es una variante de generación", () => {
+    const current = testEntry("claude", "global");
+    expect(
+      generationVariantMcpEntry(current, [
+        "/otro/install/dist/cli/main.js",
+        ...current.args.slice(1, -1),
+        "22.9.0",
+      ]),
+    ).toBeUndefined();
+    // …and the same observation with the real prefix IS one.
+    expect(
+      generationVariantMcpEntry(current, [...current.args.slice(0, -1), "22.9.0"])?.args.at(-1),
+    ).toBe("22.9.0");
+  });
+
+  it("una generación distinta no alcanza: otro entrypoint sigue siendo ajeno", () => {
+    const foreign = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
+      nodePath: TEST_NODE,
+      entrypoint: "/otro/install/dist/cli/main.js",
+      host: "claude",
+      scope: "global",
+      platform: "linux",
+      descriptorGeneration: "22.9.0",
+    });
+    writeFileSync(
+      join(scopeDir, ".claude.json"),
+      JSON.stringify({ mcpServers: { alpha: mcpEntryShapeForHost("claude", foreign) } }),
+    );
+
+    const snapshot = readMcpEntry("claude", scopeDir, "alpha", "global");
+    const classified = classifyMcpEntry("claude", snapshot, testEntry("claude", "global"), {
+      name: "alpha",
+      dsnVar: "ALPHA_DATABASE_URL",
+    });
+
+    expect(classified.state).toBe("foreign");
+  });
+});
+
+// A release upgrade is the only way these appear in the wild, and what the
+// writer needs back is the descriptor byte-for-byte as the older release wrote
+// it — including codex's `required = false` and its empty env table.
+describe("classifyMcpEntry — descriptor de otra generación, contra el writer real", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-generation-variant-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  for (const host of ["claude", "codex"] as McpHost[]) {
+    it(`${host}: es known-legacy y el writer acepta reemplazarlo`, () => {
+      const prior = priorGenerationEntry(host);
+      writeMcpEntry(host, prior, { scopeDir, kind: "global" }, {});
+
+      const snapshot = readMcpEntry(host, scopeDir, prior.name, "global");
+      const classified = classifyMcpEntry(host, snapshot, testEntry(host, "global"), {
+        name: "alpha",
+        dsnVar: "ALPHA_DATABASE_URL",
+      });
+      expect(classified.state).toBe("known-legacy");
+
+      const replaced = writeMcpEntry(
+        host,
+        testEntry(host, "global"),
+        { scopeDir, kind: "global" },
+        { replaceLegacy: classified.legacy },
+      );
+      expect(replaced.action).toBe("written");
+      const after = readMcpEntry(host, scopeDir, prior.name, "global");
+      expect(
+        classifyMcpEntry(host, after, testEntry(host, "global"), {
+          name: "alpha",
+          dsnVar: "ALPHA_DATABASE_URL",
+        }).state,
+      ).toBe("current");
+    });
+
+    it(`${host}: una generación MÁS NUEVA también es propia (downgrade del binario)`, () => {
+      const newer = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
+        nodePath: TEST_NODE,
+        entrypoint: TEST_ENTRYPOINT,
+        host,
+        scope: "global",
+        platform: "linux",
+        descriptorGeneration: "99.0.0",
+      });
+      writeMcpEntry(host, newer, { scopeDir, kind: "global" }, {});
+
+      const snapshot = readMcpEntry(host, scopeDir, newer.name, "global");
+      const classified = classifyMcpEntry(host, snapshot, testEntry(host, "global"), {
+        name: "alpha",
+        dsnVar: "ALPHA_DATABASE_URL",
+      });
+
+      expect(classified.state).toBe("known-legacy");
+      expect(classified.legacy).toEqual(newer);
+    });
+  }
 });
 
 describe("readMcpEntry — Codex", () => {

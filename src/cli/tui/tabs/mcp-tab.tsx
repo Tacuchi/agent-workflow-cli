@@ -6,6 +6,7 @@ import { testMcpConnection } from "../../../application/mcp-test-connection-serv
 import {
   type SelfMcpConfigData,
   type SelfMcpConnectionView,
+  type SelfMcpHostStatus,
   isDsnVisible,
   selfMcpConfig,
 } from "../../../application/self/mcp-config.js";
@@ -741,15 +742,33 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
   }
 }
 
+/** Where a same-named entry actually lives, and whose it is — the two things a bare state name never says. */
+function entryOrigin(state: SelfMcpHostStatus, home: string): string {
+  if (state.target === undefined) return "";
+  const file = homeRelative(state.target, home);
+  if (state.entry_state === "foreign") return ` · ajena en ${file}`;
+  if (state.legacy_kind === "generation") return ` · de otra versión en ${file}`;
+  if (state.legacy_kind === "historic") return ` · descriptor histórico en ${file}`;
+  return "";
+}
+
+/** One line per remedy, naming the hosts it applies to rather than "that host". */
+function recoveryLine(
+  connection: SelfMcpConnectionView,
+  kind: NonNullable<SelfMcpHostStatus["legacy_kind"]>,
+  remedy: string,
+): string[] {
+  const hosts = HOST_CHOICES.filter(
+    (host) => connection.host_status[host].legacy_kind === kind,
+  ).map(mcpHostLabel);
+  return hosts.length === 0 ? [] : [`Acción: ${hosts.join(", ")} ${remedy}`];
+}
+
 function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): string {
   const hostStates = HOST_CHOICES.map((host) => {
     const state = connection.host_status[host];
     // A same-named entry Workline did not write: say WHERE it is — "conflict"
     // alone reads like a warning and leaves the person guessing.
-    const foreign =
-      state.entry_state === "foreign" && state.target !== undefined
-        ? ` · ajena en ${homeRelative(state.target, home)}`
-        : "";
     const receiptFailure =
       state.receipt_failure === undefined
         ? ""
@@ -758,7 +777,7 @@ function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): 
       state.native_check_failure === undefined
         ? ""
         : ` (native/${state.native_check_failure.code} @ ${state.native_check_failure.observed_at})`;
-    return `${mcpHostLabel(host)}: ${state.state}${foreign}${receiptFailure}${nativeFailure}`;
+    return `${mcpHostLabel(host)}: ${state.state}${entryOrigin(state, home)}${receiptFailure}${nativeFailure}`;
   });
   const conflictRecovery = HOST_CHOICES.some(
     (host) => connection.host_status[host].entry_state === "foreign",
@@ -767,6 +786,19 @@ function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): 
         `Acción: la entrada '${connection.server_name}' marcada ajena no la escribió Workline y no se toca; borrala o renombrala a mano en el archivo indicado de cada host y reinstalá.`,
       ]
     : [];
+  // Two legacies, two remedies. Saying "reinstall" for a historic shape would
+  // send the reader in a loop: install refuses it on purpose, and only the
+  // migration replaces it — with a preview of what it overwrites.
+  const outdatedRecovery = recoveryLine(
+    connection,
+    "generation",
+    "quedó con un descriptor de otra versión de Workline; reinstalá la conexión desde este panel para actualizarlo.",
+  );
+  const historicRecovery = recoveryLine(
+    connection,
+    "historic",
+    "conserva un descriptor histórico de Workline; instalar no lo reemplaza, corré 'agent-workflow mcp migrate'.",
+  );
   const probes = HOST_CHOICES.flatMap((host) => {
     const state = connection.host_status[host];
     return state.last_probe === undefined
@@ -801,6 +833,8 @@ function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): 
     ...hostStates,
     ...(probes.length === 0 ? ["last probe: —"] : probes.map((probe) => `last probe: ${probe}`)),
     ...conflictRecovery,
+    ...outdatedRecovery,
+    ...historicRecovery,
     ...receiptRecovery,
     ...nativeRecovery,
     ...reloadHints,

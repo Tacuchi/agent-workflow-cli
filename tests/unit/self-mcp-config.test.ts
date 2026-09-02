@@ -8,6 +8,7 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { type SelfMcpPrompts, selfMcpConfig } from "../../src/application/self/mcp-config.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { knownLegacyMcpEntries, mcpEntryShapeForHost } from "../../src/domain/mcp-entry.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
@@ -136,6 +137,29 @@ function expectReliableDescriptor(
     readPackageVersion(),
   ]);
   expect(descriptor.env).toEqual({});
+}
+
+/** Rewrites a host descriptor as an earlier release of this same install wrote it. */
+function downgradeClaudeGeneration(home: string, name: string): void {
+  const file = join(home, ".claude.json");
+  const data = JSON.parse(readFileSync(file, "utf-8")) as {
+    mcpServers: Record<string, { args: string[] }>;
+  };
+  const args = data.mcpServers[name]?.args;
+  if (args === undefined) throw new Error(`no claude descriptor for ${name}`);
+  args[args.length - 1] = "0.0.1";
+  writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
+}
+
+function downgradeCodexGeneration(home: string, version: string): void {
+  const file = join(home, ".codex", "config.toml");
+  const raw = readFileSync(file, "utf-8");
+  const next = raw.replace(
+    `"--descriptor-generation", "${version}"`,
+    '"--descriptor-generation", "0.0.1"',
+  );
+  if (next === raw) throw new Error("codex descriptor did not carry the current generation");
+  writeFileSync(file, next, "utf-8");
 }
 
 describe("selfMcpConfig", () => {
@@ -647,6 +671,93 @@ describe("selfMcpConfig", () => {
     expect(readFileSync(join(home, ".codex", "config.toml"), "utf-8")).toContain("@bytebase/dbhub");
     expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).not.toContain("reporting");
     expect(readFileSync(mcpHostReceiptFile(ctx.paths), "utf-8")).not.toContain("reporting");
+  });
+
+  // The whole point of the release binding is that an upgrade rewrites nothing
+  // on disk. What must not happen is that the upgrade turns Workline's own
+  // descriptors into somebody else's: the TUI would say conflict, install would
+  // refuse, and remove would drop the registry entry with the descriptor still
+  // in the host config.
+  it("tras un upgrade del CLI el descriptor propio queda legacy, install lo actualiza y remove lo retira", async () => {
+    const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await registerReporting(ctx);
+    await selfMcpConfig(
+      buildArgs(["mcp", "install-claude"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+    await selfMcpConfig(buildArgs(["mcp", "install-codex"], { name: "reporting" }), ctx, prompts());
+
+    // The upgrade: the entries stay exactly as the previous release wrote them.
+    downgradeClaudeGeneration(home, "reporting");
+    downgradeCodexGeneration(home, readPackageVersion());
+
+    const listed = await selfMcpConfig(buildArgs(["mcp", "list"]), ctx, prompts());
+    if (!listed.ok) throw new Error("expected ok");
+    const stale = listed.data.connections?.[0]?.host_status;
+    expect(stale?.claude.state).toBe("legacy");
+    expect(stale?.claude.entry_state).toBe("known-legacy");
+    expect(stale?.claude.target).toBe(join(home, ".claude.json"));
+    // What the surfaces need to route the person: an install refreshes this one.
+    expect(stale?.claude.legacy_kind).toBe("generation");
+    expect(stale?.codex.state).toBe("legacy");
+    expect(stale?.codex.legacy_kind).toBe("generation");
+
+    const reinstalled = await selfMcpConfig(
+      buildArgs(["mcp", "install-claude"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+    expect(reinstalled.ok).toBe(true);
+    if (!reinstalled.ok) throw new Error("expected ok");
+    expect(reinstalled.data.connection?.host_status.claude.entry_state).toBe("current");
+    // Codex was left stale on purpose: remove must still retire it cleanly.
+    expect(reinstalled.data.connection?.host_status.codex.entry_state).toBe("known-legacy");
+
+    const removed = await selfMcpConfig(
+      buildArgs(["mcp", "remove"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+    expect(removed.ok).toBe(true);
+    if (!removed.ok) throw new Error("expected ok");
+    expect(removed.data.remove?.conflicts).toEqual([]);
+    expect(removed.data.preserved_foreign).toBeUndefined();
+    expect(readFileSync(join(home, ".claude.json"), "utf-8")).not.toContain('"reporting"');
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf-8")).not.toContain(
+      "mcp_servers.reporting",
+    );
+    expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).not.toContain("reporting");
+  });
+
+  it("una forma histórica se marca como tal: la migración la reemplaza, no el install", async () => {
+    const legacy = knownLegacyMcpEntries("reporting", "REPORTING_DATABASE_URL")[0];
+    if (legacy === undefined) throw new Error("expected a known legacy shape");
+    const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await registerReporting(ctx);
+    writeFileSync(
+      join(home, ".claude.json"),
+      `${JSON.stringify({ mcpServers: { reporting: mcpEntryShapeForHost("claude", legacy) } }, null, 2)}\n`,
+      "utf-8",
+    );
+
+    const listed = await selfMcpConfig(buildArgs(["mcp", "list"]), ctx, prompts());
+    if (!listed.ok) throw new Error("expected ok");
+    const status = listed.data.connections?.[0]?.host_status.claude;
+    expect(status?.state).toBe("legacy");
+    expect(status?.legacy_kind).toBe("historic");
+
+    // And the refusal says so: the summary is what the TUI shows as the body of
+    // its toast, so it must not read "instalada" under an "Install failed" title.
+    const refused = await selfMcpConfig(
+      buildArgs(["mcp", "install-claude"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+    expect(refused.ok).toBe(false);
+    expect(refused.data?.summary).toContain("No se instaló 'reporting'");
+    expect(refused.data?.summary).toContain("~/.claude.json");
+    expect(refused.data?.summary).not.toContain("instalada en");
   });
 
   it("crear DSN env var sólo devuelve comandos de ayuda y no registra conexión", async () => {

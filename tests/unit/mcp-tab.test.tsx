@@ -197,6 +197,100 @@ describe("McpTab — user-scope install", () => {
     expect(frame).toContain("Acción: la entrada 'gamma' marcada ajena no la escribió Workline");
   });
 
+  it("una entrada de otra versión dice de dónde salió y que se arregla reinstalando", async () => {
+    // After a CLI upgrade the descriptor is still ours, one release behind. The
+    // panel must not leave the reader with a bare "legacy" and reload hints that
+    // cannot change a file.
+    const stale = {
+      nombre: "delta",
+      server_name: "delta",
+      dsn_var: "DELTA_DATABASE_URL",
+      dsn_visible: true,
+      instalado: {
+        claude: "drift",
+        codex: "no",
+        warp: "no",
+        gemini: "no",
+        opencode: "no",
+        crush: "no",
+        kimi: "no",
+      },
+      host_status: {
+        ...registeredHostStatus(),
+        claude: {
+          state: "legacy",
+          entry_state: "known-legacy",
+          legacy_kind: "generation",
+          launchable: false,
+          reload_required: true,
+          target: "/home/test/.claude.json",
+        },
+      },
+    };
+    vi.mocked(selfMcpConfig).mockResolvedValueOnce({
+      ok: true,
+      data: { connections: [stale] },
+    } as never);
+
+    const { lastFrame, stdin } = render(<McpTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const frame = (lastFrame() ?? "").replace(/[│]/g, "").replace(/\s+/g, " ");
+    expect(frame).toContain("Claude Code: legacy · de otra versión en ~/.claude.json");
+    expect(frame).toContain("Acción: Claude Code quedó con un descriptor de otra versión");
+    expect(frame).toContain("reinstalá");
+    // Reinstalling is what install actually does here, so it must not send the
+    // reader to the migration instead.
+    expect(frame).not.toContain("mcp migrate");
+  });
+
+  it("un descriptor histórico manda a la migración, no a reinstalar", async () => {
+    // Install refuses this shape on purpose: only `mcp migrate` replaces it,
+    // and it previews what it overwrites. Telling the reader to reinstall would
+    // be advice the code is built to reject.
+    const historic = {
+      nombre: "epsilon",
+      server_name: "epsilon",
+      dsn_var: "EPSILON_DATABASE_URL",
+      dsn_visible: true,
+      instalado: {
+        claude: "drift",
+        codex: "no",
+        warp: "no",
+        gemini: "no",
+        opencode: "no",
+        crush: "no",
+        kimi: "no",
+      },
+      host_status: {
+        ...registeredHostStatus(),
+        claude: {
+          state: "legacy",
+          entry_state: "known-legacy",
+          legacy_kind: "historic",
+          launchable: false,
+          reload_required: true,
+          target: "/home/test/.claude.json",
+        },
+      },
+    };
+    vi.mocked(selfMcpConfig).mockResolvedValueOnce({
+      ok: true,
+      data: { connections: [historic] },
+    } as never);
+
+    const { lastFrame, stdin } = render(<McpTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const frame = (lastFrame() ?? "").replace(/[│]/g, "").replace(/\s+/g, " ");
+    expect(frame).toContain("Claude Code: legacy · descriptor histórico en ~/.claude.json");
+    expect(frame).toContain("Acción: Claude Code conserva un descriptor histórico");
+    expect(frame).toContain("mcp migrate");
+    expect(frame).not.toContain("reinstalá la conexión desde este panel");
+  });
+
   it("un remove que falla muestra el resumen del backend, no el error crudo", async () => {
     const onToast = vi.fn();
     const { stdin } = render(<McpTab ctx={ctx} isActive onToast={onToast} />);

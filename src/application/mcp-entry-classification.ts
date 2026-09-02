@@ -4,6 +4,7 @@ import {
   type McpEntry,
   type McpEntryState,
   type McpHost,
+  generationVariantMcpEntry,
   knownLegacyMcpEntries,
   mcpEntryShapeForHost,
   previousReliableMcpEntry,
@@ -81,6 +82,17 @@ function classifyShape(
     isDeepStrictEqual(snapshot.raw, mcpEntryShapeForHost(host, previous))
   ) {
     return { state: "known-legacy", legacy: previous };
+  }
+  // A descriptor this install published under an earlier (or later) release:
+  // identical but for the generation value. It is ours and replaceable — the
+  // release binding exists so a stale binary cannot confirm a host load, which
+  // the argv check on that path still enforces, not to disown our own entries.
+  const variant = generationVariantMcpEntry(current, snapshot.args);
+  if (
+    variant !== undefined &&
+    isDeepStrictEqual(snapshot.raw, mcpEntryShapeForHost(host, variant))
+  ) {
+    return { state: "known-legacy", legacy: variant };
   }
   const legacy = knownLegacyMcpEntries(connection.name, connection.dsnVar).find((entry) =>
     isDeepStrictEqual(snapshot.raw, mcpEntryShapeForHost(host, entry)),
