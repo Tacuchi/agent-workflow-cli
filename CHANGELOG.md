@@ -4,6 +4,17 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.1.0] — 2026-09-02
+
+### Added
+
+- **`aw flow` incorpora una ruta adaptativa sellada.** Antes de QUICK, SPEC-refine y PLAN, el agente propone sólo controles metodológicos relevantes con recomendación, alternativas, consecuencias y riesgo; la persona acepta toda la ruta o la ajusta sin mover cursor ni efectos. Los gates sin configuración siguen duros.
+- **La calidad de evidencia se separa del cierre.** El estado y la directiva registran propuesta, decisiones y `assurance` (`verified`, `partially_verified`, `unverified_accepted`). Una omisión aceptada queda visible como evidencia no ejecutada; una sustitución sólo llega a `verified` al cruzar su propio veredicto. `status`, `resume` y el sello de PLAN nunca presentan evidencia ausente como aprobada.
+
+### Changed
+
+- **SPEC conserva el qué y PLAN el cómo.** Las restricciones técnicas decididas quedan como entrada mínima de PLAN; los planes disponen de `## Implementation decisions`, y QUICK mantiene excepciones de ruta en `DECISION` y `CHECKPOINT` sin crear un documento técnico adicional.
+
 ## [25.0.1] — 2026-09-01
 
 ### Fixed
