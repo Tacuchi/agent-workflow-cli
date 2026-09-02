@@ -10,8 +10,8 @@ export const ROUTE_DISPOSITIONS = ["apply", "omit", "substitute"] as const;
 
 export type RouteDisposition = (typeof ROUTE_DISPOSITIONS)[number];
 
-export const ROUTE_ACCEPT_LABEL = "Aceptar ruta";
-export const ROUTE_ADJUST_LABEL = "Ajustar ruta";
+export const ROUTE_ACCEPT_LABEL = "Aceptar propuesta";
+export const ROUTE_ADJUST_LABEL = "Pedir ajustes";
 
 export const ASSURANCE_STATUSES = [
   "verified",
@@ -29,6 +29,13 @@ export interface RouteControlConfiguration {
 
 /** What the agent reports before a person accepts the route. */
 export interface RouteProposal {
+  /**
+   * The user-facing explanation shown before any choice.
+   *
+   * Optional only so an in-flight v11 run written before this field existed stays
+   * readable. Every new proposal is required to provide it at submit time.
+   */
+  summary?: RouteProposalSummary;
   basis: {
     intention: string;
     checkout: string;
@@ -36,6 +43,12 @@ export interface RouteProposal {
     adopted_decisions: string;
   };
   controls: RouteProposalControl[];
+}
+
+export interface RouteProposalSummary {
+  finding: string;
+  diagnosis: string;
+  solution: string;
 }
 
 export interface RouteProposalControl {

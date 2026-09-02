@@ -24,6 +24,7 @@ import {
   realizationOf,
 } from "../../src/domain/flow/authority.js";
 import { PAUSE_LABEL, STOP_LABEL } from "../../src/domain/flow/directive.js";
+import { ROUTE_ACCEPT_LABEL } from "../../src/domain/flow/route.js";
 import { docsBoundaryBreach } from "../../src/domain/flow/rules.js";
 import { MAX_BOUNDARY_ATTEMPTS, newRunState } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -60,7 +61,7 @@ const CODE = "008";
 const SRC = resolve(__dirname, "..", "..");
 
 /** Cross the new route boundary so legacy chassis cases exercise their own gate. */
-async function acceptDefaultRoute(paths: PathsService): Promise<void> {
+async function acceptDefaultRoute(paths: PathsService, choice = ROUTE_ACCEPT_LABEL): Promise<void> {
   const current = await readRun(fs, locateRun(paths, SESSION));
   if (!current.ok) throw new Error(current.failure.code);
   const initial = resolveBoundary(current.state, journeyOfFlow(current.state.flow));
@@ -70,6 +71,11 @@ async function acceptDefaultRoute(paths: PathsService): Promise<void> {
       input_digest: initial.seal,
       decisions: {
         route: {
+          summary: {
+            finding: "la corrida necesita acordar cómo se realizará el trabajo",
+            diagnosis: "los controles opcionales dependen del alcance concreto",
+            solution: "continuar con los controles relevantes declarados por la corrida",
+          },
           basis: {
             intention: "fixture",
             checkout: "fixture",
@@ -88,7 +94,7 @@ async function acceptDefaultRoute(paths: PathsService): Promise<void> {
   const review = resolveBoundary(reviewed.state, journeyOfFlow(reviewed.state.flow));
   const accepted = await submitFlow(fs, paths, {
     code: CODE,
-    raw: JSON.stringify({ input_digest: review.seal, choice: "Aceptar ruta" }),
+    raw: JSON.stringify({ input_digest: review.seal, choice }),
     approval: null,
   });
   if (!accepted.ok) throw new Error("esperaba aceptación de ruta");
@@ -675,6 +681,16 @@ describe("la corrida real cruza las filas transversales", () => {
       expect(step.ownership).toBe("cli-owned");
     }
     expect(adopted.directive.boundary.transition).toBe("chassis.route-evaluation");
+  });
+
+  it("acepta la etiqueta anterior sólo para una pregunta que quedó abierta durante el upgrade", async () => {
+    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptDefaultRoute(paths, "Aceptar ruta");
+    const current = await readRun(fs, locateRun(paths, SESSION));
+    if (!current.ok) throw new Error(current.failure.code);
+    expect(current.state.route_decisions).toEqual([]);
+    expect(current.state.applied).toContain("chassis.route-evaluation");
   });
 
   it("el cierre es el último paso pendiente de toda jornada", () => {

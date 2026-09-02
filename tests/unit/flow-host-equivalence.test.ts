@@ -187,6 +187,11 @@ function answerFor(
           stopped.id === "chassis.route-evaluation"
             ? {
                 route: {
+                  summary: {
+                    finding: "ambas superficies recibieron la misma corrida",
+                    diagnosis: "la equivalencia exige la misma propuesta sellada",
+                    solution: "continuar sin controles opcionales en ambas superficies",
+                  },
                   basis: {
                     intention: "equivalencia",
                     checkout: "fixture",

@@ -12,6 +12,7 @@ import {
   applyTransition,
   newRunState,
   parseRunState,
+  serializeRunState,
   withBoundary,
   withRouteDecisions,
   withRouteProposal,
@@ -55,6 +56,13 @@ const hardGate: FlowDecision = {
 };
 
 const proposal = {
+  summary: {
+    finding: "la página no necesita infraestructura adicional",
+    diagnosis:
+      "agregar un framework o una suite nueva ampliaría el trabajo sin mejorar el resultado",
+    solution:
+      "resolverla con HTML, CSS y JavaScript y validar el resultado con un smoke proporcional",
+  },
   basis: {
     intention: "una página estática sin dependencias",
     checkout: "checkout limpio y aislado",
@@ -78,10 +86,15 @@ const proposal = {
 
 describe("ruta adaptativa", () => {
   it("sella una propuesta, pide aceptación humana y ajustar no mueve el cursor", () => {
+    expect(ROUTE_ACCEPT_LABEL).toBe("Aceptar propuesta");
+    expect(ROUTE_ADJUST_LABEL).toBe("Pedir ajustes");
     const journey = [routeGate, validation, hardGate];
     const initial = advanceFlowRun({ state: newRunState("quick", "001-ruta-quick"), journey });
     if (!initial.ok) throw new Error(initial.failure.code);
     expect(initial.directive.boundary.kind).toBe("semantic");
+    expect(initial.directive.request?.contract).toContain(
+      "summary { finding, diagnosis, solution }",
+    );
 
     const review = advanceFlowRun({ state: withRouteProposal(initial.state, proposal), journey });
     if (!review.ok) throw new Error(review.failure.code);
@@ -153,5 +166,13 @@ describe("ruta adaptativa", () => {
         },
       ]),
     ).toBe("partially_verified");
+  });
+
+  it("mantiene legible una propuesta v11 en vuelo anterior al resumen explícito", () => {
+    const { summary: _summary, ...previousProposal } = proposal;
+    const state = withRouteProposal(newRunState("quick", "001-ruta-quick"), previousProposal);
+    const parsed = parseRunState(serializeRunState(state));
+    if (!parsed.ok) throw new Error(parsed.failure.code);
+    expect(parsed.state.route_proposal?.summary).toBeUndefined();
   });
 });

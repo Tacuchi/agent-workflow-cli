@@ -891,7 +891,7 @@ function planDoneClosure(state: FlowRunState, session: string): string {
       (substitution): substitution is NonNullable<typeof substitution> => substitution !== null,
     );
   if (state.assurance === "unverified_accepted") {
-    return `evidencia omitida por ruta aceptada (${omitted.join("; ") || "sin detalle"}); commits e integración acreditados por la corrida ${session}; no se afirma que la validación pasó`;
+    return `evidencia omitida en la propuesta aceptada (${omitted.join("; ") || "sin detalle"}); commits e integración acreditados por la corrida ${session}; no se afirma que la validación pasó`;
   }
   if (state.assurance === "partially_verified") {
     return `validación sustituta pendiente (${substitutions.map((substitution) => substitution.validation).join(", ") || "sin detalle"}); riesgo aceptado: ${substitutions.map((substitution) => substitution.risk).join(", ") || "assurance parcial"}; commits e integración acreditados por la corrida ${session}`;

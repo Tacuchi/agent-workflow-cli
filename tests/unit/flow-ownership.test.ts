@@ -171,8 +171,13 @@ describe("una transición sin propiedad del CLI bloquea, no vuelve a la doctrina
     const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey });
     if (!result.ok) throw new Error("esperaba la frontera bloqueada");
     const human = renderDirectiveHuman(result.directive);
-    expect(human).toContain("fixture.migrada (cli · cli-owned)");
-    expect(human).toContain("detenido en fixture.sin-propiedad");
+    expect(human).not.toContain("fixture.migrada (cli · cli-owned)");
+    expect(human).toContain("el paso cuya propiedad el registro no declara");
+    // Un error de integridad sí nombra la identidad exacta que hay que reparar.
+    expect(human).toContain("fixture.sin-propiedad");
+    const detailed = renderDirectiveHuman(result.directive, true);
+    expect(detailed).toContain("fixture.migrada (cli · cli-owned)");
+    expect(detailed).toContain("detalle interno: fixture.sin-propiedad");
     // The line that used to send the reader to a document is gone with it.
     expect(human).not.toContain("fallback declarado");
     expect(human).not.toContain("loops/CODE-POLICIES.md");

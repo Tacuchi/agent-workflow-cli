@@ -1722,10 +1722,10 @@ function checkV11RecordShape(
   invalid: (why: string) => CapabilityFailure,
 ): CapabilityFailure | null {
   if (!isRouteProposal(parsed.route_proposal)) {
-    return invalid("declara una propuesta de ruta sin controles o consecuencias trazables");
+    return invalid("declara una propuesta de solución con resumen, contexto o controles inválidos");
   }
   if (!isRouteDecisionArray(parsed.route_decisions)) {
-    return invalid("declara decisiones de ruta sin una disposición o sustitución válida");
+    return invalid("declara decisiones de la propuesta sin una disposición o sustitución válida");
   }
   if (!isAssuranceStatus(parsed.assurance)) {
     return invalid("declara un assurance que no representa su evidencia");
@@ -1756,6 +1756,15 @@ function isRouteSubstitution(value: unknown): value is RouteSubstitution {
 function isRouteProposal(value: unknown): value is RouteProposal | null {
   if (value === null) return true;
   if (!isRecord(value) || !isRecord(value.basis) || !Array.isArray(value.controls)) return false;
+  if (
+    value.summary !== undefined &&
+    (!isRecord(value.summary) ||
+      !isNonEmptyString(value.summary.finding) ||
+      !isNonEmptyString(value.summary.diagnosis) ||
+      !isNonEmptyString(value.summary.solution))
+  ) {
+    return false;
+  }
   if (
     !isNonEmptyString(value.basis.intention) ||
     !isNonEmptyString(value.basis.checkout) ||

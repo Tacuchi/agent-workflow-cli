@@ -17,7 +17,7 @@ import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId, readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, sessionCodeFlag } from "../parser.js";
-import type { CliCommand } from "../registry.js";
+import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail, failSemantic, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -272,12 +272,12 @@ ${CHECKOUT}`,
     );
   },
 
-  renderHuman(result: CommandResult<FlowResult>): string {
+  renderHuman(result: CommandResult<FlowResult>, context: HumanRenderContext): string {
     // Derived from the same payload the JSON carries — never a second narrative.
     if (result.data === undefined) return "";
     const data = result.data;
     if ("proof" in data) return `${renderProofHuman(data)}\n`;
-    return `${renderDirectiveHuman(data)}\n`;
+    return `${renderDirectiveHuman(data, context.detail)}\n`;
   },
 };
 

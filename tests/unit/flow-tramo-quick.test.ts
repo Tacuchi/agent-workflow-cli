@@ -976,6 +976,8 @@ describe("resume y status proyectan la frontera vigente", () => {
     const semantic = await projectRun(fs, paths, SESSION);
     expect(semantic?.boundary).toBe("semantic");
     expect(semantic?.transition).toBe("quick.entry-gate-signal");
+    expect(semantic?.summary).toContain("reconocer cada señal de tamaño");
+    expect(semantic?.summary).not.toContain("quick.entry-gate-signal");
     // Lo que se fija sigue siendo lo mismo —el flag proyectado tiene que ser uno
     // que el comando `flow` LEA, porque proyectar otro deja un comando que no
     // corre— y lo que cambió es cuál: `aw flow` acepta `--code`, la misma
@@ -1003,6 +1005,7 @@ describe("resume y status proyectan la frontera vigente", () => {
     // reconstruirla leyendo prosa.
     expect(execution?.command).toBe(`aw session-artifacts --code ${SESSION}`);
     expect(execution?.summary).toContain("aw flow submit");
+    expect(execution?.summary).not.toContain("quick.session-create");
   });
 
   it("una corrida anterior al cutover no se proyecta: entra por re-adopción", async () => {

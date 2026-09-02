@@ -1,5 +1,3 @@
-# Route
+# Proposal
 
-Propose relevant optional `apply`, `omit`, or `substitute` controls, then accept or
-adjust. Adjusting applies no effects. Unconfigured gates stay hard; omitted
-evidence is never passed.
+Explain finding, diagnosis, solution and control results/risks before choice. Say "proposal", not "route"; hide ids. Adjusting has no effects; gates stay hard; unrun proof stays unverified.

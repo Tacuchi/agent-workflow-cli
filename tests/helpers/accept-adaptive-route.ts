@@ -4,6 +4,7 @@ import { type SubmitFlowInput, submitFlow } from "../../src/application/flow/sub
 import type { PathsService } from "../../src/application/paths-service.js";
 import { journeyForState } from "../../src/domain/flow/authority.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
+import { ROUTE_ACCEPT_LABEL } from "../../src/domain/flow/route.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 
 /** Cross the explicit route preview in fixtures that exercise a later journey row. */
@@ -23,6 +24,11 @@ export async function acceptAdaptiveRoute(
       input_digest: first.seal,
       decisions: {
         route: {
+          summary: {
+            finding: "la corrida necesita acordar cómo se realizará el trabajo",
+            diagnosis: "los controles opcionales dependen del alcance concreto",
+            solution: "continuar con los controles relevantes declarados por la corrida",
+          },
           basis: {
             intention: "fixture route",
             checkout: "fixture checkout",
@@ -45,7 +51,7 @@ export async function acceptAdaptiveRoute(
   }
   const accepted = await submitFlow(fs, paths, {
     code: folder,
-    raw: JSON.stringify({ input_digest: review.seal, choice: "Aceptar ruta" }),
+    raw: JSON.stringify({ input_digest: review.seal, choice: ROUTE_ACCEPT_LABEL }),
     approval: null,
     ...input,
   });

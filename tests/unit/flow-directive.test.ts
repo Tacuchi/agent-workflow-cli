@@ -22,6 +22,7 @@ import {
   buildFlowDirective,
   renderDirectiveHuman,
 } from "../../src/domain/flow/directive.js";
+import { ROUTE_ACCEPT_LABEL, ROUTE_ADJUST_LABEL } from "../../src/domain/flow/route.js";
 import { sealProposal } from "../../src/domain/proposal.js";
 import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 
@@ -180,9 +181,76 @@ describe("directiva de frontera — la forma válida", () => {
     });
     if (!built.ok) throw new Error("esperaba una directiva");
     const human = renderDirectiveHuman(built.directive);
-    expect(human).toContain("quick.entry-gate-signal");
+    expect(human).toContain("reconocer cada señal de tamaño en el objetivo recibido");
+    expect(human).not.toContain("quick.entry-gate-signal");
+    expect(human).not.toContain("quick.session-create");
     expect(human).toContain(built.directive.next_action);
     expect(human).toContain(built.directive.state_digest);
+    expect(renderDirectiveHuman(built.directive, true)).toContain("quick.entry-gate-signal");
+  });
+
+  it("explica la propuesta de solución antes de ofrecer sus opciones", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      boundary: boundary({
+        kind: "human",
+        transition: "chassis.route-evaluation",
+        authority: "human",
+        title: "revisar la propuesta de solución",
+      }),
+      outcome: "needs_input",
+      choices: [
+        choice(ROUTE_ACCEPT_LABEL, "continúa con este enfoque", true, { kind: "continue" }),
+        choice(ROUTE_ADJUST_LABEL, "vuelve a preparar la propuesta", false, {
+          kind: "continue",
+        }),
+      ],
+      route: {
+        proposal: {
+          summary: {
+            finding: "la entrada duplicada existe sólo en la configuración del host",
+            diagnosis: "el registro administrado y el archivo del host no coinciden",
+            solution: "retirar el registro administrado sin tocar la entrada ajena",
+          },
+          basis: {
+            intention: "retirar una conexión MCP",
+            checkout: "repositorio limpio",
+            conventions: "preservar configuración ajena",
+            adopted_decisions: "no reinstalar todavía",
+          },
+          controls: [
+            {
+              transition: "quick.review-findings",
+              title: "releer el cambio con las convenciones del checkout",
+              disposition: "apply",
+              recommendation: "apply",
+              alternatives: {
+                apply: "relee el cambio",
+                omit: "continúa sin esa revisión",
+                substitute: "usa una revisión equivalente",
+              },
+              consequence: "el cambio se revisa antes del cierre",
+              risk: "puede aparecer un hallazgo adicional",
+              reason: "el cambio toca una frontera de configuración",
+              substitution: null,
+            },
+          ],
+        },
+        decisions: [],
+        assurance: "verified",
+      },
+      nextAction: "elegí una alternativa sobre la propuesta explicada",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+    const human = renderDirectiveHuman(built.directive);
+    expect(human).toContain("propuesta de solución:");
+    expect(human).toContain("hallazgo: la entrada duplicada");
+    expect(human).toContain("diagnóstico: el registro administrado");
+    expect(human).toContain("solución: retirar el registro administrado");
+    expect(human).toContain("· Realizar: releer el cambio");
+    expect(human).not.toContain("quick.review-findings");
+    expect(human.indexOf("hallazgo:")).toBeLessThan(human.indexOf(ROUTE_ACCEPT_LABEL));
+    expect(renderDirectiveHuman(built.directive, true)).toContain("quick.review-findings");
   });
 
   it("muestra el preview durable de decisión antes de la elección humana", () => {

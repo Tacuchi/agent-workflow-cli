@@ -902,7 +902,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí basis (intention, checkout, conventions, adopted_decisions) y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:
@@ -993,14 +993,14 @@ function routeChoices(): FlowDirective["choices"] {
     {
       label: ROUTE_ACCEPT_LABEL,
       consequence:
-        "se persiste cada control de la ruta y el recorrido continúa con sus disposiciones acordadas",
+        "se guarda este enfoque y el trabajo continúa con los controles explicados en la propuesta",
       recommended: true,
       outcome: { kind: "continue" },
     },
     {
       label: ROUTE_ADJUST_LABEL,
       consequence:
-        "no avanza el cursor ni aplica efectos; se solicita una propuesta revisada que requiere nueva aceptación",
+        "no se aplica ningún cambio; podés indicar qué corregir antes de recibir una nueva propuesta",
       recommended: false,
       outcome: { kind: "continue" },
     },

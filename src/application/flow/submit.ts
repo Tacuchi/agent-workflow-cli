@@ -820,8 +820,12 @@ function routeAnswer(
 ): RouteAnswer {
   if (!isRouteEvaluation(stopped)) return { kind: "none" };
   if (state.route_proposal !== null) {
-    if (answer.choice === ROUTE_ADJUST_LABEL) return { kind: "adjust" };
-    if (answer.choice === ROUTE_ACCEPT_LABEL) {
+    // Accept a choice emitted by v25.1.0 if the CLI was upgraded while the
+    // question was still open. New directives never display these legacy labels.
+    if (answer.choice === ROUTE_ADJUST_LABEL || answer.choice === "Ajustar ruta") {
+      return { kind: "adjust" };
+    }
+    if (answer.choice === ROUTE_ACCEPT_LABEL || answer.choice === "Aceptar ruta") {
       return {
         kind: "accept",
         decisions: state.route_proposal.controls,
@@ -831,23 +835,41 @@ function routeAnswer(
       kind: "failure",
       failure: {
         code: "FLOW_ROUTE_DECISION_INVALID",
-        message: "la ruta propuesta sólo puede aceptarse completa o ajustarse",
-        action: `elegí '${ROUTE_ACCEPT_LABEL}' o '${ROUTE_ADJUST_LABEL}'; ajustar no aplica efectos ni avanza el cursor`,
+        message: "la propuesta de solución sólo puede aceptarse completa o devolverse para ajustes",
+        action: `elegí '${ROUTE_ACCEPT_LABEL}' o '${ROUTE_ADJUST_LABEL}'; pedir ajustes no aplica efectos ni avanza el trabajo`,
       },
     };
   }
   const candidate = answer.decisions.route;
-  if (!isRecord(candidate) || !isRecord(candidate.basis) || !Array.isArray(candidate.controls)) {
+  if (
+    !isRecord(candidate) ||
+    !isRecord(candidate.summary) ||
+    !isRecord(candidate.basis) ||
+    !Array.isArray(candidate.controls)
+  ) {
     return {
       kind: "failure",
       failure: {
         code: "FLOW_ROUTE_PROPOSAL_INVALID",
-        message: "la evaluación de ruta no trae basis y controls",
+        message: "la propuesta no trae su resumen, contexto y controles",
         action:
-          "devolvé decisions.route con basis { intention, checkout, conventions, adopted_decisions } y controls relevantes",
+          "devolvé decisions.route con summary { finding, diagnosis, solution }, basis { intention, checkout, conventions, adopted_decisions } y controls relevantes",
       },
     };
   }
+  const summary = candidate.summary;
+  const summaryFields = ["finding", "diagnosis", "solution"] as const;
+  if (summaryFields.some((field) => !nonBlank(summary[field]))) {
+    return {
+      kind: "failure",
+      failure: {
+        code: "FLOW_ROUTE_PROPOSAL_INVALID",
+        message: "la propuesta no explica el hallazgo, el diagnóstico y la solución",
+        action: "resumí cada parte para que una persona pueda decidir sin conocer Workline",
+      },
+    };
+  }
+  const declaredSummary = summary as Record<(typeof summaryFields)[number], string>;
   const basis = candidate.basis;
   const basisFields = ["intention", "checkout", "conventions", "adopted_decisions"] as const;
   if (basisFields.some((field) => !nonBlank(basis[field]))) {
@@ -875,7 +897,7 @@ function routeAnswer(
         kind: "failure",
         failure: {
           code: "FLOW_ROUTE_PROPOSAL_INVALID",
-          message: "un control de ruta no nombra transición o disposición válida",
+          message: "un control opcional no nombra transición o disposición válida",
           action: "cada control declara transition, disposition apply|omit|substitute y reason",
         },
       };
@@ -897,7 +919,7 @@ function routeAnswer(
         kind: "failure",
         failure: {
           code: "FLOW_ROUTE_HARD_GATE",
-          message: `'${raw.transition}' no es un control de ruta configurable: sigue siendo un gate duro`,
+          message: `'${raw.transition}' no es un control opcional configurable: sigue siendo un gate duro`,
           action:
             "no intentes omitir autorización, seguridad, privacidad, secretos, trust boundaries, custodia, stale/CAS ni recuperación; sólo proponé controles marcados por el registro",
         },
@@ -921,6 +943,11 @@ function routeAnswer(
   return {
     kind: "proposal",
     proposal: {
+      summary: {
+        finding: declaredSummary.finding.trim(),
+        diagnosis: declaredSummary.diagnosis.trim(),
+        solution: declaredSummary.solution.trim(),
+      },
       basis: {
         intention: declaredBasis.intention.trim(),
         checkout: declaredBasis.checkout.trim(),
@@ -1600,12 +1627,23 @@ function admit(
     resolved.kind === "authorization"
       ? effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? [])
       : null;
+  const acceptedChoices =
+    isRouteEvaluation(stopped) && state.route_proposal !== null
+      ? [
+          ...resolved.choices,
+          ...resolved.choices.flatMap((choice) => {
+            if (choice.label === ROUTE_ACCEPT_LABEL) return [{ ...choice, label: "Aceptar ruta" }];
+            if (choice.label === ROUTE_ADJUST_LABEL) return [{ ...choice, label: "Ajustar ruta" }];
+            return [];
+          }),
+        ]
+      : resolved.choices;
   const parsed = parseFlowAnswer({
     raw: input.raw,
     boundary: resolved.kind,
     decision: stopped,
     seal: resolved.seal,
-    choices: resolved.choices,
+    choices: acceptedChoices,
     approval: input.approval,
     expectedApproval,
     action: resolved.action,

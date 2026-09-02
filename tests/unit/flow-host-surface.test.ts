@@ -108,6 +108,20 @@ describe("la superficie de host solo invoca, transporta y presenta", () => {
     }
     expect(section).toContain("`session`");
     expect(section).toContain("`authorizations`");
+    expect(keys.has("route")).toBe(true);
+    expect(section).toContain("`route.proposal`");
+  });
+
+  it("presenta una propuesta de solución y reserva los ids internos para diagnóstico", async () => {
+    const section = await presentation();
+    const route = await readFile(join(BUNDLE, "modules", "ADAPTIVE-ROUTE.md"), "utf8");
+    expect(section).toContain("solution proposal");
+    expect(section).toContain("Internal ids are diagnostic, not narration");
+    expect(route).toContain("finding, diagnosis, solution");
+    expect(route).toContain('"proposal", not "route"');
+    expect(route).toContain("hide ids");
+    expect(route).toContain("unrun proof stays unverified");
+    expect(route.indexOf("finding")).toBeLessThan(route.indexOf("before choice"));
   });
 
   it("el contrato de presentación no lleva semántica de un host concreto", async () => {

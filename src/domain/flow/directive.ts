@@ -707,44 +707,69 @@ const DIRECTIVE_CHECKS: readonly DirectiveCheck[] = [
  * `renderReceiptHuman` follows, so the prose cannot contradict the structured
  * form: there is no second source for it to disagree with.
  */
-export function renderDirectiveHuman(directive: FlowDirective): string {
+export function renderDirectiveHuman(directive: FlowDirective, detail = false): string {
   return [
-    `${directive.flow} (${directive.tranche}) — frontera ${directive.boundary.kind}: ${directive.outcome}`,
-    ...boundaryLines(directive),
-    ...askLines(directive),
+    directiveHeading(directive),
+    ...boundaryLines(directive, detail),
+    ...askLines(directive, detail),
     ...effectLines(directive),
     `continuidad: ${directive.state_digest}`,
     `siguiente: ${directive.next_action}`,
   ].join("\n");
 }
 
-function boundaryLines(directive: FlowDirective): string[] {
+const BOUNDARY_HEADINGS: Readonly<Record<FlowBoundaryKind, string>> = {
+  semantic: "preparando el siguiente paso",
+  human: "necesita tu decisión",
+  authorization: "necesita autorización",
+  execution: "listo para ejecutar",
+  blocked: "requiere resolver un bloqueo",
+  final: "trabajo completado",
+};
+
+function directiveHeading(directive: FlowDirective): string {
+  return `${directive.flow} — ${BOUNDARY_HEADINGS[directive.boundary.kind]}`;
+}
+
+function boundaryLines(directive: FlowDirective, detail: boolean): string[] {
   const lines: string[] = [];
   if (directive.boundary.transition !== null) {
-    const owner = directive.boundary.ownership === null ? "" : ` · ${directive.boundary.ownership}`;
-    const title = directive.boundary.title === null ? "" : ` — ${directive.boundary.title}`;
-    lines.push(`detenido en ${directive.boundary.transition}${owner}${title}`);
+    if (directive.boundary.title !== null) lines.push(`paso actual: ${directive.boundary.title}`);
+    if (detail) {
+      const owner =
+        directive.boundary.ownership === null ? "" : ` · ${directive.boundary.ownership}`;
+      lines.push(`detalle interno: ${directive.boundary.transition}${owner}`);
+    }
   }
-  if (directive.applied.length > 0) {
-    const trace = directive.applied
-      .map((step) => {
-        const base = `${step.transition} (${step.authority} · ${step.ownership}`;
-        // The omission carries its cause in the same breath: a step that reads
-        // "omitida" and nothing else sends the reader to the registry to find out
-        // why the run did not stop where the doctrine says it stops.
-        return step.outcome === "skipped"
-          ? `${base} · OMITIDA: ${step.reason ?? "sin motivo declarado"})`
-          : `${base})`;
-      })
-      .join(", ");
-    lines.push(`pasos de esta invocación: ${trace}`);
-  }
+  lines.push(...appliedLines(directive, detail));
   if (directive.pending.length > 0) lines.push(`pendientes: ${directive.pending.length}`);
   return lines;
 }
 
+function appliedLines(directive: FlowDirective, detail: boolean): string[] {
+  if (directive.applied.length === 0) return [];
+  if (!detail) {
+    const omitted = directive.applied.filter((step) => step.outcome === "skipped").length;
+    return [
+      `avance de esta invocación: ${directive.applied.length} paso(s) resuelto(s)${omitted === 0 ? "" : `, ${omitted} omitido(s) con motivo registrado`}`,
+    ];
+  }
+  const trace = directive.applied
+    .map((step) => {
+      const base = `${step.transition} (${step.authority} · ${step.ownership}`;
+      // The omission carries its cause in the same breath: a step that reads
+      // "omitida" and nothing else sends the reader to the registry to find out
+      // why the run did not stop where the doctrine says it stops.
+      return step.outcome === "skipped"
+        ? `${base} · OMITIDA: ${step.reason ?? "sin motivo declarado"})`
+        : `${base})`;
+    })
+    .join(", ");
+  return [`pasos de esta invocación: ${trace}`];
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one renderer keeps every visible boundary field in one ordered projection.
-function askLines(directive: FlowDirective): string[] {
+function askLines(directive: FlowDirective, detail: boolean): string[] {
   const lines: string[] = [];
   if (directive.request !== null) {
     lines.push(`contrato de respuesta: ${directive.request.contract}`);
@@ -752,16 +777,31 @@ function askLines(directive: FlowDirective): string[] {
   }
   if (directive.route.proposal !== null) {
     const proposal = directive.route.proposal;
-    lines.push(
-      `ruta evaluada: intención ${proposal.basis.intention}; checkout ${proposal.basis.checkout}; convenciones ${proposal.basis.conventions}; decisiones ${proposal.basis.adopted_decisions}`,
-    );
+    lines.push("propuesta de solución:");
+    if (proposal.summary !== undefined) {
+      lines.push(`hallazgo: ${proposal.summary.finding}`);
+      lines.push(`diagnóstico: ${proposal.summary.diagnosis}`);
+      lines.push(`solución: ${proposal.summary.solution}`);
+    } else {
+      // A v11 proposal already in flight predates the explicit summary. Keep it
+      // readable without pretending its technical basis was a diagnosis.
+      lines.push(`objetivo: ${proposal.basis.intention}`);
+      lines.push(`contexto verificado: ${proposal.basis.checkout}`);
+      lines.push(`convenciones relevantes: ${proposal.basis.conventions}`);
+      lines.push(`decisiones previas: ${proposal.basis.adopted_decisions}`);
+    }
     for (const control of proposal.controls) {
       const substitute =
         control.substitution === null
           ? ""
-          : `; sustitución: ${control.substitution.validation}; riesgo aceptado: ${control.substitution.risk}`;
+          : ` Sustitución: ${control.substitution.validation}. Riesgo aceptado: ${control.substitution.risk}.`;
+      const id = detail ? ` [${control.transition}]` : "";
+      const recommendation =
+        control.disposition === control.recommendation
+          ? ""
+          : ` Recomendación base: ${routeDispositionLabel(control.recommendation)}.`;
       lines.push(
-        `control de ruta ${control.transition}: ${control.disposition} (recomendado: ${control.recommendation}) — ${control.consequence}; riesgo: ${control.risk}${substitute}`,
+        `· ${routeDispositionLabel(control.disposition)}: ${control.title}${id}. Motivo: ${control.reason}. Resultado: ${control.consequence}. Riesgo: ${control.risk}.${recommendation}${substitute}`,
       );
     }
   }
@@ -813,9 +853,19 @@ function askLines(directive: FlowDirective): string[] {
   return lines;
 }
 
+const ROUTE_DISPOSITION_LABELS = {
+  apply: "Realizar",
+  omit: "Omitir",
+  substitute: "Sustituir",
+} as const;
+
+function routeDispositionLabel(disposition: keyof typeof ROUTE_DISPOSITION_LABELS): string {
+  return ROUTE_DISPOSITION_LABELS[disposition];
+}
+
 function effectLines(directive: FlowDirective): string[] {
   const lines: string[] = [];
-  lines.push(`assurance: ${directive.route.assurance}`);
+  lines.push(`estado de evidencia: ${ASSURANCE_LABELS[directive.route.assurance]}`);
   if (directive.authorizations.length > 0) {
     lines.push(`efectos permitidos: ${directive.authorizations.join(", ")}`);
   }
@@ -830,3 +880,9 @@ function effectLines(directive: FlowDirective): string[] {
   }
   return lines;
 }
+
+const ASSURANCE_LABELS: Readonly<Record<AssuranceStatus, string>> = {
+  verified: "verificada",
+  partially_verified: "verificación parcial",
+  unverified_accepted: "no verificada, aceptada explícitamente",
+};

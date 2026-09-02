@@ -137,8 +137,8 @@ export async function projectRun(
     command: invocation ?? `aw flow advance --code ${folder}`,
     summary:
       invocation === null
-        ? `frontera ${resolved.kind} en ${stopped.id} — ${stopped.title}`
-        : `frontera execution en ${stopped.id} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --code ${folder}'`,
+        ? `pendiente: ${stopped.title}`
+        : `pendiente: ${stopped.title} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --code ${folder}'`,
     scope: read.state.scope,
     assurance: read.state.assurance,
   };

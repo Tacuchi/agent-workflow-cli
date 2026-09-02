@@ -961,7 +961,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "chassis.route-evaluation",
     scope: CHASSIS,
-    title: "proponer la ruta adaptativa relevante para esta corrida",
+    title: "preparar una propuesta de solución clara para esta corrida",
     authority: "agent",
     ownership: "cli-owned",
     document: CHASSIS_MD,
