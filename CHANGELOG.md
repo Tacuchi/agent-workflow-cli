@@ -4,6 +4,13 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.1.1] — 2026-09-02
+
+### Fixed
+
+- **La elección adaptativa se presenta como una propuesta de solución comprensible.** Antes de elegir, la vista humana resume hallazgo, diagnóstico, solución, resultado y riesgo; usa «Aceptar propuesta»/«Pedir ajustes» y oculta por defecto ids internos como `quick.review-findings`. `--detail` conserva la traza técnica y las preguntas abiertas por 25.1.0 siguen aceptando sus etiquetas anteriores.
+- **Una entrada MCP ajena homónima ya no deja una conexión imposible de retirar.** La TUI identifica el host y archivo en conflicto, explica la acción manual y `remove` elimina el registro y los recibos de Workline cuando no queda ningún descriptor propio. Las entradas ajenas no se modifican; si una de ellas oculta todavía un descriptor propio, la eliminación sigue fallando de forma segura y conserva el registro con una recuperación concreta.
+
 ## [25.1.0] — 2026-09-02
 
 ### Added
