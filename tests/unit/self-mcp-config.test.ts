@@ -509,9 +509,10 @@ describe("selfMcpConfig", () => {
     expect(result.data.summary).toContain("Restart");
   });
 
-  it("remove conserva una entrada global homónima ajena y reporta eliminación parcial", async () => {
+  it("remove conserva la entrada global homónima ajena, la nombra y borra igual la conexión del registro", async () => {
     // The user has THEIR OWN 'reporting' server in Gemini's global settings —
-    // this tool never wrote it. Remove must not touch it.
+    // this tool never wrote it. Remove must not touch it — and must not let it
+    // keep the Workline connection alive either: it was never ours to resolve.
     const foreign = {
       mcpServers: { reporting: { command: "node", args: ["my-server.js"], env: {} } },
     };
@@ -535,17 +536,117 @@ describe("selfMcpConfig", () => {
       prompts(),
     );
 
-    expect(result.ok).toBe(false);
-    if (result.ok) throw new Error("expected partial failure");
-    expect(result.error?.code).toBe("MCP_REMOVE_PARTIAL");
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
     expect(result.data.preserved_foreign).toEqual(["gemini"]);
     // The foreign entry survives with its relevant bytes intact; ours in claude is gone.
     const gemini = JSON.parse(readFileSync(join(home, ".gemini", "settings.json"), "utf-8"));
     expect(gemini.mcpServers.reporting.args).toEqual(["my-server.js"]);
     expect(readFileSync(join(home, ".claude.json"), "utf-8")).not.toContain('"reporting"');
-    // El registro no se borra mientras queda un host en conflicto: así la TUI y
-    // el CLI pueden mostrar exactamente qué configuración debe resolver la persona.
+    // A foreign homonym is not Workline's to resolve: the connection leaves the
+    // registry anyway, and the summary names the file that kept the foreign entry
+    // so the person knows where to look — the TUI shows exactly this text.
+    expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).not.toContain("reporting");
+    expect(result.data.summary).toContain("Se conservó la entrada ajena homónima en: Gemini CLI");
+    expect(result.data.summary).toContain("~/.gemini/settings.json");
+  });
+
+  it("list nombra el archivo de la entrada ajena en conflicto, incluso en la ubicación legacy de Claude", async () => {
+    // The user's own 'reporting' lives in the historical .claude/settings.json.
+    // The status has to name THAT file: pointing at ~/.claude.json would send the
+    // person to the wrong place.
+    const foreign = {
+      mcpServers: { reporting: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } },
+    };
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "settings.json"),
+      `${JSON.stringify(foreign, null, 2)}\n`,
+      "utf-8",
+    );
+    const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await registerReporting(ctx);
+
+    const result = await selfMcpConfig(buildArgs(["mcp", "list"]), ctx, prompts());
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    const status = result.data.connections?.[0]?.host_status;
+    expect(status?.claude.state).toBe("conflict");
+    expect(status?.claude.entry_state).toBe("foreign");
+    expect(status?.claude.target).toBe(join(home, ".claude", "settings.json"));
+    // A host with no same-named entry has no file to point at.
+    expect(status?.codex.target).toBeUndefined();
+  });
+
+  it("remove conserva el registro cuando un homónimo ajeno en el legacy de Claude tapa un descriptor propio", async () => {
+    // Workline's own 'reporting' sits in ~/.claude.json; the user also has a
+    // foreign 'reporting' in the historical ~/.claude/settings.json. The writer
+    // stops on the legacy file BEFORE touching the owned entry, so dropping the
+    // registry entry would orphan a descriptor Workline can no longer target.
+    const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await registerReporting(ctx);
+    await selfMcpConfig(
+      buildArgs(["mcp", "install-claude"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+    const foreign = {
+      mcpServers: { reporting: { command: "npx", args: ["-y", "@bytebase/dbhub"], env: {} } },
+    };
+    mkdirSync(join(home, ".claude"), { recursive: true });
+    writeFileSync(
+      join(home, ".claude", "settings.json"),
+      `${JSON.stringify(foreign, null, 2)}\n`,
+      "utf-8",
+    );
+
+    const result = await selfMcpConfig(
+      buildArgs(["mcp", "remove"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected partial failure");
+    expect(result.error?.code).toBe("MCP_REMOVE_PARTIAL");
+    expect(result.data.remove?.errors.map((error) => error.host)).toEqual(["claude"]);
+    // Nothing moved: owned descriptor, foreign homonym and registry entry all stay.
+    expect(readFileSync(join(home, ".claude.json"), "utf-8")).toContain('"reporting"');
+    expect(readFileSync(join(home, ".claude", "settings.json"), "utf-8")).toContain(
+      "@bytebase/dbhub",
+    );
     expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).toContain("reporting");
+    expect(result.data.summary).toContain("Queda un descriptor propio en ~/.claude.json");
+    expect(result.data.summary).toContain("resolvé la entrada ajena en ~/.claude/settings.json");
+  });
+
+  it("remove retira el recibo del host cuya entrada dejó de ser de Workline", async () => {
+    // Workline installed into Codex (receipt recorded); the user then rewrote the
+    // entry by hand. Remove keeps the foreign entry, drops the connection, and
+    // must not leave a receipt describing a connection that no longer exists.
+    const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await registerReporting(ctx);
+    await selfMcpConfig(buildArgs(["mcp", "install-codex"], { name: "reporting" }), ctx, prompts());
+    expect(readFileSync(mcpHostReceiptFile(ctx.paths), "utf-8")).toContain("reporting");
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.reporting]\ncommand = "npx"\nargs = ["-y", "@bytebase/dbhub"]\n',
+      "utf-8",
+    );
+
+    const result = await selfMcpConfig(
+      buildArgs(["mcp", "remove"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok");
+    expect(result.data.preserved_foreign).toEqual(["codex"]);
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf-8")).toContain("@bytebase/dbhub");
+    expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).not.toContain("reporting");
+    expect(readFileSync(mcpHostReceiptFile(ctx.paths), "utf-8")).not.toContain("reporting");
   });
 
   it("crear DSN env var sólo devuelve comandos de ayuda y no registra conexión", async () => {

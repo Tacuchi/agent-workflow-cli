@@ -13,6 +13,7 @@ import {
   validateMcpInstance,
 } from "../../domain/mcp-entry.js";
 import type { CommandResult } from "../../domain/types.js";
+import { homeRelative } from "../display-path.js";
 import { dsnKeyForInstance, readDsnFile } from "../dsn-reader-service.js";
 import {
   type McpConnection,
@@ -23,7 +24,7 @@ import {
 } from "../mcp-connections-service.js";
 import { type McpDoctorResult, runMcpDoctor } from "../mcp-doctor-service.js";
 import { classifyMcpEntry } from "../mcp-entry-classification.js";
-import { readMcpEntry } from "../mcp-host-reader.js";
+import { type McpEntrySnapshot, readMcpEntry } from "../mcp-host-reader.js";
 import {
   type McpHostReceipt,
   McpHostReceiptError,
@@ -32,6 +33,7 @@ import {
   parseMcpHostReceiptBook,
 } from "../mcp-host-receipt-service.js";
 import { mcpHostReceiptFile } from "../mcp-host-receipt-store.js";
+import { removePersistedMcpReceipt } from "../mcp-host-receipts.js";
 import { probePersistedMcpSetupEntries } from "../mcp-launch-probe-service.js";
 import {
   checkNativeMcpHosts,
@@ -40,6 +42,7 @@ import {
 import { registerMcpSetupReceipts } from "../mcp-receipt-registration-service.js";
 import { removeMcpRemoveReceipts } from "../mcp-receipt-removal-service.js";
 import { type McpRemoveInput, type McpRemoveResult, runMcpRemove } from "../mcp-remove-service.js";
+import type { McpErrorRecord } from "../mcp-scope-common.js";
 import { type McpSetupInput, type McpSetupResult, runMcpSetup } from "../mcp-setup-service.js";
 import {
   type WarpPostInstallHint,
@@ -137,6 +140,8 @@ export interface SelfMcpHostStatus {
   entry_state: McpEntryState;
   launchable: boolean;
   reload_required: boolean;
+  /** Host config file holding the same-named entry (absent when nothing is registered there). */
+  target?: string;
   last_probe?: { outcome: "passed" | "failed"; phase: string; observed_at: string };
   last_host_load_observed?: string;
   /** Failure-only result of the host's native MCP inspection. */
@@ -553,25 +558,54 @@ async function removeConnection(
   const remove = runMcpRemove(ctx.env, removeInput);
   if ("ok" in remove) return refusal("remove", connectionView(ctx, connection), remove.hint);
   const receiptErrors = await removeMcpRemoveReceipts(ctx.paths, removeInput, remove);
+  const home = ctx.env.homeDir();
+  // A `conflict` says the writer stopped before touching that host — not that
+  // nothing of ours is there. Claude stops on a foreign homonym in the legacy
+  // file BEFORE reaching the owned entry in ~/.claude.json, so an owned
+  // descriptor still present anywhere is an error that holds the registry entry:
+  // dropping it would orphan that descriptor.
+  const leftovers: McpErrorRecord[] = remove.conflicts.flatMap((conflict) => {
+    const left = ownedDescriptorLeft(ctx, connection, conflict.host);
+    return left === null
+      ? []
+      : [
+          {
+            host: conflict.host,
+            instance: connection.name,
+            target: left,
+            message: `Queda un descriptor propio en ${homeRelative(left, home)}: resolvé la entrada ajena en ${homeRelative(conflict.target, home)} y repetí remove.`,
+          },
+        ];
+  });
+  const settled = [...remove.errors, ...receiptErrors, ...leftovers];
+  // A foreign homonym was never Workline's: it is neither removed nor allowed to
+  // keep the connection registered, and once the connection goes its receipt
+  // describes nothing of ours. Only a real error holds the registry entry.
+  const staleReceiptErrors =
+    dryRun || settled.length > 0
+      ? []
+      : await purgeForeignReceipts(ctx.paths, connection.name, remove.conflicts);
   const removeWithReceipts: McpRemoveResult = {
     ...remove,
-    errors: [...remove.errors, ...receiptErrors],
+    errors: [...settled, ...staleReceiptErrors],
   };
-  const hasProblems =
-    removeWithReceipts.errors.length > 0 || removeWithReceipts.conflicts.length > 0;
+  const hasErrors = removeWithReceipts.errors.length > 0;
   const preservedForeign = [
     ...new Set(removeWithReceipts.conflicts.map((conflict) => conflict.host)),
   ];
-  const deleted = !dryRun && !hasProblems ? deleteMcpConnection(ctx.paths, connection) : null;
+  const deleted = !dryRun && !hasErrors ? deleteMcpConnection(ctx.paths, connection) : null;
+  const leftoverNote = leftovers.map((leftover) => ` ${leftover.message}`).join("");
   const preservedNote =
-    preservedForeign.length > 0
-      ? ` Se conservó la entrada ajena homónima en: ${preservedForeign.join(", ")}.`
+    removeWithReceipts.conflicts.length > 0
+      ? ` Se conservó la entrada ajena homónima en: ${removeWithReceipts.conflicts
+          .map((conflict) => `${hostLabel(conflict.host)} (${homeRelative(conflict.target, home)})`)
+          .join(", ")}.`
       : "";
   const reloadNotice = removalReloadNotice(removeWithReceipts);
   const views = connectionViews(ctx);
   if (views.kind === "invalid") return invalidRegistryResult("remove", views.issue);
   return {
-    ok: !hasProblems,
+    ok: !hasErrors,
     data: {
       action: "remove",
       connection: connectionView(ctx, connection),
@@ -582,20 +616,69 @@ async function removeConnection(
       ...(deleted ? { registry: { path: deleted.path, changed: deleted.removed } } : {}),
       summary: dryRun
         ? `Previsualización de eliminación para '${connection.name}'.${preservedNote}`
-        : hasProblems
-          ? `Eliminación parcial de '${connection.name}'.${preservedNote}${reloadNotice}`
+        : hasErrors
+          ? `Eliminación parcial de '${connection.name}'.${preservedNote}${leftoverNote}${reloadNotice}`
           : `Conexión '${connection.name}' eliminada de los hosts con MCP y del registro local.${preservedNote}${reloadNotice}`,
     },
-    ...(hasProblems
+    ...(hasErrors
       ? {
           error: {
             code: "MCP_REMOVE_PARTIAL",
-            message: `${removeWithReceipts.errors.length} error(es) y ${removeWithReceipts.conflicts.length} conflicto(s) durante remove; ver data.remove.errors y data.remove.conflicts`,
+            message: `${removeWithReceipts.errors.length} error(es) durante remove; ver data.remove.errors`,
           },
         }
       : {}),
-    exitCode: hasProblems ? 1 : 0,
+    exitCode: hasErrors ? 1 : 0,
   };
+}
+
+/**
+ * The file that still holds a Workline-shaped descriptor for this host, or null.
+ * Each Claude location is judged on its own: the combined classification reports
+ * the foreign legacy homonym and would hide the owned primary entry behind it.
+ */
+function ownedDescriptorLeft(
+  ctx: CliContext,
+  connection: McpConnection,
+  host: McpHost,
+): string | null {
+  const entry = buildMcpEntry(connection.name, connection.dsnVar, {
+    host,
+    scope: "global",
+    namespace: ctx.paths.namespace,
+  });
+  const { secondary, ...primary } = readMcpEntry(host, ctx.env.homeDir(), entry.name, "global");
+  for (const location of secondary === undefined ? [primary] : [primary, secondary]) {
+    const { state } = classifyMcpEntry(host, location, entry, connection);
+    if (state === "current" || state === "known-legacy") return location.target;
+  }
+  return null;
+}
+
+async function purgeForeignReceipts(
+  paths: CliContext["paths"],
+  connectionName: string,
+  conflicts: readonly McpRemoveResult["conflicts"][number][],
+): Promise<McpErrorRecord[]> {
+  const errors: McpErrorRecord[] = [];
+  for (const conflict of conflicts) {
+    try {
+      await removePersistedMcpReceipt(paths, {
+        host: conflict.host,
+        scope: "global",
+        connection: connectionName,
+      });
+    } catch {
+      errors.push({
+        host: conflict.host,
+        instance: connectionName,
+        target: conflict.target,
+        message:
+          "La entrada ajena se conserva, pero no se pudo retirar el recibo operativo de Workline.",
+      });
+    }
+  }
+  return errors;
 }
 
 function removalReloadNotice(remove: McpRemoveResult): string {
@@ -701,9 +784,24 @@ function installStatus(
   });
   const snapshot = readMcpEntry(host, ctx.env.homeDir(), entry.name, "global");
   const classification = classifyMcpEntry(host, snapshot, entry, connection);
-  const ledgerFailure = receiptLedgerFailureStatus(classification.state, receiptLedger);
+  const status = lifecycleStatus(classification.state, snapshot, receiptLedger, host, connection);
+  // The file the entry was read from travels with the status, so a consumer can
+  // point the person at it — for Claude that may be the historical settings file.
+  return classification.target === undefined
+    ? status
+    : { ...status, target: classification.target };
+}
+
+function lifecycleStatus(
+  entryState: McpEntryState,
+  snapshot: McpEntrySnapshot,
+  receiptLedger: HostReceiptLedger,
+  host: McpHost,
+  connection: McpConnection,
+): SelfMcpHostStatus {
+  const ledgerFailure = receiptLedgerFailureStatus(entryState, receiptLedger);
   if (ledgerFailure !== undefined) return ledgerFailure;
-  const entryStatus = nonCurrentEntryStatus(classification.state);
+  const entryStatus = nonCurrentEntryStatus(entryState);
   if (entryStatus !== undefined) return entryStatus;
 
   const receipt = receiptLedger.receipts.find(
@@ -713,9 +811,9 @@ function installStatus(
       candidate.connection === connection.name,
   );
   if (receipt !== undefined && !receiptMatchesDescriptor(receipt, snapshot)) {
-    return staleReceiptStatus(classification.state);
+    return staleReceiptStatus(entryState);
   }
-  return currentDescriptorStatus(classification.state, receipt);
+  return currentDescriptorStatus(entryState, receipt);
 }
 
 function receiptLedgerFailureStatus(
@@ -835,10 +933,7 @@ function currentDescriptorStatus(
   return { state: "configured", ...evidence };
 }
 
-function receiptMatchesDescriptor(
-  receipt: McpHostReceipt,
-  snapshot: ReturnType<typeof readMcpEntry>,
-): boolean {
+function receiptMatchesDescriptor(receipt: McpHostReceipt, snapshot: McpEntrySnapshot): boolean {
   if (snapshot.command === undefined || snapshot.args === undefined) return false;
   try {
     return (

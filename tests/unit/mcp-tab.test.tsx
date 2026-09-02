@@ -69,7 +69,9 @@ import { INSTALLABLE_MCP_HOSTS, mcpHostLabel } from "../../src/cli/tui/tabs/mcp-
 import { McpTab } from "../../src/cli/tui/tabs/mcp-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
 
-const ctx = {} as unknown as CliContext;
+// The tab reads the home through the env port, like the backend that builds the
+// paths it shows — so the frame is deterministic and never depends on the real home.
+const ctx = { env: { homeDir: () => "/home/test" } } as unknown as CliContext;
 const ENTER = "\r";
 const DOWN = "\x1B[B";
 const tick = () => new Promise((r) => setTimeout(r, 80));
@@ -150,6 +152,89 @@ describe("McpTab — user-scope install", () => {
     expect(frame).toContain(
       "agent-workflow tool call execute_sql --connection alpha --input-json -",
     );
+  });
+
+  it("explica el conflicto: nombra el archivo de la entrada ajena y qué hacer con ella", async () => {
+    // The user's own 'gamma' lives in Claude's historical settings file. The
+    // detail must say WHICH file and that Workline will not touch it — a bare
+    // "conflict" leaves the person guessing whether it is even a problem.
+    const conflicted = {
+      nombre: "gamma",
+      server_name: "gamma",
+      dsn_var: "GAMMA_DATABASE_URL",
+      dsn_visible: true,
+      instalado: {
+        claude: "drift",
+        codex: "no",
+        warp: "no",
+        gemini: "no",
+        opencode: "no",
+        crush: "no",
+        kimi: "no",
+      },
+      host_status: {
+        ...registeredHostStatus(),
+        claude: {
+          state: "conflict",
+          entry_state: "foreign",
+          launchable: false,
+          reload_required: false,
+          target: "/home/test/.claude/settings.json",
+        },
+      },
+    };
+    vi.mocked(selfMcpConfig).mockResolvedValueOnce({
+      ok: true,
+      data: { connections: [conflicted] },
+    } as never);
+
+    const { lastFrame, stdin } = render(<McpTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const frame = (lastFrame() ?? "").replace(/[│]/g, "").replace(/\s+/g, " ");
+    expect(frame).toContain("Claude Code: conflict · ajena en ~/.claude/settings.json");
+    expect(frame).toContain("Acción: la entrada 'gamma' marcada ajena no la escribió Workline");
+  });
+
+  it("un remove que falla muestra el resumen del backend, no el error crudo", async () => {
+    const onToast = vi.fn();
+    const { stdin } = render(<McpTab ctx={ctx} isActive onToast={onToast} />);
+    await tick();
+    stdin.write(ENTER); // detail of alpha
+    await tick();
+    for (let i = 0; i < 3; i++) {
+      stdin.write(DOWN); // Install → Test → Edit → Remove
+      await tick();
+    }
+    stdin.write(ENTER); // confirm banner
+    await tick();
+    // The next backend call is the remove itself: a real write error keeps the
+    // connection, and the summary — not a pointer to JSON fields the TUI never
+    // shows — is what the person can act on.
+    vi.mocked(selfMcpConfig).mockResolvedValueOnce({
+      ok: false,
+      data: {
+        action: "remove",
+        connection: null,
+        summary:
+          "Eliminación parcial de 'alpha'. Se conservó la entrada ajena homónima en: Codex (~/.codex/config.toml).",
+      },
+      error: {
+        code: "MCP_REMOVE_PARTIAL",
+        message:
+          "1 error(es) y 1 conflicto(s) durante remove; ver data.remove.errors y data.remove.conflicts",
+      },
+      exitCode: 1,
+    } as never);
+    stdin.write("y");
+    await tick();
+
+    const failed = onToast.mock.calls
+      .map(([toast]) => toast as { tone: string; body?: string })
+      .find((toast) => toast.tone === "err");
+    expect(failed?.body).toContain("Eliminación parcial de 'alpha'");
+    expect(failed?.body).not.toContain("ver data.remove");
   });
 
   it("guides add → alias → DSN (suggested) → review with save+install before committing", async () => {

@@ -1,5 +1,6 @@
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useMemo, useState } from "react";
+import { homeRelative } from "../../../application/display-path.js";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { testMcpConnection } from "../../../application/mcp-test-connection-service.js";
 import {
@@ -215,7 +216,10 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
           ctx,
         );
         if (!result.ok) {
-          const summary = result.error?.message ?? "failed";
+          // The summary is the sentence a person can act on (what happened, which
+          // file kept a foreign entry); the error message points at JSON fields
+          // this screen never shows.
+          const summary = result.data?.summary ?? result.error?.message ?? "failed";
           onToast?.({ tone: "err", title: `Step ${action} failed`, body: summary });
           return null;
         }
@@ -586,7 +590,7 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
             bordered
             header={{
               name: current.nombre,
-              meta: connectionDetailMeta(current),
+              meta: connectionDetailMeta(current, ctx.env.homeDir()),
             }}
             statePill={mcpRuntimeAggregatePill(hostRuntimeStates(current))}
             actions={detailActions}
@@ -595,7 +599,7 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
               mode.kind === "confirm-delete" ? (
                 <ConfirmBanner
                   title={`× Remove ${mode.name}?`}
-                  body={`This removes '${mode.name}' (Workline PostgreSQL entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Not reversible.`}
+                  body={`This removes '${mode.name}' (Workline PostgreSQL entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Same-named entries Workline did not write stay untouched. Not reversible.`}
                 />
               ) : null
             }
@@ -737,9 +741,15 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
   }
 }
 
-function connectionDetailMeta(connection: SelfMcpConnectionView): string {
+function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): string {
   const hostStates = HOST_CHOICES.map((host) => {
     const state = connection.host_status[host];
+    // A same-named entry Workline did not write: say WHERE it is — "conflict"
+    // alone reads like a warning and leaves the person guessing.
+    const foreign =
+      state.entry_state === "foreign" && state.target !== undefined
+        ? ` · ajena en ${homeRelative(state.target, home)}`
+        : "";
     const receiptFailure =
       state.receipt_failure === undefined
         ? ""
@@ -748,8 +758,15 @@ function connectionDetailMeta(connection: SelfMcpConnectionView): string {
       state.native_check_failure === undefined
         ? ""
         : ` (native/${state.native_check_failure.code} @ ${state.native_check_failure.observed_at})`;
-    return `${mcpHostLabel(host)}: ${state.state}${receiptFailure}${nativeFailure}`;
+    return `${mcpHostLabel(host)}: ${state.state}${foreign}${receiptFailure}${nativeFailure}`;
   });
+  const conflictRecovery = HOST_CHOICES.some(
+    (host) => connection.host_status[host].entry_state === "foreign",
+  )
+    ? [
+        `Acción: la entrada '${connection.server_name}' marcada ajena no la escribió Workline y no se toca; borrala o renombrala a mano en el archivo indicado de cada host y reinstalá.`,
+      ]
+    : [];
   const probes = HOST_CHOICES.flatMap((host) => {
     const state = connection.host_status[host];
     return state.last_probe === undefined
@@ -783,6 +800,7 @@ function connectionDetailMeta(connection: SelfMcpConnectionView): string {
     `${connection.server_name} · ${connection.dsn_var}`,
     ...hostStates,
     ...(probes.length === 0 ? ["last probe: —"] : probes.map((probe) => `last probe: ${probe}`)),
+    ...conflictRecovery,
     ...receiptRecovery,
     ...nativeRecovery,
     ...reloadHints,
