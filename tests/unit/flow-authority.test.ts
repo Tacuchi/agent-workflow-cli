@@ -334,9 +334,10 @@ describe("registro de autoridad — el universo es el command registry", () => {
       (command) => !flows.has(command) && !classified.has(command) && !excluded.has(command),
     );
     expect(unclassified).toEqual([]);
-    // And the universe is real: five flows plus thirteen commands with no loop —
-    // `discard` and `reset` joined it as transversal retirement (plan 024).
-    expect(slashCommands()).toHaveLength(18);
+    // And the universe is real: five flows plus fourteen commands with no loop —
+    // `discard` and `reset` joined it as transversal retirement (plan 024), and
+    // `doctor` as the transversal diagnosis (plan 040).
+    expect(slashCommands()).toHaveLength(19);
   });
 });
 

@@ -25,6 +25,55 @@ export function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY.test(normalized);
 }
 
+/**
+ * Whether one string carries credential-shaped material.
+ *
+ * The boolean core of the MCP receipt's `assertSecretFree`, lifted here because
+ * a second caller appeared — the custody gate over a declared authentication
+ * flow's `argv` — and two copies of this expression is how one surface starts
+ * accepting what the other rejects. The extra pattern beside the redactor's own
+ * is deliberate: `redactSensitiveText` only rewrites an assignment when it can
+ * see a VALUE after it, and a bare `--token=` with nothing behind it is still a
+ * request for a credential.
+ */
+export function carriesSecretMaterial(value: string): boolean {
+  return (
+    redactSensitiveText(value) !== value ||
+    /(?:^|[?&;\s-])(?:password|passwd|secret|token|api[-_]?key|dsn|pgpassword|pgpassfile)\s*=/i.test(
+      value,
+    )
+  );
+}
+
+/**
+ * Whether one argument is a flag ASKING for a credential, value or not.
+ *
+ * Two expressions, and the union is the point: neither list alone is the answer.
+ * The literal one catches the spellings written without a separator (`--apikey`),
+ * which the normalized key list cannot see; `isSensitiveKey` catches the compound
+ * names (`--access-token`, `--client-secret`, `--credentials`, `--private-key`,
+ * `--connection-string`) that the literal list missed — and those were being let
+ * through by the custody gate, which is the whole reason this is not one list any
+ * more. Deriving the second half from `SENSITIVE_KEY` also means a name added
+ * there is a name blocked here, instead of a third list to keep in sync.
+ *
+ * What no name list can cover is a flag that does not say what it carries
+ * (`--pat`, `-t`). Those still pass, and the caller's docblock says so rather
+ * than implying this predicate is a complete defense.
+ */
+export function isSecretFlag(value: string): boolean {
+  if (
+    /^--?(?:token|secret|password|passwd|pwd|api[-_]?key|key|auth|dsn|database[-_]?url|pgpassword|pgpassfile)(?:=|$)/i.test(
+      value,
+    )
+  ) {
+    return true;
+  }
+  if (!value.startsWith("-")) return false;
+  const name = value.replace(/^-+/, "").split("=")[0] ?? "";
+  return name.length > 0 && isSensitiveKey(name);
+}
+
 /** Safe predicate for configuration shapes that must never reflect credentials. */
 export function containsSensitiveData(value: unknown): boolean {
   if (typeof value === "string") return redactSensitiveText(value) !== value;

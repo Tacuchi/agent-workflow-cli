@@ -1,7 +1,7 @@
 import { isAbsolute } from "node:path";
 import type { McpHost } from "../domain/mcp-entry.js";
 import { normalizeMcpInstance, validateMcpInstance } from "../domain/mcp-entry.js";
-import { redactSensitiveText } from "../domain/redaction.js";
+import { carriesSecretMaterial, isSecretFlag } from "../domain/redaction.js";
 import { canonicalJson, semanticDigest } from "./semantic-operation/protocol.js";
 
 /**
@@ -645,25 +645,20 @@ function requireNativeCheckFailureCode(value: unknown): McpNativeHostCheckFailur
   return value;
 }
 
+/**
+ * A receipt never needs a connection URI or an assignment carrying credentials.
+ *
+ * The predicate itself lives in `domain/redaction.ts`: the custody gate over a
+ * declared authentication flow asks the same question, and one expression with
+ * two callers is the only way both surfaces keep rejecting the same thing.
+ */
 function assertSecretFree(value: string): void {
-  // A receipt never needs a connection URI or an assignment carrying credentials.
-  if (
-    redactSensitiveText(value) !== value ||
-    /(?:^|[?&;\s-])(?:password|passwd|secret|token|api[-_]?key|dsn|pgpassword|pgpassfile)\s*=/i.test(
-      value,
-    )
-  ) {
+  if (carriesSecretMaterial(value)) {
     throw new McpHostReceiptError(
       "MCP_RECEIPT_SECRET_REJECTED",
       "El recibo MCP rechazó material que podría contener una credencial.",
     );
   }
-}
-
-function isSecretFlag(value: string): boolean {
-  return /^--?(?:token|secret|password|passwd|pwd|api[-_]?key|key|auth|dsn|database[-_]?url|pgpassword|pgpassfile)(?:=|$)/i.test(
-    value,
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

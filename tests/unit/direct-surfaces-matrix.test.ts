@@ -137,6 +137,12 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // lee —sello vigente, sello nuevo, la línea exacta— es lo que aprueba con el
     // digest, y el JSON del host sale del mismo objeto sellado.
     "reseal",
+    // plan 040 — el informe agregado del doctor. La proyección humana es
+    // obligatoria acá porque el veredicto viaja en el CÓDIGO DE SALIDA y no en
+    // `ok`: si el informe fuera `ok:false` al bloquear, el runtime no llamaría a
+    // `renderHuman` y la persona vería una línea de error justo cuando necesita
+    // el informe entero.
+    "doctor",
     // La corrección directa de una redacción cerrada, por la misma razón que
     // `reseal` llevada un paso más lejos: lo que una persona lee después de
     // corregir —qué se reemplazó, con qué, bajo qué declaración y con qué

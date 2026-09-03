@@ -801,11 +801,19 @@ function renderCommandWrapper(
  * Preserve that fact in direct CLI calls so terminal markers cannot override
  * the agent runtime selected by the installed surface. Shared `agents` skills
  * deliberately stay unbound because several hosts read them.
+ *
+ * `doctor` joins `flow` and `capability` for the same reason and one more of its
+ * own: it walks EVERY host and highlights the one the run came from. Left
+ * unbound, the wrapper installed for one host would hand that role to whatever
+ * the terminal's markers happened to say — so the report would point at a
+ * different host than the surface the person actually invoked.
  */
-function bindHostInvocations(body: string, target: InstallTarget): string {
+export function bindHostInvocations(body: string, target: InstallTarget): string {
   const host = harnessByInstallTarget(target)?.id;
   if (host === undefined) return body;
-  return body.replace(/\baw (flow|capability)\b/g, `aw $1 --host ${host}`);
+  // `aw doctor prepare` y `aw doctor apply` reciben el flag igual: el subverbo
+  // viene después, así que insertarlo tras `doctor` no lo desplaza.
+  return body.replace(/\baw (flow|capability|doctor)\b/g, `aw $1 --host ${host}`);
 }
 
 /**

@@ -21,7 +21,7 @@ describe("context-plan — the resolver returns what the doctrine already orders
   // nothing. F3 and F4 then deliberately made those documents smaller, so the
   // BYTES are no longer expected to match. The frozen documents remain exact,
   // except for explicitly approved new core modules, while the budget stays green.
-  it("reaches the baseline read-set for all 18 commands, unsignalled, at no greater cost", async () => {
+  it("reaches the baseline read-set for all 16 baselined commands, unsignalled, at no greater cost", async () => {
     const baseline = JSON.parse(await readFile(BASELINE_PATH, "utf8"));
     const frozen = new Map<string, { bytes: number; files: string[] }>(
       baseline.guaranteed.map((g: { command: string; bytes: number; files: string[] }) => [
@@ -55,7 +55,7 @@ describe("context-plan — the resolver returns what the doctrine already orders
     const commandFiles = (await readdir(COMMANDS_ROOT))
       .filter((name) => name.endsWith(".md") && name !== "README.md")
       .sort();
-    expect(commandFiles).toHaveLength(18);
+    expect(commandFiles).toHaveLength(19);
 
     const offenders: string[] = [];
     for (const file of commandFiles) {

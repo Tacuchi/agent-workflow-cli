@@ -105,6 +105,9 @@ const GROUPS: readonly CommandGroup[] = [
   {
     name: "Doctor / Data",
     commands: [
+      // The aggregate. It composes the specialized doctors below rather than
+      // replacing them: each keeps its own contract and its own place here.
+      "doctor",
       "plugin-doctor",
       "plugin-cache",
       "host-doctor",

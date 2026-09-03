@@ -1,0 +1,182 @@
+[
+  {
+    "name": "agent-workflow",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "agent-workflow",
+      "args": [
+        "mcp",
+        "serve",
+        "--host",
+        "codex"
+      ],
+      "env": null,
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "computer-use",
+    "enabled": false,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "./Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient",
+      "args": [
+        "mcp"
+      ],
+      "env": null,
+      "env_vars": [],
+      "cwd": "."
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "context7",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp"
+      ],
+      "env": null,
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": 20.0,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "figma",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "streamable_http",
+      "url": "https://mcp.figma.com/mcp",
+      "bearer_token_env_var": null,
+      "http_headers": null,
+      "env_http_headers": null,
+      "http_headers_helper": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "not_logged_in"
+  },
+  {
+    "name": "node_repl",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
+      "args": [],
+      "env": {
+        "NODE_REPL_NODE_MODULE_DIRS": "/Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules",
+        "NODE_REPL_NODE_PATH": "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node",
+        "NODE_REPL_TRUSTED_CODE_PATHS": "/Users/tacuchi/.codex:/Applications/ChatGPT.app/Contents/Resources/cua_node/lib/node_modules",
+        "CODEX_CLI_PATH": "/Applications/ChatGPT.app/Contents/Resources/codex",
+        "NODE_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS": "1000",
+        "NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S": "9230e2bd8b24b7ac7a0ba6774c64bf0d78ecdabbdd91d0ed627b02a587bae2df",
+        "BROWSER_USE_CODEX_APP_VERSION": "26.810.52044",
+        "BROWSER_USE_CODEX_APP_BUILD_FLAVOR": "prod",
+        "BROWSER_USE_AVAILABLE_BACKENDS": "chrome,iab",
+        "CODEX_HOME": "/Users/tacuchi/.codex",
+        "NODE_REPL_INSTRUCTIONS_USE_CASE_BROWSER": "Control the in-app browser in conjunction with the Browser Plugin.",
+        "NODE_REPL_INSTRUCTIONS_USE_CASE_CHROME": "Control the Chrome browser in conjunction with the Chrome Plugin. Prefer this method of controlling Chrome over alternatives (such as Computer Use) unless the user explicitly mentions an alternative.",
+        "NODE_REPL_INSTRUCTIONS_USE_CASE_COMPUTER_USE": "Control desktop apps on macOS through Computer Use."
+      },
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": 120.0,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "openaiDeveloperDocs",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "streamable_http",
+      "url": "https://developers.openai.com/mcp",
+      "bearer_token_env_var": null,
+      "http_headers": null,
+      "env_http_headers": null,
+      "http_headers_helper": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "qtc-cert",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/Users/tacuchi/.nvm/versions/node/v22.20.0/bin/node",
+      "args": [
+        "/Users/tacuchi/.nvm/versions/node/v22.20.0/lib/node_modules/@tacuchi/agent-workflow-cli/dist/cli/main.js",
+        "mcp",
+        "serve-db",
+        "--namespace",
+        "workflow",
+        "--instance",
+        "qtc-cert",
+        "--host",
+        "codex",
+        "--scope",
+        "global",
+        "--descriptor-generation",
+        "25.1.2"
+      ],
+      "env": {},
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  },
+  {
+    "name": "qtc-prod",
+    "enabled": true,
+    "disabled_reason": null,
+    "transport": {
+      "type": "stdio",
+      "command": "/Users/tacuchi/.nvm/versions/node/v22.20.0/bin/node",
+      "args": [
+        "/Users/tacuchi/.nvm/versions/node/v22.20.0/lib/node_modules/@tacuchi/agent-workflow-cli/dist/cli/main.js",
+        "mcp",
+        "serve-db",
+        "--namespace",
+        "workflow",
+        "--instance",
+        "qtc-prod",
+        "--host",
+        "codex",
+        "--scope",
+        "global",
+        "--descriptor-generation",
+        "25.1.2"
+      ],
+      "env": {},
+      "env_vars": [],
+      "cwd": null
+    },
+    "startup_timeout_sec": null,
+    "tool_timeout_sec": null,
+    "auth_status": "unsupported"
+  }
+]

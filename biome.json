@@ -14,6 +14,7 @@
       "**/*.snap",
       "tests/fixtures/golden/**",
       "tests/fixtures/golden-write/**",
+      "tests/fixtures/doctor/**",
       ".warp/**",
       ".workflow/**"
     ]

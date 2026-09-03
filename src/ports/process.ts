@@ -53,6 +53,19 @@ export interface SpawnInTerminalResult {
   terminalError?: string | undefined;
 }
 
+/**
+ * What an inherited-stdio run may be told: where to run, and nothing else.
+ *
+ * There is deliberately no `env`. The child inherits this process's environment
+ * — the same one the person's own shell hands every command they type — and the
+ * CLI adds nothing to it. A caller that could compose the child's environment
+ * would have somewhere to put a credential, and the only caller of this method
+ * exists precisely so that never happens.
+ */
+export interface InteractiveOptions {
+  cwd?: string;
+}
+
 // SpawnDetachedOptions/Result describe NodeProcess.spawnDetached — an adapter
 // method used only as spawnInTerminal's internal headless fallback, so it is
 // deliberately NOT part of the port.
@@ -95,4 +108,23 @@ export interface ProcessPort {
   killTree(pid: number): Promise<void>;
   /** Whether a process with the given PID is currently alive (best-effort). */
   isAlive(pid: number): Promise<boolean>;
+  /**
+   * Whether THIS process owns a terminal a child could inherit.
+   *
+   * Asked separately from running, because "there is no terminal" is an answer a
+   * caller has to be able to give back to a person — not a failure to report
+   * after the fact.
+   */
+  hasTty(): boolean;
+  /**
+   * Run a command that OWNS the terminal, and return ONLY its exit code.
+   *
+   * stdio is inherited, so nothing the child prints or reads passes through this
+   * process. That is the point and not an optimization: the one caller is an
+   * authentication flow, and a secret the person types has to travel from the
+   * terminal to the program without this CLI ever holding it. Capturing the
+   * output — even to log it — would put the credential in our buffers, so there
+   * is no `stdout` in the result to be tempted by.
+   */
+  runInteractive(cmd: string, args: string[], opts?: InteractiveOptions): Promise<{ code: number }>;
 }

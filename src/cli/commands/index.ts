@@ -16,6 +16,7 @@ import { contextBudgetCommand } from "./context-budget.js";
 import { contextPlanCommand } from "./context-plan.js";
 import { designsCommand } from "./designs.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
+import { doctorCommand } from "./doctor.js";
 import {
   exportDiagramsCommand,
   exportManualsCommand,
@@ -119,6 +120,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   pluginCacheCommand,
   pluginDoctorCommand,
   hostDoctorCommand,
+  doctorCommand,
   releaseDataCommand,
   attachMultirootCommand,
   detachMultirootCommand,
