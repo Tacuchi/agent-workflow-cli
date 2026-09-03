@@ -18,6 +18,7 @@ import {
   flowOfScope,
   journeyForState,
   journeyOfFlow,
+  proposalContractOf,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
@@ -648,5 +649,220 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(integrated.boundary.kind).toBe("execution");
     expect(integrated.action?.invocation.args).toEqual(["flow", "advance", "--code", SESSION]);
     expect((await current()).state.applied).toContain("plan-exec.unit-integration");
+  });
+});
+
+describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecutarlo", () => {
+  /**
+   * El mismo juicio, dos momentos.
+   *
+   * El incidente que originó esta fase: un plan cerrado y aprobado que la
+   * entrada de ejecución rechazaba por una frase, cuando quien la escribió ya
+   * no estaba escribiendo. La compuerta corre ahora sobre los bytes de la
+   * propuesta de guardado —antes de sellar la vista previa y antes de que nadie
+   * apruebe— y es literalmente la misma función, así que los dos momentos no
+   * pueden discrepar.
+   */
+  const REFINE_SESSION = "032-tramo-migracion-plan-refine";
+  const REFINE_CODE = "032";
+  const EXEC_SESSION = "033-tramo-migracion-plan-exec";
+  const EXEC_CODE = "033";
+  const DOC = "docs/plans/032-plan-migracion.md";
+
+  const planWith = (validation: string) =>
+    [
+      "# Plan 032 — migración",
+      "",
+      "> Límite de ejecución: checkout",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — columnas nuevas",
+      `> Fuentes: ${ALIAS}`,
+      "",
+      `- [ ] T1.1 — agregar las columnas _(fuentes: ${ALIAS})_`,
+      "",
+      `**Validación de fase:** ${validation}`,
+      "**Condición de salida:** el catálogo declara las tres columnas.",
+      "",
+      "## Execution batches",
+      "",
+      "- B1 · isolated · F1",
+      "",
+      "## Validations",
+      "",
+      "- El catálogo queda igual al aplicar `migraciones/` dos veces seguidas.",
+    ].join("\n");
+
+  // Ninguna de las dos frases contiene los términos que hoy habilitan el cierre.
+  const LOCAL = planWith(
+    "las tres columnas aparecen al aplicar `migraciones/003_add_columns.sql` sobre una base de trabajo.",
+  );
+  const NADA = planWith("el equipo confirma que la migración quedó bien.");
+
+  let workdir: string;
+  let paths: PathsService;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-guardado-plan-"));
+    paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+    for (const session of [REFINE_SESSION, EXEC_SESSION]) {
+      await mkdir(join(paths.cwdSessionsDir(), session), { recursive: true });
+      await writeFile(
+        join(paths.cwdSessionsDir(), session, "SESSION.md"),
+        "# SESSION — migración\n\n## Objective\nrefinar y ejecutar el plan de migración\n",
+        "utf8",
+      );
+    }
+    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await mkdir(join(workdir, "docs", "plans"), { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  async function state(session: string) {
+    const read = await readRun(fs, locateRun(paths, session));
+    if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
+    return {
+      state: read.state,
+      resolved: resolveBoundary(read.state, journeyForState(read.state)),
+    };
+  }
+
+  async function answer(code: string, body: unknown): Promise<FlowDirective> {
+    const result = await submitFlow(fs, paths, { code, raw: JSON.stringify(body) });
+    if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
+    return result.directive;
+  }
+
+  /** Una evidencia acreditada, con la prueba de checkout donde la frontera la exige. */
+  function evidenceFor(id: string): Record<string, unknown> {
+    if (id !== "workline.source-bounded")
+      return { id, passed: true, detail: `salida real de ${id}` };
+    return {
+      id,
+      passed: true,
+      detail: `salida real de ${id}`,
+      proof: {
+        kind: "inspection" as const,
+        source: "workspace",
+        relative_cwd: ".",
+        checkout_digest: "test-checkout",
+        invocation: { artifact: "tests/unit/flow-tramo-plan.test.ts" },
+      },
+    };
+  }
+
+  /** El resultado real de la invocación que la frontera selló. */
+  function executionBody(
+    resolved: Awaited<ReturnType<typeof state>>["resolved"],
+  ): Record<string, unknown> {
+    const action = resolved.action;
+    if (action === null) throw new Error("una frontera de ejecución sin invocación");
+    const declared = effectsOf(resolved.stopped as FlowDecision);
+    return {
+      input_digest: resolved.seal,
+      outcome: "completed",
+      invocation: action.invocation,
+      validations: action.evidence.map(evidenceFor),
+      effects: { planned: [...declared], approved: [], applied: [...declared] },
+      output: null,
+    };
+  }
+
+  /** Lo que la frontera vigente admite; los bytes del plan donde el contrato los pide. */
+  function bodyFor(
+    resolved: Awaited<ReturnType<typeof state>>["resolved"],
+    content: string,
+  ): Record<string, unknown> {
+    const stopped = resolved.stopped as FlowDecision;
+    if (resolved.kind === "execution") return executionBody(resolved);
+    if (resolved.kind !== "semantic") {
+      return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
+    }
+    if (proposalContractOf(stopped) !== null) {
+      return { input_digest: resolved.seal, artifacts: [{ path: DOC, content }] };
+    }
+    return {
+      input_digest: resolved.seal,
+      signals: [],
+      decisions:
+        stopped.scopes_sources === true ? { plan: DOC, sources: [ALIAS] } : { paso: stopped.id },
+    };
+  }
+
+  /** Contesta la frontera vigente, con su aprobación cuando la pide. */
+  async function answerBoundary(
+    code: string,
+    resolved: Awaited<ReturnType<typeof state>>["resolved"],
+    content: string,
+  ): Promise<void> {
+    if (resolved.kind !== "authorization") {
+      await answer(code, bodyFor(resolved, content));
+      return;
+    }
+    const stopped = resolved.stopped as FlowDecision;
+    const result = await submitFlow(fs, paths, {
+      code,
+      raw: JSON.stringify({ input_digest: resolved.seal, choice: "Autorizar el efecto" }),
+      approval: effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? []),
+    });
+    if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
+  }
+
+  /** Adopta la corrida y contesta hasta la frontera de `id`, con los bytes dados. */
+  async function walkTo(
+    flow: string,
+    session: string,
+    code: string,
+    id: string,
+    content: string,
+  ): Promise<void> {
+    const adopted = await advanceFlow(fs, paths, { code, flow, adopt: true });
+    if (!adopted.ok) throw new Error(`esperaba adoptar la corrida de ${flow}`);
+    await acceptAdaptiveRoute(fs, paths, session);
+    for (let step = 0; step < 40; step += 1) {
+      const { resolved } = await state(session);
+      if (resolved.stopped === null || resolved.stopped.id === id) return;
+      await answerBoundary(code, resolved, content);
+    }
+    throw new Error(`el recorrido nunca llegó a '${id}'`);
+  }
+
+  it("una validación sin comprobación se rechaza antes de sellar y sin pedir aprobación", async () => {
+    await walkTo("plan-refine", REFINE_SESSION, REFINE_CODE, "plan-refine.save-proposal", NADA);
+    const gate = await state(REFINE_SESSION);
+    const directive = await answer(REFINE_CODE, bodyFor(gate.resolved, NADA));
+
+    expect(directive.error?.code).toBe("PLAN_SOURCE_LOCAL_PROOF_MISSING");
+    expect(directive.error?.message).toContain(DOC);
+    // La acción arregla la frase donde se está escribiendo: no manda a refinar
+    // lo que todavía no se guardó, y no manda a declarar fuentes que ya están.
+    expect(directive.error?.action).toContain("nombrá en esa cláusula el comando");
+    expect(directive.error?.action).not.toMatch(/plan-refine|declar[aá] las fuentes/);
+    // Nada se selló, así que no hay vista previa que aprobar.
+    const after = await state(REFINE_SESSION);
+    expect(after.state.proposal).toBeNull();
+    expect(after.resolved.stopped?.id).toBe("plan-refine.save-proposal");
+  });
+
+  it("el plan aceptado al cerrarse atraviesa la entrada de ejecución sin ese código", async () => {
+    await walkTo("plan-refine", REFINE_SESSION, REFINE_CODE, "plan-refine.save-proposal", LOCAL);
+    const gate = await state(REFINE_SESSION);
+    const directive = await answer(REFINE_CODE, bodyFor(gate.resolved, LOCAL));
+
+    // La misma cláusula, aceptada: la propuesta se sella y la confirmación se pide.
+    expect(directive.error).toBeNull();
+    const sealed = await state(REFINE_SESSION);
+    expect(sealed.state.proposal).not.toBeNull();
+
+    // Y los mismos bytes, ya en el workspace, pasan el scope de la ejecución.
+    await writeFile(join(workdir, DOC), LOCAL, "utf8");
+    await walkTo("plan-exec", EXEC_SESSION, EXEC_CODE, "plan-exec.implementation", LOCAL);
+    const exec = await state(EXEC_SESSION);
+    expect(exec.resolved.stopped?.id).toBe("plan-exec.implementation");
+    expect(exec.state.scope).toMatchObject({ plan: DOC, sources: [ALIAS] });
   });
 });

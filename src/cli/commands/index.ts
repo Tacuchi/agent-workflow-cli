@@ -5,6 +5,7 @@
 // directly (order here = order in the grouped `--help` listing).
 
 import type { CliCommand } from "../registry.js";
+import { amendCommand } from "./amend.js";
 import { capabilityCommand } from "./capability.js";
 import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
@@ -113,6 +114,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   // review concluded it still holds, instead of walking a whole plan-refine to
   // make the publication recompute one line.
   resealCommand,
+  amendCommand,
   codeScanCommand,
   pluginCacheCommand,
   pluginDoctorCommand,

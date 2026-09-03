@@ -137,6 +137,12 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // lee —sello vigente, sello nuevo, la línea exacta— es lo que aprueba con el
     // digest, y el JSON del host sale del mismo objeto sellado.
     "reseal",
+    // La corrección directa de una redacción cerrada, por la misma razón que
+    // `reseal` llevada un paso más lejos: lo que una persona lee después de
+    // corregir —qué se reemplazó, con qué, bajo qué declaración y con qué
+    // comando se deshace— es exactamente lo que el registro append-only guarda,
+    // y el JSON del host sale del mismo objeto.
+    "amend",
   ];
 
   it("no undeclared command acquired a human projection", () => {

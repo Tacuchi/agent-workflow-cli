@@ -72,6 +72,7 @@ import {
   type FlowRunEvent,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
+  applyAttemptReconciliation,
   applyTransition,
   attemptAccountingAt,
   attemptsAt,
@@ -79,6 +80,7 @@ import {
   currentBatchIteration,
   degradeTransition,
   positionDigest,
+  reconcileAttemptsAt,
   skipTransition,
   withBoundary,
   withPendingAction,
@@ -113,18 +115,26 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   const incoherent = checkAgainstJourney(input.state, input.journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
 
+  // The run repairs its OWN bookkeeping first, and only when the mismatch has
+  // exactly one reading. No boundary is opened, no attempt is charged, no
+  // degradation is asked for and nothing is added to the directive: what the
+  // caller sees is the boundary they were going to see anyway, answerable. The
+  // repair survives as a line in the run's sealed trace, which is what makes
+  // "it is not notified" different from "it cannot be audited".
+  const reconciled = reconcileRun(input.state, input.journey);
+
   // A handoff is terminal for this run even though the linear journey still has
   // rows after the gate. Letting `advance` walk those rows would build the
   // escalation package and then continue toward commits, which is exactly the
   // contradictory route the typed choice closes.
-  if (input.state.handoff !== null && input.state.handoff !== undefined) {
-    const stopped = input.journey[input.state.applied.length] ?? null;
-    let state = withBoundary(input.state, stopped?.id ?? null);
+  if (reconciled.handoff !== null && reconciled.handoff !== undefined) {
+    const stopped = input.journey[reconciled.applied.length] ?? null;
+    let state = withBoundary(reconciled, stopped?.id ?? null);
     state = withPendingAction(state, null);
     return directiveFor(state, resolveBoundary(state, input.journey), input.applied ?? []);
   }
 
-  const walked = walk(input.state, input.journey);
+  const walked = walk(reconciled, input.journey);
   let state = walked.state;
   const appliedNow: FlowStep[] = [...(input.applied ?? []), ...walked.applied];
 
@@ -148,6 +158,19 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
       : { transition: stopped.id, digest: actionDigest(emitted) },
   );
   return directiveFor(state, resolveBoundary(state, input.journey), appliedNow);
+}
+
+/**
+ * Reconcile the boundary the run is standing at, or hand the state back untouched.
+ *
+ * It asks the domain and applies nothing of its own: which mismatches have one
+ * reading is {@link reconcileAttemptsAt}'s call, and repairing-plus-recording is
+ * a single function so a repair can never happen unrecorded.
+ */
+function reconcileRun(state: FlowRunState, journey: readonly FlowDecision[]): FlowRunState {
+  const stopped = journey[state.applied.length] ?? null;
+  if (stopped === null) return state;
+  return applyAttemptReconciliation(state, reconcileAttemptsAt(state, stopped.id));
 }
 
 /**
@@ -389,13 +412,10 @@ function blockedCause(
     // matters: one continues on the next advance, the other cannot. Reporting the
     // stricter message for both would tell somebody their run is stuck when it is
     // about to move on.
-    const degradable = exhaustionSkip(state, stopped) !== null;
     return {
       code: "FLOW_BOUNDARY_EXHAUSTED",
       message: `'${stopped.id}' agotó sus ${MAX_BOUNDARY_ATTEMPTS} intentos: contestarlo otra vez sería el bucle que la regla evita${conflictClause(accounting)}`,
-      action: degradable
-        ? `${DEGRADE_ACTION}; el próximo 'aw flow advance' lo pasa por alto dejando dicho por qué y sigue con el resto`
-        : `${DEGRADE_ACTION}, y resolvé este paso fuera de la corrida antes de seguir: saltearlo daría por aprobado un efecto que nadie aprobó, o por hecho algo que nada corrió. Si lo que hay que rehacer es el intento, '${recoverInvocation(state)}' le devuelve los intentos a esta frontera conservando todo lo aplicado`,
+      action: exhaustedAction(state, stopped),
     };
   }
   // Not exhausted, and still not answerable: the rows this run persisted cannot
@@ -416,6 +436,36 @@ function blockedCause(
     };
   }
   return null;
+}
+
+/**
+ * What to do about an exhausted boundary — decided by WHAT is broken.
+ *
+ * Degrading the gap is the chassis' destination for a gap that cannot close, and
+ * it was read first no matter the cause: with the accounting in conflict it
+ * repairs nothing, and being the first thing offered is what sent a mechanical
+ * mismatch to a refinement nobody needed. A conflict that reaches here is one the
+ * automatic reconciliation refused because its reading is NOT unique, so the exit
+ * is the verb that recovers — and degradation is not offered at all, because the
+ * gap is not the problem.
+ */
+function exhaustedAction(state: FlowRunState, stopped: FlowDecision): string {
+  // Reaching here means the automatic reconciliation did NOT repair the mismatch,
+  // so what is left is a count nobody can reconstruct. Not every unrepaired
+  // mismatch belongs to the accounting: a boundary that already moved the world
+  // is refused BY the recovery too, and there degrading the gap is the honest
+  // exit. That is why the scope decides, and not the mere presence of a conflict
+  // — a forgiven counter excess keeps reporting its difference forever, and
+  // reading that as "broken accounting" would deny degradation to a boundary
+  // whose cap was reached legitimately.
+  const ambiguous = reconcileAttemptsAt(state, stopped.id).ambiguous;
+  if (ambiguous?.scope === "accounting") {
+    return `lo roto es la contabilidad de la corrida, no el gap: ${ambiguous.reason}. '${recoverInvocation(state)}' le devuelve los intentos a esta frontera conservando todo lo aplicado; degradar el gap no arregla una cuenta`;
+  }
+  if (exhaustionSkip(state, stopped) !== null) {
+    return `${DEGRADE_ACTION}; el próximo 'aw flow advance' lo pasa por alto dejando dicho por qué y sigue con el resto`;
+  }
+  return `${DEGRADE_ACTION}, y resolvé este paso fuera de la corrida antes de seguir: saltearlo daría por aprobado un efecto que nadie aprobó, o por hecho algo que nada corrió. Si lo que hay que rehacer es el intento, '${recoverInvocation(state)}' le devuelve los intentos a esta frontera conservando todo lo aplicado`;
 }
 
 /**
@@ -514,6 +564,12 @@ function nothingToPublish(state: FlowRunState, decision: FlowDecision): string |
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
   if (!exhausted(state, decision)) return null;
   if (!owned(decision)) return null;
+  // Degradation is what a GAP that cannot close deserves. When the exhaustion
+  // comes from a bookkeeping mismatch the automatic reconciliation could not
+  // read, passing the step over would skip real work because two counters
+  // disagree — the same mistake as sending it to a refinement, one notch worse.
+  // So it is not offered at all: the boundary blocks and names the recovery.
+  if (reconcileAttemptsAt(state, decision.id).ambiguous?.scope === "accounting") return null;
   const failure = executionFailure(state, decision.id);
   if (actionOf(decision) !== null && failure === null) return null;
   if (failure !== null && touchesTheWorld(effectsOfTransition(state, decision))) return null;

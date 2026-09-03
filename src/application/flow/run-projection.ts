@@ -15,7 +15,9 @@
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
 import type { AssuranceStatus } from "../../domain/flow/route.js";
 import {
+  type AttemptRepair,
   type FlowRunScope,
+  attemptReconciliationsOf,
   checkAgainstJourney,
   legacyRunNeedsAdoption,
 } from "../../domain/flow/run-state.js";
@@ -48,6 +50,15 @@ export interface FlowRunProjection {
   scope: FlowRunScope | null;
   /** Null only when the persisted run is unreadable or still legacy. */
   assurance: AssuranceStatus | null;
+  /**
+   * The bookkeeping this run repaired by itself, for whoever wants to look.
+   *
+   * The repairs cost no boundary and no attempt, and they are deliberately not
+   * notified while the run is walking — so this is where they become auditable
+   * afterwards. It is a record, never pending work: nothing here asks anybody to
+   * do anything, and an empty array is the ordinary case.
+   */
+  repairs: { transition: string; repairs: AttemptRepair[] }[];
 }
 
 export async function projectRun(
@@ -73,6 +84,7 @@ export async function projectRun(
       // refuses would be the one field of this projection nobody could trust.
       scope: null,
       assurance: null,
+      repairs: [],
     };
   }
   if (legacyRunNeedsAdoption(read.state)) {
@@ -86,6 +98,7 @@ export async function projectRun(
       summary: `corrida legacy v${read.state.version}: requiere adopción explícita antes de continuar`,
       scope: read.state.scope,
       assurance: null,
+      repairs: attemptReconciliationsOf(read.state),
     };
   }
   const journey = journeyForRun(read.state);
@@ -101,6 +114,7 @@ export async function projectRun(
       summary: `${incoherent.message} — ${incoherent.action}`,
       scope: read.state.scope,
       assurance: read.state.assurance,
+      repairs: attemptReconciliationsOf(read.state),
     };
   }
   const resolved = resolveBoundary(read.state, journey);
@@ -119,6 +133,7 @@ export async function projectRun(
           : `complete · ${read.state.assurance}: la evidencia omitida o sustituida no se presenta como aprobada`,
       scope: read.state.scope,
       assurance: read.state.assurance,
+      repairs: attemptReconciliationsOf(read.state),
     };
   }
   const invocation =
@@ -141,5 +156,6 @@ export async function projectRun(
         : `pendiente: ${stopped.title} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --code ${folder}'`,
     scope: read.state.scope,
     assurance: read.state.assurance,
+    repairs: attemptReconciliationsOf(read.state),
   };
 }

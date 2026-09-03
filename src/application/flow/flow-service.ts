@@ -12,6 +12,7 @@ import {
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
   type RecoveryBlocker,
+  applyAttemptReconciliation,
   atCurrentVersion,
   attemptAccountingAt,
   checkAgainstJourney,
@@ -19,6 +20,7 @@ import {
   legacyRunNeedsAdoption,
   newRunState,
   normalizeAttemptChain,
+  reconcileAttemptsAt,
   recoveryBlockedAt,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -276,12 +278,25 @@ function recover(state: FlowRunState, named: string | null): FlowRunMutation<Flo
   const blocked = recoveryBlockedAt(state, stopped.id);
   if (blocked !== null) return refuseRecovery(stopped.id, blocked);
 
-  // The grant gives the budget back. The chain relabel is what makes the boundary
-  // ANSWERABLE when the rows were the problem: handing back three attempts over a
-  // ledger that still refuses the ordinal would be a recovery that reports success
-  // and changes nothing. Coherent accounting is left exactly as it is.
-  const granted = grantAttempts(state, stopped.id, spent);
-  const recovered = accounting.unanswerable === null ? granted : normalizeAttemptChain(granted);
+  // The SAME reconciliation the advance applies on its own, over the same input
+  // and through the same function: two copies of this arithmetic is exactly how
+  // the verb and the automatic repair would end up disagreeing about one run. It
+  // is a no-op when the accounting is coherent, which is the ordinary exhaustion
+  // case, and it leaves its own line in the trace when it is not.
+  const reconciled = applyAttemptReconciliation(state, reconcileAttemptsAt(state, stopped.id));
+  // What the VERB adds is the half a person asked for out loud: giving the spend
+  // back to a boundary that reached its cap legitimately — which the automatic
+  // path never does, because reaching the cap is not a mismatch — and relabelling
+  // a chain the reconciliation refused for repeating an ordinal. The totals do not
+  // move: what the reconciliation already forgave is subtracted from the spend
+  // this grant covers, so nothing is forgiven twice.
+  const pending = attemptAccountingAt(reconciled, stopped.id);
+  const granted =
+    pending.spent > 0 ? grantAttempts(reconciled, stopped.id, pending.spent) : reconciled;
+  const recovered =
+    attemptAccountingAt(granted, stopped.id).unanswerable === null
+      ? granted
+      : normalizeAttemptChain(granted);
   const built = directiveFor(recovered, resolveBoundary(recovered, journey), []);
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state: built.state, value: built.directive };

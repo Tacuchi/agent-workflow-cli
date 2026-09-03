@@ -4,7 +4,16 @@ import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js"
 import { groupCommands, renderGroupedCommandLines } from "../../src/cli/help-groups.js";
 import type { FlowAuthority, FlowDecision } from "../../src/domain/flow/authority.js";
 import { decisionsOfScope } from "../../src/domain/flow/authority.js";
-import { newRunState } from "../../src/domain/flow/run-state.js";
+import {
+  type FlowRunAttempt,
+  type FlowRunState,
+  attemptAccountingAt,
+  attemptReconciliationsOf,
+  newRunState,
+  withAttempt,
+  withAttemptCounters,
+  withEvent,
+} from "../../src/domain/flow/run-state.js";
 
 /**
  * One invocation exhausts the deterministic steps and stops at the first
@@ -170,5 +179,126 @@ describe("la entrada pública queda en su familia y ninguna guarda se rompe", ()
 
   it("el describe nombra su propia invocación", () => {
     expect(commandDescribes().get("flow")).toContain("aw flow advance");
+  });
+});
+
+describe("aw flow advance — la contabilidad propia se repara antes de resolver la frontera", () => {
+  /**
+   * El pedido era «que el CLI ayude con cosas así y ni siquiera notifique al
+   * agente». Lo que se fija acá es las dos mitades de eso: el desajuste con
+   * lectura única desaparece sin frontera, sin intento y sin ocupar la
+   * respuesta; y el que no tiene lectura única sigue bloqueando, nombrando la
+   * salida que corresponde en vez de pedir una degradación que no arregla nada.
+   */
+  const STOPPED = "fixture.semantica";
+
+  const row = (attempt: number, parent: string | null): FlowRunAttempt => ({
+    invocation_id: "sello-unico",
+    attempt,
+    request_digest: `pedido-${attempt}`,
+    parent_request_digest: parent,
+    transition: STOPPED,
+  });
+
+  /** La corrida parada en la frontera semántica, con las filas que se le pasen. */
+  function parked(...rows: FlowRunAttempt[]): FlowRunState {
+    const walked = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey: JOURNEY });
+    if (!walked.ok) throw new Error("esperaba avanzar hasta la frontera semántica");
+    return rows.reduce((acc, entry) => withAttempt(acc, entry), walked.state);
+  }
+
+  it("el contador por encima de las filas se repara al vuelo: misma frontera, intentos intactos", () => {
+    const broken = withAttemptCounters(parked(row(1, null)), {
+      floor: { [STOPPED]: 3 },
+      grants: {},
+    });
+    // Antes de avanzar, la frontera está agotada por una cuenta que nadie gastó.
+    expect(attemptAccountingAt(broken, STOPPED).available).toBe(0);
+
+    const result = advanceFlowRun({ state: broken, journey: JOURNEY });
+    if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
+
+    // La frontera vigente es la que iba a ser, contestable y con sus intentos.
+    expect(result.directive.boundary.transition).toBe(STOPPED);
+    expect(result.directive.boundary.kind).toBe("semantic");
+    expect(result.directive.error).toBeNull();
+    expect(attemptAccountingAt(result.state, STOPPED).available).toBe(2);
+    // Ni frontera nueva, ni intento gastado, ni degradación pedida.
+    expect(result.state.attempts).toHaveLength(1);
+    expect(result.state.degraded ?? []).toEqual([]);
+    // Y nada de esto aparece en la directiva: sólo en la traza sellada.
+    expect(result.directive.applied.map((step) => step.transition)).not.toContain(
+      "flow.attempt-reconciliation",
+    );
+    expect(attemptReconciliationsOf(result.state)).toEqual([
+      {
+        transition: STOPPED,
+        repairs: [
+          {
+            rule: "forgive-counter-excess",
+            cause: expect.stringContaining("contador monótono"),
+            field: "attempt_grants",
+            before: 0,
+            after: 2,
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("una cadena incontestable con hueco se renumera y la frontera vuelve a contestarse", () => {
+    const gapped = parked(row(1, null), row(3, "pedido-1"));
+    expect(attemptAccountingAt(gapped, STOPPED).unanswerable).not.toBeNull();
+
+    const result = advanceFlowRun({ state: gapped, journey: JOURNEY });
+    if (!result.ok) throw new Error("esperaba avanzar");
+    expect(result.directive.boundary.transition).toBe(STOPPED);
+    expect(result.directive.error).toBeNull();
+    expect(attemptAccountingAt(result.state, STOPPED).unanswerable).toBeNull();
+    expect(result.state.attempts.map((entry) => entry.attempt)).toEqual([1, 2]);
+  });
+
+  it("un ordinal repetido sigue bloqueando, y la acción nombra recuperar en vez de degradar", () => {
+    const twice = withAttemptCounters(parked(row(1, null), row(1, null), row(1, null)), {
+      floor: {},
+      grants: {},
+    });
+    const result = advanceFlowRun({ state: twice, journey: JOURNEY });
+    if (!result.ok) throw new Error("esperaba una directiva con su bloqueo");
+
+    const error = result.directive.error;
+    if (error === null) throw new Error("esperaba que la frontera siguiera bloqueada");
+    expect(error.action).toContain("aw flow recover --session");
+    expect(error.action).toContain("lo roto es la contabilidad de la corrida, no el gap");
+    // La degradación NO se ofrece: degradar un gap que no es el problema no lo arregla.
+    expect(error.action).not.toContain("degradá el gap");
+    expect(attemptReconciliationsOf(result.state)).toEqual([]);
+  });
+
+  it("una frontera que ya materializó efectos no se repara sola: sus contadores quedan como están", () => {
+    const moved = withEvent(
+      withAttemptCounters(parked(row(1, null), row(2, "pedido-1"), row(3, "pedido-2")), {
+        floor: { [STOPPED]: 4 },
+        grants: {},
+      }),
+      {
+        kind: "executed",
+        transition: STOPPED,
+        operation: "fixture.write",
+        summary: "escribió el documento",
+        output_digest: "salida",
+        effects: ["mutate_overwrite"],
+        evidence: ["fixture.evidencia"],
+      },
+    );
+    const result = advanceFlowRun({ state: moved, journey: JOURNEY });
+    if (!result.ok) throw new Error("esperaba una directiva con su bloqueo");
+
+    // Nada se reparó y nada se perdonó: con el mundo ya movido, la única lectura
+    // segura es no tocar la cuenta. Lo que pase después con esa frontera es la
+    // conducta que el recorrido ya tenía, y esta fase no la cambia.
+    expect(attemptReconciliationsOf(result.state)).toEqual([]);
+    expect(result.state.attempt_grants ?? {}).toEqual({});
+    expect(result.state.attempt_floor).toEqual({ [STOPPED]: 4 });
   });
 });

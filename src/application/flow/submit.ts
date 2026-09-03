@@ -116,6 +116,7 @@ import {
   type CheckoutState,
   sourceAliasesOfPlan,
   validatePlanSourceBoundary,
+  validateSourceBoundedSemantics,
 } from "../source-boundary-policy.js";
 import {
   type ResolvedBoundary,
@@ -283,6 +284,8 @@ interface Observation {
   root: string;
   destinations: DestinationSnapshot;
   scope: ScopeSnapshot;
+  /** Per plan artifact a proposal carries, the source-boundary verdict on its bytes. */
+  plans: readonly PlanArtifactBoundary[];
   /** `null` when this caller has no live Git reader (pure/test callers). */
   checkouts: CheckoutState[] | null;
   /** Per plan artifact, the baseline its publication must seal. */
@@ -301,6 +304,7 @@ async function observe(
     root,
     destinations: await observeDestinations(fs, paths, raw),
     scope: await observeScope(fs, paths, raw),
+    plans: await observePlanEvidence(fs, paths, raw),
     checkouts: await observeCheckouts(fs, paths, session, git),
     baselines: await observeSpecBaselines(fs, paths, raw),
   };
@@ -376,6 +380,76 @@ async function observeSpecBaselines(
     if (coreDocumentKindForPath(relative, canon.canon) !== "plan") continue;
     const baseline = await baselineOfPlan(fs, root, content, canon.canon.spec);
     if (baseline !== null) out.set(relative, baseline);
+  }
+  return out;
+}
+
+/** One plan artifact and what the source policy says about the bytes proposed. */
+interface PlanArtifactBoundary {
+  path: string;
+  failures: ReturnType<typeof validatePlanSourceBoundary>;
+}
+
+/**
+ * Run the source-boundary policy over the plan bytes a proposal is carrying.
+ *
+ * The same judgment the execution entry makes, one moment earlier — over the
+ * artifact's content instead of a file on disk — so a plan accepted when it
+ * closes cannot be rejected for the same cause when somebody tries to run it.
+ * Nothing is read when the payload carries no artifact.
+ *
+ * When the WORKSPACE block cannot be read, only the SEMANTIC half runs. The
+ * clause-level judgment needs no alias table, and answering an unreadable block
+ * with "that alias does not exist" would reject a plan for something the plan
+ * did not do.
+ */
+async function observePlanEvidence(
+  fs: FileSystemPort,
+  paths: PathsService,
+  raw: string,
+): Promise<PlanArtifactBoundary[]> {
+  const proposed = proposedArtifacts(raw);
+  if (proposed.length === 0) return [];
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  // An unreadable canon cannot tell a plan from anything else, and judging a
+  // spec's prose by the plan's closure rule would reject what it never promised.
+  if (!canon.ok) return [];
+  const root = await resolveWorkspaceRootFrom(fs, paths);
+  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const declared = block === null ? null : block.fuentes.map((source) => source.alias);
+  const out: PlanArtifactBoundary[] = [];
+  for (const artifact of proposed) {
+    if (!checkSafeRelativePath(artifact.path).ok) continue;
+    if (coreDocumentKindForPath(artifact.path, canon.canon) !== "plan") continue;
+    out.push({
+      path: artifact.path,
+      failures:
+        declared === null
+          ? validateSourceBoundedSemantics(artifact.content)
+          : validatePlanSourceBoundary(artifact.content, declared),
+    });
+  }
+  return out;
+}
+
+/** The `path`/`content` pairs a payload proposes, read as data and judged by nobody. */
+function proposedArtifacts(raw: string): { path: string; content: string }[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  const artifacts = (parsed as { artifacts?: unknown } | null)?.artifacts;
+  if (!Array.isArray(artifacts)) return [];
+  const out: { path: string; content: string }[] = [];
+  for (const entry of artifacts) {
+    const path = (entry as { path?: unknown })?.path;
+    const content = (entry as { content?: unknown })?.content;
+    if (typeof path !== "string" || typeof content !== "string") continue;
+    const relative = path.trim();
+    if (relative.length === 0 || out.some((artifact) => artifact.path === relative)) continue;
+    out.push({ path: relative, content });
   }
   return out;
 }
@@ -648,6 +722,19 @@ async function decide(
       resolved,
       scoped.failure.message,
       { code: scoped.failure.code, action: scoped.failure.action },
+      cost,
+    );
+  }
+  // The closure-evidence gate runs over the proposed bytes BEFORE the seal: a
+  // plan whose validation names no observable check of the checkout is refused
+  // while it is being written, not when somebody tries to execute it.
+  const evidence = planEvidenceFrom(resolved.stopped, parsed.answer, snapshot.plans);
+  if (evidence !== null) {
+    return reject(
+      state,
+      resolved,
+      evidence.failure.message,
+      { code: evidence.failure.code, action: evidence.failure.action },
       cost,
     );
   }
@@ -1115,8 +1202,7 @@ function scopeFrom(
       failure: {
         code: structural.code,
         message: structural.message,
-        action:
-          "el plan no cumple el límite checkout: abrilo con /w:plan-refine y declará las fuentes por fase y tarea",
+        action: planBoundaryAction(structural.code, "execution-entry"),
       },
     };
   }
@@ -1433,6 +1519,74 @@ function withStandaloneGuidance(
  */
 function invalidScope(message: string, action: string): CapabilityFailure {
   return { code: "FLOW_SCOPE_INVALID", message, action };
+}
+
+/** The five codes the plan source policy can return over a document's bytes. */
+type PlanBoundaryCode = ReturnType<typeof validatePlanSourceBoundary>[number]["code"];
+
+/**
+ * What to do about a source-boundary failure, said at the moment it was found.
+ *
+ * One generic sentence used to answer all five codes, and it was wrong twice
+ * over: it sent somebody to declare sources that were already declared, and it
+ * sent a sentence of prose to a refinement. Structure goes to the refinement
+ * that owns it; a clause that names no observable check is a phrase to fix where
+ * it is being written, and at a save proposal nothing is even saved yet.
+ */
+function planBoundaryAction(
+  code: PlanBoundaryCode,
+  moment: "proposal" | "execution-entry",
+): string {
+  const then =
+    moment === "proposal"
+      ? "corregilo en los bytes y volvé a proponer la vista previa"
+      : "corregilo con /w:plan-refine antes de volver a entrar a ejecución";
+  switch (code) {
+    case "PLAN_SOURCE_BOUNDARY_MISSING":
+      return `falta la declaración estructural: '> Límite de ejecución: checkout' bajo el título y '> Fuentes:' en cada fase — ${then}`;
+    case "PLAN_SOURCE_UNKNOWN":
+      return `ese alias no está en la tabla Fuentes del bloque WORKSPACE: declaralo ahí, o usá uno de los que ya están — ${then}`;
+    case "PLAN_TASK_SOURCE_OUTSIDE_PHASE":
+      return `la fuente de una tarea es un subconjunto de la de su fase: ajustá una de las dos — ${then}`;
+    case "PLAN_SOURCE_EXTERNAL_CLOSURE":
+      return `una cláusula de cierre no puede apoyarse en una superficie externa: llevá esa comprobación a '## Handoff operativo' y dejá en la cláusula una del checkout — ${then}`;
+    case "PLAN_SOURCE_LOCAL_PROOF_MISSING":
+      return moment === "proposal"
+        ? "nombrá en esa cláusula el comando, el archivo o la ruta que produce la comprobación, y volvé a proponer la vista previa"
+        : "es una frase del documento y no su estructura: nombrá en esa cláusula el comando, el archivo o la ruta que produce la comprobación";
+    default:
+      return then;
+  }
+}
+
+/**
+ * The closure-evidence gate, run BEFORE the preview is sealed.
+ *
+ * Position is the whole rule: the rejection has to arrive while the plan is
+ * still being written, so nobody is asked to approve a document the execution
+ * entry would refuse. The judgment is literally the same function, which is what
+ * makes the two moments impossible to disagree.
+ */
+function planEvidenceFrom(
+  stopped: FlowDecision,
+  answer: FlowAnswer,
+  observed: readonly PlanArtifactBoundary[],
+): { failure: CapabilityFailure } | null {
+  if (proposalContractOf(stopped) === null || answer.artifacts.length === 0) return null;
+  const proposed = new Set(answer.artifacts.map((artifact) => artifact.path.trim()));
+  for (const plan of observed) {
+    if (!proposed.has(plan.path)) continue;
+    const failure = plan.failures[0];
+    if (failure === undefined) continue;
+    return {
+      failure: {
+        code: failure.code,
+        message: `'${plan.path}': ${failure.message}`,
+        action: planBoundaryAction(failure.code, "proposal"),
+      },
+    };
+  }
+  return null;
 }
 
 /**

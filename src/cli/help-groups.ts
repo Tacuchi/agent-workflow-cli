@@ -90,6 +90,11 @@ const GROUPS: readonly CommandGroup[] = [
       // plan-refine. Lives here and not with the doctors because what it
       // maintains is the spec→plan lineage, not the tool's own records.
       "reseal",
+      // The same lineage, one notch smaller: `reseal` rewrites the baseline of a
+      // plan a review found still valid; `amend` corrects the WORDING of a
+      // closed spec or plan without opening a refinement, refusing structurally
+      // whatever touches the contract.
+      "amend",
     ],
   },
   {

@@ -15,8 +15,11 @@ import {
   FLOW_RUN_STATE_VERSION,
   type FlowRunAttempt,
   type FlowRunState,
+  applyAttemptReconciliation,
   applyTransition,
   atCurrentVersion,
+  attemptAccountingAt,
+  attemptReconciliationsOf,
   attemptsAt,
   checkAgainstJourney,
   degradeTransition,
@@ -25,12 +28,14 @@ import {
   newRunState,
   parseRunState,
   positionDigest,
+  reconcileAttemptsAt,
   serializeRunState,
   skipTransition,
   withActionAttempted,
   withAttempt,
   withAttemptCounters,
   withBoundary,
+  withEvent,
   withObservation,
   withPendingAction,
 } from "../../src/domain/flow/run-state.js";
@@ -625,5 +630,147 @@ describe("estado de corrida — sobre un workspace real", () => {
     const after = await readRun(fs, location);
     if (!after.ok) throw new Error("esperaba leer la corrida");
     expect(after.state.applied).toHaveLength(1);
+  });
+});
+
+describe("reconciliación de la contabilidad — lo que la habilita es la unicidad", () => {
+  /**
+   * La tabla de casos: un reparable y un ambiguo por cada conflicto que la
+   * contabilidad publica, más la frontera que ya materializó efectos.
+   *
+   * Lo que se fija no es que repare, sino DÓNDE está la línea: se perdona
+   * exactamente el exceso y nunca se baja el contador; no se perdona más de lo
+   * que las filas registran; y lo que tiene dos lecturas se deja quieto con su
+   * razón dicha.
+   */
+  const TRANSITION = "fixture.a";
+
+  const row = (attempt: number, parent: string | null): FlowRunAttempt => ({
+    invocation_id: "sello-unico",
+    attempt,
+    request_digest: `pedido-${attempt}`,
+    parent_request_digest: parent,
+    transition: TRANSITION,
+  });
+
+  const withRows = (state: FlowRunState, ...rows: FlowRunAttempt[]): FlowRunState =>
+    rows.reduce((acc, entry) => withAttempt(acc, entry), state);
+
+  const oneRow = (): FlowRunState => withRows(newRunState("quick", SESSION), row(1, null));
+
+  it("el contador por encima de las filas se perdona en su exceso, sin bajar el contador", () => {
+    const state = withAttemptCounters(oneRow(), { floor: { [TRANSITION]: 3 }, grants: {} });
+    expect(attemptsAt(state, TRANSITION)).toBe(3);
+
+    const plan = reconcileAttemptsAt(state, TRANSITION);
+    expect(plan.ambiguous).toBeNull();
+    expect(plan.repairs).toHaveLength(1);
+    expect(plan.repairs[0]).toMatchObject({
+      rule: "forgive-counter-excess",
+      field: "attempt_grants",
+      before: 0,
+      after: 2,
+    });
+
+    const repaired = applyAttemptReconciliation(state, plan);
+    // El gasto vuelve a ser lo que las filas registran, y el contador no bajó.
+    expect(attemptsAt(repaired, TRANSITION)).toBe(1);
+    expect(repaired.attempt_floor).toEqual({ [TRANSITION]: 3 });
+    expect(attemptAccountingAt(repaired, TRANSITION).available).toBe(2);
+  });
+
+  it("reconciliar dos veces no perdona dos veces: la regla se lee sobre el gasto", () => {
+    const state = withAttemptCounters(oneRow(), { floor: { [TRANSITION]: 3 }, grants: {} });
+    const once = applyAttemptReconciliation(state, reconcileAttemptsAt(state, TRANSITION));
+    const again = reconcileAttemptsAt(once, TRANSITION);
+    expect(again.repairs).toEqual([]);
+    expect(applyAttemptReconciliation(once, again)).toBe(once);
+    // El conflicto estructural sigue publicándose —el piso nunca baja— y eso es
+    // exactamente por lo que la regla no puede escribirse sobre esa diferencia.
+    expect(attemptAccountingAt(once, TRANSITION).conflicts).not.toEqual([]);
+  });
+
+  it("los grants por encima de lo registrado se recortan a lo registrado", () => {
+    const state = withAttemptCounters(oneRow(), { floor: {}, grants: { [TRANSITION]: 5 } });
+    const plan = reconcileAttemptsAt(state, TRANSITION);
+    expect(plan.repairs).toHaveLength(1);
+    expect(plan.repairs[0]).toMatchObject({ rule: "clamp-grants", before: 5, after: 1 });
+    const repaired = applyAttemptReconciliation(state, plan);
+    expect(repaired.attempt_grants).toEqual({ [TRANSITION]: 1 });
+    expect(reconcileAttemptsAt(repaired, TRANSITION).repairs).toEqual([]);
+  });
+
+  it("una cadena con hueco y sin repetidos se renumera preservando el orden", () => {
+    const gapped = withRows(newRunState("quick", SESSION), row(1, null), row(3, "pedido-1"));
+    expect(attemptAccountingAt(gapped, TRANSITION).unanswerable).not.toBeNull();
+
+    const plan = reconcileAttemptsAt(gapped, TRANSITION);
+    expect(plan.ambiguous).toBeNull();
+    expect(plan.repairs.map((repair) => repair.rule)).toContain("renumber-chain");
+
+    const repaired = applyAttemptReconciliation(gapped, plan);
+    expect(repaired.attempts.map((entry) => entry.attempt)).toEqual([1, 2]);
+    expect(repaired.attempts.map((entry) => entry.request_digest)).toEqual([
+      "pedido-1",
+      "pedido-3",
+    ]);
+    expect(attemptAccountingAt(repaired, TRANSITION).unanswerable).toBeNull();
+  });
+
+  it("un ordinal repetido no se repara: cuál fila fue primero es una adivinanza", () => {
+    const twice = withRows(newRunState("quick", SESSION), row(1, null), row(1, null));
+    const plan = reconcileAttemptsAt(twice, TRANSITION);
+    expect(plan.repairs).toEqual([]);
+    expect(plan.ambiguous).toMatchObject({ scope: "accounting" });
+    expect(plan.ambiguous?.reason).toContain("repite el ordinal 1");
+    expect(applyAttemptReconciliation(twice, plan)).toBe(twice);
+  });
+
+  it("una frontera que ya materializó efectos no se toca, ni con el contador desajustado", () => {
+    const moved = withEvent(
+      withAttemptCounters(oneRow(), { floor: { [TRANSITION]: 3 }, grants: {} }),
+      {
+        kind: "executed",
+        transition: TRANSITION,
+        operation: "fixture.write",
+        summary: "escribió el documento",
+        output_digest: "salida",
+        effects: ["mutate_overwrite"],
+        evidence: ["fixture.evidencia"],
+      },
+    );
+    const plan = reconcileAttemptsAt(moved, TRANSITION);
+    expect(plan.repairs).toEqual([]);
+    expect(plan.ambiguous).toMatchObject({ scope: "effects" });
+    expect(plan.ambiguous?.reason).toContain("ya ejerció efectos");
+  });
+
+  it("la reparación queda en la traza sellada, y se puede leer después", () => {
+    const state = withAttemptCounters(oneRow(), { floor: { [TRANSITION]: 3 }, grants: {} });
+    const repaired = applyAttemptReconciliation(state, reconcileAttemptsAt(state, TRANSITION));
+
+    const event = repaired.events.at(-1);
+    expect(event).toMatchObject({ kind: "reconciled", transition: TRANSITION });
+    // Sobrevive a una ida y vuelta por el archivo: una corrida vieja se sigue
+    // leyendo, y esta también.
+    const back = parseRunState(serializeRunState(repaired));
+    if (!back.ok) throw new Error(`esperaba un estado válido: ${back.failure.code}`);
+    expect(attemptReconciliationsOf(back.state)).toEqual([
+      {
+        transition: TRANSITION,
+        repairs: [
+          {
+            rule: "forgive-counter-excess",
+            cause: expect.stringContaining("contador monótono"),
+            field: "attempt_grants",
+            before: 0,
+            after: 2,
+          },
+        ],
+      },
+    ]);
+    // No es trabajo pendiente: la traza no la anota como paso ni como bloqueo.
+    expect(back.state.boundary).toBeNull();
+    expect(back.state.degraded ?? []).toEqual([]);
   });
 });

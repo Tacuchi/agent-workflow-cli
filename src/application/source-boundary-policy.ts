@@ -84,11 +84,39 @@ const REMOTE_LOCATOR =
 // `remote-read` is the discriminant of RemoteContextSnapshot, not a prose term.
 // Seeing that typed context in a closure clause is invalid by construction.
 const REMOTE_CONTEXT_DISCRIMINANT = /\bkind\s*:\s*["'`]?remote-read\b/i;
-// A close is allowed only when it names one of the local proof forms Workline
-// can reproduce. This is an allowlist of evidence *semantics*, not a list of
-// remote products/hosts to forbid. Relative checkout artifacts are evidence too.
-const LOCAL_PROOF =
+// COMPATIBILITY PATH, NOT THE CRITERION.
+//
+// This is the term allowlist that judged closure evidence before the referent
+// rule below existed. It is kept so that no plan already written changes
+// verdict: the criterion is the UNION of the two, which is strictly more
+// permissive than either, so there is no migration and no grace period.
+//
+// Its path branch is exactly why the rule had to change: it accepted a relative
+// path only under `src/`, `tests/`, `fixtures/`, `docs/` or `scripts/` — the
+// directories of THIS repo — so a plan validating over `migraciones/` or `db/`
+// was rejected for naming its own, while describing a perfectly local check.
+const LOCAL_PROOF_TERMS_COMPAT =
   /\b(?:checkout|checkoutproof|fixture|ephemeral|test(?:s)?|prueba(?:s)?|inspecci[oó]n|inspection|lint|typecheck|build|golden(?:s)?|diff)\b|\bnpm\s+(?:run\s+)?(?:test|lint|typecheck|build|pack)\b|(?:^|[\s`(])(?:\.?\/?(?:src|tests|fixtures|docs|scripts)\/)/i;
+
+// THE CRITERION: a closing clause is local when it names a REFERENT the checkout
+// can produce — never when it happens to use a word from a list. Two structural
+// forms, both about the shape of the reference and neither about vocabulary:
+//
+//   · an invocation written as inline code — `npm run test`, `psql -f db/seed.sql`;
+//   · a relative path of ANY shape — `migraciones/001_init.sql`, `db/seeds/`.
+//
+// A remote locator never reaches this side: `remoteSurfaceOf` rejects the clause
+// first, which is what lets the positive rule stay ignorant of surfaces. The
+// policy is pure and touches no disk, so it judges whether the clause POINTS at
+// the checkout, never whether the file is there — that is the checkout proof's
+// job at execution time.
+const INLINE_CODE_SPAN = /`([^`\n]+)`/g;
+// A path is RELATIVE by grammar: it starts at a delimiter, never after another
+// separator, so `/etc/passwd` and `~/scripts/x.sh` — local to a machine but
+// outside the checkout — are not referents while `migraciones/001.sql` is.
+const RELATIVE_PATH = /(?:^|[\s`("'[<])((?:\.{1,2}\/)?[\w.@+-]+(?:\/[\w.@+-]+)*\/[\w.@+-]*)/g;
+const FILE_NAME = /\.[A-Za-z0-9]{1,8}$/;
+const PROGRAM_NAME = /^(?:\.{1,2}\/)?[A-Za-z_][\w.+-]*$/;
 
 /**
  * Reads the structural source declarations from a plan without interpreting its
@@ -253,16 +281,32 @@ export function validateSourceBoundedSemantics(text: string): SourceBoundaryFail
     }
     if (
       (clause.kind === "phase-validation" || clause.kind === "plan-validation") &&
-      !LOCAL_PROOF.test(clause.text)
+      !namesCheckoutReferent(clause.text) &&
+      !LOCAL_PROOF_TERMS_COMPAT.test(clause.text)
     ) {
       failures.push({
         code: "PLAN_SOURCE_LOCAL_PROOF_MISSING",
         line: clause.line,
-        message: `${semanticClauseLabel(clause)} no nombra una prueba local de checkout`,
+        message: `${semanticClauseLabel(clause)} no nombra ninguna comprobación observable en el checkout: nombrá el comando, el archivo o la ruta que la produce`,
       });
     }
   }
   return failures;
+}
+
+/**
+ * The closing clauses of a document, by kind and text — the gate's own reading.
+ *
+ * Exported so a guard that must refuse a change to the closure path uses the
+ * SAME extraction the gate judges with, instead of a second parser that could
+ * disagree about what a closing clause even is. Line numbers are deliberately
+ * dropped: they move with any edit above them, and an editorial fix three
+ * sections up is not a change to a clause.
+ */
+export function closingClausesOf(text: string): { kind: SemanticClauseKind; text: string }[] {
+  return sourceBoundedClauses(text)
+    .filter((clause) => clause.kind !== "task")
+    .map((clause) => ({ kind: clause.kind, text: clause.text }));
 }
 
 function sourceBoundedClauses(text: string): SemanticClause[] {
@@ -330,6 +374,43 @@ function sourceBoundedClauses(text: string): SemanticClause[] {
     }
   }
   return clauses;
+}
+
+/**
+ * Does the clause name something the checkout can produce?
+ *
+ * Two forms. A relative path is a referent when its last segment is a file name
+ * or it ends in a separator — which is what keeps `N/A` and `60/40` from reading
+ * as evidence while `migraciones/001.sql` and `db/seeds/` do. An inline-code
+ * span whose first of two or more tokens has the shape of a program is an
+ * invocation, so `make verificar-catalogo` accredits without naming any path.
+ */
+function namesCheckoutReferent(text: string): boolean {
+  if (namesRelativePath(text)) return true;
+  for (const match of text.matchAll(INLINE_CODE_SPAN)) {
+    const tokens = (match[1] ?? "")
+      .trim()
+      .split(/\s+/)
+      .filter((token) => token.length > 0);
+    if (tokens.length >= 2 && PROGRAM_NAME.test(tokens[0] ?? "")) return true;
+  }
+  return false;
+}
+
+/**
+ * One path predicate for the whole rule, inside code spans and in prose alike.
+ *
+ * Backticks are not part of a path's grammar, so scanning the clause once
+ * covers `` `migraciones/003.sql` `` and the same path written bare — and keeps
+ * a code span from accrediting `N/A` merely for carrying a slash.
+ */
+function namesRelativePath(text: string): boolean {
+  for (const match of text.matchAll(RELATIVE_PATH)) {
+    const path = match[1] ?? "";
+    if (path.endsWith("/")) return true;
+    if (FILE_NAME.test(path.slice(path.lastIndexOf("/") + 1))) return true;
+  }
+  return false;
 }
 
 function remoteSurfaceOf(text: string): string | null {

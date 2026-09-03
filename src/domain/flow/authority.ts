@@ -3521,6 +3521,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     reason:
       "comando transversal de mantenimiento documental: mismo contrato que `discard`, `reset` y `claims` —`prepare` read-only y `apply` con el digest exacto recomputado bajo el lock del workspace— y sin corrida propia porque no hay recorrido que dirigir: re-sellar es UNA afirmación humana sobre un plan que sigue valiendo, no un tramo con fronteras. La divergencia que sí exige rediseñar el plan sigue entregándose a `/w:plan-refine`",
   },
+  {
+    command: "amend",
+    reason:
+      "comando transversal de mantenimiento documental, un escalón por debajo de `reseal`: corrige la REDACCIÓN de una spec o un plan ya cerrados en un solo acto, sin corrida propia porque no hay recorrido que dirigir —una frase que se lee mal no es un tramo con fronteras—. No lleva `prepare`/`apply` porque ese molde existe para que una persona decida entre los dos pasos, y acá el candado del workspace más el compare-and-swap sobre el digest del documento dan la misma seguridad en una invocación. Lo que sí toca el contrato se rechaza estructuralmente y se entrega a `/w:spec-refine` o `/w:plan-refine`",
+  },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },

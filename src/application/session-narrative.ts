@@ -206,6 +206,21 @@ async function materialTrace(
       });
       continue;
     }
+    if (event.kind === "reconciled") {
+      // A repair nobody was asked about still belongs in the account of what
+      // happened — as something already applied, never as a pending step.
+      sequence.push({
+        state: "aplicado",
+        text: `la corrida reparó su propia contabilidad en ${event.transition}: ${event.repairs
+          .map((repair) => repair.rule)
+          .join(", ")}`,
+        detail: event.repairs
+          .map((repair) => `${repair.field} ${repair.before} → ${repair.after} (${repair.cause})`)
+          .join(" · "),
+        source,
+      });
+      continue;
+    }
     sequence.push({
       state: "fallido",
       text: `${event.message} — ${event.recovery}`,

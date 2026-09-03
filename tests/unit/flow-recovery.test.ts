@@ -24,10 +24,13 @@ import {
   FLOW_RUN_STATE_VERSION,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
+  applyAttemptReconciliation,
   attemptAccountingAt,
+  attemptReconciliationsOf,
   attemptsAt,
   normalizeAttemptChain,
   parseRunState,
+  reconcileAttemptsAt,
   recoveryBlockedAt,
   sealRunState,
   withActionAttempted,
@@ -634,6 +637,53 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       const applied = await answerObserve();
       expect(applied.boundary.transition).toBe("fixture.board");
       expect((await state()).applied).toContain("fixture.observe");
+    });
+
+    it("el verbo repara con la MISMA función que el avance, y no perdona dos veces", async () => {
+      // El desajuste tal como ocurre: el contador vive en su propio archivo y no
+      // baja, así que restaurar una copia anterior del ledger deja tres intentos
+      // contados sobre una sola fila persistida. Es el caso con lectura única.
+      await refuseObserve();
+      const oneRow = await readFile(statePath(), "utf8");
+      await refuseObserve();
+      await refuseObserve();
+      await writeFile(statePath(), oneRow, "utf8");
+
+      const before = await state();
+      expect(attemptsAt(before, "fixture.observe")).toBe(MAX_BOUNDARY_ATTEMPTS);
+      expect(before.attempts).toHaveLength(1);
+
+      // Lo que el avance haría por su cuenta, calculado con la misma función que
+      // el verbo usa: perdonar exactamente el exceso, sin bajar el contador.
+      const shared = reconcileAttemptsAt(before, "fixture.observe");
+      expect(shared.repairs).toEqual([
+        {
+          rule: "forgive-counter-excess",
+          cause: expect.stringContaining("contador monótono"),
+          field: "attempt_grants",
+          before: 0,
+          after: 2,
+        },
+      ]);
+      const automatic = applyAttemptReconciliation(before, shared);
+      expect(automatic.attempt_grants?.["fixture.observe"]).toBe(2);
+      expect(attemptsAt(automatic, "fixture.observe")).toBe(1);
+
+      const recovered = await recover();
+      if (!recovered.ok) throw new Error(`esperaba recuperar: ${recovered.failure.code}`);
+      const after = await state();
+
+      // La reparación compartida quedó registrada tal cual, una sola vez.
+      expect(attemptReconciliationsOf(after)).toEqual([
+        { transition: "fixture.observe", repairs: shared.repairs },
+      ]);
+      // Y el total perdonado sigue siendo el gasto, no la suma de dos perdones:
+      // 2 del exceso del contador + 1 del intento que las filas sí registran.
+      expect(after.attempt_grants?.["fixture.observe"]).toBe(MAX_BOUNDARY_ATTEMPTS);
+      expect(attemptsAt(after, "fixture.observe")).toBe(0);
+      expect(after.attempts).toHaveLength(1);
+      expect(after.attempt_floor?.["fixture.observe"]).toBe(MAX_BOUNDARY_ATTEMPTS);
+      expect(recovered.directive.boundary.transition).toBe("fixture.observe");
     });
 
     it("el verbo existe en la superficie del CLI y llega al servicio", async () => {

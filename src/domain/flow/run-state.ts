@@ -311,6 +311,199 @@ export function attemptAccountingAt(state: FlowRunState, transition: string): At
   };
 }
 
+/** The three repairs whose reading is unique. Nothing else is ever applied. */
+export type AttemptRepairRule = "forgive-counter-excess" | "clamp-grants" | "renumber-chain";
+
+/** One repair: the rule, the conflict it answers, and the two values it moves. */
+export interface AttemptRepair {
+  rule: AttemptRepairRule;
+  /** The conflict's own words, so the trace says WHY and not only what. */
+  cause: string;
+  /** The field the repair moves, by the name it carries in the state. */
+  field: string;
+  before: number;
+  after: number;
+}
+
+/**
+ * What this run's bookkeeping can be repaired to, when the reading is unique.
+ *
+ * The rule is UNICITY, never membership of a list of foreseen cases: a mismatch
+ * is repaired because there is exactly one state it could have come from, and
+ * left alone because there is more than one. That is why `ambiguous` carries a
+ * sentence instead of a code — what a person needs is which reading is missing.
+ */
+export interface AttemptReconciliation {
+  transition: string;
+  /** Empty when the accounting is coherent, or when nothing may be touched. */
+  repairs: AttemptRepair[];
+  /**
+   * Why what is left has no single reading, or `null`.
+   *
+   * `scope` is what decides the way out, and the two are not interchangeable.
+   * `accounting` is a count that cannot be reconstructed: the exit is the verb
+   * that recovers, and degrading the gap would repair nothing. `effects` is the
+   * world having moved — or nobody being able to say whether it did — and there
+   * the exit is NOT a recovery: giving the boundary back would invite a second
+   * answer on top of something that already happened.
+   */
+  ambiguous: { scope: "accounting" | "effects"; reason: string } | null;
+}
+
+/**
+ * The reconciliation one transition admits — pure, and the ONLY place it is decided.
+ *
+ * Three mismatches have exactly one reading, and each is repaired at its own
+ * scale:
+ *
+ * - the monotone counter ahead of the rows → forgive EXACTLY the excess. Never
+ *   lower the counter: lowering it would reopen the hole the counter is fenced
+ *   by, so the repair is a grant, which is subtracted rather than deleted.
+ * - grants above what the transition ever recorded → clamp them to what was
+ *   recorded. Forgiving more than the rows hold is the one thing the accounting
+ *   must not be able to do.
+ * - a chain whose ordinals do not reach the row count, with no repeated ordinal
+ *   → relabel it preserving the order that actually happened.
+ *
+ * And three leave it alone, because the state they came from cannot be told: a
+ * repeated ordinal (which row came first is a guess), a boundary that already
+ * materialized effects, and an action begun whose verdict never came back. The
+ * last two are read from the run's material trace, not inferred from counters.
+ */
+export function reconcileAttemptsAt(
+  state: FlowRunState,
+  transition: string,
+): AttemptReconciliation {
+  const blocked = recoveryBlockedAt(state, transition);
+  if (blocked !== null) {
+    return {
+      transition,
+      repairs: [],
+      ambiguous: {
+        scope: "effects",
+        reason:
+          blocked.reason === "materialized"
+            ? `'${transition}' ya ejerció efectos en esta corrida (${blocked.event.operation}): reparar su contabilidad al vuelo invitaría a una segunda respuesta sobre algo que ya ocurrió`
+            : `'${transition}' dejó anotado que su acción se iba a ejecutar y nunca registró en qué terminó: nadie puede decir si tocó el mundo`,
+      },
+    };
+  }
+  const { rows, floor: read, granted, spent } = spendAt(state, transition);
+  const floor = Math.max(read, rows.length);
+  const accounting = attemptAccountingAt(state, transition);
+  const repairs: AttemptRepair[] = [];
+  // What is repaired is the EFFECTIVE spend, not the raw difference between the
+  // counter and the rows — and that is what makes the repair idempotent. The
+  // floor never comes down, so `floor > rows` stays true forever: a rule written
+  // against that difference would forgive it again on every single advance and
+  // quietly remove the cap. Written against the spend, the second reading finds
+  // `spent === rows` and has nothing to do.
+  const unforgiven = spent - rows.length;
+  if (unforgiven > 0) {
+    repairs.push({
+      rule: "forgive-counter-excess",
+      cause: conflictCause(accounting, "attempt_floor"),
+      field: "attempt_grants",
+      before: granted,
+      after: granted + unforgiven,
+    });
+  }
+  const recorded = Math.max(rows.length, floor);
+  if (granted > recorded) {
+    repairs.push({
+      rule: "clamp-grants",
+      cause: conflictCause(accounting, "attempt_grants"),
+      field: "attempt_grants",
+      before: granted,
+      after: recorded,
+    });
+  }
+  const duplicated = repeatedOrdinal(state);
+  if (accounting.unanswerable !== null && duplicated === null) {
+    repairs.push({
+      rule: "renumber-chain",
+      cause: conflictCause(accounting, "attempts[].attempt"),
+      field: "attempts[].attempt",
+      before: accounting.ordinals.length === 0 ? 0 : Math.max(...accounting.ordinals),
+      after: rows.length,
+    });
+  }
+  return {
+    transition,
+    repairs,
+    ambiguous:
+      duplicated === null
+        ? null
+        : {
+            scope: "accounting",
+            reason: `la cadena de intentos repite el ordinal ${duplicated} bajo la misma invocación: cuál de las dos filas ocurrió primero no se puede reconstruir`,
+          },
+  };
+}
+
+/** The cause the accounting already wrote for a conflict, or a literal fallback. */
+function conflictCause(accounting: AttemptAccounting, field: string): string {
+  const found = accounting.conflicts.find((conflict) => conflict.between[0].name === field);
+  return found?.cause ?? `${field} no coincide con las filas persistidas`;
+}
+
+/** The first ordinal a single invocation records twice, or `null`. */
+function repeatedOrdinal(state: FlowRunState): number | null {
+  const seen = new Map<string, Set<number>>();
+  for (const row of state.attempts) {
+    const ordinals = seen.get(row.invocation_id) ?? new Set<number>();
+    if (ordinals.has(row.attempt)) return row.attempt;
+    ordinals.add(row.attempt);
+    seen.set(row.invocation_id, ordinals);
+  }
+  return null;
+}
+
+/**
+ * Apply a reconciliation and record it — one function, so neither can happen alone.
+ *
+ * A repair nobody can see afterwards is what "it does not even notify the agent"
+ * would otherwise cost, and a trace line without the repair would be a claim.
+ * Returns the state untouched when there is nothing whose reading is unique.
+ */
+export function applyAttemptReconciliation(
+  state: FlowRunState,
+  reconciliation: AttemptReconciliation,
+): FlowRunState {
+  if (reconciliation.repairs.length === 0) return state;
+  const key = attemptCounterKey(state, reconciliation.transition);
+  let next = state;
+  for (const repair of reconciliation.repairs) {
+    if (repair.rule === "renumber-chain") {
+      next = normalizeAttemptChain(next);
+      continue;
+    }
+    const grants = { ...(next.attempt_grants ?? {}) };
+    grants[key] = repair.after;
+    next = sealRunState({ ...withoutSeal(next), attempt_grants: grants });
+  }
+  const iteration = currentBatchIteration(next, reconciliation.transition);
+  return withEvent(next, {
+    kind: "reconciled",
+    transition: reconciliation.transition,
+    ...(iteration === null ? {} : { batch_iteration: iteration }),
+    operation: "flow.attempt-reconciliation",
+    repairs: reconciliation.repairs,
+  });
+}
+
+/** Every repair this run applied to its own bookkeeping, oldest first. */
+export function attemptReconciliationsOf(
+  state: FlowRunState,
+): { transition: string; repairs: AttemptRepair[] }[] {
+  return state.events
+    .filter(
+      (event): event is Extract<FlowRunEvent, { kind: "reconciled" }> =>
+        event.kind === "reconciled",
+    )
+    .map((event) => ({ transition: event.transition, repairs: event.repairs }));
+}
+
 /**
  * The refusal a submit would hit replaying this run's own history, or `null`.
  *
@@ -380,6 +573,9 @@ export function recoveryBlockedAt(state: FlowRunState, transition: string): Reco
  * written before the field existed: same unknown, same refusal.
  */
 function declaresMaterialEffect(event: FlowRunEvent): boolean {
+  // A reconciliation moved the run's own counters and nothing else: it can no
+  // more block a recovery than reading the file could.
+  if (event.kind === "reconciled") return false;
   if (event.kind !== "failed") return touchesTheWorld(event.effects);
   if (event.effects === undefined) return true;
   return event.code === "FLOW_EFFECT_PARTIAL" || touchesTheWorld(event.effects);
@@ -487,6 +683,25 @@ export type FlowRunEvent =
       output_digest: string;
       effects: EffectClass[];
       evidence: string[];
+    }
+  | {
+      /**
+       * The run repaired its OWN bookkeeping, and nobody was asked anything.
+       *
+       * It is a third kind rather than an `executed` event because nothing was
+       * invoked and nothing in the world moved: what happened is that a mismatch
+       * with exactly one reading was closed before the boundary was resolved. The
+       * line exists so "it is not notified" does not become "it cannot be
+       * audited" — the repairs are consultable afterwards, and they are never
+       * pending work.
+       */
+      kind: "reconciled";
+      transition: string;
+      /** See {@link FlowRunAttempt.batch_iteration}. */
+      batch_iteration?: number;
+      operation: string;
+      /** Every repair applied, with the conflict it answered and its two values. */
+      repairs: AttemptRepair[];
     }
   | {
       kind: "failed";
@@ -2194,37 +2409,54 @@ function isPendingAction(value: unknown): value is FlowPendingAction | null {
  * back, and saying what to do about what did not.
  */
 function isEventArray(value: unknown): value is FlowRunEvent[] {
-  if (!Array.isArray(value)) return false;
-  return value.every((entry) => {
-    if (!isRecord(entry)) return false;
-    if (
-      typeof entry.transition !== "string" ||
-      typeof entry.operation !== "string" ||
-      (entry.batch_iteration !== undefined &&
-        (!Number.isInteger(entry.batch_iteration) || (entry.batch_iteration as number) < 1))
-    ) {
-      return false;
-    }
-    if (entry.kind === "executed") {
-      return (
-        typeof entry.summary === "string" &&
-        typeof entry.output_digest === "string" &&
-        isEffectClassArray(entry.effects) &&
-        isStringArray(entry.evidence)
-      );
-    }
-    if (entry.kind === "failed") {
-      return (
-        typeof entry.code === "string" &&
-        typeof entry.message === "string" &&
-        typeof entry.recovery === "string" &&
-        // ABSENT-or-well-formed, never defaulted: a version 7 trace has no such
-        // field, and the guard that reads it treats its absence as the refusal.
-        (entry.effects === undefined || isEffectClassArray(entry.effects))
-      );
-    }
+  return Array.isArray(value) && value.every(isEvent);
+}
+
+/** One trace entry: the fields every kind carries, then the ones its kind demands. */
+function isEvent(entry: unknown): boolean {
+  if (!isRecord(entry)) return false;
+  if (typeof entry.transition !== "string" || typeof entry.operation !== "string") return false;
+  if (
+    entry.batch_iteration !== undefined &&
+    (!Number.isInteger(entry.batch_iteration) || (entry.batch_iteration as number) < 1)
+  ) {
     return false;
-  });
+  }
+  if (entry.kind === "executed") {
+    return (
+      typeof entry.summary === "string" &&
+      typeof entry.output_digest === "string" &&
+      isEffectClassArray(entry.effects) &&
+      isStringArray(entry.evidence)
+    );
+  }
+  if (entry.kind === "reconciled") return isRepairArray(entry.repairs);
+  if (entry.kind === "failed") {
+    return (
+      typeof entry.code === "string" &&
+      typeof entry.message === "string" &&
+      typeof entry.recovery === "string" &&
+      // ABSENT-or-well-formed, never defaulted: a version 7 trace has no such
+      // field, and the guard that reads it treats its absence as the refusal.
+      (entry.effects === undefined || isEffectClassArray(entry.effects))
+    );
+  }
+  return false;
+}
+
+/** A repair is well-formed when its rule is one of the three and its values are numbers. */
+function isRepairArray(value: unknown): value is AttemptRepair[] {
+  if (!Array.isArray(value)) return false;
+  const rules: AttemptRepairRule[] = ["forgive-counter-excess", "clamp-grants", "renumber-chain"];
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      rules.includes(entry.rule as AttemptRepairRule) &&
+      typeof entry.cause === "string" &&
+      typeof entry.field === "string" &&
+      Number.isInteger(entry.before) &&
+      Number.isInteger(entry.after),
+  );
 }
 
 function isObservationArray(value: unknown): value is FlowObservation[] {

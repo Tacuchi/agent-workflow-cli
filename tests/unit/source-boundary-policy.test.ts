@@ -273,3 +273,100 @@ describe("SourceBoundaryPolicy — contexto remoto", () => {
     ).toBeNull();
   });
 });
+
+describe("SourceBoundaryPolicy — referente de checkout en la evidencia de cierre", () => {
+  // El incidente que originó la regla: un plan de migración de otro proyecto,
+  // cuyas validaciones nombran SUS directorios. Ninguna de las frases de abajo
+  // contiene los términos que hoy habilitan el cierre, y eso es a propósito.
+  const planWith = (validation: string, planValidation?: string) =>
+    [
+      "# Plan 001 — migración",
+      "",
+      "> Límite de ejecución: checkout",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — Columnas nuevas",
+      "> Fuentes: cli",
+      "",
+      "- [ ] T1.1 — Agregar las columnas. _(fuentes: cli)_",
+      "",
+      `**Validación de fase:** ${validation}`,
+      ...(planValidation === undefined ? [] : ["", "## Validations", "", `- ${planValidation}`]),
+    ].join("\n");
+
+  it("acepta la ruta relativa de un proyecto cuyos directorios no son los de este repo", () => {
+    const plan = planWith(
+      "las tres columnas aparecen al aplicar `migraciones/003_add_columns.sql` sobre una base de trabajo y la salida coincide con `db/esperado/003.txt`.",
+      "el catálogo queda igual al aplicar `migraciones/` completo dos veces seguidas.",
+    );
+    expect(validatePlanSourceBoundary(plan, ["cli"])).toEqual([]);
+  });
+
+  it("acepta una invocación local escrita como código, sin ruta y sin palabra habilitante", () => {
+    const plan = planWith(
+      "`make verificar-catalogo` termina en cero y su salida no reporta ninguna columna faltante.",
+    );
+    expect(validatePlanSourceBoundary(plan, ["cli"])).toEqual([]);
+  });
+
+  it("es el referente y no el vocabulario lo que acepta: sin la ruta, la misma frase se rechaza", () => {
+    const plan = planWith(
+      "las tres columnas aparecen al aplicar la migración sobre una base de trabajo.",
+    );
+    expect(validatePlanSourceBoundary(plan, ["cli"]).map((failure) => failure.code)).toEqual([
+      "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    ]);
+  });
+
+  it("sigue rechazando la superficie externa con el mismo código y el mismo detalle", () => {
+    const plan = planWith("el endpoint responde en https://example.test/health después de migrar.");
+    expect(validatePlanSourceBoundary(plan, ["cli"])[0]).toMatchObject({
+      code: "PLAN_SOURCE_EXTERNAL_CLOSURE",
+      line: 12,
+      message:
+        "la validación de fase de línea 12 depende de la superficie externa 'https://example.test/health'",
+    });
+  });
+
+  it("a la cláusula que no comprueba nada le pide una comprobación observable, no una prueba", () => {
+    const plan = planWith(
+      "el equipo queda conforme con el resultado.",
+      "la aceptación final del área.",
+    );
+    const failures = validatePlanSourceBoundary(plan, ["cli"]);
+    expect(failures.map((failure) => failure.code)).toEqual([
+      "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+      "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    ]);
+    expect(failures[0]?.message).toBe(
+      "la validación de fase de línea 12 no nombra ninguna comprobación observable en el checkout: nombrá el comando, el archivo o la ruta que la produce",
+    );
+    expect(failures[1]?.line).toBe(16);
+    for (const failure of failures) {
+      expect(failure.message).not.toMatch(/prueba local|declar[aá] las fuentes|plan-refine/);
+    }
+  });
+
+  it("no cambia el veredicto de lo que hoy pasa: el término solo sigue alcanzando", () => {
+    const plan = planWith(
+      "inspección del catálogo tras migrar.",
+      "revisión por inspección del resultado.",
+    );
+    expect(validatePlanSourceBoundary(plan, ["cli"])).toEqual([]);
+  });
+
+  it("una barra que no es una ruta no acredita nada, ni siquiera entre comillas invertidas", () => {
+    const plan = planWith("cobertura `N/A`, reparto 60/40 entre los dos equipos.");
+    expect(validatePlanSourceBoundary(plan, ["cli"]).map((failure) => failure.code)).toEqual([
+      "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    ]);
+  });
+
+  it("una ruta local pero fuera del checkout tampoco es referente", () => {
+    const plan = planWith("el operador corre ~/scripts/deploy.sh y revisa /etc/app/estado.conf.");
+    expect(validatePlanSourceBoundary(plan, ["cli"]).map((failure) => failure.code)).toEqual([
+      "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    ]);
+  });
+});
