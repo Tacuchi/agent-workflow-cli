@@ -3567,7 +3567,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
     command: "doctor",
     reason:
-      "misma clasificación que los doctores que compone: diagnóstico read-only sin recorrido propio. Su autoridad es su contrato — el veredicto viaja en el código de salida y no decide nada por la persona",
+      "misma clasificación que los doctores que compone: diagnóstico sin recorrido propio, y el veredicto viaja en el código de salida sin decidir nada por la persona. Sus subverbos de reparación no abren corrida por la misma razón que `discard`, `reset` y `claims`: su autoridad es el orden que aplican —`prepare` sin escribir, y `apply` recomputando la propuesta bajo el lock del workspace para comparar el digest exacto que la persona aprobó—",
   },
   { command: "release-data", reason: "datos de release del paquete" },
   { command: "hook", reason: "punto de entrada de los hooks del host" },

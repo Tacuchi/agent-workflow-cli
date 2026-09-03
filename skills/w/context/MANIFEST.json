@@ -65,6 +65,10 @@
     "quick.db-touched": "the task read from or wrote to a database, so there is a statement to derive into the session script"
   },
   "commands": {
+    "doctor": {
+      "core": ["commands/doctor.md"],
+      "modules": [{ "path": "modules/PLAN-MODE.md", "signal": "plan-mode" }]
+    },
     "discard": {
       "core": ["commands/discard.md"],
       "modules": []

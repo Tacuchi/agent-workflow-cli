@@ -90,9 +90,15 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
       skipNative: args.flags.has("--skip-native"),
       // El flag ES la autorización de red, y no hay ceremonia extra a propósito:
       // nombra exactamente el efecto, lo tipeó la persona, y lo único que habilita
-      // es un `SELECT 1` de sólo lectura. Sin él, una verificación que saldría de
-      // la máquina se degrada a la presencia y lo DICE en su evidencia.
-      ...(args.flags.has("--verify-connection") ? { verify: ["network_external" as const] } : {}),
+      // es un `SELECT 1` de sólo lectura.
+      //
+      // Sin el flag se pide verificar IGUAL, con la lista de clases vacía. No es
+      // lo mismo que no pedir nada: pedir con las manos vacías es lo que hace que
+      // cada proveedor degrade su verificación profunda y lo DIGA en su evidencia,
+      // en vez de que el informe afirme una salud que nadie comprobó. Sin esto la
+      // rama que lo declara era inalcanzable desde acá, y una credencial presente
+      // contra un servicio caído salía «resuelta» sin una línea que lo matizara.
+      verify: args.flags.has("--verify-connection") ? (["network_external"] as const) : [],
     };
     if (args.rest[0] === "prepare") return await runPrepare(args, ctx, options);
     if (args.rest[0] === "apply") return await runApply(args, ctx, options);

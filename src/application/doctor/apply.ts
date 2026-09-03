@@ -183,8 +183,13 @@ async function runUnderLock(
       ok: false,
       rejection: {
         code: "EVIDENCE_MISSING",
-        message:
-          "lo aprobado no es lo que se aplicaría: cambió el lote, o cambió alguno de los archivos que se leyeron para decidirlo",
+        // Los dos digests van en el MENSAJE y no sólo en `candidates`, porque la
+        // proyección humana de un rechazo imprime el código y el mensaje y nada
+        // más: dejarlos únicamente en los detalles los publicaba en el JSON y los
+        // escondía en la terminal, que es donde la persona está parada cuando
+        // esto pasa. Y sin los dos no puede distinguir «aprobé otra vista previa»
+        // de «el estado se movió».
+        message: `lo aprobado no es lo que se aplicaría: cambió el lote, o cambió alguno de los archivos que se leyeron para decidirlo (aprobado ${input.approval}, vigente ${proposal.digest}). Volvé a correr \`prepare\`, leé la vista previa vigente y aprobá ese digest`,
         candidates: [input.approval, proposal.digest],
         action: "volvé a correr `prepare`, leé la vista previa vigente y aprobá ese digest",
       },

@@ -51,11 +51,16 @@ beforeEach(() => {
 });
 
 describe("aw doctor · la autorización de red viaja del argv hacia adentro", () => {
-  it("sin el flag NADIE pide verificar", async () => {
+  it("sin el flag se pide verificar IGUAL, con las manos vacías", async () => {
+    // No es lo mismo que no pedir nada, y la diferencia es observable: pedir con
+    // la lista vacía es lo que hace que cada proveedor DEGRADE su verificación
+    // profunda y lo diga en su evidencia. Con `undefined` esa rama era
+    // inalcanzable desde la superficie y una credencial presente contra un
+    // servicio caído salía «resuelta» sin una línea que lo matizara.
     await doctorCommand.execute(parseArgv(["doctor"]), ctx);
 
     expect(seen.options).toHaveLength(1);
-    expect(seen.options[0]?.verify).toBeUndefined();
+    expect(seen.options[0]?.verify).toEqual([]);
   });
 
   it("con `--verify-connection` la clase de red llega como autorización", async () => {

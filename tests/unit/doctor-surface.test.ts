@@ -360,6 +360,10 @@ describe("aw doctor · el veredicto viaja en el código de salida, no en ok", ()
       host: "codex",
       only: ["claude-code"],
       skipNative: true,
+      // La autorización de verificación viaja siempre, vacía cuando nadie pidió
+      // `--verify-connection`: pedir con las manos vacías es lo que hace que la
+      // verificación profunda se degrade DICIÉNDOLO.
+      verify: [],
     });
   });
 

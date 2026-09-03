@@ -1194,6 +1194,10 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
       only: ["claude-code", "codex"],
       skipNative: true,
       select: [A],
+      // Sin `--verify-connection` la autorización de verificación viaja VACÍA, no
+      // ausente: es lo que hace que cada proveedor degrade su verificación
+      // profunda y lo declare en vez de callarla.
+      verify: [],
     });
   });
 

@@ -28,3 +28,9 @@ coverage/
 .agent-workflow/**/*.tmp
 # Override local de Claude Code (personal, no compartido).
 CLAUDE.local.md
+
+# agent-workflow runtime (machine-specific — do not commit)
+.workflow/sessions/
+.workflow/processes.json
+.workflow/launch/
+docs/logs/

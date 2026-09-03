@@ -153,20 +153,30 @@ describe("Doctrine guards — G1 · context budget derived from a frozen baselin
     }
   });
 
-  it("every one of the 18 commands is at least 20% under its baseline", async () => {
+  it("every command WITH a baseline is at least 20% under it, and the exempt set is named", async () => {
     const result = await measure();
     const perCommand = result.budget.filter((line) => line.metric.startsWith("activation."));
-    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(18);
+    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(19);
+    // Y qué se juzga de verdad: `deriveBudget` no le pone `target` a un comando
+    // que el baseline congelado no tiene, así que el filtro de `offenders` no lo
+    // mira NUNCA. Enumerar los exentos es lo que hace visible esa exención en vez
+    // de dejarla como un efecto lateral de un `undefined` — y el día que el
+    // baseline se re-congele, esta lista tiene que vaciarse.
+    const exempt = perCommand
+      .filter((l) => l.metric !== "activation.median" && l.target === undefined)
+      .map((l) => l.metric)
+      .sort();
+    expect(exempt).toEqual(["activation.discard", "activation.doctor", "activation.reset"]);
     const offenders = perCommand
       .filter((line) => line.ok === false)
       .map((line) => `${line.metric}: ${line.actual} B > ${line.target} B`);
     expect(offenders).toEqual([]);
   });
 
-  it("covers all 18 commands, not the 6 flows the retired table listed", async () => {
+  it("covers all 19 commands, not the 6 flows the retired table listed", async () => {
     const result = await measure();
-    expect(result.guaranteed).toHaveLength(18);
-    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(18);
+    expect(result.guaranteed).toHaveLength(19);
+    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(19);
   });
 
   it("every journey the manifest declares is actually measured", async () => {

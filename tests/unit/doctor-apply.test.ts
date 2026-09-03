@@ -733,6 +733,13 @@ describe("applyDoctorBatch · nada corre sin la aprobación de su digest exacto"
     expect(rejection.candidates).toEqual([ajeno, proposal.digest]);
     expect(rejection.candidates[1]).toMatch(DIGEST_SHAPE);
     expect(double.calls).toEqual([]);
+    // Y los dos van también en el MENSAJE, porque es lo único que la proyección
+    // humana de un rechazo imprime: `renderHumanError` muestra el código y el
+    // mensaje y nada más, así que dejarlos sólo en `candidates` los publicaba en
+    // el JSON y los escondía en la terminal — que es justo donde está parada la
+    // persona cuando aprobó una vista previa que ya no vale.
+    expect(rejection.message).toContain(ajeno);
+    expect(rejection.message).toContain(proposal.digest);
   });
 
   it("sin --approval → APPROVAL_REQUIRED y sin una sola llamada al ejecutor", async () => {
