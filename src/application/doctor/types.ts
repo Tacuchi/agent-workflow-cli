@@ -1,4 +1,5 @@
 import type { CliContext } from "../../cli/types.js";
+import type { EffectClass } from "../../domain/capability/effects.js";
 import type {
   DoctorCategory,
   DoctorCoverage,
@@ -40,6 +41,15 @@ export interface DoctorProviderInput {
   workspaceDir: string;
   /** The native MCP inspection was declined: coverage says `skipped`, not `checked`. */
   skipNative: boolean;
+  /**
+   * The effect classes this run authorized for VERIFYING, when it asked to verify.
+   *
+   * `undefined` means nobody asked: the cheap read runs and nothing else. An
+   * empty array means verification was asked for with no extra authorization —
+   * the provider then verifies as far as it can locally and SAYS what it could
+   * not do, which is the difference between a degraded check and a silent one.
+   */
+  verifyAuthorization?: readonly EffectClass[];
 }
 
 export interface DoctorProviderOutput {

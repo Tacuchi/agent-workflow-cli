@@ -137,6 +137,14 @@ const DIGEST_SHAPE = /^[0-9a-f]{64}$/;
 const DETAIL_NOT_APPLIED = "no se recomprobó: la acción no aplicó";
 const DETAIL_NOT_RUN = "no se recomprobó: la acción no llegó a correr";
 const DETAIL_RECHECK_OFF = "la recomprobación quedó desactivada";
+/**
+ * El detalle de un hallazgo que desapareció, y por qué ya no es una frase exacta.
+ *
+ * La ausencia de un hallazgo prueba algo SÓLO si alguien miró, así que el detalle
+ * nombra ahora la cobertura que lo hace concluyente —«(mcps en claude-code)»— y
+ * el host varía por prueba. Lo congelado es la afirmación; el paréntesis es la
+ * evidencia que la sostiene.
+ */
 const DETAIL_GONE = "el hallazgo ya no aparece en el informe";
 const DETAIL_BLOCKED = "la operación se declaró bloqueada: el recurso queda como estaba";
 
@@ -919,7 +927,9 @@ describe("applyDoctorBatch · la recomprobación es el mismo proveedor releyendo
       "applied",
     ]);
     expect(actionOf(result, arreglado).recheck).toBe("resolved");
-    expect(actionOf(result, arreglado).recheck_detail).toBe(DETAIL_GONE);
+    expect(actionOf(result, arreglado).recheck_detail).toContain(DETAIL_GONE);
+    // Y nombra la cobertura que hace concluyente la ausencia.
+    expect(actionOf(result, arreglado).recheck_detail).toContain("mcps en");
     expect(actionOf(result, terco).recheck).toBe("pending");
     expect(actionOf(result, terco).recheck_detail).toBe("el informe lo reporta warning");
     expect(actionOf(result, trabado).recheck).toBe("blocked");

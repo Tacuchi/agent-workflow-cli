@@ -102,6 +102,10 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   // `consumeOptionFlag` already refuses a dash-prefixed token as a value.
   "doctor",
   "skip-native",
+  // `--verify-connection` autoriza salir de la máquina para verificar una
+  // credencial, y no lleva valor. Sin declararlo, `aw doctor --verify-connection
+  // prepare` se comería `prepare` como su valor y correría el informe.
+  "verify-connection",
   "verbose",
   "dry-run",
   "deep",

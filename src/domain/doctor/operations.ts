@@ -110,6 +110,27 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     verb: (args) => `aw self skills reinstall${flag(args, "name")}`,
   },
   {
+    op: "auth.flow",
+    delegates: "runDoctorAuthFlow",
+    // `execute` y nada más de este lado: correr el flujo es lo que la operación
+    // ES. Lo que el flujo además necesite —salir a la red, por ejemplo— lo
+    // declara el flujo, y el anotador SUMA esas clases a estas antes de sellar.
+    // Ninguna de las dos se autoriza sola.
+    effects: ["execute"],
+    expected: "healthy",
+    summary: "corre el flujo de autenticación que declara el proveedor, heredando la terminal",
+    // El verbo NOMBRA el flujo; no lo compone. Los tokens del `argv` viajan
+    // sellados en la acción y la vista previa los muestra desde ahí: escribir
+    // acá una línea de comando armada invitaría a ejecutarla como texto, que es
+    // exactamente lo que este catálogo no hace en ningún caso.
+    // Los dos nombres van PARENTIZADOS, y no es estética: el id del único
+    // proveedor real es `dsn`, y el redactor lee cualquier token de secreto
+    // seguido de un espacio como una asignación y borra la palabra siguiente. Sin
+    // los paréntesis, este verbo llega al informe como «por dsn *** env:x».
+    verb: (args) =>
+      `el flujo declarado por el proveedor (${args.provider ?? "sin nombre"}) para el sujeto (${args.subject ?? "sin nombre"})`,
+  },
+  {
     op: "multiroot.attach",
     delegates: "runMultiroot",
     effects: ["mutate_overwrite"],

@@ -44,7 +44,7 @@ import {
  * auto-autorizable: declarar `mutate_overwrite` («reescribe») lo que en realidad
  * BORRA deja la aprobación mostrando un efecto más chico que el real, y una
  * prueba que sólo exija «alguna clase no auto-autorizable» no lo nota. Lo mismo
- * con `expected`: hoy las diez declaran `healthy`, así que cualquier aserción
+ * con `expected`: hoy las once declaran `healthy`, así que cualquier aserción
  * derivada del catálogo es indistinguible de un literal, y la primera entrada
  * que espere otra cosa pasaría sin que nadie lo decida.
  *
@@ -143,6 +143,21 @@ const CATALOG: readonly CatalogRow[] = [
     expected: "healthy",
     args: { name: "w:doctor" },
     verb: "aw self skills reinstall --name w:doctor",
+  },
+  {
+    op: "auth.flow",
+    module: "../../src/application/doctor/auth-flow.js",
+    delegates: "runDoctorAuthFlow",
+    // `execute` y nada más de este lado. Lo que el flujo además necesite lo
+    // declara el flujo, y el anotador lo SUMA antes de sellar: acá se congela lo
+    // que la operación pide por sí misma, que es correr un programa.
+    effects: ["execute"],
+    expected: "healthy",
+    args: { provider: "dsn", subject: "env:qtc-cert" },
+    // Los dos nombres van parentizados a propósito: el id del único proveedor
+    // real es `dsn`, y sin los paréntesis el redactor se lleva la palabra que
+    // sigue («por dsn *** env:qtc-cert»).
+    verb: "el flujo declarado por el proveedor (dsn) para el sujeto (env:qtc-cert)",
   },
   {
     op: "multiroot.attach",

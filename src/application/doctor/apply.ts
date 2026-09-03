@@ -26,6 +26,7 @@
  */
 import type { CliContext } from "../../cli/types.js";
 import type { DoctorFindingState, DoctorReport } from "../../domain/doctor/model.js";
+import { redactSensitiveText } from "../../domain/redaction.js";
 import { withCwdLock } from "../lock-service.js";
 import {
   type DoctorBatch,
@@ -191,7 +192,7 @@ async function runUnderLock(
   }
 
   // 3 — recién acá se toca la máquina.
-  return { ok: true, result: await execute(ctx, proposal.batch, proposal.digest, deps) };
+  return { ok: true, result: await execute(ctx, input, proposal.batch, proposal.digest, deps) };
 }
 
 /**
@@ -211,27 +212,18 @@ async function alreadySettled(
   const select = [...(input.select ?? [])];
   if (select.length === 0) return null;
   const report = await runDoctor(ctx, input, deps);
-  const present = new Set(report.findings.map((finding) => finding.id));
-  if (select.some((id) => present.has(id))) return null;
 
+  const settled: string[] = [];
   for (const id of select) {
-    const parts = id.split("/");
-    const host = parts[0];
-    const category = parts[1];
-    if (host === undefined || category === undefined) return null;
-    const covered = report.coverage.some(
-      (entry) =>
-        entry.category === category &&
-        (entry.host === host || entry.host === "workspace") &&
-        entry.state === "checked",
-    );
-    if (!covered) return null;
+    const how = settlementOf(report, id);
+    if (how === null) return null;
+    settled.push(how);
   }
 
   return {
     status: "already",
     digest: input.approval,
-    actions: select.map((id) => ({
+    actions: select.map((id, index) => ({
       finding_id: id,
       op: "—",
       host: id.split("/")[0] ?? "—",
@@ -243,7 +235,7 @@ async function alreadySettled(
       status: "skipped" as const,
       reason: "no se ejecutó: el recurso ya no reporta el problema",
       recheck: "resolved" as const,
-      recheck_detail: "el hallazgo ya no aparece y su categoría se comprobó en esta corrida",
+      recheck_detail: settled[index] ?? "el recurso ya no reporta el problema",
     })),
     summary: {
       applied: 0,
@@ -258,6 +250,70 @@ async function alreadySettled(
 }
 
 /**
+ * Por qué este recurso ya está saldado, o `null` si no lo está.
+ *
+ * Dos formas de estarlo, y las dos hacen falta. Un hallazgo que DESAPARECIÓ es
+ * la obvia. La otra es el hallazgo que sigue ahí y ya no tiene nada que hacer:
+ * los proveedores emiten el sano en vez de callarse —«no estaba mal» y «nadie
+ * miró» son respuestas distintas—, así que arreglar el recurso a mano entre la
+ * vista previa y la aprobación NO lo hace desaparecer, lo vuelve `healthy`. Sin
+ * esta segunda forma, repetir una aprobación sobre algo que ya está bien
+ * devolvía `SELECTION_NOT_ACTIONABLE` con salida 1: un error sobre un recurso
+ * sano, y la promesa de que un reintento idéntico responde `already` sólo se
+ * cumplía cuando el recurso dejaba de existir.
+ *
+ * Y las dos exigen lo mismo: que la categoría se haya COMPROBADO en este host.
+ * La ausencia de un hallazgo prueba algo únicamente cuando alguien miró; si la
+ * cobertura quedó `unavailable` o `skipped`, el recurso puede estar igual de
+ * roto y nadie lo sabe.
+ */
+function settlementOf(report: DoctorReport, id: string): string | null {
+  const finding = report.findings.find((candidate) => candidate.id === id);
+  if (finding !== undefined) {
+    const inert = finding.state === "healthy" && finding.remediation.action === null;
+    if (!inert) return null;
+  }
+  const covered = coverageFor(report, id);
+  if (!covered.ok) return null;
+  return finding === undefined
+    ? `el hallazgo ya no aparece y su categoría se comprobó en esta corrida (${covered.where})`
+    : `el recurso ya reporta sano y no propone ninguna acción (${covered.where})`;
+}
+
+/**
+ * Si alguien miró la categoría de este hallazgo en su host, y dónde lo dice.
+ *
+ * La misma pregunta la hacen dos caminos —el `already` y la recomprobación de
+ * una acción cuyo hallazgo desapareció—, así que vive una sola vez. Un id que no
+ * nombra host y categoría falla CERRADO: no se puede afirmar cobertura sobre algo
+ * que no se puede ubicar.
+ */
+function coverageFor(
+  report: DoctorReport,
+  id: string,
+): { ok: true; where: string } | { ok: false; why: string } {
+  const parts = id.split("/");
+  const host = parts[0];
+  const category = parts[1];
+  if (host === undefined || category === undefined || parts.length < 3) {
+    return { ok: false, why: `el id '${id}' no nombra host y categoría` };
+  }
+  const entries = report.coverage.filter(
+    (entry) => entry.category === category && (entry.host === host || entry.host === "workspace"),
+  );
+  const checked = entries.find((entry) => entry.state === "checked");
+  if (checked !== undefined) return { ok: true, where: `${category} en ${checked.host}` };
+  const gap = entries[0];
+  return {
+    ok: false,
+    why:
+      gap === undefined
+        ? `la categoría ${category} no declaró cobertura para ${host}`
+        : `la cobertura de ${category} en ${gap.host} quedó ${gap.state}: ${gap.reason ?? "sin razón declarada"}`,
+  };
+}
+
+/**
  * El orden topológico ya viene del lote; acá se respeta y se registra.
  *
  * Una acción fallida no detiene al lote: marca `skipped` a todo lo que dependía
@@ -267,6 +323,7 @@ async function alreadySettled(
  */
 async function execute(
   ctx: CliContext,
+  input: DoctorApplyInput,
   batch: DoctorBatch,
   digest: string,
   deps: DoctorApplyDeps,
@@ -305,7 +362,7 @@ async function execute(
       continue;
     }
 
-    const recheck = await recheckOf(ctx, action, deps);
+    const recheck = await recheckOf(ctx, input, action, deps);
     reports.push({ ...identity(action), status: "applied", reason: null, ...recheck });
   }
 
@@ -330,7 +387,15 @@ async function run(
   try {
     return await executor(action, ctx);
   } catch (error) {
-    return { status: "failed", detail: `la operación lanzó: ${messageOf(error)}` };
+    // El mensaje de una excepción es el único texto de este resultado que no
+    // viene del informe ya redactado, y `run` existe justamente para atrapar lo
+    // que nadie previó — así que puede traer cualquier cosa. El comando devuelve
+    // siempre `ok:true` (el veredicto va en el exit code), y la última línea de
+    // defensa del CLI sólo redacta la rama de error: acá no hay nadie más abajo.
+    return {
+      status: "failed",
+      detail: redactSensitiveText(`la operación lanzó: ${messageOf(error)}`),
+    };
   }
 }
 
@@ -342,30 +407,61 @@ async function run(
  * primero como el segundo es exactamente la validación omitida que AC-12
  * prohíbe. Y una recomprobación que no corrió o que falló queda `unverified`,
  * jamás `resolved`.
+ *
+ * Corre con el ALCANCE de la corrida —los mismos `--host`, `--only` y
+ * `--skip-native` que la persona pidió— y no con opciones inventadas acá. No es
+ * cosmético: `--skip-native` existe porque inspeccionar los MCP nativos LANZA los
+ * servidores del host, y una recomprobación que lo descartara volvería a hacer,
+ * una vez por acción aplicada, exactamente la sonda que la persona declinó.
+ *
+ * Y pide VERIFICAR, no sólo releer: eso es lo que hace que «quedó resuelto»
+ * dependa de la observación del proveedor y no del código de salida del programa.
+ * La autorización con la que verifica es EXACTAMENTE la que la persona dio en la
+ * invocación, nunca más: pedir un vacío significa «verificá hasta donde puedas
+ * sin permisos extra», y cada proveedor degrada lo que no alcance diciéndolo.
+ *
+ * Y no se amplía con las clases de la acción, aunque estén aprobadas. Una acción
+ * aprobada con `network_external` autoriza a ESA acción a salir de la máquina, no
+ * a la relectura del entorno entero: la verificación de un informe no tiene
+ * alcance por sujeto, así que sumar esa clase acá conectaría contra todas las
+ * credenciales registradas para recomprobar una.
  */
 async function recheckOf(
   ctx: CliContext,
+  input: DoctorApplyInput,
   action: DoctorBatchAction,
   deps: DoctorApplyDeps,
 ): Promise<{ recheck: DoctorRecheckStatus; recheck_detail: string }> {
   if (deps.recheck === false) {
     return { recheck: "unverified", recheck_detail: "la recomprobación quedó desactivada" };
   }
+  const verify = [...(input.verify ?? [])];
   let report: DoctorReport;
   try {
-    report = await runDoctor(ctx, {}, deps);
+    report = await runDoctor(ctx, { ...input, verify }, deps);
   } catch (error) {
     return {
       recheck: "unverified",
-      recheck_detail: `la recomprobación no pudo correr: ${messageOf(error)}`,
+      recheck_detail: redactSensitiveText(`la recomprobación no pudo correr: ${messageOf(error)}`),
     };
   }
   const finding = report.findings.find((candidate) => candidate.id === action.finding_id);
   if (finding === undefined) {
-    return {
-      recheck: "resolved",
-      recheck_detail: "el hallazgo ya no aparece en el informe",
-    };
+    // Que el hallazgo no esté NO prueba nada por sí solo: prueba algo cuando
+    // alguien miró. Si la categoría de ese hallazgo quedó sin comprobar en este
+    // host —un proveedor que se cayó durante la relectura se lleva TODOS sus
+    // hallazgos—, declarar `resolved` sería exactamente la validación omitida
+    // presentada como superada que AC-12 prohíbe.
+    const covered = coverageFor(report, action.finding_id);
+    return covered.ok
+      ? {
+          recheck: "resolved",
+          recheck_detail: `el hallazgo ya no aparece en el informe (${covered.where})`,
+        }
+      : {
+          recheck: "unverified",
+          recheck_detail: `el hallazgo no aparece, pero nadie lo comprobó: ${covered.why}`,
+        };
   }
   return { ...classify(finding.state), recheck_detail: `el informe lo reporta ${finding.state}` };
 }

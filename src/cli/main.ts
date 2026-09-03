@@ -149,7 +149,7 @@ async function initializeCliContext(
       logger: new Logger({
         fs,
         paths,
-        enabled: !isStrictReadCommand(effectiveCommandName(parsed)),
+        enabled: !isStrictReadCommand(parsed),
       }),
     },
   };
@@ -403,9 +403,18 @@ function effectiveCommandName(parsed: ParsedArgs): string | undefined {
  * corre a ciegas y no deja rastro. Con el logger habilitado, cada `aw doctor`
  * creaba `~/.workflow/logs/` y le anexaba la invocación y el resultado, así que
  * la promesa era falsa en la superficie real aunque ningún proveedor escribiera.
+ *
+ * Pero la exención es del INFORME, no del comando: `doctor apply` reescribe la
+ * configuración de los hosts y corre programas, y `doctor prepare` es el paso que
+ * produce el digest que autoriza eso. Eximirlos por compartir el nombre dejaba sin
+ * rastro justamente las dos invocaciones que hay que poder auditar después. Por
+ * eso el subverbo cuenta: exento cuando `aw doctor` se corre a secas, registrado
+ * en cuanto hay uno.
  */
-function isStrictReadCommand(command: string | undefined): boolean {
-  return command === "status" || command === "resume" || command === "doctor";
+function isStrictReadCommand(parsed: ParsedArgs): boolean {
+  const command = effectiveCommandName(parsed);
+  if (command === "status" || command === "resume") return true;
+  return command === "doctor" && parsed.rest.length === 0;
 }
 
 function emit(result: CommandResult, command: CliCommand, mode: OutputMode): void {

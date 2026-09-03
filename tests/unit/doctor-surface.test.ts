@@ -709,8 +709,25 @@ describe("aw doctor · el diagnóstico no escribe ni siquiera la bitácora (AC-0
       }),
     ).toBe("doctor");
 
-    expect(main).toContain("isStrictReadCommand(effectiveCommandName(parsed))");
+    const predicate = /function isStrictReadCommand\([\s\S]*?\n}/.exec(main)?.[0];
+    expect(predicate).toContain("effectiveCommandName(parsed)");
     const effective = /function effectiveCommandName\([\s\S]*?\n}/.exec(main)?.[0];
     expect(effective).toContain("resolveGlobalAlias");
+  });
+
+  it("la exención es del INFORME: con un subverbo la bitácora vuelve a encenderse", () => {
+    // El defecto que atrapa: eximir por nombre de comando dejaba sin rastro
+    // justamente las dos invocaciones que hay que poder auditar después —
+    // `apply`, que reescribe la configuración de los hosts y corre programas, y
+    // `prepare`, que produce el digest que autoriza eso—. El informe sí promete
+    // no escribir nada; sus subverbos no prometen eso en absoluto.
+    const predicate = /function isStrictReadCommand\([\s\S]*?\n}/.exec(main)?.[0];
+    if (predicate === undefined) throw new Error("main.ts ya no declara isStrictReadCommand");
+    expect(predicate).toContain("parsed.rest.length === 0");
+
+    // Y el parser deja el subverbo donde el predicado lo mira.
+    expect(parseArgv(["doctor"]).rest).toEqual([]);
+    expect(parseArgv(["doctor", "apply", "--approval", "abc"]).rest).toEqual(["apply"]);
+    expect(parseArgv(["doctor", "prepare", "--select", "x"]).rest).toEqual(["prepare"]);
   });
 });

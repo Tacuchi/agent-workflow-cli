@@ -13,6 +13,7 @@ import {
   buildWinHops,
 } from "../application/terminal-launch.js";
 import type {
+  InteractiveOptions,
   ProcessPort,
   RunBinaryResult,
   RunOptions,
@@ -469,5 +470,46 @@ export class NodeProcess implements ProcessPort {
       // EPERM → the process exists but is owned by another user → still alive.
       return (err as NodeJS.ErrnoException).code === "EPERM";
     }
+  }
+
+  /**
+   * Both ends, because a child that reads a password needs stdin AND stdout.
+   *
+   * A pipe on either side is a run whose prompt nobody can see or answer, and a
+   * flow that hangs on an invisible prompt is worse than one that refuses.
+   */
+  hasTty(): boolean {
+    return process.stdin.isTTY === true && process.stdout.isTTY === true;
+  }
+
+  /**
+   * `stdio: "inherit"` and nothing else: no pipes, so nothing to capture.
+   *
+   * A spawn error resolves as a non-zero code rather than rejecting. The caller
+   * turns the code into an outcome a person reads, and a missing binary is the
+   * same kind of answer as a flow the person cancelled — not an exception that
+   * would have to be caught to say the same thing.
+   */
+  async runInteractive(
+    cmd: string,
+    args: string[],
+    opts: InteractiveOptions = {},
+  ): Promise<{ code: number }> {
+    return new Promise((resolve) => {
+      const child = spawn(cmd, args, {
+        cwd: opts.cwd,
+        env: this.env,
+        stdio: "inherit",
+        // Never a shell: the argv is already separated, and handing it to one
+        // would reintroduce every quoting hazard the separation exists to avoid.
+        shell: false,
+      });
+      child.on("error", () => {
+        resolve({ code: 127 });
+      });
+      child.on("close", (code) => {
+        resolve({ code: code ?? 1 });
+      });
+    });
   }
 }

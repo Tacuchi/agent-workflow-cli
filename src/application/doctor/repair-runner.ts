@@ -30,6 +30,7 @@ import { selfInstallSkill } from "../self/install-skill.js";
 import { reinstallSkill } from "../self/skills-manager.js";
 import { selfUninstall } from "../self/uninstall.js";
 import type { DoctorActionOutcome } from "./apply.js";
+import { runDoctorAuthFlow } from "./auth-flow.js";
 import type { DoctorBatchAction } from "./prepare.js";
 
 /** Un `ParsedArgs` explícito: sin comando, sin positional y con los flags que la operación pide. */
@@ -90,6 +91,8 @@ export async function runDoctorRepair(
       return mcpOutcome(runMcpRemove(ctx.env, mcpInput(ctx, action)), "retirar la entrada MCP");
     case "mcp.migrate":
       return migrateOutcome(action, ctx);
+    case "auth.flow":
+      return runDoctorAuthFlow(action, ctx);
     case "multiroot.attach":
     case "multiroot.detach":
       return multirootOutcome(

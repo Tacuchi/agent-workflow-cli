@@ -75,9 +75,17 @@ const ctx = {
   fs: {},
   env: { homeDir: () => "/home/tester" },
   paths: { workspaceDir: () => "/ws" },
+  // El delegado de `auth.flow` no es un módulo que se pueda doblar con
+  // `vi.mock`: es el método del puerto de procesos que hereda la terminal. Se
+  // dobla acá y se registra con el mismo espía, así que la fila de la tabla se
+  // comprueba igual que las otras diez.
+  process: {
+    hasTty: () => true,
+    runInteractive: spy("runInteractive", { code: 0 }),
+  },
 } as unknown as CliContext;
 
-function actionFor(op: string, args: Record<string, string> = {}) {
+function actionFor(op: string, args: Record<string, string> = {}, argv?: readonly string[]) {
   return {
     finding_id: `claude-code/mcps/${op}`,
     host: "claude-code",
@@ -89,6 +97,7 @@ function actionFor(op: string, args: Record<string, string> = {}) {
     expected: "healthy",
     verb: "—",
     summary: "—",
+    ...(argv === undefined ? {} : { argv }),
   };
 }
 
@@ -101,7 +110,13 @@ function actionFor(op: string, args: Record<string, string> = {}) {
  * este archivo persigue. Acá el catálogo se usa sólo para comprobar que la tabla
  * no se quedó corta.
  */
-const WIRING: ReadonlyArray<{ op: string; delegate: string; args?: Record<string, string> }> = [
+const WIRING: ReadonlyArray<{
+  op: string;
+  delegate: string;
+  args?: Record<string, string>;
+  /** Sólo las operaciones que corren un programa lo llevan, y va sellado. */
+  argv?: readonly string[];
+}> = [
   { op: "self.install-skill", delegate: "selfInstallSkill", args: { target: "user" } },
   { op: "self.uninstall", delegate: "selfUninstall", args: { target: "user" } },
   { op: "self.install-hooks", delegate: "selfInstallHooks", args: { target: "claude" } },
@@ -122,6 +137,12 @@ const WIRING: ReadonlyArray<{ op: string; delegate: string; args?: Record<string
     delegate: "runMcpMigration",
     args: { host: "claude", instance: "cert", scope: "workspace" },
   },
+  {
+    op: "auth.flow",
+    delegate: "runInteractive",
+    args: { provider: "doble", subject: "fixture:uno" },
+    argv: ["login-de-prueba", "--sujeto", "uno"],
+  },
   { op: "multiroot.attach", delegate: "runMultiroot", args: { scope: "workspace" } },
   { op: "multiroot.detach", delegate: "runMultiroot", args: { scope: "workspace" } },
 ];
@@ -133,9 +154,9 @@ describe("el cableado entre una operación y la función que escribe", () => {
     overrides.clear();
   });
 
-  for (const { op, delegate, args } of WIRING) {
+  for (const { op, delegate, args, argv } of WIRING) {
     it(`'${op}' llama a ${delegate} y a NADIE más`, async () => {
-      const outcome = await runDoctorRepair(actionFor(op, args), ctx);
+      const outcome = await runDoctorRepair(actionFor(op, args, argv), ctx);
 
       // Exactamente un delegado, y es el que corresponde. `toEqual` sobre la
       // lista entera —y no un `toContain`— porque el daño de este defecto es

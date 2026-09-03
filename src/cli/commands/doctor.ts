@@ -14,7 +14,7 @@ import {
   type DoctorProposal,
   prepareDoctorBatch,
 } from "../../application/doctor/prepare.js";
-import { runDoctor } from "../../application/doctor/report.js";
+import { type DoctorRunOptions, runDoctor } from "../../application/doctor/report.js";
 import type { DoctorReport } from "../../domain/doctor/model.js";
 import { DOCTOR_CATEGORIES } from "../../domain/doctor/model.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -82,12 +82,17 @@ function isSubverb(data: DoctorCommandData): data is Exclude<DoctorCommandData, 
 export const doctorCommand: CliCommand<DoctorCommandData> = {
   name: "doctor",
   describe:
-    "aw doctor: diagnóstico contextual de la instalación y los recursos de Workline en los hosts detectados, con cobertura por categoría y veredicto en el código de salida.",
+    "aw doctor: diagnóstico contextual de la instalación y los recursos de Workline en los hosts detectados, con cobertura por categoría y veredicto en el código de salida. Con --verify-connection autorizás verificar las credenciales contra su servicio.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DoctorCommandData>> {
     const options = {
       host: flagValue(args, "host") ?? null,
       only: onlyHosts(args),
       skipNative: args.flags.has("--skip-native"),
+      // El flag ES la autorización de red, y no hay ceremonia extra a propósito:
+      // nombra exactamente el efecto, lo tipeó la persona, y lo único que habilita
+      // es un `SELECT 1` de sólo lectura. Sin él, una verificación que saldría de
+      // la máquina se degrada a la presencia y lo DICE en su evidencia.
+      ...(args.flags.has("--verify-connection") ? { verify: ["network_external" as const] } : {}),
     };
     if (args.rest[0] === "prepare") return await runPrepare(args, ctx, options);
     if (args.rest[0] === "apply") return await runApply(args, ctx, options);
@@ -116,7 +121,7 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
 async function runPrepare(
   args: ParsedArgs,
   ctx: CliContext,
-  options: { host: string | null; only: string[]; skipNative: boolean },
+  options: DoctorRunOptions,
 ): Promise<CommandResult<DoctorCommandData>> {
   const outcome = await prepareDoctorBatch(ctx, {
     ...options,
@@ -156,7 +161,7 @@ function onlyHosts(args: ParsedArgs): string[] {
 async function runApply(
   args: ParsedArgs,
   ctx: CliContext,
-  options: { host: string | null; only: string[]; skipNative: boolean },
+  options: DoctorRunOptions,
 ): Promise<CommandResult<DoctorCommandData>> {
   const outcome = await applyDoctorBatch(ctx, {
     ...options,

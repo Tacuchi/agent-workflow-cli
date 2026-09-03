@@ -7,10 +7,15 @@ import type { ProcessPort, RunBinaryResult, RunResult } from "../../src/ports/pr
  */
 export class FakeProcess implements ProcessPort {
   readonly calls: { cmd: string; args: string[] }[] = [];
+  /** Cada corrida que heredó la terminal, en orden —con su cwd—. Vacío = ninguna. */
+  readonly interactive: { cmd: string; args: string[]; cwd?: string | undefined }[] = [];
   constructor(
     private readonly opts: {
       run?: (cmd: string, args: string[]) => RunResult;
       which?: (cmd: string) => string | undefined;
+      /** Por defecto NO hay terminal: un fake que la finge deja pasar el camino bloqueado. */
+      tty?: boolean;
+      interactive?: (cmd: string, args: string[]) => { code: number };
     } = {},
   ) {}
   async run(cmd: string, args: string[] = []): Promise<RunResult> {
@@ -34,5 +39,16 @@ export class FakeProcess implements ProcessPort {
   async killTree(): Promise<void> {}
   async isAlive(): Promise<boolean> {
     return false;
+  }
+  hasTty(): boolean {
+    return this.opts.tty === true;
+  }
+  async runInteractive(
+    cmd: string,
+    args: string[] = [],
+    opts: { cwd?: string } = {},
+  ): Promise<{ code: number }> {
+    this.interactive.push({ cmd, args, cwd: opts.cwd });
+    return this.opts.interactive?.(cmd, args) ?? { code: 0 };
   }
 }

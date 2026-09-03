@@ -1,125 +1,242 @@
-import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
-import { dsnKeyForInstance } from "../dsn-reader-service.js";
 /**
- * Tools and authentication — bounded to what Workline itself uses.
+ * Tools and authentication — un recorrido por el registro de proveedores.
  *
- * There is exactly one authenticable thing in this CLI today: the `DB_<X>_DSN`
- * variable behind each registered MCP connection. So this provider checks that,
- * and relays the authentication state the host reports for its own servers —
- * which is a finding about somebody else's resource and therefore never an
- * action.
+ * Este archivo no sabe qué es un DSN. Camina el registro, le pregunta a cada
+ * proveedor qué sujetos tiene y en qué estado están, y traduce eso al modelo
+ * común. Lo que antes estaba cableado acá vive ahora en `auth-dsn.ts`, y la
+ * diferencia importa: agregar una cosa autenticable es agregar un proveedor al
+ * registro, no editar el diagnóstico.
  *
- * The guidance NAMES THE VARIABLE AND NEVER ITS VALUE, and it comes from
- * `buildEnvHelp`, the same help the setup path already prints. The CLI does not
- * write the DSN anywhere: custody stays with the person, which is the only way
- * a report can promise it never leaks one.
+ * También es el único choke point de la custodia. Los proveedores declaran su
+ * flujo; acá se comprueba con `custodyViolation` ANTES de que exista cualquier
+ * sugerencia de acción, así que un flujo que pondría el secreto en un argumento
+ * —o que no hereda la terminal, o que escribiría— sale como bloqueante con su
+ * razón y sin proposal. Como los proveedores no construyen hallazgos, no hay
+ * ningún camino que se saltee esta comprobación.
  */
-import { readMcpConnections } from "../mcp-connections-service.js";
-import { buildEnvHelp, isDsnVisible } from "../self/mcp-config.js";
+import {
+  type DoctorAuthCheck,
+  type DoctorAuthState,
+  type DoctorAuthSubject,
+  authFindingState,
+  custodyViolation,
+} from "../../domain/doctor/auth.js";
+import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
+import { DOCTOR_AUTH_PROVIDERS, type DoctorAuthCliProvider } from "./auth-registry.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
 import { coverage } from "./types.js";
 
 const CATEGORY = "tools-auth" as const;
 const SCOPE_HOST = "workspace";
 
-export const toolsAuthProvider: DoctorProvider = {
-  category: CATEGORY,
-  async run(input: DoctorProviderInput): Promise<DoctorProviderOutput> {
-    const connections = readMcpConnections(input.ctx.paths, input.ctx.env);
-    if (connections.length === 0) {
-      return {
-        coverage: [
-          coverage(
-            CATEGORY,
-            SCOPE_HOST,
-            "not-applicable",
-            "no hay ninguna conexión registrada que requiera autenticación",
-          ),
-        ],
-        findings: [],
-      };
-    }
+export interface ToolsAuthProviderDeps {
+  /** El registro. Inyectable para probar la maquinaria con un doble. */
+  providers?: readonly DoctorAuthCliProvider[];
+}
 
-    const findings = connections.map((connection) => dsnFinding(input, connection));
-    return { coverage: [coverage(CATEGORY, SCOPE_HOST, "checked")], findings };
+export function createToolsAuthProvider(deps: ToolsAuthProviderDeps = {}): DoctorProvider {
+  const providers = deps.providers ?? DOCTOR_AUTH_PROVIDERS;
+  return {
+    category: CATEGORY,
+    async run(input: DoctorProviderInput): Promise<DoctorProviderOutput> {
+      const enumerated = providers.flatMap((provider) =>
+        provider.subjects(input.ctx).map((subject) => ({ provider, subject })),
+      );
+      if (enumerated.length === 0) {
+        return {
+          coverage: [
+            coverage(
+              CATEGORY,
+              SCOPE_HOST,
+              "not-applicable",
+              "no hay ninguna cosa autenticable registrada en este entorno",
+            ),
+          ],
+          findings: [],
+        };
+      }
+
+      const findings: DoctorFinding[] = [];
+      const seen = new Map<string, string>();
+      for (const { provider, subject } of enumerated) {
+        const owner = seen.get(subject.id);
+        if (owner !== undefined) {
+          findings.push(collisionFinding(subject, owner, provider.id));
+          continue;
+        }
+        seen.set(subject.id, provider.id);
+        findings.push(await subjectFinding(provider, subject, input));
+      }
+      return { coverage: [coverage(CATEGORY, SCOPE_HOST, "checked")], findings };
+    },
+  };
+}
+
+export const toolsAuthProvider: DoctorProvider = createToolsAuthProvider();
+
+/**
+ * Qué dice el informe de cada estado de autenticación.
+ *
+ * La tabla existe para que el mapeo estado → hallazgo viva en UN lugar: el
+ * estado sale de `authFindingState`, en el dominio, y la prosa de acá. Antes la
+ * rama sana cortaba antes de llegar al mapeo y el resto se decidía con dos
+ * ternarios en el call site, así que la mitad de la regla vivía en el proveedor y
+ * la rama `present` del dominio no la alcanzaba ningún camino.
+ */
+const SUBJECT_PROSE: Record<
+  DoctorAuthState,
+  { summary: (label: string) => string; impact: string }
+> = {
+  present: {
+    summary: (label) => `la autenticación de (${label}) está resuelta`,
+    impact: "el recurso que depende de esta credencial puede autenticarse",
+  },
+  absent: {
+    summary: (label) => `falta la autenticación de (${label})`,
+    impact: "el recurso que depende de esta credencial va a fallar cuando se use",
+  },
+  unverified: {
+    summary: (label) => `no se pudo verificar la autenticación de (${label})`,
+    impact: "el recurso puede estar sin autenticar y el informe no puede afirmar lo contrario",
   },
 };
 
-function dsnFinding(
+async function subjectFinding(
+  provider: DoctorAuthCliProvider,
+  subject: DoctorAuthSubject,
   input: DoctorProviderInput,
-  connection: { name: string; dsnVar?: string },
-): DoctorFinding {
-  const variable = connection.dsnVar ?? dsnKeyForInstance(connection.name);
-  const visible = isDsnVisible(input.ctx, variable);
+): Promise<DoctorFinding> {
+  const observed = await observe(provider, subject, input);
   const base = {
-    id: doctorFindingId(SCOPE_HOST, CATEGORY, `env:${connection.name}`),
+    id: doctorFindingId(SCOPE_HOST, CATEGORY, subject.id),
     host: SCOPE_HOST,
     category: CATEGORY,
-    resource: {
-      kind: "credential" as const,
-      name: variable,
-      locator: input.ctx.paths.userDsnFile(),
-    },
-    // The evidence says PRESENT or ABSENT and stops there. Reading the value to
-    // describe it would put it one redaction bug away from the report.
-    //
-    // The variable name is always PARENTHESIZED, and that is load-bearing: the
-    // redactor treats `<something>_DSN` followed by `=`, `:` or a space as an
-    // assignment and blanks whatever comes next. Naming the variable is exactly
-    // what this finding owes the person, so the one place it appears has to be a
-    // shape the redactor cannot read as a value — a closing paren is not a
-    // separator, so `(DB_X_DSN)` survives while `DB_X_DSN: visible` does not.
-    evidence: [`variable de entorno (${variable}): ${visible ? "presente" : "ausente"}`],
+    resource: { kind: "credential" as const, name: subject.label, locator: subject.locator },
+    evidence: observed.evidence,
     ownership: "ours" as const,
   };
-  if (visible) {
+
+  const flow = provider.flow(subject, input.ctx);
+  const custody = flow === null ? null : custodyViolation(flow);
+  if (flow !== null && custody !== null) {
+    // La custodia se rompe por la DECLARACIÓN, no por el estado del sujeto: un
+    // flujo así es peligroso aunque la credencial ya esté puesta, y que el
+    // veredicto salga 1 es lo correcto — es un defecto de este CLI, no del
+    // entorno de la persona.
     return {
       ...base,
-      state: "healthy",
-      summary: `la conexión ${connection.name} tiene visible su variable de entorno (${variable})`,
-      impact: "el MCP de esa conexión puede autenticarse cuando el host lo levante",
-      remediation: { kind: "none", action: null, guidance: [] },
+      state: "blocking",
+      summary: `el flujo declarado para (${subject.label}) no puede preservar la custodia del secreto`,
+      impact: "no se ofrece ninguna reparación automática: correrlo filtraría la credencial",
+      evidence: [...observed.evidence, `custodia: ${custody}`],
+      remediation: {
+        kind: "manual",
+        action: null,
+        guidance: [
+          ...provider.guidance(subject, input.ctx),
+          `el flujo del proveedor (${provider.id}) quedó bloqueado y hay que corregirlo en el CLI`,
+        ],
+      },
     };
   }
-  const help = buildEnvHelp(variable, connection.name);
-  return {
+
+  const prose = SUBJECT_PROSE[observed.state];
+  const authenticated = observed.state === "present";
+  const finding: DoctorFinding = {
     ...base,
-    state: "warning",
-    summary: `la conexión ${connection.name} no puede autenticarse: falta su variable de entorno (${variable})`,
-    impact: "el MCP levanta pero cualquier consulta fallará por falta de credencial",
-    remediation: { kind: "manual", action: null, guidance: survivingGuidance(help) },
+    state: authFindingState(observed.state),
+    summary: prose.summary(subject.label),
+    impact: prose.impact,
+    // Al sano no se le ofrece nada: no hay remedio para lo que no está roto. Los
+    // otros dos llevan la guía del proveedor, que nombra la variable y el archivo
+    // y nunca el valor.
+    remediation: authenticated
+      ? { kind: "none", action: null, guidance: [] }
+      : { kind: "manual", action: null, guidance: provider.guidance(subject, input.ctx) },
+  };
+  // Un flujo declarado que pasa la custodia es una SUGERENCIA, no una acción:
+  // quién la recibe lo decide el anotador, en un solo lugar, con los predicados
+  // de propiedad. Y al sano no se le sugiere: la sugerencia existe para que algo
+  // se repare.
+  if (flow === null || authenticated) return finding;
+  return {
+    ...finding,
+    proposal: { op: "auth.flow", args: { provider: provider.id, subject: subject.id }, flow },
   };
 }
 
 /**
- * La guía de `buildEnvHelp`, reescrita para que la redacción no la vuelva dañina.
+ * Qué se observó del sujeto: la lectura barata, o la verificación si se pidió.
  *
- * `buildEnvHelp` emite `export DB_X_DSN='<DSN>'`, que es correcto y no lleva
- * ningún valor — pero `redactSensitiveText` lee `…_DSN=` como una asignación y
- * reemplaza lo que sigue, así que la línea LLEGA a la persona como
- * `export DB_X_DSN=***`. Quien la copie deja literalmente `***` en su archivo de
- * arranque y el MCP falla con una credencial inválida en vez de con una ausente:
- * una guía que empeora las cosas es peor que ninguna.
+ * La verificación REEMPLAZA a `check` en vez de acompañarla. Son dos lecturas
+ * del mismo hecho, y ponerlas juntas en la evidencia las hace leer como dos
+ * hechos distintos; la verificación es la observación más fuerte y es la que
+ * queda.
  *
- * Así que la línea se parte en dos: el nombre de la variable —lo único
- * accionable que este hallazgo puede dar— va parentizado, y el valor se nombra
- * como lo que es, algo que la persona pega y el CLI nunca ve. `next_step` se
- * releva tal cual: no lleva el nombre pegado a un separador.
+ * Y el nivel de autorización que el proveedor DECLARA se hace valer acá, que es
+ * el único lugar que llama a `verify`. Antes el campo `authorization` no lo leía
+ * nadie: cada proveedor repetía el control adentro de su propio `run`, así que la
+ * declaración podía mentir sin consecuencia y un proveedor nuevo que se olvidara
+ * del control salía de la máquina en una corrida donde nadie autorizó nada. Con
+ * el control acá, `run` puede confiar en que su autorización está concedida.
+ *
+ * Cuando falta esa autorización la observación se DEGRADA a la lectura barata y
+ * lo dice en la evidencia: una verificación que no corrió y se calla se lee como
+ * una que corrió.
  */
-function survivingGuidance(help: ReturnType<typeof buildEnvHelp>): string[] {
-  return [
-    // Ojo con la prosa: cualquier aparición del token de un secreto SEGUIDA de
-    // espacio se lleva la palabra siguiente. Por eso acá no se escribe la sigla
-    // suelta, y el nombre de la variable va siempre entre paréntesis.
-    `exportá en tu entorno la variable (${help.variable}) con la cadena de conexión; el valor lo pegás vos y el CLI no lo guarda en ningún lado`,
-    `dejala en tu archivo de arranque (${startupFileOf(help)}) para que sobreviva a la próxima terminal`,
-    help.next_step,
-  ];
+async function observe(
+  provider: DoctorAuthCliProvider,
+  subject: DoctorAuthSubject,
+  input: DoctorProviderInput,
+): Promise<DoctorAuthCheck> {
+  const granted = input.verifyAuthorization;
+  if (granted === undefined) return await provider.check(subject, input.ctx);
+  const needed = provider.verify.authorization;
+  if (needed !== null && !granted.includes(needed)) {
+    const shallow = await provider.check(subject, input.ctx);
+    return {
+      ...shallow,
+      evidence: [
+        ...shallow.evidence,
+        `la verificación profunda NO corrió: esta corrida no autorizó '${needed}' (lo autoriza \`aw doctor --verify-connection\`)`,
+      ],
+    };
+  }
+  return await provider.verify.run(subject, input.ctx, granted);
 }
 
-/** El archivo de arranque que `buildEnvHelp` nombró, o el genérico si no lo dijo. */
-function startupFileOf(help: ReturnType<typeof buildEnvHelp>): string {
-  const named = help.commands.find((command) => command.includes(">>"));
-  const file = named?.split(">>").pop()?.trim();
-  return file === undefined || file.length === 0 ? "el de tu shell" : file;
+/**
+ * Dos sujetos con el mismo id, denunciado en vez de perdido.
+ *
+ * El id del sujeto es la identidad del hallazgo. Dos iguales colapsan en una
+ * fila y el informe pierde uno sin decir nada — el mismo defecto que ya costó
+ * una ronda en este plan, cuando sanear un id lo volvió no inyectivo y los
+ * hallazgos desaparecieron de un `Map`. Así que la colisión es bloqueante y
+ * nombra a los dos proveedores.
+ */
+function collisionFinding(
+  subject: DoctorAuthSubject,
+  owner: string,
+  duplicate: string,
+): DoctorFinding {
+  return {
+    // El id lleva al proveedor DUPLICADO y no sólo al sujeto: con tres
+    // proveedores declarando lo mismo, dos colisiones distintas colapsarían en
+    // una fila y el informe volvería a perder un hallazgo — que es exactamente
+    // el defecto que esta rama existe para denunciar.
+    id: doctorFindingId(SCOPE_HOST, CATEGORY, `colision:${duplicate}:${subject.id}`),
+    host: SCOPE_HOST,
+    category: CATEGORY,
+    resource: { kind: "credential", name: subject.label, locator: subject.locator },
+    state: "blocking",
+    summary: `dos proveedores de autenticación declaran el sujeto ${subject.id}`,
+    impact: "uno de los dos no se comprobó y el informe no puede hablar por él",
+    evidence: [`lo declaran los proveedores (${owner}) y (${duplicate})`],
+    ownership: "ours",
+    remediation: {
+      kind: "manual",
+      action: null,
+      guidance: [`prefijá los ids de sujeto del proveedor (${duplicate}) para que no colisionen`],
+    },
+  };
 }

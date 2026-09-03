@@ -1,4 +1,5 @@
 import type { CliContext } from "../../cli/types.js";
+import type { EffectClass } from "../../domain/capability/effects.js";
 /**
  * The aggregate: run every provider, consolidate, redact, and let the verdict
  * fall out of what was found.
@@ -38,6 +39,15 @@ export interface DoctorRunOptions {
   /** Restricts the run to these hosts. This one DOES filter. */
   only?: readonly string[];
   skipNative?: boolean;
+  /**
+   * Ask the providers to VERIFY, with the effect classes this run authorized.
+   *
+   * Absent = only the cheap read. `[]` = verify locally. `["network_external"]`
+   * = the person typed `--verify-connection`, which names exactly that effect
+   * and is the explicit authorization to leave the machine; without it a
+   * verification that would hit the network degrades and declares it.
+   */
+  verify?: readonly EffectClass[];
 }
 
 export interface DoctorRunDeps {
@@ -73,6 +83,7 @@ export async function runDoctor(
     currentHost,
     workspaceDir,
     skipNative: options.skipNative === true,
+    ...(options.verify === undefined ? {} : { verifyAuthorization: options.verify }),
   };
 
   // Un `--only` mal escrito se denuncia ANTES de mirar nada: es lo único que

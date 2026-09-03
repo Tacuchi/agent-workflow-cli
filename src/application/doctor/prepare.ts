@@ -38,6 +38,22 @@ export interface DoctorBatchAction {
   /** El comando equivalente, para mostrar. Nunca se ejecuta como texto. */
   verb: string;
   summary: string;
+  /**
+   * El programa y sus argumentos de un flujo declarado, ya separados.
+   *
+   * Entra al sello: aprobar un lote que ejecuta un comando es aprobar sus tokens
+   * exactos, y la vista previa los muestra desde acá para que lo que se aprueba
+   * y lo que se corre salgan de los mismos bytes.
+   */
+  argv?: readonly string[];
+  /**
+   * Dónde vive el recurso, tal como su propio hallazgo lo declaró.
+   *
+   * Es material —forma parte de «sobre qué recursos»— y además es lo que deja
+   * que el `read_set` de una operación pregunte por el archivo del recurso en vez
+   * de por una constante por operación.
+   */
+  locator: string | null;
 }
 
 export interface DoctorReadSetEntry {
@@ -176,6 +192,8 @@ function toBatchAction(finding: DoctorFinding, action: DoctorAction): DoctorBatc
     expected: action.expected,
     verb: spec === null ? action.op : spec.verb(action.args),
     summary: spec === null ? finding.summary : spec.summary,
+    locator: finding.resource.locator,
+    ...(action.argv === undefined ? {} : { argv: [...action.argv] }),
   };
 }
 
@@ -265,7 +283,9 @@ function effectsOf(actions: readonly DoctorBatchAction[]): string[] {
  */
 function readSetFor(ctx: CliContext, actions: readonly DoctorBatchAction[]): DoctorReadSetEntry[] {
   const paths = new Set<string>();
-  paths.add(join(ctx.env.homeDir(), ".workflow", "dev", "mcp-connections.json"));
+  // Por el servicio de rutas y no por un `join` propio: una segunda forma de
+  // decir dónde vive el registro es una que puede quedar apuntando a otro lado.
+  paths.add(ctx.paths.userMcpConnectionsFile());
   for (const action of actions) {
     for (const target of targetsOf(ctx, action)) paths.add(target);
   }
@@ -282,7 +302,6 @@ function targetsOf(ctx: CliContext, action: DoctorBatchAction): string[] {
     case "mcp.setup":
     case "mcp.remove":
     case "mcp.migrate":
-    case "self.mcp-descriptor":
       return [
         join(scope, ".mcp.json"),
         join(scope, ".claude.json"),
@@ -290,6 +309,17 @@ function targetsOf(ctx: CliContext, action: DoctorBatchAction): string[] {
       ];
     case "skills.reinstall":
       return [join(home, ".agents", "skills")];
+    // Lo que se leyó para decidir que falta autenticar es el archivo que el
+    // SUJETO declaró, no una ruta por operación: el proveedor de conexiones —el
+    // dueño de `dsn.env`— declara `flow: null`, así que ninguna acción de flujo
+    // puede ser suya y cablear su archivo acá sellaría bytes ajenos al recurso.
+    // Un sujeto que no declara archivo no aporta ninguno: la otra mitad de su
+    // estado es el entorno del proceso, que no tiene bytes que sellar — y por eso
+    // una variable exportada entre la vista previa y la aprobación NO invalida el
+    // digest; lo que la ataja es que el recurso pasa a reportar sano y `apply`
+    // responde `already` en vez de correr un flujo que ya no hace falta.
+    case "auth.flow":
+      return action.locator === null ? [] : [action.locator];
     case "multiroot.attach":
     case "multiroot.detach":
       return [join(scope, ".claude", "settings.local.json"), join(scope, ".codex", "config.toml")];
@@ -322,6 +352,11 @@ function previewOf(
   batch.actions.forEach((action, index) => {
     lines.push(`  ${index + 1}. ${action.summary} — ${action.resource} (${action.host})`);
     lines.push(`     comando equivalente: ${action.verb}`);
+    // Los tokens exactos, cuando la acción corre un programa: aprobar sin verlos
+    // sería aprobar «un flujo», no ESTE flujo.
+    if (action.argv !== undefined) {
+      lines.push(`     se ejecutará, tal cual: ${action.argv.join(" ")}`);
+    }
     lines.push(`     efectos: ${action.effects.join(", ")}`);
     if (action.depends_on.length > 0) {
       lines.push(`     después de: ${action.depends_on.join(", ")}`);

@@ -8,6 +8,7 @@
  * the three things a person needs (`ReadinessVerdict`: state, evidence, action).
  */
 import type { HarnessId, InstallTarget } from "../harnesses.js";
+import type { DoctorAuthFlow } from "./auth.js";
 
 /** A new field raises this; a field is never renamed inside one version. */
 export const DOCTOR_SCHEMA_VERSION = 1;
@@ -82,6 +83,16 @@ export interface DoctorAction {
   depends_on: string[];
   /** The finding state expected after it applies. */
   expected: DoctorFindingState;
+  /**
+   * El programa y sus argumentos de un flujo declarado, ya separados.
+   *
+   * Sólo lo llevan las operaciones que corren un flujo de autenticación, y va
+   * ACÁ —dentro de lo que se sella— en vez de resolverse otra vez en el momento
+   * de aplicar: aprobar un lote que ejecuta un comando es aprobar sus tokens
+   * exactos, y entre el `prepare` y el `apply` hay dos procesos distintos que
+   * pueden ser dos versiones distintas del CLI.
+   */
+  argv?: readonly string[];
 }
 
 /**
@@ -106,6 +117,15 @@ export interface DoctorRepairHint {
   op: string;
   /** Los argumentos que esa operación necesita, ya resueltos por el proveedor. */
   args: Record<string, string>;
+  /**
+   * El flujo declarado, cuando la sugerencia es correrlo.
+   *
+   * Viaja entero porque el anotador necesita las dos cosas que trae: su `argv`,
+   * que termina sellado en la acción, y sus `effects`, que se SUMAN a los de la
+   * operación — un flujo que sale a la red bajo una aprobación que sólo cubría
+   * `execute` sería una autorización que no autorizó lo que pasó.
+   */
+  flow?: DoctorAuthFlow;
 }
 
 export interface DoctorFinding {
