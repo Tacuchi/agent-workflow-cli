@@ -2135,7 +2135,16 @@ function attemptIdentity(
   const batchIteration = currentBatchIteration(state, transition);
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
   const twin = prior.find((past) => past.request_digest === digest);
-  const attempt = twin?.attempt ?? prior.length + 1;
+  // The next ordinal, asked with the SAME expression `AttemptLedger.record`
+  // validates it against. Counting rows instead is a second reading of one fact,
+  // and the two part the moment a resend is persisted: a recognized resend is
+  // re-evaluated and its row kept wearing the twin's ordinal — deliberately, so
+  // it still counts toward the cap — so the rows say two while the highest
+  // ordinal says one, and the next answer arrives as attempt 3 where the ledger
+  // accepts only 2. Nobody can answer that boundary, and `recover` reads the
+  // chain as coherent because replaying two identical rows never fails.
+  const highest = Math.max(0, ...prior.map((past) => past.attempt));
+  const attempt = twin?.attempt ?? highest + 1;
   const parent =
     attempt === 1
       ? null

@@ -1063,6 +1063,55 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       expect((await state()).applied).toContain("fixture.observe");
     });
 
+    /**
+     * El quinto defecto del mismo ledger, y el único que no necesita que nadie
+     * toque el estado a mano: lo produce el camino de producción.
+     *
+     * Un reenvío del MISMO sobre se reconoce, se vuelve a evaluar y persiste su
+     * fila con el ordinal del gemelo — a propósito, para que siga contando
+     * contra el techo. A partir de ahí las filas dicen dos y el ordinal más alto
+     * dice uno, y la respuesta siguiente se numeraba por filas: llegaba como
+     * intento 3 a un ledger que sólo admite el 2. La frontera quedaba sin forma
+     * de contestarse, y `recover` se negaba porque reproducir dos filas
+     * idénticas nunca falla. El fixture `corruptChain` de arriba evita el gemelo
+     * idéntico a propósito, y su comentario da por sentado que ése no desfasa la
+     * corrida: esa suposición ES el defecto.
+     */
+    it("un reenvío idéntico deja la frontera contestable, y sigue gastando intento", async () => {
+      const raw = JSON.stringify({
+        input_digest: await seal(),
+        signals: ["fixture.inventada-reenviada"],
+      });
+      expect((await submit(raw)).error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+      expect((await submit(raw)).error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+
+      const resent = attemptAccountingAt(await state(), "fixture.observe");
+      // El reenvío se persiste con el ordinal del gemelo y cuenta contra el
+      // techo: es lo que termina degradando la frontera en vez de dejar a quien
+      // contesta dando vueltas.
+      expect(resent.ordinals).toEqual([1, 1]);
+      expect(resent.spent).toBe(2);
+      expect(resent.available).toBe(MAX_BOUNDARY_ATTEMPTS - 2);
+      // Y no es una divergencia: el contenido es el mismo, así que nada que
+      // `recover` tenga que destrabar.
+      expect(resent.unanswerable).toBeNull();
+
+      // Acá estaba el bloqueo: con el ordinal contado por filas, esta respuesta
+      // volvía CAPABILITY_ATTEMPT_OUT_OF_SEQUENCE y no había forma de seguir.
+      const applied = await answerObserve();
+      expect(applied.boundary.transition).toBe("fixture.board");
+      expect((await state()).applied).toContain("fixture.observe");
+      expect(attemptAccountingAt(await state(), "fixture.observe").ordinals).toEqual([1, 1, 2]);
+    });
+
+    it("sin reenvíos la cadena sigue numerando densa, 1, 2, 3", async () => {
+      for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await refuseObserve();
+      const accounting = attemptAccountingAt(await state(), "fixture.observe");
+      expect(accounting.ordinals).toEqual([1, 2, 3]);
+      expect(accounting.conflicts).toEqual([]);
+      expect(accounting.spent).toBe(MAX_BOUNDARY_ATTEMPTS);
+    });
+
     it("el contrato persistido no se movió: una prueba lo fija", () => {
       // Las corridas v7-v9 se siguen leyendo, pero una corrida activa se adopta
       // explícitamente antes de escribir la semántica de batches de v10.
