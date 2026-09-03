@@ -75,6 +75,11 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   // Repeated `--input` (capability): an operation takes as many inputs as its
   // descriptor declares, and a single-value routing would keep only the last.
   "input",
+  // Repeated `--only` (doctor): the flag names the SET of hosts a run is
+  // restricted to. Without this, `aw doctor --only claude-code --only codex`
+  // kept the last one and produced a report over ONE host that looks exactly
+  // like a complete one — the silent-drop family of `--source`/`--path`.
+  "only",
 ]);
 
 // Flag names (without leading `--`) that are booleans: their presence is the
@@ -86,6 +91,13 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
 // changes no value semantics.)
 const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "all",
+  // The global alias `aw --doctor`. Without it `consumeOptionFlag` eats the next
+  // token WITHOUT a leading dash as its value: `aw --doctor extra` would swallow
+  // `extra` — the command the person typed — and run the diagnosis instead of
+  // reporting an unknown command. A following `--json` was never at risk:
+  // `consumeOptionFlag` already refuses a dash-prefixed token as a value.
+  "doctor",
+  "skip-native",
   "verbose",
   "dry-run",
   "deep",

@@ -137,6 +137,12 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // lee —sello vigente, sello nuevo, la línea exacta— es lo que aprueba con el
     // digest, y el JSON del host sale del mismo objeto sellado.
     "reseal",
+    // plan 040 — el informe agregado del doctor. La proyección humana es
+    // obligatoria acá porque el veredicto viaja en el CÓDIGO DE SALIDA y no en
+    // `ok`: si el informe fuera `ok:false` al bloquear, el runtime no llamaría a
+    // `renderHuman` y la persona vería una línea de error justo cuando necesita
+    // el informe entero.
+    "doctor",
   ];
 
   it("no undeclared command acquired a human projection", () => {

@@ -1159,7 +1159,7 @@ async function resolveDsnVar(
   return validation.value;
 }
 
-function buildEnvHelp(
+export function buildEnvHelp(
   dsnVar: string,
   name: McpInstance,
 ): NonNullable<SelfMcpConfigData["env_help"]> {

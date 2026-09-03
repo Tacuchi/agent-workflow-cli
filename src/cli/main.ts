@@ -27,8 +27,9 @@ import {
 import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
 import { ALL_COMMANDS, commandDescribes } from "./commands/index.js";
+import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
 import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
-import { type MenuAction, shouldShowInteractiveMenu } from "./interactive-menu.js";
+import type { MenuAction } from "./interactive-menu.js";
 import { type OutputMode, resolveOutputMode } from "./output-mode.js";
 import { type ParsedArgs, parseArgv } from "./parser.js";
 import { type CliCommand, CommandRegistry } from "./registry.js";
@@ -145,7 +146,11 @@ async function initializeCliContext(
       directory,
       paths,
       skills,
-      logger: new Logger({ fs, paths, enabled: !isStrictReadCommand(parsed.command) }),
+      logger: new Logger({
+        fs,
+        paths,
+        enabled: !isStrictReadCommand(effectiveCommandName(parsed)),
+      }),
     },
   };
 }
@@ -276,23 +281,24 @@ interface ParsedCommandDispatch {
 
 async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<ExitCode> {
   const { parsed, ctx, registry, isTTY, hasHelp, output, workspaceFs } = input;
-  if (shouldShowInteractiveMenu({ command: parsed.command, isTTY, hasHelp })) {
-    return await runInteractiveMenu(ctx, registry);
-  }
-
-  if (parsed.command === undefined) {
+  // The decision — menu, help or which command, alias included — belongs to
+  // `planDispatch`, which is importable and therefore testable. What is left
+  // here is carrying it out: no ordering and no command name of its own.
+  const plan = planDispatch({ command: parsed.command, flags: parsed.flags, isTTY, hasHelp });
+  if (plan.kind === "menu") return await runInteractiveMenu(ctx, registry);
+  if (plan.kind === "global-help") {
     printHelp(registry.list());
     return 0;
   }
 
-  const command = registry.resolve(parsed.command);
+  const command = registry.resolve(plan.name);
   if (command === undefined) {
-    emitError(formatUnknownCommand(parsed.command, registry.list()));
+    emitError(formatUnknownCommand(plan.name, registry.list()));
     return 1;
   }
 
   // `<command> --help` shows the subcommand's help (its describe), not the global help.
-  if (hasHelp) {
+  if (plan.help) {
     printCommandHelp(command);
     return 0;
   }
@@ -371,8 +377,35 @@ function attachMaterializationReceipt(
   return { ...result, data: { ...result.data, materialization } };
 }
 
+/**
+ * El comando que la invocación va a correr de verdad: el explícito, o el que
+ * resuelve un alias global.
+ *
+ * `aw --doctor` no lleva comando —el alias lo resuelve `planDispatch` más
+ * tarde—, así que juzgar sólo `parsed.command` dejaba justo a esa superficie
+ * (la que la spec pinta como «corrélo a ciegas») fuera de la exención de sólo
+ * lectura y con la bitácora habilitada.
+ */
+function effectiveCommandName(parsed: ParsedArgs): string | undefined {
+  if (parsed.command !== undefined) return parsed.command;
+  return resolveGlobalAlias({
+    command: parsed.command,
+    flags: parsed.flags,
+    isTTY: false,
+    hasHelp: false,
+  });
+}
+
+/**
+ * Comandos que prometen NO tocar el disco de la persona, ni siquiera su bitácora.
+ *
+ * `doctor` está acá porque su contrato es exactamente ese: la fase diagnóstica se
+ * corre a ciegas y no deja rastro. Con el logger habilitado, cada `aw doctor`
+ * creaba `~/.workflow/logs/` y le anexaba la invocación y el resultado, así que
+ * la promesa era falsa en la superficie real aunque ningún proveedor escribiera.
+ */
 function isStrictReadCommand(command: string | undefined): boolean {
-  return command === "status" || command === "resume";
+  return command === "status" || command === "resume" || command === "doctor";
 }
 
 function emit(result: CommandResult, command: CliCommand, mode: OutputMode): void {

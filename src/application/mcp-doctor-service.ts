@@ -197,7 +197,7 @@ function malformedEntryDetail(entryName: string): string {
 }
 
 /** Never return a value from a host entry; this only drives a safe remediation hint. */
-function hasEmbeddedCredential(snapshot: ReturnType<typeof readMcpEntry>): boolean {
+export function hasEmbeddedCredential(snapshot: ReturnType<typeof readMcpEntry>): boolean {
   return containsSensitiveData({
     ...(snapshot.command === undefined ? {} : { command: snapshot.command }),
     ...(snapshot.args === undefined ? {} : { args: snapshot.args }),

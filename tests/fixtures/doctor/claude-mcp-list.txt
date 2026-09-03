@@ -1,0 +1,8 @@
+Checking MCP server health…
+
+plugin:context7:context7: https://mcp.context7.com/mcp (HTTP) - ✔ Connected
+plugin:figma:figma: https://mcp.figma.com/mcp (HTTP) - ! Needs authentication
+plugin:firebase:firebase: npx -y firebase-tools@latest mcp - ✔ Connected
+plugin:telegram:telegram: bun run --cwd /Users/tacuchi/.claude/plugins/cache/claude-plugins-official/telegram/0.0.7 --shell=bun --silent start - ⊘ Disabled for this project (re-enable via /mcp)
+qtc-cert: /Users/tacuchi/.nvm/versions/node/v22.20.0/bin/node /Users/tacuchi/.nvm/versions/node/v22.20.0/lib/node_modules/@tacuchi/agent-workflow-cli/dist/cli/main.js mcp serve-db --namespace workflow --instance qtc-cert --host claude --scope global --descriptor-generation 25.1.2 - ✔ Connected
+qtc-prod: /Users/tacuchi/.nvm/versions/node/v22.20.0/bin/node /Users/tacuchi/.nvm/versions/node/v22.20.0/lib/node_modules/@tacuchi/agent-workflow-cli/dist/cli/main.js mcp serve-db --namespace workflow --instance qtc-prod --host claude --scope global --descriptor-generation 25.1.2 - ✔ Connected

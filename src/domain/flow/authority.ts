@@ -3564,6 +3564,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "plugin-doctor", reason: "diagnóstico de instalación" },
   { command: "plugin-cache", reason: "mantenimiento de caché" },
   { command: "host-doctor", reason: "diagnóstico de hosts" },
+  {
+    command: "doctor",
+    reason:
+      "misma clasificación que los doctores que compone: diagnóstico read-only sin recorrido propio. Su autoridad es su contrato — el veredicto viaja en el código de salida y no decide nada por la persona",
+  },
   { command: "release-data", reason: "datos de release del paquete" },
   { command: "hook", reason: "punto de entrada de los hooks del host" },
   { command: "mcp", reason: "configuración de servidores MCP" },
