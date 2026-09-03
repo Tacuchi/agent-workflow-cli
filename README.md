@@ -185,6 +185,7 @@ Workspace artifacts live under `.<namespace>/`. Resolution order (first match wi
 - `git-flow <sync|to-dev|to-qa|to-prod> [--source|--all] [--target] [--dry-run]` — run the per-source branch flows (sync working ← base, promote to dev/QA/prod) with conflict-pause; `--all` processes every source and reports each one. Also surfaced as Project-tab actions.
 - `release-data` — corpus reader backing the `export-*` skills.
 - `self install-skill` / `self doctor` / `self update` / `mcp` — CLI maintenance.
+- `amend <apply|revert|list>` — correct the WORDING of an already closed spec or plan in one act, under the workspace lock and with the document's own digest as the compare-and-swap base; it demands an explicit declaration that no scope, criteria or rules move, records the exact pre-image in an append-only ledger, and refuses structurally whatever touches the contract (naming the refinement instead). CLI-only: there is no `/w:amend`.
 
 Run `agent-workflow --help` (or `aw --help`) for the full list, or `agent-workflow <command> --help` for per-command flags.
 
