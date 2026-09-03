@@ -114,6 +114,7 @@ function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
       impact: "el host no ve esas fuentes: sus lecturas y ediciones ahí fallan",
       evidence: report.missing.map((path) => `falta: ${path}`),
       remediation: { kind: "manual", action: null, guidance: ["aw attach-multiroot"] },
+      proposal: { op: "multiroot.attach", args: { scope: report.scope } },
     });
   }
   if (report.extra.length > 0) {
@@ -125,6 +126,7 @@ function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
       impact: "el host ve directorios fuera del workspace declarado",
       evidence: report.extra.map((path) => `sobra: ${path}`),
       remediation: { kind: "manual", action: null, guidance: ["aw detach-multiroot"] },
+      proposal: { op: "multiroot.detach", args: { scope: report.scope } },
     });
   }
   if (report.status === "no-settings") {
@@ -136,6 +138,7 @@ function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
       impact: "el host no ve ninguna fuente declarada del workspace",
       evidence: [`archivo esperado: ${report.target}`],
       remediation: { kind: "manual", action: null, guidance: ["aw attach-multiroot"] },
+      proposal: { op: "multiroot.attach", args: { scope: report.scope } },
     });
   }
   if (findings.length === 0) {

@@ -98,6 +98,11 @@ function hooksArmedFinding(host: string, report: HooksArmedReport): DoctorFindin
     remediation: report.armed
       ? { kind: "none", action: null, guidance: [] }
       : { kind: "manual", action: null, guidance: ["aw self install-hooks"] },
+    // Armar los hooks presupone que el bundle esté en ese host: si las dos
+    // acciones entran al mismo lote, el anotador las ordena.
+    ...(report.armed
+      ? {}
+      : { proposal: { op: "self.install-hooks", args: { target: report.target } } }),
   };
 }
 

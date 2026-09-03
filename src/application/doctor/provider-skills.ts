@@ -156,6 +156,7 @@ function skillFinding(skill: {
       action: null,
       guidance: [`aw self skills reinstall --name ${skill.name}`],
     },
+    proposal: { op: "skills.reinstall", args: { name: skill.name } },
   };
 }
 

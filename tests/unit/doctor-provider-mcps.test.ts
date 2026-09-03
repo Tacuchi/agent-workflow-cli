@@ -492,7 +492,11 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
     expect(finding.state).toBe("warning");
     expect(finding.evidence.join(" | ")).toContain("known-legacy");
     expect(finding.remediation.kind).toBe("manual");
-    expect(finding.remediation.guidance).toContain("aw self mcp install-claude");
+    // La ubicación HISTÓRICA se MIGRA, no se reinstala: es un archivo que el
+    // host todavía lee y hay que mover. Reescribir en el lugar dejaría el
+    // descriptor duplicado en los dos archivos que el host carga a la vez.
+    expect(finding.remediation.guidance.join(" | ")).toContain("aw mcp migrate");
+    expect(finding.proposal?.op).toBe("mcp.migrate");
   });
 
   it("una entrada llamada 'agent-workflow' que Workline no escribió queda ajena y se preserva", async () => {

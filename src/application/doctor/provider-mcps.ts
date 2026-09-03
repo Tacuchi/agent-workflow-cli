@@ -9,7 +9,11 @@
  * the person a working host when it fails, so it is diagnosed and given
  * written guidance, and never an action.
  */
-import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
+import {
+  type DoctorFinding,
+  type DoctorRepairHint,
+  doctorFindingId,
+} from "../../domain/doctor/model.js";
 import { type McpDriftReport, type McpHost, mcpEntryNameFor } from "../../domain/mcp-entry.js";
 import { WORKLINE_MCP_ENTRY_NAME, worklineMcpEntry } from "../../domain/workline-mcp-entry.js";
 import { readMcpConnections } from "../mcp-connections-service.js";
@@ -200,6 +204,7 @@ function ownConnectionFinding(report: McpDriftReport, host: string): DoctorFindi
       },
     };
   }
+  const repair = driftRepair(report);
   return {
     ...base,
     state: "warning",
@@ -207,7 +212,32 @@ function ownConnectionFinding(report: McpDriftReport, host: string): DoctorFindi
     impact: "el host no levantará este MCP como Workline lo dejó configurado",
     ownership: "ours",
     remediation: { kind: "manual", action: null, guidance: driftGuidance(report) },
+    ...(repair === null ? {} : { proposal: repair }),
   };
+}
+
+/**
+ * Qué operación arregla cada clase de drift — y cuáles no tienen ninguna.
+ *
+ * Los dos estados de la variable DSN no aparecen acá a propósito: su remedio es
+ * que la persona exporte la variable, y el CLI no puede hacerlo sin custodiar el
+ * valor. El resto se mapea a la operación que ya escribe esa configuración.
+ */
+function driftRepair(report: McpDriftReport): DoctorRepairHint | null {
+  const args = { host: report.host, instance: report.instance, scope: report.scope };
+  switch (report.status) {
+    case "missing-mcp":
+      return { op: "mcp.setup", args };
+    case "legacy-entry":
+      // La entrada quedó con una forma anterior EN SU LUGAR: se reescribe donde
+      // está. Mover una entrada de la ubicación histórica es otra operación, y la
+      // decide el descriptor de abajo, que es el que sabe de qué archivo salió.
+      return { op: "mcp.setup", args };
+    case "extra-entry":
+      return { op: "mcp.remove", args };
+    default:
+      return null;
+  }
 }
 
 /**
@@ -534,19 +564,30 @@ function worklineEntryFinding(
     };
   }
   if (ours) {
+    // Para ESTE descriptor, `known-legacy` sólo puede significar una cosa: está
+    // en una ubicación que el host todavía lee y hay que moverlo. La otra mitad
+    // de `known-legacy` —una GENERACIÓN anterior— exige un
+    // `--descriptor-generation` en los argumentos, que el descriptor de
+    // elicitación no tiene; esa mitad vive en las conexiones de base de datos, y
+    // su reparación es reescribir en el lugar (`mcp.setup`), no mover.
     return {
       ...base,
       state: "warning",
-      summary: `el descriptor de Workline en ${host} quedó en una forma anterior`,
-      impact: "el host puede seguir levantando una versión vieja del descriptor",
+      summary: `el descriptor de Workline en ${host} quedó en una ubicación que ya no es la vigente`,
+      impact: "el host puede cargar el descriptor viejo junto al vigente",
       ownership: "ours",
       remediation: {
         kind: "manual",
         action: null,
-        guidance: [`aw self mcp install-${mcpHost}`],
+        guidance: [`aw mcp migrate --host ${mcpHost} --scope ${scope}`],
+      },
+      proposal: {
+        op: "mcp.migrate",
+        args: { host: mcpHost, instance: WORKLINE_MCP_ENTRY_NAME, scope },
       },
     };
   }
+
   return {
     ...base,
     state: "warning",

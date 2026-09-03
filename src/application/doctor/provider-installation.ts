@@ -24,7 +24,7 @@ export const installationProvider: DoctorProvider = {
       const state = input.hostStates.find((candidate) => candidate.host === host.host);
       findings.push(hostFinding(host, state?.advice ?? null));
       const target = targets.find((candidate) => candidate.target === host.target);
-      if (target !== undefined) findings.push(...targetFindings(host.host, target));
+      if (target !== undefined) findings.push(...targetFindings(host, target));
     }
 
     return {
@@ -64,6 +64,7 @@ function hostFinding(
   if (host.status === "installable") {
     return {
       ...base,
+      proposal: { op: "self.install-skill", args: { target: host.target } },
       state: "warning",
       summary: `${host.label} está en esta máquina y Workline no está instalado ahí`,
       impact: "los comandos de Workline no existen en ese host hasta instalarlo",
@@ -72,6 +73,11 @@ function hostFinding(
   }
   return {
     ...base,
+    // Retirar lo residual y instalar el bundle no pueden coexistir para un mismo
+    // host: el catálogo declara un host `installable` O `residual-config`, nunca
+    // los dos, así que la exclusión es del estado y no una regla que haya que
+    // recordar acá.
+    proposal: { op: "self.uninstall", args: { target: host.target } },
     state: "warning",
     summary: `${host.label} dejó configuración sin un runtime que la use`,
     impact: "la configuración residual puede confundir a otras herramientas que la lean",
@@ -87,7 +93,7 @@ function hostFinding(
  * finding whose resource nobody can locate.
  */
 function targetFindings(
-  host: string,
+  host: DoctorProviderInput["hosts"][number],
   target: {
     legacy_leftover?: boolean;
     legacy_leftover_path?: string;
@@ -99,14 +105,15 @@ function targetFindings(
   const findings: DoctorFinding[] = [];
   if (target.legacy_leftover === true) {
     findings.push({
-      id: doctorFindingId(host, CATEGORY, "resto-legacy"),
-      host,
+      id: doctorFindingId(host.host, CATEGORY, "resto-legacy"),
+      host: host.host,
       category: CATEGORY,
       resource: {
         kind: "bundle",
         name: "resto legacy",
         locator: target.legacy_leftover_path ?? target.path,
       },
+      proposal: { op: "self.clean-legacy", args: { target: host.target } },
       state: "warning",
       summary: target.legacy_leftover_warning ?? "quedó un bundle de una instalación anterior",
       impact: "el host puede cargar documentos viejos junto a los vigentes",
@@ -117,10 +124,11 @@ function targetFindings(
   }
   if (target.lock_warning !== undefined) {
     findings.push({
-      id: doctorFindingId(host, CATEGORY, "lock"),
-      host,
+      id: doctorFindingId(host.host, CATEGORY, "lock"),
+      host: host.host,
       category: CATEGORY,
       resource: { kind: "lock", name: "lock de skills", locator: target.path },
+      proposal: { op: "self.install-skill", args: { target: host.target } },
       state: "warning",
       summary: target.lock_warning,
       impact: "el registro compartido de skills no describe lo que está instalado",

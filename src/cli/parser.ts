@@ -80,6 +80,10 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   // kept the last one and produced a report over ONE host that looks exactly
   // like a complete one — the silent-drop family of `--source`/`--path`.
   "only",
+  // Repeated `--select` (doctor prepare/apply): la selección ES un conjunto de
+  // hallazgos, y quedarse con el último sellaría un lote de UNA acción
+  // indistinguible del que la persona creía estar aprobando.
+  "select",
 ]);
 
 // Flag names (without leading `--`) that are booleans: their presence is the

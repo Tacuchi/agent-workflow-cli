@@ -22,6 +22,7 @@ import {
 import type { HarnessId } from "../../domain/harnesses.js";
 import { redactSensitiveValue } from "../../domain/redaction.js";
 import { readPackageVersion } from "../../runtime/version.js";
+import { annotateRepairs } from "./actions.js";
 import { DOCTOR_HOST_ORDER, type DoctorHostSelection, selectDoctorHosts } from "./hosts.js";
 import { installationProvider } from "./provider-installation.js";
 import { type McpsProviderDeps, createMcpsProvider } from "./provider-mcps.js";
@@ -108,7 +109,10 @@ export async function runDoctor(
   }
 
   const hostOrder = [...DOCTOR_HOST_ORDER, "workspace"];
-  const orderedFindings = sortDoctorFindings(findings, hostOrder);
+  // El gate de propiedad, en un solo lugar y sobre el conjunto consolidado: acá
+  // es donde una sugerencia de proveedor se vuelve acción, o no. También es
+  // donde `proposal` se consume: el informe emitido no la lleva.
+  const orderedFindings = sortDoctorFindings(annotateRepairs(findings), hostOrder);
   const orderedCoverage = sortDoctorCoverage(coverages, hostOrder);
 
   const report: DoctorReport = {

@@ -8,6 +8,12 @@
  * result is always `ok: true`, and THE EXIT CODE CARRIES THE VERDICT — with the
  * verdict repeated inside `data` so the JSON is self-sufficient.
  */
+import { type DoctorApplyResult, applyDoctorBatch } from "../../application/doctor/apply.js";
+import {
+  type DoctorPrepareListing,
+  type DoctorProposal,
+  prepareDoctorBatch,
+} from "../../application/doctor/prepare.js";
 import { runDoctor } from "../../application/doctor/report.js";
 import type { DoctorReport } from "../../domain/doctor/model.js";
 import { DOCTOR_CATEGORIES } from "../../domain/doctor/model.js";
@@ -53,39 +59,186 @@ const REMEDIATION_LABEL: Record<string, string> = {
   none: "sin acción segura",
 };
 
-export const doctorCommand: CliCommand<DoctorReport> = {
+/**
+ * Lo que el comando devuelve, y por qué es una unión y no un sobre.
+ *
+ * `aw doctor` a secas emite el informe COMO `data`, sin envolverlo: es el
+ * contrato que el esquema `schema_version: 1` publica y que un consumidor ya
+ * puede leer. Los subverbos traen otra cosa —un listado o una propuesta
+ * sellada—, así que se distinguen por su propio `kind`. El informe no lo lleva
+ * justamente para no cambiar la forma que ya estaba publicada.
+ */
+export type DoctorCommandData =
+  | DoctorReport
+  | ({ kind: "prepare-listing" } & DoctorPrepareListing)
+  | ({ kind: "prepare-sealed" } & DoctorProposal)
+  | ({ kind: "applied" } & DoctorApplyResult);
+
+/** Los subverbos se distinguen por su propio `kind`; el informe no lo lleva. */
+function isSubverb(data: DoctorCommandData): data is Exclude<DoctorCommandData, DoctorReport> {
+  return "kind" in data;
+}
+
+export const doctorCommand: CliCommand<DoctorCommandData> = {
   name: "doctor",
   describe:
     "aw doctor: diagnóstico contextual de la instalación y los recursos de Workline en los hosts detectados, con cobertura por categoría y veredicto en el código de salida.",
-  async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DoctorReport>> {
-    const report = await runDoctor(ctx, {
+  async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DoctorCommandData>> {
+    const options = {
       host: flagValue(args, "host") ?? null,
       only: onlyHosts(args),
       skipNative: args.flags.has("--skip-native"),
-    });
+    };
+    if (args.rest[0] === "prepare") return await runPrepare(args, ctx, options);
+    if (args.rest[0] === "apply") return await runApply(args, ctx, options);
+    const report = await runDoctor(ctx, options);
     return { ok: true, data: report, exitCode: report.verdict.exit_code };
   },
-  renderHuman(result: CommandResult<DoctorReport>, _context): string {
-    const report = result.data;
-    if (report === undefined) return "el diagnóstico no produjo informe.";
+  renderHuman(result: CommandResult<DoctorCommandData>, _context): string {
+    const data = result.data;
+    if (data === undefined) return "el diagnóstico no produjo informe.";
+    if (isSubverb(data)) {
+      if (data.kind === "applied") return appliedLines(data);
+      return data.kind === "prepare-sealed" ? sealedLines(data) : listingLines(data);
+    }
     return [
-      ...hostLines(report),
+      ...hostLines(data),
       "",
-      ...coverageLines(report),
+      ...coverageLines(data),
       "",
-      ...findingLines(report),
+      ...findingLines(data),
       "",
-      ...summaryLines(report),
+      ...summaryLines(data),
     ].join("\n");
   },
 };
 
-/** `--only` may repeat; `--host` never does. One reads a list, the other a name. */
+async function runPrepare(
+  args: ParsedArgs,
+  ctx: CliContext,
+  options: { host: string | null; only: string[]; skipNative: boolean },
+): Promise<CommandResult<DoctorCommandData>> {
+  const outcome = await prepareDoctorBatch(ctx, {
+    ...options,
+    select: args.valuesMulti.get("select") ?? selectOne(args),
+  });
+  if (!outcome.ok) {
+    return {
+      ok: false,
+      // Los `candidates` y la acción de salida VIAJAN: el punto de este rechazo
+      // es nombrar los ids concretos, y un error que sólo dice «selección
+      // inválida» obliga a la persona a adivinar cuál de los que escribió falla.
+      error: {
+        code: outcome.rejection.code,
+        message: outcome.rejection.message,
+        details: {
+          candidates: outcome.rejection.candidates,
+          action: outcome.rejection.action,
+        },
+      },
+      exitCode: 1,
+    };
+  }
+  if (outcome.kind === "listing") {
+    return { ok: true, data: { kind: "prepare-listing", ...outcome.listing }, exitCode: 0 };
+  }
+  return { ok: true, data: { kind: "prepare-sealed", ...outcome.proposal }, exitCode: 0 };
+}
+
+/** `--only` puede repetirse; `--host` nunca. Uno lee una lista, el otro un nombre. */
 function onlyHosts(args: ParsedArgs): string[] {
   const multi = args.valuesMulti.get("only");
   if (multi !== undefined) return multi;
   const single = flagValue(args, "only");
   return single === undefined ? [] : [single];
+}
+
+async function runApply(
+  args: ParsedArgs,
+  ctx: CliContext,
+  options: { host: string | null; only: string[]; skipNative: boolean },
+): Promise<CommandResult<DoctorCommandData>> {
+  const outcome = await applyDoctorBatch(ctx, {
+    ...options,
+    select: args.valuesMulti.get("select") ?? selectOne(args),
+    ...(flagValue(args, "approval") === undefined
+      ? {}
+      : { approval: flagValue(args, "approval") as string }),
+  });
+  if (!outcome.ok) {
+    return {
+      ok: false,
+      error: {
+        code: outcome.rejection.code,
+        message: outcome.rejection.message,
+        details: {
+          candidates: outcome.rejection.candidates,
+          action: outcome.rejection.action,
+        },
+      },
+      exitCode: 1,
+    };
+  }
+  // La misma convención que el informe: `ok:true` con el exit code como
+  // veredicto, para que la proyección humana se renderice también cuando el lote
+  // salió parcial — que es justo cuando la persona necesita ver acción por
+  // acción hasta dónde llegó.
+  return {
+    ok: true,
+    data: { kind: "applied", ...outcome.result },
+    exitCode: outcome.result.exit_code,
+  };
+}
+
+/** El resultado del lote: acción por acción, con su recomprobación. */
+function appliedLines(data: { kind: "applied" } & DoctorApplyResult): string {
+  const mark: Record<string, string> = {
+    applied: "✔",
+    failed: "✘",
+    skipped: "·",
+    blocked: "⊘",
+  };
+  const lines = [`Lote ${data.status} — ${flat(data.reason)}`, ""];
+  for (const action of data.actions) {
+    lines.push(`  ${mark[action.status] ?? "·"} ${flat(action.finding_id)} · ${action.op}`);
+    if (action.reason !== null) lines.push(`      motivo: ${flat(action.reason)}`);
+    lines.push(`      recomprobación: ${action.recheck} — ${flat(action.recheck_detail)}`);
+  }
+  const { applied, failed, skipped, blocked, resolved } = data.summary;
+  lines.push("");
+  lines.push(
+    `Resumen: ${applied} aplicada(s) · ${failed} fallida(s) · ${skipped} omitida(s) · ${blocked} bloqueada(s) · ${resolved} resuelta(s)`,
+  );
+  lines.push(`Salida ${data.exit_code} · digest aprobado ${data.digest}`);
+  return lines.join("\n");
+}
+
+/** `--select` puede repetirse; una sola vez llega por `values`. */
+function selectOne(args: ParsedArgs): string[] {
+  const single = flagValue(args, "select");
+  return single === undefined ? [] : [single];
+}
+
+/** El listado: qué se PODRÍA reparar. No sella nada y no aprueba nada. */
+function listingLines(data: { kind: "prepare-listing" } & DoctorPrepareListing): string {
+  if (data.actionable.length === 0) {
+    return "No hay ningún hallazgo con reparación automatizable en este informe.";
+  }
+  const lines = [`${data.actionable.length} hallazgo(s) con reparación automatizable:`];
+  for (const action of data.actionable) {
+    lines.push(`  ${flat(action.finding_id)}`);
+    lines.push(`     ${flat(action.summary)} — ${flat(action.resource)} (${action.host})`);
+    lines.push(`     comando equivalente: ${flat(action.verb)}`);
+    lines.push(`     efectos: ${action.effects.join(", ")}`);
+  }
+  lines.push("");
+  lines.push("Seleccioná con: aw doctor prepare --select <id> [--select <id> …]");
+  return lines.join("\n");
+}
+
+/** La propuesta sellada: exactamente lo que `apply` va a hacer, y su digest. */
+function sealedLines(data: { kind: "prepare-sealed" } & DoctorProposal): string {
+  return [...data.preview.map(flat), "", `siguiente: ${flat(data.next)}`].join("\n");
 }
 
 function hostLines(report: DoctorReport): string[] {
@@ -138,8 +291,15 @@ function coverageLines(report: DoctorReport): string[] {
  * texto en el momento de dibujarlo.
  */
 function flat(text: string): string {
+  // La sangría del principio SE CONSERVA: es la estructura del informe y no
+  // contenido ajeno. Aplanar la línea entera dejaba la vista previa sin
+  // jerarquía —todas las acciones al mismo margen— y lo que hay que neutralizar
+  // son los saltos y los controles de ADENTRO, no el formato de afuera.
+  const indent = /^ */.exec(text)?.[0] ?? "";
   return (
+    indent +
     text
+      .slice(indent.length)
       // biome-ignore lint/suspicious/noControlCharactersInRegex: es exactamente lo que hay que sacar
       .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
       .replace(/\s+/g, " ")

@@ -84,6 +84,30 @@ export interface DoctorAction {
   expected: DoctorFindingState;
 }
 
+/**
+ * Lo que un proveedor SUGIERE que repararía este recurso — y nunca la acción.
+ *
+ * Existe porque el proveedor es el único que tiene el contexto (qué host, qué
+ * instancia, qué scope, qué nombre) y el id no lo lleva: recomponerlo con una
+ * expresión regular sobre el id es des-renderizar la presentación para recuperar
+ * un dato estructural que estaba a la vista donde se emitió.
+ *
+ * Es una SUGERENCIA y no una acción por una razón que es la promesa entera del
+ * plan: quién puede recibir una acción lo decide el anotador, en un solo lugar,
+ * con los predicados de propiedad. Un proveedor que emitiera acciones sería un
+ * segundo lugar donde esa regla vive, y ahí es donde AC-08 se rompe sin que
+ * nadie lo note.
+ *
+ * NUNCA llega al informe emitido: `runDoctor` la consume y la retira. Lo que el
+ * esquema publica es `remediation`.
+ */
+export interface DoctorRepairHint {
+  /** Id de una operación del catálogo. Una que no existe se descarta. */
+  op: string;
+  /** Los argumentos que esa operación necesita, ya resueltos por el proveedor. */
+  args: Record<string, string>;
+}
+
 export interface DoctorFinding {
   /** Deterministic: `<host>/<category>/<resource>`. Stable across runs over the same state. */
   id: string;
@@ -98,6 +122,8 @@ export interface DoctorFinding {
   evidence: string[];
   ownership: DoctorOwnership;
   remediation: DoctorRemediation;
+  /** Interno: la sugerencia del proveedor. Ver {@link DoctorRepairHint}. */
+  proposal?: DoctorRepairHint;
 }
 
 export interface DoctorCoverage {
