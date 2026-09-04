@@ -58,6 +58,7 @@ const GROUP_TITLES: Record<PipelineItem["kind"], string> = {
   "spec-unrefined": "Specs sin refinar",
   "spec-unplanned": "Specs sin plan",
   "plan-open": "Planes abiertos",
+  "plan-handoff": "Planes cerrados con traspaso vigente",
   // Kept because the model keeps the class: a loose checkpoint is reported as a
   // notice now, so nothing reaches this row — and the day something does, it is
   // titled rather than rendered as a blank group.
@@ -69,6 +70,7 @@ const KIND_NOUNS: Record<PipelineItem["kind"], string> = {
   "spec-unrefined": "spec",
   "spec-unplanned": "spec",
   "plan-open": "plan",
+  "plan-handoff": "traspaso",
   "checkpoint-orphan": "sesión",
 };
 

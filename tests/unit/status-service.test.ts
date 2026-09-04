@@ -6,6 +6,13 @@ import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs as FakeFs } from "../helpers/mem-fs.js";
+import {
+  HANDOFF_CHAIN,
+  HANDOFF_PLAN,
+  HANDOFF_TEXT,
+  seedClosedPlanWithHandoff,
+  seedOpenPlanWithHandoff,
+} from "../helpers/plan-obligation-fixtures.js";
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
 
@@ -912,5 +919,89 @@ describe("status human — un root implícito sigue siendo Workline", () => {
     expect(data.workspace.initialized).toBe(false);
     expect(text).toContain("sin pendientes");
     expect(text).not.toContain("/w:workspace-init");
+  });
+});
+
+// F4 · T4.3 — un plan cerrado con traspaso vigente vuelve al tablero. Cerrarlo
+// era justo lo que lo hacía desaparecer: el traspaso no lo salda ninguna
+// clausura, porque no es trabajo de esta línea. Lo que se fija acá es que
+// vuelve, que NO bloquea, y que trae el comando con el que se reconoce.
+describe("status — el traspaso de un plan cerrado sigue a la vista", () => {
+  it("aparece como pendiente no bloqueante, con su comando y sin invertir el titular", async () => {
+    const fs = pending();
+    seedClosedPlanWithHandoff(fs);
+
+    const data = await board(fs);
+    const item = data.pipeline.find((row) => row.file === HANDOFF_PLAN);
+
+    expect(item?.kind).toBe("plan-handoff");
+    expect(item?.detail.next).toContain("TRASPASO VIGENTE por DEC-001");
+    expect(item?.detail.next).toContain(HANDOFF_TEXT);
+    expect(item?.detail.next).toContain("no bloquea el cierre");
+    // NO es obligación: `obligation` significa «ni ejecutable ni cerrable», y un
+    // traspaso es precisamente la clase que no retiene nada. Marcarlo pondría
+    // trabajo de afuera por delante del trabajo propio del workspace.
+    expect(item?.detail.obligation).toBe(false);
+    expect(item?.action).toEqual({
+      kind: "continue",
+      command: `aw settle prepare ${HANDOFF_PLAN}`,
+      mode: "settlement",
+    });
+    // Y va último: es lo que menos manda, y no le gana a nada abierto.
+    expect(item?.priority).toBe(4);
+  });
+
+  it("el tablero lo imprime bajo su propio título, no bajo «Planes abiertos»", async () => {
+    const fs = pending();
+    seedClosedPlanWithHandoff(fs);
+
+    const text = render(await board(fs));
+
+    expect(text).toContain("Planes cerrados con traspaso vigente");
+    expect(text).toContain("plan 040 — cerrado · 1 traspaso(s) vigente(s)");
+    expect(text).not.toContain("Planes abiertos");
+  });
+
+  it("el cierre sin verificar conserva su aviso: la fila nueva no se lo come", async () => {
+    const fs = pending();
+    seedClosedPlanWithHandoff(fs, "unverified_accepted");
+
+    const item = (await board(fs)).pipeline.find((row) => row.file === HANDOFF_PLAN);
+
+    // El titular es el traspaso, porque es lo que trae la fila; pero un plan
+    // cerrado sobre evidencia omitida o sustituta no deja de decirlo por haber
+    // delegado algo — serían dos hechos y sólo se contaría uno.
+    expect(item?.detail.next).toContain("TRASPASO VIGENTE");
+    expect(item?.detail.warning?.code).toBe("WORKLINE_PLAN_CLOSURE_UNVERIFIED");
+    expect(item?.detail.warning?.message).toContain("unverified_accepted");
+  });
+
+  it("un plan ABIERTO con traspaso sigue ejecutable: el traspaso no le toca la ruta", async () => {
+    const fs = pending();
+    seedOpenPlanWithHandoff(fs);
+
+    const data = await board(fs);
+    const plan = data.plans.find((p) => p.file === HANDOFF_PLAN);
+    const item = data.pipeline.find((row) => row.file === HANDOFF_PLAN);
+
+    // Primero: el traspaso está VIVO. Sin esto la prueba pasaría sobre un plan
+    // que no debe nada, y no probaría nada.
+    expect(plan?.reconciliation?.handoffs).toHaveLength(1);
+    // Y entonces: un traspaso no bloquea, así que tampoco cambia el comando.
+    // Apoderarse de la ruta dejaría sin ejecutar un plan por trabajo ajeno.
+    expect(item?.kind).toBe("plan-open");
+    expect(item?.command).toContain("/w:plan-exec");
+    expect(item?.detail.obligation).toBe(false);
+  });
+
+  it("sin traspaso vigente el plan cerrado sigue siendo historia y no se lista", async () => {
+    const fs = pending();
+    seedClosedPlanWithHandoff(fs);
+    // El mismo plan cerrado, con su cadena borrada: sin obligación vigente no
+    // hay nada que decir, y la fila nueva no resucita todo plan cerrado.
+    await fs.remove(`/cwd/${HANDOFF_CHAIN}`);
+
+    const data = await board(fs);
+    expect(data.pipeline.map((row) => row.file)).not.toContain(HANDOFF_PLAN);
   });
 });

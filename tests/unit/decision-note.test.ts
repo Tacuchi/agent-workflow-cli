@@ -34,6 +34,7 @@ import {
   NOTE_SCHEMA,
   computeNoteDigest,
   effectiveNotes,
+  normalizeObligations,
   orderNotes,
   validateDecisionNote,
 } from "../../src/domain/decision-note.js";
@@ -65,7 +66,9 @@ function draft(over: Partial<DecisionNote> = {}): Omit<DecisionNote, "digest"> {
     consumers: [PLAN.path],
     evidence_preserved: ["tests/unit/lineage.test.ts"],
     evidence_invalidated: [],
-    obligations: ["revalidar F3 contra el contrato compuesto"],
+    obligations: [
+      { text: "revalidar F3 contra el contrato compuesto", kind: "compensation", declared: true },
+    ],
     resume_point: "F4/T4.2",
     date: "2026-08-16",
     ...over,
@@ -321,5 +324,237 @@ describe("el índice por linaje se lee del workspace", () => {
     expect(read.ok).toBe(false);
     if (read.ok) return;
     expect(read.failures[0]?.code).toBe("NOTE_INDEX_UNREADABLE");
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// La clase de una obligación (plan 042 · F1 · S042/AC-03 y S042/AC-04).
+//
+// Dos formas y un solo sello. La forma de texto es la que quedó publicada antes
+// de que las clases existieran y se LEE como compensación —la mitad segura—;
+// la forma con clase es la única que la vía de escritura acepta. El digest se
+// calcula sobre el registro TAL COMO SE ESCRIBIÓ, así que ninguna nota ya
+// publicada cambia de sello por haber ganado un lector nuevo.
+
+describe("las obligaciones llevan clase, y las ya publicadas siguen leyéndose", () => {
+  const PATH = "docs/decisions/033-decisions-x.json";
+  /** El registro tal como quedó en disco antes de que las clases existieran. */
+  const legacy = (): Record<string, unknown> => {
+    const text = "revalidar el recorrido PLAN completo";
+    const digest = computeNoteDigest({
+      ...draft(),
+      obligations: normalizeObligations([text]) ?? [],
+    });
+    return { ...draft(), obligations: [text], digest };
+  };
+
+  it("una nota en forma de texto se lee como compensación NO declarada", () => {
+    const read = validateDecisionNote(legacy());
+
+    expect(read.ok).toBe(true);
+    expect(read.value?.obligations).toEqual([
+      { text: "revalidar el recorrido PLAN completo", kind: "compensation", declared: false },
+    ]);
+  });
+
+  it("y conserva su digest: leerla distinto no la re-sella", () => {
+    const raw = legacy();
+    const read = validateDecisionNote(raw);
+
+    expect(read.ok).toBe(true);
+    expect(read.value?.digest).toBe(raw.digest);
+  });
+
+  it("volver a escribirla devuelve la obligación con los bytes que tenía", async () => {
+    const fs = new MemFs({ lenient: true });
+    const before = `${JSON.stringify({ schema: NOTE_INDEX_SCHEMA, spec: SPEC, notes: [legacy()] }, null, 2)}\n`;
+    fs.file(`/cwd/${PATH}`, before);
+    const read = await readNoteIndex(fs, "/cwd", PATH, SPEC);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+
+    // El escritor real, sobre lo que el lector devolvió: byte por byte lo mismo.
+    expect(noteIndexArtifact(PATH, read.read.index).content).toBe(before);
+  });
+
+  it("una nota con clase declarada la conserva y se sella sobre { text, kind }", () => {
+    const n = note({
+      obligations: [{ text: "avisar a Producto y QA", kind: "handoff", declared: true }],
+    });
+    const read = validateDecisionNote(n);
+
+    expect(read.ok).toBe(true);
+    expect(read.value?.obligations).toEqual([
+      { text: "avisar a Producto y QA", kind: "handoff", declared: true },
+    ]);
+    // El sello de la forma con clase NO es el de la forma de texto: son bytes
+    // distintos, y por eso una no puede hacerse pasar por la otra.
+    const asText = { ...draft(), obligations: ["avisar a Producto y QA"] };
+    expect(read.value?.digest).not.toBe(
+      computeNoteDigest(asText as unknown as Omit<DecisionNote, "digest">),
+    );
+  });
+
+  it("una obligación que no es ni texto ni { text, kind } se rechaza con su código", () => {
+    const read = validateDecisionNote(
+      note({ obligations: [{ text: "x", kind: "otra" }] as never }),
+    );
+
+    expect(read.ok).toBe(false);
+    expect(read.failures.map((f) => f.code)).toContain("NOTE_OBLIGATIONS_INVALID");
+  });
+
+  it("anexar una nota NUEVA sin clase se rechaza nombrando las dos clases", () => {
+    const index: DecisionIndex = { schema: NOTE_INDEX_SCHEMA, spec: SPEC, notes: [] };
+    const incoming = validateDecisionNote(legacy());
+    expect(incoming.ok).toBe(true);
+    if (!incoming.ok || incoming.value === null) return;
+
+    const appended = appendNote(index, incoming.value);
+
+    expect(appended.ok).toBe(false);
+    if (appended.ok) return;
+    expect(appended.failures.map((f) => f.code)).toContain("NOTE_OBLIGATION_KIND_MISSING");
+    expect(appended.failures[0]?.action).toContain("compensation");
+    expect(appended.failures[0]?.action).toContain("handoff");
+  });
+
+  it("y una con clase entra sin problema: la tolerancia es de lectura, no de escritura", () => {
+    const index: DecisionIndex = { schema: NOTE_INDEX_SCHEMA, spec: SPEC, notes: [] };
+    const classed = note({
+      obligations: [{ text: "revalidar F2 completo", kind: "compensation", declared: true }],
+    });
+
+    expect(appendNote(index, classed).ok).toBe(true);
+  });
+
+  it("re-sellar una nota ya leída no le mueve el sello, en ninguna de las dos formas", () => {
+    const empty = (): DecisionIndex => ({ schema: NOTE_INDEX_SCHEMA, spec: SPEC, notes: [] });
+
+    for (const value of [
+      ["revalidar el recorrido PLAN completo"],
+      [{ text: "avisar a Producto y QA", kind: "handoff" }],
+    ]) {
+      const written = sealNote(empty(), {
+        ...draft(),
+        obligations: value,
+      } as unknown as Omit<DecisionNote, "id" | "digest">);
+      const read = validateDecisionNote(written);
+      expect(read.ok).toBe(true);
+      if (!read.ok || read.value === null) return;
+
+      // Volver a sellar lo que el lector devolvió da el mismo digest: leer y
+      // escribir son la misma forma, y una vuelta más no re-sella nada.
+      expect(sealNote(empty(), read.value).digest).toBe(written.digest);
+    }
+  });
+});
+
+describe("la vía de escritura no se cae ante un borrador mal formado", () => {
+  const index = (): DecisionIndex => ({ schema: NOTE_INDEX_SCHEMA, spec: SPEC, notes: [] });
+  const withObligations = (value: unknown) => {
+    const { obligations: _drop, ...rest } = draft();
+    return { ...rest, obligations: value } as unknown as Omit<DecisionNote, "id" | "digest">;
+  };
+
+  const cases: Array<[string, unknown]> = [
+    ["ausentes", undefined],
+    ["nulas", null],
+    ["que no son lista", "revalidar F3"],
+    ["con una entrada nula", [null]],
+    ["con una entrada numérica", [42]],
+    ["con una clase inventada", [{ text: "x", kind: "urgente" }]],
+  ];
+
+  it.each(cases)("obligaciones %s: rechazo con código, nunca una excepción", (_name, value) => {
+    const sealed = sealNote(index(), withObligations(value));
+    const appended = appendNote(index(), sealed);
+
+    expect(appended.ok).toBe(false);
+    if (appended.ok) return;
+    expect(appended.failures.every((f) => f.code.length > 0 && f.action.length > 0)).toBe(true);
+    expect(appended.failures.map((f) => f.code)).toContain(
+      Array.isArray(value) ? "NOTE_OBLIGATIONS_INVALID" : "NOTE_OBLIGATIONS_MISSING",
+    );
+  });
+
+  it("un registro que se dice NO declarado no compra su clase con decirla", () => {
+    const forged = { text: "revalidar F3", kind: "handoff", declared: false };
+    const body = { ...draft(), obligations: normalizeObligations([forged]) ?? [] };
+    const read = validateDecisionNote({ ...body, digest: computeNoteDigest(body) });
+
+    // Sella como texto suelto —esa es su forma de disco— así que leerlo como
+    // traspaso pondría a dos superficies a discrepar sobre los mismos bytes.
+    expect(read.ok).toBe(true);
+    expect(read.value?.obligations).toEqual([
+      { text: "revalidar F3", kind: "compensation", declared: false },
+    ]);
+  });
+
+  it("con clases mezcladas, el rechazo nombra sólo las que no la declararon", () => {
+    const mixed = validateDecisionNote({
+      ...draft(),
+      obligations: [
+        { text: "avisar a Producto y QA", kind: "handoff" },
+        "revalidar el recorrido PLAN completo",
+      ],
+      digest: computeNoteDigest({
+        ...draft(),
+        obligations:
+          normalizeObligations([
+            { text: "avisar a Producto y QA", kind: "handoff" },
+            "revalidar el recorrido PLAN completo",
+          ]) ?? [],
+      }),
+    });
+    expect(mixed.ok).toBe(true);
+    if (!mixed.ok || mixed.value === null) return;
+
+    const appended = appendNote({ schema: NOTE_INDEX_SCHEMA, spec: SPEC, notes: [] }, mixed.value);
+
+    expect(appended.ok).toBe(false);
+    if (appended.ok) return;
+    const message = appended.failures[0]?.message ?? "";
+    expect(message).toContain("revalidar el recorrido PLAN completo");
+    expect(message).not.toContain("avisar a Producto y QA");
+  });
+});
+
+describe("una cadena MIXTA conserva cada nota en la forma con la que se publicó", () => {
+  const PATH = "docs/decisions/033-decisions-x.json";
+
+  it("la legada sigue siendo texto suelto y la nueva { text, kind }, y todo verifica", async () => {
+    const legacyBody = {
+      ...draft(),
+      obligations: normalizeObligations(["revalidar el recorrido PLAN completo"]) ?? [],
+    };
+    const published: DecisionNote = { ...legacyBody, digest: computeNoteDigest(legacyBody) };
+
+    const chain: DecisionIndex = { schema: NOTE_INDEX_SCHEMA, spec: SPEC, notes: [published] };
+    const incoming = sealNote(chain, {
+      ...draft({ date: "2026-08-17" }),
+      obligations: [{ text: "avisar a Producto y QA", kind: "handoff", declared: true }],
+    });
+    const appended = appendNote(chain, incoming);
+    expect(appended.ok).toBe(true);
+    if (!appended.ok) return;
+
+    const fs = new MemFs({ lenient: true });
+    const written = noteIndexArtifact(PATH, appended.index);
+    fs.file(`/cwd/${PATH}`, written.content);
+
+    const parsed = JSON.parse(written.content) as { notes: Array<{ obligations: unknown }> };
+    expect(parsed.notes[0]?.obligations).toEqual(["revalidar el recorrido PLAN completo"]);
+    expect(parsed.notes[1]?.obligations).toEqual([
+      { text: "avisar a Producto y QA", kind: "handoff" },
+    ]);
+
+    // Y la cadena entera vuelve a leerse, con los dos sellos intactos y los
+    // mismos bytes: anexar no reescribió la nota que ya estaba publicada.
+    const read = await readNoteIndex(fs, "/cwd", PATH, SPEC);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    expect(read.read.index.notes.map((n) => n.digest)).toEqual([published.digest, incoming.digest]);
+    expect(noteIndexArtifact(PATH, read.read.index).content).toBe(written.content);
   });
 });

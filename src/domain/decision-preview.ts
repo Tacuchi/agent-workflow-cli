@@ -1,6 +1,6 @@
 import type { EffectClass } from "./capability/effects.js";
 import { SELF_AUTHORIZABLE_CLASSES } from "./capability/effects.js";
-import type { DecisionNote, NoteFailure, NoteScope } from "./decision-note.js";
+import type { DecisionNote, NoteFailure, NoteObligation, NoteScope } from "./decision-note.js";
 import type { EffectiveContract } from "./effective-contract.js";
 import type { EffectGrant } from "./flow/authorization.js";
 import type { LocalProposal, PreviewEntry, ProposalArtifact, ProposalBase } from "./proposal.js";
@@ -66,8 +66,16 @@ export interface DecisionPreview {
   impact: { scope: NoteScope; assertions: number; consumers: number };
   /** 5 — what still counts, and what stopped counting. */
   evidence: { preserved: string[]; invalidated: string[] };
-  /** 6 — the compensatory work the decision creates. */
-  obligations: string[];
+  /**
+   * 6 — the work the decision creates, each with the class it was given.
+   *
+   * With the class and not only the text: the person approving is being asked
+   * whether this lineage now owes that work or whether somebody else does, and
+   * those are different answers to different questions. A preview that showed
+   * the sentence alone let a handoff be approved as compensation, which is the
+   * shape of the deadlock this section now prevents.
+   */
+  obligations: NoteObligation[];
   /** 7 — where execution resumes once this is registered. */
   resume_point: string;
   /** 8 — destination, weight and whether it replaces, plus the classes exercised. */

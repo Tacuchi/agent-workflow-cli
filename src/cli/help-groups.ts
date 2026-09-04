@@ -95,6 +95,13 @@ const GROUPS: readonly CommandGroup[] = [
       // closed spec or plan without opening a refinement, refusing structurally
       // whatever touches the contract.
       "amend",
+      // And the same lineage seen from its obligations: `settle` discharges or
+      // acknowledges what a decision note left owing on a plan whose execution
+      // run is long closed. It belongs beside these two and not with the doctors
+      // for the same reason they do — what it maintains is the spec→plan
+      // lineage, not the tool's own records — and it refuses outright while a
+      // run holds the plan, because that run's own closure settles them.
+      "settle",
     ],
   },
   {

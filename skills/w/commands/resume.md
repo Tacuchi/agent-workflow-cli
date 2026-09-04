@@ -32,10 +32,10 @@ No target → **every** pending item as `candidates` in the CLI's order, `propos
 
 ## What the CLI decides (do not re-derive)
 
-- **Priority**: unrefined spec → refined spec with no plan → plan not `done`; started first. A loose session is a notice, never a candidate.
+- **Priority**: unrefined spec → refined spec with no plan → plan not `done` → live handoff; started first. A loose session is a notice, never a candidate.
 - **Ties**: equal priority and progress → no single recommendation; date never splits.
 - **Spec→plan link**: `Derived from` or `## Origin`, never the slug; unproven stays unplanned.
-- **The route**: `/w:spec-refine`, `/w:plan-new`, `/w:plan-exec`, `aw session-resume --reopen`.
+- **The route**: `/w:spec-refine`, `/w:plan-new`, `/w:plan-exec`, `aw settle prepare`, `aw session-resume --reopen`.
 
 > A plan is not finished because its boxes are ticked: re-entry is the first phase not `validada`, a `bloqueada` phase with its declared reason, or — phases green, plan never closed — the final validation. One declaring `done` over open work comes back as inconsistent. An obligation leaving it neither runnable nor closable is said before its percentage.
 

@@ -28,7 +28,7 @@ import { canonicalJson, semanticDigest } from "../../application/semantic-operat
 import { type EffectClass, isEffectClass, touchesTheWorld } from "../capability/effects.js";
 import { AttemptLedger } from "../capability/protocol.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
-import { type DecisionNote, validateDecisionNote } from "../decision-note.js";
+import { type DecisionNote, normalizeObligations, validateDecisionNote } from "../decision-note.js";
 import type { DecisionPreview } from "../decision-preview.js";
 import type { LocalProposal } from "../proposal.js";
 import type { PlanReconciliation } from "../reconciliation.js";
@@ -867,6 +867,62 @@ export interface FlowFixPreview {
   diff: string;
 }
 
+/**
+ * ONE OBLIGATION THE CLOSURE STILL HAS TO ANSWER FOR.
+ *
+ * Snapshotted when the batch loop ends, and from the board's own reconciliation
+ * so the closure and `aw status` cannot disagree about what a plan owes. The
+ * note and the position are how it is named; the text is what a person reads;
+ * `legacy` is what makes a reading offered over it honest, because a class
+ * nobody declared is a reading being proposed, not a fact being reported.
+ */
+export interface FlowSettlementObligation {
+  note: string;
+  index: number;
+  text: string;
+  legacy: boolean;
+}
+
+/**
+ * What the closure found owing, and the successors it prepared for it.
+ *
+ * Held in the run's sealed state for the same reason a decision preparation is:
+ * what the person answers at the settlement question has to be the exact thing
+ * that was worked out, and a draft that lived only inside one answer could not
+ * survive a compaction or a resume.
+ *
+ * Optional and NEVER written by default — the same discipline as `degraded` and
+ * `fix_preview`: a run that owes nothing serializes exactly the bytes it did
+ * before this field existed. Absent means "the loop has not ended yet", never
+ * "nothing is owed".
+ */
+export interface FlowSettlement {
+  /** Live compensations, in chain order. Only these hold the closure shut. */
+  compensations: FlowSettlementObligation[];
+  /** Live handoffs: recorded so the closure can report them, never blocking. */
+  handoffs: FlowSettlementObligation[];
+  /**
+   * What the run declared about each compensation, once the authoring row
+   * answered — and, for one whose class nobody declared, the reading it
+   * PROPOSES for a person to ratify.
+   *
+   * Absent means the authoring row has not answered yet. Kept in the sealed
+   * state and never re-derived after the question, for the same reason a
+   * decision preparation is: what the person ratified has to be the exact thing
+   * that was shown.
+   */
+  declared?: FlowSettlementDeclaration[] | null;
+}
+
+/** What the run says about one live compensation. */
+export interface FlowSettlementDeclaration {
+  note: string;
+  index: number;
+  outcome: "settled" | "handoff" | "pending";
+  /** What proves the work was done. Only for `settled`. */
+  evidence?: string;
+}
+
 /** The evidence a handoff destination receives instead of rediscovering it. */
 export interface FlowEscalationPackage {
   /** Plan whose execution discovered the divergence, if the run had fixed one. */
@@ -1019,6 +1075,15 @@ export interface FlowRunState {
    * never as "nothing is owed".
    */
   continuation?: FlowContinuation | null;
+  /**
+   * What the closure still owes, snapshotted when the batch loop ended.
+   *
+   * This is what lets the three settlement rows be passed over ON THEIR OWN
+   * when a plan owes nothing: the walk is a pure function of the registry and
+   * this state, so a run with no live compensation closes exactly the way it
+   * closed before these rows existed — no question, no extra boundary.
+   */
+  settlement?: FlowSettlement | null;
   /** The one preview the agent prepared before the route can be accepted. */
   route_proposal: RouteProposal | null;
   /** Human-approved dispositions; `null` means this v11 run has not accepted a route yet. */
@@ -1029,9 +1094,18 @@ export interface FlowRunState {
   digest: string;
 }
 
-/** The plan position a decision's first unsettled obligation resumes at. */
+/**
+ * WHAT A DECISION OF THIS RUN DECLARED, kept as the run's own bookkeeping.
+ *
+ * Not a destination any more. It used to be read as "where execution comes
+ * back", and that reading is exactly what sent people into phases already
+ * validated: the point a note records is a fact about the day it was written.
+ * Where a plan is actually resumed from is derived from the plan as it reads
+ * now, and that is what every surface names. This stays as a record of what
+ * this run's own decision said it owed.
+ */
 export interface FlowContinuation {
-  /** Where execution comes back, from the owed note's own resume point. */
+  /** The resume point the owed note DECLARED. History, not a destination. */
   resume_point: string;
   /** The note that owes it. */
   by: string;
@@ -1484,6 +1558,44 @@ export function withFixPreview(state: FlowRunState, preview: FlowFixPreview): Fl
 }
 
 /**
+ * Record what the closure owes — written once, when the batch loop ends.
+ *
+ * Re-recording the same snapshot returns the state untouched, so a resumed run
+ * that walks over the row again neither re-seals nor loses what it found.
+ */
+export function withSettlement(state: FlowRunState, settlement: FlowSettlement): FlowRunState {
+  const current = state.settlement;
+  if (current !== undefined && current !== null && sameSettlement(current, settlement)) {
+    return state;
+  }
+  return sealRunState({ ...withoutSeal(state), settlement });
+}
+
+function sameSettlement(a: FlowSettlement, b: FlowSettlement): boolean {
+  return canonicalJson(a) === canonicalJson(b);
+}
+
+/** Record what the run declared about each compensation. */
+export function withSettlementDeclarations(
+  state: FlowRunState,
+  declared: FlowSettlementDeclaration[],
+): FlowRunState {
+  const settlement = state.settlement;
+  if (settlement === undefined || settlement === null) return state;
+  return sealRunState({ ...withoutSeal(state), settlement: { ...settlement, declared } });
+}
+
+/** Whether the closure has a live compensation to settle before it may seal. */
+export function settlementOwed(state: FlowRunState): boolean {
+  return (state.settlement?.compensations.length ?? 0) > 0;
+}
+
+/** The live compensations whose class nobody declared: the only ambiguous ones. */
+export function settlementAmbiguous(state: FlowRunState): FlowSettlementObligation[] {
+  return (state.settlement?.compensations ?? []).filter((obligation) => obligation.legacy);
+}
+
+/**
  * Reconcile the state with the monotone counter that lives outside its seal.
  *
  * The only writer of both maps, so "the sidecar is the authority and the state is
@@ -1617,14 +1729,14 @@ export function withObservation(state: FlowRunState, observation: FlowObservatio
 }
 
 /**
- * Point the run at the first thing a decision still owes — or clear it.
+ * Record the first thing a decision of this run still owes — or clear it.
  *
  * It takes the whole reconciliation and not a bare point on purpose. The rule is
  * "the FIRST new or pending obligation reached", and that is a fact about the
- * entire effective contract: a second note handed its own resume point would
- * move the run FORWARD, stepping over work an earlier decision is still owed. By
- * reading the projection, settling everything clears the continuation on its own
- * and there is no separate "we are done" call anybody can forget to make.
+ * entire effective contract: a second note's own declaration would move the
+ * record FORWARD, past work an earlier decision is still owed. By reading the
+ * projection, settling everything clears the continuation on its own and there
+ * is no separate "we are done" call anybody can forget to make.
  */
 export function withContinuation(
   state: FlowRunState,
@@ -1633,12 +1745,16 @@ export function withContinuation(
   const first = reconciliation.pending[0];
   if (first === undefined) return consumeContinuation(state);
   const held = state.continuation ?? null;
-  if (held !== null && held.by === first.by && held.resume_point === first.resume_point) {
+  // El punto que la nota DECLARÓ, que es lo que esta contabilidad guarda: la
+  // continuación es un registro de la corrida sobre lo que ella misma decidió,
+  // no un lugar al que se manda a nadie. Dónde se retoma de verdad lo deriva el
+  // tablero del plan como está hoy, y ese es el que las superficies nombran.
+  if (held !== null && held.by === first.by && held.resume_point === first.declared_point) {
     return state;
   }
   return sealRunState({
     ...withoutSeal(state),
-    continuation: { resume_point: first.resume_point, by: first.by },
+    continuation: { resume_point: first.declared_point, by: first.by },
   });
 }
 
@@ -1927,6 +2043,11 @@ function checkV10RecordShape(
   }
   if (!isFixPreview(parsed.fix_preview)) {
     return invalid("declara un preview de arreglo sin archivos, intención o forma del diff");
+  }
+  if (!isSettlement(parsed.settlement)) {
+    return invalid(
+      "declara un saldo pendiente sin la nota, la posición o el texto de una obligación",
+    );
   }
   return null;
 }
@@ -2287,6 +2408,53 @@ function isDecisionPreparation(
  * whose intent or diff cannot be read is one the approval boundary could not show,
  * so carrying it would be worse than not having it.
  */
+function isSettlement(value: unknown): value is FlowSettlement | null | undefined {
+  if (value === undefined || value === null) return true;
+  if (!isRecord(value)) return false;
+  return (
+    isSettlementObligations(value.compensations) &&
+    isSettlementObligations(value.handoffs) &&
+    isSettlementDeclarations(value.declared)
+  );
+}
+
+function isSettlementDeclarations(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.note === "string" &&
+        entry.note.length > 0 &&
+        Number.isInteger(entry.index) &&
+        (entry.outcome === "settled" ||
+          entry.outcome === "handoff" ||
+          entry.outcome === "pending") &&
+        (entry.evidence === undefined ||
+          (typeof entry.evidence === "string" && entry.evidence.trim().length > 0)),
+    )
+  );
+}
+
+function isSettlementObligations(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.note === "string" &&
+        entry.note.length > 0 &&
+        Number.isInteger(entry.index) &&
+        typeof entry.index === "number" &&
+        entry.index >= 0 &&
+        typeof entry.text === "string" &&
+        entry.text.length > 0 &&
+        typeof entry.legacy === "boolean",
+    )
+  );
+}
+
 function isFixPreview(value: unknown): value is FlowFixPreview | null | undefined {
   if (value === undefined || value === null) return true;
   if (!isRecord(value) || !isStringArray(value.files)) return false;
@@ -2317,7 +2485,7 @@ function isDecisionPreview(
     previewBaseline.digest !== baseline.digest ||
     !Array.isArray(value.effective_change) ||
     !isStringArray(value.consumers) ||
-    !isStringArray(value.obligations) ||
+    !isObligationArray(value.obligations) ||
     typeof value.resume_point !== "string" ||
     value.resume_point.trim().length === 0 ||
     !isStringArray(value.evidence.preserved) ||
@@ -2340,6 +2508,20 @@ function isDecisionPreview(
       Number.isInteger(entry.bytes) &&
       typeof entry.overwrite === "boolean",
   );
+}
+
+/**
+ * The persisted preview's obligations, in EITHER form.
+ *
+ * A run sealed before classes existed carries bare strings here, and refusing
+ * them would not send that run back to re-prepare — it would fail the whole
+ * record's shape and cost the person their applied cursor, their batch trace
+ * and the gate they already answered. So the same tolerance the chain grants a
+ * published note is granted to a run in flight, and the one consumer normalizes
+ * before it renders.
+ */
+function isObligationArray(value: unknown): boolean {
+  return normalizeObligations(value) !== null;
 }
 
 function isProposal(value: unknown): value is LocalProposal | null {

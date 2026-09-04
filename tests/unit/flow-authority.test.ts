@@ -149,6 +149,13 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.deviation-gate",
       "plan-exec.escalation-package",
       "plan-exec.review-findings",
+      // El saldo del cierre. La autoría es del AGENTE porque la evidencia es
+      // suya: corrió los comandos. La pregunta es de una PERSONA y existe para
+      // un solo caso —una obligación cuya clase nadie declaró y cuyo texto el
+      // plan no enumera—; todo lo demás se deriva, y preguntarlo sería pedirle a
+      // alguien que ratifique una cuenta.
+      "plan-exec.settlement-authoring",
+      "plan-exec.settlement-question",
       "plan-exec.commit-authorization",
       // Contracted in their own command rather than walked: they decide which
       // line a prompt joins, or fire at whatever boundary the run is standing
@@ -469,7 +476,15 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // en el registro: lo que le faltaba no era existir, era detenerse.
     // The manual pending-effects/task/state trio was replaced by one internal
     // v10 batch close, so the registry loses two rows without losing a route.
-    expect(plan).toHaveLength(56);
+    // 56 + 3, el tramo del saldo entre el último `batch-close` y la validación
+    // final: la autoría del agente, la pregunta única de la persona y la
+    // publicación interna del CLI. Antes de ellas, un cierre que encontraba una
+    // compensación viva rechazaba recetando un remedio que el recorrido ya no
+    // podía alcanzar, y la única salida era escribir la cadena desde fuera del
+    // flow. Las tres se saltan solas cuando el plan no debe compensación, así que
+    // un cierre sin obligaciones sigue teniendo exactamente las fronteras que
+    // tenía. Edición consciente: el orden de estas filas ES la doctrina.
+    expect(plan).toHaveLength(59);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos

@@ -32,11 +32,15 @@ import { dispositionOf } from "../../domain/flow/route.js";
 import {
   type FlowRunScope,
   type FlowRunState,
+  type FlowSettlement,
+  type FlowSettlementObligation,
   type PlanExecBatch,
   withPlanExecBatch,
   withPlanExecBatchLoop,
+  withSettlement,
 } from "../../domain/flow/run-state.js";
 import { type LocalProposal, sealProposal } from "../../domain/proposal.js";
+import { type PendingObligation, obligationExit } from "../../domain/reconciliation.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
@@ -63,6 +67,7 @@ import {
   preparePlanExecDoneSeal,
   publishPlanExecBatch,
 } from "../plan-exec-batch-service.js";
+import { settlePlanExecObligations } from "../plan-exec-decision-service.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
@@ -70,6 +75,7 @@ import { recordPublication } from "../session-custody-recorder.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
+import { projectRun } from "./run-projection.js";
 import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
 /** The run's own coordinates — the only scope an internal operation may touch. */
@@ -154,6 +160,8 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
         return closeBatch(deps, run);
       case "plan-exec.plan-done":
         return sealPlanDone(deps, run);
+      case "plan-exec.settlement-publish":
+        return publishSettlement(deps, run);
     }
   };
 }
@@ -606,9 +614,18 @@ async function inferBatch(
         if (next.failure.code !== "PLAN_EXEC_BATCH_NONE_OPEN") {
           return { ok: false, failure: next.failure };
         }
+        // The loop has ended, which is the one moment the closure can be told
+        // what the plan still owes. Snapshotting it HERE — under the same lock,
+        // from the board's own reconciliation — is what lets the settlement rows
+        // be passed over on their own: the walk stays a pure function of the
+        // registry and this state, so a plan that owes nothing closes exactly as
+        // it closed before those rows existed.
         return {
           ok: true,
-          state: withPlanExecBatchLoop(current, { pending: false, iteration: null }),
+          state: withSettlement(
+            withPlanExecBatchLoop(current, { pending: false, iteration: null }),
+            await settlementSnapshot(deps, scope.plan),
+          ),
           value: { batch: null, created: false, no_work: true },
         };
       }
@@ -637,6 +654,130 @@ async function inferBatch(
     output: canonicalJson({ batch: inferred.value.batch, created: inferred.value.created }),
     effects: [],
     state: inferred.state,
+  };
+}
+
+/**
+ * Publish the successor of every note whose obligation this closure discharged.
+ *
+ * It takes nothing from the caller: the obligations are the snapshot the batch
+ * loop's end sealed, and what was declared about each of them is the authoring
+ * row's own answer, both read from the run's state. What it does is derive and
+ * hand them to the same sealed registration the deviation gate uses.
+ *
+ * A compensation the run declared STILL PENDING stops it here, and that is the
+ * point: the closure is not a place to record that work remains, it is the place
+ * to finish it. The refusal names the work and the command that comes back.
+ */
+async function publishSettlement(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
+  if (run.scope === null) {
+    return refusal(
+      "plan-exec.settlement-publish",
+      "la corrida no fijó el plan cuyo saldo debe publicar",
+      canonicalJson({ scope: null }),
+    );
+  }
+  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const read = await readRun(deps.fs, locateRun(deps.paths, run.session));
+  if (!read.ok) {
+    return refusal(
+      "plan-exec.settlement-publish",
+      `${read.failure.message} — ${read.failure.action}`,
+      canonicalJson({ failure: read.failure }),
+    );
+  }
+  if (run.state_digest !== undefined && read.state.digest !== run.state_digest) {
+    return refusal(
+      "plan-exec.settlement-publish",
+      "la corrida cambió mientras se preparaba el saldo",
+      canonicalJson({ expected: run.state_digest, actual: read.state.digest }),
+    );
+  }
+  // Reaching here with nothing declared means the authoring row never answered —
+  // it was exhausted and passed over — and publishing "nothing" would credit
+  // this plan as owing nothing when it owes everything it owed before.
+  const declared = read.state.settlement?.declared ?? [];
+  if (declared.length === 0 && (read.state.settlement?.compensations.length ?? 0) > 0) {
+    return refusal(
+      "plan-exec.settlement-publish",
+      `el plan conserva compensación vigente y la corrida no declaró nada sobre ella: ${(read.state.settlement?.compensations ?? []).map((o) => `${o.note}: ${o.text}`).join("; ")} — devolvele sus intentos a la frontera de autoría con 'aw flow recover --session ${run.session}' y declará el saldo`,
+      canonicalJson({ declared: [], compensations: read.state.settlement?.compensations ?? [] }),
+    );
+  }
+  const settled = await settlePlanExecObligations(deps.fs, deps.paths, {
+    root,
+    plan: run.scope.plan,
+    // This run, at its closure: saying so is more honest than borrowing the
+    // phase of a batch that is already integrated.
+    execution: () => ({ session: run.session, phase: "cierre" }),
+    date: new Date().toISOString().slice(0, 10),
+    declarations: declared.map((declaration) => ({
+      note: declaration.note,
+      index: declaration.index,
+      outcome: declaration.outcome,
+      ...(declaration.evidence === undefined ? {} : { evidence: declaration.evidence }),
+    })),
+  });
+  if (!settled.ok) {
+    return refusal(
+      "plan-exec.settlement-publish",
+      `${settled.failure.message} — ${settled.failure.action}`,
+      canonicalJson({ failure: settled.failure }),
+    );
+  }
+  if (settled.published.length === 0) {
+    return refusal(
+      "plan-exec.settlement-publish",
+      "ninguna declaración cambia la cadena: no hay saldo que publicar y el plan sigue debiendo lo mismo",
+      canonicalJson({ declared }),
+    );
+  }
+  return {
+    ok: true,
+    summary: `saldo publicado: ${settled.published.map((note) => note.id).join(", ")}`,
+    output: canonicalJson({
+      published: settled.published.map((note) => note.id),
+      settled: settled.settled,
+      reconciliation: settled.reconciliation,
+    }),
+    // A successor landed, or was already on disk from an interrupted run — and
+    // either way the index it joined existed, so overwriting is what happened.
+    effects: ["mutate_overwrite"],
+  };
+}
+
+/**
+ * What the plan owes when its last batch closed, read from the board.
+ *
+ * From the board and not from a second walk of the chain: `aw status` already
+ * decides which notes are in force, which obligations they carry and which of
+ * them are compensations, and a closure computing that again would be a second
+ * authority on whether a plan may close. A plan the board cannot judge at all —
+ * unsealed baseline, no chain — owes nothing, which is the same answer the board
+ * gives and the same one the closure gave before this row existed.
+ */
+async function settlementSnapshot(deps: InternalActionDeps, plan: string): Promise<FlowSettlement> {
+  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, { git: deps.git });
+  const found = index.plans.find((candidate) => candidate.file === plan);
+  // A lineage that does not COMPOSE reports its own refusal as what is owed — an
+  // unreadable chain, an overlap — and those pending entries name no note.
+  // Offering them for settlement would ask the closure to discharge a parse
+  // error, and the publication would then go looking for a note called
+  // "composición". That refusal is `plan-done`'s, which reports it as what it is.
+  const reconciliation = found?.contract === null ? undefined : found?.reconciliation;
+  const owed = (obligations: readonly PendingObligation[]): FlowSettlementObligation[] =>
+    obligations.map((obligation) => ({
+      note: obligation.by,
+      index: obligation.index,
+      text: obligation.text,
+      legacy: obligation.legacy,
+    }));
+  return {
+    compensations: owed(reconciliation?.pending ?? []),
+    handoffs: owed(reconciliation?.handoffs ?? []),
   };
 }
 
@@ -722,6 +863,13 @@ async function closeBatch(
       canonicalJson({ failure: published.failure }),
     );
   }
+  // THE LOOP ENDS HERE, and this is the only place that knows it: the publisher
+  // derives the next cursor from the exact bytes it just wrote, and when nothing
+  // is left open it sets `pending: false` — which means the inference row is
+  // never walked again, and a snapshot taken only there would never exist for a
+  // run that actually executed work. So the closure is told what the plan still
+  // owes at the moment its last batch lands.
+  const state = await recordSettlementOwed(deps, run, published.state);
   return {
     ok: true,
     summary: published.already_applied
@@ -733,9 +881,44 @@ async function closeBatch(
       already_applied: published.already_applied,
     }),
     effects: ["mutate_overwrite"],
-    state: published.state,
+    state,
   };
 }
+
+/**
+ * Seal what the plan owes into the run, once the batch loop has ended.
+ *
+ * Persisted and not merely returned: the driver settles against the digest this
+ * state carries, so a snapshot that lived only in memory would fail its own
+ * compare-and-swap. A loop still running gets nothing — there is no closure to
+ * inform yet — and a state that cannot be written keeps the one it had, which
+ * leaves the settlement rows passed over and `plan-done` refusing on its own
+ * terms: the same answer, one step later.
+ */
+async function recordSettlementOwed(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  published: FlowRunState,
+): Promise<FlowRunState> {
+  if (published.batch_loop?.pending !== false || run.scope === null) return published;
+  const owed = await settlementSnapshot(deps, run.scope.plan);
+  const sealed = await applyUnderLock<null>(
+    deps.fs,
+    locateRun(deps.paths, run.session),
+    (live) =>
+      live === null
+        ? { ok: false, failure: RUN_GONE }
+        : { ok: true, state: withSettlement(live, owed), value: null },
+    { expectDigest: published.digest },
+  );
+  return sealed.ok ? sealed.state : published;
+}
+
+const RUN_GONE: CapabilityFailure = {
+  code: "FLOW_RUN_ABSENT",
+  message: "la corrida desapareció antes de sellar lo que el plan debe",
+  action: "reanudá la corrida con 'aw flow advance' antes de cerrar el batch",
+};
 
 const PLAN_DONE_REQUIRED_TRANSITIONS = [
   "plan-exec.final-validation",
@@ -845,7 +1028,7 @@ async function sealPlanDone(
     // The index is re-read while the document publication holds the workspace
     // lock.  This closes the decision-note race: a new compensatory obligation
     // cannot appear between the run's earlier reading and a `done` write.
-    precondition: () => planDonePrecondition(deps, run.scope?.plan ?? ""),
+    precondition: () => planDonePrecondition(deps, run.scope?.plan ?? "", run.session),
   });
   if (!applied.ok) {
     return refusal(
@@ -903,9 +1086,10 @@ function planDoneClosure(state: FlowRunState, session: string): string {
 }
 
 /** The documentary checks that must pass in the same critical section as done. */
-async function planDonePrecondition(
+export async function planDonePrecondition(
   deps: InternalActionDeps,
   path: string,
+  session: string,
 ): Promise<CapabilityFailure | null> {
   const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, { git: deps.git });
   if (index.docs_canon_error !== undefined) {
@@ -931,10 +1115,35 @@ async function planDonePrecondition(
     };
   }
   if (plan.reconciliation !== null && !plan.reconciliation.closable) {
+    // The SAME derivation the board's headline and the pipeline row come from.
+    // The run is this one: `plan-done` executes inside it, so the exit it needs
+    // is its own next boundary — the board asks the same question of a plan it
+    // is only looking at, and gets the answer for whichever run holds it.
+    //
+    // And the command is READ from the projection, not spelled here. The two
+    // agreed by accident: at an internal boundary the projection happens to
+    // return exactly `aw flow advance --code <NNN>`. It does not have to — a
+    // legacy run refuses a bare `advance` and needs `--flow … --adopt`, and only
+    // the projection knows that. Synthesizing it was the third derivation this
+    // phase set out to remove.
+    const run = await projectRun(deps.fs, deps.paths, session);
+    const exit = obligationExit(plan.reconciliation, {
+      plan: path,
+      current_point: plan.current_point,
+      run: {
+        session,
+        // `plan-done` runs inside a live run, so the projection is there; the
+        // fallback is the shape TypeScript needs, not a case anybody reaches.
+        command: run?.command ?? `aw flow advance --code ${session}`,
+        why: "tiene la corrida de ejecución que llegó a este cierre",
+      },
+    });
     return {
       code: "PLAN_EXEC_DONE_RECONCILIATION_PENDING",
-      message: `${path} conserva obligaciones de reconciliación`,
-      action: `resolvé la compensación desde ${plan.reconciliation.resume_point ?? "su punto de reanudación"} antes de cerrar`,
+      message: exit === null ? `${path} conserva obligaciones de reconciliación` : exit.headline,
+      action:
+        exit?.action ??
+        `resolvé la compensación vigente de '${path}' y volvé a sellar: 'aw settle prepare ${path}' la lista`,
     };
   }
   if (

@@ -3,10 +3,12 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { noteIndexPath } from "../../src/application/decision-note-service.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import {
   type InternalActionExecutor,
   internalActionExecutor,
+  planDonePrecondition,
 } from "../../src/application/flow/internal-actions.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
@@ -32,6 +34,12 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
+import { MemFs } from "../helpers/mem-fs.js";
+import {
+  OWING_PLAN,
+  OWING_TEXT,
+  seedExecutedPlanOwingCompensation,
+} from "../helpers/plan-obligation-fixtures.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -399,5 +407,77 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     const raw = await readFile(statePath(), "utf8");
     const read = parseRunState(raw);
     expect(read.ok).toBe(true);
+  });
+});
+
+// F4 · T4.4 — el rechazo del sello sale de la misma derivación que el titular del
+// tablero y la acción del pipeline. Lo que se fija es lo que este texto tenía
+// mal por su cuenta: prescribía publicar una nota sustituta —un remedio que la
+// corrida no podía alcanzar desde donde estaba— y no nombraba `aw settle`.
+describe("plan-done — el rechazo por reconciliación nombra una salida ejecutable", () => {
+  const OWING_SESSION = "144-deuda-plan-exec";
+
+  function owingWorkspace(): { deps: Parameters<typeof planDonePrecondition>[0]; mem: MemFs } {
+    const mem = new MemFs();
+    mem.file("/cwd/.workflow/sessions/.keep", "");
+    seedExecutedPlanOwingCompensation(mem);
+    return {
+      mem,
+      deps: {
+        fs: mem,
+        env: new FakeEnv("/home", "/cwd"),
+        paths: new PathsService(normalizeNamespace("workflow"), "/home", "/cwd"),
+        git: new RecordingGit(),
+      },
+    };
+  }
+
+  it("no es el rechazo de los contadores: el plan está entero y aun así no cierra", async () => {
+    const { deps } = owingWorkspace();
+
+    const failure = await planDonePrecondition(deps, OWING_PLAN, OWING_SESSION);
+
+    expect(failure?.code).toBe("PLAN_EXEC_DONE_RECONCILIATION_PENDING");
+    expect(failure?.message).toContain("COMPENSACIÓN VIGENTE por DEC-001");
+    expect(failure?.message).toContain(OWING_TEXT);
+  });
+
+  it("con el linaje ilegible nombra la reparación, que es lo único que sirve", async () => {
+    const { deps, mem } = owingWorkspace();
+    // La cadena corrompida: sin contrato que componer, el tramo de saldo se
+    // saltea solo —no hay nota que sustituir— y el rechazo del cierre queda como
+    // el único texto de todo el recorrido que puede decir qué hacer.
+    mem.file(`/cwd/${noteIndexPath("docs/decisions", "043", "deuda")}`, "{ esto no es json");
+
+    const failure = await planDonePrecondition(deps, OWING_PLAN, OWING_SESSION);
+
+    expect(failure?.code).toBe("PLAN_EXEC_DONE_RECONCILIATION_PENDING");
+    expect(failure?.message).toContain("LINAJE ILEGIBLE");
+    // La reparación va PRIMERO. Mandar a avanzar antes de eso es el bucle: el
+    // tramo de saldo se saltea —no hay nota que sustituir—, el cierre vuelve a
+    // rechazar acá, y ningún texto del recorrido nombra lo que hay que hacer.
+    expect(failure?.action.startsWith("el índice de decisiones es un documento sellado")).toBe(
+      true,
+    );
+    expect(failure?.action.indexOf("reparalo a mano")).toBeLessThan(
+      failure?.action.indexOf("aw flow advance"),
+    );
+    expect(failure?.message).not.toContain("retomá en");
+  });
+
+  it("nombra las dos salidas y ninguna es una fase ya validada", async () => {
+    const { deps } = owingWorkspace();
+
+    const failure = await planDonePrecondition(deps, OWING_PLAN, OWING_SESSION);
+
+    // La corrida propia primero, porque `plan-done` corre adentro de una…
+    expect(failure?.action).toContain(`aw flow advance --code ${OWING_SESSION}`);
+    // …y la otra mitad, para la corrida que ya pasó la frontera de saldo: el
+    // cursor sólo crece, así que ésa no puede volver.
+    expect(failure?.action).toContain(`aw settle prepare ${OWING_PLAN}`);
+    // Y el punto: la nota grabó F1/T1.1 al nacer y F1 está VALIDADA, así que el
+    // punto vigente es el cierre. Mandar a F1/T1.1 es mandar a trabajo hecho.
+    expect(failure?.message).toContain("retomá en el cierre del plan");
+    expect(`${failure?.message} ${failure?.action}`).not.toContain("F1/T1.1");
   });
 });

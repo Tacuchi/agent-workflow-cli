@@ -195,6 +195,11 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   FLOW_DECISION_UNRESOLVABLE: "evaluated",
   FLOW_DECISION_PREPARATION_FAILED: "evaluated",
   FLOW_DECISION_PREVIEW_ABSENT: "evaluated",
+  // The settlement's own vocabulary. Both mean the CLI READ the declaration and
+  // compared it against what the plan really owes — a declaration that answers
+  // for the wrong obligations, or that leaves one unanswered.
+  FLOW_SETTLEMENT_INVALID: "evaluated",
+  FLOW_SETTLEMENT_INCOMPLETE: "evaluated",
   PLAN_SOURCE_BOUNDARY_MISSING: "evaluated",
   PLAN_SOURCE_UNKNOWN: "evaluated",
   PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
@@ -212,6 +217,11 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   FLOW_ROUTE_PROPOSAL_INVALID: "evaluated",
   FLOW_ROUTE_SUBSTITUTION_INVALID: "evaluated",
   FLOW_ROUTE_HARD_GATE: "evaluated",
+  // A compensation the run declared STILL PENDING is not a malformed answer and
+  // not a failed check: it is the truthful one. The closure stays where it is
+  // until the work is done, and charging an attempt for saying so would make
+  // telling the truth cost the run its retries.
+  PLAN_EXEC_SETTLEMENT_PENDING: "control",
   FLOW_BOUNDARY_PAUSED: "control",
   FLOW_BOUNDARY_DECLINED: "control",
   FLOW_ANSWER_RESENT: "control",

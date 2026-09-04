@@ -164,6 +164,8 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_DECISION_UNRESOLVABLE: "evaluated",
       FLOW_DECISION_PREPARATION_FAILED: "evaluated",
       FLOW_DECISION_PREVIEW_ABSENT: "evaluated",
+      FLOW_SETTLEMENT_INVALID: "evaluated",
+      FLOW_SETTLEMENT_INCOMPLETE: "evaluated",
       PLAN_SOURCE_BOUNDARY_MISSING: "evaluated",
       PLAN_SOURCE_UNKNOWN: "evaluated",
       PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
@@ -177,6 +179,9 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_ROUTE_SUBSTITUTION_INVALID: "evaluated",
       FLOW_ROUTE_HARD_GATE: "evaluated",
       // Una respuesta real que no aplica nada, o la misma dos veces.
+      // Y la compensación que sigue pendiente: decir la verdad sobre trabajo que
+      // no se hizo no puede costarle a la corrida uno de sus intentos.
+      PLAN_EXEC_SETTLEMENT_PENDING: "control",
       FLOW_BOUNDARY_PAUSED: "control",
       FLOW_BOUNDARY_DECLINED: "control",
       FLOW_ANSWER_RESENT: "control",

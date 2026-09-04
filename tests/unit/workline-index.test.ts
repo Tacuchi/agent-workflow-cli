@@ -5,10 +5,21 @@ import { parseSpecRelation } from "../../src/application/parsers/spec-relation.j
 import { PathsService } from "../../src/application/paths-service.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { type DecisionNote, NOTE_SCHEMA } from "../../src/domain/decision-note.js";
+import {
+  FLOW_RUN_STATE_FILE,
+  newRunState,
+  serializeRunState,
+  withScope,
+} from "../../src/domain/flow/run-state.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
+import {
+  OWING_PLAN,
+  OWING_TEXT,
+  seedExecutedPlanOwingCompensation,
+} from "../helpers/plan-obligation-fixtures.js";
 
 const fakeEnv = new FakeEnv("/home", "/cwd");
 const NOW = new Date(2026, 6, 29, 12, 0, 0);
@@ -403,7 +414,7 @@ function seedObligation(fs: MemFs, planText: string): void {
     consumers: [D_PLAN],
     evidence_preserved: ["F1/T1.1 como historia"],
     evidence_invalidated: ["F1/T1.1 como prueba"],
-    obligations: ["revalidar F1"],
+    obligations: [{ text: "revalidar F1", kind: "compensation", declared: true }],
     resume_point: "F1/T1.1",
     date: "2026-07-29",
   });
@@ -453,7 +464,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     expect(item.detail.next).toBe("BLOQUEADA F1 — sin motivo declarado");
   });
 
-  it("3 · la reconciliación pendiente gana al plan inconsistente, con su punto de retorno", async () => {
+  it("3 · la reconciliación pendiente gana al plan inconsistente, con salida ejecutable", async () => {
     // `done` con una fase pendiente es justo lo que hace `inconsistent`: si la
     // obligación no ganara, el tablero mandaría a reparar un plan que no está roto.
     const text = detailPlan({ header: [`> Baseline: ${D_SPEC}@${D_DIGEST}`, "> Estado: done"] });
@@ -461,9 +472,20 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     seedObligation(fs, text);
 
     const item = await planItem(fs);
-    expect(item.detail.next).toContain("RECONCILIACIÓN PENDIENTE por DEC-001 — revalidar F1");
-    expect(item.detail.next).toContain("retomá en F1/T1.1");
+    expect(item.detail.next).toContain("COMPENSACIÓN VIGENTE por DEC-001 — revalidar F1");
+    // El punto es el del plan HOY. La nota dijo F1/T1.1 y F1 está validada: ese
+    // punto queda en el detalle de la obligación y no se ofrece como destino.
+    expect(item.detail.next).toContain("retomá en F2 — la segunda");
+    expect(item.detail.next).not.toContain("F1/T1.1");
     expect(item.detail.obligation).toBe(true);
+    // Y nunca `command: null` por reconciliación: sin corrida abierta sobre el
+    // plan, la salida es el comando que lo salda.
+    expect(item.action).toEqual({
+      kind: "continue",
+      command: `aw settle prepare ${D_PLAN}`,
+      mode: "settlement",
+    });
+    expect(item.command).toBe(`aw settle prepare ${D_PLAN}`);
   });
 
   it("4 · un legacy inconsistente sigue ejecutable en modo compatible, sin afirmar baseline", async () => {
@@ -629,5 +651,175 @@ describe("buildWorklineIndex — una sesión suelta es un aviso, no trabajo del 
 
     const out = await index(fs);
     expect(out.loose_sessions).toEqual([]);
+  });
+});
+
+// Una cadena de decisiones ILEGIBLE no es «sin obligaciones» (plan 042 · F1).
+//
+// El código decía esto mismo en un comentario y hacía lo contrario: caía a lista
+// vacía, así que un índice corrupto se leía como pizarra limpia y dejaba cerrar
+// un plan sobre compensación que nadie podía leer. Se reporta como lo que es —
+// trabajo debido — y su acción es repararlo, porque repararlo ES el trabajo.
+
+describe("una cadena ilegible deja el plan sin cerrar, nombrando el archivo", () => {
+  const seedUnreadable = (fs: MemFs): void => {
+    fs.file(`/cwd/${noteIndexPath("docs/decisions", "033", "detalle")}`, "{ esto no es json");
+  };
+  /** Un plan CERRADO: todas sus casillas, sus dos fases validadas y su cierre. */
+  const donePlan = (): string =>
+    detailPlan({
+      f2: "validada",
+      header: [
+        `> Baseline: ${D_SPEC}@${D_DIGEST}`,
+        "> Estado: done",
+        "> Cierre: 2026-07-29 · sesión 134",
+      ],
+    });
+
+  it("el plan cerrado deja de leerse cerrable y su pendiente nombra el índice", async () => {
+    const text = donePlan();
+    const fs = detailWorkspace(text);
+    seedUnreadable(fs);
+
+    const out = await index(fs);
+    const plan = out.plans.find((p) => p.file === D_PLAN);
+
+    expect(plan?.reconciliation?.closable).toBe(false);
+    expect(plan?.reconciliation?.pending[0]?.text).toContain("NOTE_INDEX_UNREADABLE");
+    expect(plan?.reconciliation?.pending[0]?.text).toContain(
+      noteIndexPath("docs/decisions", "033", "detalle"),
+    );
+    // Una pendiente fabricada no tiene punto que ninguna nota haya declarado, y
+    // decirlo así es lo que impide que se lea como uno. La reparación viaja en
+    // su propio campo, que es el que las salidas nombran.
+    expect(plan?.reconciliation?.pending[0]?.declared_point).toBe(
+      "sin nota: la pendiente la fabrica la composición",
+    );
+    expect(plan?.reconciliation?.pending[0]?.repair).toContain("reparalo a mano");
+    // El documento dice `done` y el contrato no se puede leer: eso es `inconsistent`.
+    expect(plan?.plan_state).toBe("inconsistent");
+  });
+
+  it("y una cadena legible sobre el mismo plan lo deja cerrar", async () => {
+    const text = donePlan();
+    const fs = detailWorkspace(text);
+
+    const plan = (await index(fs)).plans.find((p) => p.file === D_PLAN);
+
+    expect(plan?.reconciliation?.closable).toBe(true);
+    expect(plan?.plan_state).toBe("done");
+  });
+});
+
+// F4 · T4.2 — la fila de un plan con compensación vigente. Salía `blocked` con
+// `command: null`, que es un rechazo sin salida: el tablero decía que no se
+// puede y no decía por dónde. Lo que se fija es que la salida existe siempre y
+// que es la correcta de las dos según haya o no una corrida abierta.
+describe("el ítem de un plan con compensación vigente siempre trae comando", () => {
+  const OWING_SESSION = "144-deuda-plan-exec";
+
+  function owing(): MemFs {
+    const fs = new MemFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    seedExecutedPlanOwingCompensation(fs);
+    return fs;
+  }
+
+  /** Una sesión activa con una corrida de `plan-exec` fija sobre este plan. */
+  function withOpenRun(fs: MemFs, folder = OWING_SESSION): MemFs {
+    fs.file(
+      `/cwd/.workflow/sessions/${folder}/SESSION.md`,
+      "# SESSION\n\n## Objective\nejecutar\n\n## Type\nexec\n",
+    );
+    const run = withScope(newRunState("plan-exec", folder), {
+      plan: OWING_PLAN,
+      sources: ["workspace"],
+    });
+    fs.file(`/cwd/.workflow/sessions/${folder}/${FLOW_RUN_STATE_FILE}`, serializeRunState(run));
+    return fs;
+  }
+
+  async function owingItem(fs: MemFs) {
+    const out = await index(fs);
+    const item = out.pipeline.find((row) => row.file === OWING_PLAN);
+    if (item === undefined) throw new Error("el plan no está en el pipeline");
+    return item;
+  }
+
+  it("sin corrida abierta el comando es el que salda el plan", async () => {
+    const item = await owingItem(owing());
+
+    expect(item.detail.next).toContain("COMPENSACIÓN VIGENTE por DEC-001");
+    expect(item.detail.next).toContain(OWING_TEXT);
+    expect(item.detail.obligation).toBe(true);
+    expect(item.command).toBe(`aw settle prepare ${OWING_PLAN}`);
+    expect(item.action.kind).toBe("continue");
+  });
+
+  it("con una corrida abierta sobre el plan el comando es el de ESA corrida", async () => {
+    const item = await owingItem(withOpenRun(owing()));
+
+    // La corrida abierta manda: `aw settle` se niega debajo de ella, así que
+    // ofrecerlo sería ofrecer un comando que rechaza.
+    expect(item.command).toBe(`aw flow advance --code ${OWING_SESSION}`);
+    expect(item.action).toMatchObject({ kind: "continue", mode: "settlement" });
+  });
+
+  it("una sesión abierta de OTRO flujo no se vuelve la dueña del plan", async () => {
+    const fs = owing();
+    fs.file(
+      "/cwd/.workflow/sessions/900-otra-cosa-quick/SESSION.md",
+      "# SESSION\n\n## Objective\notra cosa\n\n## Type\nquick\n",
+    );
+    fs.file(
+      `/cwd/.workflow/sessions/900-otra-cosa-quick/${FLOW_RUN_STATE_FILE}`,
+      serializeRunState(newRunState("quick", "900-otra-cosa-quick")),
+    );
+
+    const out = await index(fs);
+    const plan = out.plans.find((p) => p.file === OWING_PLAN);
+    const item = out.pipeline.find((row) => row.file === OWING_PLAN);
+
+    // Ninguna corrida de otro flujo fija un plan, así que ninguna lo tiene: el
+    // tablero mandaba a adoptar la corrida de un tercero para saldar este plan.
+    expect(plan?.holding_run).toBeNull();
+    expect(item?.command).toBe(`aw settle prepare ${OWING_PLAN}`);
+  });
+
+  it("con la cadena ilegible el tablero nombra la reparación, no una fase", async () => {
+    const fs = owing();
+    // La cadena del linaje, corrompida: el contrato no compone, así que la
+    // pendiente es la propia negativa y el plan no es cerrable.
+    fs.file(`/cwd/${noteIndexPath("docs/decisions", "043", "deuda")}`, "{ esto no es json");
+
+    const out = await index(fs);
+    const plan = out.plans.find((row) => row.file === OWING_PLAN);
+    const item = out.pipeline.find((row) => row.file === OWING_PLAN);
+
+    expect(plan?.contract).toBeNull();
+    expect(plan?.reconciliation?.closable).toBe(false);
+    expect(item?.detail.next).toContain("LINAJE ILEGIBLE");
+    // La frase que sirve: reparar el índice. Antes de esta prueba el tablero
+    // decía «retomá en el cierre del plan» sobre un JSON roto.
+    expect(item?.detail.next).toContain("reparalo a mano");
+    expect(item?.detail.next).not.toContain("retomá en");
+    // Y la fila sigue siendo una salida, no un bloqueo sin comando: un contrato
+    // que no compone tiene una reparación, y una reparación es algo que se hace.
+    expect(item?.action.kind).toBe("continue");
+    expect(item?.command).not.toBeNull();
+  });
+
+  it("ninguna fila del tablero queda sin comando por reconciliación", async () => {
+    for (const fs of [owing(), withOpenRun(owing())]) {
+      const out = await index(fs);
+      for (const item of out.pipeline) {
+        // Ningún código de bloqueo del tablero habla de reconciliación: la
+        // situación dejó de ser un bloqueo y pasó a ser una salida.
+        const blocked = item.action.kind === "blocked" ? item.action.code : "";
+        expect(blocked).not.toContain("RECONCILIATION");
+      }
+      const item = out.pipeline.find((row) => row.file === OWING_PLAN);
+      expect(item?.command).not.toBeNull();
+    }
   });
 });

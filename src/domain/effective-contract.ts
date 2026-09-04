@@ -1,4 +1,9 @@
-import { type DecisionNote, type NoteFailure, effectiveNotes } from "./decision-note.js";
+import {
+  type DecisionNote,
+  type NoteFailure,
+  type NoteObligation,
+  effectiveNotes,
+} from "./decision-note.js";
 
 /**
  * THE effective contract: the baseline plus its notes in force, applied in
@@ -26,10 +31,25 @@ export interface EffectiveAssertion {
   by: string | null;
 }
 
-export interface EffectiveObligation {
-  text: string;
+/**
+ * An obligation in force, with its class and its cause.
+ *
+ * The class travels with it because every surface downstream needs it and none
+ * of them may re-derive it: what blocks a closure and what merely stays visible
+ * is one answer, and two places computing it is how a board and the gate that
+ * follows it end up disagreeing about the same plan.
+ */
+export interface EffectiveObligation extends NoteObligation {
   /** The note that created it — an obligation always keeps its cause. */
   by: string;
+  /**
+   * Its position in that note's list.
+   *
+   * The only stable name an obligation has: it carries no id, and its text is
+   * not unique — a note may owe the same sentence twice. Settling one names the
+   * note and this position, so "which one was discharged" is never a guess.
+   */
+  index: number;
 }
 
 export interface EffectiveContract {
@@ -100,7 +120,9 @@ export function composeEffectiveContract(
     failures.push(...checkAssertions(note, known, amendedBy));
     failures.push(...checkContradiction(note));
     for (const id of note.supersedes_assertions) amendedBy.set(id, note.id);
-    for (const text of note.obligations) obligations.push({ text, by: note.id });
+    for (const [index, obligation] of note.obligations.entries()) {
+      obligations.push({ ...obligation, by: note.id, index });
+    }
     // First note wins the attribution: the chain is applied in order, so the
     // earliest one to say something about a piece of evidence is the one whose
     // claim the conflict check has to name.

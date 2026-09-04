@@ -186,6 +186,7 @@ Workspace artifacts live under `.<namespace>/`. Resolution order (first match wi
 - `release-data` — corpus reader backing the `export-*` skills.
 - `self install-skill` / `self doctor` / `self update` / `mcp` — CLI maintenance.
 - `amend <apply|revert|list>` — correct the WORDING of an already closed spec or plan in one act, under the workspace lock and with the document's own digest as the compare-and-swap base; it demands an explicit declaration that no scope, criteria or rules move, records the exact pre-image in an append-only ledger, and refuses structurally whatever touches the contract (naming the refinement instead). CLI-only: there is no `/w:amend`.
+- `settle <list|prepare|apply>` — settle or acknowledge the live obligations a decision note left on a plan whose execution run is already closed. `list` shows each one with its note, position, class, whether that class was declared and the plan's CURRENT resume point; `prepare` derives the same settlement note the closure derives, writes nothing and returns the digest that authorizes it; `apply` re-derives from the live workspace, demands that digest and publishes under the lock. It refuses while an execution run holds the plan, naming that run — its closure settles its own obligations. CLI-only: there is no `/w:settle`.
 
 Run `agent-workflow --help` (or `aw --help`) for the full list, or `agent-workflow <command> --help` for per-command flags.
 

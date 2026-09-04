@@ -151,6 +151,37 @@ run stops at it: declaring a deviation no longer carries on to the commit by its
 
 > **How an affirmation is addressed:** a decision note names the criteria it amends as `S{NNN}/AC-nn` — `NNN` from the spec file's number, `AC-nn` the label the criterion carries in the spec's checklist. The CLI **derives** that id from the label plus the file number, so the readable form the spec template writes is already addressable (a criterion that spells the full id is read the same way, never counted twice). A note amending a criterion the spec does not state **at all** is refused with `CONTRACT_ASSERTION_ABSENT`, and the exit is the spec stating it (`spec-refine`), never a second spelling of the id here.
 
+### Obligations — the two classes, and how each one is settled
+
+A note may leave work behind, and it declares **which of two classes** each piece is. A
+**compensation** is work this lineage owes: it holds the plan's closure shut until it is settled. A
+**handoff** is work somebody outside the run took on: it stays listed, it stays visible after the plan
+closes, and it blocks nothing — a run that cannot discharge it could never close. Nothing historical
+moves: the boxes and the phase states record what happened, and the obligation is new work of the
+effective contract.
+
+The class is the agent's to state while drafting the note, and the person sees it in the sealed
+preview before registering it; a new note leaving work without saying which class is refused. A note
+published before the class existed is read tolerantly — an undeclared obligation is a **compensation**
+unless the plan itself enumerates that exact work as a handoff — and every surface marks that as a
+reading somebody supplied, never as the note's own word. The class is revocable: the
+settlement boundary may declare a live compensation a handoff after all. So **when in doubt,
+compensation** — the only error a later boundary still catches.
+
+Settling one is publishing a note that **supersedes** the one carrying it without carrying it forward;
+there is no second ledger of discharged obligations: one recorded outside the chain
+could disagree with it. The closure does this by itself: between the last `batch-close` and
+the final validation the run declares, per compensation, whether it is done and with what evidence,
+and the CLI derives and publishes the settlement note. A compensation still pending leaves that
+boundary open with an executable action and costs the run no attempt. With **no** open run — a plan
+blocked today whose run closed long ago — the exit is `aw settle`: it lists what is owed, previews the
+note, and publishes it against an approval.
+
+**The split between scaffolding and content**, in three lines. A gap with a **single** reading is
+repaired by the run itself, and the repair is recorded. A gap with **more than one** reading is asked
+**once for all of them**, with the run's own reading offered as the recommendation. Everything else
+is **content**, and content is the person's.
+
 **Eligibility is closure, never size.** The composable exit opens only when the four close: the
 divergence stays in the **same functional lineage**; its **intent is settled**, so nothing further has
 to be elicited; its **transitive impact can be enumerated**, every consumer nameable; and its

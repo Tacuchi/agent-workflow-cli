@@ -132,7 +132,7 @@ function decisionPreview(): DecisionPreview {
     consumers: ["docs/plans/032-plan-x.md"],
     impact: { scope: "functional", assertions: 1, consumers: 1 },
     evidence: { preserved: ["prueba verde"], invalidated: ["prueba anterior"] },
-    obligations: ["revalidar F4"],
+    obligations: [{ text: "revalidar F4", kind: "compensation", declared: true }],
     resume_point: "F4/T4.1",
     effects: { classes: ["local_additive"], entries: proposal.preview },
     proposal,
@@ -295,6 +295,75 @@ describe("directiva de frontera — la forma válida", () => {
     expect(human).toContain("vista previa de decisión");
     expect(human).toContain("revalidar F4");
     expect(human).toContain("sello del preview");
+  });
+
+  it("un preview sellado ANTES de que existieran las clases se sigue mostrando", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      flow: "plan-exec",
+      boundary: boundary({
+        kind: "human",
+        transition: "plan-exec.deviation-gate",
+        authority: "human",
+        title: "elegir la salida de la desviación",
+      }),
+      outcome: "needs_input",
+      choices: [
+        choice("Registrar la decisión y seguir", "autoriza la vista previa", true, {
+          kind: "register-decision",
+        }),
+        choice("Refinar el plan", "entrega el paquete a plan-refine", false, {
+          kind: "handoff",
+          destination: "plan-refine",
+        }),
+      ],
+      // La forma legada: strings sueltos, como los persistió una corrida vieja.
+      decisionPreview: {
+        ...decisionPreview(),
+        obligations: ["revalidar F4"] as unknown as DecisionPreview["obligations"],
+      },
+      nextAction: "elegí sobre la vista previa que el CLI ya preparó",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+
+    // Se lee con la clase segura, no se rompe ni imprime un hueco.
+    expect(renderDirectiveHuman(built.directive)).toContain("revalidar F4 [compensación]");
+  });
+
+  it("la sección de obligaciones distingue compensación de traspaso", () => {
+    const built = buildFlowDirective({
+      ...BASE,
+      flow: "plan-exec",
+      boundary: boundary({
+        kind: "human",
+        transition: "plan-exec.deviation-gate",
+        authority: "human",
+        title: "elegir la salida de la desviación",
+      }),
+      outcome: "needs_input",
+      choices: [
+        choice("Registrar la decisión y seguir", "autoriza la vista previa", true, {
+          kind: "register-decision",
+        }),
+        choice("Refinar el plan", "entrega el paquete a plan-refine", false, {
+          kind: "handoff",
+          destination: "plan-refine",
+        }),
+      ],
+      decisionPreview: {
+        ...decisionPreview(),
+        obligations: [
+          { text: "revalidar F4", kind: "compensation", declared: true },
+          { text: "Producto y QA validan el flujo", kind: "handoff", declared: true },
+        ],
+      },
+      nextAction: "elegí sobre la vista previa que el CLI ya preparó",
+    });
+    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
+
+    const human = renderDirectiveHuman(built.directive);
+    expect(human).toContain("revalidar F4 [compensación]");
+    expect(human).toContain("Producto y QA validan el flujo [traspaso]");
   });
 
   it("una frontera de ejecución lleva la invocación y su evidencia, y la proyecta", () => {

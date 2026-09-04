@@ -15,12 +15,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { noteIndexPath, sealNote } from "../../src/application/decision-note-service.js";
+import {
+  noteIndexArtifact,
+  noteIndexPath,
+  sealNote,
+} from "../../src/application/decision-note-service.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runResume } from "../../src/application/resume-service.js";
 import { buildWorklineIndex, specConsumers } from "../../src/application/workline-index-service.js";
-import { type DecisionNote, NOTE_SCHEMA } from "../../src/domain/decision-note.js";
+import {
+  type DecisionNote,
+  NOTE_SCHEMA,
+  type NoteObligation,
+  normalizeObligations,
+} from "../../src/domain/decision-note.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -96,7 +105,7 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
   };
 
   /** Publica una nota vigente sobre el linaje, con las obligaciones dadas. */
-  const publishNote = (obligations: readonly string[]): DecisionNote => {
+  const publishNote = (obligations: readonly (string | NoteObligation)[]): DecisionNote => {
     const index = {
       schema: "workline.decision-index/v1" as const,
       spec: { path: SPEC_FILE, number: "033" },
@@ -121,14 +130,17 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
       consumers: [PLAN_FILE],
       evidence_preserved: ["F1/T1.1 como historia"],
       evidence_invalidated: ["F1/T1.1 como prueba"],
-      obligations: [...obligations],
+      obligations: normalizeObligations(obligations) ?? [],
       resume_point: "F1/T1.1",
       date: "2026-08-16",
     });
-    writeFileSync(
-      join(root, noteIndexPath("docs/decisions", "033", "x")),
-      `${JSON.stringify({ ...index, notes: [sealed] }, null, 2)}\n`,
-    );
+    // Por el escritor real: una serialización a mano rompería el sello de una
+    // nota en forma legada, y el índice dejaría de verificar.
+    const artifact = noteIndexArtifact(noteIndexPath("docs/decisions", "033", "x"), {
+      ...index,
+      notes: [sealed],
+    });
+    writeFileSync(join(root, artifact.path), artifact.content);
     return sealed;
   };
 
@@ -163,10 +175,22 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
       const plan = await planOf();
 
       expect(plan?.reconciliation).toEqual({
-        pending: [{ text: "revalidar F1", by: "DEC-001", resume_point: "F1/T1.1" }],
-        resume_point: "F1/T1.1",
+        pending: [
+          {
+            text: "revalidar F1",
+            by: "DEC-001",
+            index: 0,
+            declared_point: "F1/T1.1",
+            kind: "compensation",
+            legacy: true,
+          },
+        ],
+        handoffs: [],
         closable: false,
       });
+      // Lo que la nota grabó al nacer es F1/T1.1, y F1 está validada. El punto
+      // vigente lo deriva el tablero del plan como está hoy.
+      expect(plan?.current_point).toBe("F2 — la fase que falta");
     });
 
     it("un plan sin sello no tiene contra qué componer, y no inventa un contrato vacío", async () => {
@@ -186,9 +210,12 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
       publishNote(["revalidar F1 contra el contrato nuevo"]);
       const next = await resumeNext();
 
-      expect(next).toContain("RECONCILIACIÓN PENDIENTE por DEC-001");
+      expect(next).toContain("COMPENSACIÓN VIGENTE por DEC-001");
       expect(next).toContain("revalidar F1 contra el contrato nuevo");
-      expect(next).toContain("retomá en F1/T1.1");
+      // La nota dijo F1/T1.1 y esa fase está validada: `resume` manda al punto
+      // vigente, que es la primera fase que falta.
+      expect(next).toContain("retomá en F2 — la fase que falta");
+      expect(next).not.toContain("F1/T1.1");
       expect(next).toContain("ni ejecutable ni cerrable");
     });
 

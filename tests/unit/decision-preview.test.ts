@@ -64,7 +64,9 @@ function note(over: Partial<DecisionNote> = {}): DecisionNote {
     consumers: [PLAN.path, "docs/plans/031-plan-y.md"],
     evidence_preserved: ["tests/unit/flow-authority.test.ts"],
     evidence_invalidated: ["tests/unit/deviation-gate.test.ts::salto"],
-    obligations: ["revalidar el recorrido PLAN completo"],
+    obligations: [
+      { text: "revalidar el recorrido PLAN completo", kind: "compensation", declared: true },
+    ],
     resume_point: "F5/T5.1",
     date: "2026-08-16",
     ...over,
@@ -134,7 +136,9 @@ describe("buildDecisionPreview — las ocho cosas que la decisión necesita", ()
       invalidated: ["tests/unit/deviation-gate.test.ts::salto"],
     });
     // 6 · qué trabajo nace
-    expect(view.obligations).toEqual(["revalidar el recorrido PLAN completo"]);
+    expect(view.obligations).toEqual([
+      { text: "revalidar el recorrido PLAN completo", kind: "compensation", declared: true },
+    ]);
     // 7 · desde dónde sigue la ejecución
     expect(view.resume_point).toBe("F5/T5.1");
     // 8 · destino, peso y si reemplaza
@@ -333,7 +337,11 @@ describe("grantFor — una sola autorización, sobre el sello que se mostró", (
   it("un cambio material en cualquiera de las ocho cosas produce un sello distinto", () => {
     const base = preview();
     const otherResume = preview({ subject: note({ resume_point: "F6/T6.1" }) });
-    const otherObligations = preview({ subject: note({ obligations: ["otra obligación"] }) });
+    const otherObligations = preview({
+      subject: note({
+        obligations: [{ text: "otra obligación", kind: "compensation", declared: true }],
+      }),
+    });
     const otherDestination = preview({
       artifacts: [{ path: "docs/decisions/otro.json", content: CONTENT, overwrite: false }],
     });

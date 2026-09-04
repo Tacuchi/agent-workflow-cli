@@ -434,13 +434,24 @@ describe("cursor repetible de PLAN-exec", () => {
       secondClose,
     );
 
+    // Cerrado el último batch, el recorrido entra en el CIERRE, y el cierre
+    // empieza por el saldo: entre la última publicación de batch y la validación
+    // final están las tres filas que saldan o reconocen las obligaciones. Con un
+    // plan que no debe compensación las tres se pasan de largo solas y la
+    // frontera vuelve a ser la validación final, pero eso lo decide el walk sobre
+    // el estado, no la forma estática del recorrido que este test mide.
     const last = withBoundary(
       withPlanExecBatchLoop(state, { pending: false, iteration: null }),
-      "plan-exec.final-validation",
+      "plan-exec.settlement-authoring",
     );
     const finalJourney = journeyForState(last);
     expect(finalJourney.filter((row) => row.id === "plan-exec.batch-inference")).toHaveLength(1);
     expect(checkAgainstJourney(last, finalJourney)).toBeNull();
-    expect(resolveBoundary(last, finalJourney).stopped?.id).toBe("plan-exec.final-validation");
+    expect(resolveBoundary(last, finalJourney).stopped?.id).toBe("plan-exec.settlement-authoring");
+    // Y la validación final sigue detrás de las tres, nunca delante.
+    const ids = finalJourney.map((row) => row.id);
+    expect(ids.indexOf("plan-exec.final-validation")).toBeGreaterThan(
+      ids.indexOf("plan-exec.settlement-publication"),
+    );
   });
 });

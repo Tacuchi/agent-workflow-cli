@@ -40,6 +40,8 @@ import {
   FIX_PREVIEW_TRANSITION,
   type FlowChoiceOutcome,
   type FlowDecision,
+  SETTLEMENT_READINGS,
+  type SettlementReading,
   actionOf,
   alternativesOf,
   approvalGrantOf,
@@ -72,10 +74,12 @@ import {
   type FlowRunAttempt,
   type FlowRunEvent,
   type FlowRunState,
+  type FlowSettlementDeclaration,
   applyTransition,
   checkAgainstJourney,
   currentBatchIteration,
   restatesLastEvent,
+  settlementAmbiguous,
   withApproval,
   withAttempt,
   withBoundary,
@@ -91,6 +95,7 @@ import {
   withRouteProposal,
   withScope,
   withSelectedChoice,
+  withSettlementDeclarations,
 } from "../../domain/flow/run-state.js";
 import { type SpecBaseline, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
@@ -763,8 +768,10 @@ async function decide(
     cost,
   );
   if (!preparedForGate.ok) return preparedForGate.decision;
+  const settlement = recordSettlement(preparedForGate.state, parsed.answer, resolved, cost);
+  if (!settlement.ok) return settlement.decision;
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
-  const approved = grantOf(preparedForGate.state, resolved, parsed.answer, granted, journey);
+  const approved = grantOf(settlement.state, resolved, parsed.answer, granted, journey);
   // All pure scope/proposal checks have now passed. A durable decision is a
   // material write, so it must never land when a later validation of the same
   // answer would refuse the boundary and leave its cursor standing.
@@ -1253,6 +1260,262 @@ type GateDecisionPreparation =
   | { ok: false; decision: SubmitDecision };
 
 /**
+ * WHAT THE CLOSURE DECLARES ABOUT EACH OBLIGATION, and who declares it.
+ *
+ * Two boundaries write here and they write different halves. The AUTHORING row
+ * is the agent's: it has the evidence, because it ran the commands. The QUESTION
+ * is a person's, and it exists for exactly one case — an obligation whose class
+ * nobody declared and whose text the plan does not enumerate — where the agent
+ * can only propose a reading and somebody has to own it.
+ *
+ * Nothing here publishes: what it produces is the declaration the publication row
+ * then derives a note from. Keeping those apart is what lets the person's answer
+ * be about the reading rather than about a note they would have to check.
+ */
+type SettlementRecord = { ok: true; state: FlowRunState } | { ok: false; decision: SubmitDecision };
+
+const SETTLEMENT_OUTCOMES = SETTLEMENT_READINGS.map((reading) => reading.outcome);
+
+/** The reading each label of the question stands for — from the row's own table. */
+const SETTLEMENT_BY_LABEL: ReadonlyMap<string, SettlementReading> = new Map(
+  SETTLEMENT_READINGS.map((reading) => [reading.label, reading.outcome]),
+);
+
+function recordSettlement(
+  state: FlowRunState,
+  answer: FlowAnswer,
+  resolved: ResolvedBoundary,
+  cost: RejectionCost,
+): SettlementRecord {
+  const id = resolved.stopped?.id;
+  if (id === "plan-exec.settlement-authoring") {
+    return recordSettlementAuthoring(state, answer, resolved, cost);
+  }
+  if (id === "plan-exec.settlement-question") {
+    return recordSettlementAnswer(state, answer, resolved, cost);
+  }
+  return { ok: true, state };
+}
+
+/**
+ * The agent's declaration, checked against what the plan actually owes.
+ *
+ * Every live compensation, exactly once: a declaration that skips one would let
+ * the closure publish a settlement silently missing an obligation, and one that
+ * names an obligation nobody owes would decide about work that is not there.
+ *
+ * `pending` is read two ways, and the difference is the whole design. On an
+ * obligation with a single reading it means the work is NOT DONE, and the
+ * closure stops here until it is — the boundary stays open and the refusal costs
+ * no attempt, because telling the truth must not spend the run's retries. On an
+ * ambiguous one it is a PROPOSAL, and the next row is where a person settles it.
+ */
+function recordSettlementAuthoring(
+  state: FlowRunState,
+  answer: FlowAnswer,
+  resolved: ResolvedBoundary,
+  cost: RejectionCost,
+): SettlementRecord {
+  const declared = readDeclarations(answer.decisions.settlement);
+  const refusal = checkDeclarations(state, declared);
+  if (refusal !== null) {
+    return { ok: false, decision: reject(state, resolved, refusal.message, refusal, cost) };
+  }
+  return { ok: true, state: withSettlementDeclarations(state, declared ?? []) };
+}
+
+/** Every way a declaration can fail to answer for what the plan owes. */
+function checkDeclarations(
+  state: FlowRunState,
+  declared: FlowSettlementDeclaration[] | null,
+): CapabilityFailure | null {
+  const owed = state.settlement?.compensations ?? [];
+  if (declared === null) {
+    return {
+      code: "FLOW_SETTLEMENT_INVALID",
+      message: "la declaración de saldo no es una lista de { note, index, outcome, evidence? }",
+      action: `declará una entrada por cada compensación vigente: ${owed.map((o) => `${o.note}[${o.index}]`).join(", ") || "ninguna"}`,
+    };
+  }
+  const missing = owed.filter((obligation) => matching(declared, obligation).length !== 1);
+  if (missing.length > 0) {
+    return {
+      code: "FLOW_SETTLEMENT_INCOMPLETE",
+      message: `falta declarar exactamente una vez: ${missing.map((o) => `${o.note}[${o.index}] ${o.text}`).join("; ")}`,
+      action:
+        "cada compensación vigente lleva una declaración y sólo una: saltear una publicaría un saldo al que le falta trabajo",
+    };
+  }
+  const foreign = declared.filter(
+    (declaration) =>
+      !owed.some(
+        (obligation) =>
+          obligation.note === declaration.note && obligation.index === declaration.index,
+      ),
+  );
+  if (foreign.length > 0) {
+    return {
+      code: "FLOW_SETTLEMENT_INVALID",
+      message: `se declara sobre obligaciones que el plan no debe: ${foreign.map((d) => `${d.note}[${d.index}]`).join(", ")}`,
+      action:
+        "el saldo alcanza a las compensaciones vigentes que el tablero enumera, y a ninguna otra",
+    };
+  }
+  const undone = owed.filter(
+    (obligation) => !obligation.legacy && matching(declared, obligation)[0]?.outcome === "pending",
+  );
+  if (undone.length === 0) return null;
+  return {
+    code: "PLAN_EXEC_SETTLEMENT_PENDING",
+    message: `queda compensación sin saldar: ${undone.map((o) => `${o.note}: ${o.text}`).join("; ")}`,
+    action: `hacé ese trabajo y volvé con 'aw flow advance --code ${state.session}' para declararla cumplida con su evidencia; el cierre espera acá`,
+  };
+}
+
+/** The obligations of `declared` that name this exact one. */
+function matching(
+  declared: readonly FlowSettlementDeclaration[],
+  obligation: { note: string; index: number },
+): FlowSettlementDeclaration[] {
+  return declared.filter(
+    (declaration) => declaration.note === obligation.note && declaration.index === obligation.index,
+  );
+}
+
+/**
+ * The person's reading, applied to every ambiguous obligation at once.
+ *
+ * One answer for all of them, which is the degradation the plan declared before
+ * this was built: repeating a row is the batch loop's mechanism and it is keyed
+ * to the loop's own transitions. What the answer may NOT do is discharge work
+ * with no evidence behind it — "cumplida" over an obligation nobody proved is
+ * the one reading this boundary must refuse, and it refuses for free.
+ */
+function recordSettlementAnswer(
+  state: FlowRunState,
+  answer: FlowAnswer,
+  resolved: ResolvedBoundary,
+  cost: RejectionCost,
+): SettlementRecord {
+  const outcome = SETTLEMENT_BY_LABEL.get(answer.choice ?? "");
+  if (outcome === undefined) return { ok: true, state };
+  const ambiguous = settlementAmbiguous(state);
+  const declared = state.settlement?.declared ?? [];
+  // The row's own consequence says the run stays here, and this is what makes
+  // that true: choosing "still pending" is choosing NOT to close, so advancing
+  // would contradict the sentence the person read before answering.
+  if (outcome === "pending") {
+    return {
+      ok: false,
+      decision: reject(
+        state,
+        resolved,
+        `queda como compensación vigente: ${ambiguous.map((o) => `${o.note}: ${o.text}`).join("; ")}`,
+        {
+          code: "PLAN_EXEC_SETTLEMENT_PENDING",
+          action: `hacé ese trabajo y volvé con 'aw flow advance --code ${state.session}': el cierre espera en la frontera de saldo`,
+        },
+        cost,
+      ),
+    };
+  }
+  if (outcome === "settled") {
+    const unproven = ambiguous.filter(
+      (obligation) => matching(declared, obligation)[0]?.evidence === undefined,
+    );
+    if (unproven.length > 0) {
+      return {
+        ok: false,
+        decision: reject(
+          state,
+          resolved,
+          `no hay evidencia declarada para: ${unproven.map((o) => `${o.note}: ${o.text}`).join("; ")}`,
+          {
+            code: "PLAN_EXEC_SETTLEMENT_PENDING",
+            action:
+              "una obligación se salda con lo que lo prueba: volvé a la frontera anterior y declará la evidencia, o elegí otra lectura",
+          },
+          cost,
+        ),
+      };
+    }
+  }
+  return {
+    ok: true,
+    state: withSettlementDeclarations(
+      state,
+      declared.map((declaration) =>
+        ambiguous.some(
+          (obligation) =>
+            obligation.note === declaration.note && obligation.index === declaration.index,
+        )
+          ? ratified(declaration, outcome)
+          : declaration,
+      ),
+    ),
+  };
+}
+
+/**
+ * The person's reading, applied — and the agent's evidence dropped with it.
+ *
+ * The class the person ratifies REPLACES the one the run proposed, and evidence
+ * belongs to the proposal it came with: evidence accredits a settlement, so on a
+ * handoff it is evidence of work this lineage did not do. Carrying it across the
+ * ratification was a dead end with no exit — `checkSettlements` refuses an
+ * obligation that brings evidence without being declared settled, so a run whose
+ * agent proposed "done, here is the proof" and whose person answered "that was
+ * somebody else's" could never publish its settlement and never close: the plan
+ * stayed neither executable nor closable, which is the incident this whole plan
+ * exists to end. The proposal is not lost — it is in the run's own trace.
+ */
+function ratified(
+  declaration: FlowSettlementDeclaration,
+  outcome: FlowSettlementDeclaration["outcome"],
+): FlowSettlementDeclaration {
+  return outcome === "settled"
+    ? { ...declaration, outcome }
+    : { note: declaration.note, index: declaration.index, outcome };
+}
+
+function readDeclarations(value: unknown): FlowSettlementDeclaration[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: FlowSettlementDeclaration[] = [];
+  for (const entry of value) {
+    const read = readDeclaration(entry);
+    if (read === null) return null;
+    out.push(read);
+  }
+  return out;
+}
+
+/**
+ * One declaration, or `null` when it is not one.
+ *
+ * Evidence and outcome are checked together on purpose: "cumplida" without what
+ * proves it is not a slightly worse declaration, it is a discharge nobody can
+ * audit — and evidence attached to work that was NOT declared done is evidence
+ * of nothing, filed where somebody would later read it as a settlement.
+ */
+function readDeclaration(entry: unknown): FlowSettlementDeclaration | null {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
+  const raw = entry as { note?: unknown; index?: unknown; outcome?: unknown; evidence?: unknown };
+  if (typeof raw.note !== "string" || raw.note.length === 0) return null;
+  if (!Number.isInteger(raw.index)) return null;
+  if (!SETTLEMENT_OUTCOMES.includes(raw.outcome as SettlementReading)) return null;
+  const outcome = raw.outcome as FlowSettlementDeclaration["outcome"];
+  const evidence = typeof raw.evidence === "string" ? raw.evidence.trim() : "";
+  if (outcome === "settled" && evidence.length === 0) return null;
+  if (outcome !== "settled" && evidence.length > 0) return null;
+  return {
+    note: raw.note,
+    index: raw.index as number,
+    outcome,
+    ...(outcome === "settled" ? { evidence } : {}),
+  };
+}
+
+/**
  * Prepare the complete decision view one boundary BEFORE the human choice.
  *
  * `deviation-recognition` is where the semantic draft belongs: its result is
@@ -1430,7 +1693,13 @@ async function registerSelectedDecision(
       ),
     };
   }
-  const committed = await commitStoredPlanExecDecision(fs, paths, snapshot.root, preparation);
+  const committed = await commitStoredPlanExecDecision(
+    fs,
+    paths,
+    snapshot.root,
+    preparation,
+    state.scope?.plan,
+  );
   if (!committed.ok) {
     return {
       ok: false,

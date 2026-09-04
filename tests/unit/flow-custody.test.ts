@@ -37,6 +37,11 @@ const CUSTODY_ROWS = [
   "quick.convergence-gate",
   "plan-exec.validation-execution",
   "plan-exec.batch-close",
+  // El saldo del cierre: lo que aterriza es el sucesor de una nota cuyo registro
+  // una persona ya autorizó en el gate de desviación, derivado —nunca redactado—
+  // de la evidencia que la corrida declaró una fila más arriba. Edición
+  // consciente de esta lista, no un agregado silencioso.
+  "plan-exec.settlement-publication",
   "plan-exec.plan-done",
 ];
 

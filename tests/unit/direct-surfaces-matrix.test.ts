@@ -149,6 +149,12 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // comando se deshace— es exactamente lo que el registro append-only guarda,
     // y el JSON del host sale del mismo objeto.
     "amend",
+    // El saldo de una obligación, y la razón es la de `reseal` una vez más:
+    // aplicar AFIRMA que el trabajo compensatorio se hizo, o que era de otra
+    // gente. Lo que una persona lee —cada obligación con su clase, si esa clase
+    // la declaró alguien, qué suelta el sucesor y qué conserva— es exactamente
+    // lo que aprueba con el digest, y el JSON del host sale del mismo objeto.
+    "settle",
   ];
 
   it("no undeclared command acquired a human projection", () => {

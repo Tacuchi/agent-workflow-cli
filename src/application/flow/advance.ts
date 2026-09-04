@@ -32,6 +32,7 @@ import {
   type DelegatedAction,
   FIX_PREVIEW_TRANSITION,
   type FlowDecision,
+  SETTLEMENT_READINGS,
   actionOf,
   alternativesOf,
   effectsOf,
@@ -81,6 +82,8 @@ import {
   degradeTransition,
   positionDigest,
   reconcileAttemptsAt,
+  settlementAmbiguous,
+  settlementOwed,
   skipTransition,
   withBoundary,
   withPendingAction,
@@ -245,7 +248,8 @@ function passOver(
   const conditional =
     routeSkipReason(state, decision) ??
     skipReason(decision, journey, state.observations, currentBatchIteration(state, decision.id)) ??
-    nothingToPublish(state, decision);
+    nothingToPublish(state, decision) ??
+    nothingToSettle(state, decision);
   const degraded = conditional === null ? exhaustionSkip(state, decision) : null;
   const reason = conditional ?? degraded;
   if (reason === null) return null;
@@ -535,6 +539,43 @@ function nothingToPublish(state: FlowRunState, decision: FlowDecision): string |
   if (internalActionOf(decision)?.operation !== "proposal.publish") return null;
   if (state.proposal !== null) return null;
   return "no quedó ninguna propuesta aprobada: no se escribió nada";
+}
+
+/** The three rows of the settlement, in the order the closure walks them. */
+const SETTLEMENT_TRANSITIONS = new Set<string>([
+  "plan-exec.settlement-authoring",
+  "plan-exec.settlement-question",
+  "plan-exec.settlement-publication",
+]);
+
+/**
+ * A closure with nothing owing walks straight past the settlement.
+ *
+ * This is what makes the three rows cost NOTHING on the normal path: the batch
+ * loop's end already snapshotted what the plan owes, so the walk answers "is
+ * there anything to settle" from the run's own state without asking anybody. A
+ * plan with no live compensation closes exactly as it closed before these rows
+ * existed — same boundaries, same questions, none of them new.
+ *
+ * The question skips on a second count, and it is the one that keeps the person
+ * out of the CLI's bookkeeping: an obligation whose class the note declared, or
+ * whose text the plan already enumerates as a handoff, has exactly ONE reading.
+ * Asking about it would be asking somebody to ratify arithmetic.
+ */
+function nothingToSettle(state: FlowRunState, decision: FlowDecision): string | null {
+  if (!SETTLEMENT_TRANSITIONS.has(decision.id)) return null;
+  if (!settlementOwed(state)) {
+    // Dicho sobre el SNAPSHOT y no sobre el plan, porque son dos cosas: un plan
+    // cuyo linaje no se puede leer tampoco deja nada en el snapshot —no hay nota
+    // que sustituir— y no por eso es cerrable. Afirmar «el plan no conserva
+    // compensación vigente» era falso justo ahí, y `plan-done` lo rechaza
+    // después nombrando la reparación.
+    return "el recorrido no tiene ninguna obligación que saldar: sin una nota vigente que sustituir no hay saldo que publicar";
+  }
+  if (decision.id === "plan-exec.settlement-question" && settlementAmbiguous(state).length === 0) {
+    return "ninguna obligación vigente admite más de una lectura: no hay nada que preguntar";
+  }
+  return null;
 }
 
 /**
@@ -946,11 +987,15 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
       : ` Devolvé en 'artifacts' los bytes exactos que hay que escribir, cada uno con su 'path' dentro de ${proposes.destinations.join(", ")}. El CLI sella la propuesta, la muestra como vista previa y la escribe entera o no la escribe: vos no armás digests, envelopes ni referencias.`;
   const decisionDraft =
     decision.id === "plan-exec.deviation-recognition"
-      ? " Si la desviación puede resolverse registrando una decisión, incluí en 'decisions.decision' su question y draft completos ahora: el CLI preparará y mostrará el preview sellado antes de que una persona elija registrarlo."
+      ? " Si la desviación puede resolverse registrando una decisión, incluí en 'decisions.decision' su question y draft completos ahora: el CLI preparará y mostrará el preview sellado antes de que una persona elija registrarlo. Cada obligación del draft va como { text, kind }: 'compensation' es trabajo que este linaje debe y bloquea su cierre, 'handoff' es trabajo que queda a cargo de otra gente y no lo bloquea."
       : "";
   // La misma pista que el borrador de decisión, y por el mismo motivo: la forma
   // exacta se dice ANTES para que el primer intento la traiga. Acá pesa el doble,
   // porque un preview inválido es un rechazo evaluado y gasta uno de los tres.
+  const settlementDraft =
+    decision.id === "plan-exec.settlement-authoring"
+      ? ` Devolvé en 'decisions.settlement' una lista con una entrada por cada compensación vigente: { note, index, outcome, evidence? }. 'note' e 'index' son los que el tablero ya nombra. 'outcome' es 'settled' —con 'evidence': la salida real de lo que lo prueba—, 'handoff' —el trabajo es de otra gente— o 'pending' —todavía no se hizo, y entonces el cierre se detiene acá hasta que se haga—. Para una obligación cuya clase nadie declaró y que el plan no enumera, lo que declares es la lectura que PROPONÉS: una persona la ratifica en la frontera siguiente.`
+      : "";
   const fixPreview =
     decision.id === FIX_PREVIEW_TRANSITION
       ? " Devolvé en 'decisions.preview' un objeto con 'files' (las rutas que vas a tocar, lista que puede ir VACÍA si el entregable es un análisis), 'intent' (qué arregla y por qué) y 'diff' (la forma esperada del diff). Proporcional a la tarea: una línea para algo trivial; enfoque, archivos y riesgos para algo complejo."
@@ -958,7 +1003,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${settlementDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:
@@ -1039,8 +1084,68 @@ function humanChoices(decision: FlowDecision, state: FlowRunState): FlowDirectiv
           ...(standaloneRegistration(decision, state, choice.outcome)
             ? { consequence: STANDALONE_REGISTRATION_CONSEQUENCE }
             : {}),
+          ...settlementRecommendation(decision, state, choice),
         }));
   return [...resolve, ...flowControlChoices()];
+}
+
+/** The label each settlement reading is offered under — from the row's own table. */
+const SETTLEMENT_LABELS: ReadonlyMap<string, string> = new Map(
+  SETTLEMENT_READINGS.map((reading) => [reading.outcome, reading.label]),
+);
+
+/**
+ * What the settlement question recommends, and why that is not the CLI deciding.
+ *
+ * The recommendation is the AGENT's proposed reading, carried from the authoring
+ * row: it read the obligation, the plan and the evidence, so starting the person
+ * from a cold menu would waste the one thing that boundary produced. When the
+ * proposals disagree with each other the recommendation falls back to the safe
+ * reading, because one answer is applied to all of them and the safe one is the
+ * only reading that cannot discharge work nobody did.
+ *
+ * The consequence names the obligations at stake and the evidence gathered for
+ * them, so what is being ratified is on screen and not one row back.
+ */
+function settlementRecommendation(
+  decision: FlowDecision,
+  state: FlowRunState,
+  choice: { label: string; consequence: string },
+): { recommended: boolean; consequence?: string } | Record<string, never> {
+  if (decision.id !== "plan-exec.settlement-question") return {};
+  const ambiguous = settlementAmbiguous(state);
+  if (ambiguous.length === 0) return {};
+  const declared = state.settlement?.declared ?? [];
+  const proposals = new Set(
+    ambiguous.map(
+      (obligation) =>
+        declared.find((entry) => entry.note === obligation.note && entry.index === obligation.index)
+          ?.outcome ?? "pending",
+    ),
+  );
+  const [only] = [...proposals];
+  const proposed = proposals.size === 1 && only !== undefined ? only : "pending";
+  // The evidence OF THESE obligations, never of every declaration in the run: a
+  // question about one obligation that displayed another's proof would be the
+  // opposite of the auditability this boundary exists for.
+  const evidence = ambiguous
+    .map(
+      (obligation) =>
+        declared.find((entry) => entry.note === obligation.note && entry.index === obligation.index)
+          ?.evidence,
+    )
+    .filter((value): value is string => value !== undefined)
+    .join("; ");
+  const subject = ambiguous
+    .map((obligation) => `${obligation.note}: ${obligation.text}`)
+    .join("; ");
+  return {
+    recommended: SETTLEMENT_LABELS.get(proposed) === choice.label,
+    // Appended, never replacing: what each reading DOES is the row's own text,
+    // and dropping it would leave the person choosing between three subjects
+    // with no consequences attached.
+    consequence: `${choice.consequence} · se aplica a ${subject}${evidence.length === 0 ? "" : ` · evidencia declarada: ${evidence}`}`,
+  };
 }
 
 /** The only route decision: accept the complete sealed preview or request changes. */

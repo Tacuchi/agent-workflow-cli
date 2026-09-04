@@ -4,7 +4,9 @@ import {
   type NoteFailure,
   type NoteLineage,
   checkAppendOnly,
+  checkObligationsDeclared,
   computeNoteDigest,
+  noteToWire,
   orderNotes,
   validateDecisionNote,
 } from "../domain/decision-note.js";
@@ -150,6 +152,15 @@ export function sealNote(
   index: DecisionIndex,
   draft: Omit<DecisionNote, "id" | "digest">,
 ): DecisionNote {
+  // The draft comes from an author, so its obligations may still be in either
+  // form. Normalizing HERE — before the id and the seal — is what makes the
+  // digest a function of the bytes that will be written, whichever form they
+  // arrived in; `appendNote` is where a missing class is refused, not here.
+  // The draft is sealed AS IT CAME. Normalizing here would either invent an
+  // empty list for a draft that forgot to say anything — making "none" and "we
+  // did not say" the same claim — or move the seal of one that arrived in the
+  // legacy form. The digest is a function of the wire form either way, and
+  // `appendNote` is where an unreadable or unclassed draft is refused.
   const withId = { ...draft, id: nextNoteId(index) };
   return { ...withId, digest: computeNoteDigest(withId) };
 }
@@ -168,7 +179,10 @@ export function appendNote(
 ): { ok: true; index: DecisionIndex } | { ok: false; failures: NoteFailure[] } {
   const read = validateDecisionNote(note);
   const chain = checkAppendOnly(index.notes, note);
-  const failures = [...read.failures, ...chain];
+  // Over the note the reader RETURNED: asking whether an obligation declared its
+  // class only means something once the record is known to hold obligations.
+  const classed = read.ok && read.value !== null ? checkObligationsDeclared(read.value) : [];
+  const failures = [...read.failures, ...chain, ...classed];
   if (failures.length > 0) return { ok: false, failures };
   return { ok: true, index: { ...index, notes: orderNotes([...index.notes, note]) } };
 }
@@ -178,7 +192,12 @@ export function noteIndexArtifact(
   path: string,
   index: DecisionIndex,
 ): { path: string; content: string } {
-  return { path, content: `${JSON.stringify(index, null, 2)}\n` };
+  // Each note goes back out in the form it came in. Appending one note must not
+  // rewrite the bytes of the ones already published — that is the append-only
+  // rule at the level of the file, and a normalized re-serialization would break
+  // every legacy seal in the chain on the next append.
+  const wire = { ...index, notes: index.notes.map(noteToWire) };
+  return { path, content: `${JSON.stringify(wire, null, 2)}\n` };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { basename, join, relative } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives, isCorrelative } from "../domain/correlative.js";
-import type { DecisionNote } from "../domain/decision-note.js";
+import type { NoteFailure } from "../domain/decision-note.js";
 import { type EffectiveContract, composeEffectiveContract } from "../domain/effective-contract.js";
 import type { AssuranceStatus } from "../domain/flow/route.js";
 import {
@@ -10,7 +10,12 @@ import {
   alignSpecBaseline,
   specBaselineDigest,
 } from "../domain/lineage.js";
-import { type PlanReconciliation, reconciliationOf } from "../domain/reconciliation.js";
+import {
+  type ExitContext,
+  type PlanReconciliation,
+  obligationExit,
+  reconciliationOf,
+} from "../domain/reconciliation.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -38,6 +43,8 @@ import {
 } from "./parsers/spec-relation.js";
 import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
+import { resumePointOf } from "./plan-current-point.js";
+import { type HoldingRun, holdingRunOf, readHoldingRuns } from "./plan-open-run.js";
 import { listPendingJournals } from "./retirement/journal.js";
 import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
@@ -171,6 +178,23 @@ export interface IndexedPlan {
    * empty contract, because "committed to nothing" is a claim, not an absence.
    */
   contract: EffectiveContract | null;
+  /**
+   * Where this plan stands NOW: its first phase short of validated, or its
+   * closure — derived from the document, never from a note.
+   *
+   * Read here because this is the one place that reads the plan's bytes, and a
+   * surface deriving it again would be the second answer to the question that
+   * used to send people back into phases already integrated.
+   */
+  current_point: string;
+  /**
+   * The session whose live `plan-exec` run holds this plan, or `null`.
+   *
+   * What makes the exit of a pending obligation executable: with a run it is
+   * that run's own next boundary, without one it is `aw settle`. Assigned after
+   * the runs are read, like {@link IndexedSession.units}.
+   */
+  holding_run: HoldingRun | null;
   date: string;
   relative: string;
 }
@@ -264,7 +288,19 @@ export interface IndexedDiscarded {
  * Nothing here is sorted by date or age — two items that tie stay tied, and the
  * caller asks. That is the whole point: recency is not priority.
  */
-export type PipelineKind = "spec-unrefined" | "spec-unplanned" | "plan-open" | "checkpoint-orphan";
+export type PipelineKind =
+  | "spec-unrefined"
+  | "spec-unplanned"
+  | "plan-open"
+  /**
+   * A CLOSED plan whose handoffs are still in force.
+   *
+   * Its own work is finished, so it is not `plan-open` — but a handoff nobody
+   * can see is a handoff nobody does, and closing the plan used to be exactly
+   * what made it invisible. It is listed last and it blocks nothing.
+   */
+  | "plan-handoff"
+  | "checkpoint-orphan";
 
 /**
  * The executable consequence of a pending item.
@@ -287,7 +323,7 @@ export type PipelineAction =
        * mode is still its own so a consumer can tell "no contract to prove" from
        * "a contract nobody proved".
        */
-      mode?: "normal" | "compatible" | "reconcile" | "standalone";
+      mode?: "normal" | "compatible" | "reconcile" | "settlement" | "standalone";
     }
   | {
       kind: "handoff";
@@ -480,6 +516,13 @@ export async function buildWorklineIndex(
   for (const session of sessions) {
     session.units = isolation.bySession.get(session.folder) ?? [];
   }
+  // One pass over the live runs for every plan, rather than one scan per plan:
+  // the answer is the same map either way, and this is the reading `aw settle`
+  // refuses on, so the board and the command cannot disagree about who holds what.
+  const runs = await readHoldingRuns(fs, paths);
+  for (const plan of plans) {
+    plan.holding_run = holdingRunOf(runs, plan.file);
+  }
   const discarded = await readDiscarded(fs, sessions, cwd, now);
   const designs = await buildDesignGraph(fs, cwd, [
     ...specs.map((s) => ({ file: s.file, kind: "spec" as const })),
@@ -593,11 +636,11 @@ function derivePipeline(
     }
   }
   for (const plan of plans) {
-    if (plan.plan_state === "done") continue;
+    if (!planIsPending(plan)) continue;
     const presentation = planPresentation(plan, designs);
     items.push({
-      kind: "plan-open",
-      priority: 3,
+      kind: presentation.kind,
+      priority: presentation.kind === "plan-handoff" ? 4 : 3,
       file: plan.file,
       number: plan.number,
       slug: plan.slug,
@@ -639,8 +682,14 @@ function specItem(
 }
 
 function planSummary(plan: IndexedPlan): string {
-  if (plan.plan_state === "done" && plan.assurance !== null && plan.assurance !== "verified") {
-    return `plan ${plan.number} — done · no verificado (${plan.assurance})`;
+  const handoffs = liveHandoffs(plan);
+  // El único plan cerrado que llega acá: `planIsPending` deja fuera del pipeline
+  // a todos los demás, y ésta es la línea de título de una fila del pipeline.
+  // La rama que hablaba del cierre no verificado de un `done` murió con eso; el
+  // dato no se perdió —lo dicen `renderAssuranceAlerts` y el aviso de la propia
+  // fila— y conservarla sería un tercer lugar diciendo lo mismo, inalcanzable.
+  if (plan.plan_state === "done" && handoffs > 0) {
+    return `plan ${plan.number} — cerrado · ${handoffs} traspaso(s) vigente(s)`;
   }
   const phases =
     plan.phases_total > 0 ? `, fases ${plan.phases_validated}/${plan.phases_total}` : "";
@@ -678,17 +727,12 @@ export function specDetail(spec: IndexedSpec, plans: readonly IndexedPlan[]): Pi
   };
 }
 
-/** What a plan owes, and whether saying it outranks saying its percentage. */
-export function planDetail(plan: IndexedPlan, designs: DesignGraph): PipelineItemDetail {
-  return planPresentation(plan, designs).detail;
-}
-
 /** The one plan projection shared by the pipeline and direct `resume <plan>`. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one presentation keeps direct resume and status equivalent.
 export function planPresentation(
   plan: IndexedPlan,
   designs: DesignGraph,
-): { detail: PipelineItemDetail; action: PipelineAction } {
+): { kind: PipelineKind; detail: PipelineItemDetail; action: PipelineAction } {
   const phases =
     plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
   const base = {
@@ -699,8 +743,32 @@ export function planPresentation(
   // no baseline seal is not retroactively made owing or executable merely
   // because a direct `resume <plan>` bypassed the pipeline's done filter.
   if (plan.plan_state === "done") {
+    // The one live thing a closure does not settle. Its exit comes from the same
+    // derivation the refusals use, so the row cannot name a different way out
+    // from the one the seal and the board name.
+    const handoff = exitOf(plan);
+    if (handoff !== null && handoff.kind === "handoff") {
+      return {
+        kind: "plan-handoff",
+        detail: {
+          ...base,
+          next: handoff.headline,
+          // Not an obligation: `obligation` means "neither runnable nor
+          // closable", and a handoff is precisely the class that holds nothing
+          // shut. Marking it would put somebody else's work ahead of this
+          // workspace's own.
+          obligation: false,
+          // The closure's own caveat survives the handoff row. Without it a plan
+          // closed on omitted or substitute evidence would stop saying so the
+          // moment it delegated something — a warning lost to an unrelated fact.
+          ...unverifiedClosure(plan),
+        },
+        action: { kind: "continue", command: handoff.command, mode: "settlement" },
+      };
+    }
     const assurance = plan.assurance;
     return {
+      kind: "plan-open",
       detail: {
         ...base,
         next:
@@ -720,6 +788,7 @@ export function planPresentation(
   const missing = describeMissingDesign(designs, plan.file);
   if (missing !== null) {
     return {
+      kind: "plan-open",
       detail: { ...base, next: missing, obligation: true },
       action: {
         kind: "blocked",
@@ -732,6 +801,7 @@ export function planPresentation(
   const [blocked] = plan.blocked_phases;
   if (blocked !== undefined) {
     return {
+      kind: "plan-open",
       detail: {
         ...base,
         next: `BLOQUEADA F${blocked.number} — ${blocked.blocker ?? "sin motivo declarado"}`,
@@ -745,20 +815,22 @@ export function planPresentation(
       },
     };
   }
-  const owed = describePendingReconciliation(plan);
-  if (owed !== null) {
+  const owed = exitOf(plan);
+  // Solo la compensación se apodera de la ruta. Un traspaso sobre un plan ABIERTO
+  // no bloquea nada, así que cambiarle el comando dejaría sin ejecutar un plan
+  // por trabajo que no es de esta línea — la inversión exacta que la clase evita.
+  if (owed !== null && owed.kind === "compensation") {
     return {
-      detail: { ...base, next: owed, obligation: true },
-      action: {
-        kind: "blocked",
-        command: null,
-        code: "WORKLINE_PLAN_RECONCILIATION_PENDING",
-        action: "cerrá las obligaciones compensatorias desde su punto de reanudación",
-      },
+      kind: "plan-open",
+      detail: { ...base, next: owed.headline, obligation: true },
+      // Nunca `command: null`: la salida existe —la corrida abierta o `aw settle`—
+      // y un tablero que la calla convierte un rechazo accionable en una pared.
+      action: { kind: "continue", command: owed.command, mode: "settlement" },
     };
   }
   if (plan.baseline.status === "divergent") {
     return {
+      kind: "plan-open",
       detail: { ...base, next: describeUnprovenBaseline(plan), obligation: true },
       action: {
         kind: "handoff",
@@ -770,6 +842,7 @@ export function planPresentation(
   }
   if (plan.baseline.status === "malformed") {
     return {
+      kind: "plan-open",
       detail: { ...base, next: describeUnprovenBaseline(plan), obligation: true },
       action: {
         kind: "blocked",
@@ -781,6 +854,7 @@ export function planPresentation(
   }
   if (plan.baseline.status === "unresolved") {
     return {
+      kind: "plan-open",
       detail: { ...base, next: describeUnprovenBaseline(plan), obligation: true },
       action: {
         kind: "blocked",
@@ -798,6 +872,7 @@ export function planPresentation(
   // closes, exactly like a normal plan.
   if (plan.spec.status === "standalone") {
     return {
+      kind: "plan-open",
       detail: { ...base, ...normalPlanNext(plan) },
       action: { kind: "continue", command: `/w:plan-exec ${plan.file}`, mode: "standalone" },
     };
@@ -807,6 +882,7 @@ export function planPresentation(
   // accidentally lost behind the counter repair route.
   if (plan.baseline.status === "unsealed") {
     return {
+      kind: "plan-open",
       detail: {
         ...base,
         ...normalPlanNext(plan),
@@ -824,6 +900,7 @@ export function planPresentation(
   // turn an unreadable/missing contract into an advertised `plan-exec` command.
   if (plan.plan_state === "inconsistent") {
     return {
+      kind: "plan-open",
       detail: {
         ...base,
         next: "el plan se declara done pero sus contadores no lo respaldan: reconciliar las tareas y fases acreditadas desde plan-exec",
@@ -833,9 +910,63 @@ export function planPresentation(
     };
   }
   return {
+    kind: "plan-open",
     detail: { ...base, ...normalPlanNext(plan) },
     action: { kind: "continue", command: `/w:plan-exec ${plan.file}`, mode: "normal" },
   };
+}
+
+/** The caveat of a closure short of `verified`, or nothing to say. */
+function unverifiedClosure(plan: IndexedPlan): Pick<PipelineItemDetail, "warning"> {
+  const assurance = plan.assurance;
+  if (assurance === null || assurance === "verified") return {};
+  return {
+    warning: {
+      code: "WORKLINE_PLAN_CLOSURE_UNVERIFIED",
+      message: `plan cerrado · no verificado (${assurance}): evidencia omitida o sustituta aceptada, no aprobada`,
+    },
+  };
+}
+
+/** How many handoffs of this plan are still in force. */
+function liveHandoffs(plan: IndexedPlan): number {
+  return plan.reconciliation?.handoffs.length ?? 0;
+}
+
+/**
+ * WHETHER A PLAN IS PENDING WORK AT ALL — the board's one membership rule.
+ *
+ * A closed plan is documentary history, except for a handoff still in force:
+ * that is live work somebody outside the run took on, no closure ever discharged
+ * it, and closing the plan was precisely what made it unfindable. So it comes
+ * back — last, and blocking nothing.
+ *
+ * Exported because `resume <plan>` asks the same question. It used to answer it
+ * on its own with `plan_state !== "done"`, which is how a direct resume could
+ * call a plan "histórico y sin deuda" while the board, one derivation away, was
+ * printing its live handoff.
+ */
+export function planIsPending(plan: IndexedPlan): boolean {
+  return plan.plan_state !== "done" || liveHandoffs(plan) > 0;
+}
+
+/** The live facts the shared exit is named from, gathered where they are read. */
+function exitContextOf(plan: IndexedPlan): ExitContext {
+  return { plan: plan.file, current_point: plan.current_point, run: plan.holding_run };
+}
+
+/**
+ * What this plan owes and how somebody gets out of it, or `null` for nothing.
+ *
+ * The board says it, the pipeline row routes on it and `plan-exec.plan-done`
+ * refuses with it — one derivation, in the domain, so the three cannot drift
+ * apart again. And it names the plan's CURRENT point: the one the note recorded
+ * is history and is reported as history, never as somewhere to go back to.
+ */
+function exitOf(plan: IndexedPlan) {
+  return plan.reconciliation === null
+    ? null
+    : obligationExit(plan.reconciliation, exitContextOf(plan));
 }
 
 /** The document's design references that are NOT valid, in graph order. */
@@ -875,26 +1006,6 @@ function describeMissingDesign(designs: DesignGraph, file: string): string | nul
   const [first] = unresolvedDesignRefs(designs, file).filter((r) => r.state === "missing");
   if (first === undefined) return null;
   return `DISEÑO IRRESOLUBLE ${first.baseline} — ${first.detail ?? "no resuelve"}`;
-}
-
-/**
- * What a plan owes, when it owes anything — the one thing that must be said
- * before offering to run or to close it.
- *
- * A plan with an open obligation is neither executable as it stands nor
- * closable, and saying so with the obligation and its resume point is what keeps
- * the refusal actionable instead of a wall.
- */
-function describePendingReconciliation(plan: IndexedPlan): string | null {
-  const reconciliation = plan.reconciliation;
-  if (reconciliation === null || reconciliation.closable) return null;
-  const [first] = reconciliation.pending;
-  if (first === undefined) {
-    return "RECONCILIACIÓN PENDIENTE — el contrato efectivo no se puede componer: ni ejecutable ni cerrable";
-  }
-  const more = reconciliation.pending.length - 1;
-  const rest = more > 0 ? ` (+${more} más)` : "";
-  return `RECONCILIACIÓN PENDIENTE por ${first.by} — ${first.text}${rest}: retomá en ${first.resume_point}, ni ejecutable ni cerrable tal cual`;
 }
 
 /**
@@ -1146,17 +1257,20 @@ async function readPlans(
   };
   // One read of each lineage's chain, for the same reason the specs are read
   // once: two plans of one spec must be judged against one reading of its notes.
-  const chains = new Map<string, DecisionNote[]>();
-  const chainOf = async (spec: IndexedSpec): Promise<DecisionNote[]> => {
+  const chains = new Map<string, ChainReading>();
+  const chainOf = async (spec: IndexedSpec): Promise<ChainReading> => {
     const cached = chains.get(spec.number);
     if (cached !== undefined) return cached;
     const path = noteIndexPath(DEFAULT_DOCS_CANON.decision, spec.number, spec.slug);
+    // A chain that does not parse is NOT "no obligations", and until now the
+    // code said so in a comment while doing the opposite: it fell back to an
+    // empty list, so a corrupt index read as a clean slate and let a plan close
+    // over compensation nobody could read. The reader's own answer is what is
+    // cached, refusal included, and the reconciliation reports it the same way
+    // it reports a blocked composition.
     const read = await readNoteIndex(fs, cwd, path, { path: spec.file, number: spec.number });
-    // A chain that does not parse is NOT "no obligations": reporting it as a
-    // clean slate would let a plan close over compensation nobody could read.
-    const notes = read.ok ? read.read.index.notes : [];
-    chains.set(spec.number, notes);
-    return notes;
+    chains.set(spec.number, read);
+    return read;
   };
 
   const out: IndexedPlan[] = [];
@@ -1178,6 +1292,7 @@ async function readPlans(
         byNumber,
         chainOf,
         sealedDigests,
+        text,
       );
       const status = parsePlanStatus(text);
       const planState = derivePlanState(status.declared, t, p, lineage.reconciliation);
@@ -1203,6 +1318,10 @@ async function readPlans(
         baseline: alignment,
         reconciliation: lineage.reconciliation,
         contract: lineage.contract,
+        current_point: resumePointOf(p),
+        // Filled in `buildWorklineIndex`, once the live runs are read: a plan is
+        // held by a SESSION, and the plans are read before the sessions are.
+        holding_run: null,
         date: ts.date,
         relative: ts.relative,
       });
@@ -1341,8 +1460,9 @@ async function reconciliationFor(
   seal: PlanBaselineSeal,
   specText: string | null,
   byNumber: ReadonlyMap<string, IndexedSpec>,
-  chainOf: (spec: IndexedSpec) => Promise<DecisionNote[]>,
+  chainOf: (spec: IndexedSpec) => Promise<ChainReading>,
   digests: SpecCurrentDigests | null,
+  planText: string,
 ): Promise<PlanContractReading> {
   const none: PlanContractReading = { reconciliation: null, contract: null };
   if (alignment.status !== "aligned" || seal.status !== "sealed" || specText === null) return none;
@@ -1351,7 +1471,11 @@ async function reconciliationFor(
 
   // An empty chain composes to a contract with no obligations, so it needs no
   // special case: a plan nobody amended owes nothing and stays closable.
-  const chain = await chainOf(spec);
+  const reading = await chainOf(spec);
+  // An UNREADABLE chain is the opposite case and gets the same treatment as a
+  // blocked composition: not closable, and the refusal itself is what is owed.
+  if (!reading.ok) return blockedBy(reading.failures);
+  const chain = reading.read.index.notes;
   const composed = composeEffectiveContract(
     {
       path: spec.file,
@@ -1365,23 +1489,43 @@ async function reconciliationFor(
     },
     chain,
   );
-  if (composed.status === "blocked") {
-    return {
-      contract: null,
-      reconciliation: {
-        pending: composed.failures.map((failure) => ({
-          text: `${failure.code}: ${failure.message}`,
-          by: "composición",
-          resume_point: failure.action,
-        })),
-        resume_point: composed.failures[0]?.action ?? null,
-        closable: false,
-      },
-    };
-  }
+  if (composed.status === "blocked") return blockedBy(composed.failures);
   return {
     contract: composed.contract,
-    reconciliation: reconciliationOf(composed.contract, chain),
+    reconciliation: reconciliationOf(composed.contract, chain, planText),
+  };
+}
+
+/** One reading of a lineage's chain: its notes, or why nobody can read them. */
+type ChainReading = Awaited<ReturnType<typeof readNoteIndex>>;
+
+/**
+ * A lineage nobody can read, reported as what it is: work owed.
+ *
+ * The refusal becomes the pending item because it is the only honest answer —
+ * the plan may well owe nothing, and it may owe everything, and the one thing
+ * that is certain is that closing it now would be a guess. Its action is the
+ * resume point for the same reason: repairing the chain IS the work.
+ */
+function blockedBy(failures: readonly NoteFailure[]): PlanContractReading {
+  return {
+    contract: null,
+    reconciliation: {
+      pending: failures.map((failure, index) => ({
+        text: `${failure.code}: ${failure.message}`,
+        by: "composición",
+        index,
+        // No hay nota, así que no hay punto que ninguna nota haya declarado. La
+        // reparación viaja en su propio campo, que es lo que la salida nombra:
+        // las fases del plan no son lo que está roto.
+        declared_point: "sin nota: la pendiente la fabrica la composición",
+        repair: failure.action,
+        kind: "compensation" as const,
+        legacy: false,
+      })),
+      handoffs: [],
+      closable: false,
+    },
   };
 }
 

@@ -11,12 +11,13 @@
 import { basename, join } from "node:path";
 import type { CapabilityFailure } from "../domain/capability/protocol.js";
 import { type DecisionQuestion, resolveDecision } from "../domain/decision-choice.js";
-import type { DecisionNote } from "../domain/decision-note.js";
+import type { DecisionNote, ObligationKind } from "../domain/decision-note.js";
 import { type BaselineInput, composeEffectiveContract } from "../domain/effective-contract.js";
 import type { FlowDecisionPreparation } from "../domain/flow/run-state.js";
 import { specBaselineDigest } from "../domain/lineage.js";
 import { baseDigest } from "../domain/proposal.js";
 import { type PlanReconciliation, reconciliationOf } from "../domain/reconciliation.js";
+import { type ObligationSettlement, deriveSettlementNote } from "../domain/settlement.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { noteIndexPath, readNoteIndex } from "./decision-note-service.js";
 import {
@@ -184,6 +185,7 @@ export async function commitPlanExecDecision(
   paths: PathsService,
   root: string,
   prepared: PlanExecDecisionPreparation,
+  planText: string | undefined,
 ): Promise<PlanExecDecisionCommit> {
   if (!prepared.ok) return prepared;
   if (prepared.kind === "settled") return { ok: true, kind: "settled" };
@@ -209,7 +211,7 @@ export async function commitPlanExecDecision(
     resume_point: committed.result.resume_point,
     written: committed.result.written,
     already_applied: committed.result.already_applied,
-    reconciliation: reconciliationOf(composed.contract, chain.read.index.notes),
+    reconciliation: reconciliationOf(composed.contract, chain.read.index.notes, planText),
   };
 }
 
@@ -225,6 +227,8 @@ export async function commitStoredPlanExecDecision(
   paths: PathsService,
   root: string,
   preparation: FlowDecisionPreparation,
+  /** The plan THIS RUN fixed as its scope — the same one the board reads. */
+  plan: string | undefined,
 ): Promise<PlanExecDecisionCommit> {
   // Nothing durable to commit, and nothing to re-read: the standalone record IS
   // what the gate showed. It returns before `commitDecision` on purpose — a note
@@ -246,17 +250,35 @@ export async function commitStoredPlanExecDecision(
       resume_point: preparation.resume_point,
     };
   }
-  return commitPlanExecDecision(fs, paths, root, {
-    ok: true,
-    kind: "prepared",
-    prepared: {
-      note: preparation.note,
-      preview: preparation.preview,
+  // The plan is read again here, and only to classify legacy obligations: an
+  // undeclared one reads as a handoff exactly when this plan enumerates that
+  // work. It is read at the path the RUN declared, which is the path the board
+  // reads too — the note's pinned path may have moved since, and two paths would
+  // be two classifications of one obligation. Failing to read it degrades to the
+  // safe reading, never to a guess.
+  let planText: string | undefined;
+  try {
+    planText = plan === undefined ? undefined : await fs.readText(join(root, plan));
+  } catch {
+    planText = undefined;
+  }
+  return commitPlanExecDecision(
+    fs,
+    paths,
+    root,
+    {
+      ok: true,
+      kind: "prepared",
+      prepared: {
+        note: preparation.note,
+        preview: preparation.preview,
+        indexPath: preparation.index_path,
+      },
+      baseline: preparation.baseline,
       indexPath: preparation.index_path,
     },
-    baseline: preparation.baseline,
-    indexPath: preparation.index_path,
-  });
+    planText,
+  );
 }
 
 /**
@@ -298,7 +320,7 @@ interface DecisionLineage {
 
 async function readLineage(
   fs: FileSystemPort,
-  input: PreparePlanExecDecisionInput,
+  input: { root: string; plan: string },
 ): Promise<{ ok: true; value: DecisionLineage } | { ok: false; failure: CapabilityFailure }> {
   let planText: string;
   try {
@@ -465,4 +487,189 @@ function fail(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * SETTLE WHAT THE CLOSURE DISCHARGED, through the same sealed primitive.
+ *
+ * The successor of each carrier note is DERIVED (`deriveSettlementNote`) and then
+ * published by `prepareDecision`/`commitDecision` — the exact pair the deviation
+ * gate uses. Nothing here writes an index: a second writer would be a second set
+ * of chain rules, and the one property the chain has is that its rules are one
+ * implementation.
+ *
+ * Idempotent by content identity, like every registration: a run that published
+ * and died comes back to a chain that already holds the successor, and
+ * `prepareDecision` reports it as already landed instead of appending a twin.
+ */
+export interface SettlePlanExecInput {
+  root: string;
+  /** The plan THIS RUN fixed as its scope. */
+  plan: string;
+  /** Calendar date of the settlement. */
+  date: string;
+  /** What the run declared about each live compensation. */
+  declarations: readonly ObligationSettlement[];
+  /**
+   * The session and phase each successor records, resolved PER CARRIER.
+   *
+   * Per carrier because two carriers can come from two different runs, and
+   * filing the second one's successor under the first one's session would put a
+   * decision where it did not happen. A closure answers the same for all of
+   * them — its own run, at its closure — and `aw settle`, which has no run,
+   * answers with each carrier's own lineage.
+   */
+  execution: (carrier: DecisionNote) => { session: string; phase: string };
+}
+
+export type SettlePlanExecResult =
+  | {
+      ok: true;
+      /** The successor notes actually published, in the order they landed. */
+      published: DecisionNote[];
+      /** Obligations discharged, by their own text. */
+      settled: string[];
+      /** Where the plan stands once every successor is in the chain. */
+      reconciliation: PlanReconciliation;
+    }
+  | { ok: false; failure: CapabilityFailure };
+
+export async function settlePlanExecObligations(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: SettlePlanExecInput,
+): Promise<SettlePlanExecResult> {
+  const read = await readLineage(fs, { root: input.root, plan: input.plan });
+  if (!read.ok) return read;
+  const lineage = read.value;
+
+  const published: DecisionNote[] = [];
+  const settled: string[] = [];
+  // One carrier at a time, and each one re-reads the chain: publishing a
+  // successor changes which notes are in force, so a second carrier resolved
+  // against the first reading would decide against a chain that no longer is.
+  for (const carrierId of carriersOf(input.declarations)) {
+    const landed = await settleOneCarrier(fs, paths, input, lineage, carrierId);
+    if (!landed.ok) return landed;
+    if (landed.note !== null) published.push(landed.note);
+    settled.push(...landed.settled);
+  }
+
+  const chain = await readNoteIndex(fs, input.root, lineage.indexPath, {
+    path: lineage.baseline.path,
+    number: lineage.baseline.number,
+  });
+  if (!chain.ok) return noteFailure(chain.failures[0]);
+  const composed = composeEffectiveContract(lineage.baseline, chain.read.index.notes);
+  if (composed.status === "blocked") return noteFailure(composed.failures[0]);
+  return {
+    ok: true,
+    published,
+    settled,
+    reconciliation: reconciliationOf(composed.contract, chain.read.index.notes, lineage.planText),
+  };
+}
+
+/** The carrier notes named by the declarations, in the order they first appear. */
+function carriersOf(declarations: readonly ObligationSettlement[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const declaration of declarations) {
+    if (seen.has(declaration.note)) continue;
+    seen.add(declaration.note);
+    out.push(declaration.note);
+  }
+  return out;
+}
+
+/**
+ * The successor of ONE carrier note, published or recognized as already there.
+ *
+ * Extracted so the loop above reads as what it is — one settlement per carrier,
+ * in chain order — instead of interleaving four refusal shapes with the walk.
+ */
+async function settleOneCarrier(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: SettlePlanExecInput,
+  lineage: DecisionLineage,
+  carrierId: string,
+): Promise<
+  | { ok: true; note: DecisionNote | null; settled: string[] }
+  | { ok: false; failure: CapabilityFailure }
+> {
+  const chain = await readNoteIndex(fs, input.root, lineage.indexPath, {
+    path: lineage.baseline.path,
+    number: lineage.baseline.number,
+  });
+  if (!chain.ok) return noteFailure(chain.failures[0]);
+  const composed = composeEffectiveContract(lineage.baseline, chain.read.index.notes);
+  if (composed.status === "blocked") return noteFailure(composed.failures[0]);
+  const carrier = chain.read.index.notes.find((note) => note.id === carrierId);
+  if (carrier === undefined) {
+    return fail(
+      "SETTLEMENT_NOTE_ABSENT",
+      `${carrierId} no está en la cadena de ${lineage.baseline.path}`,
+      "el saldo se publica sobre la nota que cargaba la obligación: volvé a leer el tablero y reintentá",
+    );
+  }
+  // IN FORCE, and the composition is who says so — `applied` is the list of
+  // notes it really applied, so this is not a second derivation of the same
+  // question. Superseding a note somebody already superseded would put TWO
+  // successors of it in force, and the contract would hold its assertions and
+  // its obligations twice.
+  if (!composed.contract.applied.includes(carrierId)) {
+    const successor = chain.read.index.notes.find((note) => note.supersedes_note === carrierId);
+    // Already settled — by this run before it was interrupted, or by somebody
+    // else. That is the finished result, not a second successor to append.
+    if (successor !== undefined) return { ok: true, note: successor, settled: [] };
+    return fail(
+      "SETTLEMENT_NOTE_ABSENT",
+      `${carrierId} ya no está vigente en la cadena de ${lineage.baseline.path}`,
+      "el saldo se publica sobre la nota vigente que cargaba la obligación: volvé a leer el tablero y reintentá",
+    );
+  }
+  const reading = reconciliationOf(composed.contract, chain.read.index.notes, lineage.planText);
+  const derived = deriveSettlementNote(carrier, input.declarations, {
+    ...input.execution(carrier),
+    date: input.date,
+    resolved: resolvedKinds(reading, carrierId),
+  });
+  if (!derived.ok) return noteFailure(derived.failures[0]);
+  if (derived.draft === null) return { ok: true, note: null, settled: [] };
+
+  const prepared = await prepareDecision(fs, {
+    root: input.root,
+    operation: "plan-exec.settlement-publication",
+    indexPath: lineage.indexPath,
+    baseline: lineage.baseline,
+    draft: derived.draft,
+  });
+  if (prepared.status === "blocked") return noteFailure(prepared.failures[0]);
+  // Already in the chain by content identity: a run that published and died
+  // comes back to its own finished result, never to a twin note.
+  if (prepared.status === "already") {
+    return { ok: true, note: prepared.note, settled: [...derived.settled] };
+  }
+  const committed = await commitDecision(fs, paths, input.root, prepared.prepared);
+  if (!committed.ok) return { ok: false, failure: committed.failure };
+  return { ok: true, note: committed.result.note, settled: [...derived.settled] };
+}
+
+/**
+ * The class the reconciliation read for each obligation of ONE note, by position.
+ *
+ * Both lists, because both are readings of the same chain: a compensation and a
+ * handoff are equally "what the board says this obligation is", and a successor
+ * that only knew about one of them would re-mint the other unclassed.
+ */
+function resolvedKinds(
+  reading: PlanReconciliation,
+  carrierId: string,
+): ReadonlyMap<number, ObligationKind> {
+  const out = new Map<number, ObligationKind>();
+  for (const obligation of [...reading.pending, ...reading.handoffs]) {
+    if (obligation.by === carrierId) out.set(obligation.index, obligation.kind);
+  }
+  return out;
 }

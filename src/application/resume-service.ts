@@ -18,6 +18,7 @@ import {
   type SessionUnit,
   type WorklineIndex,
   buildWorklineIndex,
+  planIsPending,
   planPresentation,
   specDetail,
   unresolvedDesignRefs,
@@ -136,7 +137,10 @@ export async function runResume(
 function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
   const specs = index.specs.filter((s) => s.file === target || s.number === target);
   const allPlans = index.plans.filter((p) => p.file === target || p.number === target);
-  const plans = allPlans.filter((plan) => plan.plan_state !== "done");
+  // La misma regla de pertenencia que usa el pipeline, y por eso importada: un
+  // plan cerrado con traspaso vigente es trabajo pendiente en las dos
+  // superficies o en ninguna, nunca en una sola.
+  const plans = allPlans.filter(planIsPending);
 
   const matches: ResumeProposal[] = [
     ...specs.map((s) => specProposal(s, index)),
@@ -279,7 +283,10 @@ function specProposal(spec: IndexedSpec, index: WorklineIndex): ResumeProposal {
 function planProposal(plan: IndexedPlan, index: WorklineIndex): ResumeProposal {
   const presentation = planPresentation(plan, index.designs);
   return {
-    kind: "plan-open",
+    // Del mismo lugar que sale el titular: un plan cerrado con traspaso vigente
+    // se nombra como lo que es en las dos superficies, o `resume <plan>` diría
+    // «plan abierto» sobre uno cerrado y el tablero diría otra cosa.
+    kind: presentation.kind,
     file: plan.file,
     number: plan.number,
     ...told(presentation.detail),

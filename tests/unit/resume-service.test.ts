@@ -5,6 +5,11 @@ import { runStatusCommand } from "../../src/application/status-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
+import {
+  HANDOFF_PLAN,
+  HANDOFF_TEXT,
+  seedClosedPlanWithHandoff,
+} from "../helpers/plan-obligation-fixtures.js";
 
 const fakeEnv = new FakeEnv("/home", "/cwd");
 const NOW = new Date(2026, 6, 29, 12, 0, 0);
@@ -363,5 +368,58 @@ describe("runResume — lo que la oferta ampliada NO cambió", () => {
     const fs = nine();
     await resume(fs);
     expect(fs.writes.size).toBe(0);
+  });
+});
+
+// F4 · T4.3 — la otra superficie del mismo hecho. `status` lo lista y `resume`
+// lo ofrece, y lo que se fija es que digan LO MISMO: la fila y la propuesta
+// salen de una sola derivación, así que un traspaso vigente no puede leerse
+// distinto según por dónde se pregunte.
+describe("runResume — el traspaso de un plan cerrado se ofrece sin bloquear", () => {
+  const expected = `TRASPASO VIGENTE por DEC-001 — ${HANDOFF_TEXT}`;
+
+  it("lo propone con su comando cuando no hay nada abierto que le gane", async () => {
+    const fs = workspace();
+    seedClosedPlanWithHandoff(fs);
+
+    const out = await resume(fs);
+
+    expect(out.status).toBe("proposal");
+    if (out.status !== "proposal") return;
+    expect(out.proposal.kind).toBe("plan-handoff");
+    expect(out.proposal.file).toBe(HANDOFF_PLAN);
+    expect(out.proposal.next).toContain(expected);
+    expect(out.proposal.command).toBe(`aw settle prepare ${HANDOFF_PLAN}`);
+  });
+
+  it("un plan ABIERTO le gana: el traspaso no adelanta trabajo de afuera", async () => {
+    const fs = workspace();
+    seedClosedPlanWithHandoff(fs);
+    fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [x] T1\n- [ ] T2\n");
+
+    const out = await resume(fs);
+
+    expect(out.status).toBe("proposal");
+    if (out.status !== "proposal") return;
+    expect(out.proposal.file).toBe("docs/plans/005-plan-abierto.md");
+    // Y sigue estando: no gana la propuesta, pero no desaparece del listado.
+    expect(out.candidates?.map((c) => c.file)).toContain(HANDOFF_PLAN);
+  });
+
+  it("preguntado por el plan mismo dice exactamente lo que dice el tablero", async () => {
+    const fs = workspace();
+    seedClosedPlanWithHandoff(fs);
+
+    const direct = await resume(fs, { target: HANDOFF_PLAN });
+    const board = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    const row = board.pipeline.find((item) => item.file === HANDOFF_PLAN);
+
+    expect(direct.status).toBe("proposal");
+    if (direct.status !== "proposal") return;
+    // El mismo titular y el mismo comando, palabra por palabra: dos derivaciones
+    // es cómo estas dos superficies llegaron a describir distinto un mismo ítem.
+    expect(direct.proposal.next).toBe(row?.detail.next);
+    expect(direct.proposal.command).toBe(row?.command);
+    expect(direct.proposal.kind).toBe(row?.kind);
   });
 });

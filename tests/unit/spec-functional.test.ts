@@ -623,7 +623,7 @@ describe("migración del lado NOTA — la dualidad también cubre lo ya publicad
       { id: "S040/AC-02", state: "baseline", by: null },
       { id: "S040/AC-03", state: "baseline", by: null },
     ]);
-    expect(plan?.reconciliation).toEqual({ pending: [], resume_point: null, closable: true });
+    expect(plan?.reconciliation).toEqual({ pending: [], handoffs: [], closable: true });
     expect(plan?.plan_state).toBe("done");
   });
 
@@ -1080,7 +1080,7 @@ describe("la ida completa de la válvula, sobre una corrida real", () => {
       { id: "S040/AC-02", state: "baseline", by: null },
       { id: "S040/AC-03", state: "amended", by: "DEC-001" },
     ]);
-    expect(plan?.reconciliation).toEqual({ pending: [], resume_point: null, closable: true });
+    expect(plan?.reconciliation).toEqual({ pending: [], handoffs: [], closable: true });
   });
 
   it("y una edición editorial de la spec después NO rompe la composición ni el sello", async () => {

@@ -24,6 +24,40 @@ import { sealedRecordDigest } from "./sealed-record.js";
  *   stays readable and only the EFFECTIVE reading changes.
  */
 
+/**
+ * WHAT AN OBLIGATION IS FOR, which is not the same as what it says.
+ *
+ * A note that reconciles forward can leave two very different things owing, and
+ * before this they were the same list of sentences: work THIS lineage still has
+ * to do, and work it hands to somebody else. Counting both as pending is what
+ * left a finished plan neither executable nor closable — the handoff could never
+ * be discharged from inside the run, so the run could never close.
+ *
+ * `compensation` is owed by the lineage and blocks its closure until settled.
+ * `handoff` is owed by somebody outside it: it stays visible, and it never
+ * blocks. The class is stated by whoever writes the note, because only they know
+ * which of the two they meant.
+ */
+export const OBLIGATION_KINDS = ["compensation", "handoff"] as const;
+
+export type ObligationKind = (typeof OBLIGATION_KINDS)[number];
+
+export interface NoteObligation {
+  /** The work, in the words the note stated it. */
+  text: string;
+  kind: ObligationKind;
+  /**
+   * Whether the NOTE said the class, or this reading supplied it.
+   *
+   * A published note written before classes existed carries bare text, and it is
+   * read as `compensation` — the safe half. Remembering that nobody declared it
+   * is what lets the reconciliation ask the plan whether that text is actually a
+   * handoff the plan already enumerates, and what keeps the write path able to
+   * refuse a NEW note that omits what it should have said.
+   */
+  declared: boolean;
+}
+
 /** One end of the lineage: a document, its correlative and its exact bytes. */
 export interface NoteAnchor {
   path: string;
@@ -70,7 +104,7 @@ export interface DecisionNote {
   consumers: string[];
   evidence_preserved: string[];
   evidence_invalidated: string[];
-  obligations: string[];
+  obligations: NoteObligation[];
   /** Where execution resumes once the note is registered. */
   resume_point: string;
   date: string;
@@ -95,9 +129,49 @@ export interface NoteValidation {
   failures: NoteFailure[];
 }
 
+/**
+ * The wire form of one obligation: the shape it has ON DISK.
+ *
+ * An obligation nobody classified goes back out as the bare string it came in
+ * as. That is not nostalgia for the old format — it is the only way a note
+ * published years ago keeps the digest it was sealed with. Normalizing it into
+ * an object on read and writing that object back would re-seal every legacy
+ * record in the chain, and a chain whose records no longer verify is exactly
+ * what the append-only rule exists to prevent.
+ */
+export function obligationToWire(
+  obligation: NoteObligation,
+): string | { text: string; kind: ObligationKind } {
+  return obligation.declared ? { text: obligation.text, kind: obligation.kind } : obligation.text;
+}
+
+/**
+ * The obligations as they are WRITTEN — read back to their bytes, or left
+ * exactly as they came when they cannot be read at all.
+ *
+ * Left as they came, and never replaced by `[]`: a draft that forgot to say
+ * what work it creates and one that says "none" are opposite claims, and
+ * sealing the first as the second would put the difference beyond anybody's
+ * reach. So the unreadable value travels into the digest untouched and
+ * {@link validateDecisionNote} refuses it under its own code — a refusal
+ * somebody can act on, where a crash would be one nobody can.
+ */
+function wireObligations(value: unknown): unknown {
+  const read = normalizeObligations(value);
+  return read === null ? value : read.map(obligationToWire);
+}
+
+/** The note as it is written and sealed — normalized fields back to their bytes. */
+export function noteToWire(note: DecisionNote): Record<string, unknown> {
+  return { ...note, obligations: wireObligations(note.obligations) };
+}
+
 /** The note's own digest, by the SAME code every sealed record uses. */
 export function computeNoteDigest(note: Omit<DecisionNote, "digest">): string {
-  return sealedRecordDigest(note as unknown as Record<string, unknown>);
+  return sealedRecordDigest({
+    ...note,
+    obligations: wireObligations(note.obligations),
+  } as unknown as Record<string, unknown>);
 }
 
 /**
@@ -174,13 +248,7 @@ export function validateDecisionNote(raw: unknown): NoteValidation {
     "enumerá la evidencia que dejó de valer; [] si ninguna",
     fail,
   );
-  const obligations = requireList(
-    raw.obligations,
-    "obligations",
-    "NOTE_OBLIGATIONS_MISSING",
-    "enumerá el trabajo compensatorio que nace; [] si ninguno",
-    fail,
-  );
+  const obligations = readObligations(raw.obligations, fail);
   requireText(
     raw.resume_point,
     "resume_point",
@@ -210,7 +278,7 @@ export function validateDecisionNote(raw: unknown): NoteValidation {
     consumers: consumers as string[],
     evidence_preserved: preserved as string[],
     evidence_invalidated: invalidated as string[],
-    obligations: obligations as string[],
+    obligations: obligations as NoteObligation[],
     resume_point: raw.resume_point as string,
     date: raw.date as string,
     digest: "",
@@ -306,8 +374,12 @@ export function sameDecision(a: DecisionNote, b: DecisionNote): boolean {
 }
 
 function canonicalDecision(note: DecisionNote): string {
-  const { id: _id, digest: _digest, ...rest } = note;
-  return sealedRecordDigest(rest as unknown as Record<string, unknown>);
+  // Over the WIRE form, like every other seal in this module: a note just
+  // sealed from a draft and the same note read back out of the chain differ
+  // only in how their obligations are held in memory, and comparing those two
+  // shapes would call an interrupted run's retry a brand-new decision.
+  const { id: _id, digest: _digest, ...rest } = noteToWire(note);
+  return sealedRecordDigest(rest);
 }
 
 /** The notes still in force: every one nobody later superseded. */
@@ -350,6 +422,100 @@ function requireList(
     return null;
   }
   return value as string[];
+}
+
+/**
+ * Read `obligations` in either form, and remember which one it was.
+ *
+ * Both are accepted on READ and only one on write (see
+ * {@link checkObligationsDeclared}): a chain already published is data nobody
+ * can go back and re-state, while a note being minted now has an author who can.
+ */
+function readObligations(value: unknown, fail: Fail): NoteObligation[] | null {
+  if (!Array.isArray(value)) {
+    fail(
+      "NOTE_OBLIGATIONS_MISSING",
+      "'obligations' es obligatorio y debe ser una lista",
+      "enumerá el trabajo que nace, cada uno como { text, kind } con kind 'compensation' o 'handoff'; [] si ninguno",
+    );
+    return null;
+  }
+  const out: NoteObligation[] = [];
+  for (const [i, entry] of value.entries()) {
+    const read = readObligation(entry);
+    if (read === null) {
+      fail(
+        "NOTE_OBLIGATIONS_INVALID",
+        `'obligations[${i}]' no es ni un texto no vacío ni un { text, kind } con kind ${OBLIGATION_KINDS.join(" o ")}`,
+        "una obligación dice qué trabajo nace y de qué clase es; el texto suelto sólo se lee, para las notas ya publicadas",
+      );
+      return null;
+    }
+    out.push(read);
+  }
+  return out;
+}
+
+/**
+ * One obligation in either form — the legacy text or the classed object — or
+ * `null` when it is neither.
+ *
+ * IDEMPOTENT: a value that already carries `declared` keeps it, so reading an
+ * obligation this module already read never promotes a legacy `false` to `true`
+ * and never moves the note's seal.
+ *
+ * And an undeclared obligation gets the SAFE class, whatever else the record
+ * says. `declared: false` is not a field of either on-disk shape — it only
+ * appears on a value already read — so a record spelling it alongside a class
+ * is claiming a reading it does not have. Honouring that class would let bytes
+ * that seal as the legacy form read as the classed one, and two surfaces would
+ * disagree about the same record. The class it declares is ignored instead:
+ * nothing is gained by writing it.
+ */
+function readObligation(value: unknown): NoteObligation | null {
+  if (typeof value === "string") {
+    return value.length === 0 ? null : { text: value, kind: "compensation", declared: false };
+  }
+  if (!isRecord(value)) return null;
+  const { text, kind, declared } = value;
+  if (typeof text !== "string" || text.length === 0) return null;
+  if (typeof kind !== "string" || !OBLIGATION_KINDS.includes(kind as ObligationKind)) return null;
+  const stated = typeof declared === "boolean" ? declared : true;
+  return { text, kind: stated ? (kind as ObligationKind) : "compensation", declared: stated };
+}
+
+/** The whole list in either form, or `null` when any entry is neither. */
+export function normalizeObligations(value: unknown): NoteObligation[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: NoteObligation[] = [];
+  for (const entry of value) {
+    const read = readObligation(entry);
+    if (read === null) return null;
+    out.push(read);
+  }
+  return out;
+}
+
+/**
+ * The write path's own rule: a NOTE BEING MINTED states every class.
+ *
+ * Read tolerance and write strictness are not in tension — they are the same
+ * decision seen from the two ends of the chain. What is already published cannot
+ * be re-stated by anybody, so it is read with the safe default; what is being
+ * written has an author in front of it, and letting them omit the class would
+ * mint tomorrow's legacy note today.
+ */
+export function checkObligationsDeclared(note: DecisionNote): NoteFailure[] {
+  const bare = note.obligations.filter((obligation) => !obligation.declared);
+  if (bare.length === 0) return [];
+  return [
+    {
+      code: "NOTE_OBLIGATION_KIND_MISSING",
+      message: `${note.id} anexa obligaciones sin clase: ${bare.map((o) => o.text).join("; ")}`,
+      action:
+        "declará cada obligación como { text, kind }: 'compensation' es trabajo que este linaje debe y bloquea su cierre, 'handoff' es trabajo que queda a cargo de otra gente y no lo bloquea",
+    },
+  ];
 }
 
 function readScope(value: unknown, fail: Fail): NoteScope | null {

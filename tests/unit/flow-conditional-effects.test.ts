@@ -119,7 +119,16 @@ describe("efectos que pueden no ocurrir — la fila los condiciona", () => {
     // cada fuente de su scope, así que siempre hay algo que integrar. Condicionarla
     // sería exactamente el camino que este test cierra — una fila que se puede
     // saltar es una fila que puede declarar integrado lo que sigue en su rama.
-    expect(resto.length).toBe(17);
+    //
+    // La decimoctava es `plan-exec.settlement-publication`, y no lleva condición
+    // por una razón distinta a las anteriores: SÍ puede saltarse —cuando el plan
+    // no conserva compensación vigente el recorrido pasa de largo— pero eso no es
+    // una condición sobre señales, es un hecho del estado sellado de la corrida,
+    // y sobre todo no puede acreditar nada que no haya pasado: lo que la fila
+    // declara es un TECHO, y la operación informa los efectos que realmente
+    // aplicó, que son ninguno cuando la cadena no ganó ningún sucesor. Esa es
+    // exactamente la propiedad que este test protege.
+    expect(resto.length).toBe(18);
     expect(resto.filter((row) => conditionOf(row) !== null).map((row) => row.id)).toEqual([]);
   });
 

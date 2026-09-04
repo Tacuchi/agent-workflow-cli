@@ -34,6 +34,7 @@ import type {
   Degradation,
   EffectLedger,
 } from "../capability/protocol.js";
+import { normalizeObligations } from "../decision-note.js";
 import type { DecisionPreview } from "../decision-preview.js";
 import type { PreviewEntry, ProposalScope } from "../proposal.js";
 import {
@@ -838,7 +839,20 @@ function askLines(directive: FlowDirective, detail: boolean): string[] {
     lines.push(
       `evidencia: conserva ${preview.evidence.preserved.join(", ") || "ninguna"}; invalida ${preview.evidence.invalidated.join(", ") || "ninguna"}`,
     );
-    lines.push(`obligaciones: ${preview.obligations.join(", ") || "ninguna"}`);
+    // Normalized here because a preview persisted before classes existed holds
+    // bare strings, and the reading that gives them their class is the domain's,
+    // not a second one invented at the edge that prints.
+    const obligations = normalizeObligations(preview.obligations) ?? preview.obligations;
+    lines.push(
+      `obligaciones: ${
+        obligations
+          .map(
+            (obligation) =>
+              `${obligation.text} [${obligation.kind === "handoff" ? "traspaso" : "compensación"}]`,
+          )
+          .join(", ") || "ninguna"
+      }`,
+    );
     lines.push(`reanudación: ${preview.resume_point}`);
     lines.push(
       `efectos de decisión: ${preview.effects.classes.join(", ") || "ninguno"} · ${preview.effects.entries.map((entry) => entry.path).join(", ")}`,

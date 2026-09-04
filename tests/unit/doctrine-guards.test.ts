@@ -1169,19 +1169,33 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(transversal).toContain("/w:resume");
   });
 
-  it("`resume` routes by plan_state — done is the only state it does not resume", async () => {
+  it("`resume` routes by plan_state — a closed plan is resumed only for its handoff", async () => {
     // The routing table moved into the shared projection: `derivePipeline` skips
     // `done` and `planNext` gives every other state its own re-entry point, in one
     // chain. `resume` consumes that chain instead of running a second one — a
     // second one is how the board and the offer described the same plan
     // differently in the first place.
+    //
+    // Updated by F4 of plan 042, deliberately: `done` is no longer the whole
+    // answer. A closed plan whose HANDOFFS are still in force comes back as a
+    // non-blocking row, because the class that holds nothing shut is also the
+    // class a closure cannot discharge — and dropping the row was exactly what
+    // made a live handoff unfindable without opening the plan. Every other
+    // closed plan is still skipped, and the skip is still one line.
     const index = await readSrc("workline-index-service.ts");
-    expect(index).toContain('if (plan.plan_state === "done") continue;');
+    expect(index).toContain("export function planIsPending");
+    expect(index).toContain('return plan.plan_state !== "done" || liveHandoffs(plan) > 0;');
+    expect(index).toContain("if (!planIsPending(plan)) continue;");
     expect(index).toContain('plan.plan_state === "inconsistent"');
     expect(index).toContain("plan.final_validation_pending");
     expect(index).toContain("BLOQUEADA F");
     const service = await readSrc("resume-service.ts");
     expect(service).toContain("planPresentation");
+    // Y consume la regla de pertenencia en vez de tener la suya: un `resume`
+    // directo llamaba «histórico y sin deuda» a un plan cuyo traspaso el tablero
+    // estaba imprimiendo, y eso era una segunda derivación de una sola regla.
+    expect(service).toContain("planIsPending");
+    expect(service).not.toContain('plan_state !== "done"');
     expect(service).not.toContain("final_validation_pending");
     // And the skill states the rule without owning it.
     const doc = await readSurface("commands/resume.md");
@@ -1606,6 +1620,102 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     expect(checkpoint).toContain("declared-vs-live regrouping");
     expect(checkpoint).toContain("conditional commit authorization");
     expect(checkpoint).toContain("Continuous-batch phases move together");
+  });
+});
+
+describe("Doctrine guards — G22 · what a decision note leaves owing", () => {
+  // El pin de F5 del plan 042. La doctrina embarcada tenía las cuatro salidas del
+  // gate de desvío y no decía nada de lo que una nota deja debiendo: ni que la
+  // obligación tiene CLASE, ni quién la declara, ni cómo se salda. Un agente que
+  // sólo lee el bundle no podía saber que un traspaso no bloquea, ni que existe
+  // una salida sin corrida abierta — y ésa es la clase de hueco que se paga con
+  // una nota mal clasificada, que después nadie puede reclasificar sin cirugía.
+  //
+  // Las frases que se fijan no cruzan saltos de línea a propósito: un pin sobre
+  // el reflujo del párrafo rompería por una edición que no cambia nada.
+  const PLAN_EXEC = "loops/plan-exec-loop/LOOP.md";
+
+  it("nombra las dos clases y qué hace cada una en el cierre", async () => {
+    const exec = await readSurface(PLAN_EXEC);
+
+    expect(exec).toContain("### Obligations — the two classes, and how each one is settled");
+    // Nombrar las dos clases NO fija nada: el hecho que decide todo es qué hace
+    // cada una, y una doctrina con los dos efectos intercambiados —«una
+    // compensación no bloquea nada», «un traspaso retiene el cierre»— pasaba
+    // este guard entero. Así que el efecto va atado a su clase, en la misma
+    // frase, que es la forma en que un pin puede sobrevivir a una inversión.
+    expect(exec).toContain("**compensation** is work this lineage owes: it holds the plan's");
+    expect(exec).toContain("closure shut until it is settled");
+    expect(exec).toContain("**handoff** is work somebody outside the run took on: it stays listed");
+    expect(exec).toContain("closes, and it blocks nothing");
+    // Y la razón de que la clase exista, que es la que evita volver al bloqueo:
+    // un recorrido que no puede saldar un traspaso nunca podría cerrar.
+    expect(exec).toContain("could never close");
+  });
+
+  it("dice quién declara la clase y cómo se lee una nota que no la trae", async () => {
+    const exec = await readSurface(PLAN_EXEC);
+
+    expect(exec).toContain("agent's to state while drafting the note");
+    expect(exec).toContain("before registering it");
+    expect(exec).toContain("without saying which class is refused");
+    // La lectura tolerante y su mitad segura, más la marca de que es una lectura.
+    expect(exec).toContain("an undeclared obligation is a **compensation**");
+    expect(exec).toContain("enumerates that exact work as a handoff");
+    expect(exec).toContain("reading somebody supplied, never as the note's own word");
+    // La única omisión que se paga con una nota mal clasificada: la clase suena
+    // irrevocable y no lo es —la frontera de saldo puede declarar traspaso una
+    // compensación vigente— y su corolario es la mitad que el CLI ya defiende en
+    // toda lectura, la única cuyo error alcanza a atrapar una frontera posterior.
+    expect(exec).toContain("The class is revocable");
+    expect(exec).toContain("compensation** — the only error a later boundary still catches");
+  });
+
+  it("dice cómo se salda: en el cierre, y con `aw settle` cuando no hay corrida", async () => {
+    const exec = await readSurface(PLAN_EXEC);
+
+    expect(exec).toContain("**supersedes** the one carrying it without carrying it forward");
+    expect(exec).toContain("no second ledger of discharged obligations");
+    expect(exec).toContain("between the last `batch-close` and");
+    expect(exec).toContain("the final validation the run declares, per compensation");
+    // El sobre SÍ vuelve con error. Lo que hace vivible la frontera es que su
+    // código está clasificado `control` y no gasta intento, y eso es lo que la
+    // doctrina tiene que decir: un agente que espera un `advance` exitoso ve el
+    // error y cree que quemó uno de los tres — la creencia que lo empuja a no
+    // decir la verdad sobre una compensación pendiente.
+    expect(exec).toContain("boundary open with an executable action and costs the run no attempt");
+    // Y la CONDICIÓN, no sólo el destino: invertirla a «con una corrida abierta»
+    // pasaba el guard entero, y contradice el rechazo `SETTLE_RUN_OPEN`, que se
+    // niega precisamente cuando hay corrida.
+    expect(exec).toContain("With **no** open run");
+    expect(exec).toContain("the exit is `aw settle`");
+    expect(exec).toContain("publishes it against an approval");
+  });
+
+  it("enuncia el reparto entre andamiaje y contenido en sus tres líneas", async () => {
+    const exec = await readSurface(PLAN_EXEC);
+
+    expect(exec).toContain("**The split between scaffolding and content**, in three lines");
+    expect(exec).toContain("repaired by the run itself, and the repair is recorded");
+    // «una vez» leído como «una por hueco» hace esperar N preguntas y aplicar la
+    // respuesta a la primera nada más. La implementación pregunta UNA para todas
+    // y aplica la lectura elegida a todas: es la degradación declarada.
+    expect(exec).toContain("**once for all of them**, with the run's own reading");
+    expect(exec).toContain("content is the person's");
+  });
+
+  it("la subsección vive DENTRO del gate de desvío, no suelta al final", async () => {
+    const exec = await readSurface(PLAN_EXEC);
+    const gate = exec.indexOf("## Deviation gate");
+    const section = exec.indexOf("### Obligations — the two classes");
+    const next = exec.indexOf("## Delta 2 —");
+
+    // El lugar es parte de la doctrina: la obligación nace en la salida
+    // componible de este gate, y leerla en otra parte del documento sería
+    // leerla desconectada de la única frontera que publica una nota.
+    expect(gate).toBeGreaterThan(-1);
+    expect(section).toBeGreaterThan(gate);
+    expect(section).toBeLessThan(next);
   });
 });
 

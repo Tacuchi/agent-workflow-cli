@@ -80,7 +80,7 @@ describe("registrar una decisión", () => {
     consumers: [PLAN_PATH],
     evidence_preserved: [],
     evidence_invalidated: [],
-    obligations: ["revalidar el recorrido PLAN"],
+    obligations: [{ text: "revalidar el recorrido PLAN", kind: "compensation", declared: true }],
     resume_point: "F5/T5.4",
     date: "2026-08-16",
     ...over,
@@ -149,7 +149,9 @@ describe("registrar una decisión", () => {
     expect(preview.consumers).toEqual([PLAN_PATH]);
     expect(preview.impact).toEqual({ scope: "functional", assertions: 1, consumers: 1 });
     expect(preview.evidence).toEqual({ preserved: [], invalidated: [] });
-    expect(preview.obligations).toEqual(["revalidar el recorrido PLAN"]);
+    expect(preview.obligations).toEqual([
+      { text: "revalidar el recorrido PLAN", kind: "compensation", declared: true },
+    ]);
     expect(preview.resume_point).toBe("F5/T5.4");
     expect(preview.effects.entries).toEqual([
       { path: INDEX_PATH, bytes: expect.any(Number), overwrite: false },

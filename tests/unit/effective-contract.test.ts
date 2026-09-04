@@ -74,19 +74,19 @@ describe("F3 — propiedad: el orden de llegada no cambia el contrato", () => {
   const a = note({
     id: "DEC-001",
     supersedes_assertions: ["S033/AC-01"],
-    obligations: ["o1"],
+    obligations: [{ text: "o1", kind: "compensation", declared: true }],
     date: "2026-08-10",
   });
   const b = note({
     id: "DEC-002",
     supersedes_assertions: ["S033/AC-02"],
-    obligations: ["o2"],
+    obligations: [{ text: "o2", kind: "compensation", declared: true }],
     date: "2026-08-11",
   });
   const c = note({
     id: "DEC-003",
     supersedes_assertions: ["S033/AC-03"],
-    obligations: ["o3"],
+    obligations: [{ text: "o3", kind: "compensation", declared: true }],
     date: "2026-08-12",
   });
 
@@ -103,9 +103,9 @@ describe("F3 — propiedad: el orden de llegada no cambia el contrato", () => {
     if (composed.status !== "composed") return;
     expect(composed.contract.applied).toEqual(["DEC-001", "DEC-002", "DEC-003"]);
     expect(composed.contract.obligations).toEqual([
-      { text: "o1", by: "DEC-001" },
-      { text: "o2", by: "DEC-002" },
-      { text: "o3", by: "DEC-003" },
+      { text: "o1", kind: "compensation", declared: true, by: "DEC-001", index: 0 },
+      { text: "o2", kind: "compensation", declared: true, by: "DEC-002", index: 0 },
+      { text: "o3", kind: "compensation", declared: true, by: "DEC-003", index: 0 },
     ]);
   });
 

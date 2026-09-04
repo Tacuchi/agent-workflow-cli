@@ -405,6 +405,38 @@ export const RUN_PLACEHOLDERS = ["{session}", "{code}", "{slug}"] as const;
  * is admissible for a reason the others do not need: it writes NOTHING of its own
  * — only the exact bytes a person approved, under the seal they approved them by.
  */
+/**
+ * The three readings of an unclassed obligation, each with the label it is
+ * offered under.
+ *
+ * ONE source, read by the row that offers them and by the parser that maps the
+ * answer back. Two copies of these strings is a mutation no suite can catch:
+ * rename one and the parser silently stops recognizing the choice, so the run
+ * publishes the AGENT's proposal as if a person had ratified it.
+ */
+export const SETTLEMENT_READINGS = [
+  {
+    outcome: "settled",
+    label: "Cumplida con la evidencia declarada",
+    consequence:
+      "se salda: la nota de saldo la suelta y arrastra todo lo demás de la nota que la creó",
+  },
+  {
+    outcome: "handoff",
+    label: "Es un traspaso",
+    consequence:
+      "queda registrada como trabajo de otra gente: sigue visible y deja de bloquear el cierre",
+  },
+  {
+    outcome: "pending",
+    label: "Sigue pendiente",
+    consequence:
+      "se conserva como compensación y el plan no cierra: el recorrido queda en esta frontera",
+  },
+] as const;
+
+export type SettlementReading = (typeof SETTLEMENT_READINGS)[number]["outcome"];
+
 export const INTERNAL_ACTION_OPERATIONS = [
   /** Project the workspace board — what `aw status --json` returns. */
   "workspace.board",
@@ -422,6 +454,8 @@ export const INTERNAL_ACTION_OPERATIONS = [
   "plan-exec.batch-close",
   /** Seal a fully evidenced PLAN-exec document as done. */
   "plan-exec.plan-done",
+  /** Publish the successor note that settles what the closure just discharged. */
+  "plan-exec.settlement-publish",
 ] as const;
 
 export type InternalActionOperation = (typeof INTERNAL_ACTION_OPERATIONS)[number];
@@ -459,6 +493,11 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   // The final seal is a deterministic rewrite, guarded by the completed batch,
   // final validation, commit and integration evidence already in the run.
   "plan-exec.plan-done": ["mutate_overwrite"],
+  // Only overwriting, and that is not a narrowing of convenience: a settlement
+  // supersedes a note, so the chain it joins NECESSARILY exists. Declaring the
+  // creation class as well would make the verdict demand an effect this
+  // operation can never exercise, and every publication would refuse itself.
+  "plan-exec.settlement-publish": ["mutate_overwrite"],
 };
 
 /**
@@ -518,7 +557,18 @@ export type InternalActionPlan =
    * caller can provide a status string or closure text: both are re-derived
    * from the plan and the run at the final boundary.
    */
-  | { operation: "plan-exec.plan-done" };
+  | { operation: "plan-exec.plan-done" }
+  /**
+   * Publish the successor note that settles what the closure discharged.
+   *
+   * It takes nothing from the invocation either: the obligations come from the
+   * snapshot the batch loop's end sealed, and what was declared about each of
+   * them comes from the authoring row's own answer. A caller cannot name a note,
+   * an obligation or an evidence string here — which is what keeps "the CLI
+   * derives the settlement, the run only supplies its evidence" a property of
+   * the contract instead of a rule somebody follows.
+   */
+  | { operation: "plan-exec.settlement-publish" };
 
 export type ActionExecution =
   | ({ kind: "internal" } & InternalActionPlan)
@@ -2965,6 +3015,86 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         "reanudá con 'aw flow advance': el batch conserva su before/after sellado y o termina exactamente esa publicación o rechaza el plan movido",
     },
   },
+  // ── The settlement, between the last batch and the final validation ──────
+  //
+  // HERE and nowhere else: the compensatory work of the last batch has just
+  // finished, and the final validation has not read the board yet. A closure that
+  // found a live compensation used to reject with a remedy the journey could no
+  // longer reach — publish a superseding note — and the only way out was writing
+  // the chain from outside the flow. These three rows are that way in.
+  //
+  // All three are passed over ON THEIR OWN when the plan owes no compensation.
+  // The batch loop's end snapshots what is owed into the run's state, so the walk
+  // decides this without asking anybody and a plan that owes nothing closes
+  // exactly as it closed before these rows existed.
+  {
+    id: "plan-exec.settlement-authoring",
+    scope: "plan-exec",
+    title: "declarar qué obligación quedó saldada, con su evidencia, y qué sigue pendiente",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // The agent's and not a person's, because the evidence is the agent's: it ran
+    // the commands. What a person owns is the reading of an obligation nobody
+    // classified, and that is the next row — reached only when there is one.
+  },
+  {
+    id: "plan-exec.settlement-question",
+    scope: "plan-exec",
+    title: "elegir cómo se lee una obligación legada que el plan no declara traspaso",
+    authority: "human",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    // ONE question, and only for the obligations whose class nobody declared and
+    // whose text the plan does not enumerate. Everything else is derived: a
+    // legacy obligation the plan already declares a handoff has a single reading,
+    // and asking about it would be asking somebody to ratify arithmetic.
+    //
+    // One question for all of the ambiguous ones rather than one each: repeating
+    // a row is the batch loop's mechanism and it is keyed to the loop's own
+    // transitions, so the plan declared this degradation before it was built —
+    // the question lists them and applies one reading to all, with the agent's
+    // proposal recommended.
+    alternatives: SETTLEMENT_READINGS.map((reading) => ({
+      label: reading.label,
+      consequence: reading.consequence,
+      // Which one is recommended is the AGENT's proposal, carried from the
+      // authoring row: a row is written once and cannot see the obligation.
+      recommended: false,
+      outcome: { kind: "continue" as const },
+    })),
+  },
+  {
+    id: "plan-exec.settlement-publication",
+    scope: "plan-exec",
+    title: "publicar la nota de saldo que sustituye a la que cargaba la obligación",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["mutate_overwrite"],
+    // Run custody, on the same grounds as the `done` seal: what lands is the
+    // successor of a note whose registration a person already authorized at the
+    // deviation gate, derived — never authored — from the evidence this run
+    // declared one row above. Asking again would be asking somebody to approve
+    // the bookkeeping of a decision they already took.
+    custody: "run",
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["flow", "advance", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      execution: { kind: "internal", operation: "plan-exec.settlement-publish" },
+      evidence: ["plan.saldo-publicado"],
+      idempotent: true,
+      recovery:
+        "reanudá con 'aw flow advance': el saldo se reconoce por identidad de contenido, así que una nota ya publicada no se duplica y una compensación que sigue pendiente deja la frontera de autoría abierta",
+    },
+  },
   {
     id: "plan-exec.final-validation",
     scope: "plan-exec",
@@ -3525,6 +3655,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     command: "amend",
     reason:
       "comando transversal de mantenimiento documental, un escalón por debajo de `reseal`: corrige la REDACCIÓN de una spec o un plan ya cerrados en un solo acto, sin corrida propia porque no hay recorrido que dirigir —una frase que se lee mal no es un tramo con fronteras—. No lleva `prepare`/`apply` porque ese molde existe para que una persona decida entre los dos pasos, y acá el candado del workspace más el compare-and-swap sobre el digest del documento dan la misma seguridad en una invocación. Lo que sí toca el contrato se rechaza estructuralmente y se entrega a `/w:spec-refine` o `/w:plan-refine`",
+  },
+  {
+    command: "settle",
+    reason:
+      "comando transversal de mantenimiento documental, hermano de `reseal`: salda o reconoce las obligaciones que una nota de decisión dejó vivas sobre un plan cuya corrida de ejecución ya cerró. Sin corrida propia por la misma razón que `reseal` —lo que ocurre entre sus dos pasos es UNA afirmación humana, que el trabajo compensatorio se hizo o que era de otra gente, no un tramo con fronteras— y con el mismo contrato: `prepare` read-only y `apply` con el digest recomputado sobre el árbol vivo bajo el lock del workspace. Mientras una corrida de ejecución tenga ese plan, se niega y la nombra: el cierre de esa corrida salda sus propias obligaciones",
   },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },

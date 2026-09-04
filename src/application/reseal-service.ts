@@ -31,7 +31,6 @@
  */
 
 import { join } from "node:path";
-import { normalizeCorrelativeInput } from "../domain/correlative.js";
 import { type SpecBaseline, formatSpecBaseline, withSpecBaseline } from "../domain/lineage.js";
 import { type LocalProposal, baseDigest, sealProposal } from "../domain/proposal.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
@@ -47,6 +46,7 @@ import {
   parseSpecRelation,
 } from "./parsers/spec-relation.js";
 import { type PathsService, resolveWorkspaceRoot } from "./paths-service.js";
+import { locatePlanDocument } from "./plan-locator.js";
 
 /** What the proposal calls itself: one operation, one vocabulary. */
 const RESEAL_OPERATION = "reseal.baseline";
@@ -412,79 +412,23 @@ function undeclaredHeaderLineage(
  * `docs/plans-viejos` never passes as `docs/plans`: a re-seal writes a plan's
  * header, and nothing else in the tree is a plan.
  */
+/** The plan this re-seal was pointed at, with the codes a re-seal owns. */
 async function locatePlan(
   fs: FileSystemPort,
   root: string,
   planDir: string,
   target: string,
 ): Promise<{ path: string } | Failed> {
-  const raw = target.trim();
-  if (raw.includes("/") || raw.endsWith(".md")) {
-    const safe = checkSafeRelativePath(raw);
-    if (!safe.ok) {
-      return fail(
-        "RESEAL_TARGET_INVALID",
-        `'${target}' no es una ruta del workspace: ${safe.why}`,
-        `pasá la ruta del plan relativa al workspace ('${planDir}/NNN-plan-<slug>.md') o su correlativo`,
-      );
-    }
-    const expected = planDir.split("/");
-    const inside =
-      safe.segments.length > expected.length &&
-      expected.every((segment, index) => safe.segments[index] === segment);
-    if (!inside) {
-      return fail(
-        "RESEAL_TARGET_INVALID",
-        `'${safe.path}' no está bajo '${planDir}/': el re-sello escribe la cabecera de un plan y nada más`,
-        `pasá la ruta de un plan bajo '${planDir}/' o su correlativo`,
-      );
-    }
-    return { path: safe.path };
-  }
-
-  const number = normalizeCorrelativeInput(raw);
-  if (number === null) {
-    return fail(
-      "RESEAL_TARGET_INVALID",
-      `'${target}' no es ni una ruta ni un correlativo`,
-      `pasá la ruta del plan ('${planDir}/NNN-plan-<slug>.md') o su correlativo ('035')`,
-    );
-  }
-  const matches = await plansNumbered(fs, join(root, planDir), number);
-  const [first] = matches;
-  if (first === undefined) {
-    return fail(
-      "RESEAL_PLAN_ABSENT",
-      `no hay ningún plan '${number}' en '${planDir}/'`,
-      `verificá el correlativo con 'aw status' o pasá la ruta exacta del plan`,
-    );
-  }
-  if (matches.length > 1) {
-    return fail(
-      "RESEAL_TARGET_AMBIGUOUS",
-      `'${number}' nombra ${matches.length} documentos en '${planDir}/': ${matches.join(", ")}`,
-      "pasá la ruta exacta del plan que querés re-sellar",
-    );
-  }
-  return { path: `${planDir}/${first}` };
-}
-
-/** File names of `planDir` that carry this correlative, in directory order. */
-async function plansNumbered(
-  fs: FileSystemPort,
-  absoluteDir: string,
-  number: string,
-): Promise<string[]> {
-  let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
-  try {
-    entries = await fs.list(absoluteDir);
-  } catch {
-    // A folder that is not there holds no plan: the caller reports the absence
-    // of the document, which is what a person can act on.
-    return [];
-  }
-  const named = new RegExp(`^${number}-.*\\.md$`);
-  return entries
-    .filter((entry) => entry.type === "file" && named.test(entry.name))
-    .map((entry) => entry.name);
+  const located = await locatePlanDocument(fs, root, planDir, target, {
+    outside: "el re-sello escribe la cabecera de un plan y nada más",
+    ambiguous: "pasá la ruta exacta del plan que querés re-sellar",
+  });
+  if (located.ok) return { path: located.path };
+  const code: ResealCode =
+    located.reason === "absent"
+      ? "RESEAL_PLAN_ABSENT"
+      : located.reason === "ambiguous"
+        ? "RESEAL_TARGET_AMBIGUOUS"
+        : "RESEAL_TARGET_INVALID";
+  return fail(code, located.message, located.action);
 }
