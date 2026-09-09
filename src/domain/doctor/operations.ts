@@ -103,7 +103,9 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
   },
   {
     op: "skills.reinstall",
-    delegates: "reinstallSkill",
+    // Since Spec 043 a repair goes through the ONE mutating door: prepare the
+    // proposal, then apply it against its own digest.
+    delegates: "applySkillChange",
     effects: ["mutate_overwrite"],
     expected: "healthy",
     summary: "vuelve a materializar las réplicas de una skill registrada",

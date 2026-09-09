@@ -1,31 +1,50 @@
-// [Skills] — loose-skills manager (skills.sh model): single list with badges
-// (installed → unmanaged → registered → recommended), detail with per-status
-// actions (unmanaged = informational) and an [a] wizard: source → picker →
-// third-party warning → register.
-// The list opens PROJECTED to the recommended seed and `t` toggles to every
+// [Skills] — external-skills manager (skills.sh model): one list with badges
+// (installed → unmanaged → registered → recommended), a detail that states
+// INSTALLATION and RECOMMENDATION as separate facts, and one journey for every
+// change: selection → preview → applying → result
+// (DES-001@r7 / SCR-001@r3).
+//
+// Since Spec 043 there is no shortcut that mutates: every action prepares a
+// proposal, the preview shows the WHOLE set with its destinations, `Back` is
+// where the focus starts, and `Apply` sends that proposal's own digest as the
+// approval. The result is a view — per destination, with its verification
+// separate — and not a toast that scrolls a partial failure away.
+//
+// The list opens PROJECTED to the recommended catalog and `t` toggles to every
 // detected skill (SPEC 019) — a view mode, not a second data source.
-// Backed by skills-manager; the `w` bundle administration lives in
-// [Workline] (HostAdminSection).
+// Backed by skills-manager (reads), skills-change (prepare) and skills-apply
+// (apply/recover); the `w` bundle administration lives in [Workline].
 
 import { Box, Text, useInput, useStdout } from "ink";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import {
+  type ApplyResult,
+  type SkillJournal,
+  applySkillChange,
+  readSkillJournal,
+  recoverSkillJournal,
+} from "../../../application/self/skills-apply.js";
+import type { SkillCuration, SkillDisposition } from "../../../application/self/skills-catalog.js";
+import {
+  type SkillChangeOperation,
+  type SkillChangeProposal,
+  type SkillChangeRequest,
+  prepareSkillChange,
+} from "../../../application/self/skills-change.js";
+import type {
+  SkillCandidate,
+  SourceInventory,
+} from "../../../application/self/skills-discovery.js";
+import {
   REPLICA_HOST_KEYS,
   REPLICA_HOST_LABELS,
   type SkillListItem,
   canonicalSkillsRoot,
-  installSkill,
   listSkills,
-  probeSkillSource,
-  registerSkill,
-  reinstallSkill,
-  removeSkill,
   resolveSkillSource,
-  uninstallSkill,
-  updateSkill,
 } from "../../../application/self/skills-manager.js";
-import type { CommandResult } from "../../../domain/types.js";
+import type { RequiredExpansion } from "../../../application/self/skills-payload.js";
 import type { CliContext } from "../../types.js";
 import { ConfirmBanner } from "../components/confirm-banner.js";
 import { type DetailAction, DetailPanel } from "../components/detail-panel.js";
@@ -35,7 +54,7 @@ import { notificationStackRows } from "../components/notification-stack.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
-import { RECOMMENDED_SKILLS } from "../data/recommended-skills.js";
+import { RECOMMENDED_SKILLS, SKILL_CATALOG } from "../data/recommended-skills.js";
 import { useLockWhile } from "../input-lock.js";
 import { type ToastBridgeInput, useNotificationItems } from "../notification-center.js";
 import { rowWidth } from "../row-width.js";
@@ -44,8 +63,6 @@ import { useListDetailKeys } from "../use-list-detail-keys.js";
 import { useListWindow, windowRangeHint } from "../use-list-window.js";
 import { useOnMount } from "../use-on-mount.js";
 
-// Derived from the engine's own replica list — the four places that used to
-// spell "Claude, Gemini" by hand went stale the moment a replica host changed.
 const REPLICA_LABELS = REPLICA_HOST_LABELS.join(", ");
 
 // Rows the chrome consumes around the skills list; the window (useListWindow)
@@ -63,22 +80,68 @@ export interface SkillsTabProps {
   onToast?: (msg: ToastBridgeInput) => void;
 }
 
-type ActionId = "install" | "update" | "reinstall" | "uninstall" | "remove";
+type ActionId = "install" | "update" | "repair" | "replace" | "uninstall" | "remove";
+
+/** A prepared proposal owns a temp payload until it is applied or dropped. */
+interface Prepared {
+  proposal: SkillChangeProposal;
+  release: () => Promise<void>;
+}
+
+/** What the selection screen is choosing FOR. */
+interface SelectionIntent {
+  operation: SkillChangeOperation;
+  source: string;
+  /** Managed installations this change would retire. */
+  withdraw: string[];
+}
 
 type Mode =
   | { kind: "list" }
   | { kind: "detail" }
   | { kind: "confirm"; action: "uninstall" | "remove" }
-  | { kind: "wizard-source" }
-  | { kind: "wizard-pick"; source: string; candidates: string[]; cursor: number }
-  | { kind: "wizard-warning"; source: string; pick: string }
+  | { kind: "wizard-source"; intent: SelectionIntent }
+  | {
+      kind: "selection";
+      intent: SelectionIntent;
+      inventory: SourceInventory;
+      candidates: SkillCandidate[];
+      chosen: string[];
+      cursor: number;
+      note: string | null;
+    }
+  | { kind: "preview"; prepared: Prepared; cursor: number }
+  | { kind: "applying"; label: string }
+  | { kind: "result"; result: ApplyResult }
+  | { kind: "recovery"; journal: SkillJournal; cursor: number }
   | { kind: "busy"; label: string };
 
-// The `filtered` mode's projection: the seed's names, whatever their status.
-// A Set because the seed is scanned once per rendered list.
+// The `filtered` mode's projection: the names of the HABITUAL set, whatever
+// their status — a withdrawn entry leaves it and stays reachable under `all`.
 const RECOMMENDED_NAMES = new Set(RECOMMENDED_SKILLS.map((s) => s.name));
 
-/** Rows visible in the current mode: the whole list, or just the seed's. */
+// What `Recommendation` reads for each verdict, and which ones earn a badge in
+// the list: `keep`/`conditional` are the ordinary cases and stay quiet, while
+// the three that ask for a decision are visible without opening the detail.
+const DISPOSITION_LABEL: Record<SkillDisposition, string> = {
+  keep: "keep",
+  conditional: "conditional",
+  repair: "repair/replace",
+  candidate: "candidate",
+  withdrawn: "withdrawn",
+};
+
+const BADGED_DISPOSITIONS: Partial<Record<SkillDisposition, MetaTone>> = {
+  repair: "warn",
+  candidate: "info",
+  withdrawn: "warn",
+};
+
+// Said, never inferred: a field the review did not record is unknown, and
+// unknown is not "compatible".
+const UNKNOWN = "unknown";
+
+/** Rows visible in the current mode: the whole list, or just the habitual set's. */
 function projectSkills(all: SkillListItem[], showAll: boolean): SkillListItem[] {
   return showAll ? all : all.filter((s) => RECOMMENDED_NAMES.has(s.name));
 }
@@ -93,34 +156,31 @@ const STATUS_GLYPH: Record<
   recommended: { glyph: "·", active: false, tone: "info" },
 };
 
+/** The colour each per-destination status reads in: `applied` is the only one
+ *  that means "done", and `failed` must never look like it. */
+const RESULT_COLOR: Record<ApplyResult["destinations"][number]["status"], string> = {
+  applied: colors.ok,
+  pending: colors.warn,
+  failed: colors.err,
+  unchanged: colors.dim,
+  restored: colors.accent,
+};
+
 export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const [items, setItems] = useState<SkillListItem[]>([]);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
-  // View mode, local and unpersisted: every mount opens on the seed (SPEC 019).
+  // View mode, local and unpersisted: every mount opens on the catalog (SPEC 019).
   const [showAll, setShowAll] = useState(false);
-  // Mirror of the VISIBLE rows to preserve the selection BY NAME when they
-  // change — a refresh re-orders the list (installed→registered→recommended)
-  // and the toggle re-projects it, so a numeric cursor would land on another
-  // skill. Assigned during render, so a callback reads the rows the user is
-  // actually looking at.
   const visibleRef = useRef<SkillListItem[]>([]);
   const { stdout } = useStdout();
 
-  // Rows the active mode shows. `items` keeps the FULL list so the PageHead
-  // totals stay global — only the section's rows follow the mode.
   const visible = useMemo(() => projectSkills(items, showAll), [items, showAll]);
   visibleRef.current = visible;
 
   useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
 
-  // `detailActions` needs `current` (→ the hook's cursor), so its length
-  // reaches the hook one render late via this ref. Safe: the list cannot
-  // change while the detail is open, so the value is always fresh by the
-  // time the detail phase reads it.
   const actionsLenRef = useRef(0);
 
-  // Shared list/detail/confirm keys (↑↓ · ⏎ · esc · a add · y/n). The
-  // callbacks close over consts declared below — they only run on keystrokes.
   const { cursor, setCursor, actionCursor } = useListDetailKeys({
     isActive,
     phase:
@@ -131,7 +191,11 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
           : "off",
     listLen: visible.length,
     actionsLen: actionsLenRef.current,
-    onAdd: () => setMode({ kind: "wizard-source" }),
+    onAdd: () =>
+      setMode({
+        kind: "wizard-source",
+        intent: { operation: "install", source: "", withdraw: [] },
+      }),
     onOpenDetail: () => setMode({ kind: "detail" }),
     onCloseDetail: () => setMode({ kind: "list" }),
     onRunAction: (i) => {
@@ -141,23 +205,13 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     onConfirm: (yes) => {
       if (mode.kind !== "confirm" || !current) return;
       if (!yes) return setMode({ kind: "detail" });
-      const name = current.name;
-      if (mode.action === "uninstall") {
-        void runAction(`uninstalling ${name}…`, `Uninstalled · ${name}`, () =>
-          uninstallSkill(ctx, name),
-        );
-      } else {
-        void runAction(`removing ${name}…`, `Removed · ${name}`, () => removeSkill(ctx, name));
-      }
+      void prepare(
+        { operation: mode.action, name: current.name },
+        `preparing ${mode.action} of ${current.name}…`,
+      );
     },
   });
 
-  // Windowed slice of the skills list (shared hook): renders only the rows
-  // that fit the viewport, following the cursor at the edges. Non-TTY
-  // (unknown height) → the whole list renders, as before. The window derives
-  // from the cursor only — the by-name selection across refresh is untouched.
-  // The NotificationStack height joins the reservation so a visible banner
-  // can't clip the active row.
   const notifItems = useNotificationItems();
   const listWindow = useListWindow(
     visible.length,
@@ -165,9 +219,6 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     SKILLS_LIST_RESERVED_ROWS + notificationStackRows(notifItems),
   );
 
-  // Re-anchors the cursor when the visible rows change (refresh or mode
-  // toggle): the same skill stays selected if it survives, otherwise the
-  // cursor clamps to the new list.
   const reanchorCursor = useCallback(
     (next: SkillListItem[]) => {
       setCursor((c) => {
@@ -181,7 +232,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await listSkills(ctx, RECOMMENDED_SKILLS);
+      const next = await listSkills(ctx, SKILL_CATALOG);
       reanchorCursor(projectSkills(next, showAll));
       setItems(next);
     } catch (err) {
@@ -189,7 +240,15 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     }
   }, [ctx, onToast, reanchorCursor, showAll]);
 
-  useOnMount(() => void refresh());
+  // On mount the tab also asks whether a previous run left an operation
+  // half-applied: finding it is what makes the journal worth writing.
+  useOnMount(() => {
+    void (async () => {
+      await refresh();
+      const journal = await readSkillJournal(ctx);
+      if (journal !== null) setMode({ kind: "recovery", journal, cursor: 0 });
+    })();
+  });
 
   const current = visible[cursor] ?? null;
   const installedCount = items.filter((s) => s.status === "installed").length;
@@ -197,65 +256,183 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   const registeredCount = items.filter((s) => s.status === "registered").length;
   const recommendedCount = items.filter((s) => s.status === "recommended").length;
 
-  // Detail actions per status (SPEC 003): recommended/registered → Install;
-  // installed → Update (git only) / Reinstall / Uninstall; Remove for
-  // everything registered (a recommended one returns to `recommended`).
-  // `unmanaged` (outside the registry) is not operable: the engine's
-  // ownership guard rejects register/uninstall on foreign dirs —
-  // informational row.
+  /**
+   * Prepares a change and shows its preview. Nothing is applied here: this is
+   * the only door to a mutation, and it opens onto a preview.
+   */
+  const prepare = useCallback(
+    async (
+      request: Parameters<typeof prepareSkillChange>[1],
+      label: string,
+      intent?: SelectionIntent,
+    ) => {
+      setMode({ kind: "busy", label });
+      try {
+        const outcome = await prepareSkillChange(ctx, request);
+        if (outcome.status === "rejected") {
+          onToast?.({
+            tone: "err",
+            title: "Change refused",
+            body: `${outcome.rejection.code}: ${outcome.rejection.message}`,
+          });
+          setMode({ kind: "list" });
+          return;
+        }
+        if (outcome.status === "needs-choice") {
+          setMode({
+            kind: "selection",
+            intent: intent ?? {
+              operation: "install",
+              source: request.source ?? "",
+              withdraw: request.withdraw ?? [],
+            },
+            inventory: outcome.inventory,
+            candidates: outcome.candidates,
+            chosen: [],
+            cursor: 0,
+            note: null,
+          });
+          await outcome.release();
+          return;
+        }
+        if (outcome.status === "needs-expansion") {
+          await outcome.release();
+          setMode(expansionSelection(request, outcome.expansions, intent));
+          return;
+        }
+        setMode({
+          kind: "preview",
+          prepared: { proposal: outcome.proposal, release: outcome.release },
+          // `Back` is where the focus starts: Apply is an explicit move.
+          cursor: 0,
+        });
+      } catch (err) {
+        onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
+        setMode({ kind: "list" });
+      }
+    },
+    [ctx, onToast],
+  );
+
+  /** Re-opens the selection with the expansion the payload requires. */
+  const expansionSelection = useCallback(
+    (
+      request: Parameters<typeof prepareSkillChange>[1],
+      expansions: RequiredExpansion[],
+      intent?: SelectionIntent,
+    ): Mode => {
+      const chosen = [...(request.paths ?? [])];
+      const candidates: SkillCandidate[] = expansions.map((expansion) => ({
+        path: expansion.path,
+        name: expansion.name,
+        directory: expansion.path.split("/").pop() ?? expansion.name,
+      }));
+      return {
+        kind: "selection",
+        intent: intent ?? {
+          operation: request.operation,
+          source: request.source ?? "",
+          withdraw: request.withdraw ?? [],
+        },
+        inventory: {
+          source: request.source ?? "",
+          kind: "git",
+          requestedRef: null,
+          resolvedRef: null,
+          candidates,
+          truncated: false,
+          limits: null,
+        },
+        candidates,
+        chosen,
+        cursor: 0,
+        note: expansions.map((expansion) => expansion.reason).join(" · "),
+      };
+    },
+    [],
+  );
+
+  const applyPrepared = useCallback(
+    async (prepared: Prepared) => {
+      setMode({ kind: "applying", label: `applying ${prepared.proposal.operation}…` });
+      try {
+        const outcome = await applySkillChange(ctx, prepared.proposal, prepared.proposal.digest);
+        if (outcome.status === "refused") {
+          onToast?.({
+            tone: "err",
+            title: "Apply refused",
+            body: `${outcome.refusal.code}: ${outcome.refusal.message}`,
+          });
+          setMode({ kind: "list" });
+        } else {
+          void ctx.logger?.info(formatTuiEvent(`skills ${prepared.proposal.operation}`, "ok"));
+          setMode({ kind: "result", result: outcome.result });
+        }
+      } catch (err) {
+        onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
+        setMode({ kind: "list" });
+      } finally {
+        await prepared.release();
+        await refresh();
+      }
+    },
+    [ctx, onToast, refresh],
+  );
+
+  // Detail actions per status. `unmanaged` (outside the registry) is not
+  // operable: the ownership guard rejects it, so the row is informational.
   const detailActions = useMemo<{ id: ActionId; action: DetailAction }[]>(() => {
     if (!current || current.status === "unmanaged") return [];
-    if (current.status === "recommended") {
-      return [
+    if (current.status === "recommended" || current.status === "registered") {
+      const entries: { id: ActionId; action: DetailAction }[] = [
         {
           id: "install",
           action: {
             name: "Install",
-            description: `Register + install (canonical + host replicas: ${REPLICA_LABELS}).`,
+            description: `Prepare, preview, then materialize (canonical + ${REPLICA_LABELS}).`,
           },
         },
       ];
-    }
-    if (current.status === "registered") {
-      return [
-        {
-          id: "install",
-          action: {
-            name: "Install",
-            description: `Materialize canonical + host replicas (${REPLICA_LABELS}).`,
-          },
-        },
-        {
+      if (current.status === "registered") {
+        entries.push({
           id: "remove",
           action: { name: "Remove", description: "Drop from the registry.", danger: true },
-        },
-      ];
+        });
+      }
+      return entries;
     }
-    // The engine's canonical classifier (isAbsolute covers Windows paths like
-    // C:\… that a startsWith("/") would misclassify as git).
     const resolved = resolveSkillSource(current.source, current.ref);
     const gitSource = !("error" in resolved) && resolved.kind === "git";
+    const proposed = current.curation?.proposedSource;
     return [
       ...(gitSource
         ? [
             {
               id: "update" as const,
+              action: { name: "Update", description: "Re-fetch the registered ref." },
+            },
+          ]
+        : []),
+      ...(proposed !== undefined
+        ? [
+            {
+              id: "replace" as const,
               action: {
-                name: "Update",
-                description: "Re-fetch the registered ref (staging + swap).",
+                name: "Change source",
+                description: `Prepare from ${proposed} and show the differences.`,
               },
             },
           ]
         : []),
       {
-        id: "reinstall",
-        action: { name: "Reinstall", description: "Repair the host replicas from the canonical." },
+        id: "repair",
+        action: { name: "Repair", description: "Rebuild the host replicas from the canonical." },
       },
       {
         id: "uninstall",
         action: {
           name: "Uninstall",
-          description: "Delete canonical + replica; keeps the registration.",
+          description: "Delete canonical + replicas; keeps the registration.",
           danger: true,
         },
       },
@@ -271,79 +448,27 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   }, [current]);
   actionsLenRef.current = detailActions.length;
 
-  // TUI surface is EN (SPEC 007); the engine's summaries (ES) go in the body.
-  const runAction = useCallback(
-    async (
-      label: string,
-      successTitle: string,
-      op: () => Promise<CommandResult<{ summary?: string; warning?: string }>>,
-    ) => {
-      setMode({ kind: "busy", label });
-      try {
-        const result = await op();
-        if (result.ok) {
-          onToast?.({ tone: "ok", title: successTitle, body: result.data?.summary ?? "" });
-          if (result.data?.warning) {
-            onToast?.({ tone: "info", title: "Notice", body: result.data.warning });
-          }
-          void ctx.logger?.info(formatTuiEvent(`skill-manager ${label}`, "ok"));
-        } else {
-          onToast?.({
-            tone: "err",
-            title: "Operation refused",
-            body: result.error?.message ?? "",
-          });
-        }
-      } catch (err) {
-        onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
-      }
-      await refresh();
-      setMode({ kind: "list" });
-    },
-    [ctx, onToast, refresh],
-  );
-
   const triggerAction = useCallback(
     (id: ActionId) => {
       if (!current) return;
-      const name = current.name;
-      switch (id) {
-        case "install":
-          if (current.status === "recommended") {
-            // Register + install in one step (the seed already carries the source).
-            void runAction(`installing ${name}…`, `Installed · ${name}`, async () => {
-              const reg = await registerSkill(ctx, { source: current.source, pick: name });
-              if (!reg.ok) return reg;
-              return installSkill(ctx, name);
-            });
-          } else {
-            void runAction(`installing ${name}…`, `Installed · ${name}`, () =>
-              installSkill(ctx, name),
-            );
-          }
-          return;
-        case "update":
-          void runAction(`updating ${name}…`, `Updated · ${name}`, () => updateSkill(ctx, name));
-          return;
-        case "reinstall":
-          void runAction(`reinstalling ${name}…`, `Reinstalled · ${name}`, () =>
-            reinstallSkill(ctx, name),
-          );
-          return;
-        case "uninstall":
-          setMode({ kind: "confirm", action: "uninstall" });
-          return;
-        case "remove":
-          setMode({ kind: "confirm", action: "remove" });
-          return;
+      if (id === "uninstall" || id === "remove") {
+        setMode({ kind: "confirm", action: id });
+        return;
       }
+      const request = acquiringRequest(id, current);
+      if (request === null) return;
+      void prepare(
+        request,
+        `preparing ${id} of ${current.name}…`,
+        request.operation === "replace" && request.source !== undefined
+          ? { operation: "replace", source: request.source, withdraw: [current.name] }
+          : undefined,
+      );
     },
-    [ctx, current, runAction],
+    [current, prepare],
   );
 
-  // input — `t` toggles the list mode (seed only ↔ every detected skill).
-  // Its own handler on purpose: `useListDetailKeys` is the shared machinery of
-  // the list tabs and this key belongs to this one.
+  // input — `t` toggles the list mode (catalog only ↔ every detected skill).
   useInput(
     (input) => {
       if (!isActive || (mode.kind !== "list" && mode.kind !== "detail")) return;
@@ -354,7 +479,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — wizard-source esc
+  // input — the source prompt
   useInput(
     (_input, key) => {
       if (!isActive || mode.kind !== "wizard-source") return;
@@ -363,87 +488,95 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — wizard-pick (↑↓ · ⏎ choose · esc cancel)
-  useInput(
-    (_input, key) => {
-      if (!isActive || mode.kind !== "wizard-pick") return;
-      if (key.escape) {
-        setMode({ kind: "list" });
-        return;
-      }
-      if (key.upArrow) {
-        setMode({ ...mode, cursor: Math.max(0, mode.cursor - 1) });
-        return;
-      }
-      if (key.downArrow) {
-        setMode({ ...mode, cursor: Math.min(mode.candidates.length - 1, mode.cursor + 1) });
-        return;
-      }
-      if (key.return) {
-        const pick = mode.candidates[mode.cursor];
-        if (pick) setMode({ kind: "wizard-warning", source: mode.source, pick });
-      }
-    },
-    { isActive },
-  );
-
-  // input — wizard-warning (r register · ⏎ register+install · esc cancel)
+  // input — selection (↑↓ · space toggles · ⏎ continue · esc cancel)
   useInput(
     (input, key) => {
-      if (!isActive || mode.kind !== "wizard-warning") return;
-      if (key.escape) {
-        setMode({ kind: "list" });
-        return;
-      }
-      const { source, pick } = mode;
-      if (input === "r" || input === "R") {
-        void runAction(`registering ${pick}…`, `Registered · ${pick}`, () =>
-          registerSkill(ctx, { source, pick }),
+      if (!isActive || mode.kind !== "selection") return;
+      if (key.return) {
+        // An empty set keeps the selection with its explanation: continuing
+        // with nothing chosen would prepare a proposal about nothing.
+        if (mode.chosen.length === 0) {
+          return void setMode({ ...mode, note: "Choose at least one skill with [space]." });
+        }
+        void prepare(
+          {
+            operation: mode.intent.operation,
+            source: mode.intent.source,
+            paths: mode.chosen,
+            ...(mode.intent.withdraw.length > 0 ? { withdraw: mode.intent.withdraw } : {}),
+          },
+          `preparing ${mode.chosen.length} skill(s)…`,
+          mode.intent,
         );
         return;
       }
-      if (key.return) {
-        void runAction(`installing ${pick}…`, `Installed · ${pick}`, async () => {
-          const reg = await registerSkill(ctx, { source, pick });
-          if (!reg.ok) return reg;
-          return installSkill(ctx, pick);
-        });
-      }
+      const next = selectionAfterKey(mode, input, key);
+      if (next !== null) setMode(next);
     },
     { isActive },
   );
 
-  const probeSource = useCallback(
-    async (source: string) => {
-      setMode({ kind: "busy", label: "inspecting source…" });
-      try {
-        const probe = await probeSkillSource(ctx, { source });
-        if (!probe.ok || !probe.data) {
-          onToast?.({ tone: "err", title: "Invalid source", body: probe.error?.message ?? "" });
+  // input — preview (↑↓ Back/Apply · ⏎ run the focused one · esc back)
+  useInput(
+    (_input, key) => {
+      if (!isActive || mode.kind !== "preview") return;
+      if (key.escape) {
+        void mode.prepared.release();
+        return void setMode({ kind: "list" });
+      }
+      if (key.upArrow) return void setMode({ ...mode, cursor: 0 });
+      if (key.downArrow) return void setMode({ ...mode, cursor: 1 });
+      if (key.return) {
+        if (mode.cursor === 0) {
+          void mode.prepared.release();
           setMode({ kind: "list" });
           return;
         }
-        const candidates = probe.data.candidates;
-        const single = candidates.length === 1 ? candidates[0] : undefined;
-        setMode(
-          single !== undefined
-            ? { kind: "wizard-warning", source, pick: single }
-            : { kind: "wizard-pick", source, candidates, cursor: 0 },
-        );
+        void applyPrepared(mode.prepared);
+      }
+    },
+    { isActive },
+  );
+
+  // input — result / recovery
+  useInput(
+    (input, key) => {
+      if (!isActive) return;
+      if (mode.kind === "result" && (key.escape || key.return)) {
+        return void setMode({ kind: "list" });
+      }
+      if (mode.kind !== "recovery") return;
+      if (key.upArrow) return void setMode({ ...mode, cursor: 0 });
+      if (key.downArrow) return void setMode({ ...mode, cursor: 1 });
+      const choice = recoveryChoice(input, key.return, mode.cursor);
+      if (choice !== null) void resolveJournal(choice);
+    },
+    { isActive },
+  );
+
+  const resolveJournal = useCallback(
+    async (choice: "restore" | "discard") => {
+      setMode({ kind: "applying", label: `resolving the pending operation (${choice})…` });
+      try {
+        const outcome = await recoverSkillJournal(ctx, choice);
+        if (outcome.status === "refused") {
+          onToast?.({ tone: "err", title: "Recovery refused", body: outcome.refusal.message });
+          setMode({ kind: "list" });
+        } else {
+          setMode({ kind: "result", result: outcome.result });
+        }
       } catch (err) {
         onToast?.({ tone: "err", title: "Error", body: (err as Error).message });
         setMode({ kind: "list" });
+      } finally {
+        await refresh();
       }
     },
-    [ctx, onToast],
+    [ctx, onToast, refresh],
   );
 
   const overlayVisible = mode.kind !== "list";
   const home = ctx.env.homeDir();
-
-  // Visible-range indicator for the SectionHead hint slot — only when the
-  // window hides rows (consumes no extra terminal row); it keeps priority over
-  // the mode hint, which QuickActions announces anyway.
   const listRangeHint = windowRangeHint(listWindow, visible.length);
   const modeHint = showAll ? "all skills · t show recommended" : "recommended only · t show all";
 
@@ -464,7 +597,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         label="Skills"
         count={visible.length}
         hint={listRangeHint ?? modeHint}
-        {...(mode.kind.startsWith("wizard")
+        {...(mode.kind === "wizard-source" || mode.kind === "selection"
           ? { rightAction: "esc cancel" }
           : mode.kind === "detail" || mode.kind === "confirm"
             ? { rightAction: "esc to close detail" }
@@ -487,11 +620,11 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
                     ? "outside the registry"
                     : `${s.source}${s.ref ? ` #${s.ref}` : ""}`
                 }
-                meta={s.mode === "copy" ? [{ label: "copy", tone: "warn" }] : []}
+                meta={rowMeta(s)}
                 state={{ label: s.status, tone: glyph.tone }}
                 chevron
                 active={listWindow.start + i === cursor}
-                dimmed={mode.kind.startsWith("wizard")}
+                dimmed={overlayVisible && mode.kind !== "detail" && mode.kind !== "confirm"}
                 widthHint={rowWidth(stdout?.columns, overlayVisible)}
               />
             );
@@ -513,7 +646,10 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
                       setMode({ kind: "list" });
                       return;
                     }
-                    void probeSource(source);
+                    void prepare({ operation: "install", source }, "inspecting source…", {
+                      ...mode.intent,
+                      source,
+                    });
                   }}
                   isActive={isActive}
                 />
@@ -521,50 +657,21 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
             </Box>
           ) : null}
 
-          {mode.kind === "wizard-pick" ? (
-            <Box flexDirection="column" marginTop={1}>
-              <SectionHead
-                label="Add skill"
-                hint={`Step 2 · Pick one of ${mode.candidates.length}`}
-                rightAction="⏎ choose · esc cancel"
-              />
-              <Box marginTop={0} flexDirection="column">
-                {mode.candidates.map((name, i) => (
-                  <ListRow
-                    key={name}
-                    icon="·"
-                    title={name}
-                    active={mode.cursor === i}
-                    widthHint={rowWidth(stdout?.columns, true)}
-                  />
-                ))}
-              </Box>
-            </Box>
+          {mode.kind === "selection" ? (
+            <SelectionPanel mode={mode} columns={stdout?.columns} />
           ) : null}
 
-          {mode.kind === "wizard-warning" ? (
-            <Box flexDirection="column" marginTop={1}>
-              <SectionHead
-                label={`Add skill · ${mode.pick}`}
-                hint="Step 3 · Review"
-                rightAction="esc cancel"
-              />
-              <Box marginLeft={2} marginTop={1} flexDirection="column">
-                <Text color={colors.warn}>
-                  ⚠ A third-party skill runs with your host's permissions — review it before
-                  installing.
-                </Text>
-                <Text color={colors.dim} wrap="truncate-end">
-                  {mode.source}
-                </Text>
-                <Box marginTop={1}>
-                  <Text color={colors.faint}>[⏎] register + install · [r] register only</Text>
-                </Box>
-              </Box>
-            </Box>
+          {mode.kind === "preview" ? (
+            <PreviewPanel proposal={mode.prepared.proposal} cursor={mode.cursor} home={home} />
           ) : null}
 
-          {mode.kind === "busy" ? (
+          {mode.kind === "result" ? <ResultPanel result={mode.result} home={home} /> : null}
+
+          {mode.kind === "recovery" ? (
+            <RecoveryPanel journal={mode.journal} cursor={mode.cursor} />
+          ) : null}
+
+          {mode.kind === "busy" || mode.kind === "applying" ? (
             <Box marginTop={1}>
               <Text color={colors.warn}>
                 {icons.spinner} {mode.label}
@@ -576,10 +683,7 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
         {current && (mode.kind === "detail" || mode.kind === "confirm") ? (
           <DetailPanel
             bordered
-            header={{
-              name: current.name,
-              meta: detailMeta(current, home),
-            }}
+            header={{ name: current.name, meta: detailMeta(current, home) }}
             statePill={{
               label: current.status,
               tone:
@@ -597,10 +701,8 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
                   title={`× ${mode.action === "uninstall" ? "Uninstall" : "Remove"} ${current.name}?`}
                   body={
                     mode.action === "uninstall"
-                      ? "Deletes canonical + replica; the registration stays."
-                      : current.status === "installed"
-                        ? "Uninstalls and drops the registration. A recommended skill returns to the recommended list."
-                        : "Drops the registration. A recommended skill returns to the recommended list."
+                      ? "Prepares the removal of canonical + replicas; the registration stays. You still approve the preview."
+                      : "Prepares the removal and drops the registration. You still approve the preview."
                   }
                 />
               ) : null
@@ -621,22 +723,356 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
   );
 }
 
-function detailMeta(item: SkillListItem, home: string): string {
-  const source = `${item.source}${item.ref ? ` #${item.ref}` : ""}`;
-  if (item.status === "recommended") return `${source}\n${item.description ?? ""}`;
-  const canonical = `${canonicalSkillsRoot(home)}/${item.name}`.replace(home, "~");
-  // `item.mode` describes the FIRST replica host's materialization (symlink vs
-  // copy) — the suffix stays on that one, and the host names come from the
-  // engine's list instead of being spelled here.
-  const replicas = [
+/** Explicit selection: every eligible skill by name AND location. */
+function SelectionPanel({
+  mode,
+  columns,
+}: {
+  mode: Extract<Mode, { kind: "selection" }>;
+  columns: number | undefined;
+}) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionHead
+        label="Select skills"
+        hint={`${mode.chosen.length} of ${mode.candidates.length} chosen`}
+        rightAction="space toggle · ⏎ continue · esc cancel"
+      />
+      {mode.note !== null ? (
+        <Box marginLeft={2}>
+          <Text color={colors.warn}>{mode.note}</Text>
+        </Box>
+      ) : null}
+      {mode.inventory.truncated ? (
+        <Box marginLeft={2}>
+          <Text color={colors.warn}>
+            The source walk hit its limit: this list is a floor, not every skill.
+          </Text>
+        </Box>
+      ) : null}
+      <Box flexDirection="column">
+        {mode.candidates.map((candidate, i) => (
+          <ListRow
+            key={candidate.path}
+            icon={mode.chosen.includes(candidate.path) ? "◆" : "·"}
+            iconActive={mode.chosen.includes(candidate.path)}
+            title={candidate.name}
+            subtitle={candidate.path === "" ? "(source root)" : candidate.path}
+            meta={
+              candidate.name === candidate.directory
+                ? []
+                : [{ label: `dir ${candidate.directory}`, tone: "dim" }]
+            }
+            state={
+              mode.chosen.includes(candidate.path)
+                ? { label: "chosen", tone: "ok" }
+                : { label: "available", tone: "dim" }
+            }
+            active={mode.cursor === i}
+            widthHint={rowWidth(columns, true)}
+          />
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+/** The whole change before Apply: set, sources, destinations and effects. */
+function PreviewPanel({
+  proposal,
+  cursor,
+  home,
+}: {
+  proposal: SkillChangeProposal;
+  cursor: number;
+  home: string;
+}) {
+  const short = (path: string) => path.replace(home, "~");
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionHead
+        label={`Proposed changes · ${proposal.operation}`}
+        hint={`${proposal.additions.length} added · ${proposal.withdrawals.length} withdrawn`}
+        rightAction="↑↓ choose · ⏎ run · esc back"
+      />
+      <Box flexDirection="column" marginLeft={2}>
+        {proposal.additions.map((skill) => (
+          <Text key={skill.name} color={colors.text}>
+            + {skill.name}
+            <Text color={colors.dim}>
+              {" "}
+              · {skill.provenance.source}
+              {skill.path === "" ? "" : `/${skill.path}`}
+              {skill.provenance.resolvedRef === null
+                ? ""
+                : ` @ ${skill.provenance.resolvedRef.slice(0, 12)}`}
+              {" · "}
+              {skill.files.length} files
+              {skill.manifests.length > 1 ? ` · ${skill.manifests.length} SKILL.md` : ""}
+            </Text>
+          </Text>
+        ))}
+        {proposal.withdrawals.map((name) => (
+          <Text key={name} color={colors.warn}>
+            − {name} <Text color={colors.dim}>· managed installation retired</Text>
+          </Text>
+        ))}
+        <Box marginTop={1} flexDirection="column">
+          <Text color={colors.mute}>DESTINATIONS</Text>
+          {proposal.destinations.map((destination) => (
+            <Text key={`${destination.host}-${destination.location}`} color={colors.dim}>
+              {destination.action.padEnd(9)} {destination.host.padEnd(8)}{" "}
+              {short(destination.location)}
+              {destination.shared ? " · shared" : ""}
+              {destination.ownership === "foreign" ? " · foreign, preserved" : ""}
+            </Text>
+          ))}
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text color={colors.mute}>EFFECTS · {proposal.effects.join(", ")}</Text>
+          {proposal.notes.map((note) => (
+            <Text key={note} color={colors.faint}>
+              · {note}
+            </Text>
+          ))}
+        </Box>
+        <Box marginTop={1} flexDirection="column">
+          <Text color={cursor === 0 ? colors.bright : colors.dim}>
+            {cursor === 0 ? icons.focusBar : " "} Back
+          </Text>
+          <Text color={cursor === 1 ? colors.err : colors.dim}>
+            {cursor === 1 ? icons.focusBar : " "} Apply
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** Per destination: what happened, and — separately — what was checked. */
+function ResultPanel({ result, home }: { result: ApplyResult; home: string }) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionHead
+        label={`Result · ${result.operation}`}
+        hint={result.summary}
+        rightAction="⏎ back to the list"
+      />
+      <Box flexDirection="column" marginLeft={2}>
+        {result.destinations.map((destination) => (
+          <Text key={destination.location} color={colors.dim}>
+            <Text color={RESULT_COLOR[destination.status]}>{destination.status.padEnd(10)}</Text>
+            {destination.host.padEnd(8)} {destination.location.replace(home, "~")}
+            {destination.verification === null
+              ? " · not checked"
+              : ` · ${destination.verification.passed ? "verified" : "CHECK FAILED"}: ${destination.verification.checked.replace(home, "~")}`}
+            {destination.detail === undefined ? "" : ` · ${destination.detail}`}
+          </Text>
+        ))}
+        {result.recovery !== null ? (
+          <Box marginTop={1}>
+            <Text color={colors.warn}>{result.recovery.action}</Text>
+          </Box>
+        ) : null}
+        {result.cleanup !== null ? (
+          <Box marginTop={1}>
+            <Text color={colors.faint}>
+              Backups pending removal: {result.cleanup.pending.join(", ")}
+            </Text>
+          </Box>
+        ) : null}
+        <Box marginTop={1}>
+          <Text color={colors.faint}>
+            Applied is not "the host loaded it": what is checked above is the bytes this manager
+            wrote in the locations it manages.
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** An operation a previous run left pending: put it back, or accept and retry. */
+function RecoveryPanel({ journal, cursor }: { journal: SkillJournal; cursor: number }) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionHead
+        label="Unfinished operation"
+        hint={`${journal.operation} · ${journal.destinations.length} destination(s)`}
+        rightAction="↑↓ choose · ⏎ run"
+      />
+      <Box flexDirection="column" marginLeft={2}>
+        <Text color={colors.warn}>
+          A previous run did not finish. Its backups are kept, so the previous state can come back.
+        </Text>
+        {journal.destinations.map((destination) => (
+          <Text key={destination.location} color={colors.dim}>
+            {destination.status.padEnd(10)} {destination.location}
+          </Text>
+        ))}
+        <Box marginTop={1} flexDirection="column">
+          <Text color={cursor === 0 ? colors.bright : colors.dim}>
+            {cursor === 0 ? icons.focusBar : " "} [r] Restore the previous state
+          </Text>
+          <Text color={cursor === 1 ? colors.bright : colors.dim}>
+            {cursor === 1 ? icons.focusBar : " "} [k] Keep the current state and start over
+          </Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text color={colors.faint}>
+            Neither repeats an effect: a new attempt needs a new proposal.
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+/** Which way out of a pending operation the keystroke asks for. */
+function recoveryChoice(
+  input: string,
+  entered: boolean,
+  cursor: number,
+): "restore" | "discard" | null {
+  if (input === "r" || input === "R") return "restore";
+  if (input === "k" || input === "K") return "discard";
+  if (!entered) return null;
+  return cursor === 0 ? "restore" : "discard";
+}
+
+/** Navigation and toggling inside the selection — the state, not the effect. */
+function selectionAfterKey(
+  mode: Extract<Mode, { kind: "selection" }>,
+  input: string,
+  key: { escape: boolean; upArrow: boolean; downArrow: boolean },
+): Mode | null {
+  if (key.escape) return { kind: "list" };
+  if (key.upArrow) return { ...mode, cursor: Math.max(0, mode.cursor - 1) };
+  if (key.downArrow) {
+    return { ...mode, cursor: Math.min(mode.candidates.length - 1, mode.cursor + 1) };
+  }
+  if (input !== " ") return null;
+  const path = mode.candidates[mode.cursor]?.path;
+  if (path === undefined) return null;
+  return {
+    ...mode,
+    chosen: mode.chosen.includes(path)
+      ? mode.chosen.filter((p) => p !== path)
+      : [...mode.chosen, path],
+  };
+}
+
+/**
+ * The request an acquiring action sends to the preparer.
+ *
+ * The path the catalog reviewed is what makes a NESTED skill reachable; a name
+ * is the fallback, and it only resolves while it is unambiguous.
+ */
+function acquiringRequest(
+  id: Exclude<ActionId, "uninstall" | "remove">,
+  item: SkillListItem,
+): SkillChangeRequest | null {
+  const curation = item.curation;
+  const where = curation?.path !== undefined ? { paths: [curation.path] } : { pick: item.name };
+  if (id === "repair") return { operation: "repair", name: item.name };
+  if (id === "install") return { operation: "install", source: item.source, ...where };
+  if (id === "update") {
+    return {
+      operation: "update",
+      source: item.source,
+      ...(item.ref !== undefined ? { ref: item.ref } : {}),
+      ...where,
+    };
+  }
+  // An explicit source change: the previous installation is retired in the
+  // SAME proposal that brings the new one.
+  const source = curation?.proposedSource;
+  if (source === undefined) return null;
+  return { operation: "replace", source, withdraw: [item.name], ...where };
+}
+
+/** Badges the row carries: the degraded replica, plus a verdict that asks for
+ *  a decision (an ordinary keep/conditional row stays quiet). */
+function rowMeta(item: SkillListItem): { label: string; tone: MetaTone }[] {
+  const meta: { label: string; tone: MetaTone }[] = [];
+  if (item.mode === "copy") meta.push({ label: "copy", tone: "warn" });
+  const disposition = item.curation?.disposition;
+  const tone = disposition ? BADGED_DISPOSITIONS[disposition] : undefined;
+  if (disposition && tone) meta.push({ label: DISPOSITION_LABEL[disposition], tone });
+  return meta;
+}
+
+/** Replica line of an installed/registered/unmanaged row. */
+function replicaLine(item: SkillListItem): string {
+  return [
     `agents ${item.replicas.agents ? "✓" : "·"}`,
+    // `item.mode` describes the FIRST replica host's materialization (symlink
+    // vs copy) — the suffix stays on that one, and the host names come from
+    // the engine's list instead of being spelled here.
     ...REPLICA_HOST_KEYS.map(
       (key, i) =>
         `${key} ${item.replicas[key] ? "✓" : "·"}${i === 0 && item.mode === "copy" ? " (copy)" : ""}`,
     ),
   ].join(" · ");
-  if (item.status === "unmanaged") {
-    return `${source === "" ? "unknown source" : source}\n${canonical}\n${replicas}\nInstalled outside the registry (e.g. skills.sh) — not operable from here.`;
+}
+
+/** Short form of an inspected revision — enough to compare, never a claim
+ *  about what an acquisition would resolve. */
+function shortRef(ref: string): string {
+  return ref.length > 12 ? ref.slice(0, 12) : ref;
+}
+
+/** The reviewed verdict, or the honest absence of one. */
+function recommendationLines(curation: SkillCuration | undefined): string[] {
+  if (curation === undefined) {
+    return [
+      "Recommendation: not in the reviewed catalog",
+      `Use when: ${UNKNOWN}`,
+      `Known limits: ${UNKNOWN}`,
+    ];
   }
-  return `${source}\n${canonical}\n${replicas}`;
+  const verdict = DISPOSITION_LABEL[curation.disposition];
+  return [
+    `Recommendation: ${curation.reason ? `${verdict} — ${curation.reason}` : verdict}`,
+    `Use when: ${curation.useWhen ?? UNKNOWN}`,
+    `Known limits: ${curation.knownLimits ?? UNKNOWN}`,
+  ];
+}
+
+/** Where the bytes come from — and, when they differ, where a repair would
+ *  take them. A divergence is shown, never resolved silently. */
+function sourceLines(item: SkillListItem, curation: SkillCuration | undefined): string[] {
+  const source = `${item.source === "" ? UNKNOWN : item.source}${item.ref ? ` #${item.ref}` : ""}`;
+  const proposed = curation?.proposedSource;
+  const lines = [proposed ? `Installed source: ${source}` : `Source: ${source}`];
+  if (proposed) lines.push(`Proposed source: ${proposed}`);
+  if (curation?.path) lines.push(`Path in source: ${curation.path}`);
+  if (curation?.skillName && curation.skillName !== item.name) {
+    lines.push(`Catalog name: ${item.name}`, `Skill name: ${curation.skillName}`);
+  }
+  if (curation?.reviewedRef) lines.push(`Reviewed rev: ${shortRef(curation.reviewedRef)}`);
+  if (curation?.evidence) lines.push(`Evidence: ${curation.evidence}`);
+  return lines;
+}
+
+/**
+ * Detail body: installation and recommendation as SEPARATE facts (Spec 043 ·
+ * DES-001@r7 / SCR-001@r3#detail). Reading it changes nothing.
+ */
+function detailMeta(item: SkillListItem, home: string): string {
+  const lines: string[] = [];
+  if (item.description) lines.push(item.description, "");
+  lines.push(
+    item.status === "recommended"
+      ? "Status: recommended · not installed"
+      : `Status: ${item.status} · ${replicaLine(item)}`,
+  );
+  lines.push(...recommendationLines(item.curation), ...sourceLines(item, item.curation));
+  if (item.status !== "recommended") {
+    lines.push(`${canonicalSkillsRoot(home)}/${item.name}`.replace(home, "~"));
+  }
+  if (item.status === "unmanaged") {
+    lines.push("Installed outside the registry (e.g. skills.sh) — not operable from here.");
+  }
+  return lines.join("\n");
 }

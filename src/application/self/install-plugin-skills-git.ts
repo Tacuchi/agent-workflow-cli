@@ -88,8 +88,8 @@ export async function installPluginSkillsFromGit(
  *  under the TUI (alt-screen + raw mode) git would ask for credentials/host-key
  *  on an invisible /dev/tty and hang the busy-lock forever (same fix as
  *  GitCliAdapter). */
-function runGit(args: string[], cwd?: string): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
+function runGit(args: string[], cwd?: string): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
     const env = {
       ...process.env,
       GIT_TERMINAL_PROMPT: "0",
@@ -99,11 +99,15 @@ function runGit(args: string[], cwd?: string): Promise<void> {
     // Chunks stay as bytes: decoding each one splits multibyte characters at the
     // pipe boundary and garbles git's own message.
     const stderr: Buffer[] = [];
+    const stdout: Buffer[] = [];
+    proc.stdout?.on("data", (chunk: Buffer) => {
+      stdout.push(chunk);
+    });
     proc.stderr?.on("data", (chunk: Buffer) => {
       stderr.push(chunk);
     });
     proc.on("close", (code) => {
-      if (code === 0) resolve();
+      if (code === 0) resolve(Buffer.concat(stdout).toString("utf8"));
       else {
         const detail = Buffer.concat(stderr).toString("utf8").trim();
         reject(new Error(`git ${args[0]} falló (exit ${code}): ${detail}`));
@@ -148,10 +152,36 @@ export async function gitSparseAddSkillDir(dest: string, relDir: string): Promis
   await runGit(["sparse-checkout", "add", `/${clean}/`], dest);
 }
 
+/** Expands the sparse working tree to include ONE file — the licence or the
+ *  shared resource a payload needs, without dragging its whole directory. */
+export async function gitSparseAddFile(dest: string, relPath: string): Promise<void> {
+  const clean = relPath.replace(/^\/+/, "");
+  await runGit(["sparse-checkout", "add", `/${clean}`], dest);
+}
+
 /** Restores the full working tree — for a source whose repo root IS the skill,
  *  the whole repo is its payload. */
 export async function gitSparseDisable(dest: string): Promise<void> {
   await runGit(["sparse-checkout", "disable"], dest);
+}
+
+/**
+ * Every path of the VERSIONED tree, whatever the working copy materialized.
+ *
+ * Discovery over a sparse clone cannot ask the filesystem how many skills a
+ * source has: the tree on disk is the subset the sparse pattern brought down.
+ * The commit's own listing has no depth limit and no directory that hides what
+ * is below it, which is what lets a nested skill be addressed by its path.
+ */
+export async function gitListTreePaths(dest: string): Promise<string[]> {
+  const out = await runGit(["ls-tree", "-r", "HEAD", "--name-only", "-z"], dest);
+  return out.split("\0").filter((line) => line.length > 0);
+}
+
+/** The commit a ref resolved to — resolved ONCE, so the same preparation and
+ *  its application talk about the same bytes even if the branch moves. */
+export async function gitResolveCommit(dest: string): Promise<string> {
+  return (await runGit(["rev-parse", "HEAD"], dest)).trim();
 }
 
 async function resolvePluginDir(cloneDir: string, namespace: string): Promise<string | null> {

@@ -20,6 +20,16 @@ export interface SkillRegistryEntry {
   mode?: SkillReplicaMode;
   /** ISO timestamp of the last install/update; absent = registered, not installed. */
   installedAt?: string;
+  /** Path inside the source the selection resolved; absent = the source root.
+   *  Spec 043: what makes a nested skill addressable again next time. */
+  path?: string;
+  /** Invocable identity when it differs from this entry's key. */
+  skillName?: string;
+  /** The commit the acquisition actually resolved — not the registered ref,
+   *  which may be a branch that has moved since. */
+  resolvedRef?: string;
+  /** Inventory digest of the payload that was materialized. */
+  payloadDigest?: string;
 }
 
 export interface SkillsRegistry {
@@ -68,18 +78,39 @@ export async function readSkillsRegistry(ctx: CliContext): Promise<SkillsRegistr
       // Invalid name (e.g. "..", with separators) = entry discarded: a
       // hand-edited registry never turns a remove into an rm outside the root.
       if (!isValidSkillName(name)) continue;
-      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-      const v = value as Record<string, unknown>;
-      if (typeof v.source !== "string" || v.source.length === 0) continue;
-      skills[name] = {
-        source: v.source,
-        ...(typeof v.ref === "string" ? { ref: v.ref } : {}),
-        ...(v.mode === "symlink" || v.mode === "copy" ? { mode: v.mode } : {}),
-        ...(typeof v.installedAt === "string" ? { installedAt: v.installedAt } : {}),
-      };
+      const entry = parseRegistryEntry(value);
+      if (entry !== null) skills[name] = entry;
     }
   }
   return { registry: { skills }, path };
+}
+
+/** One entry as the file holds it — a field of the wrong type is dropped and
+ *  the rest of the entry survives. Reading NEVER migrates: an entry written
+ *  before the identity fields existed keeps its exact keys, and one that
+ *  carries them keeps them through every cycle (uninstall, repair, update). */
+function parseRegistryEntry(value: unknown): SkillRegistryEntry | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.source !== "string" || v.source.length === 0) return null;
+  const text = (key: string): string | undefined =>
+    typeof v[key] === "string" ? (v[key] as string) : undefined;
+  const ref = text("ref");
+  const installedAt = text("installedAt");
+  const path = text("path");
+  const skillName = text("skillName");
+  const resolvedRef = text("resolvedRef");
+  const payloadDigest = text("payloadDigest");
+  return {
+    source: v.source,
+    ...(ref !== undefined ? { ref } : {}),
+    ...(v.mode === "symlink" || v.mode === "copy" ? { mode: v.mode } : {}),
+    ...(installedAt !== undefined ? { installedAt } : {}),
+    ...(path !== undefined ? { path } : {}),
+    ...(skillName !== undefined ? { skillName } : {}),
+    ...(resolvedRef !== undefined ? { resolvedRef } : {}),
+    ...(payloadDigest !== undefined ? { payloadDigest } : {}),
+  };
 }
 
 export async function writeSkillsRegistry(

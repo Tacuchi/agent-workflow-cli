@@ -137,8 +137,8 @@ const CATALOG: readonly CatalogRow[] = [
   },
   {
     op: "skills.reinstall",
-    module: "../../src/application/self/skills-manager.js",
-    delegates: "reinstallSkill",
+    module: "../../src/application/self/skills-apply.js",
+    delegates: "applySkillChange",
     effects: ["mutate_overwrite"],
     expected: "healthy",
     args: { name: "w:doctor" },

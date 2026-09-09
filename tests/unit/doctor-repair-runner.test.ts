@@ -50,8 +50,21 @@ vi.mock("../../src/application/self/install-hooks.js", () => ({
 vi.mock("../../src/application/self/clean-legacy.js", () => ({
   selfCleanLegacy: spy("selfCleanLegacy"),
 }));
-vi.mock("../../src/application/self/skills-manager.js", () => ({
-  reinstallSkill: spy("reinstallSkill"),
+// A repair now goes through the ONE mutating door of Spec 043: prepare the
+// proposal, then apply it against its own digest. Both halves are doubled, so
+// the wiring assertion still sees exactly who gets called.
+vi.mock("../../src/application/self/skills-change.js", () => ({
+  prepareSkillChange: spy("prepareSkillChange", {
+    status: "prepared",
+    proposal: { operation: "repair", digest: "sealed", destinations: [] },
+    release: async () => {},
+  }),
+}));
+vi.mock("../../src/application/self/skills-apply.js", () => ({
+  applySkillChange: spy("applySkillChange", {
+    status: "applied",
+    result: { operation: "repair", digest: "sealed", destinations: [] },
+  }),
 }));
 vi.mock("../../src/application/mcp-setup-service.js", () => ({
   runMcpSetup: spy("runMcpSetup", { applied: [{}], conflicts: [], errors: [] }),
@@ -113,6 +126,8 @@ function actionFor(op: string, args: Record<string, string> = {}, argv?: readonl
 const WIRING: ReadonlyArray<{
   op: string;
   delegate: string;
+  /** When the correct wiring is more than one call, in order. */
+  delegates?: readonly string[];
   args?: Record<string, string>;
   /** Sólo las operaciones que corren un programa lo llevan, y va sellado. */
   argv?: readonly string[];
@@ -121,7 +136,12 @@ const WIRING: ReadonlyArray<{
   { op: "self.uninstall", delegate: "selfUninstall", args: { target: "user" } },
   { op: "self.install-hooks", delegate: "selfInstallHooks", args: { target: "claude" } },
   { op: "self.clean-legacy", delegate: "selfCleanLegacy", args: { target: "claude" } },
-  { op: "skills.reinstall", delegate: "reinstallSkill", args: { name: "w:doctor" } },
+  {
+    op: "skills.reinstall",
+    delegate: "applySkillChange",
+    delegates: ["prepareSkillChange", "applySkillChange"],
+    args: { name: "w:doctor" },
+  },
   {
     op: "mcp.setup",
     delegate: "runMcpSetup",
@@ -154,14 +174,15 @@ describe("el cableado entre una operación y la función que escribe", () => {
     overrides.clear();
   });
 
-  for (const { op, delegate, args, argv } of WIRING) {
-    it(`'${op}' llama a ${delegate} y a NADIE más`, async () => {
+  for (const { op, delegate, delegates, args, argv } of WIRING) {
+    const expected = delegates ?? [delegate];
+    it(`'${op}' llama a ${expected.join(" + ")} y a NADIE más`, async () => {
       const outcome = await runDoctorRepair(actionFor(op, args, argv), ctx);
 
-      // Exactamente un delegado, y es el que corresponde. `toEqual` sobre la
-      // lista entera —y no un `toContain`— porque el daño de este defecto es
-      // llamar a OTRA función además de, o en vez de, la correcta.
-      expect(calls).toEqual([delegate]);
+      // Exactamente los delegados que corresponden, en orden. `toEqual` sobre
+      // la lista entera —y no un `toContain`— porque el daño de este defecto
+      // es llamar a OTRA función además de, o en vez de, la correcta.
+      expect(calls).toEqual(expected);
       expect(outcome.status).toBe("applied");
     });
   }
@@ -286,7 +307,10 @@ describe("el cableado entre una operación y la función que escribe", () => {
 
   it("el nombre de la skill llega tal cual: reinstalar otra no es reinstalar la del hallazgo", async () => {
     await runDoctorRepair(actionFor("skills.reinstall", { name: "w:doctor" }), ctx);
-    const call = invocations.find((entry) => entry.name === "reinstallSkill");
-    expect(call?.args[1]).toBe("w:doctor");
+    const call = invocations.find((entry) => entry.name === "prepareSkillChange");
+    expect(call?.args[1]).toEqual({ operation: "repair", name: "w:doctor" });
+    // Y la aplicación recibe la propuesta preparada, no otra.
+    const applied = invocations.find((entry) => entry.name === "applySkillChange");
+    expect(applied?.args[2]).toBe("sealed");
   });
 });

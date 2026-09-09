@@ -137,4 +137,81 @@ describe("skills-registry (T3.2)", () => {
     await writeFile(lockPath, "{roto", "utf8");
     expect(await readSkillsShLockSources(ctx)).toEqual({});
   });
+
+  // ===== Spec 043 — identidad y selección en el registro =====
+
+  it("round-trip de los campos de identidad y selección, sin cambiar claves", async () => {
+    const ctx = buildCtx(home);
+    const entry = {
+      source: "trailofbits/skills",
+      ref: "main",
+      mode: "symlink" as const,
+      installedAt: "2026-09-09T10:00:00.000Z",
+      path: "plugins/sharp-edges/skills/sharp-edges",
+      skillName: "sharp-edges",
+      resolvedRef: "d3323cefbcf645678b8dc481de204b02ad3d02dc",
+      payloadDigest: "a".repeat(64),
+    };
+    await writeSkillsRegistry(ctx, { skills: { "sharp-edges": entry } });
+
+    const read = await readSkillsRegistry(ctx);
+    expect(read.registry.skills["sharp-edges"]).toEqual(entry);
+    // El archivo escrito conserva exactamente esas claves.
+    const raw = JSON.parse(await readFile(skillsRegistryPath(home), "utf8"));
+    expect(Object.keys(raw.skills["sharp-edges"]).sort()).toEqual([
+      "installedAt",
+      "mode",
+      "path",
+      "payloadDigest",
+      "ref",
+      "resolvedRef",
+      "skillName",
+      "source",
+    ]);
+  });
+
+  it("una entrada legacy se lee tal cual: leerla no la migra ni le inventa campos", async () => {
+    const ctx = buildCtx(home);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    const legacy = JSON.stringify({
+      skills: {
+        ponytail: { source: "DietrichGebert/ponytail", installedAt: "2026-01-01T00:00:00.000Z" },
+      },
+    });
+    await writeFile(skillsRegistryPath(home), legacy, "utf8");
+
+    const read = await readSkillsRegistry(ctx);
+    expect(read.registry.skills.ponytail).toEqual({
+      source: "DietrichGebert/ponytail",
+      installedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(read.warning).toBeUndefined();
+    // Y el archivo no se reescribió por haberlo leído.
+    expect(await readFile(skillsRegistryPath(home), "utf8")).toBe(legacy);
+  });
+
+  it("un campo nuevo con tipo equivocado se descarta sin perder el resto de la entrada", async () => {
+    const ctx = buildCtx(home);
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(
+      skillsRegistryPath(home),
+      JSON.stringify({
+        skills: {
+          evaluation: {
+            source: "muratcankoylan/agent-skills-for-context-engineering",
+            path: 7,
+            payloadDigest: null,
+            skillName: "evaluation",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const read = await readSkillsRegistry(ctx);
+    expect(read.registry.skills.evaluation).toEqual({
+      source: "muratcankoylan/agent-skills-for-context-engineering",
+      skillName: "evaluation",
+    });
+  });
 });

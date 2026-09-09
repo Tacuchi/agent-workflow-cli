@@ -27,7 +27,8 @@ import { runMultiroot } from "../multiroot-service.js";
 import { selfCleanLegacy } from "../self/clean-legacy.js";
 import { selfInstallHooks } from "../self/install-hooks.js";
 import { selfInstallSkill } from "../self/install-skill.js";
-import { reinstallSkill } from "../self/skills-manager.js";
+import { applySkillChange } from "../self/skills-apply.js";
+import { prepareSkillChange } from "../self/skills-change.js";
 import { selfUninstall } from "../self/uninstall.js";
 import type { DoctorActionOutcome } from "./apply.js";
 import { runDoctorAuthFlow } from "./auth-flow.js";
@@ -58,6 +59,38 @@ function fromCommand(result: CommandResult<unknown>, what: string): DoctorAction
   };
 }
 
+/**
+ * Repairs a registered skill's replicas the ONE way installations change since
+ * Spec 043: prepare, then apply against that proposal's own digest.
+ *
+ * The doctor's own preflight is what authorizes the operation (it declares
+ * `mutate_overwrite`); what this adds is the journal and the per-destination
+ * backup, so a repair that fails halfway is recoverable instead of leaving
+ * the replicas in three different states.
+ */
+async function repairSkillReplicas(ctx: CliContext, name: string): Promise<DoctorActionOutcome> {
+  const prepared = await prepareSkillChange(ctx, { operation: "repair", name });
+  if (prepared.status !== "prepared") {
+    const code = prepared.status === "rejected" ? prepared.rejection.code : prepared.status;
+    return { status: "failed", detail: `reinstalar la skill: ${code}` };
+  }
+  try {
+    const applied = await applySkillChange(ctx, prepared.proposal, prepared.proposal.digest);
+    if (applied.status === "refused") {
+      return { status: "failed", detail: `reinstalar la skill: ${applied.refusal.code}` };
+    }
+    const failed = applied.result.destinations.filter((entry) => entry.status === "failed");
+    return failed.length === 0
+      ? { status: "applied", detail: "reinstalar la skill: aplicado" }
+      : {
+          status: "failed",
+          detail: `reinstalar la skill: ${failed.length} destino(s) sin aplicar`,
+        };
+  } finally {
+    await prepared.release();
+  }
+}
+
 export async function runDoctorRepair(
   action: DoctorBatchAction,
   ctx: CliContext,
@@ -84,7 +117,7 @@ export async function runDoctorRepair(
         "limpiar el resto legacy",
       );
     case "skills.reinstall":
-      return fromCommand(await reinstallSkill(ctx, action.args.name ?? ""), "reinstalar la skill");
+      return await repairSkillReplicas(ctx, action.args.name ?? "");
     case "mcp.setup":
       return mcpOutcome(runMcpSetup(ctx.env, mcpInput(ctx, action)), "registrar la entrada MCP");
     case "mcp.remove":
