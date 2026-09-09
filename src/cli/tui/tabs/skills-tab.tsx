@@ -538,14 +538,23 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
     { isActive },
   );
 
-  // input — result / recovery
+  // input — result: any of the two obvious keys returns to the list
+  useInput(
+    (_input, key) => {
+      if (!isActive || mode.kind !== "result") return;
+      if (key.escape || key.return) setMode({ kind: "list" });
+    },
+    { isActive },
+  );
+
+  // input — recovery. A screen with no way out is a trap: `esc` leaves the
+  // journal pending and the offer comes back next time the tab opens. What it
+  // must never do is let the tab be used as if nothing were unfinished —
+  // hence the explicit note on the panel.
   useInput(
     (input, key) => {
-      if (!isActive) return;
-      if (mode.kind === "result" && (key.escape || key.return)) {
-        return void setMode({ kind: "list" });
-      }
-      if (mode.kind !== "recovery") return;
+      if (!isActive || mode.kind !== "recovery") return;
+      if (key.escape) return void setMode({ kind: "list" });
       if (key.upArrow) return void setMode({ ...mode, cursor: 0 });
       if (key.downArrow) return void setMode({ ...mode, cursor: 1 });
       const choice = recoveryChoice(input, key.return, mode.cursor);
@@ -560,7 +569,11 @@ export function SkillsTab({ ctx, isActive, onToast }: SkillsTabProps) {
       try {
         const outcome = await recoverSkillJournal(ctx, choice);
         if (outcome.status === "refused") {
-          onToast?.({ tone: "err", title: "Recovery refused", body: outcome.refusal.message });
+          onToast?.({
+            tone: "err",
+            title: "Recovery refused",
+            body: `${outcome.refusal.code}: ${outcome.refusal.message}`,
+          });
           setMode({ kind: "list" });
         } else {
           setMode({ kind: "result", result: outcome.result });
@@ -899,7 +912,7 @@ function RecoveryPanel({ journal, cursor }: { journal: SkillJournal; cursor: num
       <SectionHead
         label="Unfinished operation"
         hint={`${journal.operation} · ${journal.destinations.length} destination(s)`}
-        rightAction="↑↓ choose · ⏎ run"
+        rightAction="↑↓ choose · ⏎ run · esc later"
       />
       <Box flexDirection="column" marginLeft={2}>
         <Text color={colors.warn}>
@@ -920,7 +933,8 @@ function RecoveryPanel({ journal, cursor }: { journal: SkillJournal; cursor: num
         </Box>
         <Box marginTop={1}>
           <Text color={colors.faint}>
-            Neither repeats an effect: a new attempt needs a new proposal.
+            Neither repeats an effect: a new attempt needs a new proposal. `esc` leaves it
+            unfinished — the backups stay and this offer returns next time.
           </Text>
         </Box>
       </Box>
@@ -974,15 +988,14 @@ function acquiringRequest(
 ): SkillChangeRequest | null {
   const curation = item.curation;
   const where = curation?.path !== undefined ? { paths: [curation.path] } : { pick: item.name };
+  // The registered ref travels with EVERY acquisition, not just Update: a row
+  // registered at `#v2` that installs from the default branch would silently
+  // drop the pin — the entry is rewritten from what the acquisition resolved.
+  const pinned = item.ref !== undefined ? { ref: item.ref } : {};
   if (id === "repair") return { operation: "repair", name: item.name };
-  if (id === "install") return { operation: "install", source: item.source, ...where };
+  if (id === "install") return { operation: "install", source: item.source, ...pinned, ...where };
   if (id === "update") {
-    return {
-      operation: "update",
-      source: item.source,
-      ...(item.ref !== undefined ? { ref: item.ref } : {}),
-      ...where,
-    };
+    return { operation: "update", source: item.source, ...pinned, ...where };
   }
   // An explicit source change: the previous installation is retired in the
   // SAME proposal that brings the new one.

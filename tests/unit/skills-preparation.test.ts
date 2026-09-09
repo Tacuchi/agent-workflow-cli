@@ -602,4 +602,61 @@ describe("preparación de skills (Spec 043 · F2)", () => {
       await chmod(blocked, 0o755);
     }
   });
+
+  it("una ruta explícita alcanza una skill más honda que el límite del recorrido", async () => {
+    // Siete niveles: el recorrido local se corta en seis y no la encuentra.
+    const dir = join(root, "deep-source");
+    const deep = join(dir, "a", "b", "c", "d", "e", "f", "g");
+    await skillFile(deep, "tool-design");
+    const rel = "a/b/c/d/e/f/g";
+
+    const acquired = await acquireSource(dir);
+    if ("code" in acquired) throw new Error(acquired.message);
+    try {
+      // El recorrido declara su límite y NO la lista.
+      expect(acquired.inventory.truncated).toBe(true);
+      expect(acquired.inventory.candidates.map((c) => c.path)).not.toContain(rel);
+    } finally {
+      await acquired.release();
+    }
+
+    // Declarada explícitamente, entra igual.
+    const prepared = await prepareSkillChange(ctx, {
+      operation: "install",
+      source: dir,
+      paths: [rel],
+    });
+    if (prepared.status !== "prepared") throw new Error(`estado ${prepared.status}`);
+    try {
+      expect(prepared.proposal.additions[0]?.name).toBe("tool-design");
+      expect(prepared.proposal.additions[0]?.path).toBe(rel);
+    } finally {
+      await prepared.release();
+    }
+  });
+
+  it("una ruta explícita rechaza por su causa: fuera del origen, enlace o sin manifiesto", async () => {
+    const dir = join(root, "explicit-refusals");
+    await skillFile(join(dir, "skills", "tool-design"), "tool-design");
+    await mkdir(join(dir, "no-skill"), { recursive: true });
+    await symlink(join(dir, "skills"), join(dir, "atajo"));
+
+    const cases: Array<[string, string]> = [
+      // Absoluta: no es una ruta DEL ORIGEN. Relativa pero hacia arriba: se sale.
+      ["/etc", "PATH_NOT_RELATIVE"],
+      ["../fuera", "PATH_ESCAPES_SOURCE"],
+      ["skills/no-existe", "PATH_NOT_FOUND"],
+      ["no-skill", "MANIFEST_ABSENT"],
+      ["atajo/tool-design", "PATH_IS_SYMLINK"],
+    ];
+    for (const [path, code] of cases) {
+      const outcome = await prepareSkillChange(ctx, {
+        operation: "install",
+        source: dir,
+        paths: [path],
+      });
+      expect(outcome.status, path).toBe("rejected");
+      if (outcome.status === "rejected") expect(outcome.rejection.code, path).toBe(code);
+    }
+  });
 });

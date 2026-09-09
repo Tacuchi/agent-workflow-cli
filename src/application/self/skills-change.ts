@@ -24,6 +24,7 @@ import {
   type SkillCandidate,
   type SourceInventory,
   acquireSource,
+  candidateAtPath,
   candidatesNamed,
 } from "./skills-discovery.js";
 import {
@@ -193,20 +194,31 @@ function sealProposal(body: Omit<SkillChangeProposal, "digest">): SkillChangePro
 type Selection = { candidates: SkillCandidate[] } | { choice: SkillCandidate[] } | ChangeRejection;
 
 /** The exact selection: every path has to BE a skill of this source. */
-function selectionByPaths(paths: readonly string[], inventory: SourceInventory): Selection {
-  const byPath = new Map(inventory.candidates.map((c) => [c.path, c]));
+async function selectionByPaths(
+  paths: readonly string[],
+  acquired: AcquiredSource,
+): Promise<Selection> {
+  const byPath = new Map(acquired.inventory.candidates.map((c) => [c.path, c]));
   const chosen: SkillCandidate[] = [];
   for (const path of paths) {
-    const found = byPath.get(path.replace(/^\/+|\/+$/g, ""));
-    if (found === undefined) {
-      return {
-        code: "PATH_NOT_A_SKILL",
-        message: `'${path}' no es una skill de este origen${
-          inventory.truncated ? " y el recorrido se cortó: declaralo explícitamente" : ""
-        }`,
-      };
+    const walked = byPath.get(path);
+    if (walked !== undefined) {
+      chosen.push(walked);
+      continue;
     }
-    chosen.push(found);
+    // The path is NOT normalized here on purpose: the validator owns both the
+    // trimming and the refusal, and stripping a leading slash first turned
+    // "this is not a path of the source" into "this does not exist" — a
+    // misleading answer about a path that exists, just outside.
+    //
+    // The walk is not the authority on what the source HAS — it declares its
+    // own limits and says when it was cut. An explicit path is validated
+    // directly against the source, which is what lets somebody reach a skill
+    // deeper than the walk goes, and it refuses by cause: not relative, out of
+    // the source, absent, crossing a link, or no manifest there.
+    const explicit = await candidateAtPath(acquired.root, path);
+    if ("code" in explicit) return explicit;
+    chosen.push(explicit);
   }
   return { candidates: chosen };
 }
@@ -223,9 +235,13 @@ function selectionByName(name: string, inventory: SourceInventory): Selection {
 }
 
 /** The selection a request names, or the reason it cannot be resolved yet. */
-function selectionOf(request: SkillChangeRequest, inventory: SourceInventory): Selection {
+async function selectionOf(
+  request: SkillChangeRequest,
+  acquired: AcquiredSource,
+): Promise<Selection> {
+  const inventory = acquired.inventory;
   if (request.paths !== undefined && request.paths.length > 0) {
-    return selectionByPaths(request.paths, inventory);
+    return selectionByPaths(request.paths, acquired);
   }
   if (request.pick !== undefined) return selectionByName(request.pick, inventory);
   if (inventory.candidates.length === 1 && inventory.candidates[0]) {
@@ -509,7 +525,7 @@ async function prepareFromSource(
   notes: string[],
   acquired: AcquiredSource,
 ): Promise<PrepareOutcome> {
-  const selection = selectionOf(request, acquired.inventory);
+  const selection = await selectionOf(request, acquired);
   if ("code" in selection) {
     await acquired.release();
     return { status: "rejected", rejection: selection };
