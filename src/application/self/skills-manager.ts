@@ -156,10 +156,9 @@ export function skillFrontmatterName(content: string): string | null {
   return block.match(/^name:\s*(\S[^\r\n]*)/m)?.[1]?.trim() ?? null;
 }
 
-/** Bounded walk: nested skills up to skills/<category>/<skill>; skips
- *  node_modules, symlinks (a link's Dirent is not isDirectory) and dot-dirs —
- *  EXCEPT `.claude`, the canonical Claude skills home, so a repo that packages
- *  its skills the standard way (`.claude/skills/<skill>`) stays discoverable. */
+/** What this manager may touch for a name, and what belongs to somebody else.
+ *  READ-ONLY: a preparation needs the ownership picture before proposing an
+ *  effect, and asking for it must not move a byte. */
 export interface SkillOwnership {
   name: string;
   canonical: { path: string; state: SkillReplicaState };
