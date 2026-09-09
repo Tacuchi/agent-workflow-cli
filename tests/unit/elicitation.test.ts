@@ -4,6 +4,7 @@ import {
   CHOICE_KEY,
   FLOW_CONTROL,
   FREE_TEXT_KEY,
+  FREE_TEXT_OPTION,
   classifyElicitationReply,
   elicitationRequestsFor,
   isFlowControl,
@@ -87,19 +88,17 @@ describe("una frontera dicha en el vocabulario de elicitation", () => {
     // viaja ahí. Dejarla afuera sería degradar el contenido, no el mecanismo.
     expect(names[0]).toBe("Aprobar los commits — un commit por fuente afectada");
     expect(names[1]).toBe("Dejar sin commitear — los cambios quedan en el árbol de trabajo");
-    expect(names).toHaveLength(4);
+    expect(names).toHaveLength(5);
   });
 
-  it("conserva la respuesta libre, y como campo aparte en vez de una alternativa falsa", () => {
+  it("permite confirmar una selección sin atravesar un campo de texto adicional", () => {
     const [first] = elicitationRequestsFor(FRONTERA);
     const schema = first?.requestedSchema;
 
-    // Un `enum` rinde un selector cerrado. Sin este segundo campo la frontera
-    // perdería «responder algo distinto», que la doctrina exige.
-    expect(schema?.properties[FREE_TEXT_KEY]).toBeDefined();
-    expect(schema?.required).toBeUndefined();
+    // Codex presents every property as a step, even when it is optional.
+    expect(Object.keys(schema?.properties ?? {})).toEqual([CHOICE_KEY]);
     const values = (schema?.properties[CHOICE_KEY] as { enum: string[] }).enum;
-    expect(values).not.toContain("Otra");
+    expect(values).toContain(FREE_TEXT_OPTION.label);
   });
 });
 

@@ -4,6 +4,12 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.3.1] — 2026-09-09
+
+### Fixed
+
+- **Elegir una alternativa en el selector MCP de Codex ya no exige escribir además una respuesta.** Cada pregunta presenta un único campo de selección. «Escribir otra respuesta» abre el campo de texto solo cuando se elige; abrirlo no registra una decisión ni avanza la pregunta. Una respuesta vacía, un rechazo o una cancelación conservan la frontera pendiente y las respuestas anteriores, y Compactar/Cerrar siguen disponibles.
+
 ## [25.3.0] — 2026-09-04
 
 ### Added

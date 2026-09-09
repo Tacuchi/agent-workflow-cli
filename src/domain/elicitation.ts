@@ -56,23 +56,19 @@ export interface BoundaryQuestion {
  */
 export const CHOICE_KEY = "eleccion";
 
-/**
- * El campo de respuesta libre, y por qué existe.
- *
- * Un `enum` rinde un selector CERRADO: sin esto, la frontera perdería «responder
- * algo distinto de las alternativas ofrecidas», que la doctrina exige de toda
- * presentación. No se resuelve agregando una opción `Otra` al propio enum —eso
- * sería una alternativa falsa que no lleva a ningún lado— sino con un segundo
- * campo, opcional, en la misma solicitud. Que el selector admite varios campos y
- * cuenta los que faltan responder está probado sobre el host real.
- */
+/** Free text travels in a separate request, only after the person asks to write. */
 export const FREE_TEXT_KEY = "otra_respuesta";
+
+export const FREE_TEXT_OPTION: BoundaryOption = {
+  label: "Escribir otra respuesta",
+  consequence: "abre un campo para responder con tus propias palabras",
+};
 
 export interface ElicitationRequest {
   message: string;
   requestedSchema: {
     type: "object";
-    /** Elegir y escribir son alternativas; ninguna se exige por el esquema. */
+    /** Each request asks for a single field: either a selection or free text. */
     required?: readonly string[];
     properties: Record<string, unknown>;
   };
@@ -114,11 +110,14 @@ export function elicitationRequestsFor(
   questions: readonly BoundaryQuestion[],
 ): ElicitationRequest[] {
   return questions.map((question, index) => {
-    const options = orderedOptions(question);
+    // Codex renders even optional properties as additional form steps. Keep the
+    // ordinary path to one field; the server handles the explicit writing action.
+    const options = [...orderedOptions(question), FREE_TEXT_OPTION];
     return {
       message: `${question.question} (${index + 1}/${questions.length})`,
       requestedSchema: {
         type: "object" as const,
+        required: [CHOICE_KEY],
         properties: {
           [CHOICE_KEY]: {
             type: "string",
@@ -127,15 +126,29 @@ export function elicitationRequestsFor(
             enum: options.map((option) => option.label),
             enumNames: options.map((option) => `${option.label} — ${option.consequence}`),
           },
-          [FREE_TEXT_KEY]: {
-            type: "string",
-            title: "Otra respuesta",
-            description: "Si ninguna alternativa sirve, escribí acá lo que corresponda.",
-          },
         },
       },
     };
   });
+}
+
+/** Preserve the original question and position while asking for the opted-in text. */
+export function freeTextRequestFor(message: string): ElicitationRequest {
+  return {
+    message,
+    requestedSchema: {
+      type: "object",
+      required: [FREE_TEXT_KEY],
+      properties: {
+        [FREE_TEXT_KEY]: {
+          type: "string",
+          title: "Otra respuesta",
+          description:
+            "Escribe tu respuesta. También puedes escribir Compactar o Cerrar para detener el recorrido.",
+        },
+      },
+    },
+  };
 }
 
 export type ElicitationOutcome =

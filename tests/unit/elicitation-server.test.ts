@@ -4,7 +4,7 @@ import {
   TOOL_NAME,
   createElicitationServer,
 } from "../../src/application/elicitation-server.js";
-import { CHOICE_KEY, FREE_TEXT_KEY } from "../../src/domain/elicitation.js";
+import { CHOICE_KEY, FREE_TEXT_KEY, FREE_TEXT_OPTION } from "../../src/domain/elicitation.js";
 
 const QUESTIONS = [
   {
@@ -125,6 +125,74 @@ describe("el servidor propio, manejado por un cliente falso", () => {
     });
   });
 
+  it("solo pide texto al elegir escribir, y luego continúa con la pregunta siguiente", () => {
+    const run = driver([
+      { action: "accept", content: { [CHOICE_KEY]: FREE_TEXT_OPTION.label } },
+      { action: "accept", content: { [FREE_TEXT_KEY]: "  commiteá sin push  " } },
+      { action: "accept", content: { [CHOICE_KEY]: "Integrar" } },
+    ]);
+
+    const fields = run.elicitations.map((message) => {
+      const params = message.params as {
+        requestedSchema: { properties: Record<string, unknown> };
+      };
+      return Object.keys(params.requestedSchema.properties);
+    });
+    expect(fields).toEqual([[CHOICE_KEY], [FREE_TEXT_KEY], [CHOICE_KEY]]);
+    expect(run.result).toEqual({
+      outcome: "chosen",
+      answers: [
+        { header: "Commit", choice: "commiteá sin push", free: true, flow_control: false },
+        { header: "Integrar", choice: "Integrar", free: false, flow_control: false },
+      ],
+    });
+  });
+
+  it("abrir el campo de texto no resuelve la pregunta", () => {
+    const run = driver([{ action: "accept", content: { [CHOICE_KEY]: FREE_TEXT_OPTION.label } }]);
+
+    expect(run.elicitations).toHaveLength(2);
+    expect(run.result).toBeNull();
+  });
+
+  it.each([
+    [{ action: "accept", content: { [FREE_TEXT_KEY]: "   " } }, "empty"],
+    [{ action: "accept", content: { [CHOICE_KEY]: "Integrar" } }, "empty"],
+    [{ action: "decline" }, "declined"],
+    [{ action: "cancel" }, "cancelled"],
+  ])(
+    "texto sin respuesta válida conserva lo ya elegido y la frontera pendiente: %j",
+    (reply, outcome) => {
+      const run = driver([
+        { action: "accept", content: { [CHOICE_KEY]: "Aprobar" } },
+        { action: "accept", content: { [CHOICE_KEY]: FREE_TEXT_OPTION.label } },
+        reply,
+      ]);
+
+      expect(run.result).toMatchObject({
+        outcome,
+        stopped_at: "Integrar",
+        answers: [{ header: "Commit", choice: "Aprobar", free: false, flow_control: false }],
+      });
+      expect(run.result?.fallback_markdown).toContain("¿Integro la unidad?");
+      expect(run.result?.fallback_markdown).not.toContain("¿Aprobás los commits?");
+    },
+  );
+
+  it.each(["Compactar", "Cerrar"])("permite %s también desde la respuesta libre", (choice) => {
+    const run = driver([
+      { action: "accept", content: { [CHOICE_KEY]: FREE_TEXT_OPTION.label } },
+      { action: "accept", content: { [FREE_TEXT_KEY]: choice } },
+    ]);
+
+    expect(run.elicitations).toHaveLength(2);
+    expect(run.result).toEqual({
+      outcome: "chosen",
+      stopped_at: "Commit",
+      answers: [{ header: "Commit", choice, free: true, flow_control: true }],
+    });
+  });
+
   it("pausar en la primera pregunta corta el recorrido", () => {
     const run = driver([{ action: "accept", content: { [CHOICE_KEY]: "Compactar" } }]);
 
@@ -239,6 +307,20 @@ describe("el servidor propio, manejado por un cliente falso", () => {
             ...QUESTIONS[0],
             options: [
               { label: "Compactar", consequence: "ajena", recommended: true },
+              { label: "Otra", consequence: "otra" },
+            ],
+          },
+        ],
+      },
+    ],
+    [
+      "etiqueta de respuesta libre reservada",
+      {
+        questions: [
+          {
+            ...QUESTIONS[0],
+            options: [
+              { ...FREE_TEXT_OPTION, recommended: true },
               { label: "Otra", consequence: "otra" },
             ],
           },

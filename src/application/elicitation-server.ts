@@ -20,8 +20,10 @@ import { degradationNotice, renderLabeledMarkdown } from "../domain/degradation-
 import {
   type BoundaryQuestion,
   type ElicitationOutcome,
+  FREE_TEXT_OPTION,
   classifyElicitationReply,
   elicitationRequestsFor,
+  freeTextRequestFor,
   isFlowControl,
   orderedOptions,
 } from "../domain/elicitation.js";
@@ -81,6 +83,7 @@ interface Pending {
   index: number;
   answers: BoundaryAnswer[];
   elicitId: string;
+  freeText: boolean;
 }
 
 export interface ElicitationServer {
@@ -139,7 +142,7 @@ export function createElicitationServer(deps: ElicitationServerDeps): Elicitatio
       jsonrpc: "2.0",
       id: pending.elicitId,
       method: "elicitation/create",
-      params: request,
+      params: pending.freeText ? freeTextRequestFor(request.message) : request,
     });
   }
 
@@ -148,12 +151,20 @@ export function createElicitationServer(deps: ElicitationServerDeps): Elicitatio
     const question = pending.questions[pending.index];
     const header = question?.header ?? "";
     const validChoices =
-      question === undefined ? [] : orderedOptions(question).map((option) => option.label);
+      question === undefined || pending.freeText
+        ? []
+        : [...orderedOptions(question), FREE_TEXT_OPTION].map((option) => option.label);
     const outcome = classifyElicitationReply(message.result ?? message.error ?? null, validChoices);
     if (outcome.kind !== "chosen") {
       // Ninguna de estas avanza la frontera. Lo que cambia entre ellas es qué se
       // le dice a la persona, y por eso vuelven distinguidas en vez de colapsadas.
       finish(outcome.kind, header);
+      return;
+    }
+    // Opening the text form is not an answer and must not advance the boundary.
+    if (!outcome.free && outcome.choice === FREE_TEXT_OPTION.label) {
+      pending.freeText = true;
+      ask();
       return;
     }
     const flow = isFlowControl(outcome.choice);
@@ -170,6 +181,7 @@ export function createElicitationServer(deps: ElicitationServerDeps): Elicitatio
       return;
     }
     pending.index += 1;
+    pending.freeText = false;
     ask();
   }
 
@@ -199,6 +211,7 @@ export function createElicitationServer(deps: ElicitationServerDeps): Elicitatio
       index: 0,
       answers: [],
       elicitId: "",
+      freeText: false,
     };
     ask();
   }
@@ -445,6 +458,12 @@ function parseOption(raw: unknown, questionPosition: number, optionPosition: num
     return {
       ok: false,
       error: `La alternativa '${label}' de la pregunta ${questionPosition} está reservada para control de flujo.`,
+    };
+  }
+  if (label === FREE_TEXT_OPTION.label) {
+    return {
+      ok: false,
+      error: `La alternativa '${label}' de la pregunta ${questionPosition} está reservada para abrir la respuesta libre.`,
     };
   }
   if (raw.recommended !== undefined && typeof raw.recommended !== "boolean") {
