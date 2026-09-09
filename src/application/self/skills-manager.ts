@@ -338,5 +338,3 @@ async function inspectReplica(
   // registered mode.
   return host.key === "claude" && registeredMode === "copy" ? "ours" : "foreign";
 }
-
-/** Materializes the replica on a host (pre-flight already ensured it is not foreign). */

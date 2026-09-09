@@ -24,14 +24,10 @@ import {
   type SkillCandidate,
   type SourceInventory,
   acquireSource,
-  candidateAtPath,
   candidatesNamed,
 } from "./skills-discovery.js";
 import {
   type SkillOwnership,
-  canonicalSkillsRoot,
-  claudeReplicaRoot,
-  geminiReplicaRoot,
   inspectSkillOwnership,
   resolveSkillSource,
 } from "./skills-manager.js";
@@ -505,7 +501,7 @@ async function prepareWithoutSource(
 }
 
 /** `register`, `install`, `update` and `replace`: the payload comes first. */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the sequence IS the guarantee — selection, then payload, then registry preconditions, then withdrawals, then the seal — and every early exit releases what the previous step acquired. Splitting it would separate an acquisition from its release.
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: the sequence IS the guarantee — selection, then payload, then registry preconditions, then withdrawals, then the seal — and every early exit either releases what the previous step acquired or hands that release to the caller. Splitting it would separate an acquisition from its release.
 async function prepareFromSource(
   ctx: CliContext,
   request: SkillChangeRequest,
@@ -617,11 +613,3 @@ async function prepareFromSource(
   });
   return { status: "prepared", proposal, release };
 }
-
-/** Roots the manager owns, for a surface that wants to name them. */
-export function managedRoots(home: string): string[] {
-  return [canonicalSkillsRoot(home), claudeReplicaRoot(home), geminiReplicaRoot(home)];
-}
-
-/** Candidate at an explicit path of an already-acquired source. */
-export { candidateAtPath };
