@@ -26,8 +26,8 @@ import {
   type WorklineNodeId,
   formatNodeId,
 } from "../../domain/workline-node.js";
+import type { GraphNode, WorklineGraph } from "../workline-graph.js";
 import type { IndexedReservation } from "../workline-index-service.js";
-import type { GraphNode, RetirementGraph } from "./graph.js";
 
 export type RejectionCode =
   | "DOCS_CANON_INVALID"
@@ -60,7 +60,7 @@ export type TargetResolution =
  * ceremony when only one node answers. The moment two do, the ambiguity is the
  * answer.
  */
-export function resolveTarget(graph: RetirementGraph, selector: TargetSelector): TargetResolution {
+export function resolveTarget(graph: WorklineGraph, selector: TargetSelector): TargetResolution {
   const matches = candidatesFor(graph, selector);
   if (matches.length === 1 && matches[0] !== undefined) return { ok: true, node: matches[0] };
   if (matches.length === 0) {
@@ -101,7 +101,7 @@ export function resolveTarget(graph: RetirementGraph, selector: TargetSelector):
  * the same number still reports the truth — the number is taken, and by what.
  */
 function heldSlotFor(
-  graph: RetirementGraph,
+  graph: WorklineGraph,
   selector: TargetSelector,
 ): IndexedReservation | undefined {
   if (selector.form === "folder") return undefined;
@@ -157,7 +157,7 @@ function rejectHeldSlot(selector: TargetSelector, slot: IndexedReservation): Ret
   };
 }
 
-function candidatesFor(graph: RetirementGraph, selector: TargetSelector): GraphNode[] {
+function candidatesFor(graph: WorklineGraph, selector: TargetSelector): GraphNode[] {
   switch (selector.form) {
     case "path":
       return graph.all().filter((n) => n.path === selector.path);
@@ -181,7 +181,7 @@ function candidatesFor(graph: RetirementGraph, selector: TargetSelector): GraphN
  * with a type. Keeping it out of the graph's vocabulary and in the selector's is
  * what stops the graph from having a fourth kind that owns nothing.
  */
-function quickCandidates(graph: RetirementGraph, key: string): GraphNode[] {
+function quickCandidates(graph: WorklineGraph, key: string): GraphNode[] {
   return graph
     .all()
     .filter((n) => n.kind === "session" && n.session?.type === "quick" && matchesKey(n, key));
@@ -214,10 +214,7 @@ export type ClosureResolution =
  * "exclusive ownership" a computed fact — a session that belongs to two plans is
  * not a descendant of either, it is shared work, and the operation stops.
  */
-export function resolveDiscardClosure(
-  graph: RetirementGraph,
-  target: GraphNode,
-): ClosureResolution {
+export function resolveDiscardClosure(graph: WorklineGraph, target: GraphNode): ClosureResolution {
   const walked = walkDescendants(graph, target);
   if ("rejection" in walked) return { ok: false, rejection: walked.rejection };
 
@@ -243,7 +240,7 @@ type Collected = Map<string, { node: GraphNode; reason: ClosureEntry["reason"] }
  * hard to hold in the head.
  */
 function walkDescendants(
-  graph: RetirementGraph,
+  graph: WorklineGraph,
   target: GraphNode,
 ): { collected: Collected } | { rejection: RetirementRejection } {
   const collected: Collected = new Map();
@@ -270,7 +267,7 @@ function walkDescendants(
 
 /** One node's children into the closure, or the cycle that has no removal order. */
 function collectChildren(
-  graph: RetirementGraph,
+  graph: WorklineGraph,
   parent: WorklineNodeId,
   collected: Collected,
   pending: WorklineNodeId[],
@@ -311,7 +308,7 @@ function unprovableEdges(key: string, edges: readonly WorklineEdge[]): Retiremen
  * even though the target never mentions it.
  */
 function sharedConsumer(
-  graph: RetirementGraph,
+  graph: WorklineGraph,
   collected: Map<string, { node: GraphNode; reason: ClosureEntry["reason"] }>,
 ): RetirementRejection | null {
   for (const { node } of collected.values()) {
@@ -389,7 +386,7 @@ function removalOrder(
  * assumption behind it is explicit in the spec: a FINISHED session does not become
  * resettable by being selected.
  */
-export function resolveResetSession(graph: RetirementGraph, target: GraphNode): TargetResolution {
+export function resolveResetSession(graph: WorklineGraph, target: GraphNode): TargetResolution {
   if (target.kind === "session") {
     const facts = target.session;
     if (facts === null) return { ok: false, rejection: noIncomplete(formatNodeId(target.id)) };
@@ -458,7 +455,7 @@ function noIncomplete(target: string, seen: readonly GraphNode[] = []): Retireme
  * orphaned — so its presence is a refusal, which is the same rule discard applies
  * to shared ownership, read from the other direction.
  */
-export function resolveResetClosure(graph: RetirementGraph, session: GraphNode): ClosureResolution {
+export function resolveResetClosure(graph: WorklineGraph, session: GraphNode): ClosureResolution {
   const entries: Array<{ node: GraphNode; reason: ClosureEntry["reason"] }> = [
     { node: session, reason: "target" },
   ];

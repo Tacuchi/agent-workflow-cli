@@ -18,6 +18,7 @@ import {
   type SessionUnit,
   type WorklineIndex,
   buildWorklineIndex,
+  pipelineTie,
   planIsPending,
   planPresentation,
   specDetail,
@@ -62,6 +63,16 @@ export interface ResumeProposal {
   command: string | null;
   /** A non-blocking compatibility caveat, shown only with `--detail`. */
   warning?: { code: string; message: string };
+  /**
+   * Why a declared cut put this after something that has not landed.
+   *
+   * Carried separately from `warning` because the two can collide: `warning` is
+   * one field, and when the document has a defect of its own — an unsealed
+   * baseline, an unverified closure — the order advisory yields it. Without this
+   * key the reason would then reach `status` and vanish on `resume`, so the same
+   * plan would be explained on one surface and silently demoted on the other.
+   */
+  postponed?: { reason: string; waiting_on: string[] };
   /**
    * Design references of this document that are NOT valid. Absent when the
    * document pins none or every one resolves — a resume that always carried the
@@ -220,12 +231,12 @@ function resumePipeline(index: WorklineIndex): ResumeOutcome {
   }
   const candidates = index.pipeline.map((item) => pipelineProposal(index, item));
 
-  // A tie is priority + progress, never date. Two items that reach here are
-  // equally next, and picking one for the user is what this replaces.
-  const tied = index.pipeline.filter(
-    (item) =>
-      item.priority === head.priority && (item.started ?? false) === (head.started ?? false),
-  );
+  // A tie is the CLI's rule, read and not re-derived. Two items that reach here
+  // are equally next, and picking one for the user is what this replaces — but
+  // two that a declared cut already separated are not tied at all, and spelling
+  // the rule a second time here is how this surface would come to disagree with
+  // the board it projects.
+  const tied = index.pipeline.filter((item) => pipelineTie(item, head));
   if (tied.length > 1) {
     return {
       status: "candidates",
@@ -296,15 +307,16 @@ function planProposal(plan: IndexedPlan, index: WorklineIndex): ResumeProposal {
   };
 }
 
-/** The three fields a proposal takes verbatim from the shared derivation. */
+/** The fields a proposal takes verbatim from the shared derivation. */
 function told(
   detail: PipelineItemDetail,
-): Pick<ResumeProposal, "objective" | "progress" | "next" | "warning"> {
+): Pick<ResumeProposal, "objective" | "progress" | "next" | "warning" | "postponed"> {
   return {
     objective: detail.objective,
     progress: detail.progress,
     next: detail.next,
     ...(detail.warning === undefined ? {} : { warning: detail.warning }),
+    ...(detail.postponed === undefined ? {} : { postponed: detail.postponed }),
   };
 }
 

@@ -17,10 +17,12 @@ import {
   reconciliationOf,
 } from "../domain/reconciliation.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
+import { type WorklineNodeId, formatNodeId } from "../domain/workline-node.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { type SlotState, sanctionedActionFor, scanSlots } from "./claims-recovery.js";
+import { type CutIntentRead, readCutIntents, readingForPlan } from "./cut-intent-ledger.js";
 import { localDateIso } from "./dates.js";
 import { noteIndexPath, readNoteIndex } from "./decision-note-service.js";
 import { type DesignGraph, buildDesignGraph } from "./design/design-graph-service.js";
@@ -45,6 +47,14 @@ import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { resumePointOf } from "./plan-current-point.js";
 import { type HoldingRun, holdingRunOf, readHoldingRuns } from "./plan-open-run.js";
+import {
+  type DerivedPass,
+  type ProductionStanding,
+  derivePasses,
+  foldProduction,
+  productionStandingOf,
+  readReleasePasses,
+} from "./release-pass-ledger.js";
 import { listPendingJournals } from "./retirement/journal.js";
 import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
@@ -117,6 +127,13 @@ export interface IndexedSpec {
   /** derived alias of `status === "ready-for-plan"`; kept for existing consumers */
   refined: boolean;
   open_questions: number;
+  /**
+   * The production axis, derived from the pass ledger and INDEPENDENT of the
+   * closure axis beside it. `no-record` is its own answer: a document that
+   * predates the ledger is neither released nor pending, and saying either
+   * would invent a fact out of a silence.
+   */
+  production: ProductionStanding;
   date: string;
   relative: string;
 }
@@ -195,6 +212,13 @@ export interface IndexedPlan {
    * the runs are read, like {@link IndexedSession.units}.
    */
   holding_run: HoldingRun | null;
+  /**
+   * The production axis, derived from the pass ledger. Closure is the plan's
+   * third axis; this is a fourth, and they answer different questions — a plan
+   * can be closed and not shipped, and until this existed "closed" was the most
+   * finished thing the board could say.
+   */
+  production: ProductionStanding;
   date: string;
   relative: string;
 }
@@ -369,6 +393,21 @@ export interface PipelineItemDetail {
    * not made unexecutable only because publication predates baseline seals.
    */
   warning?: { code: string; message: string };
+  /**
+   * Why this row is not being recommended yet, when a declared cut put it after
+   * something that has not landed.
+   *
+   * Its own field rather than `next` or `warning`: `next` is what the work owes,
+   * and `warning` already carries at most one truthful note about the DOCUMENT
+   * (an unsealed baseline, an unverified closure). A postponement is neither —
+   * it is a statement about the ORDER somebody declared — and folding it into
+   * either would either lose the reason or evict a warning about a real defect.
+   *
+   * It blocks nothing. The row stays runnable and its command stays offered:
+   * running out of the declared order is allowed, and the arnés says what it
+   * expected instead of refusing.
+   */
+  postponed?: { reason: string; waiting_on: string[] };
 }
 
 export interface PipelineItem {
@@ -390,6 +429,11 @@ export interface PipelineItem {
   detail: PipelineItemDetail;
   /** plans only: work already started outranks an untouched plan */
   started?: boolean;
+  /**
+   * Where a declared cut put this plan. Absent when nobody declared one — and
+   * that absence is what keeps an undeclared board ordered exactly as before.
+   */
+  intent?: { placement: "in-pass"; index: number } | { placement: "deferred" };
 }
 
 export interface WorklineIndex {
@@ -523,6 +567,24 @@ export async function buildWorklineIndex(
   for (const plan of plans) {
     plan.holding_run = holdingRunOf(runs, plan.file);
   }
+  // One read of the pass ledger for the whole board, like the runs above: every
+  // document's production axis derives from the same facts, so a second read
+  // here would be a second chance for two rows to disagree.
+  const passes = derivePasses((await readReleasePasses(fs, paths)).events);
+  // The one human input the board takes. Read once, beside the passes, for the
+  // same reason: two reads are two chances for two rows to disagree.
+  const cuts = await readCutIntents(fs, paths);
+  const livePlans = new Set(plans.map((plan) => formatNodeId({ kind: "plan", key: plan.number })));
+  for (const plan of plans) {
+    plan.production = productionStandingOf(passes, { kind: "plan", key: plan.number });
+  }
+  for (const spec of specs) {
+    spec.production = foldProduction(
+      plans
+        .filter((plan) => plan.spec.status === "resolved" && plan.spec.number === spec.number)
+        .map((plan) => plan.production),
+    );
+  }
   const discarded = await readDiscarded(fs, sessions, cwd, now);
   const designs = await buildDesignGraph(fs, cwd, [
     ...specs.map((s) => ({ file: s.file, kind: "spec" as const })),
@@ -535,7 +597,7 @@ export async function buildWorklineIndex(
     plans,
     sessions,
     discarded,
-    pipeline: derivePipeline(specs, plans, designs),
+    pipeline: derivePipeline(specs, plans, designs, { cuts, passes, live: livePlans }),
     loose_sessions: looseSessions(sessions),
     designs,
     orphan_units: isolation.orphans,
@@ -621,10 +683,25 @@ async function readIsolation(
 
 // ── pipeline ─────────────────────────────────────────────────────────────────
 
+/** What a declared cut says about the board, read once for the whole derivation. */
+interface CutContext {
+  cuts: CutIntentRead;
+  passes: DerivedPass[];
+  /**
+   * The plans that actually exist in the workspace, by node id.
+   *
+   * Needed because a cut is a DECLARATION and the corpus moves under it: a plan
+   * it names can be discarded, retired, or never written at all. Such a node has
+   * no pass and never will, so waiting on it is waiting forever.
+   */
+  live: ReadonlySet<string>;
+}
+
 function derivePipeline(
   specs: IndexedSpec[],
   plans: IndexedPlan[],
   designs: DesignGraph,
+  cut: CutContext,
 ): PipelineItem[] {
   const items: PipelineItem[] = [];
   for (const spec of specs) {
@@ -637,21 +714,150 @@ function derivePipeline(
   }
   for (const plan of plans) {
     if (!planIsPending(plan)) continue;
-    const presentation = planPresentation(plan, designs);
-    items.push({
-      kind: presentation.kind,
-      priority: presentation.kind === "plan-handoff" ? 4 : 3,
-      file: plan.file,
-      number: plan.number,
-      slug: plan.slug,
-      summary: planSummary(plan),
-      action: presentation.action,
-      command: presentation.action.command,
-      detail: presentation.detail,
-      started: plan.tasks_done > 0 || plan.phases_validated > 0,
-    });
+    // Shipped work is not pending work. This is a SECOND axis beside the closure
+    // one `planIsPending` already applies: a plan can be open and live, or closed
+    // and unshipped, and until the pass ledger existed the board could only see
+    // the second half of that.
+    if (plan.production.axis === "in-production") continue;
+    items.push(planItem(plan, designs, cut));
   }
   return items.sort(comparePipeline);
+}
+
+/**
+ * The order advisory, on the channel the board already has.
+ *
+ * `warning` is described where it is declared as a TRUTHFUL, NON-BLOCKING note,
+ * and that is exactly what running ahead of a declared order deserves: the arnés
+ * says what it expected and carries on. Nothing new had to be built for this —
+ * which is also why the entry gate of `plan-exec`, which already reads the board
+ * with `aw status --json`, sees it without a line of its own.
+ *
+ * It yields to a warning that is already there. The ones the board emits are
+ * about a DEFECT of the document — a baseline nobody sealed, a closure nobody
+ * verified — and a defect outranks an advisory when only one can be shown. The
+ * reason is never lost when it yields: `postponed` carries it regardless, and
+ * `status` prints that line on every row that has one.
+ */
+function orderWarning(
+  detail: PipelineItemDetail,
+  postponed: PipelineItemDetail["postponed"],
+): Pick<PipelineItemDetail, "warning"> {
+  if (postponed === undefined || detail.warning !== undefined) return {};
+  return {
+    warning: {
+      code: "WORKLINE_PLAN_OUT_OF_DECLARED_ORDER",
+      message: `fuera del orden declarado · ${postponed.reason}. Ejecutarlo igual es válido: esto avisa, no bloquea`,
+    },
+  };
+}
+
+/**
+ * Where a declared cut put this plan, and whether that makes it postponed.
+ *
+ * Postponed means the person reserved it for a LATER pass and what goes first
+ * has not landed. It is derived from two facts and never written down: the cut
+ * says the plan is deferred, and the plans it is deferred behind are not all in
+ * production yet. When the pass that carries them closes, the reason evaporates
+ * on its own and the row becomes recommendable — nobody has to remember to
+ * un-postpone it.
+ *
+ * A plan nobody declared gets neither field, which is what keeps an undeclared
+ * board ordered exactly as it is today.
+ */
+function placeOf(
+  cut: CutContext,
+  plan: IndexedPlan,
+): { intent?: PipelineItem["intent"]; postponed?: PipelineItemDetail["postponed"] } {
+  const reading = readingForPlan(cut.cuts, { kind: "plan", key: plan.number });
+  if (!reading.declared) return {};
+  const position = reading.position;
+  if (position.placement === "in-pass") {
+    return { intent: { placement: "in-pass", index: position.index } };
+  }
+  if (position.placement !== "deferred") return {};
+  const postponed = postponementOf(cut, position.after);
+  return { intent: { placement: "deferred" }, ...(postponed !== null ? { postponed } : {}) };
+}
+
+/**
+ * Why a deferred plan is not being recommended yet, or `null` once it is.
+ *
+ * Derived from what has landed and never written down: when the pass carrying
+ * the plans that go first closes, the reason evaporates on its own and nobody
+ * has to remember to un-postpone anything.
+ */
+function postponementOf(
+  cut: CutContext,
+  after: readonly WorklineNodeId[],
+): PipelineItemDetail["postponed"] | null {
+  // A node the workspace does not have is NOT something to wait for. It has no
+  // pass and it never will — nobody declares a release for a document that was
+  // discarded or never written — so keeping it in `waiting` postpones the row
+  // forever, and the guarantee above becomes false. The declaration is not
+  // silently trimmed: what is absent is named in the reason while a real wait
+  // remains, and when the absent ones are ALL that is left the row becomes
+  // recommendable, which is the truthful answer — nothing real is ahead of it.
+  const absent = after.filter((node) => !cut.live.has(formatNodeId(node)));
+  const waiting = after.filter(
+    (node) =>
+      cut.live.has(formatNodeId(node)) &&
+      productionStandingOf(cut.passes, node).axis !== "in-production",
+  );
+  if (waiting.length === 0) return null;
+  const names = waiting.map(formatNodeId);
+  const passes = passesCarrying(cut.passes, waiting);
+  const held =
+    passes.length === 0
+      ? `primero va ${names.join(", ")}`
+      : `${passes.length === 1 ? "el pase" : "los pases"} ${passes.map((v) => `'${v}'`).join(", ")} sigue${passes.length === 1 ? "" : "n"} abierto${passes.length === 1 ? "" : "s"} y primero va ${names.join(", ")}`;
+  const missing =
+    absent.length === 0
+      ? ""
+      : ` (la intención también nombra ${absent.map(formatNodeId).join(", ")}, que no está en el workspace: no se espera por lo que no existe)`;
+  return {
+    reason: `la intención declarada lo reservó para un pase posterior: ${held}${missing}`,
+    waiting_on: names,
+  };
+}
+
+/**
+ * Every pass that carries a plan going first, in ledger order.
+ *
+ * All of them and not just the first: work held behind two passes that names
+ * only one reads as waiting on less than it is.
+ */
+function passesCarrying(
+  passes: readonly DerivedPass[],
+  plans: readonly WorklineNodeId[],
+): string[] {
+  const keys = new Set(plans.map(formatNodeId));
+  return passes
+    .filter((derived) => derived.pass.plans.some((node) => keys.has(formatNodeId(node))))
+    .map((derived) => derived.pass.version);
+}
+
+/** One pending plan as a board row, with the place a declared cut gave it. */
+function planItem(plan: IndexedPlan, designs: DesignGraph, cut: CutContext): PipelineItem {
+  const presentation = planPresentation(plan, designs);
+  const place = placeOf(cut, plan);
+  return {
+    kind: presentation.kind,
+    priority: presentation.kind === "plan-handoff" ? 4 : 3,
+    file: plan.file,
+    number: plan.number,
+    slug: plan.slug,
+    summary: planSummary(plan),
+    action: presentation.action,
+    command: presentation.action.command,
+    detail: {
+      ...presentation.detail,
+      ...(place.postponed !== undefined ? { postponed: place.postponed } : {}),
+      ...orderWarning(presentation.detail, place.postponed),
+    },
+    started: plan.tasks_done > 0 || plan.phases_validated > 0,
+    ...(place.intent !== undefined ? { intent: place.intent } : {}),
+  };
 }
 
 /** Active sessions carrying work that no document accounts for, by folder. */
@@ -1052,11 +1258,63 @@ function describeUnprovenBaseline(plan: IndexedPlan): string {
  */
 function comparePipeline(a: PipelineItem, b: PipelineItem): number {
   if (a.priority !== b.priority) return a.priority - b.priority;
+  // A postponement sinks a row WITHIN its priority instead of changing it: the
+  // kind of work it is did not change, only the order somebody declared for it.
+  const postponed =
+    Number(a.detail.postponed !== undefined) - Number(b.detail.postponed !== undefined);
+  if (postponed !== 0) return postponed;
+  const declared = compareDeclaredOrder(a, b);
+  if (declared !== 0) return declared;
   const started = Number(b.started ?? false) - Number(a.started ?? false);
   if (started !== 0) return started;
   const left = a.number ?? "";
   const right = b.number ?? "";
   return compareNumberedStrings(left, right);
+}
+
+/**
+ * Two items whose only remaining difference is the correlative — a real tie.
+ *
+ * Exported because `resume` asks the same question, and it used to answer it on
+ * its own with "priority + progress". That spelling was right while the
+ * correlative was the only other key: a number is an accident of minting, so two
+ * rows separated by it alone are equally next and the person picks. A DECLARED
+ * order is not an accident, and leaving it out of the tie meant resume would
+ * report three candidates tied after somebody had already said which goes first
+ * — the recommendation failing to relay a decision that exists.
+ */
+export function pipelineTie(a: PipelineItem, b: PipelineItem): boolean {
+  return (
+    a.priority === b.priority &&
+    (a.detail.postponed !== undefined) === (b.detail.postponed !== undefined) &&
+    compareDeclaredOrder(a, b) === 0 &&
+    (a.started ?? false) === (b.started ?? false)
+  );
+}
+
+/**
+ * The declared order, ahead of the correlative and behind nothing else.
+ *
+ * It sits between the postponement and `started` for one reason: a correlative
+ * is an accident of when a document was minted, and a declared order is a
+ * decision somebody made — so where a decision exists it governs, and where it
+ * does not the board keeps exactly the order it has today. Two rows that both
+ * lack a declared place tie here and fall through unchanged.
+ */
+function compareDeclaredOrder(a: PipelineItem, b: PipelineItem): number {
+  const left = a.intent?.placement === "in-pass" ? a.intent.index : null;
+  const right = b.intent?.placement === "in-pass" ? b.intent.index : null;
+  // The position is read on ONE scale, across cuts: "what somebody put first"
+  // comes before "what somebody put second", whichever cut said it. Making two
+  // positions from different cuts tie instead — so they fall to the correlative —
+  // reads better and is NOT an ordering: with A(cut X, 5, n=010), B(cut Y, 0,
+  // n=020) and C(cut X, 0, n=030) it gives A<B by number, B<C by number and C<A
+  // by index, a cycle, and a comparator with a cycle sorts arbitrarily. One
+  // scale is coarser and consistent, which is the property a sort needs.
+  if (left !== null && right !== null) return left - right;
+  if (left !== null) return -1;
+  if (right !== null) return 1;
+  return 0;
 }
 
 // ── workspace ────────────────────────────────────────────────────────────────
@@ -1123,6 +1381,7 @@ async function readSpecs(
         status,
         refined: status === "ready-for-plan",
         open_questions: countOpenQuestions(text),
+        production: { axis: "no-record" },
         date: ts.date,
         relative: ts.relative,
       });
@@ -1322,6 +1581,7 @@ async function readPlans(
         // Filled in `buildWorklineIndex`, once the live runs are read: a plan is
         // held by a SESSION, and the plans are read before the sessions are.
         holding_run: null,
+        production: { axis: "no-record" },
         date: ts.date,
         relative: ts.relative,
       });

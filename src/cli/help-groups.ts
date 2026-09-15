@@ -76,6 +76,17 @@ const GROUPS: readonly CommandGroup[] = [
       // before releasing it, so a late sealed publication is rejected rather
       // than colliding on a number somebody else now holds.
       "claims",
+      // The order and grouping a person meant for a cut of plans, declared once
+      // and corrected by declaring again. It sits beside the board it reorders
+      // because it is the only input the board's recommendation takes from a
+      // human, and it constrains nothing: deviating is warned about, never
+      // refused.
+      "cut-intent",
+      // The other half of the same reading: which passes to production exist,
+      // which sources have actually arrived on each, and therefore what is
+      // live. Closed is not released, and this is where the difference is
+      // declared.
+      "release-pass",
       // Context budget & read-set resolution (spec 009): what a command costs
       // to load, and which documents it actually has to load.
       "context-budget",

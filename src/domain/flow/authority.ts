@@ -3647,6 +3647,16 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
       "comando transversal de reservas: mismo contrato que `discard` y `reset` —vista previa y `--approval` con el digest recomputado sobre el árbol vivo— y sin corrida propia por una razón más fuerte todavía, porque la reserva que libera puede ser la de la corrida que lo dirigiera. Su autoridad es el orden que aplica: comprobar que el marcador sigue intacto, sellar la revocación irrevocable acotada al claim y sólo después liberar",
   },
   {
+    command: "cut-intent",
+    reason:
+      "comando declarativo de estado del workspace: registra la intención con que un corte de planes se pensó ejecutar y la relee, sin corrida propia porque no hay recorrido que dirigir —declarar un orden es UN acto, no un tramo con fronteras—. No lleva `prepare`/`apply` porque no ejerce ningún efecto sobre el trabajo: agrega un evento a un libro append-only bajo el namespace del workspace, y corregir es declarar de nuevo, con el registro anterior conservado y legible. Su autoridad es lo que NO hace: no impone el orden que registra, así que ejecutar fuera de él se avisa y nunca se rechaza",
+  },
+  {
+    command: "release-pass",
+    reason:
+      "comando declarativo de estado del workspace, hermano de `cut-intent`: declara un pase a producción, registra la llegada de cada fuente y su reversión, sin corrida propia por la misma razón —registrar un hecho que ya ocurrió no es un tramo con fronteras—. Su autoridad también es lo que se niega a hacer: una llegada se DECLARA y no se comprueba contra un registro de paquetes ni contra un host desplegado, porque el registro no puede depender de alcanzar la red para decir lo que alguien ya sabe; y enlazar un artefacto sólo comprueba que la ruta existe, sin abrirlo, moverlo, renumerarlo ni ejecutarlo",
+  },
+  {
     command: "reseal",
     reason:
       "comando transversal de mantenimiento documental: mismo contrato que `discard`, `reset` y `claims` —`prepare` read-only y `apply` con el digest exacto recomputado bajo el lock del workspace— y sin corrida propia porque no hay recorrido que dirigir: re-sellar es UNA afirmación humana sobre un plan que sigue valiendo, no un tramo con fronteras. La divergencia que sí exige rediseñar el plan sigue entregándose a `/w:plan-refine`",
