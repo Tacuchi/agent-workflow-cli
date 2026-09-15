@@ -82,6 +82,9 @@ function renderProposal(proposal: ResumeProposal, detail: boolean): string {
     lines.push(`  Diseño     [${design.state}] ${design.baseline}${because(design.detail)}`);
   }
   if (detail) {
+    if (proposal.postponed !== undefined) {
+      lines.push(`  Postergado ${proposal.postponed.reason}`);
+    }
     if (proposal.warning !== undefined) {
       lines.push(`  Aviso      ${proposal.warning.code}: ${proposal.warning.message}`);
     }

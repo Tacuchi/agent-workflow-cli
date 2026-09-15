@@ -1,6 +1,12 @@
 /**
- * The provenance and ownership graph a retirement reads before it deletes
- * anything.
+ * The provenance and ownership graph of the workspace.
+ *
+ * It used to live inside the retirement module, which made consulting it — "what
+ * does this plan descend from, and what descends from it?" — go through a
+ * destructive capability. The graph itself never deleted anything; it only
+ * answered. Two capabilities need that answer now, so it lives where both can
+ * reach it, and the move is of LOCATION only: same edges, same evidence
+ * classification, same refusal to build one from a hint.
  *
  * Three readings feed it and each one carries its own strength, which is the
  * whole point of building a graph rather than a list: a plan's `Derived from`
@@ -15,9 +21,9 @@
  */
 
 import { join, relative } from "node:path";
-import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
-import type { SessionCustody } from "../../domain/session/custody.js";
-import { CUSTODY_FILE, custodyCompleteness } from "../../domain/session/custody.js";
+import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
+import type { SessionCustody } from "../domain/session/custody.js";
+import { CUSTODY_FILE, custodyCompleteness } from "../domain/session/custody.js";
 import {
   type EdgeEvidence,
   type WorklineEdge,
@@ -26,13 +32,13 @@ import {
   formatNodeId,
   isProvable,
   nodeFromDocPath,
-} from "../../domain/workline-node.js";
-import type { EnvPort } from "../../ports/env.js";
-import type { FileSystemPort } from "../../ports/file-system.js";
-import type { GitPort } from "../../ports/git.js";
-import { locateRun, readRun } from "../flow/run-state-service.js";
-import type { PathsService } from "../paths-service.js";
-import { type CustodyRead, readCustody } from "../session-custody-service.js";
+} from "../domain/workline-node.js";
+import type { EnvPort } from "../ports/env.js";
+import type { FileSystemPort } from "../ports/file-system.js";
+import type { GitPort } from "../ports/git.js";
+import { locateRun, readRun } from "./flow/run-state-service.js";
+import type { PathsService } from "./paths-service.js";
+import { type CustodyRead, readCustody } from "./session-custody-service.js";
 import {
   type IndexedPlan,
   type IndexedReservation,
@@ -40,7 +46,7 @@ import {
   type IndexedSpec,
   type WorklineIndex,
   buildWorklineIndex,
-} from "../workline-index-service.js";
+} from "./workline-index-service.js";
 
 /** How far a session got, said only from evidence. */
 export type SessionCompletion =
@@ -73,7 +79,7 @@ export interface GraphNode {
   session: SessionNodeFacts | null;
 }
 
-export class RetirementGraph {
+export class WorklineGraph {
   private readonly nodes = new Map<string, GraphNode>();
   readonly edges: WorklineEdge[] = [];
 
@@ -141,19 +147,19 @@ export interface GraphDeps {
   git?: GitPort;
 }
 
-export interface BuiltGraph {
-  graph: RetirementGraph;
+export interface BuiltWorklineGraph {
+  graph: WorklineGraph;
   index: WorklineIndex;
 }
 
-export async function buildRetirementGraph(
+export async function buildWorklineGraph(
   deps: GraphDeps,
   canon: CoreDocsCanon = DEFAULT_CORE_DOCS_CANON,
-): Promise<BuiltGraph> {
+): Promise<BuiltWorklineGraph> {
   const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, {
     ...(deps.git !== undefined ? { git: deps.git } : {}),
   });
-  const graph = new RetirementGraph(index.reservations, canon);
+  const graph = new WorklineGraph(index.reservations, canon);
   const root = deps.paths.workspaceDir();
 
   for (const spec of index.specs) addDoc(graph, root, "spec", spec);
@@ -179,7 +185,7 @@ export async function buildRetirementGraph(
 }
 
 function addDoc(
-  graph: RetirementGraph,
+  graph: WorklineGraph,
   root: string,
   kind: "spec" | "plan",
   doc: IndexedSpec | IndexedPlan,
@@ -203,7 +209,7 @@ function addDoc(
  * lets the closure stop rather than treat the two as equivalent.
  */
 function linkSession(
-  graph: RetirementGraph,
+  graph: WorklineGraph,
   node: GraphNode,
   session: IndexedSession,
   canon: CoreDocsCanon,

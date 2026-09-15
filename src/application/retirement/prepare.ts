@@ -39,9 +39,9 @@ import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { readBindingRegistry } from "../session-binding-service.js";
+import { type GraphNode, type WorklineGraph, buildWorklineGraph } from "../workline-graph.js";
 import type { IndexedReservation } from "../workline-index-service.js";
 import { type AttributionBlock, attributeGitEffects } from "./attribution.js";
-import { type GraphNode, type RetirementGraph, buildRetirementGraph } from "./graph.js";
 import {
   type ResolvedClosure,
   type RetirementRejection,
@@ -96,7 +96,7 @@ export async function prepareRetirement(
     };
   }
 
-  const { graph, index } = await buildRetirementGraph(deps, canon.canon);
+  const { graph, index } = await buildWorklineGraph(deps, canon.canon);
   // A partial slot scan cannot seal a scope. The proposal would enumerate only
   // the reservations the walk managed to see, and the preview would present that
   // truncated list as the whole of what this retirement gives back — the exact
@@ -126,7 +126,7 @@ export async function prepareRetirement(
 }
 
 function resetClosure(
-  graph: RetirementGraph,
+  graph: WorklineGraph,
   target: GraphNode,
 ): ReturnType<typeof resolveResetClosure> | Promise<ReturnType<typeof resolveResetClosure>> {
   const session = resolveResetSession(graph, target);

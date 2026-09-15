@@ -14,6 +14,7 @@ import { claimsCommand } from "./claims.js";
 import { codeScanCommand } from "./code-scan.js";
 import { contextBudgetCommand } from "./context-budget.js";
 import { contextPlanCommand } from "./context-plan.js";
+import { cutIntentCommand } from "./cut-intent.js";
 import { designsCommand } from "./designs.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
 import { doctorCommand } from "./doctor.js";
@@ -38,6 +39,7 @@ import { pluginCacheCommand } from "./plugin-cache.js";
 import { pluginDoctorCommand } from "./plugin-doctor.js";
 import { projectMdUpsertCommand } from "./project-md-upsert.js";
 import { releaseDataCommand } from "./release-data.js";
+import { releasePassCommand } from "./release-pass.js";
 import { removeSourceCommand } from "./remove-source.js";
 import { resealCommand } from "./reseal.js";
 import { resumeSummaryCommand } from "./resume-summary.js";
@@ -106,6 +108,14 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   profilesCommand,
   logsCommand,
   claimsCommand,
+  // The one place a human intention enters the workspace: how a cut of plans
+  // born from one spec was meant to be executed. Everything that orders the
+  // board derives from it, so it is declared here and nowhere else.
+  cutIntentCommand,
+  // The production axis the board never had: a pass is its own object, and
+  // 'closed' is not 'released'. It sits beside cut-intent because the two are
+  // the only facts a person declares into the workspace by hand.
+  releasePassCommand,
   nextNumberCommand,
   // Retirement: the two cross-cutting commands that take work away. They open no
   // flow and create no session, because a retirement can end by deleting the very

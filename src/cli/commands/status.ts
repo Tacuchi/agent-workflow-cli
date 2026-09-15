@@ -117,6 +117,13 @@ function renderPipelineItem(item: PipelineItem, detail: boolean): string[] {
     obligation ? `  ${KIND_NOUNS[item.kind]} ${item.number} — ${next}` : `  ${item.summary}`,
     `    ${obligation ? progress : next}`,
     command,
+    // Always shown, not only under --detail: a row sitting below the ones a
+    // person declared should go first has to say WHY it is down there, or the
+    // board looks like it reordered itself. It is also why the command stays on
+    // the line above — postponed is not blocked.
+    ...(item.detail.postponed !== undefined
+      ? [`    Postergado · ${item.detail.postponed.reason}`]
+      : []),
     ...(detail && item.detail.warning !== undefined
       ? [`    Aviso · ${item.detail.warning.message}`]
       : []),
