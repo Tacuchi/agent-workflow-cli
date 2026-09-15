@@ -338,12 +338,35 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
     ]);
     await applyExport(fs, env, paths(), { raw, prepared, approval: approvalOf(prepared, raw) });
 
-    // The workspace lock is machinery, not a deliverable — it is the ONLY write
-    // outside the category, and naming it here keeps the boundary honest.
-    const touched = [...fs.writes.keys()].filter((p) => !p.endsWith("/.lock"));
+    // The workspace lock is machinery and the index row is the publication's own
+    // record — the only two writes outside the category, and naming both here
+    // keeps the boundary honest.
+    const touched = [...fs.writes.keys()].filter(
+      (p) => !p.endsWith("/.lock") && p !== "/cwd/.workflow/HISTORY.md",
+    );
     expect(touched.every((p) => p.startsWith("/cwd/docs/reports/"))).toBe(true);
     expect(touched.some((p) => p.includes("/sessions/"))).toBe(false);
     expect(touched.some((p) => p.startsWith("/cwd/docs/reports/"))).toBe(true);
+  });
+
+  it("deja su fila en el índice del workspace, sin flujo activo que la escriba", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "reports");
+    const raw = answer(prepared, [
+      ["docs/reports/001-informe-x-2026-07-29.md", "# Informe\n\nAudiencia: dirección\n"],
+    ]);
+
+    const applied = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: approvalOf(prepared, raw),
+    });
+
+    expect(applied.ok).toBe(true);
+    const index = await fs.readText("/cwd/.workflow/HISTORY.md");
+    expect(index).toContain("## Publicaciones");
+    expect(index).toContain("docs/reports/001-informe-x-2026-07-29.md");
+    expect(index).toContain("export-reports");
   });
 });
 

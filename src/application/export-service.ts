@@ -4,6 +4,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
 import { runNextNumber } from "./dev-only-services.js";
 import { resolveDocsCanon } from "./docs-canon-service.js";
+import { appendPublications, publicationRows } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { type ReleaseDataInput, runReleaseData } from "./release-data-service.js";
@@ -531,9 +532,19 @@ export async function applyExport(
     );
     // Whole dossier or nothing: `publishArtifacts` restores every previous
     // state on the first failure.
-    return await publishArtifacts(fs, paths.workspaceDir(), artifacts, {
+    const published = await publishArtifacts(fs, paths.workspaceDir(), artifacts, {
       overwrite: input.allowOverwrite === true,
     });
+    // Under the SAME lock as the write, for the same reason as in `persist`: two
+    // concurrent publications outside it would lose one of the two rows.
+    if (published.ok) {
+      await appendPublications(
+        fs,
+        paths.cwdHistoryFile(),
+        publicationRows(published.value.written, `export-${input.prepared.category}`),
+      );
+    }
+    return published;
   });
 
   if ("error" in result) {

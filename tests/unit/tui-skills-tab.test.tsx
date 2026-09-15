@@ -522,6 +522,27 @@ describe("SkillsTab (TUI) — administrador de sueltas (F4)", () => {
     unmount();
   });
 
+  it("archify y anydoc llegan a la lista, y el detalle de anydoc lleva su identidad invocable", async () => {
+    const ctx = buildCtx(home);
+
+    const { lastFrame, stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);
+    await tick();
+    const list = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(list).toContain("archify");
+    expect(list).toContain("anydoc");
+
+    // `anydoc` encabeza el grupo de documentos, así que ⏎ sobre ella abre su
+    // ficha: quien instala tiene que recibir la identidad real, no la etiqueta.
+    stdin.write(ENTER);
+    await tick();
+    const detail = (lastFrame() ?? "").replace(/\s+/g, " ");
+    expect(detail).toContain("Recommendation: keep");
+    expect(detail).toContain("Use when:");
+    expect(detail).toContain("Known limits:");
+    expect(dense(lastFrame() ?? "")).toContain("convert-documents-to-markdown");
+    unmount();
+  });
+
   it("consultar, filtrar y cancelar no cambia ninguna instalación ni el registro", async () => {
     const ctx = buildCtx(home);
     const { stdin, unmount } = render(<SkillsTab ctx={ctx} isActive={true} />);

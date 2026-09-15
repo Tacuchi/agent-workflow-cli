@@ -61,6 +61,7 @@ function buildCtx(opts: CtxOpts = {}): CliContext {
       userLibConfigDir: () => "/home/test/.workflow",
       cwdHistoryFile: () => "/home/test/project/.workflow/HISTORY.md",
       cwdSessionsDir: () => "/home/test/project/.workflow/sessions",
+      cwdMarkerFile: () => "/home/test/project/.workflow/workline.json",
       blockMarkers: () => ({ start: "<!-- AW-PROJECT-START -->", end: "<!-- AW-PROJECT-END -->" }),
     } as never,
   } as unknown as CliContext;

@@ -34,23 +34,44 @@ const REF = {
   antfu: "a74f281a27dadc02397bc1a174b0f2c97531b6ae",
   openai: "49f948faa9258a0c61caceaf225e179651397431",
   cortex: "bb47af79ad3befe01ae01940fcf5f16e30a1b6df",
+  firecrawl: "261fc257d17c3eab0f673be31c408fd9fdc2171a",
+  archify: "851b279f3710c3ed6f152f4b044a504ca4eb207c",
 } as const;
 
 const RESEARCH = "Workline skills research 2026-09-09";
+/** The later review that added the two document/diagram entries. */
+const SPEC_044 = "Spec 044 · ajustes operativos del arnés";
 const CONTEXT_COLLECTION = "muratcankoylan/agent-skills-for-context-engineering";
 
 /**
  * Every entry the 2026-09-09 curation reviewed: the 24 seed rows, the seven
- * prioritized context leaves and the two new candidates.
+ * prioritized context leaves and the two new candidates — plus the two Spec 044
+ * added afterwards (`anydoc`, `archify`), each in the group it belongs to.
  */
 export const SKILL_CATALOG: readonly SeedSkill[] = [
-  // Document processing / MCP — anthropics/skills
+  // Document processing / MCP — firecrawl/anydoc (into Markdown) and anthropics/skills (out of it)
+  {
+    name: "anydoc",
+    source: "firecrawl/anydoc",
+    description:
+      "Convert Word, PowerPoint, Excel, OpenDocument, RTF, EPUB, CSV and PDF to Markdown from the command line.",
+    disposition: "keep",
+    useWhen:
+      "A document ARRIVES in a foreign format and the work needs its content as Markdown — reading it, quoting it, bringing it into a spec. The direction is INTO Markdown: the anthropics document skills below go the other way, producing the .pdf/.docx/.xlsx/.pptx somebody asked for.",
+    knownLimits:
+      "A scanned page is not resolved locally: it exits with code 3, and converting it means sending the document to an external service.",
+    skillName: "convert-documents-to-markdown",
+    path: "skills/convert-documents-to-markdown",
+    evidence: SPEC_044,
+    reviewedRef: REF.firecrawl,
+  },
   {
     name: "pdf",
     source: "anthropics/skills",
     description: "Create, edit and analyze PDF files.",
     disposition: "conditional",
-    useWhen: "PDF is the requested format or already part of the task.",
+    useWhen:
+      "A PDF has to be PRODUCED or edited. Reading one to get its text as Markdown is `anydoc`.",
     reason: "Adds nothing to the habitual Markdown cycle.",
     knownLimits: "These document skills declare their own terms; not MIT/Apache by repo.",
     reviewedRef: REF.anthropics,
@@ -60,7 +81,7 @@ export const SKILL_CATALOG: readonly SeedSkill[] = [
     source: "anthropics/skills",
     description: "Create and edit Word documents.",
     disposition: "conditional",
-    useWhen: "A Word document is requested.",
+    useWhen: "A Word document has to be produced or edited; reading one is `anydoc`.",
     reason: "SPEC/PLAN are not converted to Word by default.",
     knownLimits: "These document skills declare their own terms; not MIT/Apache by repo.",
     reviewedRef: REF.anthropics,
@@ -70,7 +91,7 @@ export const SKILL_CATALOG: readonly SeedSkill[] = [
     source: "anthropics/skills",
     description: "Create and edit Excel spreadsheets.",
     disposition: "conditional",
-    useWhen: "A spreadsheet is part of the task.",
+    useWhen: "A spreadsheet has to be produced or edited; reading one is `anydoc`.",
     reason: "Its mandatory recalculation does not belong to tasks without sheets.",
     knownLimits: "These document skills declare their own terms; not MIT/Apache by repo.",
     reviewedRef: REF.anthropics,
@@ -80,7 +101,7 @@ export const SKILL_CATALOG: readonly SeedSkill[] = [
     source: "anthropics/skills",
     description: "Create and edit PowerPoint presentations.",
     disposition: "conditional",
-    useWhen: "A presentation is requested.",
+    useWhen: "A presentation has to be produced or edited; reading one is `anydoc`.",
     knownLimits: "These document skills declare their own terms; not MIT/Apache by repo.",
     reviewedRef: REF.anthropics,
   },
@@ -197,8 +218,10 @@ export const SKILL_CATALOG: readonly SeedSkill[] = [
     source: "softaworks/agent-toolkit",
     description: "C4 architecture diagrams with Mermaid.",
     disposition: "conditional",
-    useWhen: "The delivery is Mermaid/C4.",
-    knownLimits: "Its mandatory levels add deliverables; do not load both C4 skills routinely.",
+    useWhen:
+      "The diagram has to live INSIDE a Markdown document, as Mermaid. Structurizr DSL as code is `structurizr-c4`; a browsable HTML page is `archify`.",
+    knownLimits:
+      "Its mandatory levels add deliverables; three skills now cover architecture diagrams — choose one by delivery format, never load them together.",
   },
   {
     name: "skill-judge",
@@ -278,8 +301,25 @@ export const SKILL_CATALOG: readonly SeedSkill[] = [
     source: "Tacuchi/structurizr-c4-skill",
     description: "C4 diagrams as code with Structurizr DSL: viewer, validate, export. No Docker.",
     disposition: "keep",
-    useWhen: "Structurizr DSL, validation or export is requested.",
-    knownLimits: "Choose by delivery format; do not load both C4 skills routinely.",
+    useWhen:
+      "The architecture is kept AS CODE in Structurizr DSL, to validate and export from that source. Mermaid inside a document is `c4-architecture`; an interactive HTML page or a snapshot comparison is `archify`.",
+    knownLimits:
+      "Choose by delivery format; three skills now cover architecture diagrams and none of them replaces another.",
+  },
+  // Interactive architecture rendering — tt-a1i/archify
+  {
+    name: "archify",
+    source: "tt-a1i/archify",
+    description:
+      "Compile a typed JSON architecture spec into interactive HTML with inline SVG, and compare two validated snapshots.",
+    disposition: "keep",
+    useWhen:
+      "The delivery is a diagram somebody OPENS and navigates in a browser, or two snapshots have to be read side by side as Before / Delta / After. Neither of the other two answers that: `structurizr-c4` keeps the architecture as DSL code and `c4-architecture` draws Mermaid inside a document.",
+    knownLimits:
+      "The inspected revision declares version 2.17 and labels itself development; what is stated here is what was inspected, never a promise about upstream. Its input is a typed JSON spec, so the architecture has to be written in that shape first.",
+    path: "archify",
+    evidence: SPEC_044,
+    reviewedRef: REF.archify,
   },
   // Context engineering — the seven leaves that replace the whole-collection row.
   // Each one is addressable by its own path inside the collection.

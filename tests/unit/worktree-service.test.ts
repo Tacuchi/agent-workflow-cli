@@ -18,6 +18,7 @@ import { PathsService } from "../../src/application/paths-service.js";
 import {
   type WorktreeEnsureOutput,
   type WorktreeListOutput,
+  type WorktreeReclaimOutput,
   type WorktreeReleaseOutput,
   runWorktree,
 } from "../../src/application/worktree-service.js";
@@ -187,7 +188,13 @@ describe("runWorktree — the isolation unit of a flow", () => {
       session: "104-dos-plan-exec",
       reason: "session_closed",
     });
-    expect(listed.orphans[0]?.release).toContain("aw worktree release");
+    // El remedio que el inventario ofrece al lado del huérfano es el que de
+    // verdad lo recupera: `release` resuelve la sesión para ESCRIBIR y por eso
+    // se negaba justo sobre las sesiones cerradas y ausentes que produce esta
+    // lista.
+    expect(listed.orphans[0]?.release).toBe(
+      "aw worktree reclaim --source acme --code 104-dos-plan-exec",
+    );
   });
 
   it("lists without creating the user worktree root", async () => {
@@ -268,5 +275,180 @@ describe("runWorktree — the isolation unit of a flow", () => {
     // The commits are still there: a re-ensure checks the branch out, it does not
     // recreate it from the base and silently drop the flow's work.
     expect(readFileSync(join(again.path, "hecho.txt"), "utf-8")).toBe("trabajo previo\n");
+  });
+
+  describe("reclaim — recoger el residuo sin tocar nada que custodie trabajo", () => {
+    async function ensure(code: string): Promise<WorktreeEnsureOutput> {
+      return (await runWorktree(deps, {
+        action: "ensure",
+        alias: "acme",
+        sessionCode: code,
+      })) as WorktreeEnsureOutput;
+    }
+
+    async function reclaim(code?: string): Promise<WorktreeReclaimOutput> {
+      return (await runWorktree(deps, {
+        action: "reclaim",
+        ...(code !== undefined ? { sessionCode: code } : {}),
+      })) as WorktreeReclaimOutput;
+    }
+
+    function close(folder: string): void {
+      writeFileSync(join(workspace, ".workflow", "sessions", folder, ".closed"), "");
+    }
+
+    it("recoge en un solo acto la unidad de una sesión cerrada y la de una ausente, sin reabrir ninguna", async () => {
+      await ensure("103");
+      session("104-dos-plan-exec");
+      const cerrada = await ensure("104");
+      session("105-tres-plan-exec");
+      const ausente = await ensure("105");
+      close("104-dos-plan-exec");
+      // La sesión 105 desaparece del disco: su unidad queda sin dueño y `release`
+      // nunca la alcanzaba porque su resolución no encuentra la carpeta.
+      rmSync(join(workspace, ".workflow", "sessions", "105-tres-plan-exec"), {
+        recursive: true,
+        force: true,
+      });
+
+      const swept = await reclaim();
+
+      expect(swept.reclaimed.map((u) => u.session).sort()).toEqual([
+        "104-dos-plan-exec",
+        "105-tres-plan-exec",
+      ]);
+      expect(swept.retained).toEqual([]);
+      expect(swept.next).toBeNull();
+      const trees = git(source, "worktree", "list", "--porcelain");
+      expect(trees).not.toContain("aw/104-dos-plan-exec");
+      expect(trees).not.toContain("aw/105-tres-plan-exec");
+      expect(existsSync(cerrada.path)).toBe(false);
+      expect(existsSync(ausente.path)).toBe(false);
+      // La unidad de la sesión viva ni se mira: el barrido del workspace actúa
+      // sobre residuo, no sobre el árbol de trabajo de alguien.
+      expect(trees).toContain("aw/103-uno-plan-exec");
+      // Y la sesión cerrada sigue cerrada: recoger no la reabrió.
+      expect(
+        existsSync(join(workspace, ".workflow", "sessions", "104-dos-plan-exec", ".closed")),
+      ).toBe(true);
+    });
+
+    it("conserva la unidad con cambios sin commitear y dice qué la retiene", async () => {
+      session("104-dos-plan-exec");
+      const unit = await ensure("104");
+      writeFileSync(join(unit.path, "suelto.txt"), "sin commitear\n");
+      close("104-dos-plan-exec");
+
+      const swept = await reclaim();
+
+      expect(swept.reclaimed).toEqual([]);
+      expect(swept.retained).toHaveLength(1);
+      expect(swept.retained[0]).toMatchObject({
+        session: "104-dos-plan-exec",
+        reason: "uncommitted_changes",
+      });
+      expect(swept.retained[0]?.next).toContain(unit.path);
+      expect(swept.next).toBe(swept.retained[0]?.next);
+      expect(readFileSync(join(unit.path, "suelto.txt"), "utf-8")).toBe("sin commitear\n");
+    });
+
+    it("conserva la unidad que quedó a mitad de un merge y la manda a fix-git", async () => {
+      writeFileSync(join(source, "choque.txt"), "base\n");
+      git(source, "add", "-A");
+      git(source, "commit", "-m", "choque base");
+      session("104-dos-plan-exec");
+      const unit = await ensure("104");
+      writeFileSync(join(unit.path, "choque.txt"), "version unidad\n");
+      git(unit.path, "add", "-A");
+      git(unit.path, "commit", "-m", "la unidad toca choque");
+      writeFileSync(join(source, "choque.txt"), "version checkout\n");
+      git(source, "add", "-A");
+      git(source, "commit", "-m", "el checkout toca choque");
+      // El merge se deja a medio resolver DENTRO de la unidad.
+      expect(() => git(unit.path, "merge", "main")).toThrow();
+      close("104-dos-plan-exec");
+
+      const swept = await reclaim();
+
+      expect(swept.reclaimed).toEqual([]);
+      expect(swept.retained[0]).toMatchObject({ reason: "operation_in_progress" });
+      expect(swept.retained[0]?.next).toContain("aw fix-git --path");
+      expect(git(source, "worktree", "list", "--porcelain")).toContain("aw/104-dos-plan-exec");
+    });
+
+    it("conserva la unidad con commits que no están en la rama de trabajo", async () => {
+      session("104-dos-plan-exec");
+      const unit = await ensure("104");
+      writeFileSync(join(unit.path, "trabajo.txt"), "lo unico que existe\n");
+      git(unit.path, "add", "-A");
+      git(unit.path, "commit", "-m", "trabajo que nadie integró");
+      close("104-dos-plan-exec");
+
+      const swept = await reclaim();
+
+      expect(swept.reclaimed).toEqual([]);
+      expect(swept.retained[0]).toMatchObject({ reason: "commits_outside_work_branch" });
+      // La salida del huérfano de una sesión CERRADA nombra el único camino que
+      // recupera su trabajo, y no el integrate que se le negaría.
+      expect(swept.retained[0]?.next).toContain("aw session-resume --code 104-dos-plan-exec");
+      expect(readFileSync(join(unit.path, "trabajo.txt"), "utf-8")).toBe("lo unico que existe\n");
+    });
+
+    it("una lectura que falla RETIENE: nunca se lee como árbol limpio", async () => {
+      session("104-dos-plan-exec");
+      const unit = await ensure("104");
+      close("104-dos-plan-exec");
+      // git deja de poder contestar por esta unidad, y eso es exactamente lo que
+      // no puede despejarle el camino a una recogida irreversible.
+      writeFileSync(join(unit.path, ".git"), "gitdir: /ruta/que/no/existe\n");
+
+      const swept = await reclaim();
+
+      expect(swept.reclaimed).toEqual([]);
+      expect(swept.retained[0]).toMatchObject({ reason: "unreadable" });
+      expect(existsSync(unit.path)).toBe(true);
+    });
+
+    it("el remedio que el inventario ofrece recupera de verdad esa unidad", async () => {
+      session("104-dos-plan-exec");
+      await ensure("104");
+      close("104-dos-plan-exec");
+      const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
+      expect(listed.orphans[0]?.release).toBe(
+        "aw worktree reclaim --source acme --code 104-dos-plan-exec",
+      );
+
+      const swept = (await runWorktree(deps, {
+        action: "reclaim",
+        alias: "acme",
+        sessionCode: "104-dos-plan-exec",
+      })) as WorktreeReclaimOutput;
+
+      expect(swept.reclaimed).toHaveLength(1);
+      expect(swept.session).toBe("104-dos-plan-exec");
+      const after = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
+      expect(after.orphans).toEqual([]);
+    });
+
+    it("una recogida mixta informa lo recogido y lo retenido, cada retención con su motivo y su paso siguiente", async () => {
+      session("104-dos-plan-exec");
+      await ensure("104");
+      close("104-dos-plan-exec");
+      session("105-tres-plan-exec");
+      const sucia = await ensure("105");
+      writeFileSync(join(sucia.path, "suelto.txt"), "sin commitear\n");
+      close("105-tres-plan-exec");
+
+      const swept = await reclaim();
+
+      expect(swept.reclaimed.map((u) => u.session)).toEqual(["104-dos-plan-exec"]);
+      expect(swept.reclaimed[0]?.reason).toBe("session_closed");
+      expect(swept.retained.map((u) => u.session)).toEqual(["105-tres-plan-exec"]);
+      for (const held of swept.retained) {
+        expect(held.detail.length).toBeGreaterThan(0);
+        expect(held.next.length).toBeGreaterThan(0);
+      }
+      expect(swept.next).toBe(swept.retained[0]?.next);
+    });
   });
 });

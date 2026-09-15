@@ -23,6 +23,17 @@ function makeFs(
   return fs;
 }
 
+/**
+ * The mark that makes a `.<ns>/` directory Workline's own.
+ *
+ * `sessions/` alone is a shape the host tools share — `~/.claude/sessions`,
+ * `~/.codex/sessions`, `~/.kimi-code/sessions` — so it is no longer enough to be
+ * read as a workspace, and every fixture that means to BE one says so here.
+ */
+function mark(...markerPaths: string[]): Map<string, string> {
+  return new Map(markerPaths.map((path) => [path, '{"workline":1}\n']));
+}
+
 describe("NamespaceResolver", () => {
   const CONFIG_PATH = "/home/u/.config/agent-workflow/namespace";
 
@@ -88,7 +99,7 @@ describe("NamespaceResolver", () => {
       ],
       ["/cwd/.workflow/sessions", []],
     ]);
-    const fs = makeFs(new Map(), dirs);
+    const fs = makeFs(mark("/cwd/.workflow/workline.json"), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
     expect(result.namespace).toBe("workflow");
@@ -117,7 +128,7 @@ describe("NamespaceResolver", () => {
       ["/cwd/.workflow/sessions", []],
       ["/cwd/.other/sessions", []],
     ]);
-    const fs = makeFs(new Map(), dirs);
+    const fs = makeFs(mark("/cwd/.workflow/workline.json", "/cwd/.other/workline.json"), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     await expect(r.resolveDirectory(undefined)).rejects.toMatchObject({
       code: "WORKLINE_NAMESPACE_AMBIGUOUS",
@@ -131,7 +142,10 @@ describe("NamespaceResolver", () => {
       ["/cwd", [{ name: ".workflow", path: "/cwd/.workflow", type: "dir" }]],
       ["/cwd/.workflow/sessions", []],
     ]);
-    const fs = makeFs(new Map([[CONFIG_PATH, "configns"]]), dirs);
+    const fs = makeFs(
+      new Map([[CONFIG_PATH, "configns"], ...mark("/cwd/.workflow/workline.json")]),
+      dirs,
+    );
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
     expect(result.namespace).toBe("workflow");
@@ -161,7 +175,7 @@ describe("NamespaceResolver", () => {
       ["/cwd", [{ name: ".legacy", path: "/cwd/.legacy", type: "dir" }]],
       ["/cwd/.legacy/sessions", []],
     ]);
-    const fs = makeFs(new Map(), dirs);
+    const fs = makeFs(mark("/cwd/.legacy/workline.json"), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
     expect(result.source).toBe("workspace");
@@ -170,7 +184,7 @@ describe("NamespaceResolver", () => {
 
   it("uses the nearest ancestor marker as the shared Workline root", async () => {
     const fs = makeFs(
-      new Map(),
+      mark("/repo/.workflow/workline.json"),
       new Map([
         ["/repo", [{ name: ".workflow", path: "/repo/.workflow", type: "dir" }]],
         ["/repo/.workflow/sessions", []],
@@ -198,7 +212,7 @@ describe("NamespaceResolver", () => {
 
   it("honours an explicit namespace without silently selecting a neighbouring marker", async () => {
     const fs = makeFs(
-      new Map(),
+      mark("/cwd/.workflow/workline.json"),
       new Map([
         ["/cwd", [{ name: ".workflow", path: "/cwd/.workflow", type: "dir" }]],
         ["/cwd/.workflow/sessions", []],
@@ -215,7 +229,7 @@ describe("NamespaceResolver", () => {
 
   it("honours AW_NAMESPACE at the closest matching marker", async () => {
     const fs = makeFs(
-      new Map(),
+      mark("/repo/.workflow/workline.json", "/repo/.team/workline.json"),
       new Map([
         [
           "/repo",
@@ -238,6 +252,72 @@ describe("NamespaceResolver", () => {
       namespace: "team",
       namespaceSource: "env",
       materialized: true,
+    });
+  });
+
+  // ── la carpeta de un host no es un workspace ────────────────────────────────
+
+  it("una ruta virgen bajo carpetas de host que imitan el marcador resuelve en vez de fallar", async () => {
+    // Lo que había en $HOME de cualquier máquina: tres carpetas de herramientas
+    // con su propio `sessions/`. Con `sessions/` como marcador canónico, ese
+    // árbol se leía como tres workspaces a la vez y TODO comando lanzado abajo
+    // moría con WORKLINE_NAMESPACE_AMBIGUOUS antes de construir un servicio.
+    const dirs = new Map<string, DirEntry[]>([
+      [
+        "/home/u",
+        [
+          { name: ".claude", path: "/home/u/.claude", type: "dir" },
+          { name: ".codex", path: "/home/u/.codex", type: "dir" },
+          { name: ".kimi-code", path: "/home/u/.kimi-code", type: "dir" },
+        ],
+      ],
+      ["/home/u/.claude/sessions", []],
+      ["/home/u/.codex/sessions", []],
+      ["/home/u/.kimi-code/sessions", []],
+      ["/home/u/proyecto-nuevo", []],
+    ]);
+    const fs = makeFs(new Map(), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/home/u/proyecto-nuevo"));
+
+    await expect(r.resolveDirectory(undefined)).resolves.toEqual({
+      root: "/home/u/proyecto-nuevo",
+      namespace: "workflow",
+      namespaceSource: "default",
+      materialized: false,
+    });
+  });
+
+  it("un workspace materializado antes del marcador sigue resolviendo, sin migración", async () => {
+    // Sólo `sessions/` y los archivos de runtime que únicamente Workline pone
+    // en `.<ns>/`: es el parque que ya existe, y tiene que seguir encontrándose
+    // sin que nadie corra un comando de conversión.
+    const dirs = new Map<string, DirEntry[]>([
+      ["/viejo", [{ name: ".workflow", path: "/viejo/.workflow", type: "dir" }]],
+      ["/viejo/.workflow/sessions", []],
+    ]);
+    const fs = makeFs(new Map([["/viejo/.workflow/HISTORY.md", "# Session History\n"]]), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/viejo"));
+
+    await expect(r.resolveDirectory(undefined)).resolves.toEqual({
+      root: "/viejo",
+      namespace: "workflow",
+      namespaceSource: "workspace",
+      materialized: true,
+    });
+  });
+
+  it("desde una subcarpeta de un workspace real lo sigue encontrando", async () => {
+    const dirs = new Map<string, DirEntry[]>([
+      ["/repo", [{ name: ".workflow", path: "/repo/.workflow", type: "dir" }]],
+      ["/repo/.workflow/sessions", []],
+      ["/repo/docs/specs", []],
+    ]);
+    const fs = makeFs(mark("/repo/.workflow/workline.json"), dirs);
+    const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/repo/docs/specs"));
+
+    await expect(r.resolveDirectory(undefined)).resolves.toMatchObject({
+      root: "/repo",
+      namespaceSource: "workspace",
     });
   });
 });

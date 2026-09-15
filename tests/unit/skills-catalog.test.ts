@@ -133,6 +133,68 @@ describe("curación del catálogo (Spec 043)", () => {
   });
 });
 
+describe("alta de anydoc y archify (Spec 044)", () => {
+  it("las dos pertenecen al set habitual con procedencia, condición, límites y revisión inspeccionada", () => {
+    for (const name of ["anydoc", "archify"]) {
+      const entry = byName.get(name);
+      expect(entry, name).toBeDefined();
+      expect(
+        RECOMMENDED_SKILLS.some((s) => s.name === name),
+        name,
+      ).toBe(true);
+      expect(entry?.disposition ?? "keep", name).toBe("keep");
+      expect(entry?.source, name).toBeTruthy();
+      expect(entry?.useWhen, name).toBeTruthy();
+      expect(entry?.knownLimits, name).toBeTruthy();
+      expect(entry?.reviewedRef, name).toBeTruthy();
+    }
+    expect(byName.get("anydoc")?.source).toBe("firecrawl/anydoc");
+    expect(byName.get("archify")?.source).toBe("tt-a1i/archify");
+  });
+
+  it("cada una es invocable con su identidad real aunque no viva en la raíz de su repositorio", () => {
+    const anydoc = byName.get("anydoc");
+    // La etiqueta del catálogo y la identidad invocable NO coinciden: quien
+    // instala tiene que recibir la segunda, no la primera.
+    expect(anydoc?.skillName).toBe("convert-documents-to-markdown");
+    expect(anydoc?.skillName).not.toBe(anydoc?.name);
+    expect(anydoc?.path).toBe("skills/convert-documents-to-markdown");
+
+    const archify = byName.get("archify");
+    expect(archify?.path).toBe("archify");
+    // Acá la etiqueta ya ES la identidad: declarar un skillName igual al nombre
+    // sería afirmar una diferencia que no existe.
+    expect(archify?.skillName).toBeUndefined();
+  });
+
+  it("el «cuándo usarla» de las cuatro que comparten terreno se lee como cuatro condiciones distintas", () => {
+    const useWhen = (name: string): string => {
+      const value = byName.get(name)?.useWhen;
+      expect(value, name).toBeTruthy();
+      return value as string;
+    };
+    // Los tres de arquitectura se nombran entre sí, cada uno por su entrega.
+    expect(useWhen("archify")).toContain("browser");
+    expect(useWhen("archify")).toContain("structurizr-c4");
+    expect(useWhen("archify")).toContain("c4-architecture");
+    expect(useWhen("structurizr-c4")).toContain("archify");
+    expect(useWhen("c4-architecture")).toContain("archify");
+    expect(useWhen("c4-architecture")).toContain("Mermaid");
+    // Y las cuatro condiciones no se repiten entre sí.
+    const conditions = ["archify", "structurizr-c4", "c4-architecture", "anydoc"].map(useWhen);
+    expect(new Set(conditions).size).toBe(4);
+  });
+
+  it("anydoc queda separada de las skills de documento que ya estaban recomendadas", () => {
+    // La dirección es lo que las distingue: anydoc trae un documento ajeno HACIA
+    // Markdown; las de anthropics PRODUCEN el .pdf/.docx/.xlsx que alguien pidió.
+    expect(byName.get("anydoc")?.useWhen).toContain("Markdown");
+    for (const name of ["pdf", "docx", "xlsx", "pptx"]) {
+      expect(byName.get(name)?.useWhen, name).toContain("anydoc");
+    }
+  });
+});
+
 describe("reservas del catálogo", () => {
   it("documenta las alternativas sin ofrecerlas como recomendación", () => {
     for (const reserve of CATALOG_RESERVES) {

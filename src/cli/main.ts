@@ -334,7 +334,7 @@ async function executeCommand(
       result.ok ? "info" : "error",
       formatCommandOutcome(command.name, result.exitCode),
     );
-    emit(result, command, output);
+    emit(result, command, output, adoptionNotice(command, workspaceFs));
     return result.exitCode;
   } catch (err) {
     await ctx.logger?.error(formatCommandError(command.name, err));
@@ -343,7 +343,7 @@ async function executeCommand(
       return 1;
     }
     const message = redactSensitiveText(err instanceof Error ? err.message : String(err));
-    emit(fail("UNHANDLED", message), command, output);
+    emit(fail("UNHANDLED", message), command, output, adoptionNotice(command, workspaceFs));
     return 1;
   }
 }
@@ -351,6 +351,27 @@ async function executeCommand(
 /** Services whose public output already declares the exact first-write effects. */
 function commandOwnsMaterializationReceipt(command: string): boolean {
   return command === "workspace-init" || command === "session-create";
+}
+
+/**
+ * The line that says out loud which path Workline just adopted, or `undefined`.
+ *
+ * The receipt already travelled in `result.data`, and in a terminal nobody reads
+ * that: the human projection is each command's own `renderHuman`, and the only
+ * one that printed the adoption was `workspace-init` — the command nobody needs
+ * to be told by. So adopting a directory was silent exactly where it matters,
+ * and a command launched one folder down from a real workspace could found a
+ * second one inside it without a word. It is emitted once, by the dispatcher, so
+ * no command has to remember; the two that declare it themselves are skipped.
+ */
+function adoptionNotice(
+  command: CliCommand,
+  fs: MaterializingWorkspaceFileSystem,
+): string | undefined {
+  if (commandOwnsMaterializationReceipt(command.name)) return undefined;
+  const materialization = fs.materialization();
+  if (materialization === undefined || !materialization.materialized) return undefined;
+  return `Workline adoptó ${materialization.root} como workspace (namespace ${materialization.namespace}).`;
 }
 
 /**
@@ -417,8 +438,18 @@ function isStrictReadCommand(parsed: ParsedArgs): boolean {
   return command === "doctor" && parsed.rest.length === 0;
 }
 
-function emit(result: CommandResult, command: CliCommand, mode: OutputMode): void {
+function emit(
+  result: CommandResult,
+  command: CliCommand,
+  mode: OutputMode,
+  adopted?: string,
+): void {
   if (result.suppressOutput) return;
+  // Before anything the command prints: the adoption is the frame its output
+  // happened in, and it reads as an afterthought underneath a JSON blob.
+  if (adopted !== undefined && mode.format === "human" && command.renderRawJson === undefined) {
+    writeStdout(`${adopted}\n`);
+  }
   if (command.renderRawJson !== undefined) {
     writeStdout(command.renderRawJson(result));
     return;

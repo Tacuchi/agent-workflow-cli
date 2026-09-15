@@ -1,5 +1,6 @@
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DirEntry, FileStat, FileSystemPort, LinkStat } from "../ports/file-system.js";
+import { worklineMarkerContent } from "../runtime/workline-marker.js";
 import { acquireLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 
@@ -18,7 +19,7 @@ export const RUNTIME_GITIGNORE_HEADER =
   "# agent-workflow runtime (machine-specific — do not commit)";
 
 export interface MaterializationEffect {
-  kind: "gitignore" | "sessions";
+  kind: "gitignore" | "sessions" | "marker";
   path: string;
   status: "created" | "updated" | "existing" | "skipped";
 }
@@ -201,10 +202,17 @@ export async function ensureWorklineMaterialized(
     namespace: paths.namespace,
   };
   if (await hasCanonicalSessionsMarker(fs, paths)) {
+    // The workspace is already there. What may be missing is its OWN mark, in a
+    // workspace materialized before the mark existed — so the first write adds
+    // it, and nobody has to run a migration command to keep being found.
+    const adopted = await adoptMarker(fs, paths);
     return {
       ...base,
       materialized: false,
-      effects: [{ kind: "sessions", path: paths.cwdSessionsDir(), status: "existing" }],
+      effects: [
+        { kind: "marker", path: paths.cwdMarkerFile(), status: adopted },
+        { kind: "sessions", path: paths.cwdSessionsDir(), status: "existing" },
+      ],
     };
   }
 
@@ -220,10 +228,14 @@ export async function ensureWorklineMaterialized(
   });
   try {
     if (await hasCanonicalSessionsMarker(fs, paths)) {
+      const adopted = await adoptMarker(fs, paths);
       return {
         ...base,
         materialized: false,
-        effects: [{ kind: "sessions", path: paths.cwdSessionsDir(), status: "existing" }],
+        effects: [
+          { kind: "marker", path: paths.cwdMarkerFile(), status: adopted },
+          { kind: "sessions", path: paths.cwdSessionsDir(), status: "existing" },
+        ],
       };
     }
 
@@ -254,8 +266,11 @@ export async function ensureWorklineMaterialized(
       effects.push({ kind: "gitignore", path: join(root, ".gitignore"), status: "skipped" });
     }
 
-    // `acquireLock` created the parent `.<ns>/` if necessary.  Keep this call
-    // last: `sessions/` is the only public marker a resolver is allowed to use.
+    // `acquireLock` created the parent `.<ns>/` if necessary.  The mark goes
+    // first and `sessions/` last, so a reader either sees an implicit root or a
+    // directory already recognizable as Workline's own.
+    await fs.writeText(paths.cwdMarkerFile(), worklineMarkerContent(paths.namespace));
+    effects.push({ kind: "marker", path: paths.cwdMarkerFile(), status: "created" });
     await fs.mkdirp(paths.cwdSessionsDir());
     effects.push({ kind: "sessions", path: paths.cwdSessionsDir(), status: "created" });
     return { ...base, materialized: true, effects };
@@ -271,6 +286,7 @@ export async function previewWorklineMaterialization(
 ): Promise<WorklineMaterialization> {
   const root = paths.workspaceDir();
   const sessions = await hasCanonicalSessionsMarker(fs, paths);
+  const marked = await fs.exists(paths.cwdMarkerFile());
   const git = await belongsToGit(fs, root);
   const gitignore = join(root, ".gitignore");
   return {
@@ -285,9 +301,31 @@ export async function previewWorklineMaterialization(
           ? "skipped"
           : await gitignoreEffectStatus(fs, root, runtimeGitignoreEntries(paths.namespace)),
       },
+      { kind: "marker", path: paths.cwdMarkerFile(), status: marked ? "existing" : "created" },
       { kind: "sessions", path: paths.cwdSessionsDir(), status: sessions ? "existing" : "created" },
     ],
   };
+}
+
+/**
+ * Give an already-materialized workspace the mark it predates, once.
+ *
+ * Writing it is the whole migration: there is no command to run and no state to
+ * convert, because the mark says nothing the directory did not already mean.
+ */
+async function adoptMarker(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<MaterializationEffect["status"]> {
+  if (await fs.exists(paths.cwdMarkerFile())) return "existing";
+  try {
+    await fs.writeText(paths.cwdMarkerFile(), worklineMarkerContent(paths.namespace));
+    return "created";
+  } catch {
+    // A workspace whose runtime directory is read-only still resolves through
+    // the legacy reading, so this is a missed upgrade and never a failed write.
+    return "skipped";
+  }
 }
 
 /** The receipt status a runtime gitignore operation would have, without writing. */

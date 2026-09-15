@@ -129,6 +129,7 @@ function buildDeps({
       workspaceDir: () => "/ws",
       blockMarkers: () => MARKERS,
       cwdSessionsDir: () => "/ws/.workflow/sessions",
+      cwdMarkerFile: () => "/ws/.workflow/workline.json",
       cwdHistoryFile: () => "/ws/.workflow/HISTORY.md",
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
       cwdLockFile: () => "/ws/.workflow/.lock",

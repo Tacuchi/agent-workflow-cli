@@ -2,6 +2,7 @@ import { dirname, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { NAMESPACE_REGEX, type Namespace, normalizeNamespace } from "./namespace.js";
+import { isWorklineRoot } from "./workline-marker.js";
 
 export type NamespaceSource = "flag" | "env" | "config" | "workspace" | "default";
 
@@ -14,9 +15,10 @@ export interface ResolvedNamespace {
  * The one workspace-scoped coordinate resolved before any service is built.
  *
  * A Workline workspace does not need a configuration block to exist.  Its
- * durable marker is exactly `.<namespace>/sessions/`; until that marker exists
- * the directory from which the command was invoked is still the workspace root
- * for read-only commands.  Keeping that fact here prevents each command from
+ * durable marker is `.<namespace>/workline.json` — a mark of Workline's own, not
+ * a folder name a host tool also uses (see `workline-marker`); until that marker
+ * exists the directory from which the command was invoked is still the workspace
+ * root for read-only commands.  Keeping that fact here prevents each command from
  * independently walking cwd (or, worse, guessing a Git root).
  */
 export interface WorklineDirectory {
@@ -146,7 +148,7 @@ export class NamespaceResolver {
   private async findMarkerForNamespace(cwd: string, namespace: Namespace): Promise<string | null> {
     let dir = cwd;
     while (true) {
-      if (await this.isCanonicalMarker(join(dir, `.${namespace}`, "sessions"))) return dir;
+      if (await isWorklineRoot(this.fs, dir, namespace)) return dir;
       const parent = dirname(dir);
       if (parent === dir) return null;
       dir = parent;
@@ -165,18 +167,10 @@ export class NamespaceResolver {
       if (entry.type !== "dir" || !entry.name.startsWith(".")) continue;
       const candidate = entry.name.slice(1);
       if (!NAMESPACE_REGEX.test(candidate)) continue;
-      if (await this.isCanonicalMarker(join(entry.path, "sessions"))) {
+      if (await isWorklineRoot(this.fs, dir, candidate)) {
         matches.push(candidate as Namespace);
       }
     }
     return matches.sort();
-  }
-
-  private async isCanonicalMarker(path: string): Promise<boolean> {
-    try {
-      return (await this.fs.stat(path)).type === "dir";
-    } catch {
-      return false;
-    }
   }
 }

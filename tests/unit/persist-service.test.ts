@@ -295,6 +295,27 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
     );
   });
 
+  it("deja su fila en el índice del workspace, haya o no flujo activo", async () => {
+    // `persist` no crea sesiones y no corre dentro de un recorrido dirigido, así
+    // que hasta acá lo que publicaba no dejaba rastro en el registro propio del
+    // workspace: había que repararlo a mano con `aw history-update` después.
+    const fs = workspace();
+    const request = await prepared(fs);
+    const raw = answer(request);
+
+    const result = await applyPersist(fs, env, paths(), {
+      raw,
+      request,
+      approval: approvalFor(request, raw),
+    });
+
+    if (!result.ok) throw new Error(`expected it to apply: ${result.failure.message}`);
+    const index = await fs.readText("/cwd/.workflow/HISTORY.md");
+    expect(index).toContain("## Publicaciones");
+    expect(index).toContain("docs/research/001-research-comparar-motores.md");
+    expect(index).toContain("persist");
+  });
+
   // The consultative number in the answer is not the number that lands: two
   // existing docs mean the next one is 003, whatever the proposal said.
   it("reasigna el número dentro del lock, ignorando el que trajo la respuesta", async () => {

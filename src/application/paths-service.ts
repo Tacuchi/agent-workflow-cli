@@ -3,6 +3,7 @@ import { unitsRoot } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { Namespace } from "../runtime/namespace.js";
+import { WORKLINE_MARKER_FILE } from "../runtime/workline-marker.js";
 import { localDateIso } from "./dates.js";
 
 export interface ProjectBlockMarkers {
@@ -124,6 +125,13 @@ export class PathsService {
   }
   cwdHistoryFile(): string {
     return join(this.cwdRoot(), "HISTORY.md");
+  }
+  /**
+   * The workspace's own mark — what the resolver reads to tell a Workline
+   * workspace from a host tool's directory that happens to hold a `sessions/`.
+   */
+  cwdMarkerFile(): string {
+    return join(this.cwdRoot(), WORKLINE_MARKER_FILE);
   }
   cwdLockFile(): string {
     return join(this.cwdRoot(), ".lock");

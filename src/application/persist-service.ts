@@ -4,6 +4,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { runNextNumber } from "./dev-only-services.js";
 import { type CoreDocsCanon, resolveCoreDocsCanon } from "./docs-canon-service.js";
+import { appendPublications, publicationRows } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
@@ -358,9 +359,23 @@ export async function applyPersist(
         ? preview.target
         : `${category.dir}/${(await runNextNumber(fs, env, paths, { directory: category.dir })).next}-${category.infix}-${slugOf(artifact.path, category.infix)}.md`;
 
-    return await publishArtifacts(fs, paths.workspaceDir(), [{ path, content: artifact.content }], {
-      overwrite: preview.mode === "update",
-    });
+    const published = await publishArtifacts(
+      fs,
+      paths.workspaceDir(),
+      [{ path, content: artifact.content }],
+      { overwrite: preview.mode === "update" },
+    );
+    // Under the SAME lock as the write: the index is part of publishing, not a
+    // chore after it. Outside the lock two concurrent publications would
+    // read-modify-write the same record and one row would simply be lost.
+    if (published.ok) {
+      await appendPublications(
+        fs,
+        paths.cwdHistoryFile(),
+        publicationRows(published.value.written, OPERATION),
+      );
+    }
+    return published;
   });
 
   if ("error" in result) {

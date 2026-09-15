@@ -21,6 +21,7 @@ import {
   type SessionResolutionError,
   listSessionFolders,
   resolveSessionTarget,
+  sessionFolderMatches,
 } from "./session-resolver.js";
 import { ensureWorklineMaterialized } from "./workspace-materialization-service.js";
 
@@ -61,7 +62,16 @@ export interface OrphanUnit {
   branch: string | null;
   /** Why it is reported: its session is closed or gone, or its directory vanished. */
   reason: "session_closed" | "session_absent" | "directory_missing";
-  /** The command that gives it back. */
+  /**
+   * The command that actually recovers it.
+   *
+   * It used to name `worktree release`, and that was a dead remedy for the two
+   * reasons above: `release` reaches its unit through a session resolved with
+   * write intent, so an orphan of a CLOSED session was refused asking for a
+   * reopen and one of an ABSENT session never resolved at all — precisely the
+   * states this field is printed next to. `reclaim` reads the residue off the
+   * inventory instead of off a session, which is why it can be offered here.
+   */
   release: string;
 }
 
@@ -163,12 +173,78 @@ export interface WorktreeIntegrateSessionOutput {
   integrated: string[];
   /** Aliases still holding a unit: conflicted, or refused before merging. */
   pending: string[];
-  /** What to run for the first pending alias; `null` when nothing is pending. */
+  /**
+   * Units of this session collected once every merge was done.
+   *
+   * Integrating already gives back each unit it merged, so what this catches is
+   * the leftover: a unit whose release did not happen, or one this round never
+   * reached. Closing a session is the last moment anybody is looking, which is
+   * why the sweep rides here instead of waiting to become an orphan.
+   */
+  reclaimed: ReclaimedUnit[];
+  /** Units of this session left standing, each with why and its next step. */
+  retained: RetainedUnit[];
+  /** What to run for the first pending alias or retained unit; `null` when there is none. */
+  next: string | null;
+}
+
+/**
+ * Why a unit was eligible to be collected at all.
+ *
+ * `already_on_work_branch` is the one that is not an orphan: the unit is alive,
+ * its session is too, and it simply holds nothing the source's working branch
+ * does not already have — the state a session's own close sweeps up.
+ */
+export type ReclaimReason = OrphanUnit["reason"] | "already_on_work_branch";
+
+export interface ReclaimedUnit {
+  alias: string;
+  session: string;
+  path: string;
+  branch: string | null;
+  reason: ReclaimReason;
+}
+
+/**
+ * Why a unit was left standing — the work it still holds, in git's own terms.
+ *
+ * `unreadable` is the one that carries the whole design: a read that could not be
+ * completed retains. Collecting is irreversible in the tree, so the reading that
+ * fails must not be the reading that clears the way.
+ */
+export type RetentionReason =
+  | "uncommitted_changes"
+  | "operation_in_progress"
+  | "commits_outside_work_branch"
+  | "unreadable"
+  | "remove_refused";
+
+export interface RetainedUnit {
+  alias: string;
+  session: string;
+  path: string;
+  branch: string | null;
+  reason: RetentionReason;
+  /** What it still holds, verbatim from git when git is the one that said it. */
+  detail: string;
+  /** The next step that recovers this unit — never a generic instruction. */
+  next: string;
+}
+
+export interface WorktreeReclaimOutput {
+  workspace_key: string;
+  /** The session the sweep was narrowed to, when the caller named one. */
+  session?: string;
+  reclaimed: ReclaimedUnit[];
+  retained: RetainedUnit[];
+  /** Sources whose trees could not be read; nothing of theirs was collected. */
+  unreadable: Array<{ alias: string; error: string }>;
+  /** What to run for the first retained unit; `null` when nothing was retained. */
   next: string | null;
 }
 
 export interface WorktreeInput {
-  action: "ensure" | "list" | "release" | "integrate";
+  action: "ensure" | "list" | "release" | "integrate" | "reclaim";
   alias?: string;
   sessionCode?: string;
   contextId?: string;
@@ -180,6 +256,7 @@ export type WorktreeOutput =
   | WorktreeReleaseOutput
   | WorktreeIntegrateOutput
   | WorktreeIntegrateSessionOutput
+  | WorktreeReclaimOutput
   | WorktreeError;
 
 export async function runWorktree(
@@ -187,6 +264,11 @@ export async function runWorktree(
   input: WorktreeInput,
 ): Promise<WorktreeOutput> {
   if (input.action === "list") return listUnits(deps, input);
+  // Collecting residue resolves NO session: the units it acts on are the ones
+  // whose session is closed or already gone, so a resolver that refuses those is
+  // the reason the inventory's remedy never worked. It reads the same trees the
+  // inventory reads and decides per unit.
+  if (input.action === "reclaim") return reclaimUnits(deps, input);
   // Integrating without naming a source is not a missing argument: it is the
   // whole session, which is what a run holds and what a close has to answer for.
   if (input.action === "integrate" && input.alias === undefined) {
@@ -220,27 +302,74 @@ async function integrateSession(
   const listed = await listUnits(deps, { action: "list" });
   if ("error" in listed) return listed;
   const mine = listed.units.filter((unit) => unit.session === session);
+  const { results, integrated, pending, nextOf } = await mergeEach(deps, input, session, mine);
+  // Every merge is done: what is still standing is residue, and the same
+  // reclaimability rule that governs an orphan governs it here. A conflicted unit
+  // retains itself — its commits are precisely the ones NOT on the working
+  // branch — so this cannot take the side of a merge nobody resolved.
+  const swept = await reclaimUnits(deps, { action: "reclaim", sessionCode: session });
+  const residue =
+    "error" in swept
+      ? { reclaimed: [] as ReclaimedUnit[], retained: [] as RetainedUnit[], next: null }
+      : swept;
+  // An alias whose unit was collected is no longer holding one, so it leaves
+  // `pending`. That is not hiding its refusal — the refusal stays in `results` —
+  // it is that a unit with nothing the working branch lacks had no merge pending
+  // in the first place, and leaving it listed would send somebody to integrate a
+  // tree that is gone.
+  const taken = new Set(residue.reclaimed.map((u) => u.alias));
+  const holding = pending.filter((alias) => !taken.has(alias));
+  const first = holding[0];
+  return {
+    session,
+    plan: await planOf(deps, session),
+    results,
+    integrated,
+    pending: holding,
+    reclaimed: residue.reclaimed,
+    retained: residue.retained,
+    next: (first !== undefined ? (nextOf.get(first) ?? null) : null) ?? residue.next,
+  };
+}
+
+/**
+ * Every unit merged in alias order, with what is still pending and how to act on it.
+ *
+ * Nothing is aborted by a neighbour: each alias is its own merge into its own
+ * repository, so a conflict in one must not hide whether the others landed.
+ */
+async function mergeEach(
+  deps: WorktreeDeps,
+  input: WorktreeInput,
+  session: string,
+  mine: ListedUnit[],
+): Promise<{
+  results: WorktreeIntegrateSessionOutput["results"];
+  integrated: string[];
+  pending: string[];
+  nextOf: Map<string, string>;
+}> {
   const results: WorktreeIntegrateSessionOutput["results"] = [];
   const integrated: string[] = [];
   const pending: string[] = [];
-  let next: string | null = null;
+  const nextOf = new Map<string, string>();
   for (const unit of [...mine].sort((a, b) => a.alias.localeCompare(b.alias))) {
     const target = await resolveTarget(deps, { ...input, alias: unit.alias });
     const result = "error" in target ? target : await integrateUnit(deps, target);
     if ("error" in result) {
       results.push({ ...result, alias: unit.alias });
       pending.push(unit.alias);
-      next ??= `aw worktree integrate --source ${unit.alias} --code ${session}`;
+      nextOf.set(unit.alias, `aw worktree integrate --source ${unit.alias} --code ${session}`);
       continue;
     }
     results.push(result);
     if (result.integrated) integrated.push(unit.alias);
     else {
       pending.push(unit.alias);
-      next ??= result.next;
+      if (result.next !== null) nextOf.set(unit.alias, result.next);
     }
   }
-  return { session, plan: await planOf(deps, session), results, integrated, pending, next };
+  return { results, integrated, pending, nextOf };
 }
 
 /** The plan the session's run declared, or `null` when there is no readable run. */
@@ -631,6 +760,310 @@ async function releaseUnit(
 }
 
 /**
+ * Collect the residue: one act over the whole workspace, or over one session.
+ *
+ * Every unit it looks at is one the inventory already names — and the inventory
+ * names units whose session is CLOSED or GONE. That is the whole reason this
+ * path resolves no session: `release` reaches its tree through
+ * `resolveSessionTarget({ intent: "write" })`, which refuses a closed session
+ * asking for a reopen and never resolves an absent one, so the remedy printed
+ * next to every orphan could not be run on the orphans that exist. Here the
+ * identity comes off the unit's own path, exactly as the listing derives it, and
+ * what a session is allowed to do to ITS OWN artifacts is left untouched.
+ *
+ * Narrowing with a session goes further than an orphan sweep on purpose: that is
+ * the form integration uses at its own close, where the session is still alive
+ * and what is left over is its own units, not orphans.
+ */
+async function reclaimUnits(
+  deps: WorktreeDeps,
+  input: WorktreeInput,
+): Promise<WorktreeReclaimOutput | WorktreeError> {
+  const block = await readWorkspaceBlock(
+    deps.fs,
+    deps.paths.workspaceDir(),
+    deps.paths.blockMarkers(),
+  );
+  const sources = block?.fuentes ?? [];
+  if (sources.length === 0) {
+    return {
+      error: "no_sources_declared",
+      message: "el bloque WORKSPACE no declara ninguna fuente",
+      hint: "declará la fuente en la tabla Fuentes antes de pedir una recogida",
+    };
+  }
+  if (input.alias !== undefined && !sources.some((s) => s.alias === input.alias)) {
+    return {
+      error: "unknown_source",
+      message: `'${input.alias}' no es una fuente declarada`,
+      hint: `fuentes declaradas: ${sources.map((s) => s.alias).join(", ")}`,
+    };
+  }
+  const key = workspaceKey(deps.paths.workspaceDir());
+  const root = await canonicalUnitsRootForRead(deps);
+  const sessions = await sessionStates(deps);
+  const only = input.sessionCode ?? null;
+
+  const reclaimed: ReclaimedUnit[] = [];
+  const retained: RetainedUnit[] = [];
+  const unreadable: WorktreeReclaimOutput["unreadable"] = [];
+  for (const source of sources) {
+    if (input.alias !== undefined && source.alias !== input.alias) continue;
+    const swept = await sweepSource(deps, source, { root, key, only, sessions, block });
+    if ("error" in swept) {
+      unreadable.push({ alias: source.alias, error: swept.error });
+      continue;
+    }
+    reclaimed.push(...swept.reclaimed);
+    retained.push(...swept.retained);
+  }
+  return {
+    workspace_key: key,
+    ...(only !== null ? { session: only } : {}),
+    reclaimed,
+    retained,
+    unreadable,
+    next: retained[0]?.next ?? null,
+  };
+}
+
+/** What one source's residue produced, or why its trees could not be read. */
+async function sweepSource(
+  deps: WorktreeDeps,
+  source: ProjectFuente,
+  ctx: {
+    root: string;
+    key: string;
+    only: string | null;
+    sessions: SessionStates;
+    block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
+  },
+): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] } | { error: string }> {
+  if (!(await deps.git.isGitRepo(source.path))) return { reclaimed: [], retained: [] };
+  let trees: WorktreeEntry[];
+  try {
+    trees = await deps.git.worktreeList(source.path);
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+  const work = resolveSourceBranches(source, ctx.block).work;
+  const reclaimed: ReclaimedUnit[] = [];
+  const retained: RetainedUnit[] = [];
+  const vanished: ReclaimedUnit[] = [];
+  for (const tree of trees) {
+    const candidate = candidateOf(tree, ctx);
+    if (candidate === null) continue;
+    const swept = await sweepOne(deps, source, tree, work, candidate);
+    if ("retained" in swept) {
+      retained.push(swept.retained);
+      continue;
+    }
+    // A vanished tree is only collected once git has actually dropped its entry,
+    // and the prune is one call for all of them. Reporting them before it ran
+    // would turn a prune that failed into a collection that never happened.
+    if (swept.prune) vanished.push(swept.reclaimed);
+    else reclaimed.push(swept.reclaimed);
+  }
+  if (vanished.length > 0) {
+    const settled = await prune(deps, source, vanished);
+    reclaimed.push(...settled.reclaimed);
+    retained.push(...settled.retained);
+  }
+  return { reclaimed, retained };
+}
+
+/** The vanished trees git dropped, or the same ones still listed and why. */
+async function prune(
+  deps: WorktreeDeps,
+  source: ProjectFuente,
+  vanished: ReclaimedUnit[],
+): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }> {
+  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  try {
+    await deps.git.worktreePrune(source.path);
+    return { reclaimed: vanished, retained: [] };
+  } catch (err) {
+    return {
+      reclaimed: [],
+      retained: vanished.map((unit) => ({
+        alias: unit.alias,
+        session: unit.session,
+        path: unit.path,
+        branch: unit.branch,
+        reason: "remove_refused" as const,
+        detail: (err as Error).message,
+        next: `corré 'git worktree prune' en ${source.path} y volvé a recoger`,
+      })),
+    };
+  }
+}
+
+/** The identity and residue state of a tree this sweep may act on; `null` otherwise. */
+function candidateOf(
+  tree: WorktreeEntry,
+  ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
+): { session: string; alias: string; orphan: OrphanUnit["reason"] | null } | null {
+  const identity = tree.main ? null : parseUnitPath(ctx.root, tree.path);
+  if (identity === null || identity.workspaceKey !== ctx.key) return null;
+  if (ctx.only !== null && !sessionFolderMatches(identity.session, ctx.only)) return null;
+  const orphan = orphanReason(identity.session, ctx.sessions, tree.prunable);
+  // Outside a named session only residue is touched: a live session's unit is
+  // somebody's working tree, and a workspace-wide sweep that could take one would
+  // be the failure this whole feature exists to prevent.
+  if (orphan === null && ctx.only === null) return null;
+  return { session: identity.session, alias: identity.alias, orphan };
+}
+
+/** One candidate, weighed and then collected or left standing. */
+async function sweepOne(
+  deps: WorktreeDeps,
+  source: ProjectFuente,
+  tree: WorktreeEntry,
+  work: string,
+  candidate: { session: string; alias: string; orphan: OrphanUnit["reason"] | null },
+): Promise<{ reclaimed: ReclaimedUnit; prune: boolean } | { retained: RetainedUnit }> {
+  const where = {
+    alias: candidate.alias,
+    session: candidate.session,
+    path: tree.path,
+    branch: tree.branch,
+  };
+  if (candidate.orphan === "directory_missing") {
+    // Nothing to weigh: the tree is gone. Pruning drops git's administrative
+    // entry and leaves the branch — and with it every commit — exactly where it
+    // was, so there is no work this can lose.
+    return { reclaimed: { ...where, reason: candidate.orphan }, prune: true };
+  }
+  const verdict = await reclaimability(
+    deps,
+    source,
+    tree,
+    work,
+    candidate.orphan,
+    candidate.session,
+  );
+  if (!verdict.free) return { retained: { ...where, ...verdict.retention } };
+  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  try {
+    await deps.git.worktreeRemove(source.path, tree.path);
+  } catch (err) {
+    // git refused, and git refusing is the last line of the same rule: never
+    // `--force`, so whatever it is holding stays held.
+    return {
+      retained: {
+        ...where,
+        reason: "remove_refused",
+        detail: (err as Error).message,
+        next: `revisá ${tree.path} y volvé a correr 'aw worktree reclaim'; nada se borra por la fuerza`,
+      },
+    };
+  }
+  await detach(deps, tree.path);
+  return {
+    reclaimed: { ...where, reason: candidate.orphan ?? "already_on_work_branch" },
+    prune: false,
+  };
+}
+
+/**
+ * Whether a unit still custodies work — and it fails CLOSED.
+ *
+ * Three states hold a unit, and each is asked separately because each has a
+ * different way out: a half-finished git operation, uncommitted changes, and
+ * commits that are not on the source's working branch. A read that cannot be
+ * completed is a fourth: it RETAINS. `git worktree remove` refusing is not the
+ * proof that nothing with work was touched — the proof is the unit that is still
+ * there — and a `status` that could not run must never read as "clean".
+ */
+async function reclaimability(
+  deps: WorktreeDeps,
+  source: ProjectFuente,
+  tree: WorktreeEntry,
+  work: string,
+  orphan: OrphanUnit["reason"] | null,
+  session: string,
+): Promise<
+  | { free: true }
+  | { free: false; retention: Omit<RetainedUnit, "alias" | "session" | "path" | "branch"> }
+> {
+  const held = (
+    reason: RetentionReason,
+    detail: string,
+    next: string,
+  ): { free: false; retention: Omit<RetainedUnit, "alias" | "session" | "path" | "branch"> } => ({
+    free: false,
+    retention: { reason, detail, next },
+  });
+
+  let operation: Awaited<ReturnType<GitPort["operationState"]>>;
+  try {
+    operation = await deps.git.operationState(tree.path);
+  } catch (err) {
+    return held(
+      "unreadable",
+      `no se pudo leer el estado de git en la unidad: ${(err as Error).message}`,
+      `revisá ${tree.path} a mano: mientras su estado no se pueda leer, la recogida la conserva`,
+    );
+  }
+  if (operation !== "clean") {
+    return held(
+      "operation_in_progress",
+      `git dejó un ${operation} a medio resolver en la unidad`,
+      `aw fix-git --path ${tree.path}`,
+    );
+  }
+  let dirty: boolean;
+  try {
+    dirty = await deps.git.isDirty(tree.path);
+  } catch (err) {
+    return held(
+      "unreadable",
+      `no se pudo leer el árbol de la unidad: ${(err as Error).message}`,
+      `revisá ${tree.path} a mano: mientras su árbol no se pueda leer, la recogida lo conserva`,
+    );
+  }
+  if (dirty) {
+    return held(
+      "uncommitted_changes",
+      "la unidad tiene cambios sin commitear",
+      `commiteá o descartá los cambios en ${tree.path} y volvé a correr 'aw worktree reclaim'`,
+    );
+  }
+  if (tree.head === null) {
+    return held(
+      "unreadable",
+      "git no reportó el HEAD de la unidad",
+      `revisá ${tree.path} a mano: sin HEAD no se puede decidir si sus commits ya están en '${work}'`,
+    );
+  }
+  if (!(await deps.git.isAncestor(source.path, tree.head, work))) {
+    return held(
+      "commits_outside_work_branch",
+      `la unidad tiene commits que no están en '${work}'`,
+      recoveryFor(source, tree, orphan, work, session),
+    );
+  }
+  return { free: true };
+}
+
+/** How the work of a unit that is not on the working branch gets back onto it. */
+function recoveryFor(
+  source: ProjectFuente,
+  tree: WorktreeEntry,
+  orphan: OrphanUnit["reason"] | null,
+  work: string,
+  session: string,
+): string {
+  if (orphan === "session_closed") {
+    return `aw session-resume --code ${session} --reopen y después 'aw worktree integrate --source ${source.alias} --code ${session}'`;
+  }
+  if (orphan === "session_absent") {
+    return `la sesión ${session} ya no existe: revisá la rama ${tree.branch ?? unitBranch(session)} en ${source.path} y llevá sus commits a '${work}' antes de volver a recoger`;
+  }
+  return `aw worktree integrate --source ${source.alias} --code ${session}`;
+}
+
+/**
  * The workspace's live units — every one of them, or only one session's.
  *
  * The filter is what makes this reading usable as a run's own evidence: a flow
@@ -776,7 +1209,7 @@ function orphanOf(
     path: tree.path,
     branch: tree.branch,
     reason,
-    release: `aw worktree release --source ${identity.alias} --code ${identity.session}`,
+    release: `aw worktree reclaim --source ${identity.alias} --code ${identity.session}`,
   };
 }
 

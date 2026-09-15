@@ -26,6 +26,7 @@ describe("Workline implicit materialization", () => {
     expect(preview).toMatchObject({ root: "/cwd", namespace: "workflow", materialized: true });
     expect(preview.effects).toEqual([
       { kind: "gitignore", path: "/cwd/.gitignore", status: "skipped" },
+      { kind: "marker", path: "/cwd/.workflow/workline.json", status: "created" },
       { kind: "sessions", path: "/cwd/.workflow/sessions", status: "created" },
     ]);
     expect(fs.writes).toEqual(new Map());
@@ -41,10 +42,16 @@ describe("Workline implicit materialization", () => {
     expect(result.materialized).toBe(true);
     expect(result.effects).toEqual([
       { kind: "gitignore", path: "/repo/.gitignore", status: "created" },
+      { kind: "marker", path: "/repo/.workflow/workline.json", status: "created" },
       { kind: "sessions", path: "/repo/.workflow/sessions", status: "created" },
     ]);
     await expect(fs.readText("/repo/.gitignore")).resolves.toContain(".workflow/sessions/");
     expect(await fs.exists("/repo/.workflow/sessions")).toBe(true);
+    // La marca propia del workspace: lo que lo distingue de la carpeta de un
+    // host que apenas comparte el nombre de una subcarpeta.
+    await expect(fs.readText("/repo/.workflow/workline.json")).resolves.toContain(
+      '"namespace": "workflow"',
+    );
     expect(await fs.exists("/repo/.workflow/.lock")).toBe(false);
     expect(await fs.exists("/repo/.workflow/skills.toml")).toBe(false);
     expect(await fs.exists("/repo/CLAUDE.md")).toBe(false);
@@ -75,9 +82,30 @@ describe("Workline implicit materialization", () => {
 
     expect(second.materialized).toBe(false);
     expect(second.effects).toEqual([
+      { kind: "marker", path: "/cwd/.workflow/workline.json", status: "existing" },
       { kind: "sessions", path: "/cwd/.workflow/sessions", status: "existing" },
     ]);
     expect(fs.writes).toEqual(new Map());
+  });
+
+  it("le da la marca al workspace que se materializó antes de que existiera, sin migración", async () => {
+    // El parque que ya existe: `sessions/` presente y ninguna marca. La primera
+    // escritura se la agrega, así que nadie corre un comando de conversión y el
+    // resolver deja de depender de la lectura de compatibilidad para encontrarlo.
+    const fs = new MemFs();
+    fs.dir("/viejo").dir("/viejo/.workflow").dir("/viejo/.workflow/sessions");
+
+    const result = await ensureWorklineMaterialized(fs, paths("/viejo"));
+
+    expect(result.materialized).toBe(false);
+    expect(result.effects).toContainEqual({
+      kind: "marker",
+      path: "/viejo/.workflow/workline.json",
+      status: "created",
+    });
+    expect(await fs.exists("/viejo/.workflow/workline.json")).toBe(true);
+    // Y nada más se creó: la materialización mínima sigue siendo mínima.
+    expect(await fs.exists("/viejo/.workflow/.lock")).toBe(false);
   });
 
   it("serializes two concurrent first mutations into one creation and one existing receipt", async () => {

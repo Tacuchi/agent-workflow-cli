@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,6 +11,7 @@ import { runStatusCommand } from "../../src/application/status-service.js";
 import {
   type WorktreeEnsureOutput,
   type WorktreeIntegrateOutput,
+  type WorktreeIntegrateSessionOutput,
   runWorktree,
 } from "../../src/application/worktree-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -223,7 +224,7 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
       session: "104-dos-plan-exec",
       reason: "session_closed",
     });
-    expect(status.orphan_units[0]?.release).toContain("aw worktree release");
+    expect(status.orphan_units[0]?.release).toContain("aw worktree reclaim");
   });
 
   it("sin puerto git, aw status devuelve exactamente la salida de antes", async () => {
@@ -233,5 +234,152 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
 
     expect(status.orphan_units).toEqual([]);
     for (const s of status.sessions.active) expect(s.units).toEqual([]);
+  });
+});
+
+describe("integrar una sesión entera: el residuo se recoge al terminar", () => {
+  const ALIASES = ["alfa", "beta", "gamma"] as const;
+  let root: string;
+  let home: string;
+  let workspace: string;
+  let sources: Record<string, string>;
+  let deps: { fs: NodeFileSystem; env: FakeEnv; git: GitCliAdapter; paths: PathsService };
+
+  function multiBlock(paths: Record<string, string>): string {
+    const rows = ALIASES.map((a) => `| ${a} | ${paths[a]} | main |`).join("\n");
+    const work = ALIASES.map((a) => `  - ${a}: main`).join("\n");
+    return `<!-- WORKFLOW-PROJECT-START -->
+## Proyecto
+
+Test.
+
+## Fuentes
+
+| Alias | Path | Rama principal |
+|---|---|---|
+${rows}
+
+## Stack
+
+_Stack sin detectar._
+
+## Status
+
+- Ramas de trabajo actuales:
+${work}
+- Última actividad: 2026-08-07
+- Histórico: \`.workflow/HISTORY.md\`
+<!-- WORKFLOW-PROJECT-END -->
+`;
+  }
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "wt-integrate-multi-"));
+    home = join(root, "home");
+    workspace = join(root, "ws");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(workspace, { recursive: true });
+    sources = {};
+    for (const alias of ALIASES) {
+      const path = join(root, alias);
+      mkdirSync(path, { recursive: true });
+      git(path, "init", "--initial-branch=main");
+      git(path, "config", "user.email", "t@example.com");
+      git(path, "config", "user.name", "T");
+      writeFileSync(join(path, "choque.txt"), "base\n");
+      git(path, "add", "-A");
+      git(path, "commit", "-m", "inicial");
+      sources[alias] = path;
+    }
+    writeFileSync(join(workspace, "CLAUDE.md"), multiBlock(sources));
+    const dir = join(workspace, ".workflow", "sessions", "103-uno-plan-exec");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SESSION.md"), "# SESSION — 103-uno-plan-exec\n");
+
+    deps = {
+      fs: new NodeFileSystem(),
+      env: new FakeEnv(home, workspace),
+      git: new GitCliAdapter(new NodeProcess()),
+      paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
+    };
+  });
+  afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+  it("integra las tres en orden de alias, conserva la que choca y recoge las limpias que quedaron", async () => {
+    const units: Record<string, string> = {};
+    for (const alias of ALIASES) {
+      const unit = (await runWorktree(deps, {
+        action: "ensure",
+        alias,
+        sessionCode: "103",
+      })) as WorktreeEnsureOutput;
+      units[alias] = unit.path;
+      writeFileSync(join(unit.path, "choque.txt"), `unidad ${alias}\n`);
+      git(unit.path, "add", "-A");
+      git(unit.path, "commit", "-m", `trabajo en ${alias}`);
+    }
+    // Sólo `beta` va a chocar: su checkout movió el mismo archivo por su cuenta.
+    writeFileSync(join(sources.beta as string, "choque.txt"), "el checkout de beta\n");
+    git(sources.beta as string, "add", "-A");
+    git(sources.beta as string, "commit", "-m", "beta se movió sola");
+
+    const result = (await runWorktree(deps, {
+      action: "integrate",
+      sessionCode: "103",
+    })) as WorktreeIntegrateSessionOutput;
+
+    // Nada se aborta por un vecino: las tres se intentaron, en orden de alias.
+    expect(result.results).toHaveLength(3);
+    expect(result.integrated).toEqual(["alfa", "gamma"]);
+    expect(result.pending).toEqual(["beta"]);
+    expect(result.next).toContain("aw fix-git --path");
+    // La unidad que choca SOBREVIVE: sus commits son el único lado suyo del merge.
+    expect(git(sources.beta as string, "worktree", "list", "--porcelain")).toContain(
+      "aw/103-uno-plan-exec",
+    );
+    expect(readFileSync(join(units.beta as string, "choque.txt"), "utf-8")).toBe("unidad beta\n");
+    // Y la recogida del cierre no la tocó, porque lo suyo no está en la rama de trabajo.
+    expect(result.retained.map((u) => u.alias)).toEqual(["beta"]);
+    expect(result.retained[0]?.reason).toBe("commits_outside_work_branch");
+    // Las limpias ya se habían liberado al integrar: no queda residuo que barrer.
+    expect(result.reclaimed).toEqual([]);
+    for (const alias of ["alfa", "gamma"] as const) {
+      expect(git(sources[alias] as string, "worktree", "list", "--porcelain")).not.toContain(
+        "aw/103-uno-plan-exec",
+      );
+      expect(readFileSync(join(sources[alias] as string, "choque.txt"), "utf-8")).toBe(
+        `unidad ${alias}\n`,
+      );
+    }
+  });
+
+  it("recoge al terminar la unidad que no tenía nada que la rama de trabajo no tuviera ya", async () => {
+    const unit = (await runWorktree(deps, {
+      action: "ensure",
+      alias: "alfa",
+      sessionCode: "103",
+    })) as WorktreeEnsureOutput;
+    // La sesión tomó la unidad de alfa y nunca la editó; y el checkout de alfa
+    // está en otra rama, así que integrar se niega antes de mezclar nada. Sin
+    // recogida al cierre esa unidad vacía se queda ahí hasta que alguien la vea.
+    git(sources.alfa as string, "checkout", "-b", "otra-rama");
+
+    const result = (await runWorktree(deps, {
+      action: "integrate",
+      sessionCode: "103",
+    })) as WorktreeIntegrateSessionOutput;
+
+    expect(result.results[0]).toMatchObject({ error: "checkout_off_branch", alias: "alfa" });
+    expect(result.reclaimed.map((u) => u.alias)).toEqual(["alfa"]);
+    expect(result.reclaimed[0]?.reason).toBe("already_on_work_branch");
+    expect(result.retained).toEqual([]);
+    // No queda unidad que sostener, así que tampoco queda integración pendiente:
+    // la negativa sigue en `results`, que es donde se lee por qué pasó.
+    expect(result.pending).toEqual([]);
+    expect(result.next).toBeNull();
+    expect(existsSync(unit.path)).toBe(false);
+    expect(git(sources.alfa as string, "worktree", "list", "--porcelain")).not.toContain(
+      "aw/103-uno-plan-exec",
+    );
   });
 });

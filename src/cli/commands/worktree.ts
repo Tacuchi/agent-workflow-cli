@@ -6,7 +6,13 @@ import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const ACTIONS = new Set<WorktreeInput["action"]>(["ensure", "list", "release", "integrate"]);
+const ACTIONS = new Set<WorktreeInput["action"]>([
+  "ensure",
+  "list",
+  "release",
+  "integrate",
+  "reclaim",
+]);
 
 export const worktreeCommand: CliCommand = {
   name: "worktree",
@@ -17,11 +23,16 @@ export const worktreeCommand: CliCommand = {
     "one source with --source, or every unit of the session in alias order with only --code; a conflict is reported with its plan, files and " +
     "source path and routed to `aw fix-git --path`, never resolved on its own. " +
     "`list` shows every unit and orphan of the workspace, or only one session's with --code, each with its branch, dirty state and HEAD. " +
-    "Usage: aw worktree ensure|list|release|integrate [--source <alias>] [--code <NNN>].",
+    "`reclaim` collects the residue in one act — every orphan of the workspace, or one session's units with --code — reaching sessions that are " +
+    "closed or gone without reopening any. A unit that still custodies work SURVIVES: uncommitted changes, a half-resolved git operation, commits " +
+    "outside the source's working branch, or a read that could not be completed. It reports what it collected and what it retained, with the reason " +
+    "and the next step for each retention; it never uses --force and never deletes a branch. " +
+    "Usage: aw worktree ensure|list|release|integrate|reclaim [--source <alias>] [--code <NNN>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const action = args.rest[0] as WorktreeInput["action"] | undefined;
     if (action === undefined || !ACTIONS.has(action)) {
-      const usage = "uso: worktree ensure|list|release|integrate [--source <alias>] [--code <NNN>]";
+      const usage =
+        "uso: worktree ensure|list|release|integrate|reclaim [--source <alias>] [--code <NNN>]";
       return fail("INVALID_INPUT", usage, { error: usage });
     }
     const alias = flagValue(args, "source");
@@ -34,8 +45,13 @@ export const worktreeCommand: CliCommand = {
     if (session.code !== undefined) input.sessionCode = session.code;
     // The conversation's own binding resolves the unit a VERB acts on. `list` is
     // the inventory — including the orphans nobody is coming back for — so it
-    // narrows only when the caller names a session out loud.
-    if (contextId !== undefined && action !== "list") input.contextId = contextId;
+    // narrows only when the caller names a session out loud. `reclaim` acts on
+    // that same inventory and for the same reason: bound to the caller's session
+    // it would sweep only that one and leave standing exactly the residue nobody
+    // is coming back for.
+    if (contextId !== undefined && action !== "list" && action !== "reclaim") {
+      input.contextId = contextId;
+    }
 
     const data = await runWorktree(
       { fs: ctx.fs, env: ctx.env, git: ctx.git, paths: ctx.paths },

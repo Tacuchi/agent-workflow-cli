@@ -603,15 +603,21 @@ async function resolveSoleActive(
 function identityMatches(scanned: ScannedFolder[], code: string): ScannedFolder[] {
   const exact = scanned.find((s) => s.name === code);
   if (exact !== undefined) return [exact];
-  return scanned.filter((s) => matchesIdentity(s.name, code));
+  return scanned.filter((s) => sessionFolderMatches(s.name, code));
 }
 
 /**
  * Identity match, anchored on a `-` word boundary so `100` never matches
  * `1000-…` nor `01` matches `012-…`. A numeric identity also reaches the legacy
  * `sessionNNN-…` layout, so one code resolves a session in either format.
+ *
+ * Exported because naming a session is not the same as RESOLVING one: collecting
+ * isolation-unit residue has to narrow to a session that may be closed or whose
+ * folder is gone, and full resolution refuses exactly those. Sharing the matcher
+ * keeps `--code 177` meaning the same thing on both paths without giving the
+ * sweep the write access a resolution would hand it.
  */
-function matchesIdentity(folder: string, input: string): boolean {
+export function sessionFolderMatches(folder: string, input: string): boolean {
   if (folder === input) return true;
   const digits = numericIdentity(input);
   if (digits !== null) {
