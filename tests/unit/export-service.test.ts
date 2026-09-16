@@ -700,6 +700,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
     bundles: Array<{ nnn: string }>;
     standalone_sql: Array<{ name: string }>;
     excluded: Array<{ name: string; origin: string; reason: string }>;
+    exclude_unmatched: string[];
   }
 
   const inventoryOf = (prepared: ExportPrepared): Inventory =>
@@ -760,6 +761,34 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
     expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002"]);
     expect(inventory.sessions.map((s) => s.folder)).toEqual(["040-algo-plan-exec"]);
     expect(inventory.standalone_sql).toHaveLength(1);
+  });
+
+  it("una exclusión que no restó nada se declara, en vez de pasar por cumplida", async () => {
+    const inventory = inventoryOf(
+      await prepare(withMaterial(), "scripts", {
+        from: "workspace",
+        exclude: [BUNDLE_B, "099-export-scripts-2026-01-01"],
+        date: DATE,
+      }),
+    );
+
+    // A typo subtracts nothing and, from inside the composition, looks exactly
+    // like a piece the filters had already left out. Only saying so keeps the
+    // bundle from carrying the very material the person believed they removed.
+    expect(inventory.excluded.map((piece) => piece.name)).toEqual([BUNDLE_B]);
+    expect(inventory.exclude_unmatched).toEqual(["099-export-scripts-2026-01-01"]);
+  });
+
+  it("una exclusión que sí restó no se declara sin efecto", async () => {
+    const inventory = inventoryOf(
+      await prepare(withMaterial(), "scripts", {
+        from: "workspace",
+        exclude: [BUNDLE_B],
+        date: DATE,
+      }),
+    );
+
+    expect(inventory.exclude_unmatched).toEqual([]);
   });
 
   it("el inventario declara los orígenes y lo que quedó dentro y fuera, con el motivo", async () => {
@@ -838,6 +867,15 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
     if (inventada.ok) throw new Error("expected a rejection");
     expect(inventada.failure.code).toBe("EXPORT_SCOPE_INVALID");
     expect(inventada.failure.message).toContain("--from 'todo'");
+
+    // Belonging beats validity: naming the three bases to a category that never
+    // reads one sends the person to fix a value that is rejected all the same.
+    const ambas = await prepareExport(withMaterial(), env, paths(), "manuals", {
+      from: "todo" as never,
+      date: DATE,
+    });
+    if (ambas.ok) throw new Error("expected a rejection");
+    expect(ambas.failure.message).toContain("export-manuals");
   });
 });
 

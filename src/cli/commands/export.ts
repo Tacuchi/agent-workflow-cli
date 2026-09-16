@@ -139,6 +139,8 @@ ${ENVELOPE}`,
  * The exclusions are listed one by one with their reason, because an exclusion
  * somebody asked for and one the release book imposed look identical in the
  * resulting bundle and only the first is something the person can take back.
+ * A name that subtracted nothing is printed too: it is the only place a typo in
+ * `--exclude` becomes visible before the bundle carries the piece anyway.
  */
 function renderPrepare(
   category: ExportCategory,
@@ -149,6 +151,7 @@ function renderPrepare(
   const inventory = request.inventory as {
     origins?: string[];
     excluded?: Array<{ name: string; reason: string }>;
+    exclude_unmatched?: string[];
     environment?: EnvironmentFilter | null;
   };
   const lines = [
@@ -161,6 +164,9 @@ function renderPrepare(
       ? [`  Ambiente   ${describeEnvironment(inventory.environment)}`]
       : []),
     ...(inventory.excluded ?? []).map((piece) => `  Fuera      ${piece.name} (${piece.reason})`),
+    ...(inventory.exclude_unmatched ?? []).map(
+      (name) => `  Sin efecto ${name} (--exclude no encontró ninguna pieza con ese nombre)`,
+    ),
   ];
   if (context.detail) lines.push("", request.contract);
   return `${lines.join("\n")}\n`;

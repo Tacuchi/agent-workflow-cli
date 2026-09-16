@@ -307,6 +307,7 @@ export async function prepareExport(
     bundles: material.bundles,
     standalone_sql: material.standalone,
     excluded: material.excluded,
+    exclude_unmatched: material.unmatched,
     environment: material.environment,
     date,
   };
@@ -361,6 +362,8 @@ interface ComposedMaterial {
   bundles: GraduatedBundle[];
   standalone: StandaloneSql[];
   excluded: ExcludedPiece[];
+  /** Names `--exclude` gave that matched no piece of this material. */
+  unmatched: string[];
   /** Present only when the invocation named a destination environment. */
   environment: EnvironmentFilter | null;
 }
@@ -376,6 +379,19 @@ function checkComposableSelection(
   category: ExportCategory,
   selection: ExportSelection,
 ): SemanticFailure | null {
+  // Belonging comes FIRST: telling a category that does not compose its origin
+  // which bases exist would send it to fix a value that was never going to be
+  // read, and it would be rejected again on the next invocation.
+  const named = (["from", "exclude", "environment"] as const).filter(
+    (key) => selection[key] !== undefined,
+  );
+  if (category !== "scripts" && named.length > 0) {
+    return {
+      code: "EXPORT_SCOPE_INVALID",
+      message: `${named.map((k) => `--${k}`).join(", ")} es del bundle de SQL: export-${category} parte siempre del corpus de sesiones`,
+      action: "quitá esos flags, o usá aw export-scripts si lo que querés componer es el bundle",
+    };
+  }
   // Rejected HERE and not when the base is read, for the same reason a malformed
   // `--date` is: the invocation that supplied it is the one that can fix it, and
   // an unknown base silently read as one of the three would compose a different
@@ -388,16 +404,7 @@ function checkComposableSelection(
         "repetí la invocación con una de las tres bases, o sin --from para partir de las sesiones",
     };
   }
-  if (category === "scripts") return null;
-  const named = (["from", "exclude", "environment"] as const).filter(
-    (key) => selection[key] !== undefined,
-  );
-  if (named.length === 0) return null;
-  return {
-    code: "EXPORT_SCOPE_INVALID",
-    message: `${named.map((k) => `--${k}`).join(", ")} es del bundle de SQL: export-${category} parte siempre del corpus de sesiones`,
-    action: "quitá esos flags, o usá aw export-scripts si lo que querés componer es el bundle",
-  };
+  return null;
 }
 
 /**
@@ -503,6 +510,14 @@ async function composeMaterial(
     .filter((item) => named.has(item.name))
     .map((item) => ({ ...item, reason: "manual" as const }));
 
+  // A name that subtracted nothing is DECLARED, not rejected: the base or the
+  // filters may have left that piece out already, and refusing an invocation
+  // whose intent is served would be hostile. But a typo looks identical from
+  // here, and staying silent would ship the very material the person believed
+  // they had taken out — which is the failure this whole command exists against.
+  const matched = new Set(manual.map((item) => item.name));
+  const unmatched = [...named].filter((name) => !matched.has(name));
+
   // The environment subtracts from what the manual exclusions already left, and
   // by the SAME road: both are exclusions of pieces and differ only in the
   // reason the inventory declares, which is the whole of D-05.
@@ -517,6 +532,7 @@ async function composeMaterial(
     bundles: bundles.filter((b) => !out.has(bundleName(b))),
     standalone: standalone.filter((f) => !out.has(f.name)),
     excluded,
+    unmatched,
     environment: environment.filter,
   };
 }
