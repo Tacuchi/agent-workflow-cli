@@ -24,7 +24,7 @@
 
 | Export | Composes | Reads (artifacts / sessions + corpus) | Writes (its ONLY category) |
 |---|---|---|---|
-| [`export-scripts`](export-scripts/EXPORT.md) | `sql` | type-B `SCRIPTS.sql` (DDL/DML migrations) across N sessions + standalone `docs/scripts/*.sql` | `docs/scripts/NNN-export-scripts-<date>/` (numbered forwards + `00-ROLLBACK.sql`) |
+| [`export-scripts`](export-scripts/EXPORT.md) | `sql` | a DECLARED origin: session `SCRIPTS.sql`, loose `docs/scripts/*.sql` and/or published bundles, minus `--exclude` and what already ran in `--environment` | `docs/scripts/NNN-export-scripts-<date>/` (numbered forwards + `00-ROLLBACK.sql`) |
 | [`export-manuals`](export-manuals/EXPORT.md) | — (prose: ambient conventions) | sessions + `DECISION` + plan-doc (`Solution` incl. Final behavior block, `Validations`) + touched code | `docs/manuals/` |
 | [`export-diagrams`](export-diagrams/EXPORT.md) | `diagrams` | source code of the sources + plan-doc (AS-IS → TO-BE delta in `Solution`, `Impacted`) | `docs/diagrams/` (C4 / mermaid) |
 | [`export-reports`](export-reports/EXPORT.md) | — (prose: ambient conventions) | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
@@ -64,7 +64,9 @@ Mirrors `docs/referencias/workflow-exports/` and the old export SKILLs. Frontmat
 Exports read the corpus through the CLI — **never hard-coded paths**:
 
 - `aw sessions` — list sessions (counts + next correlative) to enumerate the corpus.
-- `aw release-data [--since sessionNNN] [--source alias] [--include-graduated] [--standalone-sql]` — consolidated dump of sessions (corpus enumeration). `--include-graduated` lists previous `docs/scripts` bundles (modern `NNN-export-scripts-YYYY-MM-DD` and legacy naming); `--standalone-sql` lists loose top-level `docs/scripts/*.sql` (export-scripts' source B).
+- `aw release-data [--since sessionNNN] [--source alias] [--include-graduated] [--standalone-sql]` — consolidated dump of sessions (corpus enumeration); `--include-graduated` adds the previous `docs/scripts` bundles (modern and legacy naming) and `--standalone-sql` the loose top-level `*.sql`.
+- `aw export-scripts prepare [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>]` — composes the origin and declares it: where it started, what stayed in, what stayed out and why. These three flags are this export's alone.
+- `aw release-pass link --artifact <ruta> | applied --environment <ambiente>` — the book `--environment` reads: `link` attaches a bundle to a pass by path, `applied` records that its SQL RAN there. Nothing inspects a database.
 - `aw session-artifacts --code <NNN> [--dump [kinds]]` — counts by default; `--dump` returns `{path, content, size}` per artifact (objetivo, decisiones, conclusiones, tasks, checkpoint, backlog, scripts).
 - `aw next-number docs/<category>` — deterministic numbering of the output. It also **creates the category folder when missing** (workspace-init no longer scaffolds docs/ upfront) — this is what makes destination resolution a CLI guarantee. In plan/dry-run mode call it with `--dry-run` (pure query, creates nothing).
 

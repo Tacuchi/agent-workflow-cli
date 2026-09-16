@@ -1,3 +1,4 @@
+import { basename, relative, sep } from "node:path";
 import { CORRELATIVE_SOURCE, isCorrelative } from "../domain/correlative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -8,6 +9,8 @@ import { appendPublications, publicationRows } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { type ReleaseDataInput, runReleaseData } from "./release-data-service.js";
+import type { GraduatedBundle, StandaloneSql } from "./release-data/bundles.js";
+import { derivePasses, readReleasePasses } from "./release-pass-ledger.js";
 import {
   type SemanticArtifact,
   type SemanticFailure,
@@ -67,12 +70,13 @@ interface ResolvedPolicy extends Omit<CategoryPolicy, "overwritable"> {
  * catches doctrine that drifts away from what the CLI actually sends.
  */
 export const SCRIPTS_FINAL_STATE_CONTRACT =
-  "Un dossier con 00-ROLLBACK.sql y README.md obligatorios, más los forwards NN-<nombre>.sql numerados de forma continua desde 01. El CLI NUNCA ejecuta SQL. El bundle publica el ESTADO FINAL NETO de la secuencia, no una réplica por sesión: lo que nace y muere dentro de la secuencia se omite; lo migrado va directo a su forma final; lo que el contexto declara retirado se omite aunque ningún script lo elimine. 00-ROLLBACK.sql invierte ese ESTADO FINAL en orden seguro para las dependencias, no el reverso literal de los forwards. Reconciliá contra el código además de las sesiones y la base. Excluí identidades concretas y semillas de prueba; conservá sólo objetos compartidos y necesarios para el estado final.";
+  "Un dossier con 00-ROLLBACK.sql y README.md obligatorios, más los forwards NN-<nombre>.sql numerados de forma continua desde 01. El CLI NUNCA ejecuta SQL. El bundle publica el ESTADO FINAL NETO de la secuencia, no una réplica por sesión: lo que nace y muere dentro de la secuencia se omite; lo migrado va directo a su forma final; lo que el contexto declara retirado se omite aunque ningún script lo elimine. 00-ROLLBACK.sql invierte ese ESTADO FINAL en orden seguro para las dependencias, no el reverso literal de los forwards. Reconciliá contra el código además de las sesiones y la base. Excluí identidades concretas y semillas de prueba; conservá sólo objetos compartidos y necesarios para el estado final. Un bundle previo que entra al origen es MATERIAL A RECONCILIAR, no historia intocable: dos bundles que se contradicen publican el estado final neto resultante, nunca su suma cronológica.";
 
 export const SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS = [
   "ESTADO FINAL NETO",
   "orden seguro para las dependencias",
   "objetos compartidos y necesarios para el estado final",
+  "MATERIAL A RECONCILIAR",
 ] as const;
 
 const POLICIES: Record<ExportCategory, CategoryPolicy> = {
@@ -129,10 +133,67 @@ export interface ExportScope {
   sessions?: string[];
   since?: string;
   source?: string;
+  /** The base the material starts from. Absent = the session corpus, as always. */
+  from?: ExportBase;
+  /** Pieces the invocation subtracted by name, as the inventory spells them. */
+  exclude?: string[];
+  /** The destination environment. What already ran there drops out of the material. */
+  environment?: string;
   /** The day that names the unit. */
   date: string;
   /** Consultative number that named the unit; `apply` mints the real one. */
   next: string;
+}
+
+/**
+ * Which base the material starts from.
+ *
+ * `sessions` is what the command always did and stays the default: an
+ * invocation that names no base produces exactly the material it produced
+ * before this existed. `bundles` re-consolidates what `docs/scripts` already
+ * published, and `workspace` sweeps everything the workspace holds.
+ */
+export type ExportBase = "sessions" | "bundles" | "workspace";
+
+const EXPORT_BASES: readonly ExportBase[] = ["sessions", "bundles", "workspace"];
+
+/** Where one piece of the material actually came from — the base resolves into these. */
+export type MaterialOrigin = "sessions" | "standalone-sql" | "bundles";
+
+/**
+ * A piece the composition left out, and WHY.
+ *
+ * The reason is the whole point of listing it: an exclusion the invocation
+ * asked for and one the release book imposed look identical in the resulting
+ * bundle, and only the first is something the person can take back.
+ */
+export interface ExcludedPiece {
+  origin: MaterialOrigin;
+  name: string;
+  path: string;
+  /** `manual` = the invocation named it · `applied` = the book says it already ran. */
+  reason: "manual" | "applied";
+}
+
+/**
+ * What the destination environment took out of the material, and what the book
+ * had to say about it.
+ *
+ * `no-record` is reported as itself and never as "nothing was applied": a book
+ * that says nothing about an environment is a book nobody told about it, and
+ * reading its silence as "nothing ran there" is exactly how SQL that already ran
+ * would be handed to an operator a second time.
+ *
+ * `scanned` is the other half of that honesty. The filter can only look at
+ * bundles — SQL still living in a session was never delivered, so it cannot have
+ * run — and a zero here says the filter had nothing to look at rather than
+ * letting an empty exclusion list read as "nothing was applied".
+ */
+export interface EnvironmentFilter {
+  name: string;
+  axis: "applied" | "no-record";
+  scanned: number;
+  excluded: number;
 }
 
 /** A scope not yet resolved: whatever the invocation declared, if anything. */
@@ -193,27 +254,9 @@ export async function prepareExport(
     };
   }
   const policy = resolvePolicy(category, canon.canon[category]);
-  const corpus = await readCorpus(fs, env, paths, selection);
-  if ("error" in corpus) {
-    return {
-      ok: false,
-      failure: {
-        code: "EXPORT_CORPUS_UNAVAILABLE",
-        message: corpus.error,
-        action: "revisá el workspace y los filtros --sessions/--since/--source",
-      },
-    };
-  }
-  if (corpus.sessions.length === 0) {
-    return {
-      ok: false,
-      failure: {
-        code: "EXPORT_CORPUS_EMPTY",
-        message: "ninguna sesión coincide con los filtros",
-        action: "ampliá --since, quitá --sessions, o revisá que existan sesiones cerradas",
-      },
-    };
-  }
+  const resolved = await resolveMaterial(fs, env, paths, category, selection);
+  if (!resolved.ok) return resolved;
+  const material = resolved.value;
 
   // Pinned when the answer echoed them, derived only on a first preparation:
   // re-deriving either at `validate` renames the very unit the answer wrote to,
@@ -242,6 +285,9 @@ export async function prepareExport(
     ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
     ...(selection.since !== undefined ? { since: selection.since } : {}),
     ...(selection.source !== undefined ? { source: selection.source } : {}),
+    ...(selection.from !== undefined ? { from: selection.from } : {}),
+    ...(selection.exclude !== undefined ? { exclude: selection.exclude } : {}),
+    ...(selection.environment !== undefined ? { environment: selection.environment } : {}),
     date,
     next,
   };
@@ -253,19 +299,34 @@ export async function prepareExport(
     required: policy.required,
     extensions: policy.extensions,
     overwritable: policy.overwritable,
-    sessions: corpus.sessions,
+    // What the material was composed from, and what stayed in and out of it —
+    // declared BEFORE anything is composed, which is the only moment at which
+    // the person can still disagree with the origin.
+    origins: material.origins,
+    sessions: material.sessions,
+    bundles: material.bundles,
+    standalone_sql: material.standalone,
+    excluded: material.excluded,
+    environment: material.environment,
     date,
   };
 
-  const readSet = corpus.sessions.map((s) => s.path ?? s.folder);
+  const readSet = materialPaths(material);
   const request = buildSemanticRequest({
     operation: `export-${category}`,
-    // What the seal defends is workspace state: the corpus the scope covers (a
-    // session appearing or closing changes what the dossier should have
-    // contained) and the folder this workspace publishes to. The scope rides
-    // along so an altered echo cannot pass as the original one.
-    inputs: { corpus: corpus.sessions, dir: policy.dir, scope },
-    sealed: "el corpus de sesiones del alcance o el destino declarado de la categoría",
+    // What the seal defends is workspace state: the MATERIAL the scope covers —
+    // sessions, loose SQL and previously published bundles alike, since any of
+    // them appearing or changing changes what the dossier should have contained
+    // — and the folder this workspace publishes to. The scope rides along so an
+    // altered echo cannot pass as the original one.
+    inputs: {
+      corpus: material.sessions,
+      bundles: material.bundles,
+      standalone: material.standalone,
+      dir: policy.dir,
+      scope,
+    },
+    sealed: "el material del alcance o el destino declarado de la categoría",
     scope,
     contract: `${policy.contract} Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN es consultivo: el CLI reasigna el número dentro del lock. Copiá 'scope' TAL CUAL en tu respuesta: validate y apply lo leen en vez de re-derivarlo.`,
     inventory,
@@ -289,24 +350,247 @@ function resolvePolicy(category: ExportCategory, dir: string | undefined): Resol
   };
 }
 
-async function readCorpus(
+// ── the material, composed ───────────────────────────────────────────────────
+
+type MaterialSession = { folder: string; path?: string };
+
+/** The material a preparation starts from, already composed and already subtracted. */
+interface ComposedMaterial {
+  origins: MaterialOrigin[];
+  sessions: MaterialSession[];
+  bundles: GraduatedBundle[];
+  standalone: StandaloneSql[];
+  excluded: ExcludedPiece[];
+  /** Present only when the invocation named a destination environment. */
+  environment: EnvironmentFilter | null;
+}
+
+/**
+ * The composable origin belongs to the SQL bundle and to nothing else.
+ *
+ * The other three categories publish documents an author writes; there is no
+ * previous manual to re-consolidate and no environment a diagram ran against.
+ * Accepting the flags there would answer a question those categories never ask.
+ */
+function checkComposableSelection(
+  category: ExportCategory,
+  selection: ExportSelection,
+): SemanticFailure | null {
+  // Rejected HERE and not when the base is read, for the same reason a malformed
+  // `--date` is: the invocation that supplied it is the one that can fix it, and
+  // an unknown base silently read as one of the three would compose a different
+  // origin than the one that was asked for.
+  if (selection.from !== undefined && !EXPORT_BASES.includes(selection.from)) {
+    return {
+      code: "EXPORT_SCOPE_INVALID",
+      message: `--from '${selection.from}' no es una base: ${EXPORT_BASES.join(", ")}`,
+      action:
+        "repetí la invocación con una de las tres bases, o sin --from para partir de las sesiones",
+    };
+  }
+  if (category === "scripts") return null;
+  const named = (["from", "exclude", "environment"] as const).filter(
+    (key) => selection[key] !== undefined,
+  );
+  if (named.length === 0) return null;
+  return {
+    code: "EXPORT_SCOPE_INVALID",
+    message: `${named.map((k) => `--${k}`).join(", ")} es del bundle de SQL: export-${category} parte siempre del corpus de sesiones`,
+    action: "quitá esos flags, o usá aw export-scripts si lo que querés componer es el bundle",
+  };
+}
+
+/**
+ * The material this preparation covers, or the reason there is none.
+ *
+ * The three ways it can fail — a base that is not one, an origin this category
+ * does not compose, and an origin that came back empty — answer the same
+ * question and travel together, so `prepare` reads as the sequence it is.
+ */
+async function resolveMaterial(
+  fs: FileSystemPort,
+  env: EnvPort,
+  paths: PathsService,
+  category: ExportCategory,
+  selection: ExportSelection,
+): Promise<SemanticParse<ComposedMaterial>> {
+  const invalid = checkComposableSelection(category, selection);
+  if (invalid !== null) return { ok: false, failure: invalid };
+  const material = await composeMaterial(fs, env, paths, selection);
+  if ("error" in material) {
+    return {
+      ok: false,
+      failure: {
+        code: "EXPORT_CORPUS_UNAVAILABLE",
+        message: material.error,
+        action: "revisá el workspace y los filtros --sessions/--since/--source",
+      },
+    };
+  }
+  if (materialCount(material) === 0) return { ok: false, failure: emptyOrigin(material) };
+  return { ok: true, value: material };
+}
+
+/**
+ * Why the origin came back empty — and "everything already ran" is its own answer.
+ *
+ * Proposing a bundle with nothing in it would be the wrong outcome twice over:
+ * there is nothing to deliver, and the reason there is nothing is good news the
+ * person asked for. Folding it into the generic empty corpus would send them
+ * looking for a filter to widen.
+ */
+function emptyOrigin(material: ComposedMaterial): SemanticFailure {
+  const applied = material.excluded.filter((item) => item.reason === "applied");
+  if (applied.length > 0 && material.environment !== null) {
+    return {
+      code: "EXPORT_ORIGIN_ALREADY_APPLIED",
+      message: `todo el material que quedaba en el origen ya consta aplicado en '${material.environment.name}': no hay nada que consolidar`,
+      action: `nada que hacer; si igual querés reconsolidarlo, repetí la invocación sin --environment ${material.environment.name}`,
+    };
+  }
+  return {
+    code: "EXPORT_CORPUS_EMPTY",
+    message: `ningún material del origen (${material.origins.join(", ")}) coincide con los filtros`,
+    action:
+      "ampliá --since, quitá --sessions o --exclude, probá otro --from, o revisá que existan sesiones cerradas",
+  };
+}
+
+/**
+ * The material of this preparation: a base brings, the exclusions subtract.
+ *
+ * Both halves in one place, because "where did this come from" and "why is this
+ * not here" are the two questions `prepare` has to answer together — and the
+ * listings the bases read are the ones `release-data` already produces, walked
+ * once by it rather than twice by this.
+ */
+async function composeMaterial(
   fs: FileSystemPort,
   env: EnvPort,
   paths: PathsService,
   selection: ExportSelection,
-): Promise<{ sessions: Array<{ folder: string; path?: string }> } | { error: string }> {
+): Promise<ComposedMaterial | { error: string }> {
+  const base = selection.from ?? "sessions";
   const input: ReleaseDataInput = {
     includeClosed: true,
-    // Graduated bundles are previous exports: re-exporting them would duplicate
-    // what already lives in docs/.
-    includeGraduated: false,
+    // A base of `sessions` is the behavior that always was: graduated bundles are
+    // previous exports and re-exporting them would duplicate what already lives
+    // in docs/. The other bases are asking for exactly that material.
+    includeGraduated: base !== "sessions",
+    includeStandaloneSql: base === "workspace",
     ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
     ...(selection.since !== undefined ? { since: selection.since } : {}),
     ...(selection.source !== undefined ? { sourceAlias: selection.source } : {}),
   };
   const data = await runReleaseData(fs, env, paths, input);
   if ("error" in data) return { error: data.error };
-  return { sessions: data.sessions as Array<{ folder: string; path?: string }> };
+
+  const sessions = base === "bundles" ? [] : (data.sessions as MaterialSession[]);
+  const standalone = base === "workspace" ? (data.standalone_sql ?? []) : [];
+  const bundles = base === "sessions" ? [] : (data.graduated_bundles ?? []);
+  const origins: MaterialOrigin[] = [
+    ...(base === "bundles" ? [] : (["sessions"] as const)),
+    ...(base === "workspace" ? (["standalone-sql"] as const) : []),
+    ...(base === "sessions" ? [] : (["bundles"] as const)),
+  ];
+
+  const named = new Set(selection.exclude ?? []);
+  const manual: ExcludedPiece[] = [
+    ...sessions.map((s) => piece("sessions", s.folder, s.path ?? s.folder)),
+    ...standalone.map((f) => piece("standalone-sql", f.name, f.path)),
+    ...bundles.map((b) => piece("bundles", bundleName(b), b.path)),
+  ]
+    .filter((item) => named.has(item.name))
+    .map((item) => ({ ...item, reason: "manual" as const }));
+
+  // The environment subtracts from what the manual exclusions already left, and
+  // by the SAME road: both are exclusions of pieces and differ only in the
+  // reason the inventory declares, which is the whole of D-05.
+  const kept = bundles.filter((b) => !named.has(bundleName(b)));
+  const environment = await filterByEnvironment(fs, paths, selection.environment, kept);
+  const excluded = [...manual, ...environment.excluded];
+  const out = new Set(excluded.map((item) => item.name));
+
+  return {
+    origins,
+    sessions: sessions.filter((s) => !out.has(s.folder)),
+    bundles: bundles.filter((b) => !out.has(bundleName(b))),
+    standalone: standalone.filter((f) => !out.has(f.name)),
+    excluded,
+    environment: environment.filter,
+  };
+}
+
+/**
+ * Which of these bundles the book says already ran against this environment.
+ *
+ * The chain adds no new piece: a pass LINKS the bundle by workspace-relative
+ * path and that same pass has an application for the environment. One record is
+ * enough — a bundle linked to two passes where only one ran there did run, and
+ * demanding unanimity would re-deliver SQL that is already in place, which is
+ * the error this filter exists to prevent.
+ */
+async function filterByEnvironment(
+  fs: FileSystemPort,
+  paths: PathsService,
+  environment: string | undefined,
+  bundles: readonly GraduatedBundle[],
+): Promise<{ excluded: ExcludedPiece[]; filter: EnvironmentFilter | null }> {
+  if (environment === undefined) return { excluded: [], filter: null };
+  const passes = derivePasses((await readReleasePasses(fs, paths)).events);
+  const there = passes.filter(
+    (derived) =>
+      derived.application.axis === "applied" &&
+      derived.application.environments.includes(environment),
+  );
+  // Both sides normalized to `/`: the book stores the path a person typed and
+  // this one comes from the filesystem, so on Windows the same bundle would be
+  // `docs/scripts/…` in one and `docs\\scripts\\…` in the other and nothing would
+  // ever match — every bundle would read as pending and be delivered twice.
+  const linked = new Set(there.flatMap((derived) => derived.artifacts).map(slashed));
+  const excluded = bundles
+    .filter((bundle) => linked.has(slashed(relative(paths.workspaceDir(), bundle.path))))
+    .map((bundle) => ({
+      ...piece("bundles", bundleName(bundle), bundle.path),
+      reason: "applied" as const,
+    }));
+  return {
+    excluded,
+    filter: {
+      name: environment,
+      axis: there.length === 0 ? "no-record" : "applied",
+      scanned: bundles.length,
+      excluded: excluded.length,
+    },
+  };
+}
+
+/** One spelling for a path that two different producers wrote. */
+function slashed(path: string): string {
+  return path.split(sep).join("/");
+}
+
+/** What names a bundle in `--exclude` and in the inventory: its directory. */
+function bundleName(bundle: GraduatedBundle): string {
+  return basename(bundle.path);
+}
+
+function piece(origin: MaterialOrigin, name: string, path: string): Omit<ExcludedPiece, "reason"> {
+  return { origin, name, path };
+}
+
+/** How many pieces stayed in. Zero is an empty origin, whatever the base was. */
+function materialCount(material: ComposedMaterial): number {
+  return material.sessions.length + material.bundles.length + material.standalone.length;
+}
+
+/** Everything the composer has to read, across the three origins. */
+function materialPaths(material: ComposedMaterial): string[] {
+  return [
+    ...material.sessions.map((s) => s.path ?? s.folder),
+    ...material.standalone.map((f) => f.path),
+    ...material.bundles.map((b) => b.path),
+  ];
 }
 
 // ── the scope, travelling between stages ─────────────────────────────────────
@@ -336,6 +620,9 @@ export function readExportScope(raw: string): SemanticParse<ExportScope | null> 
       ...(scope.sessions !== undefined ? { sessions: scope.sessions as string[] } : {}),
       ...(scope.since !== undefined ? { since: scope.since as string } : {}),
       ...(scope.source !== undefined ? { source: scope.source as string } : {}),
+      ...(scope.from !== undefined ? { from: scope.from as ExportBase } : {}),
+      ...(scope.exclude !== undefined ? { exclude: scope.exclude as string[] } : {}),
+      ...(scope.environment !== undefined ? { environment: scope.environment as string } : {}),
       date: scope.date as string,
       next: scope.next as string,
     },
@@ -353,7 +640,13 @@ function scopeShapeError(scope: Record<string, unknown>): string | null {
   if (scope.sessions !== undefined && !isStringArray(scope.sessions)) {
     return "'sessions' tiene que ser una lista de códigos de texto";
   }
-  for (const key of ["since", "source"] as const) {
+  if (scope.exclude !== undefined && !isStringArray(scope.exclude)) {
+    return "'exclude' tiene que ser una lista de nombres de texto";
+  }
+  if (scope.from !== undefined && !EXPORT_BASES.includes(scope.from as ExportBase)) {
+    return `'from' tiene que ser ${EXPORT_BASES.join(", ")}`;
+  }
+  for (const key of ["since", "source", "environment"] as const) {
     if (scope[key] !== undefined && typeof scope[key] !== "string") {
       return `'${key}' tiene que ser texto`;
     }
@@ -391,10 +684,15 @@ export function conflictingScopeFlags(echoed: ExportScope, flags: ExportSelectio
   if (flags.sessions !== undefined && !same(flags.sessions, echoed.sessions)) {
     conflicts.push("--sessions");
   }
+  if (flags.exclude !== undefined && !same(flags.exclude, echoed.exclude)) {
+    conflicts.push("--exclude");
+  }
   for (const [flag, key] of [
     ["--since", "since"],
     ["--source", "source"],
     ["--date", "date"],
+    ["--from", "from"],
+    ["--environment", "environment"],
   ] as const) {
     if (flags[key] !== undefined && flags[key] !== echoed[key]) conflicts.push(flag);
   }

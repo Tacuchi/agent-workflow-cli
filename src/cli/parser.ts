@@ -68,6 +68,10 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   // Repeated `--path` (attach/detach-multiroot) and `--pattern` (code-scan).
   "path",
   "pattern",
+  // Repetido `--exclude` (export-*): restar una pieza del origen es una lista, y
+  // quedarse con la última dejaría el resto dentro del bundle mientras el
+  // inventario informa que las excluyó.
+  "exclude",
   // Repeated `--settle`, `--handoff` y `--pending` (settle): un plan debe tantas
   // obligaciones como deba, y quedarse con la última dejaría el resto sin saldar
   // mientras el comando informa que saldó.

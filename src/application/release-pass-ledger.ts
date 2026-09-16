@@ -19,9 +19,12 @@ import {
   type ReleasePass,
   ReleasePassError,
   type SourceArrival,
+  type SqlApplication,
+  type SqlApplicationStanding,
   assertDeclarable,
   isArrivalKind,
   passStandingOf,
+  sqlApplicationStandingOf,
 } from "../domain/release-pass.js";
 import { type WorklineNodeId, formatNodeId, isWorklineKind } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -42,6 +45,14 @@ export type ReleasePassEvent =
       pass_version: string;
       /** Workspace-relative path. The file is never opened, moved or renumbered. */
       artifact: string;
+    }
+  | {
+      version: number;
+      at: string;
+      event: "applied";
+      pass_version: string;
+      /** That the SQL this pass carries RAN against an environment. Its own axis. */
+      application: SqlApplication;
     };
 
 /**
@@ -146,6 +157,27 @@ export async function recordArrival(
   });
 }
 
+/**
+ * Record that the SQL this pass carries ran against an environment.
+ *
+ * A fifth fact rather than a fifth arrival kind: it must not reach
+ * `passStandingOf`, which crosses arrivals against the pass's CODE sources. An
+ * application moves the application axis and leaves the release axis exactly
+ * where it was.
+ */
+export async function recordApplication(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: { at: string; passVersion: string; application: SqlApplication },
+): Promise<void> {
+  await append(fs, paths, {
+    at: input.at,
+    event: "applied",
+    pass_version: input.passVersion,
+    application: input.application,
+  });
+}
+
 /** Record a reversion. A new fact that never erases the arrivals it follows. */
 export async function recordReversion(
   fs: FileSystemPort,
@@ -203,6 +235,10 @@ export interface DerivedPass {
   reverted: boolean;
   artifacts: string[];
   standing: PassStanding;
+  /** That its SQL ran, per environment, in ledger order. */
+  applications: SqlApplication[];
+  /** Its application axis, derived apart from `standing` and never folded into it. */
+  application: SqlApplicationStanding;
 }
 
 /**
@@ -217,6 +253,7 @@ export function derivePasses(events: readonly ReleasePassEvent[]): DerivedPass[]
   for (const event of events) applyFact(declared, event);
   for (const derived of declared.values()) {
     derived.standing = passStandingOf(derived.pass, derived.arrivals, derived.reverted);
+    derived.application = sqlApplicationStandingOf(derived.applications);
   }
   return [...declared.values()];
 }
@@ -234,6 +271,8 @@ function declaredPasses(events: readonly ReleasePassEvent[]): Map<string, Derive
       reverted: false,
       artifacts: [],
       standing: passStandingOf(event.pass, [], false),
+      applications: [],
+      application: sqlApplicationStandingOf([]),
     });
   }
   return byVersion;
@@ -246,6 +285,7 @@ function applyFact(declared: Map<string, DerivedPass>, event: ReleasePassEvent):
   if (derived === undefined) return;
   if (event.event === "arrived") derived.arrivals.push(event.arrival);
   else if (event.event === "reverted") derived.reverted = true;
+  else if (event.event === "applied") derived.applications.push(event.application);
   else derived.artifacts.push(event.artifact);
 }
 
@@ -326,6 +366,7 @@ function parseEvent(line: string): ReleasePassEvent | null {
   if (typeof candidate.at !== "string") return null;
   if (candidate.event === "declared") return parseDeclared(value);
   if (candidate.event === "arrived") return parseArrived(value);
+  if (candidate.event === "applied") return parseApplied(value);
   if (candidate.event === "reverted" || candidate.event === "linked") return parseSimple(value);
   return null;
 }
@@ -352,6 +393,22 @@ function parseArrived(value: object): ReleasePassEvent | null {
   if (!isArrivalKind(a.kind) || typeof a.detail !== "string" || typeof a.at !== "string") {
     return null;
   }
+  return value as ReleasePassEvent;
+}
+
+/**
+ * An application record. Its own branch so that a well-formed one is not counted
+ * as unreadable — and an unreadable application would make SQL that already ran
+ * look pending, which is the failure this axis exists to prevent.
+ */
+function parseApplied(value: object): ReleasePassEvent | null {
+  const candidate = value as { pass_version?: unknown; application?: unknown };
+  if (typeof candidate.pass_version !== "string") return null;
+  const application = candidate.application;
+  if (typeof application !== "object" || application === null) return null;
+  const a = application as Partial<SqlApplication>;
+  if (typeof a.environment !== "string" || a.environment.length === 0) return null;
+  if (typeof a.detail !== "string" || typeof a.at !== "string") return null;
   return value as ReleasePassEvent;
 }
 

@@ -447,7 +447,9 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
     const result = validateExport(raw, second);
     if (result.ok) throw new Error("expected a rejection");
     expect(result.failure.code).toBe("SEMANTIC_STALE");
-    expect(result.failure.message).toContain("corpus");
+    // The seal names the MATERIAL now, not only the session corpus: it covers
+    // the loose SQL and the previously published bundles too.
+    expect(result.failure.message).toContain("material");
     expect(result.failure.message).toContain("cambió entre preparar y responder");
   });
 
@@ -665,3 +667,314 @@ describe("la consolidación de scripts declara el estado final neto", () => {
 function fs0(): MemFs {
   return workspace();
 }
+
+// ── the origin, composed ─────────────────────────────────────────────────────
+
+/**
+ * Where the bundle's material comes from stopped being implicit.
+ *
+ * The command always started from the session corpus and excluded the bundles it
+ * had already published. That is still what an invocation with no new flag does
+ * — the characterization case below is the one that would catch it changing —
+ * and everything else here is what a declared base adds on top of it.
+ */
+describe("el origen del bundle se compone: base, exclusiones y sello", () => {
+  const SCRIPTS = "/cwd/docs/scripts";
+  const BUNDLE_A = "002-export-scripts-2026-07-03";
+  const BUNDLE_B = "003-export-scripts-2026-07-10";
+
+  function withMaterial(): MemFs {
+    const fs = workspace();
+    closedSession(fs, "041-otra-plan-exec");
+    fs.file(`${SCRIPTS}/${BUNDLE_A}/01-alter.sql`, "ALTER TABLE t ADD c int;");
+    fs.file(`${SCRIPTS}/${BUNDLE_A}/00-ROLLBACK.sql`, "ALTER TABLE t DROP COLUMN c;");
+    fs.file(`${SCRIPTS}/${BUNDLE_B}/01-drop.sql`, "DROP TABLE t;");
+    fs.file(`${SCRIPTS}/${BUNDLE_B}/00-ROLLBACK.sql`, "CREATE TABLE t ();");
+    fs.file(`${SCRIPTS}/suelto-limpieza.sql`, "DELETE FROM tmp;");
+    return fs;
+  }
+
+  interface Inventory {
+    origins: string[];
+    sessions: Array<{ folder: string }>;
+    bundles: Array<{ nnn: string }>;
+    standalone_sql: Array<{ name: string }>;
+    excluded: Array<{ name: string; origin: string; reason: string }>;
+  }
+
+  const inventoryOf = (prepared: ExportPrepared): Inventory =>
+    prepared.request.inventory as unknown as Inventory;
+
+  function scriptsDossier(prepared: ExportPrepared): Array<[string, string]> {
+    return [
+      [`${prepared.unit}/README.md`, "# Bundle\n\nqué consolida\n"],
+      [`${prepared.unit}/00-ROLLBACK.sql`, "DROP TABLE t;\n"],
+      [`${prepared.unit}/01-crea.sql`, "CREATE TABLE t ();\n"],
+    ];
+  }
+
+  it("sin los argumentos nuevos el material es el de siempre: sesiones, y los bundles afuera", async () => {
+    const inventory = inventoryOf(await prepare(withMaterial(), "scripts", { date: DATE }));
+
+    expect(inventory.origins).toEqual(["sessions"]);
+    expect(inventory.sessions.map((s) => s.folder)).toEqual([
+      "040-algo-plan-exec",
+      "041-otra-plan-exec",
+    ]);
+    // The characterization that matters: a workspace full of published bundles
+    // and loose SQL produces exactly the corpus it produced before any of this.
+    expect(inventory.bundles).toEqual([]);
+    expect(inventory.standalone_sql).toEqual([]);
+  });
+
+  it("la base de bundles publicados parte de ellos y deja las sesiones afuera", async () => {
+    const inventory = inventoryOf(
+      await prepare(withMaterial(), "scripts", { from: "bundles", date: DATE }),
+    );
+
+    expect(inventory.origins).toEqual(["bundles"]);
+    expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002", "003"]);
+    expect(inventory.sessions).toEqual([]);
+  });
+
+  it("la base de barrido del workspace junta sesiones, SQL suelto y bundles", async () => {
+    const inventory = inventoryOf(
+      await prepare(withMaterial(), "scripts", { from: "workspace", date: DATE }),
+    );
+
+    expect(inventory.origins).toEqual(["sessions", "standalone-sql", "bundles"]);
+    expect(inventory.sessions).toHaveLength(2);
+    expect(inventory.standalone_sql.map((f) => f.name)).toEqual(["suelto-limpieza.sql"]);
+    expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002", "003"]);
+  });
+
+  it("la exclusión por nombre resta la pieza del material", async () => {
+    const inventory = inventoryOf(
+      await prepare(withMaterial(), "scripts", {
+        from: "workspace",
+        exclude: [BUNDLE_B, "041-otra-plan-exec"],
+        date: DATE,
+      }),
+    );
+
+    expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002"]);
+    expect(inventory.sessions.map((s) => s.folder)).toEqual(["040-algo-plan-exec"]);
+    expect(inventory.standalone_sql).toHaveLength(1);
+  });
+
+  it("el inventario declara los orígenes y lo que quedó dentro y fuera, con el motivo", async () => {
+    const inventory = inventoryOf(
+      await prepare(withMaterial(), "scripts", {
+        from: "workspace",
+        exclude: [BUNDLE_B],
+        date: DATE,
+      }),
+    );
+
+    expect(inventory.origins).toEqual(["sessions", "standalone-sql", "bundles"]);
+    // Named with its origin and its reason: an exclusion somebody asked for and
+    // one the release book imposed look identical in the resulting bundle, and
+    // only the first is something the person can take back.
+    expect(inventory.excluded).toEqual([
+      {
+        origin: "bundles",
+        name: BUNDLE_B,
+        path: `${SCRIPTS}/${BUNDLE_B}`,
+        reason: "manual",
+      },
+    ]);
+  });
+
+  it("el sello cubre el material nuevo: un bundle que aparece entre etapas vence la propuesta", async () => {
+    const fs = withMaterial();
+    const prepared = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const raw = answer(prepared, scriptsDossier(prepared));
+
+    // Under the old seal — the session corpus alone — this bundle appearing
+    // changed the material the answer was written against and nothing noticed.
+    fs.file(`${SCRIPTS}/004-export-scripts-2026-07-20/01-nuevo.sql`, "CREATE TABLE u ();");
+    fs.file(`${SCRIPTS}/004-export-scripts-2026-07-20/00-ROLLBACK.sql`, "DROP TABLE u;");
+    const result = validateExport(raw, await restage(fs, "scripts", raw));
+
+    if (result.ok) throw new Error("expected a rejection");
+    expect(result.failure.code).toBe("SEMANTIC_STALE");
+    expect(result.failure.message).toContain("material");
+  });
+
+  it("un alcance contradictorio se rechaza nombrando el flag que lo contradice", async () => {
+    const prepared = await prepare(withMaterial(), "scripts", {
+      from: "workspace",
+      exclude: [BUNDLE_B],
+      environment: "certificación",
+      date: DATE,
+    });
+
+    expect(conflictingScopeFlags(prepared.scope, { date: DATE })).toEqual([]);
+    expect(
+      conflictingScopeFlags(prepared.scope, { from: "workspace", exclude: [BUNDLE_B] }),
+    ).toEqual([]);
+    expect(
+      conflictingScopeFlags(prepared.scope, {
+        from: "bundles",
+        exclude: [BUNDLE_A],
+        environment: "producción",
+      }),
+    ).toEqual(["--exclude", "--from", "--environment"]);
+  });
+
+  it("componer el origen es del bundle de SQL, y una base inventada se nombra", async () => {
+    const otra = await prepareExport(withMaterial(), env, paths(), "manuals", {
+      from: "workspace",
+      date: DATE,
+    });
+    if (otra.ok) throw new Error("expected a rejection");
+    expect(otra.failure.code).toBe("EXPORT_SCOPE_INVALID");
+    expect(otra.failure.message).toContain("export-manuals");
+
+    const inventada = await prepareExport(withMaterial(), env, paths(), "scripts", {
+      from: "todo" as never,
+      date: DATE,
+    });
+    if (inventada.ok) throw new Error("expected a rejection");
+    expect(inventada.failure.code).toBe("EXPORT_SCOPE_INVALID");
+    expect(inventada.failure.message).toContain("--from 'todo'");
+  });
+});
+
+// ── the environment, subtracting what already ran ────────────────────────────
+
+/**
+ * What already ran against the destination is not pending work.
+ *
+ * The chain that answers it adds no new piece: a pass LINKS the bundle by path
+ * and that same pass has an application for the environment. And the two
+ * silences the book can return are kept apart on purpose — "no record for this
+ * environment" is not "nothing was applied", and only the second would justify
+ * handing an operator SQL that is already in place.
+ */
+describe("el ambiente deja fuera lo que ya consta aplicado", () => {
+  const SCRIPTS = "/cwd/docs/scripts";
+  const BUNDLE_A = "002-export-scripts-2026-07-03";
+  const BUNDLE_B = "003-export-scripts-2026-07-10";
+  const CERT = "certificación";
+
+  function withBundles(): MemFs {
+    const fs = workspace();
+    fs.file(`${SCRIPTS}/${BUNDLE_A}/01-alter.sql`, "ALTER TABLE t ADD c int;");
+    fs.file(`${SCRIPTS}/${BUNDLE_A}/00-ROLLBACK.sql`, "ALTER TABLE t DROP COLUMN c;");
+    fs.file(`${SCRIPTS}/${BUNDLE_B}/01-drop.sql`, "DROP TABLE t;");
+    fs.file(`${SCRIPTS}/${BUNDLE_B}/00-ROLLBACK.sql`, "CREATE TABLE t ();");
+    return fs;
+  }
+
+  /** A book where `applied` name the bundles that ran in `environment`. */
+  function book(fs: MemFs, environment: string, applied: string[]): MemFs {
+    const rows: unknown[] = [
+      {
+        version: 1,
+        at: "2026-07-04T10:00:00.000Z",
+        event: "declared",
+        pass: {
+          version: "v1.0.0",
+          plans: [{ kind: "plan", key: "047" }],
+          sources: ["agent-workflow-cli"],
+        },
+      },
+      ...applied.map((name) => ({
+        version: 1,
+        at: "2026-07-04T11:00:00.000Z",
+        event: "linked",
+        pass_version: "v1.0.0",
+        artifact: `docs/scripts/${name}`,
+      })),
+      {
+        version: 1,
+        at: "2026-07-05T09:00:00.000Z",
+        event: "applied",
+        pass_version: "v1.0.0",
+        application: { environment, detail: "corrido por el DBA", at: "2026-07-05" },
+      },
+    ];
+    fs.file(
+      "/cwd/.workflow/release-passes.jsonl",
+      `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`,
+    );
+    return fs;
+  }
+
+  interface Inventory {
+    bundles: Array<{ nnn: string }>;
+    excluded: Array<{ name: string; origin: string; reason: string }>;
+    environment: { name: string; axis: string; scanned: number; excluded: number } | null;
+  }
+
+  const inventoryOf = (prepared: ExportPrepared): Inventory =>
+    prepared.request.inventory as unknown as Inventory;
+
+  it("con constancia, el bundle que ya corrió sale y el resto se conserva", async () => {
+    const fs = book(withBundles(), CERT, [BUNDLE_A]);
+    const inventory = inventoryOf(
+      await prepare(fs, "scripts", { from: "bundles", environment: CERT, date: DATE }),
+    );
+
+    expect(inventory.bundles.map((b) => b.nnn)).toEqual(["003"]);
+    // Named with the reason that distinguishes it from an exclusion somebody asked for.
+    expect(inventory.excluded).toEqual([
+      {
+        origin: "bundles",
+        name: BUNDLE_A,
+        path: `${SCRIPTS}/${BUNDLE_A}`,
+        reason: "applied",
+      },
+    ]);
+    expect(inventory.environment).toEqual({
+      name: CERT,
+      axis: "applied",
+      scanned: 2,
+      excluded: 1,
+    });
+  });
+
+  it("sin ninguna constancia para ese ambiente, la ausencia se declara como tal", async () => {
+    const fs = book(withBundles(), "producción", [BUNDLE_A]);
+    const inventory = inventoryOf(
+      await prepare(fs, "scripts", { from: "bundles", environment: CERT, date: DATE }),
+    );
+
+    // Nothing left: the book says nothing about THIS environment, and the axis
+    // says exactly that instead of letting an empty exclusion list read as
+    // "nothing was applied".
+    expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002", "003"]);
+    expect(inventory.excluded).toEqual([]);
+    expect(inventory.environment).toEqual({
+      name: CERT,
+      axis: "no-record",
+      scanned: 2,
+      excluded: 0,
+    });
+  });
+
+  it("cuando todo el material consta aplicado, el comando lo dice y no propone un bundle vacío", async () => {
+    const fs = book(withBundles(), CERT, [BUNDLE_A, BUNDLE_B]);
+    const result = await prepareExport(fs, env, paths(), "scripts", {
+      from: "bundles",
+      environment: CERT,
+      date: DATE,
+    });
+
+    if (result.ok) throw new Error("expected a rejection");
+    expect(result.failure.code).toBe("EXPORT_ORIGIN_ALREADY_APPLIED");
+    expect(result.failure.message).toContain(CERT);
+    expect(result.failure.action).toContain("--environment");
+  });
+
+  it("sobre una base de sesiones el filtro no tiene qué mirar, y lo dice", async () => {
+    const fs = book(withBundles(), CERT, [BUNDLE_A]);
+    const inventory = inventoryOf(await prepare(fs, "scripts", { environment: CERT, date: DATE }));
+
+    // The SQL still living in a session was never delivered, so it cannot have
+    // run: a `scanned` of zero says the filter had nothing to look at.
+    expect(inventory.environment).toEqual({ name: CERT, axis: "applied", scanned: 0, excluded: 0 });
+    expect(inventory.excluded).toEqual([]);
+  });
+});

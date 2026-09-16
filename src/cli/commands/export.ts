@@ -1,5 +1,7 @@
 import {
+  type EnvironmentFilter,
   type ExportApplied,
+  type ExportBase,
   type ExportCategory,
   type ExportPrepared,
   type ExportScope,
@@ -30,7 +32,7 @@ const DESCRIBES: Record<ExportCategory, string> = {
     "Publica un dossier de manuales en docs/manuals; docs/manuals/INDEX.md es el único archivo sobrescribible y exige --overwrite.",
   reports: "Publica un informe acotado en docs/reports.",
   scripts:
-    "Consolida el SQL pendiente en un bundle de docs/scripts (00-ROLLBACK.sql + forwards continuos + README). NUNCA ejecuta SQL.",
+    "Consolida el SQL pendiente en un bundle de docs/scripts (00-ROLLBACK.sql + forwards continuos + README). NUNCA ejecuta SQL. El origen se compone: --from sessions|bundles|workspace elige la base, --exclude <nombre> (repetible) le resta piezas y --environment <ambiente> deja fuera los bundles que el libro de pases registra como aplicados allí. Sin ninguno de los tres, la base es el corpus de sesiones, igual que siempre.",
 };
 
 /**
@@ -57,7 +59,7 @@ const ENVELOPE = [
   "                  state: proposed | ambiguous | unsupported.",
   "",
   "  proposed        artifacts: [{path, content}] — cada path dentro del destino que el request declara en 'allowed_destinations'.",
-  "                  scope: el 'scope' del request, copiado TAL CUAL. Es el alcance con el que se preparó: validate y apply lo leen en vez de re-derivarlo, así que NO hace falta repetir --sessions/--since/--source/--date. Repetirlos con otro valor se rechaza.",
+  "                  scope: el 'scope' del request, copiado TAL CUAL. Es el alcance con el que se preparó —incluidos 'from', 'exclude' y 'environment'—: validate y apply lo leen en vez de re-derivarlo, así que NO hace falta repetir --sessions/--since/--source/--date/--from/--exclude/--environment. Repetirlos con otro valor se rechaza.",
   "",
   "  ambiguous       reason: por qué no se puede decidir. No se escribe nada.",
   "  unsupported     reason: por qué la operación no aplica. No se escribe nada.",
@@ -73,7 +75,7 @@ const ENVELOPE = [
 function exportCommand(category: ExportCategory): CliCommand<ExportData> {
   return {
     name: `export-${category}`,
-    describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest> [--overwrite] [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>].
+    describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest> [--overwrite] [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>]${category === "scripts" ? " [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>]" : ""}.
 
 ${ENVELOPE}`,
 
@@ -109,17 +111,7 @@ ${ENVELOPE}`,
     renderHuman(result: CommandResult<ExportData>, context: HumanRenderContext): string {
       const data = result.data;
       if (data === undefined) return "";
-      if (data.stage === "prepare") {
-        const request = data.prepared.request;
-        const lines = [
-          `export-${category} · prepare (${request.metrics.request_bytes} B)`,
-          `  Destino    ${data.prepared.unit}`,
-          `  Corpus     ${request.read_set.length} sesión(es)`,
-          `  Digest     ${request.input_digest.slice(0, 12)}…`,
-        ];
-        if (context.detail) lines.push("", request.contract);
-        return `${lines.join("\n")}\n`;
-      }
+      if (data.stage === "prepare") return renderPrepare(category, data.prepared, context);
       if (data.stage === "validate") {
         const lines = [
           `export-${category} · propuesta validada — falta tu aprobación`,
@@ -138,6 +130,58 @@ ${ENVELOPE}`,
       return `export-${category} · publicados ${data.written.length} archivo(s):\n${data.written.map((w) => `  ${w}`).join("\n")}\n`;
     },
   };
+}
+
+/**
+ * What `prepare` resolved, for a person: where it publishes, what the material
+ * came from, and what it left out.
+ *
+ * The exclusions are listed one by one with their reason, because an exclusion
+ * somebody asked for and one the release book imposed look identical in the
+ * resulting bundle and only the first is something the person can take back.
+ */
+function renderPrepare(
+  category: ExportCategory,
+  prepared: ExportPrepared,
+  context: HumanRenderContext,
+): string {
+  const request = prepared.request;
+  const inventory = request.inventory as {
+    origins?: string[];
+    excluded?: Array<{ name: string; reason: string }>;
+    environment?: EnvironmentFilter | null;
+  };
+  const lines = [
+    `export-${category} · prepare (${request.metrics.request_bytes} B)`,
+    `  Destino    ${prepared.unit}`,
+    `  Origen     ${(inventory.origins ?? []).join(" + ")}`,
+    `  Material   ${request.read_set.length} pieza(s)`,
+    `  Digest     ${request.input_digest.slice(0, 12)}…`,
+    ...(inventory.environment
+      ? [`  Ambiente   ${describeEnvironment(inventory.environment)}`]
+      : []),
+    ...(inventory.excluded ?? []).map((piece) => `  Fuera      ${piece.name} (${piece.reason})`),
+  ];
+  if (context.detail) lines.push("", request.contract);
+  return `${lines.join("\n")}\n`;
+}
+
+/**
+ * What the environment filter did, said so it cannot be misread.
+ *
+ * "No record" and "nothing was applied" are different answers and only one of
+ * them is a fact about the world, so the line says which one it is — and when
+ * the material held no bundle to look at, it says that instead of letting an
+ * empty exclusion list pass for a verdict.
+ */
+function describeEnvironment(filter: EnvironmentFilter): string {
+  if (filter.axis === "no-record") {
+    return `${filter.name} — el libro de pases no registra ninguna aplicación en este ambiente (no es lo mismo que nada aplicado)`;
+  }
+  if (filter.scanned === 0) {
+    return `${filter.name} — no había bundles en el material: el SQL que todavía vive en una sesión nunca puede constar aplicado`;
+  }
+  return `${filter.name} — ${filter.excluded} de ${filter.scanned} bundle(s) quedan fuera por constar aplicados`;
 }
 
 type StageScope =
@@ -175,6 +219,9 @@ function describeScope(scope: ExportScope): string {
     ...(scope.sessions === undefined ? [] : [`--sessions ${scope.sessions.join(",")}`]),
     ...(scope.since === undefined ? [] : [`--since ${scope.since}`]),
     ...(scope.source === undefined ? [] : [`--source ${scope.source}`]),
+    ...(scope.from === undefined ? [] : [`--from ${scope.from}`]),
+    ...(scope.exclude ?? []).map((name) => `--exclude ${name}`),
+    ...(scope.environment === undefined ? [] : [`--environment ${scope.environment}`]),
     `--date ${scope.date}`,
   ];
   return parts.join(" ");
@@ -213,6 +260,13 @@ function selection(args: ParsedArgs): ExportSelection {
   // `source` is a MULTI_VALUE flag: `values.get` would silently miss it.
   const source = flagValue(args, "source");
   const date = args.values.get("date");
+  const from = args.values.get("from");
+  // `--exclude` is repeatable, so ALL its occurrences count: `flagValue` returns
+  // the last one and would leave the rest inside the bundle.
+  const exclude = (args.valuesMulti.get("exclude") ?? [])
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0);
+  const environment = args.values.get("environment");
   return {
     ...(sessions !== undefined
       ? {
@@ -225,6 +279,9 @@ function selection(args: ParsedArgs): ExportSelection {
     ...(since !== undefined ? { since } : {}),
     ...(source !== undefined ? { source } : {}),
     ...(date !== undefined ? { date } : {}),
+    ...(from !== undefined ? { from: from as ExportBase } : {}),
+    ...(exclude.length > 0 ? { exclude } : {}),
+    ...(environment !== undefined ? { environment } : {}),
   };
 }
 

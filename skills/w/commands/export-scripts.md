@@ -1,30 +1,31 @@
 ---
-description: Use to promote the type-B `SCRIPTS.sql` artifacts of N sessions into a docs/scripts/ bundle — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes SQL. Never automatic.
-argument-hint: "[--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
+description: Use to consolidate the workspace's pending SQL into a docs/scripts/ bundle from a declared origin — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes SQL. Never automatic.
+argument-hint: "[--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>] [--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
 allowed-tools: ["Bash", "Read"]
 ---
 
 ## Run
 
-1. `aw export-scripts prepare --format human` (+ `--sessions`/`--since`/`--source`) → corpus, destination, shape, `input_digest`.
-2. Answer with one JSON: `version`/`operation`/`input_digest`/`scope` **verbatim** — the `scope` carries the prepared scope, so 3 and 4 never repeat the scope flags; `state: "proposed"`, `artifacts` = `{ path, content }` per file, all inside the destination; `NNN` is advisory: `apply` renumbers.
-3. `echo '<json>' | aw export-scripts validate --format human` → preview + `approval_digest`; confirm scope and destination with the user.
+1. `aw export-scripts prepare --format human` (+ the flags above) → origin, material, destination, `input_digest`.
+2. Answer with one JSON — `aw export-scripts --help` publishes the envelope. Copy its `scope` **verbatim**: it carries the prepared origin, so 3 and 4 never repeat flags. `NNN` is advisory: `apply` renumbers.
+3. `echo '<json>' | aw export-scripts validate --format human` → preview + `approval_digest`; confirm origin and destination.
 4. `echo '<json>' | aw export-scripts apply --approval <digest>`. On rejection nothing was written: fix and repeat step 3.
 
 ## What it produces
 
-- `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`: `00-ROLLBACK.sql` and `README.md`, both required, + forwards `NN-<nombre>.sql` numbered **continuously from 01**; the CLI rejects a gap.
-- Neither the AI nor the CLI executes the SQL: its application is a non-blocking handoff to an authorized operator.
-- Never write into `docs/` with a file tool: one pass, all or nothing, no session or loop created/touched.
+- `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`: `00-ROLLBACK.sql` and `README.md` required, + forwards `NN-<nombre>.sql` numbered **continuously from 01**; a gap is rejected.
+- Nothing here executes SQL: applying the bundle is a handoff to an authorized operator.
+- Never write into `docs/` with a file tool: one pass, all or nothing; no session touched.
 
 ## Net final state
 
-Publish the final state, not a session chronology: omit transients, write migrations in final form,
-and reconcile code before delivery. Rollback safely reverses it; exclude concrete identities and test seeds.
+Publish the final state, not a chronology: omit transients, write migrations in final form, reconcile the code.
+Rollback safely reverses it; exclude concrete identities and test seeds. A previous bundle in the
+origin is `MATERIAL A RECONCILIAR`, not history: two that contradict publish their net state, not their sum.
 `ESTADO FINAL NETO` · `orden seguro para las dependencias` · `objetos compartidos y necesarios para el estado final`
 
 ## More context
 
-`aw context-plan --command export-scripts --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly what it lists:
+`aw context-plan --command export-scripts --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` returns the extra documents a case needs; read exactly those:
 
-- `authoring` — the rollback derivation or the ordering is not obvious from the material → [`../exports/export-scripts/EXPORT.md`](../exports/export-scripts/EXPORT.md), no longer loaded on the normal path
+- `authoring` — the origin or the rollback is not obvious → [`../exports/export-scripts/EXPORT.md`](../exports/export-scripts/EXPORT.md), no longer loaded on the normal path

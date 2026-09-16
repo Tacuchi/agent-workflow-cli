@@ -12,6 +12,7 @@ import {
   linkArtifact,
   productionStandingOf,
   readReleasePasses,
+  recordApplication,
   recordArrival,
   recordReversion,
   releasePassLedgerPath,
@@ -290,6 +291,78 @@ describe("release pass ledger", () => {
     // One part pending makes the whole pending: a requirement is not shipped
     // while part of what implements it is not.
     expect(foldProduction([a, pending])).toEqual(pending);
+  });
+
+  it("registra que el SQL del pase corrió contra un ambiente y lo devuelve con su fecha", async () => {
+    await openPass();
+    const application = {
+      environment: "certificación",
+      detail: "el DBA corrió docs/scripts/003-export-scripts-2026-09-15",
+      at: "2026-09-15",
+    };
+    await recordApplication(fs, paths, {
+      at: "2026-09-15T09:00:00.000Z",
+      passVersion: "v25.5.0",
+      application,
+    });
+
+    const read = await readReleasePasses(fs, paths);
+    const [pass] = derivePasses(read.events);
+
+    // A well-formed application is a record like any other: counting it as
+    // unreadable would make SQL that already ran look pending.
+    expect(read.unreadable).toBe(0);
+    expect(read.events.map((e) => e.event)).toEqual(["declared", "applied"]);
+    expect(pass?.applications).toEqual([application]);
+    expect(pass?.application).toEqual({ axis: "applied", environments: ["certificación"] });
+  });
+
+  it("un pase sin ninguna constancia lee sin registro, que no es «nada aplicado»", async () => {
+    await openPass();
+    const [pass] = derivePasses((await readReleasePasses(fs, paths)).events);
+
+    expect(pass?.application).toEqual({ axis: "no-record" });
+    expect(pass?.application.axis).not.toBe("applied");
+  });
+
+  it("la constancia de aplicación no mueve el eje de llegada a producción", async () => {
+    await openPass();
+    await recordArrival(fs, paths, {
+      at: "2026-09-14T12:00:00.000Z",
+      passVersion: "v25.5.0",
+      arrival: { source: CLI, kind: "published-version", detail: "25.5.0", at: "2026-09-14" },
+    });
+    const before = derivePasses((await readReleasePasses(fs, paths)).events)[0];
+
+    for (const environment of ["certificación", "producción"]) {
+      await recordApplication(fs, paths, {
+        at: "2026-09-15T09:00:00.000Z",
+        passVersion: "v25.5.0",
+        application: { environment, detail: `bundle 003 en ${environment}`, at: "2026-09-15" },
+      });
+    }
+    const after = derivePasses((await readReleasePasses(fs, paths)).events)[0];
+
+    // The assertion this phase exists to pin: the release axis is derived by
+    // crossing arrivals against the pass's CODE sources, and an environment is
+    // not one of them. Had the environment entered as a fourth ArrivalKind
+    // reusing `source`, this pass would read released with `ui-spec-generator`
+    // still missing.
+    expect(after?.standing).toEqual(before?.standing);
+    expect(after?.standing.state).toBe("partially-released");
+    expect(after?.standing.arrived).toEqual([CLI]);
+    expect(after?.standing.missing).toEqual([UI]);
+    expect(productionStandingOf([after ?? never()], P1)).toEqual({
+      axis: "pending-pass",
+      pass: "v25.5.0",
+      missing: [UI],
+      reverted: false,
+    });
+    // And the environments land on their own axis, in ledger order.
+    expect(after?.application).toEqual({
+      axis: "applied",
+      environments: ["certificación", "producción"],
+    });
   });
 
   it("una llegada contra un pase que nadie declaró no inventa un pase", async () => {

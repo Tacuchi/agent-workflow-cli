@@ -3,6 +3,7 @@ import {
   derivePasses,
   linkArtifact,
   readReleasePasses,
+  recordApplication,
   recordArrival,
   recordReversion,
   releasePassLedgerPath,
@@ -19,6 +20,7 @@ const USAGE = [
   "uso: release-pass [list] [--version <v>]",
   "     release-pass declare --version <v> --sources <alias,…> [--plans <NNN,…>] [--cause <texto>]",
   "     release-pass arrived --version <v> --source <alias> --kind <published-version|deployment|production-branch> --detail <hecho> [--date <ISO>]",
+  "     release-pass applied --version <v> --environment <ambiente> --detail <hecho> [--date <ISO>]",
   "     release-pass revert --version <v> [--cause <texto>]",
   "     release-pass link --version <v> --artifact <ruta-relativa>",
 ].join("\n");
@@ -39,13 +41,14 @@ const USAGE = [
 export const releasePassCommand: CliCommand = {
   name: "release-pass",
   describe:
-    "Passes to production as first-class objects: which plans travelled together, over which sources, and whether each source actually arrived. 'release-pass declare --version <v> --sources <a,b>' opens one — the version NAMES it and is not any source's arrival fact, and the order between passes is the book's sequence, never a comparison of names. 'release-pass arrived --source <alias> --kind <…> --detail <hecho>' registers one source's arrival; with a second source still missing the pass reads partially released, naming both, and the missing source's work never reads as released. 'release-pass revert' adds a reversion that never erases the arrivals it follows. 'release-pass link --artifact <ruta>' attaches a document by workspace-relative path, checking only that it exists — never opening, moving, renumbering or executing it. The book is append-only under the workspace namespace. Usage: aw release-pass [list] | declare | arrived | revert | link.",
+    "Passes to production as first-class objects: which plans travelled together, over which sources, and whether each source actually arrived. 'release-pass declare --version <v> --sources <a,b>' opens one — the version NAMES it and is not any source's arrival fact, and the order between passes is the book's sequence, never a comparison of names. 'release-pass arrived --source <alias> --kind <…> --detail <hecho>' registers one source's arrival; with a second source still missing the pass reads partially released, naming both, and the missing source's work never reads as released. 'release-pass applied --environment <ambiente> --detail <hecho>' registers that the SQL this pass carries RAN there — its own axis, never a fourth arrival kind, so the release axis does not move and a pass with no such record reads as NO RECORD rather than as nothing applied. 'release-pass revert' adds a reversion that never erases the arrivals it follows. 'release-pass link --artifact <ruta>' attaches a document by workspace-relative path, checking only that it exists — never opening, moving, renumbering or executing it. The book is append-only under the workspace namespace. Usage: aw release-pass [list] | declare | arrived | applied | revert | link.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verb = args.rest[0] ?? "list";
     try {
       if (verb === "list") return await list(args, ctx);
       if (verb === "declare") return await declare(args, ctx);
       if (verb === "arrived") return await arrived(args, ctx);
+      if (verb === "applied") return await applied(args, ctx);
       if (verb === "revert") return await revert(args, ctx);
       if (verb === "link") return await link(args, ctx);
     } catch (error) {
@@ -129,6 +132,40 @@ async function arrived(args: ParsedArgs, ctx: CliContext): Promise<CommandResult
     arrival: { source, kind, detail, at },
   });
   return await standingOf(ctx, version, { arrived: source, at });
+}
+
+/**
+ * Register that the SQL this pass carries RAN against an environment.
+ *
+ * Its own verb because it is its own axis: an environment is not one of the
+ * pass's code sources, and reusing `arrived` for it would move the release axis
+ * on a fact that says nothing about whether any source shipped.
+ */
+async function applied(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
+  const version = flagValue(args, "version");
+  const environment = flagValue(args, "environment");
+  const detail = flagValue(args, "detail");
+  if (version === undefined || environment === undefined || detail === undefined) {
+    return fail("INVALID_INPUT", USAGE, { error: USAGE });
+  }
+  const named = environment.trim();
+  if (named.length === 0) {
+    const message =
+      "--environment nombra el ambiente contra el que corrió el SQL: sin ambiente la constancia no dice dónde";
+    return fail("INVALID_INPUT", message, { error: message });
+  }
+  const known = await knownPass(ctx, version);
+  if (known !== null) return known;
+  const now = new Date().toISOString();
+  // Same split as an arrival: the application's own date is the fact's, and the
+  // record's is when it was written.
+  const at = flagValue(args, "date") ?? now;
+  await recordApplication(ctx.fs, ctx.paths, {
+    at: now,
+    passVersion: version,
+    application: { environment: named, detail, at },
+  });
+  return await standingOf(ctx, version, { applied: named, at });
 }
 
 async function revert(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

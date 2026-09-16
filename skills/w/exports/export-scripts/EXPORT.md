@@ -1,11 +1,13 @@
 ---
 name: export-scripts
-description: "Consolidates pending SQL into one `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle with continuous numbering after `00-ROLLBACK.sql`. It publishes the net final state, not a chronological transcript. Reads type-B migrations (DDL/DML) from session `SCRIPTS.sql` and standalone `docs/scripts/*.sql`, excluding prior bundles and read-only research. Read-only/report: it NEVER executes SQL nor commits; external application is a handoff. Composes the `sql` capability. User-invoked via `/w:export-scripts`."
+description: "Consolidates pending SQL into one `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle with continuous numbering after `00-ROLLBACK.sql`. It publishes the net final state, not a chronological transcript. Its origin is DECLARED: a base (the session corpus, the published bundles, or a sweep of the whole workspace), minus the pieces named in `--exclude`, minus whatever the release book says already ran in `--environment`. Read-only/report: it NEVER executes SQL nor commits; external application is a handoff. Composes the `sql` capability. User-invoked via `/w:export-scripts`."
 ---
 
 # export-scripts — consolidated SQL bundle, simple and direct
 
-Consolidates the pending SQL migrations of N sessions + standalone files into a single bundle under `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with continuous numbering after `00-ROLLBACK.sql`. **Read-only / report** — the AI **never executes** the SQL; external application is an optional handoff.
+Consolidates pending SQL migrations into a single bundle under `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with continuous numbering after `00-ROLLBACK.sql`. **Read-only / report** — the AI **never executes** the SQL; external application is an optional handoff.
+
+**The material is declared, not assumed:** a base brings it, `--exclude` subtracts pieces and `--environment` what the book records as applied. With no flag: the session corpus, bundles out.
 
 > `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-scripts.md`.
 
@@ -17,74 +19,60 @@ Consolidates the pending SQL migrations of N sessions + standalone files into a 
 
 The **`sql`** capability (built-in default `sql`), resolved via `.workflow/skills.toml`. It contributes the DDL/DML category vocabulary, the application order and the rollback derivation. This export does **not** own that logic: it composes it. Rebindable or `off` by config.
 
-## When to use
-
-- "Release SQL bundle", "consolidate pending SQLs".
-- Before an authorized release handoff.
-- After several `exec`/`quick` sessions left `SCRIPTS.sql` files with migrations.
-
-## What it does
-
-1. Collects the workspace's SQL from **two sources**: each corpus session's type-B `SCRIPTS.sql` + standalone `docs/scripts/*.sql` (excluding previous bundles).
-2. Classifies the statements by canonical category (DDL-TABLES / DDL-FUNCTIONS / DML / INSERTS).
-3. Resolves the **net final state** across sources, then groups it by category with **continuous numbering** after `00-ROLLBACK.sql`.
-4. Writes only the forwards needed for that final state, retaining traceable origin where useful.
-5. Derives `00-ROLLBACK.sql` **at the end**, reading the already-written forwards.
-6. Writes a minimal `README.md` (Files / Apply / Revert).
-
 ## What it does NOT do
 
-- **Execute SQL** (DB scripts-only invariant). The bundle is a deliverable; a human/DBA applies it.
-- Commit, merge, push.
-- Touch `.workflow/sessions/` or the standalone `docs/scripts/*.sql` (read-only).
+- **Execute SQL** (DB scripts-only). The bundle is a deliverable; a human/DBA applies it.
+- Commit, merge or push; touch `.workflow/sessions/` or the loose `*.sql` (read-only).
 - Write any `docs/` folder other than `docs/scripts/` (invariant: one category).
-- Migrate previous bundles (`docs/scripts/NNN-export-scripts-*/` stay as history).
+- Rewrite, renumber or delete a previous bundle: one in the origin is **read**, its directory left as it was.
 - Include read-only type-A (diagnostic queries) or invent SQL.
-- Generate email templates, production checklists, commit/session listings, or executive summaries in the README.
+- Put email templates, production checklists, commit listings or executive summaries in the README.
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved `NNN`, the detected sources (sessions + standalone), the categories with content, the files that would appear at the bundle root and the approximate README content. It does **not** run `Write` or mutations; numbering queries use `aw next-number --dry-run` (pure).
+In plan mode it **describes**, never writes: the resolved `NNN`, the declared origin with its exclusions, the categories with content and the files that would appear. No `Write`, no mutations; numbering uses `aw next-number --dry-run` (pure).
 
 ## Inputs
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the session corpus (ALL sessions, closed + active, with `release_eligible`). `aw sessions` alone lists only ACTIVE sessions — never use it as the corpus.
-- `aw session-artifacts --code <NNN> --dump scripts` — lists the session's `.sql` files with path and size (content is read by path). No scripts → empty list, silent skip.
-- `aw release-data --standalone-sql` — lists the loose top-level `docs/scripts/*.sql` (source B) deterministically, with `is_rollback` flag; `--include-graduated` lists previous bundles (modern `NNN-export-scripts-YYYY-MM-DD` and legacy naming) for the exclusion/dedup step.
-- `aw next-number docs/scripts` — deterministic numbering of the bundle directory; it also creates `docs/scripts` when missing (the CLI guarantees destination resolution). In plan mode use `--dry-run` (pure query).
-
-**Filesystem**:
-
-- Standalone `docs/scripts/*.sql` (top-level only, via `--standalone-sql`), **excluding** any `docs/scripts/NNN-export-scripts-*/` (previous outputs of this export).
+- `aw release-data [--since sessionNNN] [--source <alias>]` — the session corpus (ALL sessions, closed + active, with `release_eligible`). `aw sessions` lists only ACTIVE ones: never use it as the corpus.
+- `aw session-artifacts --code <NNN> --dump scripts` — the session's `.sql` files with path and size (content is read by path). No scripts → empty list, silent skip.
+- `aw release-data --standalone-sql [--include-graduated]` — the loose `docs/scripts/*.sql` and the previous bundles. `prepare` already reads both through its base; these are for looking by hand.
+- `aw release-pass list` — the book `--environment` reads: `link --artifact <ruta>` says which bundle a pass carries, `applied --environment` that its SQL RAN there. Nothing inspects a database.
+- `aw next-number docs/scripts` — deterministic numbering; it also creates `docs/scripts` when missing, which is what makes destination resolution a CLI guarantee. In plan mode, `--dry-run`.
 
 **Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
-/w:export-scripts [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
-                  [--skip-standalone] [--dry-run]
+/w:export-scripts [--from sessions|bundles|workspace] [--exclude <nombre>]… [--environment <ambiente>]
+                  [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
 ```
 
 | Flag | Behavior |
 |---|---|
+| `--from <base>` | The base: `sessions` (default) · `bundles` · `workspace` (all three) |
+| `--exclude <nombre>` | Subtracts one piece by the name the inventory prints. **Repeatable** |
+| `--environment <ambiente>` | Subtracts bundles the book records as applied there; no record is reported as such |
 | `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
 | `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
 | `--source <alias>` | Limits to one source (multi-source workspace) |
-| `--skip-standalone` | Skips reading the standalone `docs/scripts/*.sql` |
-| `--dry-run` | Propositional report, no files written |
 
-No args: every corpus session + every standalone `.sql` (excluding previous bundles).
+No args: every corpus session, bundles and loose SQL out — the behavior that always was. The three composition flags are this export's alone.
 
 ## Flow
 
 ### Step 1 — Collect SQL sources
 
-**Source A — sessions**: for every corpus session (`aw release-data` + `session-artifacts --code <NNN> --dump scripts`), read the `.sql` files the dump lists (per-script path). Take **only** type-B statements (deliverable DDL/DML migrations); ignore read-only type-A (diagnostic queries). Expected per-statement markers: `-- @category: <01-04>` + `-- @stmt: NNN-verb-target` (format defined by the `sql` capability).
+`prepare` already resolved WHICH pieces are in: its inventory lists them per origin with every exclusion and its reason. Read only that.
 
-**Source B — standalone** (unless `--skip-standalone`): list top-level `docs/scripts/*.sql`, **excluding** `docs/scripts/NNN-export-scripts-*/`. Per file: honor `@category` markers when present; otherwise infer the category from content (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). If the filename contains `rollback` → skip (it never enters a forward).
+**Sessions**: for every session the inventory names (`aw session-artifacts --code <NNN> --dump scripts`), read the `.sql` files the dump lists (per-script path). Take **only** type-B statements (deliverable DDL/DML migrations); ignore read-only type-A (diagnostic queries). Expected per-statement markers: `-- @category: <01-04>` + `-- @stmt: NNN-verb-target` (format defined by the `sql` capability).
 
-If the A + B union is empty → **abort**: there is no pending SQL in the workspace.
+**Loose SQL**: per file, honor `@category` markers when present; otherwise infer it from content (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). If the filename contains `rollback` → skip (it never enters a forward).
+
+**Published bundles**: their forwards in numeric order, same markers. `00-ROLLBACK.sql` is **never** read as a forward — it is the bundle's reverse, not its material.
+
+An empty origin → **abort**: `prepare` already refused, saying whether nothing matched or everything was already applied.
 
 ### Step 2 — Bundle numbering
 
@@ -92,10 +80,16 @@ If the A + B union is empty → **abort**: there is no pending SQL in the worksp
 
 ### Step 3 — Net final state, classification and internal order
 
-Reconcile the session and standalone candidates against the code and the declared final state. Omit
+Reconcile every candidate the origin brought against the code and the declared final state. Omit
 objects born and retired within the sequence; write migrated objects directly in their final form;
-omit explicitly retired objects even when their deletion is absent from the input. Then group the
-remaining statements by canonical category: `01 DDL-TABLES` · `02 DDL-FUNCTIONS` · `03 DML` ·
+omit explicitly retired objects even when their deletion is absent from the input.
+
+**A previous bundle in the origin is MATERIAL A RECONCILIAR, not untouchable history.** Two that
+contradict — one creating an object, a later one retiring it — publish the resulting net final state,
+never their chronological sum: the new bundle does not create it, and its `00-ROLLBACK.sql` does not
+reverse a creation it never published. The bundles on disk are never modified.
+
+Then group the remaining statements by canonical category: `01 DDL-TABLES` · `02 DDL-FUNCTIONS` · `03 DML` ·
 `04 INSERTS`. Origin is traceability, not an ordering authority over the final contract.
 
 ### Step 4 — Continuous numbering (no gaps)
@@ -112,11 +106,11 @@ Via the `sql` capability, **reading the already-written forwards** (not the orig
 
 ### Step 7 — Write the `README.md` (3 sections)
 
-`## Archivos` (table: 1 row per file present) · `## Aplicar` (one `psql -f` per file in ascending order; the export executes nothing) · `## Revertir` (`psql -f 00-ROLLBACK.sql` + a note if there is an irreversible block). The README is a user-facing deliverable → write it in the user's language. **Vetoed**: executive summary, session table, email templates, commit listing, production checklist.
+`## Archivos` (table: 1 row per file present) · `## Aplicar` (one `psql -f` per file in ascending order; the export executes nothing) · `## Revertir` (`psql -f 00-ROLLBACK.sql` + a note if there is an irreversible block). The README is a user-facing deliverable → write it in the user's language. **Vetoed**: everything the section above forbids.
 
 ### Step 8 — Write or report
 
-With `--dry-run`: print the report; write nothing. Otherwise: `Write` the bundle. **NEVER commit**. Summary to the user: one line per written file + the bundle path (without replicating the README).
+Publish through the three stages (`prepare` → `validate` → `apply --approval`); in plan mode, describe instead. **NEVER commit**. Summary: one line per file + the bundle path, naming the origin and what stayed out.
 
 ## Output location
 
@@ -130,7 +124,7 @@ docs/scripts/NNN-export-scripts-YYYY-MM-DD/
 
 ## Re-run
 
-Functionally idempotent: each invocation takes the next `NNN` and **never overwrites** previous bundles. To regenerate: delete the directory manually and re-invoke.
+Functionally idempotent: each invocation takes the next `NNN` and **never overwrites** a previous bundle. To regenerate, delete the directory by hand and re-invoke.
 
 ## Resources
 
