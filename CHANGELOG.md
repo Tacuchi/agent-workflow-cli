@@ -4,6 +4,12 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [25.6.1] — 2026-09-16
+
+### Fixed
+
+- **`aw release-pass` era inalcanzable: dos de sus argumentos eran banderas booleanas globales.** `--version` y `--detail` estaban registradas como booleanas —su presencia es el valor, así que el parser no consume el token siguiente— y `release-pass` las nombra como argumentos propios: una versión en **cada** verbo y un hecho en `arrived` y `applied`. El valor caía en los posicionales, el verbo leía `undefined` y contestaba con su uso; y `--version` iba más lejos, disparando el chequeo global que imprime la versión del propio CLI y **sale con código 0**. La familia entera —`declare`, `arrived`, `applied`, `revert`, `link` y `list --version`— no hacía nada mientras el código de salida decía éxito. Viene desde la 25.5.0, que introdujo el comando; la 25.6.0 le agregó `applied` sobre la misma superficie muerta. **Nada podía detectarlo**: las pruebas entran por la capa de aplicación con los argumentos ya parseados, y un script que mirara el código de salida habría leído un éxito. Que una bandera lleve valor es una propiedad del **comando**, no del nombre: se agrega esa declaración por comando, y el chequeo global de `--version` pasa a valer sólo cuando no hay comando. Un `aw --version` pelado y un `aw status --detail` no cambian.
+
 ## [25.6.0] — 2026-09-15
 
 El origen del bundle de SQL deja de ser implícito. `aw export-scripts` partía siempre del corpus de sesiones cerradas, y ese era su único origen posible: no había forma de re-consolidar bundles ya publicados, de barrer el workspace entero, ni de dejar afuera lo que ya corrió contra un ambiente. Ahora la base se declara, las exclusiones restan, y el libro de pases —que desde la 25.5.0 sabe si un trabajo llegó a producción— gana el eje que le faltaba: si el SQL que ese pase lleva **corrió** contra un ambiente. **Tres documentos de `skills/` cambian**, así que el bundle instalado ya no es el de 25.4.0.
