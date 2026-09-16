@@ -79,7 +79,10 @@ function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
     process.stderr.write("aw mcp: --version y --help no son válidos para un servidor stdio\n");
     return 2;
   }
-  if (parsed.flags.has("--version")) {
+  // Global ONLY when nothing else was asked. With a command present `--version`
+  // belongs to that command — `release-pass` names one on every verb — and
+  // answering with the CLI's own version would silently swallow the invocation.
+  if (parsed.command === undefined && parsed.flags.has("--version")) {
     writeStdout(`${readPackageVersion()}\n`);
     return 0;
   }

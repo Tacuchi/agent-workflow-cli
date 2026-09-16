@@ -57,6 +57,18 @@ export function sessionCodeFlag(
 // pushes onto `valuesMulti`; non-multi flags continue to use `values` (last
 // occurrence wins) for back-compat.
 //
+// Whether a flag carries a value is a property of the COMMAND, not of the name.
+// Two of the globals above are also argument names of `release-pass`: it needs a
+// `--version <v>` on every verb and a `--detail <hecho>` on two. Routed to
+// `flags`, the value fell into the positionals and the verb read `undefined`,
+// answering with its usage — and `--version` went further, tripping the global
+// check in `main`, which printed the CLI's own version and exited 0. The whole
+// family was unreachable while the exit code said success. An entry here is the
+// narrow statement that for THIS command that name takes a value.
+const COMMAND_VALUE_FLAGS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
+  ["release-pass", new Set(["version", "detail"])],
+]);
+
 // A flag listed here routes to `valuesMulti`, NOT `values` — so a command that
 // only wants the single (last) value MUST read it via `flagValue()`, never
 // `values.get()`, or it silently sees `undefined`.
@@ -269,6 +281,13 @@ function consumeCommandIfFirst(state: ParseState, token: string): boolean {
   return true;
 }
 
+/** Boolean by name, unless the command already named says it carries a value. */
+function takesValue(state: ParseState, name: string): boolean {
+  if (!BOOLEAN_FLAGS.has(name)) return true;
+  if (state.command === undefined) return false;
+  return COMMAND_VALUE_FLAGS.get(state.command)?.has(name) === true;
+}
+
 function consumeOptionFlag(state: ParseState, token: string): boolean {
   if (!token.startsWith("--")) return false;
   const eq = token.indexOf("=");
@@ -287,7 +306,7 @@ function consumeOptionFlag(state: ParseState, token: string): boolean {
     next !== undefined &&
     (!next.startsWith("-") || acceptsStdinMarker) &&
     !PLUGIN_FLAG_KEYS.has(token) &&
-    !BOOLEAN_FLAGS.has(name)
+    takesValue(state, name)
   ) {
     setValue(state, name, next);
     state.index += 2;
