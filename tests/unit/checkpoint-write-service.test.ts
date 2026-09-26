@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  runAutoCompactOnClose,
   runCheckpointWrite,
   writeRefugeCheckpoint,
 } from "../../src/application/checkpoint-write-service.js";
@@ -9,6 +10,7 @@ import { hashContextId } from "../../src/application/session-binding-service.js"
 import type { DirEntry } from "../../src/ports/file-system.js";
 import type { GitPort, LocalChange, NumstatCounts } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { seedBinding } from "../helpers/bindings.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
@@ -171,7 +173,7 @@ describe("runCheckpointWrite", () => {
     }
   });
 
-  it("writes CHECKPOINT.md for the only active session (no --code) post-flag-day WORKFLOW markers", async () => {
+  it("writes CHECKPOINT.md for the named session post-flag-day WORKFLOW markers", async () => {
     const sessionFolder = "session010-dev-test-coverage";
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
     const fs = makeFs(
@@ -196,6 +198,7 @@ describe("runCheckpointWrite", () => {
       new FakeEnv("/home/u", "/cwd"),
       new FakeGit(),
       paths,
+      { code: sessionFolder },
     );
     if (!("checkpoint_path" in result) || "skipped" in result) {
       throw new Error(`expected success, got: ${JSON.stringify(result)}`);
@@ -355,6 +358,7 @@ _Stack sin detectar._
       new FakeEnv("/home/u", "/cwd"),
       new FakeGit(),
       paths,
+      { code: sessionFolder },
     );
     if (!("checkpoint_path" in result) || "skipped" in result) {
       throw new Error(`expected success, got: ${JSON.stringify(result)}`);
@@ -381,7 +385,9 @@ _Stack sin detectar._
         [sessionPath, []],
       ]),
     );
-    const r1 = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), new FakeGit(), paths);
+    const r1 = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), new FakeGit(), paths, {
+      code: sessionFolder,
+    });
     if (!("checkpoint_path" in r1) || "skipped" in r1) throw new Error("first call should write");
     const content1 = fs.writes.get(`${sessionPath}/CHECKPOINT.md`) ?? "";
 
@@ -389,7 +395,9 @@ _Stack sin detectar._
     // because the file is byte-for-byte the template it wrote. The case this
     // test used to admit it did not cover — a PARTIALLY filled checkpoint, which
     // is the one that lost work — lives in `checkpoint-sentinel.test.ts`.
-    const r2 = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), new FakeGit(), paths);
+    const r2 = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), new FakeGit(), paths, {
+      code: sessionFolder,
+    });
     if (!("checkpoint_path" in r2)) throw new Error(JSON.stringify(r2));
     expect(r2.preserved).toBeUndefined();
     expect(content1.length).toBeGreaterThan(50);
@@ -423,7 +431,9 @@ describe("el inventario que llega al CHECKPOINT.md escrito", () => {
 
   async function write(git: FakeGit) {
     const fs = seeded();
-    const result = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), git, paths);
+    const result = await runCheckpointWrite(fs, new FakeEnv("/home/u", "/cwd"), git, paths, {
+      code: folder,
+    });
     return { result, body: await fs.readText(`${sessionPath}/CHECKPOINT.md`) };
   }
 
@@ -540,7 +550,7 @@ describe("el refugio se escribe sólo cuando alguien podría adoptarlo", () => {
     expect(body).toContain("hook de ciclo de vida (PreCompact o SessionEnd)");
     expect(body).toContain("- Motivo: hay 2 sesiones activas");
     expect(body).toContain("- Candidatas: 020-a-quick (active) · 044-b-plan-exec (active)");
-    expect(body).toContain("- Acción: indicá cuál con --code");
+    expect(body).toContain("- Acción: indicá la sesión con --code <NNN>");
     expect(body).toMatch(/- Fecha: \d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
     // La misma regla que el registro de bindings: el id crudo no toca el disco.
     expect(body).toContain(`- Conversación: sha256:${hashContextId(conv)}`);
@@ -634,11 +644,11 @@ describe("la adopción del refugio", () => {
   function seedOn<T extends MemFs>(fs: T): T {
     fs.file(`${sessionsDir}/${folder}/SESSION.md`, `# SESSION — ${folder}\n`);
     fs.file(`${sessionsDir}/${folder}/TASKS.md`, "- [x] T1\n- [ ] T2\n");
-    return fs;
+    return seedBinding(fs, sessionsDir, conv, folder);
   }
 
   it("la conversación que lo dejó se lo lleva al CHECKPOINT, y el refugio desaparece", async () => {
-    const fs = seedActive(folder);
+    const fs = seedBinding(seedActive(folder), sessionsDir, conv, folder);
     const parked = await park(fs, conv);
 
     const result = await runCheckpointWrite(
@@ -672,7 +682,7 @@ describe("la adopción del refugio", () => {
   // —el `/compact` que viene, o el SessionEnd— veía «contenido» donde sólo
   // había texto que el propio CLI había puesto, y preservaba para siempre.
   it("el PreCompact que sigue a una adopción vuelve a escribir el CHECKPOINT", async () => {
-    const fs = seedActive(folder);
+    const fs = seedBinding(seedActive(folder), sessionsDir, conv, folder);
     const env = new FakeEnv("/home/u", "/cwd");
     await park(fs, conv);
     const adopcion = await runCheckpointWrite(fs, env, new FakeGit(), paths, {
@@ -699,7 +709,7 @@ describe("la adopción del refugio", () => {
   });
 
   it("--force después de una adopción regenera sin perder la sección adoptada", async () => {
-    const fs = seedActive(folder);
+    const fs = seedBinding(seedActive(folder), sessionsDir, conv, folder);
     const env = new FakeEnv("/home/u", "/cwd");
     await park(fs, conv);
     await runCheckpointWrite(fs, env, new FakeGit(), paths, { code: "044", contextId: conv });
@@ -717,9 +727,9 @@ describe("la adopción del refugio", () => {
   });
 
   it("un CHECKPOINT con contenido se conserva ENTERO y la sección se suma al final", async () => {
-    const fs = seedActive(folder);
+    const fs = seedBinding(seedActive(folder), sessionsDir, conv, folder);
     const env = new FakeEnv("/home/u", "/cwd");
-    await runCheckpointWrite(fs, env, new FakeGit(), paths, {});
+    await runCheckpointWrite(fs, env, new FakeGit(), paths, { contextId: conv });
     const prosa = "Cerré el guard y lo verifiqué con un relleno parcial.";
     const filled = (await fs.readText(cpPath)).replace(
       "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and the latest entry in DECISIONS.md.]_",
@@ -742,7 +752,7 @@ describe("la adopción del refugio", () => {
   });
 
   it("el refugio de otra conversación queda intacto y sin adoptar", async () => {
-    const fs = seedActive(folder);
+    const fs = seedBinding(seedActive(folder), sessionsDir, conv, folder);
     const ajeno = await park(fs, "conv-de-otro");
 
     const result = await runCheckpointWrite(
@@ -761,7 +771,7 @@ describe("la adopción del refugio", () => {
   });
 
   it("un refugio sin conversación lo adopta sólo quien nombra la sesión con --code", async () => {
-    const fs = seedActive(folder);
+    const fs = seedBinding(seedActive(folder), sessionsDir, conv, folder);
     const env = new FakeEnv("/home/u", "/cwd");
     const anonimo = await park(fs);
 
@@ -854,5 +864,170 @@ describe("la adopción del refugio", () => {
     expect(result.preserved).toBe(true);
     expect(result.refuge_adopted).toBeUndefined();
     expect(await fs.exists(`/cwd/${parked}`)).toBe(true);
+  });
+});
+
+// ── spec 056 AC-02: a quién nombra un refugio, quién lo adopta y cuándo se barre ─
+
+describe("las reglas del refugio", () => {
+  const activa = "044-b-plan-exec";
+  const otraActiva = "050-c-quick";
+  const cerrada = "010-cerrada-quick";
+  const env = new FakeEnv("/home/u", "/cwd");
+  const t0 = new Date(2026, 8, 26, 10, 0);
+  const dentro = new Date(t0.getTime() + 2 * 60 * 60 * 1000);
+  const fuera = new Date(t0.getTime() + 25 * 60 * 60 * 1000);
+
+  function seedWorkspace(): MemFs {
+    const fs = seedActive(activa, otraActiva);
+    fs.file(`${sessionsDir}/${cerrada}/SESSION.md`, `# SESSION — ${cerrada}\n`);
+    fs.file(`${sessionsDir}/${cerrada}/.closed`, "");
+    return fs;
+  }
+
+  function parkAt(fs: MemFs, candidates: string[], now: Date, contextId?: string): Promise<string> {
+    return writeRefugeCheckpoint(fs, paths, {
+      reason: "la conversación no tiene una asociación",
+      action: "indicá la sesión con --code <NNN>",
+      candidates: candidates.map((folder) => ({
+        folder,
+        code: folder.slice(0, 3),
+        state: folder === cerrada ? ("closed" as const) : ("active" as const),
+      })),
+      ...(contextId !== undefined ? { contextId } : {}),
+      now,
+    });
+  }
+
+  function write(fs: MemFs, options: Parameters<typeof runCheckpointWrite>[4]) {
+    return runCheckpointWrite(fs, env, new FakeGit(), paths, options);
+  }
+
+  it("sin ninguna activa no hay refugio, ni siquiera tras un --code que no resolvió", async () => {
+    const fs = new MemFs({ lenient: true });
+    fs.file(`${sessionsDir}/${cerrada}/SESSION.md`, `# SESSION — ${cerrada}\n`);
+    fs.file(`${sessionsDir}/${cerrada}/.closed`, "");
+    const result = await write(fs, { code: "999", contextId: conv, now: t0 });
+    if (!("continuity" in result)) throw new Error(JSON.stringify(result));
+    expect(result.refuge_path).toBeNull();
+    expect(fs.writes.size).toBe(0);
+  });
+
+  it("las cerradas no figuran como candidatas del refugio", async () => {
+    const fs = seedWorkspace();
+    // Un --code que no existe: la negativa lista TODAS las carpetas, cerrada incluida.
+    const result = await write(fs, { code: "999", contextId: conv, now: t0 });
+    if (!("continuity" in result)) throw new Error(JSON.stringify(result));
+    expect(result.candidates.map((c) => c.folder)).toContain(cerrada);
+    const body = await fs.readText(`${refugeDir}/${hashContextId(conv)}.md`);
+    expect(body).toContain(`- Candidatas: ${activa} (active) · ${otraActiva} (active)`);
+    expect(body).not.toContain(cerrada);
+  });
+
+  it("uno sin conversación lo adopta --code sobre una candidata, y no sobre otra sesión", async () => {
+    const fs = seedWorkspace();
+    const anonimo = await parkAt(fs, [activa], t0);
+
+    const ajena = await write(fs, { code: otraActiva, contextId: conv, now: dentro });
+    if (!("checkpoint_path" in ajena)) throw new Error(JSON.stringify(ajena));
+    expect(ajena.refuge_adopted).toBeUndefined();
+    expect(await fs.exists(`/cwd/${anonimo}`)).toBe(true);
+
+    const candidata = await write(fs, { code: activa, contextId: conv, now: dentro });
+    if (!("checkpoint_path" in candidata)) throw new Error(JSON.stringify(candidata));
+    expect(candidata.refuge_adopted).toEqual([anonimo]);
+  });
+
+  it("el de otra conversación no se adopta dentro de la ventana, y sí fuera de ella", async () => {
+    const fs = seedWorkspace();
+    const ajeno = await parkAt(fs, [activa], t0, "conv-de-otro");
+
+    const antes = await write(fs, { code: activa, contextId: conv, now: dentro });
+    if (!("checkpoint_path" in antes)) throw new Error(JSON.stringify(antes));
+    expect(antes.refuge_adopted).toBeUndefined();
+    expect(await fs.exists(`/cwd/${ajeno}`)).toBe(true);
+
+    const despues = await write(fs, { code: activa, contextId: conv, now: fuera });
+    if (!("checkpoint_path" in despues)) throw new Error(JSON.stringify(despues));
+    expect(despues.refuge_adopted).toEqual([ajeno]);
+  });
+
+  it("fuera de la ventana, el de otra conversación tampoco se pliega en una sesión que no es candidata", async () => {
+    const fs = seedWorkspace();
+    const ajeno = await parkAt(fs, [activa], t0, "conv-de-otro");
+    const result = await write(fs, { code: otraActiva, contextId: conv, now: fuera });
+    if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
+    expect(result.refuge_adopted).toBeUndefined();
+    expect(await fs.exists(`/cwd/${ajeno}`)).toBe(true);
+  });
+
+  it("una invocación sin identidad lo adopta sobre una candidata, dentro de la ventana", async () => {
+    const fs = seedWorkspace();
+    const ajeno = await parkAt(fs, [activa], t0, "conv-de-otro");
+    const result = await write(fs, { code: activa, now: dentro });
+    if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
+    expect(result.refuge_adopted).toEqual([ajeno]);
+  });
+
+  it("su propia conversación lo adopta en la sesión que resuelva, candidata o no", async () => {
+    const fs = seedWorkspace();
+    const propio = await parkAt(fs, [activa], t0, conv);
+    const result = await write(fs, { code: otraActiva, contextId: conv, now: dentro });
+    if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
+    expect(result.refuge_adopted).toEqual([propio]);
+  });
+
+  // Adoptable y barrible a la vez: su conversación vuelve pasada la ventana y
+  // ninguna candidata sigue activa. Barrer antes de adoptar lo perdería.
+  it("un SessionEnd resuelto adopta el refugio propio antes de barrer", async () => {
+    const fs = seedBinding(seedWorkspace(), sessionsDir, conv, activa);
+    const propio = await parkAt(fs, [cerrada], t0, conv);
+    const result = await runAutoCompactOnClose(fs, env, new FakeGit(), paths, {
+      contextId: conv,
+      now: fuera,
+    });
+    expect(result.checkpoints_written[0]?.refuge_adopted).toEqual([propio]);
+    expect(result.refuges_swept).toBeUndefined();
+  });
+
+  it("sin conversación y sin candidata activa se barre y figura en la salida", async () => {
+    const fs = seedWorkspace();
+    const huerfano = await parkAt(fs, [cerrada], t0);
+    const result = await write(fs, { code: activa, contextId: conv, now: dentro });
+    if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
+    expect(result.refuges_swept).toEqual([huerfano]);
+    expect(await fs.exists(`/cwd/${huerfano}`)).toBe(false);
+  });
+
+  it("uno con conversación y sin candidata activa espera la ventana, y después se barre", async () => {
+    const fs = seedWorkspace();
+    const ajeno = await parkAt(fs, [cerrada], t0, "conv-de-otro");
+
+    // Su conversación todavía puede volver y adoptarlo en la sesión que resuelva.
+    const antes = await runAutoCompactOnClose(fs, env, new FakeGit(), paths, {
+      contextId: conv,
+      now: dentro,
+    });
+    expect(antes.refuges_swept).toBeUndefined();
+    expect(await fs.exists(`/cwd/${ajeno}`)).toBe(true);
+
+    // El barrido corre también en la salida degradada, donde no se adopta nada.
+    const despues = await runAutoCompactOnClose(fs, env, new FakeGit(), paths, {
+      contextId: conv,
+      now: fuera,
+    });
+    expect(despues.continuity).toBe("degraded");
+    expect(despues.refuges_swept).toEqual([ajeno]);
+    expect(await fs.exists(`/cwd/${ajeno}`)).toBe(false);
+  });
+
+  it("una fecha ilegible cuenta como fuera de la ventana", async () => {
+    const fs = seedWorkspace();
+    const ajeno = await parkAt(fs, [cerrada], t0, "conv-de-otro");
+    const texto = await fs.readText(`/cwd/${ajeno}`);
+    fs.file(`/cwd/${ajeno}`, texto.replace(/- Fecha: .*/, "- Fecha: ayer por la tarde"));
+    const result = await write(fs, { code: activa, contextId: conv, now: dentro });
+    if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
+    expect(result.refuges_swept).toEqual([ajeno]);
   });
 });

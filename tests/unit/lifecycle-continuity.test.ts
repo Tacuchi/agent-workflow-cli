@@ -13,6 +13,7 @@ import { hashContextId, lookupBinding } from "../../src/application/session-bind
 import type { CliContext } from "../../src/cli/types.js";
 import type { GitPort, LocalChange, NumstatCounts } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { seedBinding } from "../helpers/bindings.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
@@ -201,7 +202,7 @@ describe("an unresolved session degrades with a refuge, never a held compaction"
     expect(body).toContain("hook de ciclo de vida (PreCompact o SessionEnd)");
     expect(body).toContain("- Motivo: hay 2 sesiones activas");
     expect(body).toContain("- Candidatas: 020-vieja-quick (active) · 044-nueva-plan-exec (active)");
-    expect(body).toContain("- Acción: indicá cuál con --code");
+    expect(body).toContain("- Acción: indicá la sesión con --code <NNN>");
     // Same rule as the bindings registry: the raw conversation id never lands.
     expect(body).toContain(`- Conversación: sha256:${hashContextId("conv-a")}`);
     expect(body).not.toContain("conv-a");
@@ -220,7 +221,9 @@ describe("an unresolved session degrades with a refuge, never a held compaction"
     expect(fs.writes.size).toBe(0);
   });
 
-  it("every session closed: still degraded, and the closed folders are the candidates", async () => {
+  // A closed session is no destination for any write, so a refuge naming only
+  // closed ones would promise an adoption that cannot happen.
+  it("every session closed: still degraded, and no refuge names a closed session", async () => {
     const fs = seedTwoActive();
     for (const folder of ["020-vieja-quick", "044-nueva-plan-exec"]) {
       fs.file(`${sessionsDir}/${folder}/.closed`, "");
@@ -228,10 +231,8 @@ describe("an unresolved session degrades with a refuge, never a held compaction"
     const result = await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
     if (!("continuity" in result)) throw new Error(JSON.stringify(result));
     expect(result.reason).toContain("no hay sesiones activas");
-    expect(checkpointsWritten(fs)).toEqual([]);
-    // Reopening one of them is a real way out, so the parked state is worth keeping.
-    expect(result.refuge_path).not.toBeNull();
-    expect(await fs.readText(refugeOf("conv-a"))).toContain("(closed)");
+    expect(result.refuge_path).toBeNull();
+    expect(fs.writes.size).toBe(0);
   });
 
   it("a broken bindings registry degrades rather than holding the compaction", async () => {
@@ -345,6 +346,7 @@ describe("SessionEnd acts on one session, never on every active one", () => {
       candidates: [{ folder: "001-sola-quick", code: "001", state: "active" }],
       contextId: "conv-a",
     });
+    seedBinding(fs, sessionsDir, "conv-a", "001-sola-quick");
 
     const result = await runAutoCompactOnClose(fs, env, git, paths, { contextId: "conv-a" });
     expect(result.checkpoints_written[0]?.refuge_adopted).toEqual([parked]);
@@ -367,6 +369,7 @@ describe("SessionEnd acts on one session, never on every active one", () => {
       candidates: [{ folder: "001-sola-quick", code: "001", state: "active" }],
       contextId: "conv-a",
     });
+    seedBinding(fs, sessionsDir, "conv-a", "001-sola-quick");
 
     const result = await runAutoCompactOnClose(fs, env, git, paths, { contextId: "conv-a" });
     expect(result.checkpoints_written).toHaveLength(1);
@@ -390,7 +393,8 @@ describe("SessionEnd acts on one session, never on every active one", () => {
       candidates: [{ folder: "001-sola-quick", code: "001", state: "active" }],
       contextId: "conv-a",
     });
-    await runCheckpointWrite(fs, env, git, paths, { contextId: "conv-a" });
+    // Naming the session adopts the refuge and binds, so the close resolves alone.
+    await runCheckpointWrite(fs, env, git, paths, { code: "001", contextId: "conv-a" });
     const cpPath = `${sessionsDir}/001-sola-quick/CHECKPOINT.md`;
     expect(await fs.readText(cpPath)).toContain("## Refugio adoptado (");
 
@@ -410,12 +414,65 @@ describe("SessionEnd acts on one session, never on every active one", () => {
     expect(checkpointsWritten(fs)).toEqual([`${sessionsDir}/020-vieja-quick/CHECKPOINT.md`]);
   });
 
-  it("the sole active session is a sufficient identity", async () => {
+  it("the sole active session is not an identity: the close writes no session line", async () => {
     const fs = new MemFs({ lenient: true });
     fs.file(`${sessionsDir}/001-sola-quick/SESSION.md`, "# SESSION — 001-sola-quick\n");
     const result = await runAutoCompactOnClose(fs, env, git, paths, {});
-    expect(result.checkpoints_written).toHaveLength(1);
-    expect(result.checkpoints_written[0]?.session).toBe("001-sola-quick");
+    expect(result.checkpoints_written).toEqual([]);
+    expect(result.continuity).toBe("degraded");
+    expect(result.candidates?.map((c) => c.folder)).toEqual(["001-sola-quick"]);
+    expect(checkpointsWritten(fs)).toEqual([]);
+  });
+});
+
+// Spec 056, «compactar sin binding con una sola sesión activa». The one active
+// session belongs to ANOTHER conversation; the invocation carries either an id
+// nobody bound or no id at all (every host but Claude Code).
+describe("compacting with no association and ONE active session writes no session line", () => {
+  const theirs = "044-ajena-plan-exec";
+  const theirCheckpoint = `${sessionsDir}/${theirs}/CHECKPOINT.md`;
+  const THEIR_PROSE = "# CHECKPOINT — 044\n\n## Completed\n- Trabajo de otra conversación.\n";
+
+  function seedOneActiveOfAnother(): MemFs {
+    const fs = new MemFs({ lenient: true });
+    for (const closed of ["010-vieja-quick", "020-otra-plan-new"]) {
+      fs.file(`${sessionsDir}/${closed}/SESSION.md`, `# SESSION — ${closed}\n`);
+      fs.file(`${sessionsDir}/${closed}/.closed`, "");
+    }
+    fs.file(`${sessionsDir}/${theirs}/SESSION.md`, `# SESSION — ${theirs}\n`);
+    fs.file(`${sessionsDir}/${theirs}/TASKS.md`, "- [x] T1\n- [ ] T2\n");
+    fs.file(theirCheckpoint, THEIR_PROSE);
+    return fs;
+  }
+
+  it.each([
+    ["an id nobody bound", { contextId: "conv-nueva" }],
+    ["no conversation id at all", {}],
+  ])("with %s, their CHECKPOINT stays byte for byte and PostCompact degrades", async (_l, id) => {
+    const fs = seedOneActiveOfAnother();
+
+    const pre = await runCheckpointWrite(fs, env, git, paths, id);
+    if (!("continuity" in pre)) throw new Error(JSON.stringify(pre));
+    expect(pre.continuity).toBe("degraded");
+    expect(pre.candidates).toEqual([{ folder: theirs, code: "044", state: "active" }]);
+    expect(pre.action).toContain("--code <NNN>");
+    // Hooks always leave a refuge when someone could adopt it.
+    expect(pre.refuge_path).not.toBeNull();
+
+    const close = await runAutoCompactOnClose(fs, env, git, paths, id);
+    expect(close.checkpoints_written).toEqual([]);
+
+    expect(await fs.readText(theirCheckpoint)).toBe(THEIR_PROSE);
+    expect(checkpointsWritten(fs)).toEqual([]);
+    // Nothing got associated on the way either.
+    expect(await fs.exists(`${sessionsDir}/.bindings.json`)).toBe(false);
+
+    const post = await runResumeSummary(fs, paths, id);
+    expect(post.continuity).toBe("degraded");
+    expect(post.primary_session).toBeNull();
+    expect(post.needs_ai_action).toBe(true);
+    expect(post.candidates).toEqual([{ folder: theirs, code: "044", state: "active" }]);
+    expect(post.action).toContain("--code");
   });
 });
 
@@ -428,14 +485,14 @@ describe("lifecycle surfaces never write to a closed session", () => {
       contextId: "conv-a",
     });
     // The compaction completes. What matters is that the closed line itself is
-    // untouched and the reason says how to reach it — reopening it is a real way
-    // out, so the state is parked next to it rather than dropped.
+    // untouched and the reason says how to reach it; the only candidate is that
+    // closed session, so no refuge is parked.
     if (!("continuity" in result)) throw new Error(JSON.stringify(result));
     expect(result.continuity).toBe("degraded");
     expect(result.reason).toContain("cerrada");
     expect(result.action).toContain("--reopen");
-    expect(checkpointsWritten(fs)).toEqual([]);
-    expect([...fs.writes.keys()]).toEqual([refugeOf("conv-a")]);
+    expect(result.refuge_path).toBeNull();
+    expect(fs.writes.size).toBe(0);
   });
 });
 
@@ -481,7 +538,7 @@ describe("reading never moves the conversation's line", () => {
     const fs = new MemFs({ lenient: true });
     fs.file(`${sessionsDir}/001-sola-quick/SESSION.md`, "# SESSION — 001-sola-quick\n");
 
-    const summary = await runResumeSummary(fs, paths, { contextId: "conv-a" });
+    const summary = await runResumeSummary(fs, paths, { code: "001", contextId: "conv-a" });
     expect(summary.primary_session).toBe("001-sola-quick");
     expect(fs.writes.size).toBe(0);
     expect(await bound(fs)).toBeNull();
@@ -647,6 +704,27 @@ describe("checkpoint-write CLI — exit 0 always, and the person hears why", () 
     expect(notice).toContain("compactación continúa sin checkpoint");
     expect(notice).toContain("2 sesiones activas");
     expect(notice).toContain(`refugio: .workflow/sessions/.refuge/${hashContextId("conv-claude")}`);
+  });
+
+  it("SessionEnd says it on stderr too, with the refuge it parked", async () => {
+    const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const { autoCompactOnCloseCommand } = await import(
+        "../../src/cli/commands/checkpoint-write.js"
+      );
+      const result = await autoCompactOnCloseCommand.execute(
+        argv([]),
+        ctxFor(seedTwoActive(), hostEnv),
+      );
+      expect(result.exitCode).toBe(0);
+      const notice = spy.mock.calls.map((call) => String(call[0])).join("");
+      expect(notice).toContain("el cierre continúa sin checkpoint");
+      expect(notice).toContain(
+        `refugio: .workflow/sessions/.refuge/${hashContextId("conv-claude")}`,
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("with nothing to park, the notice promises no refuge", async () => {

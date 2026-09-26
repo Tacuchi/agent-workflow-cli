@@ -14,28 +14,39 @@
 | `PreCompact` | `checkpoint-write` | Writes `CHECKPOINT.md` before the host compacts. **Never blocks the compaction.** |
 | `PostCompact` | `resume-summary` | Recovers **the conversation's own** loop state after a compact. |
 
-> **Conversation identity (spec 011).** The three lifecycle hooks act on **one**
-> session — the conversation's own — never on "the first active one" and never
-> on all of them. They resolve it with the canonical precedence: explicit
-> `--code` → the conversation's durable association → the sole active session.
-> The identity travels in the hook payload's `session_id` (read from stdin) or
-> in `AW_CONTEXT_ID`; two signals naming different conversations fail with
-> `CONTEXT_ID_CONFLICT` instead of picking one. The association lives in
-> `.workflow/sessions/.bindings.json` keyed by the SHA-256 of that id — the raw
-> value is never persisted.
+> **Conversation identity (spec 011, spec 056).** The three lifecycle hooks act
+> on **one** session — the conversation's own — never on "the first active one"
+> and never on all of them. They resolve it as every write does: explicit
+> `--code` → the conversation's durable association. A write **never** falls back
+> to the sole active session: it may be another conversation's line, so with no
+> identity and an active session it refuses with `SESSION_UNBOUND`, lists the
+> active sessions and asks for `--code <NNN>`. Only reads keep that fallback. The identity travels in the
+> hook payload's `session_id` (read from stdin) or in `AW_CONTEXT_ID`; two
+> signals naming different conversations fail with `CONTEXT_ID_CONFLICT` instead
+> of picking one. The association lives in `.workflow/sessions/.bindings.json`
+> keyed by the SHA-256 of that id — the raw value is never persisted. Hosts that
+> give the agent's commands no id associate nothing, so there the CHECKPOINT is
+> always written with `aw checkpoint-write --code <NNN>`.
 >
 > **An unresolved session never holds a compaction back.** `PreCompact` always
 > exits **0**. It used to exit 2 on an ambiguity so a person could name the
 > session first, and that trapped the conversation: the remedy it printed does
 > not always bind the conversation, so the next `/compact` blocked again. Now the
 > host's compaction completes, Workline reports `continuity: "degraded"` with
-> `primary_session: null`, and — whenever there is a candidate that could adopt
-> it — parks a **refuge checkpoint** in `.workflow/sessions/.refuge/` naming the
-> reason, the candidates and the way out. `PostCompact` reports it as `refuge`,
-> and the first `checkpoint-write` that does resolve the session (typically
-> `--code <NNN>`) folds it into that session's `CHECKPOINT.md` and removes it.
-> The refuge names its conversation by the SHA-256 of the id, like the
-> association registry. Per-host installation and transport belong to spec 010.
+> `primary_session: null`, says so on stderr (`PreCompact` and `SessionEnd`) and
+> parks a **refuge checkpoint** in `.workflow/sessions/.refuge/` naming the
+> reason, the **active** candidates and the way out — none at all when no
+> session is active. `PostCompact` reports it as `refuge`.
+>
+> **Who adopts a refuge.** Its own conversation, into whichever session its next
+> `checkpoint-write` or `SessionEnd` resolves. Anybody else only with `--code` on one of its candidates, and only
+> when nobody else can claim it: it has no conversation, the invocation carries
+> no id, or it is older than 24 hours. Adopting folds it into that session's
+> `CHECKPOINT.md` and removes it. A refuge nobody can adopt any more — no active
+> candidate, and no conversation or past the 24 hours — is swept on the next
+> lifecycle write and listed in `refuges_swept`. The refuge names its
+> conversation by the SHA-256 of the id, like the association registry.
+> Per-host installation and transport belong to spec 010.
 
 > **What they enforce (host-level, blocking):** invariant **#4** (DB scripts-only) via `sql-mutation-guard` (blocks DML/DDL over MCP), and the *expected-branch* clause of **#5** via `branch-check` (blocks edits on the wrong branch). The rest of git-safe (`push`/`--amend`/`--no-verify`/`--force`) is **doctrinal** — `git-commit-advisor` only **warns**, it does not block; a host may add its own deny hook if it wants hard enforcement.
 >

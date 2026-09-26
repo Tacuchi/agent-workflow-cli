@@ -91,8 +91,8 @@ class FakeGit implements GitPort {
 
 const git = new FakeGit();
 
-/** One active session, so identity is never the thing under test here. */
-function soleActive(): MemFs {
+/** One active session, named by every call, so identity is never the thing under test here. */
+function oneSession(): MemFs {
   const fs = new MemFs({ lenient: true });
   fs.file(`${sessionsDir}/${folder}/SESSION.md`, `# SESSION — ${folder}\n`);
   fs.file(`${sessionsDir}/${folder}/TASKS.md`, "- [x] T1\n- [ ] T2\n");
@@ -106,7 +106,7 @@ const PROSA = "Cerré el guard de sobrescritura y lo verifiqué con un relleno p
  * sections with real prose, and the other markers stay where they were.
  */
 async function seedPartiallyFilled(fs: MemFs): Promise<string> {
-  const first = await runCheckpointWrite(fs, env, git, paths, {});
+  const first = await runCheckpointWrite(fs, env, git, paths, { code: folder });
   if (!("checkpoint_path" in first) || first.skipped === true) {
     throw new Error(`the first write should produce a template: ${JSON.stringify(first)}`);
   }
@@ -124,9 +124,9 @@ async function seedPartiallyFilled(fs: MemFs): Promise<string> {
 
 describe("checkpoint-write — an untouched template is still free to regenerate", () => {
   it("rewrites its own pristine output instead of preserving it forever", async () => {
-    const fs = soleActive();
-    await runCheckpointWrite(fs, env, git, paths, {});
-    const second = await runCheckpointWrite(fs, env, git, paths, {});
+    const fs = oneSession();
+    await runCheckpointWrite(fs, env, git, paths, { code: folder });
+    const second = await runCheckpointWrite(fs, env, git, paths, { code: folder });
     if (!("checkpoint_path" in second)) throw new Error(JSON.stringify(second));
     expect(second.skipped).toBeUndefined();
     expect(second.preserved).toBeUndefined();
@@ -136,10 +136,10 @@ describe("checkpoint-write — an untouched template is still free to regenerate
 
 describe("checkpoint-write — a PARTIALLY filled CHECKPOINT survives the default route", () => {
   it("preserves the prose and says so instead of writing", async () => {
-    const fs = soleActive();
+    const fs = oneSession();
     const filled = await seedPartiallyFilled(fs);
 
-    const result = await runCheckpointWrite(fs, env, git, paths, {});
+    const result = await runCheckpointWrite(fs, env, git, paths, { code: folder });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
     expect(result.preserved).toBe(true);
     expect(result.skipped).toBe(true);
@@ -149,10 +149,10 @@ describe("checkpoint-write — a PARTIALLY filled CHECKPOINT survives the defaul
   });
 
   it("SessionEnd preserves it too — the hook nobody is watching", async () => {
-    const fs = soleActive();
+    const fs = oneSession();
     const filled = await seedPartiallyFilled(fs);
 
-    const result = await runAutoCompactOnClose(fs, env, git, paths, {});
+    const result = await runAutoCompactOnClose(fs, env, git, paths, { code: folder });
     expect(result.checkpoints_written).toHaveLength(1);
     expect(result.checkpoints_written[0]?.preserved).toBe(true);
     expect(result.checkpoints_written[0]?.session).toBe(folder);
@@ -160,10 +160,10 @@ describe("checkpoint-write — a PARTIALLY filled CHECKPOINT survives the defaul
   });
 
   it("--force is what overwrites it, and only --force", async () => {
-    const fs = soleActive();
+    const fs = oneSession();
     const filled = await seedPartiallyFilled(fs);
 
-    const result = await runCheckpointWrite(fs, env, git, paths, { force: true });
+    const result = await runCheckpointWrite(fs, env, git, paths, { code: folder, force: true });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
     expect(result.preserved).toBeUndefined();
     expect(result.skipped).toBeUndefined();
@@ -173,13 +173,13 @@ describe("checkpoint-write — a PARTIALLY filled CHECKPOINT survives the defaul
 
   // A fill that happens to remove every marker was already safe; it must stay so.
   it("a fully synthesised CHECKPOINT is preserved as well", async () => {
-    const fs = soleActive();
-    await runCheckpointWrite(fs, env, git, paths, {});
+    const fs = oneSession();
+    await runCheckpointWrite(fs, env, git, paths, { code: folder });
     const synthesised = (await fs.readText(cpPath)).replaceAll(/_\[AI:[^\]]*\]_/g, PROSA);
     expect(synthesised).not.toContain("_[AI:");
     await fs.writeText(cpPath, synthesised);
 
-    const result = await runCheckpointWrite(fs, env, git, paths, {});
+    const result = await runCheckpointWrite(fs, env, git, paths, { code: folder });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
     expect(result.preserved).toBe(true);
     expect(await fs.readText(cpPath)).toBe(synthesised);
@@ -193,7 +193,7 @@ describe("checkpoint-write — a CHECKPOINT from a previous version", () => {
   }
 
   it("is preserved rather than lost, even carrying the old markers", async () => {
-    const fs = soleActive();
+    const fs = oneSession();
     const legacy = unsealed(
       [
         `# Checkpoint — ${folder}`,
@@ -212,17 +212,17 @@ describe("checkpoint-write — a CHECKPOINT from a previous version", () => {
     );
     fs.file(cpPath, legacy);
 
-    const result = await runCheckpointWrite(fs, env, git, paths, {});
+    const result = await runCheckpointWrite(fs, env, git, paths, { code: folder });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
     expect(result.preserved).toBe(true);
     expect(await fs.readText(cpPath)).toBe(legacy);
   });
 
   it("does not break: --force still regenerates it into the sealed shape", async () => {
-    const fs = soleActive();
+    const fs = oneSession();
     fs.file(cpPath, unsealed(`# Checkpoint — ${folder}\n\n## Last action\n\n${PROSA}\n`));
 
-    const result = await runCheckpointWrite(fs, env, git, paths, { force: true });
+    const result = await runCheckpointWrite(fs, env, git, paths, { code: folder, force: true });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
     expect(result.preserved).toBeUndefined();
     expect(await fs.readText(cpPath)).toContain("· template sha256=");
@@ -233,8 +233,8 @@ describe("the sentinel is no longer a string the generator emits", () => {
   // The regression in one line: whatever the template says, it can never hand
   // itself the permission to be destroyed.
   it("the template's own bytes are the only thing that reads as pristine", async () => {
-    const fs = soleActive();
-    await runCheckpointWrite(fs, env, git, paths, {});
+    const fs = oneSession();
+    await runCheckpointWrite(fs, env, git, paths, { code: folder });
     const template = await fs.readText(cpPath);
     expect(template).toContain("_[AI:");
 
@@ -256,7 +256,7 @@ describe("the sentinel is no longer a string the generator emits", () => {
     }).replace("## Refs", `## Notas mías\n\n${PROSA}\n\n## Refs`);
     await fs.writeText(cpPath, forged);
 
-    const result = await runCheckpointWrite(fs, env, git, paths, {});
+    const result = await runCheckpointWrite(fs, env, git, paths, { code: folder });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
     expect(result.preserved).toBe(true);
   });

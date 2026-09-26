@@ -39,10 +39,12 @@ async function lifecycleOptions(
 export const checkpointWriteCommand: CliCommand = {
   name: "checkpoint-write",
   describe:
-    "Write CHECKPOINT.md for the conversation's session (or --code). PreCompact hook target: " +
-    "it NEVER holds a compaction back — with no resolvable session it parks a refuge " +
-    "checkpoint and exits 0. An existing CHECKPOINT with content is preserved; --force " +
-    "overwrites it. Usage: aw checkpoint-write [--code <session>] [--force].",
+    "Write CHECKPOINT.md for the session named by --code, or the conversation's associated " +
+    "one; never the sole active session on its own. PreCompact hook target: it NEVER " +
+    "holds a compaction back. With no resolvable session it exits 0 and, when a session " +
+    "is active, parks a refuge checkpoint naming the active ones. An existing CHECKPOINT " +
+    "with content is preserved; --force overwrites it. " +
+    "Usage: aw checkpoint-write --code <NNN> [--force].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const base = await lifecycleOptions(args, ctx);
     if ("failure" in base) return base.failure;
@@ -56,23 +58,37 @@ export const checkpointWriteCommand: CliCommand = {
     // — the ambiguity the notice asked to fix came back on the next attempt.
     // The host shows a person only stderr here (the stdout envelope stays
     // machine-facing), so what degraded and where the state went goes there.
-    if ("continuity" in data) writeStderr(degradedNotice(data));
+    if ("continuity" in data) writeStderr(degradedNotice("la compactación", data));
     return { ok: true, data, exitCode: 0 };
   },
 };
 
-function degradedNotice(data: CheckpointWriteDegraded): string {
+function degradedNotice(
+  event: string,
+  data: Pick<CheckpointWriteDegraded, "reason" | "refuge_path">,
+): string {
   const refuge = data.refuge_path !== null ? ` — refugio: ${data.refuge_path}` : "";
-  return `compactación continúa sin checkpoint: ${data.reason}${refuge}\n`;
+  return `${event} continúa sin checkpoint: ${data.reason}${refuge}\n`;
 }
 
 export const autoCompactOnCloseCommand: CliCommand = {
   name: "auto-compact-on-close",
-  describe: "SessionEnd hook target — checkpoint the conversation's session, and only that one.",
+  describe:
+    "SessionEnd hook target — checkpoint the session named by --code or associated with the " +
+    "conversation, and only that one; unresolved, it parks a refuge and says so on stderr.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const base = await lifecycleOptions(args, ctx);
     if ("failure" in base) return base.failure;
     const data = await runAutoCompactOnClose(ctx.fs, ctx.env, ctx.git, ctx.paths, base);
+    // Same channel as PreCompact: stderr is what the host shows a person.
+    if (data.continuity === "degraded") {
+      writeStderr(
+        degradedNotice("el cierre", {
+          reason: data.reason ?? "",
+          refuge_path: data.refuge_path ?? null,
+        }),
+      );
+    }
     return { ok: true, data, exitCode: 0 };
   },
 };

@@ -52,6 +52,7 @@ describe("binding registry — privacy and shape", () => {
   it("persists only the SHA-256 of the conversation id, never the raw value", async () => {
     const fs = seed([{ folder: "001-sola-quick" }]);
     await resolveSessionTarget(fs, paths, {
+      code: "001",
       contextId: "super-secret-conversation",
       bind: true,
       intent: "write",
@@ -77,14 +78,23 @@ describe("manual cycle — the conversation keeps its own line", () => {
     expect(await boundFolder(fs, "conv-a")).toBe("001-continuidad-plan-exec");
   });
 
-  it("the sole-active fallback associates the conversation for later operations", async () => {
+  it("a write never binds through the sole active session; naming it is what associates", async () => {
     const fs = seed([{ folder: "001-sola-quick" }]);
-    const first = await resolveSessionTarget(fs, paths, {
+    const unbound = await resolveSessionTarget(fs, paths, {
       contextId: "conv-a",
       bind: true,
       intent: "write",
     });
-    expect(first.outcome === "resolved" && first.via).toBe("sole_active");
+    expect(unbound.outcome === "error" && unbound.code).toBe("SESSION_UNBOUND");
+    expect(await fs.exists(bindingsFile)).toBe(false);
+
+    const first = await resolveSessionTarget(fs, paths, {
+      code: "001",
+      contextId: "conv-a",
+      bind: true,
+      intent: "write",
+    });
+    expect(first.outcome === "resolved" && first.via).toBe("explicit");
 
     // A second session appears; a NEW process must still land on the associated
     // one instead of becoming ambiguous.

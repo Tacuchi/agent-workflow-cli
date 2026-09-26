@@ -514,26 +514,24 @@ describe("la conversación original ya no está disponible", () => {
     expect(raw).not.toContain(started.contextId);
   });
 
-  it("una conversación nueva, sin código ni asociación previa, levanta la corrida", async () => {
+  // Spec 056 AC-01: la sesión activa única puede ser la línea de otra
+  // conversación, así que avanzar sin nombrarla no la toma por su cuenta.
+  it.each([
+    ["con una conversación sin asociación", { contextId: "conv-recien-nacida-b612" }],
+    ["sin ninguna identidad de conversación", {}],
+  ])("%s y sin --session, se niega y pide --code sin mover la corrida", async (_l, id) => {
     const left = await adopt(started);
-    // Ni `--session` ni binding: la sesión activa única es la que resuelve, que
-    // es el caso real de abrir otro host y escribir `aw flow advance`.
-    const fresh = await advanceFlow(fs, started.paths, {
-      contextId: "conv-recien-nacida-b612",
-      adopt: false,
-    });
-    if (!fresh.ok) throw new Error("esperaba resolver por sesión activa única");
-    expect(fresh.directive.boundary.transition).toBe(left.boundary.transition);
-    expect(fresh.directive.state_digest).toBe(left.state_digest);
-    expect(fresh.directive.next_action).toBe(left.next_action);
-  });
+    const refused = await advanceFlow(fs, started.paths, { ...id, adopt: false });
+    if (refused.ok || !("session" in refused)) throw new Error("esperaba la negativa de sesión");
+    expect(refused.session.code).toBe("SESSION_UNBOUND");
+    expect(refused.session.action).toContain("--code");
 
-  it("sin ninguna identidad de conversación la corrida sigue igual", async () => {
-    const left = await adopt(started);
-    const anonymous = await advanceFlow(fs, started.paths, { adopt: false });
-    if (!anonymous.ok) throw new Error("esperaba avanzar sin identidad de conversación");
-    expect(anonymous.directive.boundary.transition).toBe(left.boundary.transition);
-    expect(anonymous.directive.state_digest).toBe(left.state_digest);
+    const named = await advanceFlow(fs, started.paths, { ...id, code: CODE, adopt: false });
+    // El caso real de abrir otro host y escribir `aw flow advance --session`.
+    if (!named.ok) throw new Error("esperaba avanzar al nombrar la sesión");
+    expect(named.directive.boundary.transition).toBe(left.boundary.transition);
+    expect(named.directive.state_digest).toBe(left.state_digest);
+    expect(named.directive.next_action).toBe(left.next_action);
   });
 });
 

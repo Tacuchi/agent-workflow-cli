@@ -2026,8 +2026,7 @@ function admit(
         `'${PAUSE_LABEL}': la frontera queda en pie y la corrida retoma acá`,
         {
           code: "FLOW_BOUNDARY_PAUSED",
-          action:
-            "escribí el CHECKPOINT con 'aw checkpoint-write', compactá, y volvé con 'aw flow advance' a esta misma frontera",
+          action: `escribí el CHECKPOINT con 'aw checkpoint-write --code ${state.session}', compactá, y volvé con 'aw flow advance --code ${state.session}' a esta misma frontera`,
           outcome: "needs_input",
         },
         cost,

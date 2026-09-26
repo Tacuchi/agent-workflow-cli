@@ -146,6 +146,9 @@ describe("Self-regulation (proactive compaction) — chasis ↔ harness (spec 00
     // del marcador junto con el bloqueo: el documento tampoco puede seguir
     // prometiendo una pausa que no existe.
     expect(sub).toContain("`aw checkpoint-write`");
+    // Y nombra la sesión: sin `--code` ni asociación una escritura no cae en la
+    // única activa (spec 056 AC-01).
+    expect(sub).toContain("`--code <NNN>`");
     expect(sub).not.toContain("--can-pause");
     expect(sub).toContain("not this document's call");
     // Y lo que reemplazó a la pausa, dicho donde vive la doctrina: degradar

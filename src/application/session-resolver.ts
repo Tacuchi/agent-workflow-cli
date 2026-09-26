@@ -118,17 +118,20 @@ export async function listSessionFolders(
 // Canonical session resolution
 //
 // ONE target for every session-scoped operation, with a fixed precedence:
-//   valid explicit identity → durable conversation binding → sole active session.
+//   valid explicit identity → durable conversation binding → sole active session
+//   (reads only).
 // An invalid explicit identity ENDS the resolution — it never falls through to
 // the binding or the fallback. Nothing is ever chosen by name order, recency or
-// age: several active sessions without an association is `SESSION_AMBIGUOUS`,
-// not "the first one".
+// age: for a read, several active sessions without an association is
+// `SESSION_AMBIGUOUS`, not "the first one". A WRITE with neither identity is
+// `SESSION_UNBOUND`, however many sessions are active.
 // ---------------------------------------------------------------------------
 
 export type SessionErrorCode =
   | "SESSION_NOT_FOUND"
   | "SESSION_CLOSED"
   | "SESSION_AMBIGUOUS"
+  | "SESSION_UNBOUND"
   | "SESSION_BINDING_INVALID";
 
 /**
@@ -357,13 +360,16 @@ async function walkPrecedence(
     if (viaBinding !== null) return viaBinding;
   }
 
-  return resolveSoleActive(fs, scanned);
+  const actives = scanned.filter((s) => s.state === "active");
+  if (actives.length === 0) return noActiveSessions(scanned);
+  return request.intent === "read" ? resolveSoleActive(fs, actives) : refuseUnbound(actives);
 }
 
 /**
- * Persist the association a successful resolution implies. Both an explicit
- * selection and the sole-active fallback establish it (`via: "binding"` already
- * IS the association, and a conversation with no id has nothing to associate).
+ * Persist the association a successful resolution implies. Only an explicit
+ * selection establishes it: `via: "binding"` already IS the association, the
+ * sole-active fallback is read-only and reads never bind, and a conversation
+ * with no id has nothing to associate.
  * Returns an error to replace the resolution when the registry cannot be
  * written — fail-closed: a caller must never believe it got associated when it
  * did not. `null` = nothing to report.
@@ -563,9 +569,8 @@ async function resolveFromBinding(
 
 async function resolveSoleActive(
   fs: FileSystemPort,
-  scanned: ScannedFolder[],
+  actives: ScannedFolder[],
 ): Promise<SessionResolution> {
-  const actives = scanned.filter((s) => s.state === "active");
   const only = actives.length === 1 ? actives[0] : undefined;
   if (only !== undefined) {
     return {
@@ -574,19 +579,42 @@ async function resolveSoleActive(
       session: await buildSessionEntry(fs, only.path, only.name),
     };
   }
-  if (actives.length === 0) {
-    return resolutionError(
-      "SESSION_NOT_FOUND",
-      "no hay sesiones activas en el workspace",
-      scanned,
-      "creá una con `aw session-create` o indicá una existente con --code",
-    );
-  }
   return resolutionError(
     "SESSION_AMBIGUOUS",
     `hay ${actives.length} sesiones activas y la conversación no tiene una asociación`,
     actives,
     "indicá cuál con --code <NNN>",
+  );
+}
+
+/**
+ * A WRITE with no explicit identity and no association never falls back to the
+ * sole active session.
+ *
+ * That session may be another conversation's line: with one active session and
+ * none of its own, a PreCompact hook used to write its CHECKPOINT over it and
+ * bind the conversation there, so every later write arrived "by association".
+ * Hosts that never hand the agent's commands a conversation id had no other
+ * path at all. The active sessions are the candidates and naming one is the way
+ * out.
+ */
+function refuseUnbound(actives: ScannedFolder[]): SessionResolutionError {
+  return resolutionError(
+    "SESSION_UNBOUND",
+    actives.length === 1
+      ? "la conversación no tiene una asociación y una escritura sin --code no cae en la única sesión activa"
+      : `hay ${actives.length} sesiones activas y la conversación no tiene una asociación`,
+    actives,
+    "indicá la sesión con --code <NNN>",
+  );
+}
+
+function noActiveSessions(scanned: ScannedFolder[]): SessionResolutionError {
+  return resolutionError(
+    "SESSION_NOT_FOUND",
+    "no hay sesiones activas en el workspace",
+    scanned,
+    "creá una con `aw session-create` o indicá una existente con --code",
   );
 }
 
