@@ -72,7 +72,7 @@ describe("GitCliAdapter — new git-flow ops", () => {
     const git = new GitCliAdapter(p);
     // A network op that could otherwise block on a credential prompt.
     await git.push("/repo", "main");
-    await git.pull("/repo");
+    await git.fetchBranch("/repo", "main");
     await git.currentBranch("/repo");
     for (const inv of p.invocations) {
       expect(inv.opts?.env?.GIT_TERMINAL_PROMPT).toBe("0");
@@ -88,15 +88,137 @@ describe("GitCliAdapter — new git-flow ops", () => {
     await expect(new GitCliAdapter(p).checkout("/repo", "x")).rejects.toThrow(/checkout x failed/);
   });
 
-  it("pull runs `git pull`", async () => {
-    const p = new ScriptedProcess([]);
-    await new GitCliAdapter(p).pull("/repo");
-    expect(argsOf(p, "pull")).toEqual(["pull"]);
+  it("no expone `pull`: ninguna rama se actualiza con lo que rastree", () => {
+    expect("pull" in new GitCliAdapter(new ScriptedProcess([]))).toBe(false);
   });
 
-  it("pull throws on non-zero exit", async () => {
-    const p = new ScriptedProcess([{ match: (_c, a) => a[0] === "pull", result: fail("network") }]);
-    await expect(new GitCliAdapter(p).pull("/repo")).rejects.toThrow(/git pull failed/);
+  it("createBranch crea sin cambiar de rama, con o sin rastreo", async () => {
+    const p = new ScriptedProcess([]);
+    const git = new GitCliAdapter(p);
+    await git.createBranch("/repo", "feature/n", "refs/remotes/origin/certificacion", {
+      track: false,
+    });
+    await git.createBranch("/repo", "feature/r", "refs/remotes/origin/feature/r", { track: true });
+    const branchCalls = p.invocations.filter((i) => i.args[0] === "branch").map((i) => i.args);
+    expect(branchCalls).toEqual([
+      ["branch", "--no-track", "feature/n", "refs/remotes/origin/certificacion"],
+      ["branch", "--track", "feature/r", "refs/remotes/origin/feature/r"],
+    ]);
+  });
+
+  it("originFetchRefspecs lee remote.origin.fetch y trata la clave ausente como vacía", async () => {
+    const set = new ScriptedProcess([
+      {
+        match: (_c, a) => a[0] === "config",
+        result: { code: 0, stdout: "+refs/heads/*:refs/remotes/origin/*\n", stderr: "" },
+      },
+    ]);
+    expect(await new GitCliAdapter(set).originFetchRefspecs("/repo")).toEqual([
+      "+refs/heads/*:refs/remotes/origin/*",
+    ]);
+    const unset = new ScriptedProcess([
+      { match: (_c, a) => a[0] === "config", result: { code: 1, stdout: "", stderr: "" } },
+    ]);
+    expect(await new GitCliAdapter(unset).originFetchRefspecs("/repo")).toEqual([]);
+  });
+
+  it("mergeOrigin conserva el remoto: origin/feature/x no es feature/x trayéndose a sí misma", async () => {
+    const p = new ScriptedProcess([
+      {
+        match: (_c, a) => a[0] === "name-rev",
+        result: { code: 0, stdout: "remotes/origin/feature/x~2\n", stderr: "" },
+      },
+    ]);
+    expect(await new GitCliAdapter(p).mergeOrigin("/repo")).toBe("origin/feature/x");
+  });
+
+  it("remoteHasBranch pregunta a origin por la rama exacta y distingue ausente de ilegible", async () => {
+    const present = new ScriptedProcess([]);
+    expect(await new GitCliAdapter(present).remoteHasBranch("/repo", "certificacion")).toBe(true);
+    expect(argsOf(present, "ls-remote")).toEqual([
+      "ls-remote",
+      "--exit-code",
+      "--heads",
+      "origin",
+      "refs/heads/certificacion",
+    ]);
+
+    const absent = new ScriptedProcess([
+      { match: (_c, a) => a[0] === "ls-remote", result: { code: 2, stdout: "", stderr: "" } },
+    ]);
+    expect(await new GitCliAdapter(absent).remoteHasBranch("/repo", "x")).toBe(false);
+
+    const unreadable = new ScriptedProcess([
+      {
+        match: (_c, a) => a[0] === "ls-remote",
+        result: { code: 128, stdout: "", stderr: "no route" },
+      },
+    ]);
+    await expect(new GitCliAdapter(unreadable).remoteHasBranch("/repo", "x")).rejects.toThrow(
+      /ls-remote origin x failed.*no route/,
+    );
+  });
+
+  it("fetchBranch trae sólo esa rama a origin/<rama>, sin mezclar", async () => {
+    const p = new ScriptedProcess([]);
+    await new GitCliAdapter(p).fetchBranch("/repo", "feature/x");
+    expect(argsOf(p, "fetch")).toEqual([
+      "fetch",
+      "origin",
+      "+refs/heads/feature/x:refs/remotes/origin/feature/x",
+    ]);
+  });
+
+  it("fastForward sólo avanza: `merge --ff-only`, y falla con el stderr de git", async () => {
+    const p = new ScriptedProcess([]);
+    await new GitCliAdapter(p).fastForward("/repo", "origin/certificacion");
+    expect(argsOf(p, "merge")).toEqual(["merge", "--ff-only", "origin/certificacion"]);
+
+    const refused = new ScriptedProcess([
+      { match: (_c, a) => a[0] === "merge", result: fail("Not possible to fast-forward") },
+    ]);
+    await expect(new GitCliAdapter(refused).fastForward("/repo", "origin/x")).rejects.toThrow(
+      /Not possible to fast-forward/,
+    );
+  });
+
+  it("aheadBehind lee el conteo de `rev-list --left-right --count`", async () => {
+    const p = new ScriptedProcess([
+      { match: (_c, a) => a[0] === "rev-list", result: { code: 0, stdout: "3\t1\n", stderr: "" } },
+    ]);
+    const counts = await new GitCliAdapter(p).aheadBehind(
+      "/repo",
+      "certificacion",
+      "origin/certificacion",
+    );
+    expect(counts).toEqual({ ahead: 3, behind: 1 });
+    expect(argsOf(p, "rev-list")).toEqual([
+      "rev-list",
+      "--left-right",
+      "--count",
+      "certificacion...origin/certificacion",
+    ]);
+  });
+
+  it("revList excluye cada ref con --not y devuelve un sha por línea", async () => {
+    const p = new ScriptedProcess([
+      {
+        match: (_c, a) => a[0] === "rev-list",
+        result: { code: 0, stdout: "aaa\nbbb\n", stderr: "" },
+      },
+    ]);
+    const shas = await new GitCliAdapter(p).revList("/repo", "certificacion", [
+      "origin/certificacion",
+      "feature/x",
+    ]);
+    expect(shas).toEqual(["aaa", "bbb"]);
+    expect(argsOf(p, "rev-list")).toEqual([
+      "rev-list",
+      "certificacion",
+      "--not",
+      "origin/certificacion",
+      "feature/x",
+    ]);
   });
 
   it("merge returns ok=true on clean merge", async () => {
@@ -126,10 +248,14 @@ describe("GitCliAdapter — new git-flow ops", () => {
     await expect(new GitCliAdapter(p).merge("/repo", "x")).rejects.toThrow(/git merge x failed/);
   });
 
-  it("push runs plain `git push origin <branch>` (never --force)", async () => {
+  it("push runs `git push origin refs/heads/<b>:refs/heads/<b>` (never --force)", async () => {
     const p = new ScriptedProcess([]);
     await new GitCliAdapter(p).push("/repo", "desarrollo");
-    expect(argsOf(p, "push")).toEqual(["push", "origin", "desarrollo"]);
+    expect(argsOf(p, "push")).toEqual([
+      "push",
+      "origin",
+      "refs/heads/desarrollo:refs/heads/desarrollo",
+    ]);
     const joined = p.invocations.flatMap((i) => i.args).join(" ");
     expect(joined).not.toMatch(/--force|--no-verify|--amend/);
   });

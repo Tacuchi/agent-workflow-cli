@@ -69,7 +69,6 @@ class FakeGit implements GitPort {
     return counts;
   }
   async checkout(): Promise<void> {}
-  async pull(): Promise<void> {}
   async merge(): Promise<{ ok: boolean; conflicted: string[] }> {
     return { ok: true, conflicted: [] };
   }

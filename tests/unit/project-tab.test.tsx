@@ -92,6 +92,16 @@ function buildCtx(
     ownCommits?: Record<string, string>;
     /** When set, the workspace declares this many sources instead of alpha/beta. */
     sourceCount?: number;
+    /** Environment variables of the TUI process (agent markers, TERM_PROGRAM…). */
+    env?: Record<string, string>;
+    /** Records every push as `<repo> <branch>`. */
+    pushed?: string[];
+    /** Checkout fails with this git stderr. */
+    checkoutStderr?: string;
+    /** Records every git call that moves or brings a branch. */
+    moved?: string[];
+    /** Source paths that are not usable repos (listing skips them; probes throw). */
+    brokenRepos?: string[];
   } = {},
 ): CliContext {
   const md =
@@ -111,20 +121,42 @@ function buildCtx(
     env: {
       cwd: () => "/ws",
       homeDir: () => "/home",
-      get: () => undefined,
+      get: (name: string) => opts.env?.[name],
     },
     git: {
-      isGitRepo: async () => {
+      isGitRepo: async (repo: string) => {
         if (opts.failGit) throw new Error("git exploded");
-        return true;
+        return !opts.brokenRepos?.includes(repo);
       },
       currentBranch: async () => "feature/x",
       changedFiles: async () => [],
-      isMerging: async () => false,
+      isMerging: async (repo: string) => {
+        if (opts.brokenRepos?.includes(repo)) {
+          throw new Error(`git rev-parse failed in ${repo}: not a git repository`);
+        }
+        return false;
+      },
       isDirty: async () => false,
-      checkout: async () => {},
-      pull: async () => {},
-      push: async () => {},
+      checkout: async (repo: string, branch: string) => {
+        opts.moved?.push(`checkout ${repo} ${branch}`);
+        if (opts.checkoutStderr !== undefined) {
+          throw new Error(`git checkout ${branch} failed in ${repo}: ${opts.checkoutStderr}`);
+        }
+      },
+      remoteHasBranch: async () => true,
+      fetchBranch: async (repo: string, branch: string) => {
+        opts.moved?.push(`fetch ${repo} ${branch}`);
+      },
+      fastForward: async (repo: string, rev: string) => {
+        opts.moved?.push(`ff ${repo} ${rev}`);
+      },
+      aheadBehind: async () => ({ ahead: 0, behind: 0 }),
+      revList: async () => [],
+      mergeOrigin: async () => undefined,
+      push: async (repo: string, branch: string) => {
+        opts.moved?.push(`push ${repo} ${branch}`);
+        opts.pushed?.push(`${repo} ${branch}`);
+      },
       merge: async (_repo: string, from: string) =>
         from === opts.conflictOn
           ? { ok: false, conflicted: ["src/Foo.java"] }
@@ -532,6 +564,187 @@ function buildLaunchCtx(
     },
   } as unknown as CliContext;
 }
+
+describe("ProjectTab — «Enviar a PROD» pasa por confirm-prod (SCR-002@r7)", () => {
+  /** Open the panel on alpha and press Enter on «Enviar a PROD» (launch · sync · dev · qa · prod). */
+  async function openConfirm(stdin: { write(s: string): void }): Promise<void> {
+    stdin.write(ENTER);
+    await tick();
+    for (let i = 0; i < 4; i++) {
+      stdin.write(DOWN);
+      await tick(20);
+    }
+    stdin.write(ENTER);
+    await tick();
+  }
+
+  it("abre la confirmación con la vista previa y las ramas reales, sin cambiar ninguna rama", async () => {
+    const pushed: string[] = [];
+    const moved: string[] = [];
+    const { stdin, lastFrame, stdout } = render(
+      <ProjectTab ctx={buildCtx({ pushed, moved })} isActive />,
+    );
+    await tick();
+    setCols(stdout, 240);
+    await openConfirm(stdin);
+    const f = lastFrame() ?? "";
+    expect(f).toContain("ENVIAR A PROD");
+    expect(f).toContain("Se publicará en la rama de PROD");
+    expect(f).toContain("pull feature/x (desde origin/feature/x, si existe)");
+    expect(f).toContain("y publicar · n/esc cancelar");
+    // El final de la cadena se alcanza con → como en `result`.
+    for (let i = 0; i < 30; i++) stdin.write("\x1B[C");
+    await tick();
+    const end = lastFrame() ?? "";
+    expect(end).toContain("merge feature/x→certificacion");
+    expect(end).toContain("push certificacion");
+    expect(pushed).toEqual([]);
+    expect(moved).toEqual([]); // ni checkout, ni fetch, ni fast-forward, ni push
+  });
+
+  it("y publica la fuente listada", async () => {
+    const pushed: string[] = [];
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx({ pushed })} isActive />);
+    await tick();
+    await openConfirm(stdin);
+    stdin.write("y");
+    await tick(150);
+    expect(pushed).toEqual(["/src/alpha certificacion"]);
+    expect(lastFrame() ?? "").toContain("completed");
+  });
+
+  for (const [name, key] of [
+    ["n", "n"],
+    ["Esc", ESC],
+  ] as const) {
+    it(`${name} cancela sin publicar y vuelve al panel`, async () => {
+      const pushed: string[] = [];
+      const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx({ pushed })} isActive />);
+      await tick();
+      await openConfirm(stdin);
+      stdin.write(key);
+      await tick();
+      expect(pushed).toEqual([]);
+      const f = lastFrame() ?? "";
+      expect(f).toContain("ACTIONS");
+      expect(f).not.toContain("y publicar · n/esc cancelar");
+    });
+  }
+
+  it("dos y seguidas publican una sola vez", async () => {
+    const pushed: string[] = [];
+    const { stdin } = render(<ProjectTab ctx={buildCtx({ pushed })} isActive />);
+    await tick();
+    await openConfirm(stdin);
+    stdin.write("y");
+    stdin.write("y");
+    await tick(200);
+    expect(pushed).toEqual(["/src/alpha certificacion"]);
+  });
+
+  it("todas las fuentes incluye la que no es un repo: muestra su error y sólo se publica el resto", async () => {
+    const pushed: string[] = [];
+    const ctx = buildCtx({ pushed, brokenRepos: ["/src/beta"] });
+    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(DOWN); // alpha → all sources (beta no se lista: no es un repo)
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    for (let i = 0; i < 3; i++) {
+      stdin.write(DOWN);
+      await tick(20);
+    }
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame() ?? "").toMatch(/beta/);
+    stdin.write("y");
+    await tick(200);
+    expect(pushed).toEqual(["/src/alpha certificacion"]);
+    expect(lastFrame() ?? "").toMatch(/beta\s+error/);
+  });
+
+  it("r sobre el resultado vuelve a pasar por la confirmación", async () => {
+    const pushed: string[] = [];
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx({ pushed })} isActive />);
+    await tick();
+    await openConfirm(stdin);
+    stdin.write("y");
+    await tick(150);
+    stdin.write("r");
+    await tick(150);
+    expect(lastFrame() ?? "").toContain("y publicar · n/esc cancelar");
+    expect(pushed).toHaveLength(1);
+  });
+
+  it("con un marcador de agente, y muestra el aviso y no publica", async () => {
+    const pushed: string[] = [];
+    const ctx = buildCtx({ pushed, env: { CLAUDECODE: "1" } });
+    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    await openConfirm(stdin);
+    stdin.write("y");
+    await tick(150);
+    expect(pushed).toEqual([]);
+    const f = lastFrame() ?? "";
+    expect(f).toContain("La publicación en PROD la hace la persona");
+    expect(f).toContain("CLAUDECODE");
+  });
+
+  it("con las marcas de Warp solas, y publica", async () => {
+    const pushed: string[] = [];
+    const env = { TERM_PROGRAM: "WarpTerminal", WARP_IS_LOCAL_SHELL_SESSION: "1" };
+    const { stdin } = render(<ProjectTab ctx={buildCtx({ pushed, env })} isActive />);
+    await tick();
+    await openConfirm(stdin);
+    stdin.write("y");
+    await tick(150);
+    expect(pushed).toEqual(["/src/alpha certificacion"]);
+  });
+
+  it("sobre todas las fuentes, la lista va explícita y y publica exactamente esas", async () => {
+    const pushed: string[] = [];
+    const { stdin, lastFrame } = render(<ProjectTab ctx={buildCtx({ pushed })} isActive />);
+    await tick();
+    stdin.write(DOWN); // alpha → beta
+    await tick();
+    stdin.write(DOWN); // beta → all sources
+    await tick();
+    stdin.write(ENTER); // panel for all sources (sin «Lanzar en local»: sync · dev · qa · prod)
+    await tick();
+    for (let i = 0; i < 3; i++) {
+      stdin.write(DOWN);
+      await tick(20);
+    }
+    stdin.write(ENTER);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("alpha");
+    expect(f).toContain("beta");
+    expect(f).toContain("y publicar");
+    stdin.write("y");
+    await tick(200);
+    expect(pushed).toEqual(["/src/alpha certificacion", "/src/beta main"]);
+  });
+
+  it("el log del TUI recibe la fuente, el paso y el stderr de cada fuente fallida", async () => {
+    const logger = fakeLogger();
+    const ctx = buildCtx({ logger, checkoutStderr: "error: pathspec did not match" });
+    const { stdin } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    stdin.write(DOWN); // → Alinear con PROD
+    await tick();
+    stdin.write(ENTER);
+    await tick(150);
+    const line = logger.lines.find((l) => l.msg.startsWith("git-flow sync · alpha"));
+    expect(line?.level).toBe("error");
+    expect(line?.msg).toBe(
+      "git-flow sync · alpha · pull feature/x → error: pull feature/x failed: git checkout feature/x failed in /src/alpha: error: pathspec did not match",
+    );
+  });
+});
 
 describe("ProjectTab — lock de teclas globales (homologación)", () => {
   function LockSpy() {

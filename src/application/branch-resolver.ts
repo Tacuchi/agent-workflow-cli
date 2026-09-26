@@ -54,6 +54,34 @@ export function resolveSourceBranches(
 }
 
 /**
+ * Whether `branch` is a working branch of the source: any branch that is not
+ * its development, QA or PROD branch, `aw/*` units included.
+ *
+ * Defined next to the roles, once, because PR-04 — development never flows into
+ * a working branch — is only as sound as the definition every guard reads.
+ */
+export function isWorkingBranch(branch: string, roles: SourceBranchRoles): boolean {
+  return branch !== roles.dev && branch !== roles.qa && branch !== roles.prod;
+}
+
+/**
+ * Whether `name` is a plain branch name git reads as exactly `refs/heads/<name>`.
+ *
+ * A `--target` becomes a checkout and a push refspec. Spelled as `heads/<prod>`,
+ * `refs/heads/<prod>` or `@{-1}` it reaches the PROD branch without being equal
+ * to its name — which is what the PROD-publication check compares — so anything
+ * but a plain name is refused before a plan is built.
+ */
+export function isPlainBranchName(name: string): boolean {
+  if (name.length === 0 || name === "@" || name.includes("@{")) return false;
+  if (/[\s~^:?*[\\]/.test(name) || name.includes("..") || name.includes("//")) return false;
+  if ([...name].some((c) => (c.codePointAt(0) ?? 0) < 0x20 || c === "\u007f")) return false;
+  if (/^(refs|heads|remotes|tags)\//.test(name)) return false;
+  if (/^[-./]/.test(name) || /(\/|\.|\.lock)$/.test(name)) return false;
+  return name.split("/").every((part) => !part.startsWith("."));
+}
+
+/**
  * Single shared resolver for the expected WORKING branch of a source.
  *
  * The expected work branch is sourced from the WORKSPACE block's
@@ -88,7 +116,9 @@ export function findOwningSource(
   unitsRoot?: string,
 ): ProjectFuente | null {
   for (const s of sources) {
-    if (filePath.startsWith(s.path)) return s;
+    // A path boundary, not a string prefix: `/src/core2` is not inside `/src/core`.
+    const root = s.path.endsWith("/") ? s.path : `${s.path}/`;
+    if (filePath === s.path || filePath.startsWith(root)) return s;
   }
   if (unitsRoot === undefined) return null;
   const identity = parseUnitPath(unitsRoot, filePath);

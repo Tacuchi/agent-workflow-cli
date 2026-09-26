@@ -3,12 +3,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { runGitFlow } from "../../src/application/git-flow-service.js";
+import {
+  ALL_REJECTED_FOR_PROD,
+  type GitFlowInput,
+  PROD_CONSENT_REQUIRED,
+  runGitFlow,
+} from "../../src/application/git-flow-service.js";
 import type {
   DefaultBranches,
   ProjectBlockMarkers,
 } from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import {
+  type ProdConsent,
+  attributeTuiKeypress,
+  grantProdConsent,
+} from "../../src/application/prod-consent.js";
 import { renderProjectBlock } from "../../src/application/render/project-block.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { type GitCall, RecordingGit } from "../helpers/fake-git.js";
@@ -46,11 +56,13 @@ function blockFor(
   });
 }
 
-/** Only the call ops that touch git (currentBranch/isMerging are probes). */
+import { FakeEnv } from "../helpers/fake-env.js";
+
+/** The git ops that move a branch or bring one (currentBranch/isMerging/aheadBehind are probes). */
+const MOVING_OPS = new Set(["checkout", "fetch", "ff", "merge", "push"]);
+
 function opLog(calls: GitCall[]): string[] {
-  return calls
-    .filter((c) => c.op === "checkout" || c.op === "pull" || c.op === "merge" || c.op === "push")
-    .map((c) => (c.arg ? `${c.op} ${c.arg}` : c.op));
+  return calls.filter((c) => MOVING_OPS.has(c.op)).map((c) => (c.arg ? `${c.op} ${c.arg}` : c.op));
 }
 
 /**
@@ -63,7 +75,9 @@ function mergesQaOntoProd(calls: GitCall[], qa: string, prod: string): boolean {
   let current = "";
   for (const c of calls) {
     if (c.op === "checkout") current = c.arg ?? current;
-    if (c.op === "merge" && c.arg === qa && current === prod) return true;
+    const landsQa =
+      (c.op === "merge" && c.arg === qa) || (c.op === "ff" && c.arg === `refs/heads/${qa}`);
+    if (landsQa && current === prod) return true;
   }
   return false;
 }
@@ -80,6 +94,24 @@ describe("git-flow service", () => {
 
   function paths(): PathsService {
     return new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd);
+  }
+
+  /**
+   * The consent the person's yes builds for `input`: its preview is asked
+   * first, and the consent covers exactly that plan and its sources.
+   */
+  async function consentFor(input: GitFlowInput): Promise<ProdConsent> {
+    const preview = await runGitFlow(fs, new RecordingGit(), paths(), input);
+    const need = preview.consent_required;
+    if (need === undefined) throw new Error("the input publishes nothing in PROD");
+    const consent = grantProdConsent(attributeTuiKeypress(new FakeEnv()), need.sources, need.plan);
+    if (consent === null) throw new Error("a person attribution always grants");
+    return consent;
+  }
+
+  /** `input` as the person's yes lets it run. */
+  async function consented(input: GitFlowInput): Promise<GitFlowInput> {
+    return { ...input, consent: await consentFor(input) };
   }
 
   async function writeBlock(sources: SourceSpec[], defaults?: DefaultBranches): Promise<void> {
@@ -101,9 +133,11 @@ describe("git-flow service", () => {
     expect(result.status).toBe("ok");
     expect(opLog(git.calls)).toEqual([
       "checkout feature/x",
-      "pull feature/x",
+      "fetch feature/x",
+      "merge origin/feature/x",
       "checkout certificacion",
-      "pull certificacion",
+      "fetch certificacion",
+      "ff refs/remotes/origin/certificacion",
       "checkout feature/x",
       "merge certificacion",
     ]);
@@ -128,14 +162,17 @@ describe("git-flow service", () => {
     expect(opLog(git.calls)).toEqual([
       // sync
       "checkout feature/x",
-      "pull feature/x",
+      "fetch feature/x",
+      "merge origin/feature/x",
       "checkout certificacion",
-      "pull certificacion",
+      "fetch certificacion",
+      "ff refs/remotes/origin/certificacion",
       "checkout feature/x",
       "merge certificacion",
       // promote to qa
       "checkout desarrollo",
-      "pull desarrollo",
+      "fetch desarrollo",
+      "merge origin/desarrollo",
       "merge certificacion",
       "merge feature/x",
       "push desarrollo",
@@ -211,14 +248,17 @@ describe("git-flow service", () => {
     expect(opLog(git.calls)).toEqual([
       // sync
       "checkout feature/x",
-      "pull feature/x",
+      "fetch feature/x",
+      "merge origin/feature/x",
       "checkout certificacion",
-      "pull certificacion",
+      "fetch certificacion",
+      "ff refs/remotes/origin/certificacion",
       "checkout feature/x",
       "merge certificacion",
       // promote to dev — espejo de to-qa
       "checkout develop",
-      "pull develop",
+      "fetch develop",
+      "merge origin/develop",
       "merge certificacion",
       "merge feature/x",
       "push develop",
@@ -242,10 +282,12 @@ describe("git-flow service", () => {
 
   it("to-dev con --target SÍ promociona aunque work coincida con el default de desarrollo", async () => {
     // El guard mira el destino EFECTIVO: sin `target ??` una promoción legítima
-    // se convertiría en un salto silencioso.
-    await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
-      desarrollo: "develop",
-    });
+    // se convertiría en un salto silencioso. El destino es una rama de entorno
+    // (la de QA): hacia una rama de trabajo, PR-04 rechazaría llevar develop.
+    await writeBlock(
+      [{ alias: "core", path: "/repo/core", main: "certificacion", qa: "integration" }],
+      { desarrollo: "develop" },
+    );
     const git = new RecordingGit({ currentBranch: "develop" });
 
     const result = await runGitFlow(fs, git, paths(), {
@@ -316,20 +358,31 @@ describe("git-flow service", () => {
     ]);
     const git = new RecordingGit({ currentBranch: "feature/x" });
 
-    const result = await runGitFlow(fs, git, paths(), { action: "to-prod", source: "core" });
+    const result = await runGitFlow(
+      fs,
+      git,
+      paths(),
+      await consented({
+        action: "to-prod",
+        source: "core",
+      }),
+    );
 
     expect(result.status).toBe("ok");
     expect(opLog(git.calls)).toEqual([
       // sync
       "checkout feature/x",
-      "pull feature/x",
+      "fetch feature/x",
+      "merge origin/feature/x",
       "checkout certificacion",
-      "pull certificacion",
+      "fetch certificacion",
+      "ff refs/remotes/origin/certificacion",
       "checkout feature/x",
       "merge certificacion",
-      // promote to prod (no re-pull; syncPlan already pulled certificacion)
+      // promote to prod (no re-pull; syncPlan already pulled certificacion),
+      // landing work by fast-forward: no merge commit of its own on PROD
       "checkout certificacion",
-      "merge feature/x",
+      "ff refs/heads/feature/x",
       "push certificacion",
     ]);
   });
@@ -346,7 +399,14 @@ describe("git-flow service", () => {
     ]);
     for (const action of ["sync", "to-qa", "to-prod"] as const) {
       const git = new RecordingGit({ currentBranch: "feature/x" });
-      const result = await runGitFlow(fs, git, paths(), { action, source: "core" });
+      const result = await runGitFlow(
+        fs,
+        git,
+        paths(),
+        action === "to-prod"
+          ? await consented({ action, source: "core" })
+          : { action, source: "core" },
+      );
       expect(result.status).toBe("ok");
       expect(mergesQaOntoProd(git.calls, "desarrollo", "certificacion")).toBe(false);
     }
@@ -424,9 +484,11 @@ describe("git-flow service", () => {
     // The conflicting step is recorded as conflict; no push happened.
     expect(opLog(git.calls)).toEqual([
       "checkout feature/x",
-      "pull feature/x",
+      "fetch feature/x",
+      "merge origin/feature/x",
       "checkout certificacion",
-      "pull certificacion",
+      "fetch certificacion",
+      "ff refs/remotes/origin/certificacion",
       "checkout feature/x",
       "merge certificacion",
     ]);
@@ -460,13 +522,16 @@ describe("git-flow service", () => {
     expect(r2.status).toBe("ok");
     expect(opLog(git.calls)).toEqual([
       "checkout feature/x",
-      "pull feature/x",
+      "fetch feature/x",
+      "merge origin/feature/x",
       "checkout certificacion",
-      "pull certificacion",
+      "fetch certificacion",
+      "ff refs/remotes/origin/certificacion",
       "checkout feature/x",
       "merge certificacion",
       "checkout desarrollo",
-      "pull desarrollo",
+      "fetch desarrollo",
+      "merge origin/desarrollo",
       "merge certificacion",
       "merge feature/x",
       "push desarrollo",
@@ -511,7 +576,7 @@ describe("git-flow service", () => {
     // No resolve → still mid-merge.
     const r2 = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
     expect(r2.status).toBe("error");
-    expect(r2.results[0]?.error).toMatch(/in-progress merge|resolve/i);
+    expect(r2.results[0]?.error).toMatch(/merge a medias.*resolvelo/i);
   });
 
   it("aborts when the working tree is dirty (no git ops run)", async () => {
@@ -693,8 +758,8 @@ describe("git-flow service", () => {
     expect(result.status).toBe("error");
   });
 
-  it("--all: el peor caso y el exit se agregan igual en las CUATRO acciones", async () => {
-    for (const action of ["sync", "to-dev", "to-qa", "to-prod"] as const) {
+  it("--all: el peor caso y el exit se agregan igual en las TRES acciones que no publican en PROD", async () => {
+    for (const action of ["sync", "to-dev", "to-qa"] as const) {
       await writeBlock(
         [
           { alias: "core", path: "/repo/core", main: "main", work: "feat-a", qa: "qa-a" },
@@ -773,9 +838,11 @@ describe("git-flow service", () => {
     expect(result.status).toBe("ok");
     expect(opLog(git.calls)).toEqual([
       "checkout develop",
-      "pull develop",
+      "fetch develop",
+      "merge origin/develop",
       "checkout certificacion",
-      "pull certificacion",
+      "fetch certificacion",
+      "ff refs/remotes/origin/certificacion",
       "checkout develop",
       "merge certificacion",
     ]);
@@ -833,6 +900,524 @@ describe("git-flow service", () => {
     const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
     expect(result.status).toBe("error");
     expect(result.error).toBe("no_sources_declared");
+  });
+
+  describe("cada rama se actualiza sólo desde su homónima, y PROD sólo por fast-forward", () => {
+    const core: SourceSpec = {
+      alias: "core",
+      path: "/repo/core",
+      main: "certificacion",
+      work: "feature/x",
+    };
+
+    it("una rama sin homónima en origin omite su paso y el flujo sigue", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({ currentBranch: "feature/x", remoteMissing: ["feature/x"] });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      expect(result.status).toBe("ok");
+      const first = result.results[0]?.steps[0];
+      expect(first).toMatchObject({ step: "pull feature/x", status: "skipped" });
+      expect(first?.detail).toMatch(/origin no tiene feature\/x/);
+      expect(opLog(git.calls)).not.toContain("fetch feature/x");
+      expect(opLog(git.calls)).toContain("merge certificacion");
+    });
+
+    it("sin el remoto de PROD, sync se detiene sin mover PROD ni la rama de trabajo", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({
+        currentBranch: "feature/x",
+        remoteMissing: ["certificacion"],
+      });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      expect(result.status).toBe("error");
+      expect(result.results[0]?.error).toMatch(/origin no tiene certificacion/);
+      const ops = opLog(git.calls);
+      expect(ops).not.toContain("fetch certificacion");
+      expect(ops.some((op) => op.startsWith("ff "))).toBe(false);
+      expect(ops).not.toContain("merge certificacion");
+    });
+
+    it("PROD divergida de su remoto se detiene sin fast-forward", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({
+        currentBranch: "feature/x",
+        aheadBehind: { certificacion: { ahead: 1, behind: 2 } },
+      });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      expect(result.status).toBe("error");
+      expect(result.results[0]?.error).toMatch(/certificacion divergió de origin\/certificacion/);
+      expect(opLog(git.calls).some((op) => op.startsWith("ff "))).toBe(false);
+      expect(opLog(git.calls)).not.toContain("merge certificacion");
+    });
+
+    it("PROD adelantada con commits ajenos a la rama de trabajo se detiene y los nombra", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({
+        currentBranch: "feature/x",
+        aheadBehind: { certificacion: { ahead: 1, behind: 0 } },
+        revList: ["0123456789abcdef"],
+      });
+
+      const result = await runGitFlow(
+        fs,
+        git,
+        paths(),
+        await consented({
+          action: "to-prod",
+          source: "core",
+        }),
+      );
+
+      expect(result.status).toBe("error");
+      expect(result.results[0]?.error).toMatch(/commits que no son de feature\/x: 0123456/);
+      expect(git.calls.find((c) => c.op === "revList")?.arg).toBe(
+        "refs/heads/certificacion --not refs/remotes/origin/certificacion refs/heads/feature/x",
+      );
+      expect(opLog(git.calls).some((op) => op.startsWith("push"))).toBe(false);
+    });
+
+    it("PROD adelantada sólo con commits de la rama de trabajo retoma el push fallido", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({
+        currentBranch: "feature/x",
+        aheadBehind: { certificacion: { ahead: 3, behind: 0 } },
+        revList: [],
+      });
+
+      const result = await runGitFlow(
+        fs,
+        git,
+        paths(),
+        await consented({
+          action: "to-prod",
+          source: "core",
+        }),
+      );
+
+      expect(result.status).toBe("ok");
+      const pullProd = result.results[0]?.steps.find((s) => s.step === "pull certificacion");
+      expect(pullProd?.detail).toMatch(/sólo con commits de feature\/x \(3\)/);
+      expect(opLog(git.calls)).not.toContain("ff refs/remotes/origin/certificacion");
+      expect(opLog(git.calls)).toContain("push certificacion");
+    });
+
+    it("sync con destino PROD la trae por fast-forward, nunca con un merge de su remoto", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({
+        currentBranch: "feature/x",
+        aheadBehind: { certificacion: { ahead: 1, behind: 1 } },
+      });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "sync",
+        source: "core",
+        target: "certificacion",
+      });
+
+      expect(result.status).toBe("error");
+      expect(result.results[0]?.error).toMatch(/divergió/);
+      expect(opLog(git.calls)).not.toContain("merge origin/certificacion");
+    });
+
+    it("con desarrollo por defecto igual a PROD, sync sigue trayendo PROD (no es PR-04)", async () => {
+      await writeBlock([core], { desarrollo: "certificacion" });
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      expect(result.status).toBe("ok");
+      expect(opLog(git.calls)).toContain("merge certificacion");
+    });
+
+    it("con --target en PROD, el destino también avanza sólo por fast-forward", async () => {
+      await writeBlock([{ ...core, qa: "desarrollo" }]);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      await runGitFlow(
+        fs,
+        git,
+        paths(),
+        await consented({
+          action: "to-dev",
+          source: "core",
+          target: "certificacion",
+        }),
+      );
+
+      const ops = opLog(git.calls);
+      expect(ops.filter((op) => op === "ff refs/remotes/origin/certificacion")).toHaveLength(2);
+      expect(ops).not.toContain("merge origin/certificacion");
+      // prod→prod y work→prod aterrizan por fast-forward, sin merge propio en PROD
+      expect(ops).toContain("ff refs/heads/feature/x");
+    });
+  });
+
+  describe("publicar en PROD exige el consentimiento de la persona", () => {
+    const two: SourceSpec[] = [
+      { alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x" },
+      { alias: "ui", path: "/repo/ui", main: "main", work: "feature/y" },
+    ];
+
+    it("sin consentimiento, to-prod devuelve la vista previa con las ramas reales y no llama a git", async () => {
+      await writeBlock(two);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "to-prod", source: "core" });
+
+      expect(git.calls).toEqual([]);
+      expect(result.status).toBe("error");
+      expect(result.error).toBe(PROD_CONSENT_REQUIRED);
+      expect(result.consent_required?.sources).toEqual(["core"]);
+      const steps = result.results[0]?.steps ?? [];
+      // Las etiquetas por rol se conservan; la vista previa nombra las ramas reales.
+      expect(steps.map((s) => s.step)).toContain("merge work→prod");
+      expect(steps.map((s) => s.preview)).toEqual([
+        "pull feature/x (desde origin/feature/x, si existe)",
+        "checkout certificacion",
+        "pull certificacion (sólo fast-forward hasta origin/certificacion)",
+        "checkout feature/x",
+        "merge certificacion→feature/x",
+        "checkout certificacion",
+        "merge feature/x→certificacion",
+        "push certificacion",
+      ]);
+    });
+
+    it("to-dev --target en la rama de PROD también es una publicación en PROD", async () => {
+      await writeBlock(two);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "to-dev",
+        source: "core",
+        target: "certificacion",
+      });
+
+      expect(result.consent_required?.sources).toEqual(["core"]);
+      expect(git.calls).toEqual([]);
+    });
+
+    it("un objeto con la forma de un consentimiento no publica: sólo cuenta el que se otorgó", async () => {
+      await writeBlock(two);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "to-prod",
+        source: "core",
+        consent: { sources: ["core"] },
+      });
+
+      expect(result.consent_required).toBeDefined();
+      expect(git.calls).toEqual([]);
+    });
+
+    it("el consentimiento vale una sola vez y sólo para las fuentes que lista", async () => {
+      await writeBlock(two);
+      const consent = await consentFor({ action: "to-prod", source: "core" });
+
+      const other = new RecordingGit({ currentBranch: "feature/x" });
+      const wrong = await runGitFlow(fs, other, paths(), {
+        action: "to-prod",
+        sources: ["core", "ui"],
+        consent,
+      });
+      expect(wrong.consent_required?.sources).toEqual(["core", "ui"]);
+      expect(other.calls).toEqual([]);
+
+      // Y al revés: el de las dos fuentes no publica una sola.
+      const both = await consentFor({ action: "to-prod", sources: ["core", "ui"] });
+      const narrower = new RecordingGit({ currentBranch: "feature/x" });
+      const one = await runGitFlow(fs, narrower, paths(), {
+        action: "to-prod",
+        source: "core",
+        consent: both,
+      });
+      expect(one.consent_required).toBeDefined();
+      expect(narrower.calls).toEqual([]);
+
+      const first = new RecordingGit({ currentBranch: "feature/x" });
+      expect(
+        (await runGitFlow(fs, first, paths(), { action: "to-prod", source: "core", consent }))
+          .status,
+      ).toBe("ok");
+      const again = new RecordingGit({ currentBranch: "feature/x" });
+      const replay = await runGitFlow(fs, again, paths(), {
+        action: "to-prod",
+        source: "core",
+        consent,
+      });
+      expect(replay.consent_required).toBeDefined();
+      expect(again.calls).toEqual([]);
+    });
+
+    it("--source repetido publica exactamente las fuentes nombradas, en ese orden", async () => {
+      await writeBlock([...two, { alias: "api", path: "/repo/api", main: "main", work: "f-c" }]);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(
+        fs,
+        git,
+        paths(),
+        await consented({
+          action: "to-prod",
+          sources: ["ui", "core"],
+        }),
+      );
+
+      expect(result.status).toBe("ok");
+      expect(result.results.map((r) => r.source)).toEqual(["ui", "core"]);
+      const pushed = git.calls.filter((c) => c.op === "push").map((c) => c.repo);
+      expect(pushed).toEqual(["/repo/ui", "/repo/core"]);
+    });
+
+    it("--all sobre una publicación en PROD se rechaza pidiendo la lista, aun con consentimiento", async () => {
+      await writeBlock(two);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "to-prod",
+        all: true,
+        consent: await consentFor({ action: "to-prod", sources: ["core", "ui"] }),
+      });
+
+      expect(result.status).toBe("error");
+      expect(result.error).toBe(ALL_REJECTED_FOR_PROD);
+      expect(git.calls).toEqual([]);
+    });
+
+    it("una atribución escrita a mano no otorga nada: sólo la que lee el entorno", async () => {
+      expect(grantProdConsent({ person: true }, ["core"], "x")).toBeNull();
+    });
+
+    it("si el plan cambió entre la vista previa y el sí, no publica y vuelve a mostrarlo", async () => {
+      await writeBlock(two);
+      const consent = await consentFor({ action: "to-prod", source: "core" });
+      // Otra sesión reescribe la rama de trabajo mientras la pregunta espera.
+      await writeBlock([{ ...(two[0] as SourceSpec), work: "feature/otra" }, two[1] as SourceSpec]);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "to-prod",
+        source: "core",
+        consent,
+      });
+
+      expect(result.consent_required).toBeDefined();
+      expect(result.results[0]?.steps.map((s) => s.preview)).toContain(
+        "merge feature/otra→certificacion",
+      );
+      expect(git.calls).toEqual([]);
+    });
+
+    for (const target of [
+      "heads/certificacion",
+      "refs/heads/certificacion",
+      "@{-1}",
+      "-certificacion",
+    ]) {
+      it(`--target ${target} no es un nombre de rama simple y se rechaza antes de planear`, async () => {
+        await writeBlock(two);
+        const git = new RecordingGit({ currentBranch: "feature/x" });
+
+        const result = await runGitFlow(fs, git, paths(), {
+          action: "to-qa",
+          source: "core",
+          target,
+        });
+
+        expect(result.status).toBe("error");
+        expect(result.error).toMatch(/no es un nombre de rama simple/);
+        expect(git.calls).toEqual([]);
+      });
+    }
+
+    it("--target que difiere de PROD sólo en mayúsculas se rechaza", async () => {
+      await writeBlock(two);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "to-qa",
+        source: "core",
+        target: "Certificacion",
+      });
+
+      expect(result.results[0]?.error).toMatch(/sólo en mayúsculas/);
+      expect(git.calls).toEqual([]);
+    });
+
+    it("to-qa --target en la rama de PROD también pide consentimiento", async () => {
+      await writeBlock(two);
+      const git = new RecordingGit({ currentBranch: "feature/x" });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "to-qa",
+        source: "core",
+        target: "certificacion",
+      });
+
+      expect(result.consent_required?.sources).toEqual(["core"]);
+      expect(git.calls).toEqual([]);
+    });
+
+    it("--source repetido con la misma fuente y --target cuenta como una sola fuente", async () => {
+      await writeBlock(two);
+      const result = await runGitFlow(fs, new RecordingGit(), paths(), {
+        action: "to-qa",
+        sources: ["core", "core"],
+        target: "release/1",
+      });
+      expect(result.status).toBe("ok");
+    });
+
+    it("--target sigue exigiendo una sola fuente", async () => {
+      await writeBlock(two);
+      const result = await runGitFlow(fs, new RecordingGit(), paths(), {
+        action: "to-qa",
+        sources: ["core", "ui"],
+        target: "release/1",
+      });
+      expect(result.error).toMatch(/--target with a single --source/);
+    });
+
+    it("desarrollo y QA siguen publicando sin pedir nada, y --dry-run de to-prod no lo pide", async () => {
+      await writeBlock(two);
+      for (const action of ["to-dev", "to-qa"] as const) {
+        const git = new RecordingGit({ currentBranch: "feature/x" });
+        const result = await runGitFlow(fs, git, paths(), { action, all: true });
+        expect(result.status, action).toBe("ok");
+        expect(result.consent_required, action).toBeUndefined();
+      }
+      const dry = await runGitFlow(fs, new RecordingGit(), paths(), {
+        action: "to-prod",
+        all: true,
+        dryRun: true,
+      });
+      expect(dry.status).toBe("ok");
+      expect(dry.results[0]?.steps.at(-1)?.preview).toBe("push certificacion");
+    });
+  });
+
+  describe("un merge a medias nombra la rama donde quedó y la que lo trajo (AC-06)", () => {
+    const core: SourceSpec = {
+      alias: "core",
+      path: "/repo/core",
+      main: "certificacion",
+      work: "feature/x",
+    };
+
+    it("un merge anterior se reporta con la rama actual y la de MERGE_HEAD", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({
+        currentBranch: "feature/x",
+        merging: true,
+        mergeOrigin: "desarrollo",
+      });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      const src = result.results[0];
+      expect(src?.status).toBe("error");
+      expect(src?.paused_at).toBe("feature/x");
+      expect(src?.merge_origin).toBe("desarrollo");
+      expect(src?.error).toMatch(/sobre feature\/x, traído por desarrollo/);
+      expect(opLog(git.calls)).toEqual([]);
+    });
+
+    it("si git no sabe nombrar la rama que lo trajo, lo dice en vez de omitirla", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({ currentBranch: "feature/x", merging: true });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      expect(result.results[0]?.merge_origin).toBeNull();
+      expect(result.results[0]?.error).toMatch(/traído por una rama que git no sabe nombrar/);
+    });
+
+    it("con HEAD desacoplado lo dice, en vez de llamarlo rama", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({ currentBranch: "HEAD", merging: true, mergeOrigin: "x" });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      expect(result.results[0]?.error).toMatch(
+        /sobre un HEAD desacoplado, sin rama que git sepa nombrar/,
+      );
+    });
+
+    it("un conflicto de esta corrida nombra la rama del paso en conflicto", async () => {
+      await writeBlock([core]);
+      const git = new RecordingGit({
+        currentBranch: "feature/x",
+        conflicts: { "origin/feature/x": ["a.ts"] },
+      });
+
+      const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+
+      expect(result.results[0]).toMatchObject({
+        status: "conflict",
+        paused_at: "feature/x",
+        merge_origin: "origin/feature/x",
+      });
+    });
+  });
+
+  describe("PR-04: ningún plan mezcla la rama de desarrollo en una rama de trabajo", () => {
+    // Sin rama de trabajo declarada, work cae al default de desarrollo: promoverla
+    // hacia una feature o una unidad aw/* llevaría desarrollo a una rama de trabajo.
+    for (const target of ["feature/y", "aw/215-salvaguardas-de-produccion-plan-exec"]) {
+      it(`to-qa --target ${target} se rechaza antes de tocar git`, async () => {
+        await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
+          desarrollo: "develop",
+        });
+        const git = new RecordingGit({ currentBranch: "develop" });
+
+        const result = await runGitFlow(fs, git, paths(), {
+          action: "to-qa",
+          source: "core",
+          target,
+        });
+
+        expect(result.status).toBe("error");
+        expect(result.results[0]?.error).toMatch(
+          new RegExp(`PR-04.*develop.*${target.replace("/", "\\/")}`),
+        );
+        expect(git.calls).toEqual([]);
+      });
+    }
+
+    it("también en --dry-run: el plan prohibido no se muestra como ejecutable", async () => {
+      await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
+        desarrollo: "develop",
+      });
+      const git = new RecordingGit({ currentBranch: "develop" });
+
+      const result = await runGitFlow(fs, git, paths(), {
+        action: "to-qa",
+        source: "core",
+        target: "feature/y",
+        dryRun: true,
+      });
+
+      expect(result.results[0]?.status).toBe("error");
+      expect(result.results[0]?.error).toMatch(/PR-04/);
+    });
+
+    it("promover la rama de trabajo hacia desarrollo o QA sigue permitido", async () => {
+      await writeBlock([
+        { alias: "core", path: "/repo/core", main: "certificacion", work: "feature/x", qa: "qa" },
+      ]);
+      for (const action of ["to-dev", "to-qa"] as const) {
+        const git = new RecordingGit({ currentBranch: "feature/x" });
+        const result = await runGitFlow(fs, git, paths(), { action, source: "core" });
+        expect(result.status, action).toBe("ok");
+      }
+    });
   });
 
   it("errors on an invalid action", async () => {

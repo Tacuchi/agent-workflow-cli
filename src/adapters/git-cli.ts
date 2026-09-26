@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import type {
+  AheadBehind,
   CommitReceipt,
   ConflictStage,
   ConflictStages,
@@ -255,8 +258,56 @@ export class GitCliAdapter implements GitPort {
     await this.mustRun(`checkout ${branch}`, ["checkout", branch], repoPath);
   }
 
-  async pull(repoPath: string): Promise<void> {
-    await this.mustRun("pull", ["pull"], repoPath);
+  async remoteHasBranch(repoPath: string, branch: string): Promise<boolean> {
+    const result = await this.process.run(
+      "git",
+      ["ls-remote", "--exit-code", "--heads", "origin", `refs/heads/${branch}`],
+      this.opts(repoPath),
+    );
+    if (result.code === 0) return true;
+    // `--exit-code` answers 2 exactly when origin was read and nothing matched.
+    if (result.code === 2) return false;
+    throw this.failed(`ls-remote origin ${branch}`, repoPath, result.stderr);
+  }
+
+  async fetchBranch(repoPath: string, branch: string): Promise<void> {
+    await this.mustRun(
+      `fetch origin ${branch}`,
+      ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/origin/${branch}`],
+      repoPath,
+    );
+  }
+
+  async fastForward(repoPath: string, rev: string): Promise<void> {
+    await this.mustRun(`merge --ff-only ${rev}`, ["merge", "--ff-only", rev], repoPath);
+  }
+
+  async aheadBehind(repoPath: string, left: string, right: string): Promise<AheadBehind> {
+    const result = await this.mustRun(
+      `rev-list ${left}...${right}`,
+      ["rev-list", "--left-right", "--count", `${left}...${right}`],
+      repoPath,
+    );
+    const [ahead, behind] = result.stdout.trim().split(/\s+/).map(Number);
+    return { ahead: ahead ?? 0, behind: behind ?? 0 };
+  }
+
+  async revList(
+    repoPath: string,
+    include: string,
+    exclude: string[],
+    options: { firstParent?: boolean } = {},
+  ): Promise<string[]> {
+    const walk = options.firstParent === true ? ["--first-parent"] : [];
+    const result = await this.mustRun(
+      `rev-list ${include}`,
+      ["rev-list", ...walk, include, "--not", ...exclude],
+      repoPath,
+    );
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
   }
 
   async merge(repoPath: string, fromBranch: string): Promise<MergeResult> {
@@ -272,7 +323,13 @@ export class GitCliAdapter implements GitPort {
   }
 
   async push(repoPath: string, branch: string): Promise<void> {
-    await this.mustRun(`push ${branch}`, ["push", "origin", branch], repoPath);
+    // An explicit refspec: the branch lands on its homonym and nowhere else,
+    // whatever `push.default` or the branch's upstream say.
+    await this.mustRun(
+      `push ${branch}`,
+      ["push", "origin", `refs/heads/${branch}:refs/heads/${branch}`],
+      repoPath,
+    );
   }
 
   async isMerging(repoPath: string): Promise<boolean> {
@@ -282,6 +339,24 @@ export class GitCliAdapter implements GitPort {
       this.opts(repoPath),
     );
     return result.code === 0;
+  }
+
+  async mergeHeads(repoPath: string): Promise<string[]> {
+    const where = await this.mustRun(
+      "rev-parse --git-path MERGE_HEAD",
+      ["rev-parse", "--git-path", "MERGE_HEAD"],
+      repoPath,
+    );
+    try {
+      const text = await readFile(resolve(repoPath, where.stdout.trim()), "utf8");
+      return text
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
   }
 
   async conflictedFiles(repoPath: string): Promise<string[]> {
@@ -580,6 +655,46 @@ export class GitCliAdapter implements GitPort {
     await this.mustRun("worktree prune", ["worktree", "prune"], repoPath);
   }
 
+  async createBranch(
+    repoPath: string,
+    branch: string,
+    startPoint: string,
+    options: { track: boolean },
+  ): Promise<void> {
+    await this.mustRun(
+      `branch ${branch}`,
+      ["branch", options.track ? "--track" : "--no-track", branch, startPoint],
+      repoPath,
+    );
+  }
+
+  async localBranches(repoPath: string): Promise<string[]> {
+    const result = await this.mustRun(
+      "for-each-ref refs/heads",
+      ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
+      repoPath,
+    );
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
+  async originFetchRefspecs(repoPath: string): Promise<string[]> {
+    const result = await this.process.run(
+      "git",
+      ["config", "--get-all", "remote.origin.fetch"],
+      this.opts(repoPath),
+    );
+    // `config --get-all` exits 1 when the key is unset: no refspec, not a failure.
+    if (result.code === 1) return [];
+    if (result.code !== 0) throw this.failed("config remote.origin.fetch", repoPath, result.stderr);
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+  }
+
   async branchExists(repoPath: string, branch: string): Promise<boolean> {
     const result = await this.process.run(
       "git",
@@ -725,8 +840,12 @@ export function parseWorktreePorcelain(stdout: string): WorktreeEntry[] {
  * to a branch-ish label (best-effort identification of the incoming branch).
  */
 function cleanRefName(name: string): string {
-  return name
-    .replace(/[~^].*$/, "") // drop ~N / ^N suffixes
-    .replace(/^remotes\/[^/]+\//, "") // drop remotes/<remote>/
-    .replace(/^tags\//, "");
+  return (
+    name
+      .replace(/[~^].*$/, "") // drop ~N / ^N suffixes
+      // keep the remote: `origin/feature/x` brought into `feature/x` is not the
+      // branch bringing itself, which is what dropping it would say
+      .replace(/^remotes\//, "")
+      .replace(/^tags\//, "")
+  );
 }

@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { ConflictStages, GitPort } from "../ports/git.js";
+import { type SourceBranchRoles, isWorkingBranch } from "./branch-resolver.js";
 import {
   type SemanticFailure,
   type SemanticParse,
@@ -46,9 +47,21 @@ export interface ConflictSummary {
   bytes: number;
 }
 
+/**
+ * The branch roles the PR-04 guard judged the merge against, and whose they are:
+ * the owning source's, or — when no source owns the repo — the workspace
+ * defaults, which the output then says.
+ */
+export interface FixGitRoles extends SourceBranchRoles {
+  owner: string | null;
+  /** Where the roles came from when no source owns the repo. */
+  basis: "source" | "workspace-defaults" | "cli-floor";
+}
+
 export interface FixGitContext {
   repo: string;
   alias: string | null;
+  roles?: FixGitRoles;
   merge_origin: string | null;
   current_branch: string | null;
   conflicts: ConflictSummary[];
@@ -73,20 +86,15 @@ export async function prepareFixGit(
   git: GitPort,
   repo: string,
   alias: string | null,
+  roles?: FixGitRoles,
 ): Promise<SemanticParse<FixGitPrepared>> {
   if (!(await git.isGitRepo(repo))) {
     return { ok: false, failure: notRepo(repo) };
   }
-  if (!(await git.isMerging(repo))) {
-    return {
-      ok: false,
-      failure: {
-        code: "NOT_MERGING",
-        message: `'${repo}' no está en medio de un merge`,
-        action: "no hay conflictos que resolver: revisá el repo o el alias",
-      },
-    };
-  }
+  if (!(await git.isMerging(repo))) return { ok: false, failure: notMerging(repo) };
+
+  const forbidden = roles ? await devIntoWorkingBranch(git, repo, roles) : null;
+  if (forbidden !== null) return { ok: false, failure: forbidden };
 
   const paths = await git.conflictedFiles(repo);
   if (paths.length === 0) {
@@ -106,6 +114,7 @@ export async function prepareFixGit(
   const context: FixGitContext = {
     repo,
     alias,
+    ...(roles ? { roles } : {}),
     merge_origin: (await git.mergeOrigin(repo)) ?? null,
     current_branch: (await git.currentBranch(repo)) ?? null,
     conflicts: stages.map(summarize),
@@ -217,7 +226,12 @@ export async function applyFixGit(
   prepared: FixGitPrepared,
   resolutions: FixGitResolution[],
 ): Promise<SemanticParse<FixGitApplied>> {
-  const fresh = await prepareFixGit(git, prepared.context.repo, prepared.context.alias);
+  const fresh = await prepareFixGit(
+    git,
+    prepared.context.repo,
+    prepared.context.alias,
+    prepared.context.roles,
+  );
   if (!fresh.ok) return fresh;
   if (fresh.value.request.input_digest !== prepared.request.input_digest) {
     return {
@@ -258,7 +272,13 @@ export async function commitFixGit(
   git: GitPort,
   repo: string,
   message: string,
+  roles?: FixGitRoles,
 ): Promise<SemanticParse<{ committed: true; message: string }>> {
+  // fix-git closes a merge; with no MERGE_HEAD there is none to close — and a
+  // `merge --squash` staged the other branch with no MERGE_HEAD for any guard.
+  if (!(await git.isMerging(repo))) return { ok: false, failure: notMerging(repo) };
+  const forbidden = roles ? await devIntoWorkingBranch(git, repo, roles) : null;
+  if (forbidden !== null) return { ok: false, failure: forbidden };
   const remaining = await git.conflictedFiles(repo);
   if (remaining.length > 0) {
     return {
@@ -285,7 +305,78 @@ export async function commitFixGit(
   return { ok: true, value: { committed: true, message } };
 }
 
+// ── PR-04: development never flows into a working branch ─────────────────────
+
+/**
+ * Whether the merge in progress brings the development branch into a working
+ * branch, and why — or null.
+ *
+ * "Brings development" is read off development's first-parent history: the
+ * integration merges `to-dev` makes stay on it, the feature commits that came
+ * in through them do not. So a merge of development's own commits (those PROD
+ * does not have) into a feature is refused, while a merge between two features
+ * that both went through development is not. A feature that entered development
+ * by fast-forward leaves its commits on that chain: the bias is to refuse, and
+ * the person resolves that merge by hand.
+ */
+async function devIntoWorkingBranch(
+  git: GitPort,
+  repo: string,
+  roles: FixGitRoles,
+): Promise<SemanticFailure | null> {
+  if (!(await git.isMerging(repo))) return null;
+  const current = await git.currentBranch(repo);
+  if (current === undefined || current === "HEAD" || !isWorkingBranch(current, roles)) return null;
+
+  const prodRefs = await existingRefs(git, repo, roles.prod);
+  // Every head: an octopus merge brings development just as well in its second.
+  const incoming = new Set<string>();
+  for (const head of await git.mergeHeads(repo)) {
+    for (const sha of await git.revList(repo, head, ["HEAD"])) incoming.add(sha);
+  }
+  for (const dev of await existingRefs(git, repo, roles.dev)) {
+    const own = await git.revList(repo, dev, prodRefs, { firstParent: true });
+    const brought = own.find((sha) => incoming.has(sha));
+    if (brought === undefined) continue;
+    const whose = rolesBasisText(roles);
+    return {
+      code: "FIX_GIT_DEV_INTO_WORK",
+      message: `PR-04: el merge en curso trae la rama de desarrollo ${shortRef(dev)} (commit ${brought.slice(0, 7)}) a la rama de trabajo ${current}; fix-git no lo prepara ni lo cierra (roles de la ${whose})`,
+      action:
+        "abortá el merge con `git merge --abort` y traé sólo la rama de PROD o la homónima de origin",
+    };
+  }
+  return null;
+}
+
+export function rolesBasisText(roles: FixGitRoles): string {
+  if (roles.owner !== null) return `fuente ${roles.owner}`;
+  return roles.basis === "workspace-defaults"
+    ? "valores por defecto del workspace: ninguna fuente es dueña del repo"
+    : "mínimos del CLI: no hay bloque WORKSPACE que leer";
+}
+
+/** `refs/heads/<b>` and `refs/remotes/origin/<b>`, the ones that exist. */
+async function existingRefs(git: GitPort, repo: string, branch: string): Promise<string[]> {
+  const refs = [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`];
+  const present: string[] = [];
+  for (const ref of refs) if ((await git.refValue(repo, ref)) !== null) present.push(ref);
+  return present;
+}
+
+function shortRef(ref: string): string {
+  return ref.replace(/^refs\/(heads|remotes)\//, "");
+}
+
 // ── failures ─────────────────────────────────────────────────────────────────
+
+function notMerging(repo: string): SemanticFailure {
+  return {
+    code: "NOT_MERGING",
+    message: `'${repo}' no está en medio de un merge`,
+    action: "no hay conflictos que resolver: revisá el repo o el alias",
+  };
+}
 
 function notRepo(repo: string): SemanticFailure {
   return {

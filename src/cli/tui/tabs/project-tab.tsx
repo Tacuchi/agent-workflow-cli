@@ -1,14 +1,19 @@
 import { basename } from "node:path";
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   type GitFlowAction,
   type GitFlowInput,
   type GitFlowResult,
   runGitFlow,
 } from "../../../application/git-flow-service.js";
-import { formatTuiEvent } from "../../../application/logging/log-events.js";
+import {
+  formatGitFlowSourceLine,
+  formatTuiEvent,
+} from "../../../application/logging/log-events.js";
+import { readWorkspaceBlock } from "../../../application/parsers/project-block.js";
 import type { ProcessRecord } from "../../../application/process-registry-service.js";
+import { attributeTuiKeypress, grantProdConsent } from "../../../application/prod-consent.js";
 import {
   type ProjectSource,
   type ProjectTabData,
@@ -228,6 +233,8 @@ type Mode =
   | { kind: "detail" }
   | { kind: "running"; label: string }
   | { kind: "result"; action: GitFlowAction; result: GitFlowResult }
+  // ===== Publishing in PROD (SCR-002@r7#confirm-prod) =====
+  | { kind: "confirm-prod"; input: GitFlowInput; preview: GitFlowResult }
   // ===== Source removal =====
   | { kind: "confirm-remove"; alias: string }
   // ===== Source-launch + process management =====
@@ -236,6 +243,30 @@ type Mode =
   | { kind: "collision"; req: LaunchRequest; existing: ProcessRecord }
   | { kind: "notice"; tone: "ok" | "err"; lines: string[] }
   | { kind: "log"; record: ProcessRecord; lines: string[] };
+
+/** The aliases the WORKSPACE block declares, readable or not. */
+async function declaredAliases(ctx: CliContext): Promise<string[]> {
+  const block = await readWorkspaceBlock(
+    ctx.fs,
+    ctx.paths.workspaceDir(),
+    ctx.paths.blockMarkers(),
+  );
+  return (block?.fuentes ?? []).map((s) => s.alias);
+}
+
+const FLOW_LOG_LEVEL = { ok: "info", conflict: "warn", error: "error" } as const;
+
+/** The event line, then one line per source that did not finish (source, step, git's stderr). */
+function logFlowResult(ctx: CliContext, event: string, result: GitFlowResult): void {
+  void ctx.logger?.log(
+    FLOW_LOG_LEVEL[result.status],
+    formatTuiEvent(event, result.status, result.error),
+  );
+  for (const r of result.results) {
+    if (r.status === "ok") continue;
+    void ctx.logger?.log(FLOW_LOG_LEVEL[r.status], formatGitFlowSourceLine(result.action, r));
+  }
+}
 
 /** First per-source detail action: launch the app locally. */
 const LAUNCH_ACTION = { id: "launch", name: "Lanzar en local" } as const;
@@ -546,19 +577,23 @@ function Initialized({
     [currentSource, sourceProcesses],
   );
 
-  const runFlow = useCallback(
-    async (action: GitFlowAction) => {
-      const target = targets[cursor] ?? ALL_SOURCES;
-      const isAll = target === ALL_SOURCES;
+  // Run a git-flow input and show its result. Every source that did not finish
+  // leaves its own line (source, step, git's stderr) next to the event line.
+  const executeFlow = useCallback(
+    async (input: GitFlowInput, label: string) => {
+      const action = input.action;
       const actionName = FLOW_ACTIONS.find((a) => a.id === action)?.name ?? action;
-      setMode({ kind: "running", label: `${actionName} · ${isAll ? "all sources" : target}` });
-      const input: GitFlowInput = isAll ? { action, all: true } : { action, source: target };
-      const event = `git-flow ${action} · ${isAll ? "all-sources" : target}`;
+      setMode({ kind: "running", label: `${actionName} · ${label}` });
+      const event = `git-flow ${action} · ${label === "all sources" ? "all-sources" : label}`;
       try {
         const result = await runGitFlow(ctx.fs, ctx.git, ctx.paths, input);
-        const level =
-          result.status === "error" ? "error" : result.status === "conflict" ? "warn" : "info";
-        void ctx.logger?.log(level, formatTuiEvent(event, result.status, result.error));
+        logFlowResult(ctx, event, result);
+        // The plan moved between the preview and the yes: nothing ran, and the
+        // person is asked again over the preview of what would run now.
+        if (result.consent_required !== undefined) {
+          const { consent: _spent, ...fresh } = input;
+          return setMode({ kind: "confirm-prod", input: fresh, preview: result });
+        }
         setMode({ kind: "result", action, result });
       } catch (err) {
         const message = (err as Error).message;
@@ -576,7 +611,76 @@ function Initialized({
         });
       }
     },
-    [cursor, ctx, targets],
+    [ctx],
+  );
+
+  // «Enviar a PROD» never runs from the panel: it opens confirm-prod over the
+  // service's own preview, and `r` on its result comes back here too. "All
+  // sources" becomes the explicit list the confirmation shows (--all is refused
+  // for PROD by the service).
+  const runFlow = useCallback(
+    async (action: GitFlowAction) => {
+      const target = targets[cursor] ?? ALL_SOURCES;
+      const isAll = target === ALL_SOURCES;
+      const label = isAll ? "all sources" : target;
+      if (action !== "to-prod") {
+        const input: GitFlowInput = isAll ? { action, all: true } : { action, source: target };
+        return executeFlow(input, label);
+      }
+      // Locked while the preview is built: a key pressed meanwhile must not be
+      // overtaken by a confirmation opening on top of where the person went.
+      setMode({ kind: "running", label: `Enviar a PROD · vista previa · ${label}` });
+      // Every declared source, not only the ones the listing could read: one
+      // that is not a repo still belongs on the list, and says so when it runs.
+      const input: GitFlowInput = isAll
+        ? { action, sources: await declaredAliases(ctx) }
+        : { action, source: target };
+      const preview = await runGitFlow(ctx.fs, ctx.git, ctx.paths, input).catch(
+        (err): GitFlowResult => ({
+          action,
+          dry_run: false,
+          status: "error",
+          results: [],
+          error: (err as Error).message,
+        }),
+      );
+      if (preview.consent_required === undefined) {
+        logFlowResult(ctx, `git-flow ${action} · ${label}`, preview);
+        return setMode({ kind: "result", action, result: preview });
+      }
+      setMode({ kind: "confirm-prod", input, preview });
+    },
+    [cursor, ctx, targets, executeFlow],
+  );
+
+  // `y` in confirm-prod: only a process with no agent marker publishes, and only
+  // the plan the preview showed, for exactly the sources it listed.
+  // A preview is answered once: a second `y` that reaches a listener Ink has
+  // not swapped yet would otherwise grant a second consent for the same plan.
+  const answeredPreview = useRef<GitFlowResult | null>(null);
+  const publishProd = useCallback(
+    (input: GitFlowInput, preview: GitFlowResult) => {
+      const need = preview.consent_required;
+      if (need === undefined || answeredPreview.current === preview) return;
+      answeredPreview.current = preview;
+      const label = input.sources ? "all sources" : (input.source ?? "");
+      const who = attributeTuiKeypress(ctx.env);
+      if (!who.person) {
+        void ctx.logger?.warn(formatTuiEvent(`git-flow to-prod · ${label}`, "refused", who.reason));
+        return setMode({
+          kind: "notice",
+          tone: "err",
+          lines: [
+            "La publicación en PROD la hace la persona: desde el TUI o desde su propia terminal.",
+            `No se publicó: ${who.reason}.`,
+          ],
+        });
+      }
+      const consent = grantProdConsent(who, need.sources, need.plan);
+      if (consent === null) return;
+      void executeFlow({ ...input, consent }, label);
+    },
+    [ctx, executeFlow],
   );
 
   // Remove a source from the workspace: orchestrates detach + block pruning +
@@ -696,7 +800,7 @@ function Initialized({
         if (key.escape || key.return) setMode({ kind: "list" });
         return;
       }
-      // `result` handles its own keys: FlowResultView owns the cursor, the
+      // `result` and `confirm-prod` handle their own keys: FlowResultView owns the cursor, the
       // horizontal window and the conflict detail, and calls back for the two
       // consequences that are the tab's (re-run, and back+reload). Keeping a
       // branch here too would give `r` and `esc` two handlers — Ink delivers
@@ -716,6 +820,20 @@ function Initialized({
           <Text color={colors.faint}>git corriendo · no interrumpible — Ctrl+C aborta el TUI</Text>
         </Box>
       </Box>
+    );
+  }
+
+  if (mode.kind === "confirm-prod") {
+    return (
+      <FlowResultView
+        action="to-prod"
+        result={mode.preview}
+        isActive={isActive}
+        confirm={{
+          onPublish: () => publishProd(mode.input, mode.preview),
+          onCancel: () => setMode({ kind: "detail" }),
+        }}
+      />
     );
   }
 
