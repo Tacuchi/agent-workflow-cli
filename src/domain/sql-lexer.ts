@@ -4,14 +4,30 @@
  * Lexical facts another engine reads differently than PostgreSQL. The scan
  * only reports them; each caller decides what they mean for its own policy.
  */
-export type SqlLexicalMark = "hash" | "backtick" | "backslash-quote" | "executable-comment";
+export type SqlLexicalMark =
+  | "hash"
+  | "backtick"
+  | "backslash-quote"
+  | "executable-comment"
+  | "dollar-quote";
+
+export interface SqlLiteral {
+  /** Index in the statement's `tokens` of the first token after the literal. */
+  at: number;
+  /** The value between the quotes, doubled quotes undone; E'…' escapes stay raw. */
+  text: string;
+}
 
 export interface SqlStatement {
   /** Offsets of the statement's text in the scanned input, without its `;`. */
   start: number;
   end: number;
-  /** Upper-cased words plus the marks `(`, `)` and `,`, outside literals and comments. */
+  /**
+   * Upper-cased words, quoted identifiers verbatim with their quotes, and the
+   * marks `(`, `)` and `,`, outside literals and comments.
+   */
   tokens: string[];
+  literals: SqlLiteral[];
   marks: SqlLexicalMark[];
 }
 
@@ -71,7 +87,7 @@ function createSqlScanState(): SqlScanState {
 }
 
 function openStatement(start: number): SqlStatement {
-  return { start, end: start, tokens: [], marks: [] };
+  return { start, end: start, tokens: [], literals: [], marks: [] };
 }
 
 function closeStatement(state: SqlScanState, end: number): void {
@@ -188,6 +204,14 @@ function consumeQuotedSql(sql: string, state: SqlScanState, quote: "'" | '"'): b
   if (!allowsBackslashEscapes && sql.slice(state.index, next).includes(`\\${quote}`)) {
     mark(state, "backslash-quote");
   }
+  // Only the statement sees quoted names and literal values: the flat `tokens`
+  // serve-db reads stay as they were.
+  if (quote === '"') {
+    state.statement.tokens.push(sql.slice(state.index, next));
+  } else {
+    const text = sql.slice(state.index + 1, next - 1).replaceAll("''", "'");
+    state.statement.literals.push({ at: state.statement.tokens.length, text });
+  }
   state.index = next;
   return true;
 }
@@ -204,6 +228,10 @@ function consumeDollarQuotedSql(sql: string, state: SqlScanState): DollarQuotedC
   // 1 MiB input cap.
   const close = sql.indexOf(opener.tag, opener.afterOpen);
   if (close < 0) return "unterminated";
+  // MySQL has no dollar-quoting: it reads the body as SQL.
+  mark(state, "dollar-quote");
+  const text = sql.slice(opener.afterOpen, close);
+  state.statement.literals.push({ at: state.statement.tokens.length, text });
   state.index = close + opener.tag.length;
   return "consumed";
 }

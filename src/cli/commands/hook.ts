@@ -34,7 +34,12 @@ export const hookCommand: CliCommand = {
       return { ok: true, data: undefined, exitCode: result.exitCode };
     }
     if (subcommand === "sql-mutation-guard") {
-      const result = runSqlMutationGuard({ stdin, env: ctx.env, runtime: ctx.runtime });
+      const result = runSqlMutationGuard({
+        stdin,
+        env: ctx.env,
+        runtime: ctx.runtime,
+        paths: ctx.paths,
+      });
       if (result.stderr) writeStderr(result.stderr);
       return { ok: true, data: undefined, exitCode: result.exitCode };
     }
