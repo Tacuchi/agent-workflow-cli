@@ -1,4 +1,5 @@
 import type { ParsedArgs } from "../../cli/parser.js";
+import type { GitFlowSourceResult } from "../git-flow-service.js";
 
 /**
  * Human-readable one-line rendering of a command invocation for the operational
@@ -42,6 +43,28 @@ function redactedInvocationValue(key: string, value: string): string {
   // SQL and arbitrary tool arguments may contain personal or proprietary data.
   // They are a direct request payload, never operational telemetry.
   return key === "input-json" ? "<redacted>" : value;
+}
+
+/**
+ * `git-flow <action> · <source> · <step> → <status>: <detail>` — the one line a
+ * failed or paused source leaves in the daily log, from the CLI and the TUI
+ * alike. `detail` carries git's own stderr (it rides in the source's error) and,
+ * for a half-done merge, the branch it sits on and the one that brought it.
+ */
+export function formatGitFlowSourceLine(action: string, result: GitFlowSourceResult): string {
+  const step = result.steps.at(-1)?.step ?? "precondición";
+  const parts: string[] = [];
+  // A merge found before starting already names both branches in its error.
+  if (result.status === "conflict" && result.paused_at !== undefined) {
+    const from = result.merge_origin ?? "una rama que git no sabe nombrar";
+    parts.push(`merge sobre ${result.paused_at}, traído por ${from}`);
+  }
+  if (result.conflicted_files?.length)
+    parts.push(`archivos: ${result.conflicted_files.join(", ")}`);
+  if (result.error !== undefined) parts.push(result.error);
+  // git's stderr spans lines (a rejected push is seven); the log is one per event.
+  const detail = parts.join("; ").replace(/\s*\r?\n\s*/g, " | ");
+  return `git-flow ${action} · ${result.source} · ${step} → ${result.status}: ${detail}`;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import type {
   GitFlowAction,
   GitFlowResult,
@@ -81,16 +81,32 @@ const ALIAS_MIN_CELLS = 4;
 // it costs no row of its own.
 const RESULT_LIST_RESERVED_ROWS = 20;
 
+/** `confirm-prod` adds its footer (1 line + 1 marginTop); its warning takes the summary's rows. */
+const CONFIRM_FOOTER_ROWS = 2;
+
+/**
+ * `confirm-prod` (SCR-002@r7): the same compact list, fed by the service's
+ * preview instead of a run. The tab decides what `y` does — this view only
+ * reports which key the person pressed.
+ */
+export interface FlowConfirm {
+  onPublish: () => void;
+  onCancel: () => void;
+}
+
 export function FlowResultView({
   action,
   result,
   isActive = false,
   onRerun,
   onBack,
+  confirm,
 }: {
   action: GitFlowAction;
   result: GitFlowResult;
   isActive?: boolean;
+  /** Present → render `confirm-prod` over `result` as a preview. */
+  confirm?: FlowConfirm;
   /** `r`: re-runs the same action (= resumes after a resolved conflict). */
   onRerun?: () => void;
   /** `esc` from the list: back to the Project listing. */
@@ -119,7 +135,7 @@ export function FlowResultView({
 
   const { cols } = useTerminalSize();
   const notifItems = useNotificationItems();
-  const reservedRows = RESULT_LIST_RESERVED_ROWS + notificationStackRows(notifItems);
+  const reservedRows = reservedRowsFor(confirm !== undefined) + notificationStackRows(notifItems);
   const rowW = rowWidth(cols, false, ROWS_INDENT);
 
   // Fixed zone = marker + alias + status; only the chain scrolls, so a source
@@ -149,7 +165,8 @@ export function FlowResultView({
   const chainInner = Math.max(1, rowW - fixedCells - aliasWidth);
 
   const selected = sources[cursor];
-  const selectedChain = selected ? chainOf(selected) : "";
+  const chainFor = chainRendererFor(confirm !== undefined);
+  const selectedChain = selected ? chainFor(selected) : "";
   const selectedChainCells = [...selectedChain];
   // Clamping on the way OUT (not on the keypress) is what makes a resize
   // correct: a wider terminal shrinks `maxOffset` and the row re-anchors
@@ -174,8 +191,8 @@ export function FlowResultView({
         }
         return;
       }
-      if (key.escape) return onBack?.();
-      if (input === "r") return onRerun?.();
+      const leave = leavingKey(input, key, confirm, onBack, onRerun);
+      if (leave !== undefined) return leave();
       if (key.upArrow) {
         setChainOffset(0);
         return setCursor((c) => Math.max(0, c - 1));
@@ -232,6 +249,42 @@ export function FlowResultView({
         : (result.error ?? "error");
   const range = windowRangeHint(win, sources.length);
 
+  const rows = (
+    <Box marginLeft={ROWS_INDENT} flexDirection="column">
+      {sources.slice(win.start, win.start + win.visible).map((r, i) => {
+        const index = win.start + i;
+        const active = index === cursor;
+        const chain = active ? selectedChain : chainFor(r);
+        // The active row slices its exact window (the `‹›` gutters say what
+        // is outside it); an inactive one marks its cut with `…` so a chain
+        // that does not fit never looks complete.
+        const shown = active
+          ? selectedChainCells.slice(offset, offset + chainInner).join("")
+          : truncateCells(chain, chainInner);
+        return (
+          <Box key={r.source}>
+            <Text color={active ? colors.accent : colors.faint} bold={active}>
+              {active ? icons.focusBar : " "}{" "}
+            </Text>
+            <Text color={active ? colors.bright : colors.text} bold={active}>
+              {truncateCells(r.source, aliasWidth).padEnd(aliasWidth)}{" "}
+            </Text>
+            <Text color={statusColor(r.status)}>
+              {SOURCE_STATUS_LABEL[r.status].padEnd(statusWidth)}{" "}
+            </Text>
+            <Text color={colors.mute}>{active && offset > 0 ? "‹" : " "}</Text>
+            <Text color={colors.text}>{shown}</Text>
+            <Text color={colors.mute}>
+              {active && offset + chainInner < selectedChainCells.length ? "›" : " "}
+            </Text>
+          </Box>
+        );
+      })}
+    </Box>
+  );
+
+  if (confirm) return <ConfirmProdFrame range={range} rows={rows} />;
+
   return (
     <Box flexDirection="column">
       <SectionHead
@@ -250,37 +303,7 @@ export function FlowResultView({
           <Text color={colors.err}>{result.error}</Text>
         </Box>
       ) : null}
-      <Box marginLeft={ROWS_INDENT} flexDirection="column">
-        {sources.slice(win.start, win.start + win.visible).map((r, i) => {
-          const index = win.start + i;
-          const active = index === cursor;
-          const chain = active ? selectedChain : chainOf(r);
-          // The active row slices its exact window (the `‹›` gutters say what
-          // is outside it); an inactive one marks its cut with `…` so a chain
-          // that does not fit never looks complete.
-          const shown = active
-            ? selectedChainCells.slice(offset, offset + chainInner).join("")
-            : truncateCells(chain, chainInner);
-          return (
-            <Box key={r.source}>
-              <Text color={active ? colors.accent : colors.faint} bold={active}>
-                {active ? icons.focusBar : " "}{" "}
-              </Text>
-              <Text color={active ? colors.bright : colors.text} bold={active}>
-                {truncateCells(r.source, aliasWidth).padEnd(aliasWidth)}{" "}
-              </Text>
-              <Text color={statusColor(r.status)}>
-                {SOURCE_STATUS_LABEL[r.status].padEnd(statusWidth)}{" "}
-              </Text>
-              <Text color={colors.mute}>{active && offset > 0 ? "‹" : " "}</Text>
-              <Text color={colors.text}>{shown}</Text>
-              <Text color={colors.mute}>
-                {active && offset + chainInner < selectedChainCells.length ? "›" : " "}
-              </Text>
-            </Box>
-          );
-        })}
-      </Box>
+      {rows}
     </Box>
   );
 }
@@ -305,6 +328,65 @@ function chainOf(result: GitFlowSourceResult): string {
     .join(` ${icons.arrow} `);
 }
 
+/** `confirm-prod`'s frame around the preview rows: the warning above, the keys below. */
+function ConfirmProdFrame({ range, rows }: { range: string | undefined; rows: ReactNode }) {
+  return (
+    <Box flexDirection="column">
+      <SectionHead
+        label="Enviar a PROD"
+        {...spreadHint(range ? `fuentes ${range}` : undefined)}
+        rightAction="↑↓ ←→ · ⏎ detalle"
+      />
+      <Box marginLeft={ROWS_INDENT} marginTop={1}>
+        <Text color={colors.warn}>Se publicará en la rama de PROD de cada fuente listada.</Text>
+      </Box>
+      {rows}
+      <Box marginLeft={ROWS_INDENT} marginTop={1}>
+        <Text color={colors.faint}>y publicar · n/esc cancelar</Text>
+      </Box>
+    </Box>
+  );
+}
+
+/** A preview has no state to show; a run's chain carries one glyph per step. */
+function chainRendererFor(confirming: boolean): (result: GitFlowSourceResult) => string {
+  return confirming ? previewChainOf : chainOf;
+}
+
+function reservedRowsFor(confirming: boolean): number {
+  return RESULT_LIST_RESERVED_ROWS + (confirming ? CONFIRM_FOOTER_ROWS : 0);
+}
+
+/**
+ * The key that leaves the list, and what it does: `y`/`n`/`esc` in
+ * `confirm-prod`, `esc`/`r` in `result`. Undefined for every other key.
+ */
+function leavingKey(
+  input: string,
+  key: { escape?: boolean },
+  confirm: FlowConfirm | undefined,
+  onBack: (() => void) | undefined,
+  onRerun: (() => void) | undefined,
+): (() => void) | undefined {
+  if (confirm) {
+    if (input === "y" || input === "Y") return confirm.onPublish;
+    if (key.escape || input === "n" || input === "N") return confirm.onCancel;
+    return undefined;
+  }
+  if (key.escape) return onBack ?? (() => {});
+  if (input === "r") return onRerun ?? (() => {});
+  return undefined;
+}
+
+/**
+ * The preview's chain: what would run, with the real branch names, and no state
+ * glyph — nothing ran, so there is no state to show.
+ */
+function previewChainOf(result: GitFlowSourceResult): string {
+  if (result.steps.length === 0) return result.error ?? "sin pasos";
+  return result.steps.map((s) => s.preview ?? s.step).join(` ${icons.arrow} `);
+}
+
 /**
  * The conflict/error detail as lines already hard-wrapped to `width`, so one
  * line is exactly one rendered row: the vertical window counts rows, and
@@ -316,7 +398,10 @@ function detailLines(result: GitFlowSourceResult, width: number): string[] {
   const raw: string[] = [];
   const failed = result.steps.find((s) => s.status === "conflict");
   if (failed) raw.push(`paso: ${failed.step}${failed.detail ? ` · ${failed.detail}` : ""}`);
-  if (result.paused_at) raw.push(`pausado en: ${result.paused_at}`);
+  if (result.paused_at) {
+    raw.push(`pausado en: ${result.paused_at}`);
+    raw.push(`traído por: ${result.merge_origin ?? "git no sabe nombrar la rama que lo trajo"}`);
+  }
   const files = result.conflicted_files ?? [];
   if (files.length > 0) {
     raw.push(`archivos en conflicto (${files.length}):`);

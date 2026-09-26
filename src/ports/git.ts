@@ -4,6 +4,12 @@ export interface NumstatCounts {
   removed: string;
 }
 
+/** How far two revisions moved apart: commits only on the left, and only on the right. */
+export interface AheadBehind {
+  ahead: number;
+  behind: number;
+}
+
 /** Outcome of a `git merge`: ok=false with conflicted files on merge conflict. */
 export interface MergeResult {
   ok: boolean;
@@ -135,14 +141,45 @@ export interface GitPort {
   ): Promise<Record<string, NumstatCounts>>;
   /** `git checkout <branch>`. Throws on failure. */
   checkout(repoPath: string, branch: string): Promise<void>;
-  /** `git pull` on the checked-out branch. Throws on failure. */
-  pull(repoPath: string): Promise<void>;
+  /**
+   * Whether `origin` has `branch` (`git ls-remote --exit-code --heads`).
+   *
+   * Asked before fetching because git-flow treats a missing homonym as a step
+   * to skip, not a failure. Throws when origin itself cannot be read.
+   */
+  remoteHasBranch(repoPath: string, branch: string): Promise<boolean>;
+  /**
+   * Bring exactly `branch` from `origin` into `origin/<branch>`, whatever the
+   * local branch tracks. Nothing is merged. Throws on failure.
+   */
+  fetchBranch(repoPath: string, branch: string): Promise<void>;
+  /** `git merge --ff-only <rev>` on the checked-out branch. Throws when it cannot. */
+  fastForward(repoPath: string, rev: string): Promise<void>;
+  /** Commits only `left` has and commits only `right` has (`rev-list --left-right --count`). */
+  aheadBehind(repoPath: string, left: string, right: string): Promise<AheadBehind>;
+  /**
+   * `git rev-list [--first-parent] <include> --not <exclude…>`: commits reachable
+   * from include and from none of exclude. `firstParent` walks only the
+   * first-parent chain of include — a branch's own integration history.
+   */
+  revList(
+    repoPath: string,
+    include: string,
+    exclude: string[],
+    options?: { firstParent?: boolean },
+  ): Promise<string[]>;
   /** `git merge <fromBranch>`. Returns ok=false + conflicted files on conflict. */
   merge(repoPath: string, fromBranch: string): Promise<MergeResult>;
   /** `git push <remote?> <branch>`. Plain push (never --force). Throws on failure. */
   push(repoPath: string, branch: string): Promise<void>;
   /** True when the repo is mid-merge (MERGE_HEAD present). */
   isMerging(repoPath: string): Promise<boolean>;
+  /**
+   * Every head being merged in: each line of `MERGE_HEAD`. An octopus merge has
+   * several, and `rev-parse MERGE_HEAD` answers only the first. Empty when no
+   * merge is in progress.
+   */
+  mergeHeads(repoPath: string): Promise<string[]>;
   /** Unmerged paths: `git diff --name-only --diff-filter=U`. */
   conflictedFiles(repoPath: string): Promise<string[]>;
   /**
@@ -198,6 +235,21 @@ export interface GitPort {
   worktreePrune(repoPath: string): Promise<void>;
   /** True when `branch` already exists locally. */
   branchExists(repoPath: string, branch: string): Promise<boolean>;
+  /** Short names of every local branch (`for-each-ref refs/heads`). */
+  localBranches(repoPath: string): Promise<string[]>;
+  /** `remote.origin.fetch`, every value; empty when origin is not configured. */
+  originFetchRefspecs(repoPath: string): Promise<string[]>;
+  /**
+   * `git branch --track|--no-track <branch> <startPoint>`: creates the branch
+   * without switching to it. `track: false` leaves it with no upstream at all,
+   * so a bare `git push` or `git pull` on it has nowhere to write or read.
+   */
+  createBranch(
+    repoPath: string,
+    branch: string,
+    startPoint: string,
+    options: { track: boolean },
+  ): Promise<void>;
   /**
    * Full names of every ref that CONTAINS `sha` (`git for-each-ref --contains`).
    *

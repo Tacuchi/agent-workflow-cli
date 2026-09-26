@@ -1,4 +1,10 @@
-import type { GitPort, MergeResult, NumstatCounts, WorktreeEntry } from "../../src/ports/git.js";
+import type {
+  AheadBehind,
+  GitPort,
+  MergeResult,
+  NumstatCounts,
+  WorktreeEntry,
+} from "../../src/ports/git.js";
 
 /** A recorded GitPort call: method name + positional args. */
 export interface GitCall {
@@ -34,7 +40,7 @@ export interface RecordingGitOptions {
    * purpose: the real adapter's `isDirty`/`isMerging` reject when the path is
    * not a usable repo, and a batch must survive that.
    */
-  throwOn?: "checkout" | "pull" | "push" | "merge" | "isDirty" | "isMerging";
+  throwOn?: "checkout" | "fetch" | "fastForward" | "push" | "merge" | "isDirty" | "isMerging";
   /** Repos whose precondition probes throw (path missing / not a git repo). */
   throwOnRepos?: string[];
   /** Start mid-merge (MERGE_HEAD present) without calling `merge()` first. */
@@ -47,6 +53,12 @@ export interface RecordingGitOptions {
   worktrees?: Record<string, WorktreeEntry[]>;
   /** Branches `branchExists` answers true for. */
   existingBranches?: string[];
+  /** Branches origin does NOT have; every other branch exists there. */
+  remoteMissing?: string[];
+  /** `aheadBehind(<branch>, …)` per local branch; absent ⇒ even with its remote. */
+  aheadBehind?: Record<string, AheadBehind>;
+  /** What `revList` answers: the commits of the left side none of the excluded refs reach. */
+  revList?: string[];
 }
 
 /**
@@ -132,9 +144,35 @@ export class RecordingGit implements GitPort {
     this.branches.set(repo, branch);
   }
 
-  async pull(repo: string): Promise<void> {
-    this.calls.push({ op: "pull", repo, arg: this.branchOf(repo) });
-    this.maybeThrow("pull");
+  async remoteHasBranch(repo: string, branch: string): Promise<boolean> {
+    this.calls.push({ op: "remoteHasBranch", repo, arg: branch });
+    return !(this.opts.remoteMissing ?? []).includes(branch);
+  }
+
+  async fetchBranch(repo: string, branch: string): Promise<void> {
+    this.calls.push({ op: "fetch", repo, arg: branch });
+    this.maybeThrow("fetch");
+  }
+
+  async fastForward(repo: string, rev: string): Promise<void> {
+    this.calls.push({ op: "ff", repo, arg: rev });
+    this.maybeThrow("fastForward");
+  }
+
+  async aheadBehind(repo: string, left: string, right: string): Promise<AheadBehind> {
+    this.calls.push({ op: "aheadBehind", repo, arg: `${left}...${right}` });
+    return this.opts.aheadBehind?.[left.replace(/^refs\/heads\//, "")] ?? { ahead: 0, behind: 0 };
+  }
+
+  async revList(
+    repo: string,
+    include: string,
+    exclude: string[],
+    options: { firstParent?: boolean } = {},
+  ): Promise<string[]> {
+    const walk = options.firstParent === true ? "--first-parent " : "";
+    this.calls.push({ op: "revList", repo, arg: `${walk}${include} --not ${exclude.join(" ")}` });
+    return this.opts.revList ?? [];
   }
 
   async merge(repo: string, fromBranch: string): Promise<MergeResult> {
@@ -168,6 +206,11 @@ export class RecordingGit implements GitPort {
     return this.isMergingIn(repo);
   }
 
+  async mergeHeads(repo: string): Promise<string[]> {
+    this.calls.push({ op: "mergeHeads", repo });
+    return this.isMergingIn(repo) ? ["MERGE_HEAD"] : [];
+  }
+
   async conflictedFiles(repo: string): Promise<string[]> {
     this.calls.push({ op: "conflictedFiles", repo });
     return this.pendingConflicts.get(repo) ?? this.opts.conflicted ?? [];
@@ -196,6 +239,30 @@ export class RecordingGit implements GitPort {
 
   async worktreePrune(repo: string): Promise<void> {
     this.calls.push({ op: "worktreePrune", repo });
+  }
+
+  async createBranch(
+    repo: string,
+    branch: string,
+    startPoint: string,
+    options: { track: boolean },
+  ): Promise<void> {
+    this.calls.push({
+      op: "createBranch",
+      repo,
+      arg: `${branch} ${startPoint} ${options.track ? "track" : "no-track"}`,
+    });
+    this.opts.existingBranches = [...(this.opts.existingBranches ?? []), branch];
+  }
+
+  async localBranches(repo: string): Promise<string[]> {
+    this.calls.push({ op: "localBranches", repo });
+    return this.opts.existingBranches ?? [];
+  }
+
+  async originFetchRefspecs(repo: string): Promise<string[]> {
+    this.calls.push({ op: "originFetchRefspecs", repo });
+    return ["+refs/heads/*:refs/remotes/origin/*"];
   }
 
   async branchExists(repo: string, branch: string): Promise<boolean> {

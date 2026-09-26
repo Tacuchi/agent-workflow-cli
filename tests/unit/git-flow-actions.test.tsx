@@ -361,3 +361,103 @@ describe("FlowResultView — resultado compacto", () => {
     expect(lastFrame() ?? "").toContain("WORKSPACE block not found");
   });
 });
+
+describe("FlowResultView — confirm-prod y el detalle del merge a medias (SCR-002@r7)", () => {
+  const preview: GitFlowResult = {
+    action: "to-prod",
+    dry_run: false,
+    status: "error",
+    error: "publicar en PROD exige la confirmación de la persona",
+    consent_required: { sources: ["alpha"], plan: "d" },
+    results: [
+      {
+        source: "alpha",
+        status: "ok",
+        steps: [
+          { step: "merge work→prod", status: "skipped", preview: "merge feature/x→certificacion" },
+          { step: "push certificacion", status: "skipped", preview: "push certificacion" },
+        ],
+      },
+      { source: "beta", status: "error", steps: [], error: "PR-04: el plan mezclaría develop" },
+    ],
+  };
+
+  it("pinta la vista previa con las ramas reales, sin glifos de estado, y la fila fallida con su error", () => {
+    const { lastFrame } = render(
+      <FlowResultView
+        action="to-prod"
+        result={preview}
+        isActive
+        confirm={{ onPublish: () => {}, onCancel: () => {} }}
+      />,
+    );
+    const f = lastFrame() ?? "";
+    expect(f).toContain("ENVIAR A PROD");
+    expect(row(f, "alpha")).toContain("merge feature/x→certificacion → push certificacion");
+    expect(row(f, "beta")).toContain("PR-04");
+    expect(f).toContain("y publicar · n/esc cancelar");
+  });
+
+  it("y publica; n y esc cancelan; r no reejecuta nada", async () => {
+    const onPublish = vi.fn();
+    const onCancel = vi.fn();
+    const onRerun = vi.fn();
+    const { stdin } = render(
+      <FlowResultView
+        action="to-prod"
+        result={preview}
+        isActive
+        onRerun={onRerun}
+        confirm={{ onPublish, onCancel }}
+      />,
+    );
+    await tick();
+    stdin.write("r");
+    await tick();
+    stdin.write("x");
+    await tick();
+    expect(onPublish).not.toHaveBeenCalled();
+    stdin.write("n");
+    await tick();
+    stdin.write(ESC);
+    await tick();
+    expect(onCancel).toHaveBeenCalledTimes(2);
+    stdin.write("y");
+    await tick();
+    expect(onPublish).toHaveBeenCalledTimes(1);
+    expect(onRerun).not.toHaveBeenCalled();
+  });
+
+  function paused(merge_origin: string | null): GitFlowResult {
+    return resultOf({
+      source: "alpha",
+      status: "error",
+      steps: [],
+      paused_at: "feature/x",
+      merge_origin,
+      error: "hay un merge a medias",
+    });
+  }
+
+  it("el detalle nombra la rama donde quedó el merge y la que lo trajo", async () => {
+    const { stdin, lastFrame } = render(
+      <FlowResultView action="sync" result={paused("origin/feature/x")} isActive />,
+    );
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    const f = lastFrame() ?? "";
+    expect(f).toContain("pausado en: feature/x");
+    expect(f).toContain("traído por: origin/feature/x");
+  });
+
+  it("cuando git no sabe nombrar la rama que lo trajo, el detalle lo dice", async () => {
+    const { stdin, lastFrame } = render(
+      <FlowResultView action="sync" result={paused(null)} isActive />,
+    );
+    await tick();
+    stdin.write(ENTER);
+    await tick();
+    expect(lastFrame() ?? "").toContain("traído por: git no sabe nombrar la rama que lo trajo");
+  });
+});

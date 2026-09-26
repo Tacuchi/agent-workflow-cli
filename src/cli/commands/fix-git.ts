@@ -1,13 +1,20 @@
+import { findOwningSource, resolveSourceBranches } from "../../application/branch-resolver.js";
 import {
   type FixGitApplied,
   type FixGitContext,
+  type FixGitRoles,
   applyFixGit,
   commitFixGit,
   prepareFixGit,
+  rolesBasisText,
   validateFixGit,
 } from "../../application/fix-git-service.js";
 import { runMergeState } from "../../application/merge-state-service.js";
-import type { SemanticRequest } from "../../application/semantic-operation/protocol.js";
+import { readWorkspaceBlock } from "../../application/parsers/project-block.js";
+import type {
+  SemanticFailure,
+  SemanticRequest,
+} from "../../application/semantic-operation/protocol.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
@@ -44,9 +51,11 @@ export const fixGitCommand: CliCommand<FixGitData> = {
       );
     }
 
-    if (stage === "commit") return await runCommit(args, ctx, target.path);
+    const roles = await rolesOf(ctx, target);
+    if ("failure" in roles) return failSemantic(roles.failure);
+    if (stage === "commit") return await runCommit(args, ctx, target.path, roles);
 
-    const prepared = await prepareFixGit(ctx.git, target.path, target.alias);
+    const prepared = await prepareFixGit(ctx.git, target.path, target.alias, roles);
     if (!prepared.ok) return failSemantic(prepared.failure);
 
     if (stage === "prepare") {
@@ -96,8 +105,11 @@ function renderPrepare(context: FixGitContext, request: SemanticRequest, detail:
   const lines = [
     `fix-git · ${context.conflicts.length} conflicto(s) en ${context.alias ?? context.repo}`,
     `  Merge      ${context.merge_origin ?? "?"} → ${context.current_branch ?? "?"}`,
-    "",
   ];
+  if (context.roles !== undefined && context.roles.owner === null) {
+    lines.push(`  Roles      ${rolesBasisText(context.roles)}`);
+  }
+  lines.push("");
   for (const conflict of context.conflicts) {
     const kind = conflict.binary ? " · BINARIO (resolución manual)" : "";
     lines.push(`  ${conflict.path} (${conflict.bytes} B)${kind}`);
@@ -110,6 +122,7 @@ async function runCommit(
   args: ParsedArgs,
   ctx: CliContext,
   repo: string,
+  roles: FixGitRoles,
 ): Promise<CommandResult<FixGitData>> {
   const message = args.values.get("message");
   if (message === undefined || message.trim().length === 0) {
@@ -123,9 +136,52 @@ async function runCommit(
       "cerrar el merge es una acción separada: repetí con --confirm si el mensaje es el correcto",
     );
   }
-  const result = await commitFixGit(ctx.git, repo, message);
+  const result = await commitFixGit(ctx.git, repo, message, roles);
   if (!result.ok) return failSemantic(result.failure);
   return { ok: true, data: { stage: "commit", ...result.value }, exitCode: 0 };
+}
+
+/**
+ * The branch roles of the source that owns the repo — by alias, by its
+ * declared path, or by the `aw/*` unit it sits in — so `--source`, `--path`,
+ * the cwd and a worktree all get the same PR-04 guard. With no owner, the
+ * workspace defaults: the same chain `resolveSourceBranches` applies elsewhere.
+ */
+async function rolesOf(
+  ctx: CliContext,
+  target: { path: string; alias: string | null },
+): Promise<FixGitRoles | { failure: SemanticFailure }> {
+  const block = await readWorkspaceBlock(
+    ctx.fs,
+    ctx.paths.workspaceDir(),
+    ctx.paths.blockMarkers(),
+  );
+  const sources = block?.fuentes ?? [];
+  const unitsRoot = await ctx.fs.realPath(ctx.paths.userUnitsDir()).catch(() => undefined);
+  const repo = await ctx.fs.realPath(target.path).catch(() => target.path);
+  const owner =
+    sources.find((s) => s.alias === target.alias) ??
+    findOwningSource(sources, repo, unitsRoot) ??
+    findOwningSource(sources, target.path, unitsRoot);
+  // An `aw/*` unit is a checkout of some source, but from inside it — no flags,
+  // its own root — no WORKSPACE block says which one, nor its branch roles: the
+  // unit's key is a one-way hash of the workspace path. Guessing the CLI floor
+  // there would let development through under a name it does not have.
+  if (owner === null && unitsRoot !== undefined && repo.startsWith(`${unitsRoot}/`)) {
+    return {
+      failure: {
+        code: "FIX_GIT_ROLES_UNKNOWN",
+        message: `no se pudieron leer los roles de rama de '${target.path}': es una unidad aw/* y no hay bloque WORKSPACE que la declare`,
+        action: "invocá fix-git desde el workspace con --source <alias> o --path <unidad>",
+      },
+    };
+  }
+  const roles = resolveSourceBranches(
+    owner ?? { alias: "", path: target.path, main_branch: "" },
+    block,
+  );
+  const basis = owner !== null ? "source" : block !== null ? "workspace-defaults" : "cli-floor";
+  return { ...roles, owner: owner?.alias ?? null, basis };
 }
 
 async function resolveRepo(
