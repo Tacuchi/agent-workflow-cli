@@ -3676,6 +3676,16 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     reason:
       "comando transversal de lectura de un plan: `lint` corre sobre el documento las mismas funciones que la publicación y la entrada a ejecución, y devuelve todas las violaciones de la gramática de una vez, sin corrida propia porque no hay recorrido que dirigir ni nada que escribir —juzgar un documento no es un tramo con fronteras—. No crea sesión, no toca ninguna corrida y no gasta intento",
   },
+  {
+    command: "recall",
+    reason:
+      "comando transversal sin recorrido propio, apoyado en `aw host-memory`: el contraste y la oferta son juicio del agente, y guardar es el acto del host actual por su propio canal tras la confirmación de la persona, nunca un tramo con fronteras que dirigir",
+  },
+  {
+    command: "host-memory",
+    reason:
+      "lectura read-only de la memoria curada de los otros hosts, sin corrida propia porque no hay recorrido que dirigir: informa y no escribe. Guardar un aprendizaje es el acto del host actual por su propio canal, nunca de este comando",
+  },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },

@@ -56,6 +56,9 @@ const GROUPS: readonly CommandGroup[] = [
     commands: [
       "status",
       "resume",
+      // What the other hosts of the machine learned about Workline, read-only:
+      // the substrate `/w:recall` judges, as `status` is for `/w:status`.
+      "host-memory",
       "persist",
       "stack",
       "skill-index",

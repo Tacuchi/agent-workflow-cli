@@ -807,13 +807,17 @@ function renderCommandWrapper(
  * unbound, the wrapper installed for one host would hand that role to whatever
  * the terminal's markers happened to say — so the report would point at a
  * different host than the surface the person actually invoked.
+ *
+ * `host-memory` joins for the same reason: the report leaves out the current
+ * host and names where IT saves, so an unbound wrapper could save a learning
+ * into the memory of whichever host the terminal's markers named.
  */
 export function bindHostInvocations(body: string, target: InstallTarget): string {
   const host = harnessByInstallTarget(target)?.id;
   if (host === undefined) return body;
   // `aw doctor prepare` y `aw doctor apply` reciben el flag igual: el subverbo
   // viene después, así que insertarlo tras `doctor` no lo desplaza.
-  return body.replace(/\baw (flow|capability|doctor)\b/g, `aw $1 --host ${host}`);
+  return body.replace(/\baw (flow|capability|doctor|host-memory)\b/g, `aw $1 --host ${host}`);
 }
 
 /**

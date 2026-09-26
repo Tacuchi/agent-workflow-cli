@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -10,7 +10,7 @@ import {
 } from "../../src/application/self/install-skill.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { HOST_INSTALL_TARGETS } from "../../src/domain/harnesses.js";
+import { HOST_INSTALL_TARGETS, harnessByInstallTarget } from "../../src/domain/harnesses.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -874,4 +874,59 @@ describe("selfInstallSkill", () => {
       expect(claudeDest?.cache_cleared).toBe(false);
     }
   });
+});
+
+describe("selfInstallSkill · /w:recall reaches every host bound to it (plan 062)", () => {
+  let workdir: string;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-recall-install-"));
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  /** Every installed command surface for `recall`, leaving out the canonical bundle copy. */
+  async function recallSurfaces(dir: string): Promise<string[]> {
+    const out: string[] = [];
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) out.push(...(await recallSurfaces(full)));
+      else if (/(^|\/)(recall\.(md|toml)|w-recall\/SKILL\.md)$/.test(portablePath(full)))
+        out.push(full);
+    }
+    return out.filter((path) => !portablePath(path).includes(`/${SKILL_DIR_NAME}/commands/`));
+  }
+
+  it.each([...HOST_INSTALL_TARGETS])(
+    "%s receives the command with `aw host-memory` bound to its host",
+    async (target) => {
+      const source = join(workdir, "source");
+      const home = join(workdir, `home-${target}`);
+      await mkdir(home, { recursive: true });
+      await makeFakeRepo(source);
+      await seedCommandsFixture(source);
+      await writeFile(
+        join(source, "commands/recall.md"),
+        "---\ndescription: Recall.\n---\n\n# recall\n\n1. `aw host-memory --json` reads the other hosts.\n",
+        "utf8",
+      );
+
+      const result = await selfInstallSkill(
+        buildArgs({ from: source, target }, []),
+        buildCtx(home, new RealFs(), new FakeProcess()),
+      );
+      expect(result.ok, target).toBe(true);
+
+      const host = harnessByInstallTarget(target)?.id;
+      const surfaces = await recallSurfaces(home);
+      expect(surfaces.length, target).toBeGreaterThan(0);
+      for (const surface of surfaces) {
+        expect(await readFile(surface, "utf8"), surface).toContain(
+          `aw host-memory --host ${host} --json`,
+        );
+      }
+    },
+  );
 });

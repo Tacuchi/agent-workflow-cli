@@ -31,6 +31,7 @@ import { gitFlowCommand } from "./git-flow.js";
 import { historyUpdateCommand } from "./history-update.js";
 import { hookCommand } from "./hook.js";
 import { hostDoctorCommand } from "./host-doctor.js";
+import { hostMemoryCommand } from "./host-memory.js";
 import { mcpCommand } from "./mcp.js";
 import { mergeStateCommand } from "./merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./multiroot.js";
@@ -69,6 +70,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   sessionsCommand,
   statusCommand,
   resumeCommand,
+  hostMemoryCommand,
   persistCommand,
   fixGitCommand,
   exportDiagramsCommand,

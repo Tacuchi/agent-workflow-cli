@@ -1,14 +1,13 @@
 ---
 name: w
 description: >-
-  Orientation skill for Workline (`w` = *workline*), the whole system — built-in
-  default for the `overview` role. Load this to understand the model end-to-end: the 3-layer
-  architecture (commands → loops → sessions/artifacts) plus the docs/ zone, the 3
-  flows (SPEC / PLAN / QUICK), the `/w:` commands, the 5 loops and their chassis, the
-  `export-*` family, the composable capability skills + `.workflow/skills.toml`
-  binding cascade, and the 6 hard invariants. Use whenever an agent (or human) needs
-  to know how the pieces fit, where a deliverable should land, or which command/loop/
-  skill to reach for.
+  Orientation skill for Workline (`w` = *workline*), default for the `overview`
+  role. Load it to understand the whole model: the 3 layers (commands → loops →
+  sessions/artifacts) plus docs/, the 3 flows (SPEC / PLAN / QUICK), the `/w:`
+  commands, the 5 loops and their chassis, the `export-*` family, the capability
+  skills + `.workflow/skills.toml` cascade, and the 6 hard invariants. Use it to
+  know how the pieces fit, where a deliverable lands, or which command/loop/skill
+  to reach for.
 ---
 
 # w — Workline overview
@@ -111,7 +110,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
 
-### Transversal skills (no flow) — `/w:status` · `/w:doctor` · `/w:fix-git` · `/w:generate-launch` · `/w:persist` · `/w:resume`
+### Transversal skills (no flow) — `/w:status` · `/w:doctor` · `/w:fix-git` · `/w:generate-launch` · `/w:persist` · `/w:resume` · `/w:recall`
 
 **Flow-independent invocable** skills: triggered with `/w:` like any command, but they do **not** belong to SPEC/PLAN/QUICK, do **not** manage `docs/`, and do **not** count in **6 flow commands / 5 loops**. *(In the bundle they are packaged under `commands/` so `/w:` can invoke them; in the design they are the `workflow-skills/` category.)*
 
@@ -120,6 +119,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 - `/w:fix-git` — resolves an in-progress merge's conflicts in any repo (identifies origin↔destination, analyzes intent, *structured-choice* on ambiguity). No session, never touches `docs/`; git-safe; backed by `aw merge-state`.
 - `/w:generate-launch` — (re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) by detecting each source's stack; idempotent (preserves hand-edited scripts, `--force` overwrites). Complements the launch flow's on-demand generation. No session, never touches `docs/`; backed by `aw generate-launch`.
 - `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Never creates sessions; the host→`docs/` counterpart of `export-*` (which stays the only session→`docs/` path).
+- `/w:recall` — reports what the other hosts' curated memory learned about Workline (backed by `aw host-memory`, which only reads), contrasts each learning against the installed CLI and doctrine, applies what still holds in the session and offers to save it in the current host's own memory, with its origin mark, only after confirmation. Never writes another host's memory.
 - `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen); an optional artifact argument (spec/plan/session) skips the survey and gets its exact re-entry route. Writes nothing; the actionable sibling of `/w:status`.
 
 ### The loops (Layer 2)

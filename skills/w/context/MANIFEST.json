@@ -410,6 +410,10 @@
         }
       ]
     },
+    "recall": {
+      "core": ["commands/recall.md"],
+      "modules": [{ "path": "modules/PLAN-MODE.md", "signal": "plan-mode" }]
+    },
     "reset": {
       "core": ["commands/reset.md"],
       "modules": []

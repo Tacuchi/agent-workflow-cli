@@ -27,6 +27,7 @@ Every invoked directory is a usable implicit workspace. The closest ancestor wit
 | [`generate-launch`](generate-launch.md) | (Re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) | single-pass (transversal) |
 | [`persist`](persist.md) | Persists in-conversation work into `docs/` (classify → `research` · spec draft · plan adoption) | single-pass (transversal) |
 | [`resume`](resume.md) | Summary (composes `/status`) + proposes how to resume pending work | single-pass (transversal) |
+| [`recall`](recall.md) | What the other hosts learned about Workline: contrasted, applied, offered for saving | single-pass (transversal) |
 | [`export-scripts`](export-scripts.md) | Promotes session SQL migrations to `docs/scripts/` | single-pass, read-only |
 | [`export-manuals`](export-manuals.md) | Generates manuals in `docs/manuals/` | single-pass, read-only |
 | [`export-diagrams`](export-diagrams.md) | Generates C4/mermaid diagrams in `docs/diagrams/` | single-pass, read-only |
@@ -34,7 +35,7 @@ Every invoked directory is a usable implicit workspace. The closest ancestor wit
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.
 >
-> **Transversal (no flow):** `status`, `doctor`, `fix-git`, `generate-launch`, `persist` and `resume` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
+> **Transversal (no flow):** `status`, `doctor`, `fix-git`, `generate-launch`, `persist`, `resume` and `recall` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
 
 ## Schema of each command file
 

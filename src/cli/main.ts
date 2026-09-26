@@ -437,7 +437,8 @@ function effectiveCommandName(parsed: ParsedArgs): string | undefined {
  */
 function isStrictReadCommand(parsed: ParsedArgs): boolean {
   const command = effectiveCommandName(parsed);
-  if (command === "status" || command === "resume") return true;
+  // `host-memory` reads other hosts' private memory: its trace stays out of the log too.
+  if (command === "status" || command === "resume" || command === "host-memory") return true;
   return command === "doctor" && parsed.rest.length === 0;
 }
 

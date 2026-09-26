@@ -184,11 +184,15 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
     const result = await runContextBudget(new NodeFileSystem(), { root: BUNDLE });
     const median = result.budget.find((line) => line.metric === "activation.median");
 
-    expect(median?.actual).toBe(bytes);
+    // Con 20 comandos (plan 062 sumó `recall`) la mediana es el promedio del 10.º
+    // y el 11.º valor: `doctor.md` y `reset.md`. Así `doctor.md` sigue fijándola,
+    // ahora a medias con su vecino de arriba.
+    const entries = new Map(result.activation.entries.map((e) => [e.command, e.bytes]));
+    expect(entries.size).toBe(20);
+    expect(median?.actual).toBe(Math.floor((bytes + 2537) / 2));
     expect(median?.actual ?? 0).toBeLessThanOrEqual(DOC_CEILING);
     // Y los dos vecinos que definen el hueco, con sus bytes: si alguno se mueve,
     // esta prueba lo dice antes que el gate.
-    const entries = new Map(result.activation.entries.map((e) => [e.command, e.bytes]));
     expect(entries.get("fix-git")).toBe(2519);
     expect(entries.get("reset")).toBe(2537);
   });

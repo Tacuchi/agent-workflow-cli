@@ -55,7 +55,7 @@ describe("context-plan — the resolver returns what the doctrine already orders
     const commandFiles = (await readdir(COMMANDS_ROOT))
       .filter((name) => name.endsWith(".md") && name !== "README.md")
       .sort();
-    expect(commandFiles).toHaveLength(19);
+    expect(commandFiles).toHaveLength(20);
 
     const offenders: string[] = [];
     for (const file of commandFiles) {

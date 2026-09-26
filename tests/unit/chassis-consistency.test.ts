@@ -342,7 +342,7 @@ describe("Structured-choice — opciones funcionales y bindings multi-host", () 
   });
 
   it("los comandos directos que preguntan enlazan forma canónica y binding por host", async () => {
-    const commands = ["generate-launch.md", "persist.md", "resume.md", "spec-new.md"];
+    const commands = ["generate-launch.md", "persist.md", "recall.md", "resume.md", "spec-new.md"];
     for (const command of commands) {
       const body = await readFile(join(LOOPS_ROOT, "..", "commands", command), "utf8");
       expect(body, command).toContain("../loops/CHASSIS.md#structured-choice-design--batching");

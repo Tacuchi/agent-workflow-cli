@@ -691,7 +691,8 @@ describe("aw doctor · el diagnóstico no escribe ni siquiera la bitácora (AC-0
     const predicate = /function isStrictReadCommand\([\s\S]*?\n}/.exec(main)?.[0];
     if (predicate === undefined) throw new Error("main.ts ya no declara isStrictReadCommand");
     const exempt = [...predicate.matchAll(/"([a-z-]+)"/g)].map((match) => match[1]).sort();
-    expect(exempt).toEqual(["doctor", "resume", "status"]);
+    // `host-memory` is exempt for its own reason: it reads other hosts' private memory.
+    expect(exempt).toEqual(["doctor", "host-memory", "resume", "status"]);
     // Y el predicado sigue siendo el que apaga la bitácora: declararlo sin
     // cablearlo dejaría las dos escrituras intactas.
     expect(main).toMatch(/new Logger\(\{[^}]*enabled: !isStrictReadCommand\(/);
