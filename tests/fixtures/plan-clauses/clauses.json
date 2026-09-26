@@ -1,0 +1,872 @@
+[
+  {
+    "from": "docs/plans/003-plan-autorregulacion-compactacion.md",
+    "kind": "plan-validation",
+    "lines": ["Ningún LOOP.md repite el delta (herencia — grep sin duplicados)."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "archivo-sin-ruta"
+  },
+  {
+    "from": "docs/plans/008-plan-continuidad-identidad-sesiones.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** con permiso para el runner:",
+      "`npm run lint`, `npm run typecheck`, pruebas focalizadas, `npm test` y",
+      "`npm run build`, más revisión estática de todos los callers de",
+      "`resolveSession`/`findActiveSessions`."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "continuacion-en-columna-0"
+  },
+  {
+    "from": "docs/plans/009-plan-fluidez-comandos-directos-exports.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** fixtures por export confirman request acotado, preview",
+      "determinista, aprobación requerida y estructura final; inyección de fallo antes",
+      "de publish deja cero archivos finales, y ninguna prueba ejecuta SQL ni modifica",
+      "sesiones, fuentes u otra categoría docs."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "continuacion-en-columna-0"
+  },
+  {
+    "from": "docs/plans/010-plan-carga-adaptativa-contexto.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Bytes es la métrica del gate**, por determinista. Los tokens se registran solo donde el",
+      "  host los expone; hoy ninguno de la matriz de `HARNESS.md` los expone al agente, así que el",
+      "  recibo declara «no disponible». No se inventa equivalencia entre ambos."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "archivo-sin-ruta"
+  },
+  {
+    "from": "docs/plans/011-plan-superficies-multihost.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** suite de guards nueva verde; grep sin registros paralelos de",
+      "hosts hardcodeados en `src/cli/tui/hosts.ts`."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "continuacion-en-columna-0"
+  },
+  {
+    "from": "docs/plans/014-plan-capacidades-componibles-directas.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** SPEC REFINE compone `design.create`, maneja `needs_input` y conserva gate/publicación; PLAN REFINE usa `update|validate`; PLAN EXEC y QUICK rechazan autoría y solo validan/consumen; todas entran al mismo dispatcher; operación fuera del mapa falla; package directo se adopta con misma identidad/revisión/digest; ninguna ruta abre una sesión adicional."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "archivo-sin-ruta"
+  },
+  {
+    "from": "docs/plans/015-plan-direccion-determinista-desde-cli.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Sin base de datos y sin red:** no hay `SCRIPTS.sql` ni llamadas externas en ninguna fase."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "archivo-sin-ruta"
+  },
+  {
+    "from": "docs/plans/016-plan-compatibilidad-funcional-multihost.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** el veredicto de la sonda consta en `CONCLUSIONS`",
+      "con su pregunta y su pass/fail sembrados antes de correr; y `aw self",
+      "detect-hosts` no reporta hooks armados en codex."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "continuacion-en-columna-0"
+  },
+  {
+    "from": "docs/plans/001-plan-retomar-pendiente.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Read-only invariante (AC6)**: `allowed-tools` = `[Bash, Read]` en ambos comandos; ninguno propone escribir `docs/`/`.workflow/`."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/009-plan-fluidez-comandos-directos-exports.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** ninguna ruta de persistencia del wrapper escribe por sí",
+      "misma; sin respuesta válida y aprobación coincidente no existe efecto, y un",
+      "reintento stale no usa número, inventario o contenido antiguos."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/011-plan-superficies-multihost.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** un host añadido/quitado en el dominio aparece/desaparece de",
+      "las proyecciones de F1 sin tocar otro archivo; los 7 actuales conservan su superficie."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/012-plan-paquete-diseno-ui-y-flows.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** un package renombrado o movido resuelve por ID; un manifest con versión desconocida, ID duplicado o path inseguro falla nombrando el artefacto y la acción correctiva; ninguna otra superficie de Workline cambia de comportamiento."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/012-plan-paquete-diseno-ui-y-flows.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** ninguna tarea con diseño incompleto, ausente, alterado o revocado llega a implementarse; una revisión posterior no invalida por sí sola una referencia fijada; el grafo distingue los cuatro estados sin que el usuario tenga que leer archivos."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/013-plan-interoperabilidad-y-directo.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** existe evidencia ejecutable de que los dos perfiles conservan lo que el contrato promete y de que el camino local es autosuficiente."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/014-plan-capacidades-componibles-directas.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `node dist/cli/main.js context-budget --root skills/w --format json` verde sin offenders; `node dist/cli/main.js context-plan --root skills/w --command <señal>` para `design` y cada flow afectado demuestra los read-sets esperados y ausencia en perfiles no relacionados/compactos; comparación de bytes/read-sets antes/después; si hubo rebaseline, artefacto con cifra vieja/nueva/razón y un solo cambio."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/015-plan-direccion-determinista-desde-cli.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `npx vitest run tests/unit/flow-fail-closed.test.ts` — los cinco modos dejan el estado byte a byte igual y devuelven acción; el escenario stale devuelve la frontera recalculada; el reenvío idéntico no avanza dos veces."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/015-plan-direccion-determinista-desde-cli.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** ninguna regla determinista de SPEC sigue decidiendo desde el Markdown y el recorrido produce el mismo resultado observable."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/016-plan-compatibilidad-funcional-multihost.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** matriz y ledger fechados coinciden con lo",
+      "verificado en F1-F3; ninguna superficie contradice el estado real."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/017-plan-recorrido-completo-y-hooks-restantes.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** el artefacto de plugin es reproducible y reversible dentro del checkout;",
+      "su ejecución por opencode es una observación opcional de handoff."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/019-plan-detener-informa-resultado.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**3** (confirmación acotada con camino rápido) → evidencia por comportamiento en los dos tests de motor: el de éxito ejercita el camino rápido (sin espera) y el de superviviente agota el presupuesto (~600 ms de duración observada). Sin aserciones de tiempo: serían flaky y el contrato es conductual (Assumption de la spec: valores = calibración)."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/020-plan-ejecucion-paralela-por-worktree.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Ninguna prueba nueva se apoya en la salida del propio código bajo prueba para fijar su valor esperado."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/022-plan-trazabilidad-legible-workline.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Un fixture de reconstrucción ajena verifica respuestas y orden desde la salida normal; otro verifica detalle técnico bajo demanda. Los goldens prohíben por defecto IDs internos, digests, envelopes y nombres de transición, sin eliminar su consulta explícita."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/024-plan-comandos-discard-reset.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** toda sesión nueva que pueda modificar artefactos o fuentes tiene un baseline completo y trazable, o el CLI la bloquea antes de la modificación; ningún identificador retirado se recicla."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/026-plan-higiene-registro-sesiones.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** ninguna ruta que el usuario no invocó explícitamente puede borrar contenido de un CHECKPOINT."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/029-plan-export-scope-estable.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** ningún rechazo por vencimiento se debe a algo que no sea un cambio real del workspace."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/031-plan-workline-agnostico-ejecucion-checkout.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** las pruebas de diseño cubren consumidor, rollback byte-exacto, reintento",
+      "idempotente y las intercalaciones M1→M2; la comprobación CAS, el sello y la escritura ocurren bajo",
+      "el mismo lock."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/032-plan-reconciliacion-incremental-spec-plan.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** no existe nota autoritativa sin sus efectos, ni efecto aplicado sin su nota."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/034-plan-estado-y-reanudacion-guiada.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** en este workspace la oferta incluye los planes abiertos que hoy quedan fuera, el orden es el del CLI, y `resume` sigue sin escribir ni ejecutar nada."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/035-plan-checkout-proof-observable.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`tests/unit/flow-recovery.test.ts` sigue verde: el guard que recorre los códigos de rechazo los clasifica todos, así que F4 no introduce una exención silenciosa al tope de intentos."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/036-plan-claims-con-propietario.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** la numeración no deja huecos permanentes por reservas abandonadas; ninguna intercalación produce doble propiedad ni doble publicación; y ningún correlativo publicado se vuelve elegible."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/038-plan-flow-reintentos-recuperables.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `npx vitest run tests/unit/flow-recovery.test.ts` pasa con las regresiones nuevas incluidas,",
+      "y T1.2 afirma sobre las transiciones aplicadas — el probe demostró que mirar el error de la directiva",
+      "devuelta acusa a la frontera siguiente y no a la contestada."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/039-plan-structured-choice-nativa-mcp.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** tests unitarios sobre el catálogo y sobre el generador del estampado: un host con la vía disponible produce el texto que ordena los tres mecanismos; uno sin evidencia no la ofrece; y el guard que ya compara el catálogo contra la fila de doctrina sigue verde. Más `aw context-budget --root skills/w --baseline tests/fixtures/context-baseline.json` con `verdict: ok` y `offenders: []`."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/040-plan-doctor-multihost.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** `aw doctor`, `aw doctor --json` y `aw --doctor` producen el mismo informe en dos proyecciones; un informe con un `blocking` se renderiza entero en humano y sale con 1; ningún comando existente cambia su salida ni su exit code."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/041-plan-ceremonia-proporcional.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** ninguna cláusula que nombre un referente del checkout es rechazada, ninguna superficie externa es aceptada, y ninguna de las cláusulas que hoy pasan cambia de veredicto."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/042-plan-andamiaje-autorreparable.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `npm test` sobre `tests/unit/decision-note.test.ts`, `tests/unit/effective-contract.test.ts`, `tests/unit/reconciliation.test.ts` y `tests/unit/decision-preview.test.ts` con los casos nuevos —nota legada releída idéntica y con el mismo digest, nota nueva sin clase rechazada con su código, plan con sólo traspasos leído cerrable, correspondencia en sus tres desenlaces— más `npm run typecheck` y `npm run lint` limpios."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/042-plan-andamiaje-autorreparable.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Que todo rechazo nombre una salida ejecutable (AC-05, escenario 2) se fija comprobando en `tests/unit/flow-internal-actions.test.ts` y `tests/unit/workline-index.test.ts` que cada texto de rechazo por reconciliación contiene `aw flow advance` o `aw settle`, y ninguno el punto de una fase ya validada."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/044-plan-ajustes-operativos-del-arnes.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** la lista recomendada incluye las dos entradas con su ficha completa; el",
+      "«cuándo usarla» de `archify` la distingue de las dos skills de C4 y el de `anydoc` de las skills de",
+      "documento; y cada fila de la lista recomendada tiene su línea en el README, sin filas de más ni de",
+      "menos."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/046-plan-convenciones-siempre-activas.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `node --test tests/host-wiring.test.mjs tests/codex-wiring.test.mjs tests/gemini-input-contract.test.mjs` pasa, y cada caso comprueba que el veredicto de ese host lleva las tres reglas."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/047-plan-origen-ampliado-del-bundle-sql.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** la paridad pasa con el anclaje nuevo, ningún argumento documentado deja de existir en el CLI, la reconciliación entre bundles queda escrita en el contrato y en el manual de autoría, y la medición del presupuesto no reporta infractores."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/048-plan-supervivencia-de-corridas.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `npx vitest run tests/unit/flow-restart.test.ts tests/unit/flow-recovery.test.ts tests/unit/flow-advance.test.ts` pasa, y `npm run typecheck` sale limpio."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/048-plan-supervivencia-de-corridas.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`npm run lint`, `npm run typecheck` y `npm test` pasan sobre todo el repositorio antes de cerrar el último lote, y `npm run build` compila la configuración que se publica."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/050-plan-ciclo-de-vida-de-la-corrida.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`npx vitest run tests/unit/flow-lifecycle.test.ts` fija el escenario «cerrar a mano a mitad del recorrido y retomar» sobre `functional-ambiguity`."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/052-plan-validacion-final-con-pipeline.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`npx vitest run tests/unit/flow-final-validation.test.ts` fija que la validación final exige, por cada fuente de código que toca, el build y los tests — cubre AC-16."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/053-plan-subagentes-acotados-cierre-primero.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`skills/w/loops/CHASSIS.md`: las unidades dependientes van en secuencia en el hilo principal;"
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/054-plan-intentos-directiva-y-prueba.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `npx vitest run tests/unit/flow-prove.test.ts tests/unit/checkout-proof-observable.test.ts tests/unit/source-boundary-policy.test.ts` pasa con estos casos:"
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/055-plan-gramatica-del-plan.md",
+    "kind": "phase-exit",
+    "lines": [
+      "**Condición de salida:** el test del corpus muestra que ningún veredicto cambió fuera de los que declara esta fase. La firma de cláusulas de `aw amend` cambia sólo en las cláusulas partidas en columna 0, y `npm run typecheck` sale limpio."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/056-plan-sellos-tolerantes-al-fin-de-linea.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `npx vitest run tests/unit/plan-exec-batch-service.test.ts tests/unit/flow-internal-actions.test.ts` pasa con estos casos:"
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/058-plan-guarda-sql-solo-lecturas.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`tests/unit/hook-sql-mutation-guard.test.ts` fija que pasan `WITH RECURSIVE … SELECT`, `AS MATERIALIZED (…)`, `EXPLAIN (ANALYZE, BUFFERS) SELECT`, `EXPLAIN ANALYZE VERBOSE SELECT`, `SHOW`, `VALUES`, `TABLE` y `(SELECT …) UNION (SELECT …)`: las formas de lectura que la spec define."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/059-plan-salvaguardas-de-produccion.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**AC-04:** `npx vitest run tests/unit/git-flow-fixture.test.ts tests/unit/git-flow-service.test.ts` fija dos cosas:"
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/059-plan-salvaguardas-de-produccion.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Cierre:** `npm run typecheck` y `npm run lint` salen limpios, y `npm test` pasa sobre todo el repositorio antes de cerrar el último lote, con las pruebas de unidades `aw/*` incluidas."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/061-plan-sesiones-confiables-y-durables.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** `npx vitest run tests/unit/flow-run-state.test.ts tests/unit/process-registry-service.test.ts tests/unit/session-binding-cycle.test.ts tests/unit/session-concurrency.test.ts tests/unit/checkpoint-write-service.test.ts` pasa, y `npm run typecheck` sale limpio."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/061-plan-sesiones-confiables-y-durables.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`npx vitest run tests/unit/export-scripts-parity.test.ts tests/golden` y `aw context-budget` fijan que la doctrina reescrita es consistente y no tiene infractores."
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/062-plan-memoria-compartida-entre-hosts.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`tests/unit/host-memory-provenance.test.ts`, corrido como Codex: la nota de Claude Code sobre `aw next-number --publish` sale con host `claude-code` y su fecha, sin señal de obsolescencia, con el destino de notas de Codex;"
+    ],
+    "was": "ok"
+  },
+  {
+    "from": "docs/plans/001-plan-retomar-pendiente.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**/status rápido por defecto**: el enriquecimiento es aditivo, cheap-tier, oportunista y **nunca bloquea ni pregunta**; degrada omitiendo la sección."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/002-plan-minimality-gate.md",
+    "kind": "plan-validation",
+    "lines": ["**doctrine-guards** — G1 (todos los flujos bajo su budget) + G10 (pins presentes)."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/005-plan-split-gates.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Guards en verde: G1 con presupuestos nuevos, G12 + Split contract pinneando gates/labels/scoping, G2 (líneas ≤900 / frases ≤60), G3 (español solo en inline code), G4 (descriptions ≤500), G7 (hard floors intactos byte a byte)."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/007-plan-ajustes-pestana-project.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Compat parsers viejos: la entrada nueva va ANTES de las listas de ramas (con `section='none'` se ignora; después sería tragada como working_branch)."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/008-plan-continuidad-identidad-sesiones.md",
+    "kind": "plan-validation",
+    "lines": [
+      "`NNN`, `NNN-*`, código legacy y `sessionNNN-*` resuelven exactamente una",
+      "  carpeta; prefijos como `01`/`100` no colisionan con `012`/`1000`."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/008-plan-continuidad-identidad-sesiones.md",
+    "kind": "plan-validation",
+    "lines": ["Las lecturas agregadas pueden listar N sesiones y nunca escriben el registro."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/009-plan-fluidez-comandos-directos-exports.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Resume:** target explícito, cuatro niveles, parcial antes de intacto, empate",
+      "  sin fecha, checkpoint asociado/huérfano, invalid target y ruta exacta sin",
+      "  invocarla. Con `MemFs`: un `resume` con target de sesión sobre un workspace sin",
+      "  binding previo deja `.bindings.json` inexistente; sobre uno con binding lo deja",
+      "  byte por byte igual."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/009-plan-fluidez-comandos-directos-exports.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Deterministas:** dry-run, choice id inválido, default compatible, `--force`,",
+      "  no-op idempotente y configuración externa confirmada."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/010-plan-carga-adaptativa-contexto.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**El tope de +5% por recorrido es transversal**: se comprueba en F3 y en F4, porque las dos",
+      "  mueven bytes y una mejora en un tramo no puede pagarse encareciendo otro."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/010-plan-carga-adaptativa-contexto.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Una regla, un sitio**: partir el chasis no puede convertirse en repetir la misma norma en",
+      "  el núcleo y en un módulo. Es exactamente la deriva que las guardas de consistencia cazan, y",
+      "  el motivo de que sigan siendo el criterio de aceptación de F4."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/011-plan-superficies-multihost.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Smoke suite por nivel (F9) como validación final del plan; los smokes con el binario",
+      "  kimi usan prompts triviales (consumo de cuota mínimo y declarado)."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/012-plan-paquete-diseno-ui-y-flows.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Autoridad única**: cada dato tiene un propietario normativo; una contradicción se resuelve a su favor y se reporta como error de validación, nunca se concilia en silencio."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/013-plan-interoperabilidad-y-directo.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** entregar el mismo bundle a los dos perfiles conformantes y comprobar que ambas salidas quedan registradas como renditions de la misma revisión; y un intento de envío externo sin autorización que no realiza la llamada y explica qué falta."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/013-plan-interoperabilidad-y-directo.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Determinismo del bundle**: mismo baseline, misma selección y mismo perfil producen el mismo manifest canónico; timestamps y locators de resultado quedan fuera de su digest."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/013-plan-interoperabilidad-y-directo.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Opt-in externo**: ningún envío a un tercero ocurre sin autorización visible que enumere requisitos, assets y datos."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/013-plan-interoperabilidad-y-directo.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Guards del repo respetados**: todo schema publicado entra a la tabla del schema-guard y usa la gramática compartida (`GRAMMAR`); todo adoptante nuevo de `renderHuman` se declara en `direct-surfaces-matrix`."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/014-plan-capacidades-componibles-directas.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Descriptor transversal:** vive fuera de `domain/design` y `CANONICAL_SCHEMAS`; el de `design` referencia schemas de dominio y no aparece como otro formato del package."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/014-plan-capacidades-componibles-directas.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Instancia exacta:** nombre, scope, locators, versión y digest identifican lo ejecutable; mismo nombre con bytes distintos es `misconfigured`, nunca precedencia silenciosa."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/014-plan-capacidades-componibles-directas.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Selección conformante o floor:** nada se atribuye sin instancia, orden, versión y digest verificables; una selección opaca corre el floor sin atribución inventada."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/014-plan-capacidades-componibles-directas.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Sin lectura legacy:** ningún nombre ni formato retirado se lee, importa, convierte o migra, ni satisface un gate; ningún archivo histórico se borra."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/015-plan-direccion-determinista-desde-cli.md",
+    "kind": "plan-validation",
+    "lines": [
+      "**Propiedad observable POR FORMA, y una fila sin consumidor es un defecto.** El recorrido que camina una corrida es la lista de filas de su flow, así que declarar `CLI-owned` una fila que ninguna corrida alcanza —y que ningún mecanismo realiza— es propiedad afirmada, no migrada: el mismo defecto que los gates de revisión de F11 y F12 ya retiraron dos veces (`OperationOutput`, `threshold`). Cada fila migrada queda observable de UNA de tres maneras, y la guarda verifica cuál: atravesada por una corrida real, atribuida a un mecanismo que existe, o contratada en el comando que la ejecuta."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/016-plan-compatibilidad-funcional-multihost.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Suite unitaria (vitest) + guards de consistencia (chassis, catálogo,",
+      "  superficie) tras cada cambio de soporte — se actualizan a la par,",
+      "  nunca se debilitan."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/020-plan-ejecucion-paralela-por-worktree.md",
+    "kind": "plan-validation",
+    "lines": ["Verificación de tipos y linter del repositorio en verde en cada lote."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/022-plan-trazabilidad-legible-workline.md",
+    "kind": "plan-validation",
+    "lines": [
+      "La matriz `S023/AC01`–`AC11` queda cubierta así: inventario `F1/F2`; camino, fuente y detalle `F2`; diseño simple y recorrido mínimo `F3/F4`; aprobación y fronteras `F3`; expansión `F4`; recuperación `F1/F3`; compatibilidad y multihost `F2/F3/F4`."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/024-plan-comandos-discard-reset.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** fixtures Git cubren todos los estados locales anteriores, rama propia no integrada, fast-forward, merge, commit publicado, descendiente dependiente, commit compartido, tag ausente/incorrecto y legacy sin receipt; la simulación conflictiva escribe cero y los originales siguen alcanzables."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/024-plan-comandos-discard-reset.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Fault injection cubre cada frontera durable y reinicio de proceso; un resultado no aplicado nunca aparece como completo, y la reentrada idéntica no duplica efectos."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/025-plan-flow-recorrido-atravesable.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** una frontera agotada se recupera y el recorrido continúa; con efectos aplicados la recuperación se niega y el estado queda igual; el estado final distingue las tres situaciones."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/026-plan-higiene-registro-sesiones.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** ninguna lectura mueve el vínculo; el cierre sin argumentos sigue escribiendo donde corresponde."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/027-plan-doctrina-cert-only.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** un plan con una fase que exige producción queda señalado; uno que sólo consulta producción en sólo lectura pasa sin observaciones."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/027-plan-doctrina-cert-only.md",
+    "kind": "plan-validation",
+    "lines": [
+      "Los dos planes que motivaron la regla, releídos contra ella, quedan explicados por la doctrina nueva."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/plans/011-plan-superficies-multihost.md",
+    "kind": "task",
+    "lines": ["`resolveHosts` (`mcp.ts:253-273`): harness `unknown` sin `--host` → error"],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "archivo-con-linea"
+  },
+  {
+    "from": "docs/plans/011-plan-superficies-multihost.md",
+    "kind": "task",
+    "lines": ["Fuente única de hooks: los tres sets `{claude}` (`install-skill.ts:248`,"],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "archivo-con-linea"
+  },
+  {
+    "from": "docs/plans/011-plan-superficies-multihost.md",
+    "kind": "task",
+    "lines": ["Fix del bug de `stripOurHookEvents` (`uninstall.ts:339-349`): borra SOLO"],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "archivo-con-linea"
+  },
+  {
+    "from": "docs/plans/016-plan-compatibilidad-funcional-multihost.md",
+    "kind": "task",
+    "lines": ["Corrección de `README.md:24` (*labeled* markdown, no"],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "archivo-con-linea"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "phase-validation",
+    "lines": ["**Validación de fase:** `./mvnw test` pasa y `pom.xml:277` declara la dependencia."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "archivo-con-linea"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "phase-validation",
+    "lines": ["**Validación de fase:** `UsuarioServiceLoginMensajesTest` pasa."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "nombre-de-test"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "phase-validation",
+    "lines": ["**Validación de fase:** corre `mvnw` y revisa la rúbrica."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "phase-validation",
+    "lines": ["**Validación de fase:** la spec queda cubierta."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "phase-validation",
+    "lines": ["**Validación de fase:** la rúbrica queda verde."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "phase-validation",
+    "lines": [
+      "**Validación de fase:** la cláusula se parte en dos líneas y la segunda",
+      "nombra `tests/unit/corte.test.ts`."
+    ],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "continuacion-en-columna-0"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["el reporte sale a las 10:30 en `reportes/diario.csv`."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "hora-o-razon"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["la imagen `node:20` construye con `docker build .`."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "tag-de-imagen"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": [
+      "el conector acepta el formato `esquema://host[:puerto]` en `config/conectores.yml`."
+    ],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "esquema-generico"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["`Producto.java:24` valida el precio con `./mvnw test`."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "archivo-con-linea"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["`src/flow/answer.ts:74` rechaza el envío con `npm test`."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE",
+    "now": "ok",
+    "rule": "ruta-con-linea"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["test_login_bloquea_tras_tres_intentos pasa en la suite."],
+    "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING",
+    "now": "ok",
+    "rule": "nombre-de-test"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["la salud responde en https://api.example.com/health."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["`psql -h db.prod.internal:5432` responde."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["`curl localhost:8080/health` responde."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["`redis-cli -h cache:6379 ping` responde."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["`curl https://api.test/usuarios/{id}` responde."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE"
+  },
+  {
+    "from": "docs/specs/053-spec-fronteras-sin-friccion.md",
+    "kind": "plan-validation",
+    "lines": ["`app.component.ts:40` muestra el aviso tras `npm test`."],
+    "was": "PLAN_SOURCE_EXTERNAL_CLOSURE"
+  }
+]

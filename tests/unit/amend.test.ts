@@ -196,6 +196,33 @@ describe("aw amend — la corrección directa de una redacción cerrada", () => 
     expect(await read(PLAN)).toBe(planText);
   });
 
+  it("la segunda línea en columna 0 de una cláusula es parte de ella: corregirla toca el cierre", async () => {
+    // Antes esa línea se perdía y su corrección pasaba como redacción; ahora la
+    // cláusula se lee entera, así que la firma sólo cambia en ese caso.
+    const split = planText.replace(
+      "**Condición de salida:** ninguna cláusula con referente es rechazada.",
+      "**Condición de salida:** ninguna cláusula con referente es\nrechazada por la compuerta.",
+    );
+    await writeFile(join(workdir, PLAN), split, "utf8");
+    const refused = await amendDocument(fs, env, paths, {
+      target: PLAN,
+      from: "rechazada por la compuerta.",
+      to: "rechazada casi nunca por la compuerta.",
+      declaration: "es una aclaración de redacción",
+    });
+    if (refused.status !== "failed") throw new Error("esperaba un rechazo estructural");
+    expect(refused.failure.code).toBe("AMEND_CONTRACT_TOUCHED");
+    expect(await read(PLAN)).toBe(split);
+
+    const applied = await amendDocument(fs, env, paths, {
+      target: PLAN,
+      from: "se conserba como compatibilidad",
+      to: "se conserva como compatibilidad",
+      declaration: "es un error de tipeo en la prosa de la solución",
+    });
+    expect(applied.status).not.toBe("failed");
+  });
+
   it("rechaza corregir un documento que todavía está abierto", async () => {
     await writeFile(
       join(workdir, PLAN),

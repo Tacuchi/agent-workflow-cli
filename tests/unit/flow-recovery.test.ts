@@ -171,6 +171,8 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
       PLAN_SOURCE_EXTERNAL_CLOSURE: "evaluated",
       PLAN_SOURCE_LOCAL_PROOF_MISSING: "evaluated",
+      // La gramática del plan no gasta: el linaje ausente se corrige en la cabecera.
+      PLAN_LINEAGE_UNSEALED: "envelope",
       FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",
       FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "evaluated",
       FLOW_PROPOSAL_BASE_UNREADABLE: "evaluated",
@@ -211,6 +213,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       "src/domain/flow/answer.ts",
       "src/domain/flow/execution-result.ts",
       "src/application/flow/submit.ts",
+      "src/application/plan-lineage-seal.ts",
     ];
     const emitted = new Set<string>();
     for (const file of sources) {

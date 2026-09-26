@@ -65,7 +65,7 @@ const SESSION_MD = (slug: string) =>
   `# SESSION — ${slug}-plan-new\n\n## Objective\ngenerar el plan de ${slug}\n\n## Success criteria\n- [ ] el plan declara sus fases verificables\n`;
 
 const PLAN_BYTES = (slug: string) =>
-  `# Plan — ${slug}\n\n> Estado: open\n\n## Origin\nspec ${slug}\n\n## Tasks\n\n### F1 — arranque\n> Estado: pendiente\n`;
+  `# Plan — ${slug}\n\n> Standalone: plan de prueba de ${slug}\n> Estado: open\n\n## Origin\nspec ${slug}\n\n## Tasks\n\n### F1 — arranque\n> Estado: pendiente\n`;
 
 describe("dos plan-new concurrentes reclaman, completan y devuelven su correlativo", () => {
   let workdir: string;
@@ -266,13 +266,15 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     await walkTo(alpha, "plan-new.save-confirmation");
     const preview = await current(alpha);
     // La mitad que rompía: completar la reserva propia es aditivo, no un
-    // reemplazo, así que el contrato de la fila alcanza.
+    // reemplazo, así que el contrato de la fila alcanza — y la vista previa lo
+    // dice así, en vez de mostrar una sobrescritura que no ocurre.
     expect(preview.resolved.proposal?.effects).toEqual(["local_additive"]);
     expect(preview.resolved.proposal?.preview).toEqual([
       {
         path: reserved(alpha),
         bytes: Buffer.byteLength(PLAN_BYTES("alpha"), "utf8"),
-        overwrite: true,
+        overwrite: false,
+        reserved: true,
       },
     ]);
     // Y sigue bajo compare-and-swap: la reserva es la base del sello.

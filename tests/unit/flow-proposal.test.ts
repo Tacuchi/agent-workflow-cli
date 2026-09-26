@@ -12,6 +12,7 @@ import {
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import { SELF_AUTHORIZABLE_CLASSES } from "../../src/domain/capability/effects.js";
 import {
   FLOW_DECISIONS,
@@ -78,8 +79,29 @@ describe("el sello de una propuesta cubre todo lo que la vuelve otra propuesta",
     ["ampliación", { scope: { sensitive_sources: false, scope_expanded: true } }],
     ["clase de efecto", { effects: ["local_additive" as const, "mutate_overwrite" as const] }],
     ["lo que exige aprobación", { requiresApproval: ["mutate_overwrite" as const] }],
+    [
+      "la reserva propia",
+      { artifacts: [{ path: SPEC, content: BYTES, overwrite: false, reserved: true as const }] },
+    ],
   ])("cambiar %s invalida la aprobación", (_campo, over) => {
     expect(sealProposal({ ...base, ...over }).digest).not.toBe(sealProposal(base).digest);
+  });
+
+  it("una propuesta sin reserva sella lo mismo que antes de existir la marca", () => {
+    // La forma del sello antes del campo `reserved`, calculada acá a mano: una
+    // propuesta en vuelo sellada con esa forma sigue valiendo.
+    const legacy = semanticDigest({
+      operation: base.operation,
+      artifacts: [{ path: SPEC, content_digest: semanticDigest(BYTES), overwrite: false }],
+      bases: [],
+      scope: { sensitive_sources: false, scope_expanded: false },
+      effects: ["local_additive"],
+      requires_approval: [],
+    });
+    expect(sealProposal(base).digest).toBe(legacy);
+    expect(sealProposal(base).preview).toEqual([
+      { path: SPEC, bytes: Buffer.byteLength(BYTES, "utf8"), overwrite: false },
+    ]);
   });
 });
 

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives } from "../domain/correlative.js";
+import { withSpecBaseline } from "../domain/lineage.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { runNextNumber } from "./dev-only-services.js";
@@ -8,6 +9,7 @@ import { appendPublications, publicationRows } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
+import { observePlanLineageSeal, readPlanLineage } from "./plan-lineage-seal.js";
 import {
   type SemanticFailure,
   type SemanticParse,
@@ -83,6 +85,8 @@ export interface PersistPreview {
   bytes: number;
   /** `null` on `new`: the real number is minted inside the lock at apply. */
   target: string | null;
+  /** A plan's lineage: `derived-from` is sealed at apply, `standalone` is not. */
+  lineage?: "derived-from" | "standalone";
 }
 
 export interface PersistValidation {
@@ -207,6 +211,8 @@ export function validatePersist(
   }
   const shape = checkFilename(artifact.path, category.dir, category.infix, decisions.value.slug);
   if (shape !== null) return { ok: false, failure: shape };
+  const lineage = lineageOf(decisions.value.category, artifact.content, request);
+  if (lineage !== undefined && "failure" in lineage) return { ok: false, failure: lineage.failure };
 
   return {
     ok: true,
@@ -217,9 +223,39 @@ export function validatePersist(
         destination: category.dir,
         bytes: Buffer.byteLength(artifact.content, "utf8"),
         target: decisions.value.mode === "update" ? (decisions.value.target ?? null) : null,
+        ...(lineage !== undefined ? { lineage: lineage.kind } : {}),
       },
       approval_digest: approvalDigest(parsed.value),
     },
+  };
+}
+
+/**
+ * A plan's lineage, read the way the flow's publication reads it: sealed from
+ * its header label, standalone by its marker, or refused. Other categories
+ * carry no lineage, so they read `undefined`.
+ */
+function lineageOf(
+  category: PersistCategory,
+  content: string,
+  request: SemanticRequest,
+): { kind: "derived-from" | "standalone" } | { failure: SemanticFailure } | undefined {
+  if (category !== "plan") return undefined;
+  const reading = readPlanLineage(content, specDirOf(request));
+  if (reading.kind === "refused") return { failure: lineageFailure(reading.failure.message) };
+  return { kind: reading.kind === "derived" ? "derived-from" : "standalone" };
+}
+
+function specDirOf(request: SemanticRequest): string {
+  return (request.inventory as PersistInventory).categories.spec.destination;
+}
+
+function lineageFailure(message: string): SemanticFailure {
+  return {
+    code: "PLAN_LINEAGE_UNSEALED",
+    message,
+    action:
+      "declará el linaje en la cabecera del plan ('> Derived from <ruta de la spec>' o '> Standalone: <de dónde salió>') y volvé a validar",
   };
 }
 
@@ -359,10 +395,18 @@ export async function applyPersist(
         ? preview.target
         : `${category.dir}/${(await runNextNumber(fs, env, paths, { directory: category.dir })).next}-${category.infix}-${slugOf(artifact.path, category.infix)}.md`;
 
+    const content = await sealedContent(
+      fs,
+      paths,
+      preview.category,
+      artifact.content,
+      input.request,
+    );
+    if ("failure" in content) return { ok: false as const, failure: content.failure };
     const published = await publishArtifacts(
       fs,
       paths.workspaceDir(),
-      [{ path, content: artifact.content }],
+      [{ path, content: content.text }],
       { overwrite: preview.mode === "update" },
     );
     // Under the SAME lock as the write: the index is part of publishing, not a
@@ -393,6 +437,23 @@ export async function applyPersist(
     ok: true,
     value: { written: result.value.written, category: preview.category, mode: preview.mode },
   };
+}
+
+/**
+ * The bytes a plan is written with: its baseline sealed from the spec its header
+ * names, read inside the lock so the digest is of the spec that is there now.
+ */
+async function sealedContent(
+  fs: FileSystemPort,
+  paths: PathsService,
+  category: PersistCategory,
+  content: string,
+  request: SemanticRequest,
+): Promise<{ text: string } | { failure: SemanticFailure }> {
+  if (category !== "plan") return { text: content };
+  const seal = await observePlanLineageSeal(fs, paths.workspaceDir(), content, specDirOf(request));
+  if (seal.status === "refused") return { failure: lineageFailure(seal.failure.message) };
+  return { text: seal.status === "sealed" ? withSpecBaseline(content, seal.baseline) : content };
 }
 
 function slugOf(path: string, infix: string): string {

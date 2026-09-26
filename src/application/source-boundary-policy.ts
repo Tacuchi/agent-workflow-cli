@@ -49,6 +49,8 @@ export interface PlanPhaseSources {
 
 export interface ParsedPlanSourceBoundary {
   execution_surface: ExecutionSurface | null;
+  /** The value written after the label, present only when it was not accepted. */
+  declared_surface?: string;
   phases: PlanPhaseSources[];
 }
 
@@ -58,6 +60,40 @@ const SURFACE_LINE = /^>\s*(?:L[ií]mite de ejecuci[oó]n|Execution surface)\s*:
 const SOURCES_LINE = /^>\s*Fuentes\s*:\s*(.*)$/i;
 const TASK_LINE = /^\s*[-*]\s*\[[ xX]\]\s+(.+)$/;
 const TASK_SOURCES = /_\(\s*fuentes\s*:\s*([^)]*)\)_/i;
+// A clarification in parentheses never widens what the CLI enforces.
+const CHECKOUT_SURFACE = /^checkout(?:\s*\([^()]*[^()\s][^()]*\))?$/i;
+const OPENS_BLOCK = /^(?:[-*+]\s|\d+[.)]\s|#{1,6}\s|>|\||\*\*)/;
+
+/**
+ * The one continuation rule of a clause, shared by the gate's clauses and by a
+ * task's source declaration. Markdown's indented continuation folds, as before.
+ * A column-0 line folds too, while no other block opened since the clause
+ * started: a list item, a heading, a blockquote, a table row or a bold label.
+ * A blank line ends the clause.
+ */
+class ClauseContinuation {
+  private prose = false;
+
+  start(): void {
+    this.prose = true;
+  }
+
+  /** A block the reader consumed on its own, such as a fence or a blockquote. */
+  interrupt(): void {
+    this.prose = false;
+  }
+
+  /** `null` when the clause ended; otherwise whether the line belongs to it. */
+  read(raw: string): boolean | null {
+    if (raw.trim().length === 0) {
+      this.prose = false;
+      return null;
+    }
+    if (/^\s{2,}\S/.test(raw)) return true;
+    if (OPENS_BLOCK.test(raw.trimStart())) this.prose = false;
+    return this.prose;
+  }
+}
 
 type SemanticClauseKind = "task" | "phase-validation" | "phase-exit" | "plan-validation";
 
@@ -78,9 +114,23 @@ const PHASE_EXIT_LINE =
   /^\s*(?:[-*]\s*)?(?:\*\*)?\s*(?:condici[oó]n de salida|exit condition|cierre|closure)(?:\*\*)?\s*:/i;
 // A URI or host:port is an execution surface by grammar, independently of its
 // name. This intentionally catches a new host/connection without having to add
-// it to a blacklist.
+// it to a blacklist. It judges what a CheckoutProof runs, so it stays strict:
+// the clause reading below relaxes only the early warning, never this gate.
 const REMOTE_LOCATOR =
   /(?:\b[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s<>()]+|\b[A-Za-z0-9][A-Za-z0-9.-]*:\d{2,5}(?:\/[^\s<>()]*)?)/;
+// The same two shapes, split so a closing clause can tell a file citation, a
+// time or an image tag from a host. The URI tail stops where REMOTE_LOCATOR's
+// does, so `<https://…>` is judged by its authority and not by the autolink.
+const SCHEME_LOCATOR = /\b([A-Za-z][A-Za-z0-9+.-]{0,31}):\/\/([^\s<>()]*)/g;
+// The name is the whole token, so `job_runner.py:40` or `+page.ts:9` is judged
+// by its full name and not by the tail after the underscore or the plus. A dot
+// before it does not hide it: `…db:5432` is still a host.
+const HOST_PORT_LOCATOR = /(?<![\w+-])([\w+-][\w.+-]*):(\d{2,5})(\/[^\s<>()]*)?/g;
+const PLACEHOLDER_SCHEME = /^(?:esquema|scheme|protocolo|protocol)$/i;
+// A template is a closed pair in the authority, `host[:puerto]` or `{{host}}`.
+// An IPv6 literal such as `[::1]` holds only hex digits, colons and dots.
+const TEMPLATE_AUTHORITY = /\[[^\]]*[^\]0-9A-Fa-f:.][^\]]*\]|\{[^}]*\}/;
+const LOOPBACK_OR_IPV4 = /^(?:localhost|\d{1,3}(?:\.\d{1,3}){3})$/i;
 // `remote-read` is the discriminant of RemoteContextSnapshot, not a prose term.
 // Seeing that typed context in a closure clause is invalid by construction.
 const REMOTE_CONTEXT_DISCRIMINANT = /\bkind\s*:\s*["'`]?remote-read\b/i;
@@ -117,6 +167,24 @@ const INLINE_CODE_SPAN = /`([^`\n]+)`/g;
 const RELATIVE_PATH = /(?:^|[\s`("'[<])((?:\.{1,2}\/)?[\w.@+-]+(?:\/[\w.@+-]+)*\/[\w.@+-]*)/g;
 const FILE_NAME = /\.[A-Za-z0-9]{1,8}$/;
 const PROGRAM_NAME = /^(?:\.{1,2}\/)?[A-Za-z_][\w.+-]*$/;
+// A bare file is a referent too, cited or not (`pom.xml`, `SCRIPTS.sql`). It
+// starts at a delimiter — never after a separator, which would make it the tail
+// of a path the rule above already judges. Its extension is lowercase and starts
+// with a letter, so neither a version such as 25.6.1 nor RR.HH. or EE.UU. is a
+// file, and its stem has two characters, so p.ej. is not one either.
+const BARE_FILE =
+  /(?:^|[\s`("'[<])[\w@+-]{2,}(?:\.[\w@+-]+)*\.[a-z][a-z0-9]{0,7}(?=$|[\s`)"'\]>,;:.!?])/;
+// How a clause names what produces it, in the words of the forms above.
+const HOW_TO_CITE = [
+  "citá el comando con sus argumentos entre comillas invertidas (`./mvnw test`)",
+  "o nombrá el archivo (pom.xml), la ruta (tests/unit/x.test.ts) o el test",
+  "(UsuarioServiceTest) que la produce",
+].join(" ");
+// A relative executable is a referent only when cited: `./mvnw`.
+const RELATIVE_EXECUTABLE = /^\.{1,2}\/[\w.+-]+$/;
+// A test named as the runner reports it. The first hump needs a lowercase letter
+// so EXIT or AUDIT are not tests, and `Test` alone is not a name.
+const TEST_NAME = /\b[A-Z][a-z0-9][A-Za-z0-9]*?(?:Test|Tests|IT|Spec)\b|\btest_[A-Za-z0-9_]+\b/;
 
 /**
  * Reads the structural source declarations from a plan without interpreting its
@@ -126,13 +194,18 @@ const PROGRAM_NAME = /^(?:\.{1,2}\/)?[A-Za-z_][\w.+-]*$/;
 export function parsePlanSourceBoundary(text: string): ParsedPlanSourceBoundary {
   const phases: PlanPhaseSources[] = [];
   let surface: ExecutionSurface | null = null;
+  let declaredSurface: string | null = null;
   let inTasks = false;
   let current: PlanPhaseSources | null = null;
   let currentTask: PlanTaskSources | null = null;
+  const continuation = new ClauseContinuation();
   const markdown = scanMarkdown(text);
 
   for (const [index, raw] of markdown.lines.entries()) {
-    if (markdown.fenced[index]) continue;
+    if (markdown.fenced[index]) {
+      continuation.interrupt();
+      continue;
+    }
     const line = index + 1;
     const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(raw);
     if (heading?.[1] !== undefined && heading[2] !== undefined) {
@@ -154,6 +227,8 @@ export function parsePlanSourceBoundary(text: string): ParsedPlanSourceBoundary 
     const surfaceMatch = SURFACE_LINE.exec(raw.trim());
     if (surfaceMatch?.[1] !== undefined && surface === null) {
       surface = readExecutionSurface(surfaceMatch[1]);
+      declaredSurface = surface === null ? surfaceMatch[1].trim() : null;
+      continuation.interrupt();
       continue;
     }
 
@@ -161,6 +236,7 @@ export function parsePlanSourceBoundary(text: string): ParsedPlanSourceBoundary 
     const sourceMatch = SOURCES_LINE.exec(raw.trim());
     if (sourceMatch !== null && current.sources === null) {
       current.sources = readAliases(sourceMatch[1] ?? "");
+      continuation.interrupt();
       continue;
     }
     const taskMatch = TASK_LINE.exec(raw);
@@ -173,26 +249,36 @@ export function parsePlanSourceBoundary(text: string): ParsedPlanSourceBoundary 
         sources: declared === null ? null : readAliases(declared[1] ?? ""),
       };
       current.tasks.push(currentTask);
+      continuation.start();
       continue;
     }
-    // Markdown keeps a wrapped list item's continuation indented. Let the
-    // declaration sit on that continuation, but never scan arbitrary prose in
-    // the phase: an annotation in a validation paragraph cannot retroactively
-    // make the preceding task executable.
-    if (
-      currentTask !== null &&
-      currentTask.sources === null &&
-      /^\s{2,}\S/.test(raw) &&
-      raw.trim().length > 0
-    ) {
-      const declared = TASK_SOURCES.exec(raw);
-      if (declared !== null) currentTask.sources = readAliases(declared[1] ?? "");
-    } else if (raw.trim().length === 0) {
-      currentTask = null;
-    }
+    if (currentTask !== null) currentTask = continueTask(currentTask, continuation, raw);
   }
 
-  return { execution_surface: surface, phases };
+  return {
+    execution_surface: surface,
+    ...(declaredSurface !== null ? { declared_surface: declaredSurface } : {}),
+    phases,
+  };
+}
+
+/**
+ * The declaration may sit on the task's continuation, never on arbitrary prose
+ * in the phase: an annotation in a validation paragraph cannot retroactively
+ * make the preceding task executable. `null` once the task ended.
+ */
+function continueTask(
+  task: PlanTaskSources,
+  continuation: ClauseContinuation,
+  raw: string,
+): PlanTaskSources | null {
+  const folds = continuation.read(raw);
+  if (folds === null) return null;
+  if (folds && task.sources === null) {
+    const declared = TASK_SOURCES.exec(raw);
+    if (declared !== null) task.sources = readAliases(declared[1] ?? "");
+  }
+  return task;
 }
 
 /**
@@ -210,7 +296,7 @@ export function validatePlanSourceBoundary(
   if (parsed.execution_surface !== CHECKOUT_EXECUTION_SURFACE) {
     failures.push({
       code: "PLAN_SOURCE_BOUNDARY_MISSING",
-      message: "el plan debe declarar '> Límite de ejecución: checkout' antes de poder ejecutarse",
+      message: surfaceMessage(parsed.declared_surface),
     });
   }
   if (parsed.phases.length === 0) {
@@ -287,7 +373,7 @@ export function validateSourceBoundedSemantics(text: string): SourceBoundaryFail
       failures.push({
         code: "PLAN_SOURCE_LOCAL_PROOF_MISSING",
         line: clause.line,
-        message: `${semanticClauseLabel(clause)} no nombra ninguna comprobación observable en el checkout: nombrá el comando, el archivo o la ruta que la produce`,
+        message: `${semanticClauseLabel(clause)} no nombra ninguna comprobación observable en el checkout: ${HOW_TO_CITE}`,
       });
     }
   }
@@ -318,10 +404,12 @@ function sourceBoundedClauses(text: string): SemanticClause[] {
   let inValidations = false;
   let inPhase = false;
   let active: SemanticClause | null = null;
+  const continuation = new ClauseContinuation();
 
   const add = (kind: SemanticClauseKind, line: number, value: string): SemanticClause => {
     const clause = { kind, line, text: value.trim() };
     clauses.push(clause);
+    continuation.start();
     return clause;
   };
 
@@ -365,13 +453,11 @@ function sourceBoundedClauses(text: string): SemanticClause[] {
       active = add("plan-validation", index + 1, trimmed.replace(/^[-*]\s+/, ""));
       continue;
     }
-    // A wrapped task/validation stays one semantic clause.  We only append
-    // Markdown's indented continuation, never arbitrary phase prose.
-    if (active !== null && /^\s{2,}\S/.test(raw)) {
-      active.text = `${active.text} ${trimmed}`;
-    } else if (trimmed.length === 0) {
-      active = null;
-    }
+    // A wrapped task/validation stays one semantic clause.
+    if (active === null) continue;
+    const folds = continuation.read(raw);
+    if (folds === null) active = null;
+    else if (folds) active.text = `${active.text} ${trimmed}`;
   }
   return clauses;
 }
@@ -386,13 +472,14 @@ function sourceBoundedClauses(text: string): SemanticClause[] {
  * invocation, so `make verificar-catalogo` accredits without naming any path.
  */
 function namesCheckoutReferent(text: string): boolean {
-  if (namesRelativePath(text)) return true;
+  if (namesRelativePath(text) || BARE_FILE.test(text) || TEST_NAME.test(text)) return true;
   for (const match of text.matchAll(INLINE_CODE_SPAN)) {
     const tokens = (match[1] ?? "")
       .trim()
       .split(/\s+/)
       .filter((token) => token.length > 0);
     if (tokens.length >= 2 && PROGRAM_NAME.test(tokens[0] ?? "")) return true;
+    if (tokens.length === 1 && RELATIVE_EXECUTABLE.test(tokens[0] ?? "")) return true;
   }
   return false;
 }
@@ -413,10 +500,55 @@ function namesRelativePath(text: string): boolean {
   return false;
 }
 
+/**
+ * The remote surface a closing clause names, read more finely than a proof's args.
+ *
+ * A clause is an early warning: what actually runs is judged by `remoteLocatorIn`,
+ * which stays strict. So here `pom.xml:277`, `10:30`, `node:20` and a generic
+ * `esquema://host[:puerto]` read as what they are, and only an ambiguous shape
+ * keeps the remote reading.
+ */
 function remoteSurfaceOf(text: string): string | null {
-  const locator = REMOTE_LOCATOR.exec(text)?.[0];
-  if (locator !== undefined) return locator;
+  let rest = text;
+  for (const match of text.matchAll(SCHEME_LOCATOR)) {
+    rest = rest.replace(match[0], " ");
+    const locator = schemeLocator(match[1] ?? "", match[2] ?? "");
+    if (locator !== null) return locator;
+  }
+  for (const match of rest.matchAll(HOST_PORT_LOCATOR)) {
+    const at = match.index ?? 0;
+    // After one `/` the name is a path segment; after `//` it is a host.
+    const inPath = rest[at - 1] === "/" && rest[at - 2] !== "/";
+    if (hostPortIsRemote(match[1] ?? "", match[2] ?? "", inPath, match[3])) return match[0];
+  }
   return REMOTE_CONTEXT_DISCRIMINANT.test(text) ? "RemoteContextSnapshot" : null;
+}
+
+/** A URI is remote unless its scheme or its authority is a template placeholder. */
+function schemeLocator(scheme: string, tail: string): string | null {
+  const authority = tail.split("/")[0] ?? "";
+  if (PLACEHOLDER_SCHEME.test(scheme) || TEMPLATE_AUTHORITY.test(authority)) return null;
+  return tail.length === 0 ? null : `${scheme}://${tail}`;
+}
+
+/**
+ * `X:N` without a scheme, in a clause. Loopback and IPv4 are hosts; digits alone
+ * are a time or a ratio; after a `/` it is a path with a line; one label is an
+ * image tag below three digits; two dots or a trailing path are a host; one dot
+ * before a letter is a file with its line.
+ */
+function hostPortIsRemote(
+  name: string,
+  port: string,
+  inPath: boolean,
+  path: string | undefined,
+): boolean {
+  if (LOOPBACK_OR_IPV4.test(name)) return true;
+  if (/^\d+$/.test(name) || inPath) return false;
+  const dots = name.split(".").length - 1;
+  if (dots === 0) return port.length >= 3;
+  if (dots >= 2 || path !== undefined) return true;
+  return !/\.[A-Za-z]/.test(name);
 }
 
 function semanticClauseLabel(clause: SemanticClause): string {
@@ -600,9 +732,18 @@ function foldHeading(value: string): string {
 }
 
 function readExecutionSurface(value: string): ExecutionSurface | null {
-  return value.trim().toLowerCase() === CHECKOUT_EXECUTION_SURFACE
-    ? CHECKOUT_EXECUTION_SURFACE
-    : null;
+  return CHECKOUT_SURFACE.test(value.trim()) ? CHECKOUT_EXECUTION_SURFACE : null;
+}
+
+/** Says what was read and what is extra, so the fix is not a guess. */
+function surfaceMessage(declared: string | undefined): string {
+  const expected =
+    "el plan debe declarar '> Límite de ejecución: checkout' antes de poder ejecutarse";
+  if (declared === undefined) return expected;
+  if (!/^checkout\b/i.test(declared))
+    return `${expected}; leyó '${declared}', que no es 'checkout'`;
+  const extra = declared.slice("checkout".length).trim();
+  return `${expected}; leyó '${declared}' y sobra '${extra}': sólo se admite una aclaración entre paréntesis`;
 }
 
 function readAliases(value: string): string[] {

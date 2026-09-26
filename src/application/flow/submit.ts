@@ -108,20 +108,24 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
-import { functionalSpecDigest } from "../parsers/spec-functional.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import {
   commitStoredPlanExecDecision,
   preparePlanExecDecision,
 } from "../plan-exec-decision-service.js";
+import {
+  type PlanGrammarFailure,
+  planBoundaryAction,
+  planGrammarAtEntry,
+  planGrammarAtPublication,
+} from "../plan-lint-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import {
   type CheckoutState,
   sourceAliasesOfPlan,
-  validatePlanSourceBoundary,
-  validateSourceBoundedSemantics,
+  type validatePlanSourceBoundary,
 } from "../source-boundary-policy.js";
 import {
   type ResolvedBoundary,
@@ -305,136 +309,72 @@ async function observe(
   git: GitPort | undefined,
 ): Promise<Observation> {
   const root = await resolveWorkspaceRootFrom(fs, paths);
+  const plans = await observePlanArtifacts(fs, paths, raw);
   return {
     root,
     destinations: await observeDestinations(fs, paths, raw),
     scope: await observeScope(fs, paths, raw),
-    plans: await observePlanEvidence(fs, paths, raw),
+    plans: plans.evidence,
     checkouts: await observeCheckouts(fs, paths, session, git),
-    baselines: await observeSpecBaselines(fs, paths, raw),
+    baselines: plans.baselines,
   };
 }
 
 type BaselineSnapshot = ReadonlyMap<string, SpecBaseline>;
 
-/**
- * The baseline one plan document seals, or `null` when it cannot seal one.
- *
- * What gets sealed is the spec's FUNCTIONAL digest, not its exact bytes: a plan
- * derives from what the spec promises, so a later comma or a rewrapped
- * paragraph must not turn this plan divergent and make it uncloseable.
- *
- * Every `null` here is a plan that stays UNSEALED, which is a legitimate
- * reading: no `Derived from` path, two contradictory ones, a path that escapes
- * the workspace, or a spec nobody can read. None of them is an error — a wrong
- * seal would be.
- */
-async function baselineOfPlan(
-  fs: FileSystemPort,
-  root: string,
-  content: string,
-  specDir: string,
-): Promise<SpecBaseline | null> {
-  const specPath = parseDerivedFromPath(content, specDir);
-  if (specPath === null || !checkSafeRelativePath(specPath).ok) return null;
-  const relation = parseSpecRelation(content, specDir);
-  if (relation.status !== "declared") return null;
-  try {
-    const specText = await fs.readText(join(root, specPath));
-    return { path: specPath, number: relation.number, digest: functionalSpecDigest(specText) };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * For every PLAN artifact in the payload, the exact spec bytes it was derived
- * from — read here, never taken from the sender.
- *
- * A digest supplied by whoever wrote the document would prove only that they
- * typed something; the point of the seal is that publication computed it from
- * the file the plan names. A plan whose `Derived from` is absent or
- * contradictory yields nothing, and publication then writes no seal — an
- * unsealed plan is a legitimate diagnostic, a wrong seal is not.
- */
-async function observeSpecBaselines(
-  fs: FileSystemPort,
-  paths: PathsService,
-  raw: string,
-): Promise<BaselineSnapshot> {
-  const out = new Map<string, SpecBaseline>();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return out;
-  }
-  const artifacts = (parsed as { artifacts?: unknown } | null)?.artifacts;
-  if (!Array.isArray(artifacts) || artifacts.length === 0) return out;
-  const canon = await resolveCoreDocsCanon(fs, paths);
-  // An unreadable canon cannot tell a plan from anything else. Sealing on a
-  // guess would stamp a baseline into whatever the payload happened to carry.
-  if (!canon.ok) return out;
-  const root = await resolveWorkspaceRootFrom(fs, paths);
-  for (const entry of artifacts) {
-    const path = (entry as { path?: unknown })?.path;
-    const content = (entry as { content?: unknown })?.content;
-    if (typeof path !== "string" || typeof content !== "string") continue;
-    const relative = path.trim();
-    if (out.has(relative)) continue;
-    if (coreDocumentKindForPath(relative, canon.canon) !== "plan") continue;
-    const baseline = await baselineOfPlan(fs, root, content, canon.canon.spec);
-    if (baseline !== null) out.set(relative, baseline);
-  }
-  return out;
-}
-
 /** One plan artifact and what the source policy says about the bytes proposed. */
 interface PlanArtifactBoundary {
   path: string;
-  failures: ReturnType<typeof validatePlanSourceBoundary>;
+  failures: PlanGrammarFailure[];
 }
 
 /**
- * Run the source-boundary policy over the plan bytes a proposal is carrying.
+ * Judge the plan bytes a proposal is carrying, and derive the seal each one gets.
  *
- * The same judgment the execution entry makes, one moment earlier — over the
- * artifact's content instead of a file on disk — so a plan accepted when it
- * closes cannot be rejected for the same cause when somebody tries to run it.
- * Nothing is read when the payload carries no artifact.
+ * The grammar half is the same judgment the execution entry makes, one moment
+ * earlier — over the artifact's content instead of a file on disk — so a plan
+ * accepted when it closes cannot be rejected for the same cause when somebody
+ * tries to run it. When the WORKSPACE block cannot be read, only the SEMANTIC
+ * half runs: answering an unreadable block with "that alias does not exist"
+ * would reject a plan for something the plan did not do.
  *
- * When the WORKSPACE block cannot be read, only the SEMANTIC half runs. The
- * clause-level judgment needs no alias table, and answering an unreadable block
- * with "that alias does not exist" would reject a plan for something the plan
- * did not do.
+ * The lineage half runs in the same stage, so one refusal carries both. The seal
+ * is computed here from the spec the header names — never taken from the sender,
+ * whose digest would prove only that they typed something — and a plan that
+ * declares neither a lineage nor `> Standalone:` is refused instead of published
+ * without a seal. Nothing is read when the payload carries no artifact.
  */
-async function observePlanEvidence(
+async function observePlanArtifacts(
   fs: FileSystemPort,
   paths: PathsService,
   raw: string,
-): Promise<PlanArtifactBoundary[]> {
+): Promise<{ evidence: PlanArtifactBoundary[]; baselines: BaselineSnapshot }> {
+  const evidence: PlanArtifactBoundary[] = [];
+  const baselines = new Map<string, SpecBaseline>();
   const proposed = proposedArtifacts(raw);
-  if (proposed.length === 0) return [];
+  if (proposed.length === 0) return { evidence, baselines };
   const canon = await resolveCoreDocsCanon(fs, paths);
-  // An unreadable canon cannot tell a plan from anything else, and judging a
-  // spec's prose by the plan's closure rule would reject what it never promised.
-  if (!canon.ok) return [];
+  // An unreadable canon cannot tell a plan from anything else: judging a spec's
+  // prose by the plan's closure rule, or sealing on a guess, would both act on
+  // whatever the payload happened to carry.
+  if (!canon.ok) return { evidence, baselines };
   const root = await resolveWorkspaceRootFrom(fs, paths);
   const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
   const declared = block === null ? null : block.fuentes.map((source) => source.alias);
-  const out: PlanArtifactBoundary[] = [];
   for (const artifact of proposed) {
     if (!checkSafeRelativePath(artifact.path).ok) continue;
     if (coreDocumentKindForPath(artifact.path, canon.canon) !== "plan") continue;
-    out.push({
-      path: artifact.path,
-      failures:
-        declared === null
-          ? validateSourceBoundedSemantics(artifact.content)
-          : validatePlanSourceBoundary(artifact.content, declared),
-    });
+    const { failures, seal } = await planGrammarAtPublication(
+      fs,
+      root,
+      artifact.content,
+      declared,
+      canon.canon.spec,
+    );
+    if (seal.status === "sealed") baselines.set(artifact.path, seal.baseline);
+    evidence.push({ path: artifact.path, failures });
   }
-  return out;
+  return { evidence, baselines };
 }
 
 /** The `path`/`content` pairs a payload proposes, read as data and judged by nobody. */
@@ -518,7 +458,7 @@ async function observeScope(
     declared,
     plan,
     sources: sourceAliasesOfPlan(text),
-    boundary_failures: validatePlanSourceBoundary(text, declared ?? []),
+    boundary_failures: planGrammarAtEntry(text, declared),
     plan_error: null,
   };
 }
@@ -1790,44 +1730,6 @@ function invalidScope(message: string, action: string): CapabilityFailure {
   return { code: "FLOW_SCOPE_INVALID", message, action };
 }
 
-/** The five codes the plan source policy can return over a document's bytes. */
-type PlanBoundaryCode = ReturnType<typeof validatePlanSourceBoundary>[number]["code"];
-
-/**
- * What to do about a source-boundary failure, said at the moment it was found.
- *
- * One generic sentence used to answer all five codes, and it was wrong twice
- * over: it sent somebody to declare sources that were already declared, and it
- * sent a sentence of prose to a refinement. Structure goes to the refinement
- * that owns it; a clause that names no observable check is a phrase to fix where
- * it is being written, and at a save proposal nothing is even saved yet.
- */
-function planBoundaryAction(
-  code: PlanBoundaryCode,
-  moment: "proposal" | "execution-entry",
-): string {
-  const then =
-    moment === "proposal"
-      ? "corregilo en los bytes y volvé a proponer la vista previa"
-      : "corregilo con /w:plan-refine antes de volver a entrar a ejecución";
-  switch (code) {
-    case "PLAN_SOURCE_BOUNDARY_MISSING":
-      return `falta la declaración estructural: '> Límite de ejecución: checkout' bajo el título y '> Fuentes:' en cada fase — ${then}`;
-    case "PLAN_SOURCE_UNKNOWN":
-      return `ese alias no está en la tabla Fuentes del bloque WORKSPACE: declaralo ahí, o usá uno de los que ya están — ${then}`;
-    case "PLAN_TASK_SOURCE_OUTSIDE_PHASE":
-      return `la fuente de una tarea es un subconjunto de la de su fase: ajustá una de las dos — ${then}`;
-    case "PLAN_SOURCE_EXTERNAL_CLOSURE":
-      return `una cláusula de cierre no puede apoyarse en una superficie externa: llevá esa comprobación a '## Handoff operativo' y dejá en la cláusula una del checkout — ${then}`;
-    case "PLAN_SOURCE_LOCAL_PROOF_MISSING":
-      return moment === "proposal"
-        ? "nombrá en esa cláusula el comando, el archivo o la ruta que produce la comprobación, y volvé a proponer la vista previa"
-        : "es una frase del documento y no su estructura: nombrá en esa cláusula el comando, el archivo o la ruta que produce la comprobación";
-    default:
-      return then;
-  }
-}
-
 /**
  * The closure-evidence gate, run BEFORE the preview is sealed.
  *
@@ -1847,10 +1749,16 @@ function planEvidenceFrom(
     if (!proposed.has(plan.path)) continue;
     const failure = plan.failures[0];
     if (failure === undefined) continue;
+    // Grammar and lineage travel together: whoever fixes the first cause
+    // should not learn of the header on the next attempt.
+    const lineage = plan.failures.find(
+      (candidate) => candidate !== failure && candidate.code === "PLAN_LINEAGE_UNSEALED",
+    );
+    const also = lineage === undefined ? "" : ` · además: ${lineage.message}`;
     return {
       failure: {
         code: failure.code,
-        message: `'${plan.path}': ${failure.message}`,
+        message: `'${plan.path}': ${failure.message}${also}`,
         action: planBoundaryAction(failure.code, "proposal"),
       },
     };
@@ -1899,28 +1807,28 @@ function sealFrom(
   const artifacts = answer.artifacts.map((artifact) => {
     const seen = snapshot.get(artifact.path);
     const baseline = baselines.get(artifact.path);
+    /**
+     * Completing THIS run's reservation replaces no document.
+     *
+     * The file is there because this run put it there to hold the number, and
+     * nothing was ever published into it — so the write is additive in the only
+     * sense the classes measure, and the preview says so: `overwrite: false`,
+     * `reserved: true`. A destination that exists for any other reason stays an
+     * overwrite, which is what keeps a save row declaring only `local_additive`
+     * from reaching a real plan.
+     */
+    const reserved = seen?.exists === true && seen.digest === reservation;
     return {
       path: artifact.path,
       // Publication seals the baseline into the very bytes it is about to
       // propose, so preview, approval and write cover it as one thing.
       content:
         baseline === undefined ? artifact.content : withSpecBaseline(artifact.content, baseline),
-      overwrite: seen?.exists === true,
-      /**
-       * Completing THIS run's reservation replaces no document.
-       *
-       * The file is there because this run put it there to hold the number, and
-       * nothing was ever published into it — so the write is additive in the only
-       * sense the classes measure: nobody's content is lost. A destination that
-       * exists for any other reason stays `mutate_overwrite`, which is what keeps
-       * a save row declaring only `local_additive` from reaching a real plan.
-       */
-      reserved: seen?.exists === true && seen.digest === reservation,
+      overwrite: seen?.exists === true && !reserved,
+      ...(reserved ? { reserved: true as const } : {}),
     };
   });
-  const effects = observedEffects(
-    artifacts.map((a) => ({ overwrite: a.overwrite && !a.reserved })),
-  );
+  const effects = observedEffects(artifacts);
   const beyond = effects.filter((effect) => !contract.effects.includes(effect));
   if (beyond.length > 0) {
     return {
@@ -1931,8 +1839,10 @@ function sealFrom(
       },
     };
   }
+  // The reservation is a base too: the marker has to be the one this run left
+  // when the write lands, or somebody published into the slot in between.
   const bases = artifacts
-    .filter((a) => a.overwrite)
+    .filter((a) => a.overwrite || a.reserved === true)
     .map((a) => ({ path: a.path, digest: snapshot.get(a.path)?.digest ?? "" }));
   const unreadable = bases.filter((base) => base.digest.length === 0);
   if (unreadable.length > 0) {
