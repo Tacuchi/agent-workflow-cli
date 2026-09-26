@@ -12,8 +12,10 @@ import type { CliContext } from "../types.js";
 export const resumeSummaryCommand: CliCommand = {
   name: "resume-summary",
   describe:
-    "Compact resume payload for the PostCompact hook. " +
-    "Usage: aw resume-summary [--code <session>] [--include-recent-closed] [--recent-days <n>].",
+    "Compact resume payload for the PostCompact hook: the session named by --code or " +
+    "associated with the conversation; otherwise degraded continuity with the candidates " +
+    "(the active sessions, even when only one is active) and this conversation's refuge. " +
+    "Usage: aw resume-summary [--code <NNN>] [--include-recent-closed] [--recent-days <n>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const options: ResumeSummaryOptions = {};
     if (args.flags.has("--include-recent-closed")) {

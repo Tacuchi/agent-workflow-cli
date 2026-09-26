@@ -68,7 +68,9 @@ export async function resolveLifecycleTarget(
   binding: LifecycleBinding,
 ): Promise<LifecycleTarget> {
   // `allowClosed` stays off: a lifecycle surface writes or restores state, and
-  // a closed line is not a valid destination for either.
+  // a closed line is not a valid destination for either. Write intent holds even
+  // for PostCompact, which does not bind: restoring a line presents it as this
+  // conversation's, so it must never reach the sole-active fallback only reads get.
   const resolution = await resolveSessionTarget(fs, paths, {
     intent: "write",
     ...(options.code !== undefined ? { code: options.code } : {}),

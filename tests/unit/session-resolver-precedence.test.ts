@@ -160,6 +160,42 @@ describe("resolveSessionTarget — precedence", () => {
   });
 });
 
+describe("resolveSessionTarget — a write with no identity never falls back", () => {
+  const soleActive: Seed[] = [
+    { folder: "020-vieja-quick", closed: true },
+    { folder: "044-ajena-plan-exec" },
+  ];
+
+  it.each([
+    ["an unbound conversation id", { contextId: "conv-nueva" }],
+    ["no conversation id at all", {}],
+  ])("with ONE active session and %s, it refuses naming the active one", async (_l, id) => {
+    const fs = buildFs(soleActive);
+    const result = expectError(
+      await resolveSessionTarget(fs, paths, { ...id, intent: "write", bind: true }),
+    );
+    expect(result.code).toBe("SESSION_UNBOUND");
+    expect(result.candidates).toEqual([
+      { folder: "044-ajena-plan-exec", code: "044", state: "active" },
+    ]);
+    expect(result.action).toMatch(/--code <NNN>/);
+    // Refusing is not binding: the conversation stays without a line.
+    expect(await fs.exists(bindingsFile)).toBe(false);
+  });
+
+  it("an explicit --code and a binding resolve a write exactly as before", async () => {
+    const explicit = await resolveSessionTarget(buildFs(soleActive), paths, {
+      code: "044",
+      intent: "write",
+    });
+    expect(expectResolved(explicit).via).toBe("explicit");
+
+    const fs = withBindings(buildFs(soleActive), { "conv-a": "044-ajena-plan-exec" });
+    const bound = await resolveSessionTarget(fs, paths, { contextId: "conv-a", intent: "write" });
+    expect(expectResolved(bound).via).toBe("binding");
+  });
+});
+
 describe("resolveSessionTarget — closed sessions", () => {
   const seeds: Seed[] = [{ folder: "044-cerrada-plan-exec", closed: true }];
 

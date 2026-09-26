@@ -146,6 +146,8 @@ describe("the full identity matrix resolves one target or one actionable error",
     request: { code?: string; contextId?: string };
     bound?: string;
     expect: { folder: string } | { code: string };
+    /** What a WRITE gets instead, when it differs from the read. */
+    writeExpect?: { folder: string } | { code: string };
   }[] = [
     {
       name: "zero sessions, no identity",
@@ -154,10 +156,11 @@ describe("the full identity matrix resolves one target or one actionable error",
       expect: { code: "SESSION_NOT_FOUND" },
     },
     {
-      name: "one active, no identity → sole active",
+      name: "one active, no identity → sole active, for reads only",
       folders: [{ folder: "001-a-quick" }],
       request: {},
       expect: { folder: "001-a-quick" },
+      writeExpect: { code: "SESSION_UNBOUND" },
     },
     {
       name: "one closed only, no identity",
@@ -170,6 +173,7 @@ describe("the full identity matrix resolves one target or one actionable error",
       folders: [{ folder: "001-a-quick" }, { folder: "002-b-quick" }],
       request: {},
       expect: { code: "SESSION_AMBIGUOUS" },
+      writeExpect: { code: "SESSION_UNBOUND" },
     },
     {
       name: "several active, current-model explicit code",
@@ -198,12 +202,15 @@ describe("the full identity matrix resolves one target or one actionable error",
       folders: [{ folder: "047-algo-quick" }, { folder: "session047-legacy-x" }],
       request: { code: "session047-legacy-x" },
       expect: { folder: "session047-legacy-x" },
+      // Inspecting it by name is fine; writing it has no unambiguous HISTORY row.
+      writeExpect: { code: "SESSION_AMBIGUOUS" },
     },
     {
       name: "la del modelo nuevo en colisión, también por su carpeta exacta",
       folders: [{ folder: "047-algo-quick" }, { folder: "session047-legacy-x" }],
       request: { code: "047-algo-quick" },
       expect: { folder: "047-algo-quick" },
+      writeExpect: { code: "SESSION_AMBIGUOUS" },
     },
     {
       name: "several active, binding decides",
@@ -281,6 +288,14 @@ describe("the full identity matrix resolves one target or one actionable error",
     const result = await resolveSessionTarget(fs, paths, { intent: "read", ...row.request });
     assertOutcome(result, row.expect);
     // Resolution alone never mutates: `bind` is off in every row here.
+    expect(fs.writes.size).toBe(before);
+  });
+
+  it.each(rows.map((r) => [r.name, r] as const))("write: %s", async (_name, row) => {
+    const fs = buildMatrixFs(row);
+    const before = fs.writes.size;
+    const result = await resolveSessionTarget(fs, paths, { intent: "write", ...row.request });
+    assertOutcome(result, row.writeExpect ?? row.expect);
     expect(fs.writes.size).toBe(before);
   });
 });

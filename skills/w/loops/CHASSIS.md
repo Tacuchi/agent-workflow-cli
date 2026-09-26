@@ -76,7 +76,7 @@ The loop creates and manages its session under `.workflow/sessions/`; **the user
 
 > The flow's input document (spec/plan) **never** goes inside a session; it lives in `docs/`.
 
-**CLI**: `aw session-create --type <type> --name <slug>-<flow> --objetivo "<one-line objective>"` opens it · `aw checkpoint-write` / `aw checkpoint-read` keep it resumable. **Closing it is the CLI's own move**, run at `finalize`: a loop never issues the close itself, and one issued mid-run leaves the next `advance`/`submit` standing on a closed session.
+**CLI**: `aw session-create --type <type> --name <slug>-<flow> --objetivo "<one-line objective>"` opens it · `aw checkpoint-write --code <NNN>` / `aw checkpoint-read` keep it resumable. **Closing it is the CLI's own move**, run at `finalize`: a loop never runs it, and one issued mid-run leaves the next `advance`/`submit` on a closed session.
 
 > The caller passes **only the descriptor** via `--name` — **never** a number; the CLI owns the global `NNN`. Its assignment, locating or reopening a session and repairing a failed history upsert live in the `sessions` module.
 

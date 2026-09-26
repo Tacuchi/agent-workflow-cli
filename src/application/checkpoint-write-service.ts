@@ -11,7 +11,7 @@ import {
   isPristineCheckpoint,
 } from "./checkpoint/markdown.js";
 import { extractSessionState } from "./checkpoint/state-reader.js";
-import { localMinuteIso } from "./dates.js";
+import { localMinuteIso, parseLocalMinuteIso } from "./dates.js";
 import {
   type LifecycleDegraded,
   type LifecycleOptions,
@@ -53,6 +53,8 @@ export interface CheckpointWriteOutput {
    * workspace-relative path. Absent when there was none to adopt.
    */
   refuge_adopted?: string[];
+  /** Refuges nobody could adopt any more, removed on the way (see {@link sweepRefuges}). */
+  refuges_swept?: string[];
 }
 
 /**
@@ -71,14 +73,20 @@ export interface CheckpointWriteDegraded {
   action: string;
   /**
    * Where the state was parked instead, workspace-relative — `null` when there
-   * was no candidate that could ever adopt it (see {@link parkRefuge}).
+   * was no active candidate that could ever adopt it (see {@link parkRefuge}).
    */
   refuge_path: string | null;
+  refuges_swept?: string[];
 }
 
 export type CheckpointWriteResult = CheckpointWriteOutput | CheckpointWriteDegraded;
 
-export interface CheckpointWriteOptions extends LifecycleOptions {
+/** Injectable clock for the refuge's date, its adoption window and the sweep. */
+export interface RefugeClock {
+  now?: Date;
+}
+
+export interface CheckpointWriteOptions extends LifecycleOptions, RefugeClock {
   force?: boolean;
 }
 
@@ -101,12 +109,13 @@ export async function runCheckpointWrite(
   const target = await resolveLifecycleTarget(fs, paths, options, "bind");
   if (target.outcome !== "resolved") return unresolved(fs, paths, target, options);
   const session = target.session;
+  const now = options.now ?? new Date();
   const cpPath = join(session.path, "CHECKPOINT.md");
 
   if (await hasContentToPreserve(fs, cpPath, options.force === true)) {
     // Adoption runs even here: preservation protects written prose from being
     // REGENERATED, and folding a refuge in only appends to it.
-    const adopted = await adoptRefuge(fs, paths, session, adoptionScope(options));
+    const adopted = await adoptRefuge(fs, paths, session, adoptionScope(options, now));
     return {
       session: session.folder,
       checkpoint_path: cpPath,
@@ -114,6 +123,7 @@ export async function runCheckpointWrite(
       preserved: true,
       reason: PRESERVED_REASON,
       ...adoptedField(adopted.adopted),
+      ...sweptField(await sweepRefuges(fs, paths, now)),
     };
   }
 
@@ -141,7 +151,7 @@ export async function runCheckpointWrite(
 
   // Last, never first: a refuge is folded into the checkpoint this run just
   // produced, so the file it appends to is already there.
-  const adopted = await adoptRefuge(fs, paths, session, adoptionScope(options));
+  const adopted = await adoptRefuge(fs, paths, session, adoptionScope(options, now));
 
   return {
     session: session.folder,
@@ -152,6 +162,7 @@ export async function runCheckpointWrite(
     tasks_closed: state.tasks.closed,
     files_touched_count: totalInScope(state.files_touched),
     ...adoptedField(adopted.adopted),
+    ...sweptField(await sweepRefuges(fs, paths, now)),
   };
 }
 
@@ -169,11 +180,16 @@ export interface AutoCompactOnCloseOutput {
   }>;
   continuity?: "degraded";
   primary_session?: null;
+  /** Why no session resolved; only on the degraded branch. */
+  reason?: string;
   candidates?: SessionCandidate[];
   action?: string;
   /** Same meaning as in {@link CheckpointWriteDegraded}; only on the degraded branch. */
   refuge_path?: string | null;
+  refuges_swept?: string[];
 }
+
+export interface AutoCompactOnCloseOptions extends LifecycleOptions, RefugeClock {}
 
 /**
  * SessionEnd. It used to iterate EVERY active session, so closing one host
@@ -186,21 +202,27 @@ export async function runAutoCompactOnClose(
   env: EnvPort,
   git: GitPort,
   paths: PathsService,
-  options: LifecycleOptions = {},
+  options: AutoCompactOnCloseOptions = {},
 ): Promise<AutoCompactOnCloseOutput> {
+  const now = options.now ?? new Date();
   // Does NOT bind: the host is exiting, so there is no later turn the
   // association could serve, and establishing one is a locked write that fails
   // the whole resolution when it cannot be taken — which would cost the
   // checkpoint this surface exists to save.
   const target = await resolveLifecycleTarget(fs, paths, options, "read-only");
   if (target.outcome !== "resolved") {
+    // Park first: the fresh refuge names only active sessions and is stamped
+    // now, so the sweep that follows can never take it.
+    const refugePath = await parkRefuge(fs, paths, target, options.contextId, now);
     return {
       checkpoints_written: [],
       continuity: "degraded",
       primary_session: null,
+      reason: target.reason,
       candidates: target.candidates,
       action: target.action,
-      refuge_path: await parkRefuge(fs, paths, target, options.contextId),
+      refuge_path: refugePath,
+      ...sweptField(await sweepRefuges(fs, paths, now)),
     };
   }
   const workspaceRoot = await resolveWorkspaceRoot(fs, env, paths);
@@ -209,10 +231,15 @@ export async function runAutoCompactOnClose(
   // own failure instead of throwing, and appending a refuge to a file that was
   // never written would file the parked state under a session line nobody wrote.
   if (entry.error === undefined) {
-    const adopted = await adoptRefuge(fs, paths, target.session, adoptionScope(options));
-    return { checkpoints_written: [{ ...entry, ...adoptedField(adopted.adopted) }] };
+    const adopted = await adoptRefuge(fs, paths, target.session, adoptionScope(options, now));
+    // After adopting, never before: the conversation's own refuge can be
+    // sweepable and adoptable at once, and sweeping first would discard it.
+    return {
+      checkpoints_written: [{ ...entry, ...adoptedField(adopted.adopted) }],
+      ...sweptField(await sweepRefuges(fs, paths, now)),
+    };
   }
-  return { checkpoints_written: [entry] };
+  return { checkpoints_written: [entry], ...sweptField(await sweepRefuges(fs, paths, now)) };
 }
 
 async function writeCheckpointForTarget(
@@ -291,9 +318,12 @@ async function unresolved(
   fs: FileSystemPort,
   paths: PathsService,
   target: LifecycleDegraded,
-  options: LifecycleOptions,
+  options: CheckpointWriteOptions,
 ): Promise<CheckpointWriteDegraded> {
+  const now = options.now ?? new Date();
   const actives = await findActiveSessions(fs, paths);
+  // Same order as SessionEnd's degraded branch: park, then sweep.
+  const refugePath = await parkRefuge(fs, paths, target, options.contextId, now);
   return {
     skipped: true,
     reason: target.reason,
@@ -302,7 +332,8 @@ async function unresolved(
     active_sessions: actives.map((a) => a.folder),
     candidates: target.candidates,
     action: target.action,
-    refuge_path: await parkRefuge(fs, paths, target, options.contextId),
+    refuge_path: refugePath,
+    ...sweptField(await sweepRefuges(fs, paths, now)),
   };
 }
 
@@ -313,12 +344,28 @@ async function unresolved(
 // would mean the compaction that follows an unresolved target takes the run's
 // context away and leaves nothing behind. So the reason, the candidates and the
 // way out are written to a file OUTSIDE any session — nothing has to be guessed
-// to place it — and the first invocation that does resolve the session folds it
-// into that session's CHECKPOINT.
+// to place it — and the first invocation allowed to adopt it folds it into that
+// session's CHECKPOINT (see {@link refugeAdoptable}). One nobody can adopt any
+// more is swept (see {@link refugeSweepable}), so the directory never becomes a
+// pile of orphans.
 
-/** `- Fecha:` / `- Conversación:` — the two lines adoption reads back. */
+/** `- Fecha:` / `- Conversación:` / `- Candidatas:` — the lines adoption reads back. */
 const REFUGE_DATE_KEY = "Fecha";
 const REFUGE_CONVERSATION_KEY = "Conversación";
+const REFUGE_CANDIDATES_KEY = "Candidatas";
+const REFUGE_NO_CANDIDATES = "ninguna";
+const REFUGE_CANDIDATE_SEPARATOR = " · ";
+
+/**
+ * How long a refuge stays reserved for the conversation that parked it.
+ *
+ * Its candidates are every session active at the time, not its own, so while
+ * its conversation can still come back nobody else may fold it in: with runs in
+ * parallel the first one to name its session would take everybody's refuges.
+ * A day covers a conversation resumed the next morning; past it, a refuge whose
+ * candidates are all gone is swept instead of waiting for anybody.
+ */
+const REFUGE_ADOPTION_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** The heading an adopted refuge lands under, inside the CHECKPOINT's sealed body. */
 const ADOPTED_HEADING = "## Refugio adoptado";
@@ -327,11 +374,11 @@ const ADOPTED_HEADING = "## Refugio adoptado";
  * What `- Conversación:` says — and what the file is called — when the host gave
  * no conversation id.
  *
- * Such a refuge cannot be matched to anybody, so only an explicit `--code`
- * adopts it: a person naming the session IS the missing identity. The name
- * carries no instant on purpose: stamping it would make every compaction of
- * every id-less invocation pile up another file in a directory nothing sweeps,
- * where the digest case leaves exactly one. One file, latest reason, same rule.
+ * Such a refuge cannot be matched to anybody, so only an explicit `--code` on
+ * one of its candidates adopts it: a person naming the session IS the missing
+ * identity. The name carries no instant on purpose: stamping it would make every
+ * compaction of every id-less invocation pile up another file, where the digest
+ * case leaves exactly one. One file, latest reason, same rule.
  */
 const REFUGE_NO_CONVERSATION = "desconocida";
 
@@ -364,6 +411,10 @@ export interface RefugeEntry {
   date: string;
   /** `sha256:…` digest of the owning conversation; `null` when it declared none. */
   conversation: string | null;
+  /** The session folders it named as candidates, without their state. */
+  candidates: string[];
+  /** When it was parked; `null` when its `- Fecha:` cannot be read. */
+  parkedAt: Date | null;
   body: string;
 }
 
@@ -383,37 +434,129 @@ export async function writeRefugeCheckpoint(
 }
 
 /**
- * A refuge, but ONLY when somebody could adopt it later.
+ * A refuge, but ONLY when somebody could adopt it later — and naming only the
+ * sessions that could.
  *
- * With no candidate at all — a workspace between runs, which is the ordinary
- * state — the parked file would name no session anybody could resolve it to,
- * and every compaction of every session-less conversation would leave one
- * behind. The notice on stderr is the whole answer there.
+ * A closed session is not a destination: every write refuses it, so listing it
+ * would promise an adoption that cannot happen. With no active candidate — a
+ * workspace between runs, which is the ordinary state, or a `--code` that named
+ * a closed or missing session — the parked file would name nobody, and the
+ * notice on stderr is the whole answer.
  */
 async function parkRefuge(
   fs: FileSystemPort,
   paths: PathsService,
   target: LifecycleDegraded,
-  contextId?: string,
+  contextId: string | undefined,
+  now: Date,
 ): Promise<string | null> {
-  if (target.candidates.length === 0) return null;
+  const candidates = target.candidates.filter((candidate) => candidate.state === "active");
+  if (candidates.length === 0) return null;
   return writeRefugeCheckpoint(fs, paths, {
     reason: target.reason,
     action: target.action,
-    candidates: target.candidates,
+    candidates,
     ...(contextId !== undefined ? { contextId } : {}),
+    now,
   });
 }
 
 export interface RefugeAdoptionScope {
   contextId?: string;
-  /** The invocation named the session itself, which is what adopts an anonymous refuge. */
+  /** The invocation named the session itself, which is what adopts a refuge nobody else can. */
   explicitCode?: boolean;
+  now?: Date;
+}
+
+/** Who is asking to fold a refuge into the session it is writing. */
+interface RefugeClaim {
+  /** `sha256:…` of the invoking conversation; `null` when the invocation carries no id. */
+  conversation: string | null;
+  explicitCode: boolean;
+  /** Folder of the session being written. */
+  session: string;
+  now: Date;
 }
 
 /**
- * Fold every refuge that belongs to this conversation into the session's
- * CHECKPOINT, and remove it.
+ * Whether this claim may adopt this refuge.
+ *
+ * Its own conversation always may, into whichever session it resolves. Anybody
+ * else needs an explicit `--code` on one of its candidates, and only once nobody
+ * else can claim it: it has no conversation, the invocation cannot say whose it
+ * is (hosts that give the agent's commands no id), or the window is over.
+ */
+function refugeAdoptable(
+  refuge: Pick<RefugeEntry, "conversation" | "candidates" | "parkedAt">,
+  claim: RefugeClaim,
+): boolean {
+  if (refuge.conversation !== null && refuge.conversation === claim.conversation) return true;
+  if (!claim.explicitCode || !refuge.candidates.includes(claim.session)) return false;
+  return (
+    refuge.conversation === null ||
+    claim.conversation === null ||
+    outsideAdoptionWindow(refuge, claim.now)
+  );
+}
+
+/**
+ * Whether nobody can adopt this refuge any more: none of its candidates is
+ * active, and its conversation cannot reclaim it either — it has none, or the
+ * window is over. Its content is a reason, candidates and an action, never work
+ * state, so removing it loses nothing anybody could recover.
+ */
+export function refugeSweepable(
+  refuge: Pick<RefugeEntry, "conversation" | "candidates" | "parkedAt">,
+  activeSessions: ReadonlySet<string>,
+  now: Date,
+): boolean {
+  if (refuge.candidates.some((candidate) => activeSessions.has(candidate))) return false;
+  return refuge.conversation === null || outsideAdoptionWindow(refuge, now);
+}
+
+/**
+ * A date that cannot be read counts as outside the window: nobody can show the
+ * owning conversation is still inside it, and this module never writes one.
+ */
+function outsideAdoptionWindow(refuge: Pick<RefugeEntry, "parkedAt">, now: Date): boolean {
+  if (refuge.parkedAt === null) return true;
+  return now.getTime() - refuge.parkedAt.getTime() > REFUGE_ADOPTION_WINDOW_MS;
+}
+
+/**
+ * Remove every refuge nobody can adopt any more, and name them.
+ *
+ * Runs on every lifecycle write, which is also every adoption. Exported so the
+ * workspace residue sweep reuses this rule instead of writing a second one.
+ * Like adoption, it never throws out of a lifecycle surface: a refuge it could
+ * not remove is simply not reported, and the next write tries again.
+ */
+export async function sweepRefuges(
+  fs: FileSystemPort,
+  paths: PathsService,
+  now: Date = new Date(),
+): Promise<string[]> {
+  const swept: string[] = [];
+  try {
+    const active = new Set((await findActiveSessions(fs, paths)).map((session) => session.folder));
+    for (const refuge of await listRefugeCheckpoints(fs, paths)) {
+      if (!refugeSweepable(refuge, active, now)) continue;
+      try {
+        await fs.remove(refuge.path);
+        swept.push(refuge.relative);
+      } catch {
+        // Left for the next write; reporting it would claim a removal that did not happen.
+      }
+    }
+  } catch {
+    // Same contract as adoption: the caller's result stands without the field.
+  }
+  return swept;
+}
+
+/**
+ * Fold every refuge this invocation may adopt ({@link refugeAdoptable}) into
+ * the session's CHECKPOINT, and remove it.
  *
  * Adding a section is what makes this safe next to the preservation guard: that
  * guard refuses to REGENERATE a written checkpoint, and folding text in takes
@@ -434,7 +577,12 @@ export async function adoptRefuge(
   session: SessionEntry,
   scope: RefugeAdoptionScope = {},
 ): Promise<{ adopted: string[] }> {
-  const wanted = digestOfContext(scope.contextId);
+  const claim: RefugeClaim = {
+    conversation: digestOfContext(scope.contextId),
+    explicitCode: scope.explicitCode === true,
+    session: session.folder,
+    now: scope.now ?? new Date(),
+  };
   const cpPath = join(session.path, "CHECKPOINT.md");
   const adopted: string[] = [];
   // Nothing that happens in here may throw out of a lifecycle surface: a
@@ -443,7 +591,7 @@ export async function adoptRefuge(
   // reports "nothing adopted" and leaves the refuge for the next invocation.
   try {
     for (const refuge of await listRefugeCheckpoints(fs, paths)) {
-      if (!adoptable(refuge, wanted, scope.explicitCode === true)) continue;
+      if (!refugeAdoptable(refuge, claim)) continue;
       const block = adoptedBlock(refuge);
       // The block as it reads BACK: the plain-append path collapses the trailing
       // blank line, so only the text up to its last character is what both
@@ -517,11 +665,14 @@ export async function listRefugeCheckpoints(
     if (entry.type !== "file" || !entry.name.endsWith(".md")) continue;
     const body = await fs.readText(entry.path);
     const conversation = parseMdValue(body, REFUGE_CONVERSATION_KEY);
+    const date = parseMdValue(body, REFUGE_DATE_KEY);
     refuges.push({
       path: entry.path,
       relative: relpath(entry.path, paths.workspaceDir()),
-      date: parseMdValue(body, REFUGE_DATE_KEY) ?? "sin fecha",
+      date: date ?? "sin fecha",
       conversation: conversation?.startsWith(REFUGE_DIGEST_PREFIX) ? conversation : null,
+      candidates: refugeCandidates(parseMdValue(body, REFUGE_CANDIDATES_KEY)),
+      parkedAt: date !== undefined ? parseLocalMinuteIso(date) : null,
       body,
     });
   }
@@ -529,10 +680,13 @@ export async function listRefugeCheckpoints(
   return refuges.sort((a, b) => a.path.localeCompare(b.path));
 }
 
-/** Whose refuge this is: the conversation's own, or anybody's under an explicit `--code`. */
-function adoptable(refuge: RefugeEntry, wanted: string | null, explicitCode: boolean): boolean {
-  if (refuge.conversation === null) return explicitCode;
-  return refuge.conversation === wanted;
+/** The folders of a `- Candidatas:` line as {@link refugeBody} writes it: `a (active) · b (active)`. */
+function refugeCandidates(line: string | undefined): string[] {
+  if (line === undefined || line === REFUGE_NO_CANDIDATES) return [];
+  return line
+    .split(REFUGE_CANDIDATE_SEPARATOR)
+    .map((candidate) => candidate.replace(/\s*\([^)]*\)$/, "").trim())
+    .filter((folder) => folder.length > 0);
 }
 
 function digestOfContext(contextId?: string): string | null {
@@ -541,10 +695,11 @@ function digestOfContext(contextId?: string): string | null {
     : null;
 }
 
-function adoptionScope(options: CheckpointWriteOptions | LifecycleOptions): RefugeAdoptionScope {
+function adoptionScope(options: LifecycleOptions, now: Date): RefugeAdoptionScope {
   return {
     ...(options.contextId !== undefined ? { contextId: options.contextId } : {}),
     explicitCode: (options.code?.trim().length ?? 0) > 0,
+    now,
   };
 }
 
@@ -557,20 +712,23 @@ function adoptedBlock(refuge: RefugeEntry): string {
 }
 
 function refugeBody(input: RefugeCheckpointInput, now: Date, digest: string | null): string {
-  const candidates = input.candidates.map((c) => `${c.folder} (${c.state})`).join(" · ");
+  const candidates = input.candidates
+    .map((c) => `${c.folder} (${c.state})`)
+    .join(REFUGE_CANDIDATE_SEPARATOR);
   return `${[
     "# CHECKPOINT de refugio",
     "",
     "> Lo escribió un hook de ciclo de vida (PreCompact o SessionEnd): la",
     "> compactación —o el cierre— siguió adelante, pero no se pudo resolver a qué",
     "> sesión pertenece esta conversación, así que su estado queda acá en vez de",
-    "> perderse. Se adopta en el CHECKPOINT.md de la sesión en cuanto alguien la",
-    "> resuelva (`aw checkpoint-write --code <NNN>`).",
+    "> perderse. Lo adopta su conversación en cuanto resuelva una sesión, o un",
+    "> `aw checkpoint-write --code <NNN>` sobre una candidata cuando ya nadie más",
+    "> puede reclamarlo.",
     "",
     `- ${REFUGE_DATE_KEY}: ${localMinuteIso(now)}`,
     `- ${REFUGE_CONVERSATION_KEY}: ${digest !== null ? `${REFUGE_DIGEST_PREFIX}${digest}` : REFUGE_NO_CONVERSATION}`,
     `- Motivo: ${input.reason}`,
-    `- Candidatas: ${candidates.length > 0 ? candidates : "ninguna"}`,
+    `- ${REFUGE_CANDIDATES_KEY}: ${candidates.length > 0 ? candidates : REFUGE_NO_CANDIDATES}`,
     `- Acción: ${input.action}`,
   ].join("\n")}\n`;
 }
@@ -578,4 +736,9 @@ function refugeBody(input: RefugeCheckpointInput, now: Date, digest: string | nu
 /** Present only when something was actually adopted — an empty list says nothing. */
 function adoptedField(adopted: string[]): { refuge_adopted?: string[] } {
   return adopted.length > 0 ? { refuge_adopted: adopted } : {};
+}
+
+/** Same rule as {@link adoptedField}, for what the sweep removed. */
+function sweptField(swept: string[]): { refuges_swept?: string[] } {
+  return swept.length > 0 ? { refuges_swept: swept } : {};
 }

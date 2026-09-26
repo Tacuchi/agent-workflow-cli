@@ -642,6 +642,8 @@ describe("Compactar sobre una corrida real: pausa, no resuelve", () => {
     expect(paused.directive.outcome).toBe("needs_input");
     expect(paused.directive.boundary.transition).toBe(boundary.stopped?.id);
     expect(paused.directive.error?.action).toContain("checkpoint-write");
+    // Nombra la sesión: sin asociación, una escritura sin --code se niega (spec 056 AC-01).
+    expect(paused.directive.error?.action).toContain(`checkpoint-write --code ${SESSION}`);
 
     const after = await readRun(fs, locateRun(paths, SESSION));
     if (!after.ok) throw new Error("esperaba leer la corrida");
