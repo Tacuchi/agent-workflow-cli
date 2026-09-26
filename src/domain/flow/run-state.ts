@@ -2506,7 +2506,8 @@ function isDecisionPreview(
       isRecord(entry) &&
       typeof entry.path === "string" &&
       Number.isInteger(entry.bytes) &&
-      typeof entry.overwrite === "boolean",
+      typeof entry.overwrite === "boolean" &&
+      isReservedMark(entry.reserved),
   );
 }
 
@@ -2546,8 +2547,14 @@ function isProposalArtifacts(value: unknown): boolean {
       isRecord(entry) &&
       typeof entry.path === "string" &&
       typeof entry.content === "string" &&
-      typeof entry.overwrite === "boolean",
+      typeof entry.overwrite === "boolean" &&
+      isReservedMark(entry.reserved),
   );
+}
+
+/** The optional reservation mark: absent, or exactly `true`. */
+function isReservedMark(value: unknown): boolean {
+  return value === undefined || value === true;
 }
 
 function isProposalBases(value: unknown): boolean {

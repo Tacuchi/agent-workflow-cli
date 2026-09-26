@@ -7,6 +7,7 @@ import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { lintPlan } from "../../src/application/plan-lint-service.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   FLOW_DECISIONS,
@@ -673,6 +674,7 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
     [
       "# Plan 032 — migración",
       "",
+      "> Standalone: plan de prueba de la evidencia de cierre",
       "> Límite de ejecución: checkout",
       "",
       "## Tasks",
@@ -846,6 +848,31 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
     const after = await state(REFINE_SESSION);
     expect(after.state.proposal).toBeNull();
     expect(after.resolved.stopped?.id).toBe("plan-refine.save-proposal");
+  });
+
+  it("`aw plan lint` dice lo mismo que la publicación y la entrada a ejecución, y ambas lo nombran", async () => {
+    // Los gates reales, no las funciones que el lint envuelve: el guardado de
+    // plan-refine y el scope de plan-exec, sobre los mismos bytes.
+    await walkTo("plan-refine", REFINE_SESSION, REFINE_CODE, "plan-refine.save-proposal", NADA);
+    const gate = await state(REFINE_SESSION);
+    const saved = await answer(REFINE_CODE, bodyFor(gate.resolved, NADA));
+    expect(saved.error?.action).toContain("aw plan lint");
+
+    await writeFile(join(workdir, DOC), NADA, "utf8");
+    await walkTo("plan-exec", EXEC_SESSION, EXEC_CODE, "plan-exec.source-scope", NADA);
+    const scope = await state(EXEC_SESSION);
+    const entered = await answer(EXEC_CODE, bodyFor(scope.resolved, NADA));
+    expect(entered.error?.action).toContain("aw plan lint");
+
+    const linted = await lintPlan(fs, paths, DOC);
+    if (!linted.ok) throw new Error(linted.failure.message);
+    expect(linted.report.violations.map((v) => [v.code, v.moment])).toEqual([
+      [saved.error?.code, "both"],
+    ]);
+    expect(entered.error?.code).toBe(saved.error?.code);
+    const [violation] = linted.report.violations;
+    expect(saved.error?.message).toBe(`'${DOC}': ${violation?.message}`);
+    expect(entered.error?.message).toBe(violation?.message);
   });
 
   it("el plan aceptado al cerrarse atraviesa la entrada de ejecución sin ese código", async () => {

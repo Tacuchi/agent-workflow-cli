@@ -3671,6 +3671,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     reason:
       "comando transversal de mantenimiento documental, hermano de `reseal`: salda o reconoce las obligaciones que una nota de decisión dejó vivas sobre un plan cuya corrida de ejecución ya cerró. Sin corrida propia por la misma razón que `reseal` —lo que ocurre entre sus dos pasos es UNA afirmación humana, que el trabajo compensatorio se hizo o que era de otra gente, no un tramo con fronteras— y con el mismo contrato: `prepare` read-only y `apply` con el digest recomputado sobre el árbol vivo bajo el lock del workspace. Mientras una corrida de ejecución tenga ese plan, se niega y la nombra: el cierre de esa corrida salda sus propias obligaciones",
   },
+  {
+    command: "plan",
+    reason:
+      "comando transversal de lectura de un plan: `lint` corre sobre el documento las mismas funciones que la publicación y la entrada a ejecución, y devuelve todas las violaciones de la gramática de una vez, sin corrida propia porque no hay recorrido que dirigir ni nada que escribir —juzgar un documento no es un tramo con fronteras—. No crea sesión, no toca ninguna corrida y no gasta intento",
+  },
   { command: "sessions", reason: "listado read-only del inventario de sesiones" },
   { command: "session-artifacts", reason: "inspección read-only de lo que guarda una sesión" },
   { command: "checkpoint-read", reason: "lectura del CHECKPOINT sin decidir continuación" },

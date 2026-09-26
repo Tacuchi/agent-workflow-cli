@@ -155,6 +155,10 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // la declaró alguien, qué suelta el sucesor y qué conserva— es exactamente
     // lo que aprueba con el digest, y el JSON del host sale del mismo objeto.
     "settle",
+    // plan 055 — el lint de un plan: la proyección humana lista cada violación
+    // con su línea, su regla y el gate que la juzga, del mismo informe que viaja
+    // en el JSON; el veredicto viaja en el código de salida, como en `doctor`.
+    "plan",
   ];
 
   it("no undeclared command acquired a human projection", () => {

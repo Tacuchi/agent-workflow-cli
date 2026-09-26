@@ -113,6 +113,9 @@ const GROUPS: readonly CommandGroup[] = [
       // lineage, not the tool's own records — and it refuses outright while a
       // run holds the plan, because that run's own closure settles them.
       "settle",
+      // Before any of them: `plan lint` reads a plan the way publication and the
+      // execution entry read it, and lists every grammar violation at once.
+      "plan",
     ],
   },
   {

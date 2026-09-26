@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   applyPersist,
@@ -400,5 +401,69 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
     });
     const touched = [...fs.writes.keys()].filter((p) => p.includes("/sessions/"));
     expect(touched).toEqual([]);
+  });
+});
+
+describe("persist de un plan — pasa por la misma observación del linaje que aw flow", () => {
+  const SPEC = "docs/specs/033-spec-linaje.md";
+  const SPEC_TEXT =
+    "---\nstatus: ready-for-plan\n---\n\n# Spec 033 — linaje\n\n## Requirement\n\nsellar\n";
+  const planAnswer = (request: SemanticRequest, header: string): string =>
+    answer(request, {
+      decisions: { category: "plan", slug: "linaje", mode: "new" },
+      artifacts: [
+        {
+          path: "docs/plans/001-plan-linaje.md",
+          content: `# Plan 001 — linaje\n\n${header}\n> Estado: open\n\n## Origin\n\nSpec 033.\n`,
+        },
+      ],
+    });
+  const withSpec = (): MemFs => {
+    const fs = workspace();
+    fs.file(`/cwd/${SPEC}`, SPEC_TEXT);
+    return fs;
+  };
+
+  it("un plan con `> Derivado de` se escribe sellado con el digest funcional de su spec", async () => {
+    const fs = withSpec();
+    const request = await prepared(fs);
+    const raw = planAnswer(request, `> Derivado de ${SPEC}`);
+    const validated = validatePersist(raw, request);
+    if (!validated.ok) throw new Error(validated.failure.message);
+    expect(validated.value.preview.lineage).toBe("derived-from");
+
+    const result = await applyPersist(fs, env, paths(), {
+      raw,
+      request,
+      approval: validated.value.approval_digest,
+    });
+    if (!result.ok) throw new Error(`expected it to apply: ${result.failure.message}`);
+    const written = await fs.readText("/cwd/docs/plans/001-plan-linaje.md");
+    expect(written).toContain(
+      `> Derivado de ${SPEC}\n> Baseline: ${SPEC}@${functionalSpecDigest(SPEC_TEXT)}`,
+    );
+  });
+
+  it("un plan sin linaje se rechaza al validar con «falta `> Derived from`»", async () => {
+    const fs = withSpec();
+    const request = await prepared(fs);
+    const validated = validatePersist(planAnswer(request, "> Autor: alguien"), request);
+    expect(validated.ok).toBe(false);
+    if (validated.ok) return;
+    expect(validated.failure.code).toBe("PLAN_LINEAGE_UNSEALED");
+    expect(validated.failure.message).toContain("falta `> Derived from`");
+  });
+
+  it("un standalone se escribe sin sello aunque su Origin mencione una spec", async () => {
+    const fs = withSpec();
+    const request = await prepared(fs);
+    const raw = planAnswer(request, "> Standalone: nació de la conversación");
+    const result = await applyPersist(fs, env, paths(), {
+      raw,
+      request,
+      approval: approvalFor(request, raw),
+    });
+    if (!result.ok) throw new Error(`expected it to apply: ${result.failure.message}`);
+    expect(await fs.readText("/cwd/docs/plans/001-plan-linaje.md")).not.toContain("> Baseline:");
   });
 });

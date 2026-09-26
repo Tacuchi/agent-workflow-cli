@@ -64,6 +64,11 @@ export const persistCommand: CliCommand<PersistData> = {
         `  Categoría  ${data.preview.category} (${data.preview.mode})`,
         `  Destino    ${data.preview.target ?? `${data.preview.destination}/ (número nuevo)`}`,
         `  Tamaño     ${data.preview.bytes} B`,
+        ...(data.preview.lineage === undefined
+          ? []
+          : [
+              `  Linaje     ${data.preview.lineage === "derived-from" ? "sellado al escribir" : "standalone, sin sello"}`,
+            ]),
         `  Aprobación aw persist apply --approval ${data.approval_digest}`,
         "",
       ].join("\n");

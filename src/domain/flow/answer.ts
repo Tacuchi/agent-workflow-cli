@@ -205,6 +205,9 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
   PLAN_SOURCE_EXTERNAL_CLOSURE: "evaluated",
   PLAN_SOURCE_LOCAL_PROOF_MISSING: "evaluated",
+  // The plan's grammar does not spend: a plan published without its lineage is
+  // refused for what its header says, and fixing the header is the whole answer.
+  PLAN_LINEAGE_UNSEALED: "envelope",
   // The authoring boundary's: the bytes arrived and what they would do is not
   // what the row declares, or their destination could not be read.
   FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",

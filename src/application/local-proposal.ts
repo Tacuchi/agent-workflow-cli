@@ -176,7 +176,7 @@ async function applyCritical(
   const sealed = await sealBaseline(fs, input);
   if (sealed !== null) return { kind: "refused", failure: sealed };
 
-  const published = await publishArtifacts(fs, input.root, publishable(input.proposal.artifacts));
+  const published = await publishArtifacts(fs, input.root, publishable(input.proposal));
   if (!published.ok) {
     // `publishArtifacts` is all-or-nothing and rolls back, so nothing landed —
     // and saying so explicitly is what makes the empty list a claim rather than
@@ -230,8 +230,18 @@ async function sealBaseline(
   return null;
 }
 
-function publishable(artifacts: readonly ProposalArtifact[]): PublishableArtifact[] {
-  return artifacts.map((a) => ({ path: a.path, content: a.content, overwrite: a.overwrite }));
+/**
+ * The write each artifact is allowed. Completing this run's own reservation
+ * replaces the marker it left, and only that: `checkBases` has just verified,
+ * under the same lock, that the destination still holds exactly that marker.
+ */
+function publishable(proposal: LocalProposal): PublishableArtifact[] {
+  const pinned = new Set(proposal.bases.map((base) => base.path));
+  return proposal.artifacts.map((a) => ({
+    path: a.path,
+    content: a.content,
+    overwrite: a.overwrite || (a.reserved === true && pinned.has(a.path)),
+  }));
 }
 
 /** Only the durable classes, and only the ones somebody really authorized. */

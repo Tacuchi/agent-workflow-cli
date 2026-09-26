@@ -356,6 +356,41 @@ describe("aw reseal — cerrar una divergencia de baseline sin plan-refine", () 
     });
   });
 
+  it("un plan viejo con `> Derivado de` y sin contrato de fuentes se re-sella tras la etiqueta", async () => {
+    // Los planes del hub escritos antes del contrato de fuentes: sin límite de
+    // ejecución ni `> Fuentes:`, y con la etiqueta localizada. El resellado no
+    // les inventa el contrato; sólo sella la versión de su spec.
+    const old = `# Plan 041 — el re-sello\n\n> Derivado de ${SPEC_PATH}\n> Estado: done\n\n## Origin\n\nSpec 040.\n\n## Tasks\n\n- [x] T1 — algo\n`;
+    await seed(old);
+    const prepared = await prepare();
+    if (prepared.status !== "prepared") throw new Error(`esperaba prepared: ${prepared.status}`);
+    expect(await apply(prepared.proposal.digest)).toMatchObject({ status: "applied" });
+    const lines = (await planOnDisk()).split("\n");
+    expect(lines[2]).toBe(`> Derivado de ${SPEC_PATH}`);
+    expect(lines[3]).toBe(functionalSeal(SPEC));
+    expect((await planOnDisk()).replace(`${functionalSeal(SPEC)}\n`, "")).toBe(old);
+  });
+
+  it("una etiqueta que nombra dos specs sigue diciendo que son dos", async () => {
+    await seed(
+      `# Plan 041 — el re-sello\n\n> Derived from ${SPEC_PATH} y docs/specs/042-spec-otra.md\n> Estado: done\n\n## Origin\n\nx\n`,
+    );
+    const refused = await prepare();
+    if (refused.status !== "failed") throw new Error("esperaba un rechazo");
+    expect(refused.failure.message).toContain("más de una spec de origen");
+  });
+
+  it("una etiqueta de linaje sin ruta se rechaza por su causa, no por `## Origin`", async () => {
+    await seed(
+      `# Plan 041 — el re-sello\n\n> Derivado de la spec 040\n> Estado: done\n\n## Origin\n\nVer ${SPEC_PATH}.\n`,
+    );
+    const refused = await prepare();
+    if (refused.status !== "failed") throw new Error("esperaba un rechazo");
+    expect(refused.failure.code).toBe("RESEAL_PLAN_LINEAGE_UNDECLARED");
+    expect(refused.failure.message).toContain("no nombra la ruta de su spec");
+    expect(refused.failure.message).not.toContain("## Origin");
+  });
+
   it("un plan sin blockquote de cabecera se rechaza en vez de reestructurarse", async () => {
     // El `Derived from` está en la cabecera pero NO como blockquote: no hay
     // ningún `>` donde el sello viva, e inventarle uno sería reescribirle el

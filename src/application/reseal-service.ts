@@ -42,6 +42,7 @@ import { functionalSpecDigest, unclosedSpecFence } from "./parsers/spec-function
 import {
   type ParsedSpecRelation,
   parseDerivedFromPath,
+  parseLineageDeclaration,
   parsePlanBaselineSeal,
   parseSpecRelation,
 } from "./parsers/spec-relation.js";
@@ -340,7 +341,8 @@ function sealableSpec(
     );
   }
   if (derived === null || relation.status !== "declared" || relation.evidence !== "derived-from") {
-    return undeclaredHeaderLineage(planPath, relation, specDir);
+    const labelled = parseLineageDeclaration(planText, specDir)?.paths.length === 0;
+    return undeclaredHeaderLineage(planPath, relation, specDir, labelled);
   }
   const safe = checkSafeRelativePath(derived);
   if (!safe.ok) {
@@ -369,9 +371,19 @@ function undeclaredHeaderLineage(
   planPath: string,
   relation: ParsedSpecRelation,
   specDir: string,
+  labelled: boolean,
 ): Failed {
   const code: ResealCode = "RESEAL_PLAN_LINEAGE_UNDECLARED";
   const stamped = "el sello se estampa desde el '> Derived from …' de la cabecera";
+  // The header carries the label with no path, so the Origin mention is not the
+  // cause: the label itself names no spec.
+  if (labelled) {
+    return fail(
+      code,
+      `la etiqueta de linaje de la cabecera de '${planPath}' no nombra la ruta de su spec: ${stamped}, y sin ruta no hay archivo del que leer la versión vigente`,
+      `completá la etiqueta con la ruta: '> Derived from ${specDir}/NNN-spec-<slug>.md' (o '> Derivado de …'), y volvé a preparar el re-sello`,
+    );
+  }
   if (relation.status === "declared" && relation.evidence !== "derived-from") {
     return fail(
       code,

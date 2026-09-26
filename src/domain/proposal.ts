@@ -31,6 +31,13 @@ export interface ProposalArtifact {
   content: string;
   /** Replace an existing target. Never implicit — it is part of the seal. */
   overwrite: boolean;
+  /**
+   * The destination holds this run's own number reservation and nothing else.
+   * Completing it replaces no document, so it travels with `overwrite: false`;
+   * the writer may replace only that marker, which the compare-and-swap base
+   * pins. Absent otherwise, so a proposal without one keeps its digest.
+   */
+  reserved?: true;
 }
 
 /** The compare-and-swap base: what the candidate output was computed FROM. */
@@ -69,6 +76,8 @@ export interface PreviewEntry {
   path: string;
   bytes: number;
   overwrite: boolean;
+  /** It completes this run's own reservation: see {@link ProposalArtifact.reserved}. */
+  reserved?: true;
 }
 
 export interface LocalProposal {
@@ -101,6 +110,7 @@ export function sealProposal(input: SealProposalInput): LocalProposal {
     path: a.path,
     content: a.content,
     overwrite: a.overwrite,
+    ...reservedOf(a),
   }));
   const body = {
     operation: input.operation,
@@ -122,7 +132,13 @@ export function previewOf(artifacts: readonly ProposalArtifact[]): PreviewEntry[
     path: a.path,
     bytes: Buffer.byteLength(a.content, "utf8"),
     overwrite: a.overwrite,
+    ...reservedOf(a),
   }));
+}
+
+/** The reservation mark, carried only when present so no other digest moves. */
+function reservedOf(artifact: { reserved?: true }): { reserved?: true } {
+  return artifact.reserved === true ? { reserved: true } : {};
 }
 
 /**
@@ -143,6 +159,7 @@ export function proposalDigest(body: Omit<LocalProposal, "digest">): string {
         path: a.path,
         content_digest: semanticDigest(a.content),
         overwrite: a.overwrite,
+        ...reservedOf(a),
       }))
       .sort((a, b) => a.path.localeCompare(b.path)),
     bases: [...body.bases].sort((a, b) => a.path.localeCompare(b.path)),

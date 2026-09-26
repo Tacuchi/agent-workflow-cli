@@ -6,7 +6,10 @@
 // que el plan nombra, y lo estampa en los MISMOS bytes que se previsualizan, se
 // aprueban y se escriben — una sola transición, no dos.
 //
-// Esto es T1.2 de F1 del plan 032.
+// Esto es T1.2 de F1 del plan 032. El plan 055 (F2) agrega que ningún plan sale
+// sin sello en silencio: la etiqueta localizada `> Derivado de` también sella, un
+// standalone se publica sin sello, y uno que no declara ninguna de las dos cosas
+// se rechaza sin gastar intento.
 
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -24,6 +27,11 @@ import { submitFlow } from "../../src/application/flow/submit.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { parsePlanBaselineSeal } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import {
+  observePlanLineageSeal,
+  readPlanLineage,
+} from "../../src/application/plan-lineage-seal.js";
+import { lintPlan } from "../../src/application/plan-lint-service.js";
 import {
   type FlowDecision,
   journeyOfFlow,
@@ -168,7 +176,7 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
               source: "workspace",
               relative_cwd: ".",
               checkout_digest: "test-checkout",
-              invocation: { artifact: "tests/unit/lineage-publication.test.ts" },
+              invocation: { artifact: "tests/unit/plan-publication-lineage.test.ts" },
             },
           }
         : {}),
@@ -219,6 +227,7 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
   async function answerBoundary(
     resolved: Awaited<ReturnType<typeof current>>["resolved"],
     content: string,
+    refusal?: { at: FlowDirective | null },
   ): Promise<void> {
     const stopped = resolved.stopped as FlowDecision;
     let claimed: string | null = null;
@@ -236,9 +245,36 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
     // Un rechazo viaja DENTRO de la directiva. Sin esto el walk lo re-contesta
     // hasta agotar el ledger, y el diagnóstico culpa al contador de intentos en
     // vez de a la frontera que de verdad no pasó.
+    if (directive.error !== null && refusal !== undefined && proposalContractOf(stopped) !== null) {
+      refusal.at = directive;
+      return;
+    }
     if (directive.error !== null) {
       throw new Error(`${stopped.id} rechazó: ${JSON.stringify(directive.error)}`);
     }
+  }
+
+  /** Avanza hasta que la propuesta del guardado se rechaza, y devuelve ese rechazo. */
+  async function walkToRefusal(content: string): Promise<FlowDirective> {
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "plan-new",
+      adopt: true,
+      executor,
+    });
+    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
+    const refusal: { at: FlowDirective | null } = { at: null };
+    for (let step = 0; step < 40; step += 1) {
+      const { resolved } = await current();
+      if (resolved.stopped === null) throw new Error("el recorrido terminó sin rechazar");
+      if (publishApprovalOf(resolved.stopped) !== null && resolved.proposal !== null) {
+        throw new Error("la propuesta llegó a la confirmación en vez de rechazarse");
+      }
+      await answerBoundary(resolved, content, refusal);
+      if (refusal.at !== null) return refusal.at;
+    }
+    throw new Error("el recorrido nunca rechazó la propuesta");
   }
 
   /** Avanza el recorrido `plan-new` hasta la confirmación del guardado. */
@@ -313,14 +349,120 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
     expect(lines).toEqual([`> Baseline: ${SPEC}@${functionalSpecDigest(SPEC_BYTES)}`]);
   });
 
-  it("si la spec que el plan nombra no se puede leer, se publica SIN sello y no con uno inventado", async () => {
+  it("si la spec que el plan nombra no se puede leer, no se publica: ni sin sello ni con uno inventado", async () => {
     await rm(join(workdir, SPEC));
-    await walkToConfirmation();
+    const refused = await walkToRefusal(PLAN_BYTES);
+    expect(refused.error?.code).toBe("PLAN_LINEAGE_UNSEALED");
+    expect(refused.error?.message).toContain(`la spec '${SPEC}'`);
+    expect(refused.error?.message).toContain("no se puede leer");
+    expect(await readFile(join(workdir, planPath as string), "utf8")).not.toContain("# Plan 032");
+  });
+
+  it("un plan con `> Derivado de` se publica sellado, con el sello tras la etiqueta", async () => {
+    const localized = PLAN_BYTES.replace("> Derived from", "> Derivado de");
+    await walkToConfirmation(localized);
+    const gate = await current();
+    await answer({ input_digest: gate.resolved.seal, choice: "Aprobar y guardar" });
+
+    const published = (await readFile(join(workdir, planPath as string), "utf8")).split("\n");
+    const label = published.findIndex((line) => line.startsWith("> Derivado de"));
+    expect(published[label + 1]).toBe(`> Baseline: ${SPEC}@${functionalSpecDigest(SPEC_BYTES)}`);
+  });
+
+  it("un plan sin linaje se rechaza con «falta `> Derived from`» y sin gastar intento", async () => {
+    const orphan = PLAN_BYTES.replace(`> Derived from ${SPEC} · generated by plan-new-loop\n`, "");
+    const refused = await walkToRefusal(orphan);
+    expect(refused.error?.code).toBe("PLAN_LINEAGE_UNSEALED");
+    expect(refused.error?.message).toContain("falta `> Derived from`");
+    expect(refused.error?.action).toContain("> Standalone:");
+    expect(refused.error?.action).toContain("aw plan lint");
+    expect(refused.attempt_accounting?.spent).toBe(0);
+
+    // Sin bloque WORKSPACE, el lint sobre los mismos bytes dice lo mismo que el
+    // gate real: el linaje lo juzga sólo la publicación.
+    await writeFile(join(workdir, planPath as string), orphan, "utf8");
+    const linted = await lintPlan(fs, paths, planPath as string);
+    if (!linted.ok) throw new Error(linted.failure.message);
+    const lineage = linted.report.violations.filter((v) => v.code === "PLAN_LINEAGE_UNSEALED");
+    expect(lineage.map((v) => [v.moment, v.message])).toEqual([
+      ["publication", refused.error?.message.replace(`'${planPath}': `, "")],
+    ]);
+  });
+
+  it("un standalone se publica sin sello aunque su `## Origin` mencione una spec", async () => {
+    const standalone = PLAN_BYTES.replace(
+      `> Derived from ${SPEC} · generated by plan-new-loop`,
+      "> Standalone: nació de la conversación sobre el linaje",
+    );
+    expect(standalone).toContain("Spec 033.");
+    await walkToConfirmation(standalone);
     const gate = await current();
     await answer({ input_digest: gate.resolved.seal, choice: "Aprobar y guardar" });
 
     const published = await readFile(join(workdir, planPath as string), "utf8");
-    expect(published).not.toMatch(/^\s*>\s*Baseline:/im);
     expect(parsePlanBaselineSeal(published)).toEqual({ status: "absent" });
+    expect(published).toContain("> Standalone: nació de la conversación");
+  });
+});
+
+describe("cada causa de un sello ausente tiene su mensaje", () => {
+  const SPECS = "docs/specs";
+  const header = (...lines: string[]) =>
+    ["# Plan 040 — x", "", ...lines, "", "## Origin", "", "Spec 033.", ""].join("\n");
+
+  it("sin etiqueta ni standalone: falta la etiqueta", () => {
+    const reading = readPlanLineage(header("> Estado: open"), SPECS);
+    expect(reading.kind === "refused" && reading.failure.message).toContain(
+      "falta `> Derived from`",
+    );
+  });
+
+  it("una etiqueta sin ruta, con dos rutas o con una ruta que sale del workspace", () => {
+    const cases: Array<[string, string]> = [
+      ["> Derivado de la spec 033", "no nombra la ruta de su spec"],
+      [
+        "> Derived from docs/specs/033-spec-a.md y docs/specs/034-spec-b.md",
+        "nombra más de una spec",
+      ],
+      ["> Derived from docs/specs/033-spec-../../fuera.md", "sale del workspace"],
+    ];
+    for (const [label, expected] of cases) {
+      const reading = readPlanLineage(header(label), SPECS);
+      expect(reading.kind, label).toBe("refused");
+      if (reading.kind !== "refused") continue;
+      expect(reading.failure.code).toBe("PLAN_LINEAGE_UNSEALED");
+      expect(reading.failure.message, label).toContain(expected);
+      expect(reading.failure.line).toBe(3);
+    }
+  });
+
+  it("una etiqueta sin blockquote de cabecera: no hay dónde vivir el sello", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "aw-linaje-sin-cabecera-"));
+    try {
+      await mkdir(join(dir, SPECS), { recursive: true });
+      await writeFile(join(dir, SPEC), SPEC_BYTES, "utf8");
+      const bare = `# Plan 040 — x\n\nDerived from ${SPEC}\n\n## Origin\n\nx\n`;
+      const seal = await observePlanLineageSeal(fs, dir, bare, SPECS);
+      expect(seal.status === "refused" && seal.failure.message).toContain("no tiene un blockquote");
+      const quoted = await observePlanLineageSeal(
+        fs,
+        dir,
+        bare.replace("Derived", "> Derived"),
+        SPECS,
+      );
+      expect(quoted.status).toBe("sealed");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("una spec que no se puede leer", async () => {
+    const seal = await observePlanLineageSeal(
+      fs,
+      "/no/existe",
+      header("> Derived from docs/specs/033-spec-linaje.md"),
+      SPECS,
+    );
+    expect(seal.status === "refused" && seal.failure.message).toContain("no se puede leer");
   });
 });

@@ -35,6 +35,7 @@ import { mcpCommand } from "./mcp.js";
 import { mergeStateCommand } from "./merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./multiroot.js";
 import { persistCommand } from "./persist.js";
+import { planCommand } from "./plan.js";
 import { pluginCacheCommand } from "./plugin-cache.js";
 import { pluginDoctorCommand } from "./plugin-doctor.js";
 import { projectMdUpsertCommand } from "./project-md-upsert.js";
@@ -128,6 +129,9 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   resealCommand,
   amendCommand,
   settleCommand,
+  // The whole plan grammar without a run: what publication and the execution
+  // entry would each refuse, listed at once.
+  planCommand,
   codeScanCommand,
   pluginCacheCommand,
   pluginDoctorCommand,

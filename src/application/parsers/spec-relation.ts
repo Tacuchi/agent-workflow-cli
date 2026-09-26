@@ -1,6 +1,11 @@
 import { CORRELATIVE_SOURCE, compareCorrelatives } from "../../domain/correlative.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
-import { type PlanBaselineSeal, parsePlanBaseline, specCriteria } from "../../domain/lineage.js";
+import {
+  LINEAGE_LABEL,
+  type PlanBaselineSeal,
+  parsePlanBaseline,
+  specCriteria,
+} from "../../domain/lineage.js";
 import { type MarkdownHeading, parseMdSectionBilingual, scanMarkdown } from "../markdown.js";
 import {
   ACCEPTANCE_CRITERIA_KEY,
@@ -23,8 +28,6 @@ export type ParsedSpecRelation =
 // `Spec 011` / `spec 011` — a bare number is NOT evidence: `sesión 047` and
 // `baseline 044` would match it, and the whole point is to never guess.
 const SPEC_REFERENCE_RE = new RegExp(`\\bspec\\s+(${CORRELATIVE_SOURCE})\\b`, "gi");
-
-const DERIVED_FROM_RE = /derived from/i;
 
 /**
  * `> Standalone: <prosa>` — the marker a plan born in the host conversation
@@ -120,21 +123,46 @@ export function parseDerivedFromPath(
   text: string,
   specDir: string = DEFAULT_CORE_DOCS_CANON.spec,
 ): string | null {
+  const declared = parseLineageDeclaration(text, specDir);
+  const [only, ...rest] = declared?.paths ?? [];
+  return only !== undefined && rest.length === 0 ? only : null;
+}
+
+/** The header's lineage label and the distinct spec paths its lines name. */
+export interface LineageDeclaration {
+  /** One-based line of the first lineage label. */
+  line: number;
+  paths: string[];
+}
+
+/**
+ * Where the header declares its lineage, and with which spec paths — `null`
+ * when no header line carries the label.
+ *
+ * Separate from {@link parseDerivedFromPath} because a publication has to say
+ * WHY a declared lineage cannot be sealed: a label with no path and a label
+ * with two are different repairs, and both read `null` there.
+ */
+export function parseLineageDeclaration(
+  text: string,
+  specDir: string = DEFAULT_CORE_DOCS_CANON.spec,
+): LineageDeclaration | null {
   const { lines, fenced, headings } = scanMarkdown(text);
   const firstSection = headings.find((h) => h.level >= 2);
   const end = firstSection?.line ?? lines.length;
   const specPath = specPathPattern(specDir);
+  let first: number | null = null;
   const found: string[] = [];
   for (let i = 0; i < end; i += 1) {
     const line = lines[i];
     if (line === undefined || fenced[i] === true) continue;
-    if (!DERIVED_FROM_RE.test(line)) continue;
+    if (!LINEAGE_LABEL.test(line)) continue;
+    first ??= i + 1;
     for (const match of line.matchAll(new RegExp(specPath.source, specPath.flags))) {
       found.push(match[0]);
     }
   }
-  const unique = [...new Set(found)];
-  return unique.length === 1 ? (unique[0] as string) : null;
+  return first === null ? null : { line: first, paths: [...new Set(found)] };
 }
 
 /**
@@ -249,7 +277,7 @@ function derivedFromNumbers(text: string, specPath: RegExp): string[] {
   for (let i = 0; i < end; i++) {
     const line = lines[i];
     if (line === undefined || fenced[i] === true) continue;
-    if (!DERIVED_FROM_RE.test(line)) continue;
+    if (!LINEAGE_LABEL.test(line)) continue;
     found.push(...matchNumbers(line, specPath));
   }
   return dedupe(found);
@@ -268,7 +296,7 @@ function derivedFromNumbers(text: string, specPath: RegExp): string[] {
  * The point of the value is that the next reader learns WHERE the plan came from
  * without a spec to open, and an empty label answers that with silence.
  */
-function declaresStandalone(text: string): boolean {
+export function declaresStandalone(text: string): boolean {
   const { lines, fenced, headings } = scanMarkdown(text);
   const firstSection = headings.find((h) => h.level >= 2);
   const end = firstSection?.line ?? lines.length;

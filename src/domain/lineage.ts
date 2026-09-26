@@ -94,6 +94,15 @@ export function specBaselineDigest(specText: string): string {
   return `sha256:${baseDigest(specText)}`;
 }
 
+/**
+ * The header line that names the spec a plan derives from, in either language:
+ * `> Derived from …` or `> Derivado de …`, blockquoted or not. One label for the
+ * parser, the seal and the publication, so no reader accepts a lineage another
+ * one ignores. It opens the line, so prose that merely says "derivado de" in the
+ * header is not a declaration.
+ */
+export const LINEAGE_LABEL = /^\s*(?:>\s*)?(?:\*\*)?(?:derived from|derivado de)\b/i;
+
 /** The line a publication writes into the plan's header blockquote. */
 export function formatSpecBaseline(baseline: SpecBaseline): string {
   return `> Baseline: ${baseline.path}@${baseline.digest}`;
@@ -155,7 +164,7 @@ function readBaselineValue(raw: string, specDir: string): PlanBaselineSeal {
   return { status: "sealed", baseline: { path, number, digest } };
 }
 
-function correlativeOfSpecPath(path: string, specDir: string): string | null {
+export function correlativeOfSpecPath(path: string, specDir: string): string | null {
   const escaped = specDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(`^${escaped}/(${CORRELATIVE_SOURCE})-spec[^\\s]*\\.md$`);
   return re.exec(path)?.[1] ?? null;
@@ -172,7 +181,7 @@ function correlativeOfSpecPath(path: string, specDir: string): string | null {
  * publishes the plan — the stamped bytes are the ones previewed, approved and
  * written, so no reader ever sees a published plan whose seal landed separately.
  *
- * The line goes into the header blockquote, right after `Derived from`: the two
+ * The line goes into the header blockquote, right after the lineage label: the two
  * belong together — one names the spec, the other pins its version.
  */
 export function withSpecBaseline(planText: string, baseline: SpecBaseline): string {
@@ -191,7 +200,7 @@ export function withSpecBaseline(planText: string, baseline: SpecBaseline): stri
       lines[i] = line;
       return lines.join("\n");
     }
-    if (/derived from/i.test(raw)) derivedAt = i;
+    if (LINEAGE_LABEL.test(raw)) derivedAt = i;
   }
   const at = derivedAt >= 0 ? derivedAt + 1 : lastQuote + 1;
   // No blockquote at all: the document does not have the header this seal lives

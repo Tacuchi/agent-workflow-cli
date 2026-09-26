@@ -18,6 +18,7 @@ import {
   parseDerivedFromPath,
   parsePlanBaselineSeal,
   parseSpecCriteria,
+  parseSpecRelation,
 } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
@@ -338,6 +339,39 @@ describe("el sello se escribe donde va, y una sola vez", () => {
       `> Derived from ${SPEC_PATH}\n> Derived from docs/specs/044-spec-otra.md`,
     );
     expect(parseDerivedFromPath(two)).toBeNull();
+  });
+});
+
+describe("`Derived from` y `Derivado de` son la misma etiqueta de linaje", () => {
+  const baseline = { path: SPEC_PATH, number: "033", digest: functionalSpecDigest(SPEC) };
+  const localized = plan(null).replace("> Derived from", "> Derivado de");
+
+  it("el sello de `Derived from` queda byte a byte como antes: la línea justo tras la etiqueta", () => {
+    const expected = plan(null).replace(
+      `> Derived from ${SPEC_PATH}`,
+      `> Derived from ${SPEC_PATH}\n${formatSpecBaseline(baseline)}`,
+    );
+    expect(withSpecBaseline(plan(null), baseline)).toBe(expected);
+  });
+
+  it("la relación, la ruta y el lugar del sello leen `Derivado de` igual", () => {
+    expect(parseSpecRelation(localized)).toEqual({
+      status: "declared",
+      number: "033",
+      evidence: "derived-from",
+    });
+    expect(parseDerivedFromPath(localized)).toBe(SPEC_PATH);
+    const lines = withSpecBaseline(localized, baseline).split("\n");
+    const label = lines.findIndex((line) => line.startsWith("> Derivado de"));
+    expect(lines[label + 1]).toBe(formatSpecBaseline(baseline));
+  });
+
+  it("«derivado de» dentro de otra línea de la cabecera no declara linaje", () => {
+    const prose = plan(null).replace(
+      `> Derived from ${SPEC_PATH}`,
+      `> Nota: derivado de ${SPEC_PATH}`,
+    );
+    expect(parseDerivedFromPath(prose)).toBeNull();
   });
 });
 
