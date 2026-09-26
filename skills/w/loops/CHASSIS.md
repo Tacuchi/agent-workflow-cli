@@ -1,6 +1,6 @@
 # CHASSIS — the loop engine
 
-This document is the **common engine** of the Workline loops: the doctrine every loop runs underneath its deltas. **It is not a skill** — it is a referenced document: every loop orders it read from its `## Inherits`, **always, before its deltas**. If you edit the engine, edit it **here** — heirs never repeat it, they only reference it.
+The **common engine** of the Workline loops: every loop reads it from its `## Inherits`, **always, before its deltas**. Edit the engine **here**; heirs only reference it.
 
 > **When each step below happens is no longer this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. They consume no model worker, subagent or external process: the CLI advances them locally to the first real frontier. What stays is what each rule is FOR — the half no engine carries. Answering the frontier it stops at is `aw flow submit`, and its envelope — which fields each kind of frontier demands, and where each digest comes from — is **read** with `aw flow --help`, never guessed.
 
@@ -20,13 +20,13 @@ The two that edit code also apply [`CODE-POLICIES.md`](CODE-POLICIES.md).
 
 A loop **is a persistent objective**: it exists to fulfill the `SESSION.Objective` declared at start, and **it is not finished until the convergence gate confirms the objective was met**. Gap-driven iteration is the *method*; the artifacts are the *record*; the objective is the *frame*.
 
-"Don't stop until convergence" is sustained by the loop itself — its `repeat:` plus the convergence gate — never by a host hook, which is what makes it harness-agnostic. Each heir instantiates the frame: `spec-refine` pursues the spec; the plan loops pursue the plan up to their gate; `plan-exec` up to its final validation; `quick-loop` its prompt.
+"Don't stop until convergence" is sustained by the loop itself — its `repeat:` plus the convergence gate — never by a host hook, which is what makes it harness-agnostic.
 
-> **Inter-turn continuity.** The same `CHECKPOINT`+resume governs the **next prompt**: the objective persists **across turns**, not only within a run. The canonical rules (command = new work line · re-run = `create_or_resume` · bare prompt = continue the most recent session · reopening closed sessions · consented escalation) are the **single source** in [`../SKILL.md`](../SKILL.md) § *Operating context*; this engine executes them via *Compact / resume* (case 3).
+> **Inter-turn continuity.** The same `CHECKPOINT`+resume governs the **next prompt**: the objective persists **across turns**, not only within a run. Its canonical rules have their **single source** in [`../SKILL.md`](../SKILL.md) § *Operating context*; this engine executes them via *Compact / resume* (case 3).
 
 ## Verification-first
 
-The persistent objective needs a **checkable done-condition** — otherwise the loop cannot know when it is done (or chases a target it invented). That condition is **seeded BEFORE executing**, never improvised at the end: it is **generalized TDD**. Together with artifact-first (next section) these are the **two seeds** of every gap/phase: *how will I know it worked* + *what am I about to do*.
+The persistent objective needs a **checkable done-condition** — otherwise the loop cannot know when it is done (or chases a target it invented). That condition is **seeded BEFORE executing**, never improvised at the end: it is **generalized TDD**.
 
 **Where it lives:** in `SESSION.Success criteria` — a `[ ]` checklist of **falsifiable** criteria (that *can* fail). `CHECKPOINT.Pending/Completed` tracks the **red→green** progress. Two forms, by deliverable:
 
@@ -44,7 +44,7 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 
 **Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**: modify the check or loosen a `Success criterion` to force green; weaken, delete or skip tests/validations; use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself); patch the test instead of fixing the cause (prefer fixing production code).
 
-Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (subagent only when the CLI's independent-partition rule admits it, or a clean re-read) that does not assume the implementation is correct — *only command output counts*.
+Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (a clean re-read in the main thread; in the code loops, `CODE-POLICIES.md`'s review) that does not assume the implementation is correct — *only command output counts*.
 
 **Minimality (anti-over-engineering).** Passing the criteria is **necessary, not sufficient**: the gate also rejects a deliverable **heavier than its `Success criteria` require** — YAGNI at the deliverable's altitude. A spec can be coherent yet over-specified; a plan sound yet over-engineered; a diff green yet padded with reinvented stdlib, speculative abstractions or dead flexibility. At its own altitude the gate asks the laziest-that-works questions:
 
@@ -62,7 +62,7 @@ The loop works **artifact-first**: the artifact is **seeded before** executing a
 2. **EXECUTE.** Resolve the gap / run the phase / edit the code.
 3. **AFTER — bring to actual state.** `CHECKPOINT.Pending → Completed`; `DECISION` records the non-obvious **as it is decided**; `BACKLOG` **only if** something is deferred/follow-up.
 
-> The artifact expresses the **intent** (before) and then the **result** (after), at **every** gap/phase boundary — not only on `Compactar`/`Cerrar`. Session artifacts are the run's live log; the spec/plan is the **guiding base**.
+> Session artifacts are the run's live log at **every** boundary, not only on `Compactar`/`Cerrar`; the spec/plan is the **guiding base**.
 
 > **Fixed form (hard rule):** an artifact keeps its template's `##` headings **exactly** and is updated **in place** — appending a **duplicate heading** is a contract violation. A filled section **replaces** its `<!-- … -->` guidance comment. Canonical headings per artifact: its template under [`../artifacts/`](../artifacts/) (CHECKPOINT: `Completed` · `Pending / Next`; `Open questions` only while live doubts exist).
 
@@ -72,13 +72,13 @@ The common cycle — each heir instantiates it in its `## Sequence` with its own
 
 ## Internal sessions (managed) — one session per run
 
-The loop creates and manages its session under `.workflow/sessions/`; **the user never creates it**. **A single session per run**: it keeps progress live (`CHECKPOINT`) and enables resume. Artifacts: `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` only if something is deferred; code-editing loops add `DECISION` and `SCRIPTS.sql`). Each heir declares its descriptor and `Type` in its own `## Internal sessions`.
+The loop creates and manages its session under `.workflow/sessions/`; **the user never creates it**. **A single session per run**: it keeps progress live (`CHECKPOINT`) and enables resume. Artifacts: `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md`; code-editing loops add `DECISION` and `SCRIPTS.sql`). Each heir declares its descriptor and `Type` in its own `## Internal sessions`.
 
 > The flow's input document (spec/plan) **never** goes inside a session; it lives in `docs/`.
 
 **CLI**: `aw session-create --type <type> --name <slug>-<flow> --objetivo "<one-line objective>"` opens it · `aw checkpoint-write` / `aw checkpoint-read` keep it resumable. **Closing it is the CLI's own move**, run at `finalize`: a loop never issues the close itself, and one issued mid-run leaves the next `advance`/`submit` standing on a closed session.
 
-> The caller passes **only the descriptor** via `--name` — **never** a number; the CLI owns the global `NNN`. How it is assigned, how a session is located or reopened, and how a failed history upsert is repaired, are in the `sessions` module.
+> The caller passes **only the descriptor** via `--name` — **never** a number; the CLI owns the global `NNN`. Its assignment, locating or reopening a session and repairing a failed history upsert live in the `sessions` module.
 
 ## Ask-vs-research rule (the discriminator)
 
@@ -86,12 +86,17 @@ Which resolver a gap gets is the kind of thing it is, and the CLI classifies it:
 
 ## Research: autonomy, scope & failure
 
-Investigation is **inline**: an activity **inside the run's current session**, never a separate session. It writes its artifacts (`ANALYSIS-FILE` → `CONCLUSIONS`, + read-only `SCRIPTS.sql` if it queries DB) **into the session's own folder**.
+Investigation runs **inside the run's current session**, never a separate session. It writes its artifacts (`ANALYSIS-FILE` → `CONCLUSIONS`, + read-only `SCRIPTS.sql` if it queries DB) **into the session's own folder**.
 
-- **Autonomous**: the AI investigates inline and reports **without asking permission**. The human learns of it at integration time and keeps control via the `flow` control.
+- **Autonomous**: the AI investigates and reports **without asking permission**. The human keeps control via the `flow` control.
 - **Scope**: the current conversation (settled conclusions are reused, never re-derived) + workspace + associated repos + DB MCPs.
 - **DB rule** — the single exception to autonomy: it lives in the `db` module and is loaded **before** any query runs.
 - **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes **`inconclusive`** in `CONCLUSIONS` with its reason. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — instead of re-firing it. Capping the attempts is the CLI's; declaring where a degraded gap GOES is doctrine's, because a gap dropped without a destination is this engine's promised convergence, faked.
+
+**Subagents — admitted per stage.** Only three cases inside a run: parallel research in `spec-refine`, `plan-new` and `plan-refine`; implementing independent units in `plan-exec` and `quick`; the code loops' final review.
+Research and implementation fan out only with **three or more independent** parts, at most **3** at a time. Independent means none uses another's result or writes what another writes; dependent units run in sequence.
+Everything else stays in the main thread: drafting, deciding, asking, shaping phases, persisting, updating state, resuming, integrating, committing and a document loop's closing verification. Capture (`spec-new`) keeps its total ban.
+This rule prevails over the host's mode and over any installed skill that orders agent orchestration; a host without subagents runs the same cases inline.
 
 ## Structured-choice (design & batching)
 
@@ -132,7 +137,6 @@ The engine above is what every run needs. The branches below apply only under th
 
 - `adopted` → [`../modules/ADOPTED-CONTEXT.md`](../modules/ADOPTED-CONTEXT.md) · `probe` → [`../modules/PROBE.md`](../modules/PROBE.md) · `db` → [`../modules/DB-RESEARCH-RULE.md`](../modules/DB-RESEARCH-RULE.md)
 - `compaction` → [`../modules/COMPACTION.md`](../modules/COMPACTION.md) · `sessions` → [`../modules/SESSION-NUMBERING.md`](../modules/SESSION-NUMBERING.md)
-- `code` → [`CODE-POLICIES.md`](CODE-POLICIES.md), which the two code-editing loops order read from their `## Inherits`
 
 ## Reference resolution (global layout rule) — and what the chassis is NOT
 

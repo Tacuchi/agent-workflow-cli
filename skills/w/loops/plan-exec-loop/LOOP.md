@@ -46,13 +46,9 @@ inference, the deferred-validation cycle and conditional Git authorization.
 
 `git` (safe branch + proposed commits). `plan-exec` does **not** load `external-data`: its proof comes from the acquired checkout only. SQL fixture/ephemeral tests are ordinary local commands; remote MCP reads belong to earlier research, never this loop.
 
-> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
-
 ## Internal sessions (managed)
 
-- **plan-exec session** descriptor `<slug>-plan-exec` → `NNN-<slug>-plan-exec` (the `<slug>` comes from the input plan-doc `docs/plans/PPP-plan-<slug>.md`): **a single session per run** (Type = `exec`). Owns the run; holds `SESSION` + `CHECKPOINT` + `DECISION` + `SCRIPTS.sql` (+ `BACKLOG` only if something is deferred). Research is **inline** inside this session: it produces `ANALYSIS-FILE`/`CONCLUSIONS` (+ read-only `SCRIPTS.sql` if it queries DB) in its own folder.
-
-> **Numbering**: the caller passes only the descriptor; the CLI prepends the global sequential `NNN` over `.workflow/sessions/` (see chassis). It never restarts per type.
+- **plan-exec session** descriptor `<slug>-plan-exec` → `NNN-<slug>-plan-exec` (the `<slug>` comes from the input plan-doc `docs/plans/PPP-plan-<slug>.md`): **a single session per run** (Type = `exec`). Owns the run; holds `SESSION` + `CHECKPOINT` + `DECISION` + `SCRIPTS.sql` (+ `BACKLOG` only if something is deferred). Research runs inside this session and produces `ANALYSIS-FILE`/`CONCLUSIONS` (+ read-only `SCRIPTS.sql` if it queries DB) in its own folder.
 
 > **Compat (legacy):** old workspaces may hold `plan-exec-phase-*` sessions (one per phase) and `*-research-*` ones — historical, left as-is; new runs use a single session.
 
@@ -243,10 +239,14 @@ adds nothing of its own beyond running on a verified branch and never
 
 ## Delta 5 — Closing review gate (conventions, pre-commit)
 
-Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md): independent re-read, ambient
-conventions and the floor lenses. It covers the execution unit's **whole** diff after every phase
-proof/check and before states or Git advance. Findings are fixed and the affected checks rerun, or
-deferred with justification when they are not blockers.
+Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md). It covers the execution unit's **whole**
+diff after every phase proof/check and before states or Git advance. Findings are fixed and the
+affected checks rerun, or deferred with justification when they are not blockers.
+
+**Distinct reviewer (hard rule).** Every batch close is reviewed by a reviewer other than its
+author: neither whoever wrote the diff nor any of its implementers. The round that fixes its
+findings goes back, before the commit, to a reviewer who wrote neither the diff nor the fix. A host
+without subagents runs a clean re-read instead, and the closing report declares it.
 
 ## Delta 6 — Completion / close
 
