@@ -117,6 +117,7 @@ export type CustodyEffectKind =
   | "commit"
   | "artifact_published"
   | "flow_adopted"
+  | "flow_restarted"
   | "history_row";
 
 export interface CustodyEffect {

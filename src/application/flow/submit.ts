@@ -127,6 +127,7 @@ import {
   type ResolvedBoundary,
   actionDigest,
   advanceFlowRun,
+  awaitingCliRerun,
   directiveFor,
   effectsOfTransition,
   resolveBoundary,
@@ -642,7 +643,6 @@ async function decide(
       action: "corré 'aw flow advance' primero: la frontera la emite el motor, no el llamador",
     });
   }
-
   // The seal the payload CLAIMS keys the lookup, not the current one: a resend of
   // an answer that was already applied quotes a boundary the run has left, and
   // looking it up under today's seal would never find it. A forged seal buys
@@ -658,6 +658,21 @@ async function decide(
   // 1 · Resend, before anything else.
   const resend = resendCheck(state, resolved, cost);
   if (resend !== null) return resend;
+
+  // The one re-run of an exhausted internal boundary belongs to the CLI: an
+  // external answer here would be the fourth try the cap exists to refuse.
+  if (awaitingCliRerun(state, resolved.stopped)) {
+    return reject(
+      state,
+      resolved,
+      `'${resolved.stopped.id}' agotó sus intentos y la vuelve a correr el CLI, no un llamador`,
+      {
+        code: "FLOW_ANSWER_NOT_EXPECTED",
+        action:
+          "corré 'aw flow advance': el CLI corre una vez más la operación interna y, si reconoce su efecto, avanza sin cobrar",
+      },
+    );
+  }
 
   // The action the run is waiting on is the one that was EMITTED, and the seal
   // would already refuse a result about any other. What the persisted digest adds

@@ -1,17 +1,21 @@
 import { join } from "node:path";
 import { CORRELATIVE_SOURCE } from "../domain/correlative.js";
 import { type CoreDocsCanon, coreDocumentDirectory } from "../domain/docs-canon.js";
+import { newRunState } from "../domain/flow/run-state.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { CustodyArtifact } from "../domain/session/custody.js";
 import type { SessionType } from "../domain/types.js";
 import { type WorklineNodeId, nodeFromDocPath } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { WORKLINE_FLOWS, type WorklineFlow } from "./capability/compose.js";
 import { localDateIso } from "./dates.js";
 import { resolveCoreDocsCanon } from "./docs-canon-service.js";
+import { applyUnderLock, locateRun } from "./flow/run-state-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
 import { bindContextToSession, readBindingRegistry } from "./session-binding-service.js";
+import { recordFlowAdoption } from "./session-custody-recorder.js";
 import { baselineOf, birthCustody, custodyPath, writeCustody } from "./session-custody-service.js";
 import { nextSessionCorrelative } from "./session-resolver.js";
 import { renderSessionMarkdown } from "./templates/session.js";
@@ -61,6 +65,8 @@ export interface SessionCreateRecordOutput {
    * `none` — the custody holds no baseline, and `inputs_note` says why.
    */
   inputs_from: InputsOrigin;
+  /** The flow whose run was seeded, when the descriptor names one. */
+  flow?: WorklineFlow;
   /** Why nothing was sealed, whenever the flow DID have a document to look for. */
   inputs_note?: string;
   origin?: string;
@@ -154,7 +160,64 @@ export async function runSessionCreate(
   if (derived.note !== undefined) record.inputs_note = derived.note;
   if (origin && origin.length > 0) record.origin = origin;
 
+  const flow = flowOfDescriptor(name);
+  if (flow !== null) {
+    const seeded = await seedRun(fs, paths, folderInfo.folder, flow);
+    if (seeded !== null) return seeded;
+    record.flow = flow;
+  }
+
   return { sessionCreate: record };
+}
+
+/**
+ * The flow a descriptor names — `<slug>-<flow>` — or null for any other name.
+ *
+ * Reading it here is not inference: the doctrine tells every flow to open its
+ * session with exactly that descriptor, so the name IS the declaration. Longest
+ * suffix first, so `-plan-exec` is never read as some shorter flow.
+ */
+function flowOfDescriptor(name: string): WorklineFlow | null {
+  const descriptor = sessionDescriptor(name);
+  const flows = [...WORKLINE_FLOWS].sort((a, b) => b.length - a.length);
+  const flow = flows.find((candidate) => descriptor.endsWith(`-${candidate}`));
+  return flow !== undefined && descriptor.length > flow.length + 1 ? flow : null;
+}
+
+/**
+ * Seed the new session's run and record its flow in custody.
+ *
+ * So the first `aw flow advance` of a session created for a flow starts its run
+ * — no `--flow`, no `--adopt`, and no "legacy" for a session that is not. A run
+ * already there is left alone: creating is never a way to reset one.
+ */
+async function seedRun(
+  fs: FileSystemPort,
+  paths: PathsService,
+  folder: string,
+  flow: WorklineFlow,
+): Promise<SessionCreateError | null> {
+  // The folder was claimed a moment ago, so a run already there is not ours to
+  // adopt: refused, never reused, and custody records only a run really seeded.
+  const seeded = await applyUnderLock<null>(
+    fs,
+    locateRun(paths, folder),
+    (current) =>
+      current === null
+        ? { ok: true, state: newRunState(flow, folder), value: null }
+        : {
+            ok: false,
+            failure: {
+              code: "FLOW_RUN_EXISTS",
+              message: `la sesión '${folder}' recién creada ya tiene un estado de corrida`,
+              action: `revisá '${folder}': una sesión nueva no hereda la corrida de otra`,
+            },
+          },
+    { allowAbsent: true },
+  );
+  if (!seeded.ok) return { error: seeded.failure.message, code: seeded.failure.code };
+  await recordFlowAdoption({ fs, paths }, folder, flow);
+  return null;
 }
 
 /**

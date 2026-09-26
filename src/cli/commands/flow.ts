@@ -1,11 +1,21 @@
 import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
 import { isHarnessId } from "../../application/dev-only-services.js";
 import {
+  type AnnulPrepareResult,
+  type AnnulPreview,
+  applyAnnulment,
+  prepareAnnulment,
+} from "../../application/flow/annul-service.js";
+import {
   type AdvanceFlowResult,
   advanceFlow,
   recoverFlowBoundary,
+  restartFlow,
 } from "../../application/flow/flow-service.js";
-import { internalActionExecutor } from "../../application/flow/internal-actions.js";
+import {
+  type InternalActionExecutor,
+  internalActionExecutor,
+} from "../../application/flow/internal-actions.js";
 import {
   type CheckoutProofReceipt,
   type ProveFlowResult,
@@ -46,9 +56,9 @@ import type { CliContext } from "../types.js";
  * directive whose action carried the proof — would make the run look like it had
  * moved when nothing did.
  */
-type FlowResult = FlowDirective | CheckoutProofReceipt;
+type FlowResult = FlowDirective | CheckoutProofReceipt | AnnulPreview;
 
-const VERBS = ["advance", "submit", "recover", "prove"] as const;
+const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul"] as const;
 
 /**
  * The answer envelope, published where an executor can read it WITHOUT running a
@@ -168,7 +178,7 @@ function readFlowArgs(
   const verb = args.rest[0];
   if (verb === undefined || !(VERBS as readonly string[]).includes(verb)) {
     return refuse(
-      `uso: aw flow ${VERBS.join(" | ")} --session <código> [--flow <flow> --adopt] [--approval <digest>] [--transition <id>] [--source <alias>] [--artifact <ruta>]`,
+      `uso: aw flow ${VERBS.join(" | ")} --session <código> [--flow <flow> --adopt] [--approval <digest>] [--transition <id>] [--source <alias>] [--artifact <ruta>] [--from <lote>]`,
     );
   }
   const flow = args.values.get("flow");
@@ -192,7 +202,7 @@ function readFlowArgs(
 
 export const flowCommand: CliCommand<FlowResult> = {
   name: "flow",
-  describe: `Avanza un recorrido de Workline hasta su primera frontera no determinista y devuelve su directiva. Verbos: ${VERBS.join(" | ")}. La respuesta de submit entra por stdin como JSON y la aprobación de efecto viaja aparte en --approval. recover le devuelve los intentos a la frontera agotada vigente conservando todo lo aplicado, y se niega si esa frontera ya ejerció efectos. Usage: aw flow advance --session <código> [--flow <flow> --adopt] · aw flow recover --session <código> [--transition <id>] · aw flow prove --session <código> [--source <alias>] [--artifact <ruta>].
+  describe: `Avanza un recorrido de Workline hasta su primera frontera no determinista y devuelve su directiva. Verbos: ${VERBS.join(" | ")}. La respuesta de submit entra por stdin como JSON y la aprobación de efecto viaja aparte en --approval. recover le devuelve los intentos a la frontera agotada vigente conservando todo lo aplicado, y se niega si esa frontera ya ejerció efectos. restart saca de cualquier estado trabado —frontera agotada con efectos, registro ilegible o sellado mal, anterior a la v11, contador de intentos ilegible o revertido—: archiva el registro y su contador en un archivo con fecha y sello dentro de la sesión, re-adopta el mismo flow (del registro, de la custodia o de --flow) y lo deja en la traza; nunca hace falta tocar .flow-run.json a mano. annul reabre un lote mal acreditado y los posteriores: sin --approval muestra las fases y tareas que reabre y el digest que lo aprueba, sin escribir nada; con ese digest las deja pendientes y abiertas en el plan, retira su sello done si lo tenía, re-adopta la corrida para que las vuelva a inferir y lo deja en la traza; git no se toca. Usage: aw flow advance --session <código> [--flow <flow> --adopt] · aw flow recover --session <código> [--transition <id>] · aw flow prove --session <código> [--source <alias>] [--artifact <ruta>] · aw flow restart --session <código> [--flow <flow>] · aw flow annul --session <código> --from <lote> [--approval <digest>].
 
 ${ENVELOPE}
 
@@ -248,6 +258,10 @@ ${CHECKOUT}`,
       runtime: ctx.runtime,
     });
 
+    if (verb === "annul") return annulVerb(args, ctx, session, executor);
+
+    if (verb === "restart") return restartVerb(ctx, session, flow, executor);
+
     if (verb === "submit") {
       const approval = args.values.get("approval");
       return project(
@@ -277,6 +291,7 @@ ${CHECKOUT}`,
     if (result.data === undefined) return "";
     const data = result.data;
     if ("proof" in data) return `${renderProofHuman(data)}\n`;
+    if ("batches" in data) return `${renderAnnulHuman(data)}\n`;
     return `${renderDirectiveHuman(data, context.detail)}\n`;
   },
 };
@@ -298,6 +313,64 @@ function renderProofHuman(receipt: CheckoutProofReceipt): string {
     "",
     JSON.stringify(receipt.proof, null, 2),
   ].join("\n");
+}
+
+/** Archive the stuck run and re-adopt its flow; `--flow` only when nothing records it. */
+async function restartVerb(
+  ctx: CliContext,
+  session: { code?: string; contextId?: string },
+  flow: string | undefined,
+  executor: InternalActionExecutor,
+): Promise<CommandResult<FlowResult>> {
+  return project(
+    await restartFlow(ctx.fs, ctx.paths, {
+      ...session,
+      ...(flow !== undefined ? { flow } : {}),
+      executor,
+      git: ctx.git,
+    }),
+  );
+}
+
+/** Preview without `--approval`; apply with the digest that preview showed. */
+async function annulVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+  session: { code?: string; contextId?: string },
+  executor: InternalActionExecutor,
+): Promise<CommandResult<FlowResult>> {
+  const from = args.values.get("from");
+  if (from === undefined) {
+    return fail(
+      "ARGS_INVALID",
+      "uso: aw flow annul --session <código> --from <lote> [--approval <digest>]",
+    );
+  }
+  const approval = args.values.get("approval");
+  const annul = { ...session, from, env: ctx.env, executor, git: ctx.git };
+  if (approval === undefined) return projectAnnul(await prepareAnnulment(ctx.fs, ctx.paths, annul));
+  return project(await applyAnnulment(ctx.fs, ctx.paths, { ...annul, approval }));
+}
+
+/** An annulment preview, read by a person: what reopens, then how to approve it. */
+function renderAnnulHuman(preview: AnnulPreview): string {
+  return [
+    `anular en ${preview.plan}: ${preview.batches.map((batch) => batch.id).join(", ")}`,
+    ...preview.batches.map(
+      (batch) =>
+        `  ${batch.id}: ${batch.phases.map((phase) => `F${phase}`).join(", ")} vuelven a pendiente · reabre ${batch.tasks.join(", ")}`,
+    ),
+    ...(preview.unseals_done ? ["  el plan pierde su sello done"] : []),
+    "no se escribió nada y git no se toca",
+    `para aplicarlo: ${preview.next}`,
+  ].join("\n");
+}
+
+function projectAnnul(result: AnnulPrepareResult): CommandResult<FlowResult> {
+  if (result.ok) return { ok: true, data: result.preview, exitCode: 0 };
+  if ("session" in result)
+    return failSessionResolution(result.session) as CommandResult<FlowResult>;
+  return failSemantic(result.failure);
 }
 
 function projectProof(result: ProveFlowResult): CommandResult<FlowResult> {

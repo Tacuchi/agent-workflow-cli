@@ -828,9 +828,7 @@ async function closeBatch(
       canonicalJson({ plan: run.scope.plan }),
     );
   }
-  const batch = (live.state.batches ?? []).find(
-    (current) => current.published_plan_digest === undefined,
-  );
+  const batch = batchToClose(live.state);
   if (batch === undefined) {
     return refusal(
       "plan-exec.batch-close",
@@ -883,6 +881,26 @@ async function closeBatch(
     effects: ["mutate_overwrite"],
     state,
   };
+}
+
+/**
+ * The batch this close is about: the one still unpublished, or — on a re-entry —
+ * the one whose publication landed while the cursor never moved past its close.
+ *
+ * The second case is the write that failed AFTER the effect: the plan already
+ * carries the ticks and `validada`, the batch its after-digest, and only the run's
+ * cursor stayed on `batch-close`. It is found by counting the closes the cursor
+ * really walked, not by `batch_loop.iteration`, which after the publication
+ * already names the NEXT batch — or nothing, when it was the last one. The
+ * publisher then confirms it through its own already-applied path.
+ */
+function batchToClose(state: FlowRunState): PlanExecBatch | undefined {
+  const batches = state.batches ?? [];
+  const open = batches.find((batch) => batch.published_plan_digest === undefined);
+  if (open !== undefined) return open;
+  const walked = state.applied.filter((id) => id === "plan-exec.batch-close").length;
+  const published = batches.filter((batch) => batch.published_plan_digest !== undefined);
+  return published.length > walked ? published.at(-1) : undefined;
 }
 
 /**
@@ -1123,8 +1141,8 @@ export async function planDonePrecondition(
     // And the command is READ from the projection, not spelled here. The two
     // agreed by accident: at an internal boundary the projection happens to
     // return exactly `aw flow advance --code <NNN>`. It does not have to — a
-    // legacy run refuses a bare `advance` and needs `--flow … --adopt`, and only
-    // the projection knows that. Synthesizing it was the third derivation this
+    // run older than v11 refuses a bare `advance` and needs `aw flow restart`,
+    // and only the projection knows that. Synthesizing it was the third derivation this
     // phase set out to remove.
     const run = await projectRun(deps.fs, deps.paths, session);
     const exit = obligationExit(plan.reconciliation, {

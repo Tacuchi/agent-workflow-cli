@@ -3,7 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
-import { advanceFlow, recoverFlowBoundary } from "../../src/application/flow/flow-service.js";
+import {
+  advanceFlow,
+  recoverFlowBoundary,
+  restartFlow,
+} from "../../src/application/flow/flow-service.js";
 import type { InternalActionExecutor } from "../../src/application/flow/internal-actions.js";
 import {
   applyUnderLock,
@@ -354,7 +358,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
 
     it("la acción se ejecutó y falló: cada ejecución registra su intento y termina degradando", async () => {
       const failed = await reachBoard();
-      expect(failed.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+      expect(failed.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
       // El defecto medido: cero filas en el ledger para esa frontera, para
       // siempre. Ahora la ejecución que vuelve a fallar es el intento — cobrado
       // donde la acción corre, no al entrar al avance.
@@ -363,6 +367,12 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
         await advance();
         expect(attemptsAt(await state(), "fixture.board")).toBe(expected);
       }
+      // Agotada, el CLI la corre una vez más antes de degradarla, y esa vuelta
+      // no cobra: si hubiera reconocido su efecto, la corrida habría seguido.
+      const rerun = await advance();
+      expect(rerun.boundary.transition).toBe("fixture.board");
+      expect(attemptsAt(await state(), "fixture.board")).toBe(MAX_BOUNDARY_ATTEMPTS);
+      expect((await state()).skipped).not.toContain("fixture.board");
 
       const degraded = await advance();
       const after = await state();
@@ -371,7 +381,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       expect(after.skipped).toContain("fixture.board");
       const declared = (after.degraded ?? []).find((one) => one.transition === "fixture.board");
       expect(declared?.cause).toContain("se ejecutó y falló");
-      expect(declared?.cause).toContain("FLOW_EVIDENCE_MISSING");
+      expect(declared?.cause).toContain("FLOW_INTERNAL_ACTION_REFUSED");
       expect(declared?.cause).toContain("Open questions");
       expect(after.applied).toContain("fixture.wrap");
       expect(degraded.boundary.kind).toBe("final");
@@ -421,7 +431,8 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
 
     it("el estado final distingue contestada, agotada y salteada por condición", async () => {
       await answerObserve();
-      for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await advance();
+      // Dos intentos más, la vuelta gratis del CLI y el avance que la degrada.
+      for (let turn = 0; turn <= MAX_BOUNDARY_ATTEMPTS; turn += 1) await advance();
       const after = await state();
 
       // Contestada: está en el cursor y no está ni omitida ni degradada.
@@ -558,11 +569,12 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     /**
      * Compatibilidad hacia atrás, que es la otra mitad del cambio de versión.
      *
-     * Un ledger escrito por la versión anterior no trae el segmento batch de
-     * v10. Se puede leer sin tocarlo, pero continuar exige adoptar
-     * explícitamente: el CLI no inventa retrospectivamente ese cursor.
+     * Un ledger escrito antes de la v11 no trae lo que el motor lee hoy. Se
+     * puede leer sin tocarlo, pero no se continúa —ni con `--adopt`, que ya no lo
+     * sube en su lugar—: su salida es `aw flow restart`, que lo archiva y
+     * re-adopta. El CLI no inventa retrospectivamente ese cursor.
      */
-    it("un ledger de la versión anterior se lee, exige adopción y conserva el contador", async () => {
+    it("un ledger anterior a la v11 se lee, no se continúa y sale por aw flow restart", async () => {
       for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await refuseObserve();
       const raw = JSON.parse(await readFile(statePath(), "utf8")) as Record<string, unknown>;
       const legacy: Record<string, unknown> = { ...raw, version: 7 };
@@ -570,6 +582,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       legacy.attempt_floor = undefined;
       legacy.attempt_grants = undefined;
       legacy.degraded = undefined;
+      legacy.journey_base = undefined;
       legacy.digest = undefined;
       const clean = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
       await writeFile(
@@ -582,24 +595,33 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       expect(read.version).toBe(7);
       // El ledger viejo no dice nada de intentos gastados; el contador sí.
       expect(attemptsAt(read, "fixture.observe")).toBe(MAX_BOUNDARY_ATTEMPTS);
-      const blocked = await advanceFlow(fs, paths, { code: CODE, adopt: false, executor });
-      if (blocked.ok || "session" in blocked) {
-        throw new Error("una corrida legacy no puede continuar sin adopción");
+      for (const adopt of [false, true]) {
+        const blocked = await advanceFlow(fs, paths, {
+          code: CODE,
+          flow: "quick",
+          adopt,
+          executor,
+        });
+        // Ni continuar ni adoptar: las dos nombran la salida.
+        expect(blocked).toMatchObject({
+          ok: false,
+          failure: {
+            code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED",
+            action: expect.stringContaining(`aw flow restart --session ${SESSION}`),
+          },
+        });
       }
-      expect(blocked.failure.code).toBe("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
-      const adopted = await advanceFlow(fs, paths, {
-        code: CODE,
-        flow: "quick",
-        adopt: true,
-      });
-      if (!adopted.ok) throw new Error(`esperaba adoptar: ${adopted.failure.code}`);
-      const migrated = await state();
-      expect(migrated.version).toBe(FLOW_RUN_STATE_VERSION);
-      // El presupuesto persistido sigue mandando después de adoptar: la frontera
-      // ya agotada se degrada; no vuelve a ofrecer una cuarta respuesta.
-      expect(attemptsAt(migrated, "fixture.observe")).toBe(MAX_BOUNDARY_ATTEMPTS);
-      expect(migrated.skipped).toContain("fixture.observe");
-      expect(adopted.directive.boundary.transition).toBe("fixture.board");
+
+      const restarted = await restartFlow(fs, paths, { code: CODE, executor });
+      if (!restarted.ok) throw new Error(`esperaba reiniciar: ${JSON.stringify(restarted)}`);
+      const fresh = await state();
+      expect(fresh.version).toBe(FLOW_RUN_STATE_VERSION);
+      expect(fresh.flow).toBe("quick");
+      const first = fresh.events[0];
+      if (first?.kind !== "restarted") throw new Error("la corrida nueva nace nombrando la salida");
+      expect(first.cause).toContain("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
+      const archived = JSON.parse(await readFile(join(sessionDir(), first.archive), "utf8"));
+      expect(JSON.parse(archived.state).version).toBe(7);
     });
   });
 
@@ -1083,13 +1105,13 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       expect(attemptAccountingAt(after, "fixture.observe").available).toBe(MAX_BOUNDARY_ATTEMPTS);
     });
 
-    it("AC-08: una corrida de versión legible con el desfase se recupera igual", async () => {
+    it("AC-08: una corrida anterior a la v11 con el desfase no se recupera: sale por restart", async () => {
       await refuseObserve();
       await corruptChain();
-      // Y encima la corrida viene de una versión anterior del ledger: se lee sin
-      // tocarla y su recuperación queda detrás de la adopción explícita.
+      // Y encima la corrida viene de antes de la v11: se lee sin tocarla, y ni
+      // recover ni la adopción la continúan.
       const raw = JSON.parse(await readFile(statePath(), "utf8")) as Record<string, unknown>;
-      const legacy: Record<string, unknown> = { ...raw, version: 8 };
+      const legacy: Record<string, unknown> = { ...raw, version: 8, journey_base: undefined };
       legacy.digest = undefined;
       const clean = JSON.parse(JSON.stringify(legacy)) as Record<string, unknown>;
       await writeFile(
@@ -1101,19 +1123,13 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       const read = await state();
       expect(read.version).toBe(8);
       const legacyRecovery = await recover();
-      if (legacyRecovery.ok) throw new Error("recover no adopta una corrida legacy");
+      if (legacyRecovery.ok) throw new Error("recover no continúa una corrida anterior a la v11");
       expect(legacyRecovery.failure.code).toBe("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
-      const adopted = await advanceFlow(fs, paths, {
-        code: CODE,
-        flow: "quick",
-        adopt: true,
-        executor,
-      });
-      if (!adopted.ok) throw new Error(`esperaba adoptar: ${adopted.failure.code}`);
+      expect(legacyRecovery.failure.action).toContain("aw flow restart");
+      const restarted = await restartFlow(fs, paths, { code: CODE, executor });
+      if (!restarted.ok) throw new Error(`esperaba reiniciar: ${JSON.stringify(restarted)}`);
       expect((await state()).version).toBe(FLOW_RUN_STATE_VERSION);
-      const recovered = await recover();
-      if (!recovered.ok) throw new Error(`esperaba recuperar: ${recovered.failure.code}`);
-      expect(attemptAccountingAt(await state(), "fixture.observe").unanswerable).toBeNull();
+      // La corrida nueva se contesta con su presupuesto entero.
       await answerObserve();
       expect((await state()).applied).toContain("fixture.observe");
     });
@@ -1168,9 +1184,9 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     });
 
     it("el contrato persistido no se movió: una prueba lo fija", () => {
-      // Las corridas v7-v9 se siguen leyendo, pero una corrida activa se adopta
-      // explícitamente antes de escribir la semántica de batches de v10.
-      expect(FLOW_RUN_STATE_VERSION).toBe(11);
+      // La v12 agregó tipos de traza; la v11 se sigue continuando con su paso
+      // de subida, y de la v10 hacia atrás sólo se lee.
+      expect(FLOW_RUN_STATE_VERSION).toBe(12);
     });
 
     it("renumerar la cadena no devuelve intentos: el techo lo siguen fijando piso y grants", async () => {

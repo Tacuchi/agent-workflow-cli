@@ -9,11 +9,11 @@
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import {
+  type FlowRunEvent,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
   type RecoveryBlocker,
   applyAttemptReconciliation,
-  atCurrentVersion,
   attemptAccountingAt,
   checkAgainstJourney,
   grantAttempts,
@@ -22,20 +22,31 @@ import {
   normalizeAttemptChain,
   reconcileAttemptsAt,
   recoveryBlockedAt,
+  restartInvocation,
+  withEvent,
+  withoutExhaustedRerun,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { WORKLINE_FLOWS, type WorklineFlow } from "../capability/compose.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import type { PathsService } from "../paths-service.js";
-import { recordFlowAdoption } from "../session-custody-recorder.js";
+import { recordFlowAdoption, recordFlowRestart } from "../session-custody-recorder.js";
+import { readCustody } from "../session-custody-service.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import { advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
 import { publishObservedCheckouts } from "./checkout-observation.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
 import { journeyForRun } from "./run-journey.js";
-import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
+import {
+  type FlowRunLocation,
+  type FlowRunMutation,
+  applyUnderLock,
+  locateRun,
+  readRun,
+  restartUnderLock,
+} from "./run-state-service.js";
 
 export interface AdvanceFlowInput {
   code?: string;
@@ -85,13 +96,19 @@ export async function advanceFlow(
   }
   // A write path: a closed line is never advanced by accident, and nothing is
   // chosen by recency — several active sessions with no association is ambiguous.
-  const resolution = await resolveSessionTarget(fs, paths, {
-    intent: "write",
+  const target = {
+    intent: "write" as const,
     ...(input.code !== undefined ? { code: input.code } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+  };
+  let resolution = await resolveSessionTarget(fs, paths, {
+    ...target,
     allowClosed: false,
     bind: true,
   });
+  if (resolution.outcome === "error" && resolution.code === "SESSION_CLOSED") {
+    resolution = await closedOnItsOwnFinalize(fs, paths, target, resolution);
+  }
   if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
 
   const session = resolution.session.folder;
@@ -100,19 +117,28 @@ export async function advanceFlow(
   // the only moment that can tell an adoption from an ordinary advance.
   const adopting = input.adopt && !(await fs.exists(location.statePath));
 
-  let adoptedExisting = false;
   const applied = await applyUnderLock<FlowDirective>(
     fs,
     location,
     (current) => {
-      const seeded =
-        current === null
-          ? seed(input, session)
-          : legacyRunNeedsAdoption(current)
-            ? adoptExisting(input, current)
-            : current;
+      // A readable run older than v11 never reaches here: the lock refuses it and
+      // names `aw flow restart`. Continuing its cursor would invent batch limits
+      // the old run never declared.
+      const seeded = current === null ? seed(input, session) : current;
       if ("failure" in seeded) return { ok: false, failure: seeded.failure };
-      if (current !== null && legacyRunNeedsAdoption(current)) adoptedExisting = true;
+      // A `--flow` that names another flow than the run's is refused, never
+      // ignored: since session-create seeds the run, the first advance is exactly
+      // where somebody still passes `--flow … --adopt` by habit.
+      if (current !== null && input.flow !== undefined && input.flow !== current.flow) {
+        return {
+          ok: false,
+          failure: {
+            code: "FLOW_ADOPTION_FLOW_MISMATCH",
+            message: `la corrida declara '${current.flow}', no '${input.flow}'`,
+            action: `avanzala sin --flow, o con '--flow ${current.flow}', o elegí la sesión correcta`,
+          },
+        };
+      }
       const advance = advanceFlowRun({
         state: seeded,
         journey: journeyForRun(seeded),
@@ -120,12 +146,12 @@ export async function advanceFlow(
       if (!advance.ok) return { ok: false, failure: advance.failure };
       return { ok: true, state: advance.state, value: advance.directive };
     },
-    { allowAbsent: input.adopt, allowLegacyAdoption: input.adopt },
+    { allowAbsent: input.adopt },
   );
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
   // What the session IS, recorded once, from the adoption that really happened.
-  if (adopting || adoptedExisting) {
+  if (adopting) {
     await recordFlowAdoption({ fs, paths }, session, applied.state.flow);
   }
   // Deciding stopped at the first delegated step; executing continues past every
@@ -143,6 +169,229 @@ export async function advanceFlow(
     ok: true,
     directive: await publishObservedCheckouts(fs, paths, session, input.git, driven.value),
   };
+}
+
+/**
+ * A closed session whose run still stands on `chassis.finalize` — or the refusal.
+ *
+ * That is the close that happened and whose run write did not: `session.close`
+ * already wrote the marker and the HISTORY row, and only the cursor stayed
+ * behind. Reopening it, which is what the refusal asks for, would undo the one
+ * effect that did land. So this one shape resolves, the driver re-runs the close
+ * — which recognizes a closed session — and the run finishes. Any other closed
+ * session keeps its refusal: a line somebody closed is never advanced by accident.
+ */
+async function closedOnItsOwnFinalize(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: { intent: "write"; code?: string; contextId?: string },
+  refused: SessionResolutionError,
+): Promise<Awaited<ReturnType<typeof resolveSessionTarget>>> {
+  const closed = await resolveSessionTarget(fs, paths, { ...target, allowClosed: true });
+  if (closed.outcome !== "resolved") return refused;
+  const run = await readRun(fs, locateRun(paths, closed.session.folder));
+  // A run this CLI cannot continue is not finished by resolving it: its way out
+  // is `aw flow restart`, which needs the session open — so the reopen the
+  // refusal names comes first, instead of two refusals naming each other.
+  if (!run.ok || legacyRunNeedsAdoption(run.state)) return refused;
+  const standing = journeyForRun(run.state)[run.state.applied.length]?.id;
+  return standing === "chassis.finalize" ? closed : refused;
+}
+
+export interface RestartFlowInput {
+  code?: string;
+  contextId?: string;
+  /** Reader used ONLY to verify the roots the directive publishes. */
+  git?: GitPort;
+  /** The flow to re-adopt, needed only when neither the registry nor custody says it. */
+  flow?: string;
+  executor?: InternalActionExecutor;
+  /** The archive's timestamp; injectable so a test can name the file it expects. */
+  now?: Date;
+}
+
+/**
+ * The way out of any stuck run, without touching `.flow-run.json` by hand.
+ *
+ * Under the run's lock it archives the registry and its attempt counter into a
+ * dated, sealed file inside the session, seeds a new run of the same flow whose
+ * first trace event names that archive and the cause, and records both in the
+ * session's custody. Then it advances the new run like any adoption. What it
+ * costs is the old run's answers — kept in the archive, never deleted — and in
+ * plan-exec the new run re-infers from the plan, so nothing validated is redone.
+ *
+ * The flow comes from the registry, then from custody's `flow_adopted`, then
+ * from `--flow`: what is already on record is never asked again, and a `--flow`
+ * that contradicts the record is refused before anything is archived.
+ */
+export async function restartFlow(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: RestartFlowInput,
+): Promise<AdvanceFlowResult> {
+  const target = await writableSession(fs, paths, input, "reiniciar");
+  if (!target.ok) return target.result;
+  return reseat(fs, paths, target.session, input, {
+    cause: (location) => restartCause(fs, location),
+    events: () => [],
+  });
+}
+
+/** The session a run-replacing verb acts on: canon checked, open, bound. */
+export async function writableSession(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: { code?: string; contextId?: string },
+  verb: string,
+  bind = true,
+): Promise<
+  { ok: true; session: { folder: string; path: string } } | { ok: false; result: AdvanceFlowResult }
+> {
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok) {
+    return {
+      ok: false,
+      result: {
+        ok: false,
+        failure: {
+          code: "DOCS_CANON_INVALID",
+          message: canon.error,
+          action: `corregí [docs] para conservar el layout documental canónico antes de ${verb}`,
+        },
+      },
+    };
+  }
+  const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "write",
+    ...(input.code !== undefined ? { code: input.code } : {}),
+    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+    allowClosed: false,
+    bind,
+  });
+  if (resolution.outcome !== "resolved") {
+    return { ok: false, result: { ok: false, session: resolution } };
+  }
+  return { ok: true, session: resolution.session };
+}
+
+/**
+ * Archive the run, seed a new one of the same flow and advance it — the exit
+ * `restart` and `annul` share. The new run's first event is `restarted`; `events`
+ * adds what the verb itself has to say right after it.
+ */
+export async function reseat(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: { folder: string; path: string },
+  input: RestartFlowInput,
+  verb: {
+    cause: (location: FlowRunLocation) => Promise<string>;
+    events: () => FlowRunEvent[];
+  },
+): Promise<AdvanceFlowResult> {
+  const location = locateRun(paths, session.folder);
+  const recorded = await adoptedFlowOf(fs, session.path);
+  const restarted = await restartUnderLock(
+    fs,
+    location,
+    () => verb.cause(location),
+    (cause, archived) => {
+      const flow = flowToReadopt(archived.state, recorded, input.flow);
+      if ("failure" in flow) return { ok: false, failure: flow.failure };
+      const seeded = withEvent(newRunState(flow.flow, session.folder), {
+        kind: "restarted",
+        transition: RESTART_OPERATION,
+        operation: RESTART_OPERATION,
+        archive: archived.path,
+        cause,
+      });
+      return { ok: true, state: verb.events().reduce(withEvent, seeded) };
+    },
+    input.now === undefined ? {} : { at: input.now },
+  );
+  if (!restarted.ok) return { ok: false, failure: restarted.failure };
+  await recordFlowRestart({ fs, paths }, session.folder, restarted.archive.path);
+  await recordFlowAdoption({ fs, paths }, session.folder, restarted.state.flow);
+  return advanceFlow(fs, paths, {
+    code: session.folder,
+    adopt: false,
+    ...(input.git === undefined ? {} : { git: input.git }),
+    ...(input.executor === undefined ? {} : { executor: input.executor }),
+  });
+}
+
+const RESTART_OPERATION = "flow.restart";
+
+/**
+ * Why the old run could not go on, as `CODE: message` — what the trace keeps.
+ *
+ * Read with the same functions every other verb reads through, so the cause is
+ * the refusal the person was looking at, not a reinterpretation of it.
+ */
+async function restartCause(fs: FileSystemPort, location: FlowRunLocation): Promise<string> {
+  const read = await readRun(fs, location);
+  if (!read.ok) return `${read.failure.code}: ${read.failure.message}`;
+  const journey = journeyForRun(read.state);
+  const incoherent = checkAgainstJourney(read.state, journey);
+  if (incoherent !== null) return `${incoherent.code}: ${incoherent.message}`;
+  if (legacyRunNeedsAdoption(read.state)) {
+    return `FLOW_RUN_LEGACY_ADOPTION_REQUIRED: la corrida v${read.state.version} no se continúa`;
+  }
+  const error = resolveBoundary(read.state, journey).error;
+  return error === null
+    ? "FLOW_RESTART_REQUESTED: reinicio pedido"
+    : `${error.code}: ${error.message}`;
+}
+
+/** The flow custody recorded the last time this session adopted one, if any. */
+async function adoptedFlowOf(fs: FileSystemPort, sessionPath: string): Promise<string | null> {
+  const read = await readCustody(fs, sessionPath);
+  if (read.status !== "present") return null;
+  const adopted = read.custody.effects.filter((effect) => effect.kind === "flow_adopted");
+  return adopted.at(-1)?.paths[0] ?? null;
+}
+
+/** Registry, then custody, then `--flow` — and a `--flow` that contradicts them is refused. */
+function flowToReadopt(
+  archivedState: string | null,
+  recorded: string | null,
+  requested: string | undefined,
+): { flow: WorklineFlow } | { failure: CapabilityFailure } {
+  const known = (value: unknown): value is WorklineFlow =>
+    (WORKLINE_FLOWS as readonly unknown[]).includes(value);
+  const declared = flowDeclaredBy(archivedState);
+  const onRecord = known(declared) ? declared : known(recorded) ? recorded : null;
+  if (onRecord !== null && requested !== undefined && requested !== onRecord) {
+    return {
+      failure: {
+        code: "FLOW_ADOPTION_FLOW_MISMATCH",
+        message: `la corrida declara '${onRecord}', no '${requested}'`,
+        action: `reiniciala sin --flow, o con '--flow ${onRecord}', o elegí la sesión correcta`,
+      },
+    };
+  }
+  if (onRecord !== null) return { flow: onRecord };
+  if (known(requested)) return { flow: requested };
+  return {
+    failure: {
+      code: "FLOW_ADOPTION_FLOW_MISSING",
+      message: "ni el registro ni la custodia dicen qué flow corría esta sesión",
+      action: `pasá --flow con uno de: ${WORKLINE_FLOWS.join(", ")}`,
+    },
+  };
+}
+
+/** The `flow` an archived registry names, even when the rest of it cannot be read. */
+function flowDeclaredBy(archivedState: string | null): unknown {
+  if (archivedState === null) return null;
+  try {
+    const parsed: unknown = JSON.parse(archivedState);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>).flow
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface RecoverFlowInput {
@@ -276,7 +525,7 @@ function recover(state: FlowRunState, named: string | null): FlowRunMutation<Flo
   // answerable boundary whose action already reached the world would invite a
   // second answer on top of a half-applied one — and no attempt is worth that.
   const blocked = recoveryBlockedAt(state, stopped.id);
-  if (blocked !== null) return refuseRecovery(stopped.id, blocked);
+  if (blocked !== null) return refuseRecovery(state.session, stopped.id, blocked);
 
   // The SAME reconciliation the advance applies on its own, over the same input
   // and through the same function: two copies of this arithmetic is exactly how
@@ -293,10 +542,11 @@ function recover(state: FlowRunState, named: string | null): FlowRunMutation<Flo
   const pending = attemptAccountingAt(reconciled, stopped.id);
   const granted =
     pending.spent > 0 ? grantAttempts(reconciled, stopped.id, pending.spent) : reconciled;
-  const recovered =
+  const renumbered =
     attemptAccountingAt(granted, stopped.id).unanswerable === null
       ? granted
       : normalizeAttemptChain(granted);
+  const recovered = withoutExhaustedRerun(renumbered, stopped.id);
   const built = directiveFor(recovered, resolveBoundary(recovered, journey), []);
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state: built.state, value: built.directive };
@@ -312,6 +562,7 @@ function recover(state: FlowRunState, named: string | null): FlowRunMutation<Flo
  * missing thing is the verdict, and running the advance produces it.
  */
 function refuseRecovery(
+  session: string,
   transition: string,
   blocked: RecoveryBlocker,
 ): FlowRunMutation<FlowDirective> {
@@ -326,7 +577,7 @@ function refuseRecovery(
   return refuse(
     "FLOW_RECOVERY_EFFECTS_APPLIED",
     `'${transition}' ya ejerció efectos en esta corrida (${moved.operation}): no se devuelven intentos sobre algo que ya ocurrió`,
-    `el estado queda igual: seguí la recuperación que declara la acción de la fila, o llevá el gap a '## Open questions' — ${
+    `el estado queda igual. Sacá la corrida con '${restartInvocation(session)}', que archiva el registro dentro de la sesión, re-adopta su flow y lo deja en la traza; o seguí la recuperación de la fila — ${
       moved.kind === "failed" ? moved.recovery : "revisá la traza de la corrida"
     }`,
   );
@@ -361,39 +612,4 @@ function seed(
     };
   }
   return newRunState(flow as WorklineFlow, session);
-}
-
-/** Turn a readable v7–v9 state into v10 only after the caller explicitly opted in. */
-function adoptExisting(
-  input: AdvanceFlowInput,
-  state: FlowRunState,
-): FlowRunState | { failure: CapabilityFailure } {
-  if (!input.adopt) {
-    return {
-      failure: {
-        code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED",
-        message: `la corrida v${state.version} requiere adopción explícita antes de continuar`,
-        action: `corré 'aw flow advance --code ${state.session} --flow ${state.flow} --adopt'`,
-      },
-    };
-  }
-  if (input.flow === undefined || !(WORKLINE_FLOWS as readonly string[]).includes(input.flow)) {
-    return {
-      failure: {
-        code: "FLOW_ADOPTION_FLOW_MISSING",
-        message: "adoptar una corrida existente exige confirmar su flow",
-        action: `pasá --flow ${state.flow} junto con --adopt`,
-      },
-    };
-  }
-  if (input.flow !== state.flow) {
-    return {
-      failure: {
-        code: "FLOW_ADOPTION_FLOW_MISMATCH",
-        message: `la corrida declara '${state.flow}', no '${input.flow}'`,
-        action: `adoptala con '--flow ${state.flow}' o elegí la sesión correcta`,
-      },
-    };
-  }
-  return atCurrentVersion(state);
 }
