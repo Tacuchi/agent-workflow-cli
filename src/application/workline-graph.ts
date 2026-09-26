@@ -286,8 +286,14 @@ async function completionOf(
   canon: CoreDocsCanon,
 ): Promise<SessionCompletion> {
   const run = await readRun(deps.fs, locateRun(deps.paths, session.folder));
-  if (run.ok) return run.state.boundary === null ? "converged" : "incomplete";
-  if (read.status !== "present") return "unknown";
+  // A started run says it by its own recorded end: no boundary left standing.
+  // A run seeded at session creation looks the same before its first advance and
+  // carries no evidence either way, so for it the artifact decides — exactly as
+  // for a session with no run at all.
+  if (run.ok && run.state.applied.length > 0) {
+    return run.state.boundary === null ? "converged" : "incomplete";
+  }
+  if (read.status !== "present") return run.ok ? "incomplete" : "unknown";
   return (await artifactConverged(deps, read.custody, canon)) ? "converged" : "incomplete";
 }
 

@@ -1,9 +1,13 @@
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { GitCliAdapter } from "../../src/adapters/git-cli.js";
+import { NodeProcess } from "../../src/adapters/node-process.js";
 import { noteIndexPath } from "../../src/application/decision-note-service.js";
+import { awaitingCliRerun, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import {
   type InternalActionExecutor,
@@ -11,6 +15,7 @@ import {
   planDonePrecondition,
 } from "../../src/application/flow/internal-actions.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
+import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { flowCommand } from "../../src/cli/commands/flow.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
@@ -22,19 +27,29 @@ import {
   actionOf,
   effectsOf,
   internalActionOf,
+  journeyForState,
 } from "../../src/domain/flow/authority.js";
+import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import {
   FLOW_RUN_STATE_FILE,
   type FlowRunState,
+  MAX_BOUNDARY_ATTEMPTS,
+  attemptsAt,
+  currentBatchIteration,
+  newRunState,
   parseRunState,
   sealRunState,
   serializeRunState,
+  withAttempt,
+  withProposal,
 } from "../../src/domain/flow/run-state.js";
+import { sealProposal } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 import { MemFs } from "../helpers/mem-fs.js";
+import { planExecWalk } from "../helpers/plan-exec-walk.js";
 import {
   OWING_PLAN,
   OWING_TEXT,
@@ -228,7 +243,12 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     await rm(join(paths.cwdSessionsDir(), SESSION, "SESSION.md"));
     const directive = await advance();
     expect(directive.boundary.transition).toBe("plan-exec.session");
-    expect(directive.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+    // AC-10: the refusal says what to repair, not which evidence to return.
+    expect(directive.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
+    // The cause the operation found, and the row's recovery.
+    expect(directive.error?.message).toContain("SESSION");
+    expect(directive.error?.action).toContain("session-create");
+    expect(directive.next_action).not.toContain("devolvé cada validación");
     // La recuperación de la fila viaja con el rechazo: nunca un callejón.
     expect(directive.next_action).toContain("session-create");
     const current = await state();
@@ -479,5 +499,362 @@ describe("plan-done — el rechazo por reconciliación nombra una salida ejecuta
     // punto vigente es el cierre. Mandar a F1/T1.1 es mandar a trabajo hecho.
     expect(failure?.message).toContain("retomá en el cierre del plan");
     expect(`${failure?.message} ${failure?.action}`).not.toContain("F1/T1.1");
+  });
+});
+
+/**
+ * AC-03 of spec 052: no failed write leaves the run behind its effect.
+ *
+ * The run's own write fails right AFTER an internal operation applied its
+ * effect — the Windows EPERM on the rename, after the retry gave up. The next
+ * `aw flow advance` must recognize the effect and move on, charging nothing, even
+ * when that mismatch had exhausted the boundary.
+ */
+describe("la escritura del registro falla después del efecto", () => {
+  const PLAN = "docs/plans/090-plan-dos-fases.md";
+  const RUN = { code: "420", folder: "420-dos-fases-plan-exec", plan: PLAN };
+  const PLAN_TEXT = [
+    "# Plan 090 — dos fases",
+    "",
+    "> Standalone: prueba de re-entrada",
+    "> Límite de ejecución: checkout",
+    "",
+    "## Tasks",
+    "",
+    "### F1 — uno",
+    "> Estado: pendiente",
+    "> Fuentes: workspace",
+    "",
+    "- [ ] T1.1 — uno _(fuentes: workspace)_",
+    "",
+    "### F2 — dos",
+    "> Estado: pendiente",
+    "> Fuentes: workspace",
+    "",
+    "- [ ] T2.1 — dos _(fuentes: workspace)_",
+    "",
+  ].join("\n");
+  const WORKSPACE_BLOCK = [
+    "<!-- AGENT-WORKFLOW-PROJECT-START -->",
+    "## Proyecto",
+    "",
+    "Re-entrada de acciones internas.",
+    "",
+    "## Fuentes",
+    "",
+    "| Alias | Path | Rama principal |",
+    "|---|---|---|",
+    "| acme | {{ACME}} | main |",
+    "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+    "",
+  ].join("\n");
+
+  /** Fails the next write of the run's own state file once armed — nothing else. */
+  class FailingRunWrite extends NodeFileSystem {
+    armed = false;
+    constructor(private readonly statePath: () => string) {
+      super();
+    }
+    override async writeText(path: string, content: string): Promise<void> {
+      if (this.armed && path === this.statePath()) {
+        this.armed = false;
+        throw Object.assign(new Error("EPERM: operation not permitted, rename"), {
+          code: "EPERM",
+        });
+      }
+      return super.writeText(path, content);
+    }
+  }
+
+  let workdir: string;
+  let paths: PathsService;
+  let deps: { fs: NodeFileSystem; env: FakeEnv; git: GitCliAdapter; paths: PathsService };
+  let failing: FailingRunWrite;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-flow-reentry-"));
+    paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+    deps = {
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      git: new GitCliAdapter(new NodeProcess()),
+      paths,
+    };
+    failing = new FailingRunWrite(() => locateRun(paths, RUN.folder).statePath);
+    const dir = join(paths.cwdSessionsDir(), RUN.folder);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "SESSION.md"), "# SESSION\n\n## Objective\nprobar\n", "utf8");
+    await mkdir(join(workdir, "docs", "plans"), { recursive: true });
+    // A real repository behind the declared source: closing a session lists its
+    // units through Git, and a path that does not exist fails that listing.
+    const acme = join(workdir, "acme");
+    await mkdir(acme, { recursive: true });
+    execFileSync("git", ["init", "--quiet", "--initial-branch=main"], { cwd: acme });
+    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK.replace("{{ACME}}", acme), "utf8");
+    await writeFile(join(workdir, PLAN), PLAN_TEXT, "utf8");
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  const walk = () => planExecWalk(deps, { sources: ["workspace"] });
+
+  async function current() {
+    const read = await readRun(fs, locateRun(paths, RUN.folder));
+    if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
+    return read.state;
+  }
+
+  const occurrences = (state: FlowRunState, transition: string) =>
+    state.applied.filter((id) => id === transition).length;
+
+  /**
+   * Walk the real run, answering every boundary, until `operation` has run its
+   * `nth` time — and fail the run's write right after it. Returns the transition
+   * the operation belongs to.
+   */
+  async function failWriteAfter(operation: string, nth = 1): Promise<string> {
+    const real = internalActionExecutor({ ...deps, fs: failing });
+    let seen = 0;
+    let transition: string | null = null;
+    const armed: InternalActionExecutor = async (plan, run) => {
+      const outcome = await real(plan, run);
+      if (plan.operation === operation && transition === null) {
+        seen += 1;
+        if (seen === nth) {
+          const read = await readRun(fs, locateRun(paths, RUN.folder));
+          if (!read.ok) throw new Error(read.failure.code);
+          transition = resolveBoundary(read.state, journeyForState(read.state)).stopped?.id ?? null;
+          failing.armed = true;
+        }
+      }
+      return outcome;
+    };
+    await driveUntil(armed, () => transition !== null);
+    if (transition === null) throw new Error(`'${operation}' nunca corrió en el recorrido`);
+    return transition;
+  }
+
+  /** Our injected EPERM is expected; anything else is a real failure. */
+  const swallowOurs = (error: unknown) => {
+    if (!(error instanceof Error) || !error.message.startsWith("EPERM")) throw error;
+  };
+
+  /** Adopt, accept the route and answer every boundary until `done()` holds. */
+  async function driveUntil(executor: InternalActionExecutor, done: () => boolean) {
+    await advanceFlow(failing, paths, {
+      code: RUN.code,
+      flow: "plan-exec",
+      adopt: true,
+      executor,
+    }).catch(swallowOurs);
+    if (!done()) {
+      await acceptAdaptiveRoute(failing, paths, RUN.folder, { executor }).catch(swallowOurs);
+    }
+    const helper = walk();
+    for (let step = 0; step < 80 && !done(); step += 1) {
+      const state = await current();
+      const resolved = resolveBoundary(state, journeyForState(state));
+      if (resolved.stopped === null) return;
+      const approval =
+        resolved.kind === "authorization"
+          ? effectApprovalDigest(resolved.stopped.id, resolved.authorization?.planned ?? [])
+          : null;
+      await submitFlow(failing, paths, {
+        code: RUN.code,
+        raw: JSON.stringify(
+          approval === null
+            ? helper.bodyFor(RUN, resolved)
+            : { input_digest: resolved.seal, choice: "Autorizar el efecto" },
+        ),
+        approval,
+        executor,
+      }).catch(swallowOurs);
+    }
+  }
+
+  /** The advance the person runs next, with the ordinary file system. */
+  async function advanceAgain() {
+    const result = await advanceFlow(fs, paths, {
+      code: RUN.code,
+      adopt: false,
+      executor: internalActionExecutor(deps),
+    });
+    if (!result.ok) throw new Error(`esperaba avanzar: ${JSON.stringify(result)}`);
+    return result.directive;
+  }
+
+  async function expectRecognized(transition: string) {
+    const stuck = await current();
+    const before = occurrences(stuck, transition);
+    const spent = attemptsAt(stuck, transition);
+    expect(resolveBoundary(stuck, journeyForState(stuck)).stopped?.id).toBe(transition);
+
+    const directive = await advanceAgain();
+    const after = await current();
+    expect(occurrences(after, transition)).toBe(before + 1);
+    // Nothing charged: no attempt row was added, and the count never grew.
+    expect(after.attempts).toHaveLength(stuck.attempts.length);
+    expect(attemptsAt(after, transition)).toBeLessThanOrEqual(spent);
+    expect(after.skipped.filter((id) => id === transition)).toHaveLength(0);
+    expect(directive.boundary.transition).not.toBe(transition);
+    return after;
+  }
+
+  for (const [operation, nth] of [
+    ["session.artifacts", 1],
+    ["plan-exec.batch-infer", 1],
+    ["worktree.ensure", 1],
+    ["plan-exec.batch-close", 1],
+    ["plan-exec.plan-done", 1],
+  ] as const) {
+    it(`${operation}: el siguiente advance reconoce el efecto y avanza sin cobrar`, async () => {
+      await expectRecognized(await failWriteAfter(operation, nth));
+    });
+  }
+
+  it("batch-close del último lote (batch_loop ya en pending:false, el caso de qtc-selva) pasa a la validación final", async () => {
+    const transition = await failWriteAfter("plan-exec.batch-close", 2);
+    const stuck = await current();
+    expect(stuck.batch_loop).toEqual({ pending: false, iteration: null });
+    const plan = await readFile(join(workdir, PLAN), "utf8");
+    expect(plan).not.toContain("> Estado: pendiente");
+    const after = await expectRecognized(transition);
+    expect(after.applied).toContain("plan-exec.settlement-authoring");
+  });
+
+  it("batch-close agotado por el desfase pasa al lote siguiente sin mover el contador", async () => {
+    const transition = await failWriteAfter("plan-exec.batch-close", 1);
+    // The mismatch as the 25.6.1 engine left it: every attempt spent on a close
+    // whose ticks and `validada` were already in the plan.
+    const stuck = await current();
+    const { digest: _seal, ...rest } = stuck;
+    const attempts = [...stuck.attempts];
+    const iteration = currentBatchIteration(stuck, transition);
+    for (let n = 1; n <= MAX_BOUNDARY_ATTEMPTS; n += 1) {
+      attempts.push({
+        invocation_id: `sello-agotado-${n}`,
+        attempt: 1,
+        request_digest: `pedido-${n}`,
+        parent_request_digest: null,
+        transition,
+        // Keyed the way the engine charged it: after the publication the close
+        // counts under the loop's CURRENT iteration.
+        ...(iteration === null ? {} : { batch_iteration: iteration }),
+      });
+    }
+    await writeFile(
+      locateRun(paths, RUN.folder).statePath,
+      serializeRunState(sealRunState({ ...rest, attempts })),
+      "utf8",
+    );
+    const exhausted = await current();
+    expect(attemptsAt(exhausted, transition)).toBeGreaterThanOrEqual(MAX_BOUNDARY_ATTEMPTS);
+
+    const after = await expectRecognized(transition);
+    expect(
+      after.batches?.filter((batch) => batch.published_plan_digest !== undefined),
+    ).toHaveLength(1);
+    // The mismatch's charges sat on the key the NEXT batch's close reads; the
+    // recognized re-run gave them back, so that close starts with its budget.
+    expect(attemptsAt(after, transition)).toBe(0);
+    expect(after.attempt_grants?.[`${transition}@batch-2`] ?? 0).toBeGreaterThanOrEqual(
+      MAX_BOUNDARY_ATTEMPTS,
+    );
+    // Standing on the next batch's first boundary.
+    expect(resolveBoundary(after, journeyForState(after)).stopped?.id).toBe(
+      "plan-exec.batch-eligibility-signal",
+    );
+  });
+
+  /**
+   * The two operations no plan-exec run walks, re-run where the driver would:
+   * the second call must recognize what the first applied instead of refusing.
+   */
+  it("workspace.board y proposal.publish reconocen su efecto ya aplicado al repetirse", async () => {
+    const executor = internalActionExecutor(deps);
+    const coordinates = { session: RUN.folder, code: RUN.code, scope: null };
+    const board = await executor({ operation: "workspace.board" }, coordinates);
+    expect(board.ok).toBe(true);
+    expect((await executor({ operation: "workspace.board" }, coordinates)).ok).toBe(true);
+
+    const proposal = sealProposal({
+      operation: "plan-new.publication",
+      artifacts: [
+        { path: "docs/plans/091-plan-nuevo.md", content: "# Plan 091\n", overwrite: false },
+      ],
+      effects: ["local_additive"],
+      requiresApproval: [],
+    });
+    const run = { ...coordinates, proposal };
+    const first = await executor({ operation: "proposal.publish" }, run);
+    expect(first.ok).toBe(true);
+    const again = await executor({ operation: "proposal.publish" }, run);
+    expect(again.ok).toBe(true);
+    expect(again.summary).toContain("ya estaba aplicada");
+    expect(again.effects).toEqual(first.effects);
+  });
+
+  it("session.close: con la sesión ya cerrada y el cursor en chassis.finalize, termina la corrida", async () => {
+    const transition = await failWriteAfter("session.close", 1);
+    expect(transition).toBe("chassis.finalize");
+    const directive = await advanceAgain();
+    const after = await current();
+    expect(after.applied.at(-1)).toBe("chassis.finalize");
+    expect(attemptsAt(after, transition)).toBe(0);
+    expect(directive.boundary.kind).toBe("final");
+  });
+});
+
+/**
+ * The CLI's re-run window opens only on a row the CLI can run NOW. One still
+ * waiting on an authorization stands as that authorization, and the window
+ * would refuse the only answer that unblocks it.
+ */
+describe("la vuelta del CLI sobre una frontera agotada", () => {
+  const PUBLICATION = FLOW_DECISIONS.find((decision) => decision.id === "plan-new.publication");
+
+  function exhaustedPublication(): FlowRunState {
+    let state = withProposal(
+      newRunState("plan-new", "003-prueba-plan-new"),
+      sealProposal({
+        operation: "plan-new.publication",
+        artifacts: [{ path: "docs/plans/092-plan-x.md", content: "# x\n", overwrite: true }],
+        effects: ["mutate_overwrite"],
+        requiresApproval: ["mutate_overwrite"],
+      }),
+    );
+    for (let n = 1; n <= MAX_BOUNDARY_ATTEMPTS; n += 1) {
+      state = withAttempt(state, {
+        invocation_id: `sello-${n}`,
+        attempt: 1,
+        request_digest: `pedido-${n}`,
+        parent_request_digest: null,
+        transition: "plan-new.publication",
+      });
+    }
+    return state;
+  }
+
+  it("no se abre mientras falta la autorización, y se abre cuando está", () => {
+    if (PUBLICATION === undefined) throw new Error("falta la fila de publicación");
+    const waiting = exhaustedPublication();
+    expect(awaitingCliRerun(waiting, PUBLICATION)).toBe(false);
+
+    const proposal = waiting.proposal;
+    if (proposal === null) throw new Error("esperaba la propuesta sellada");
+    const { digest: _seal, ...unsealed } = waiting;
+    const granted = sealRunState({
+      ...unsealed,
+      authorizations: [
+        {
+          digest: proposal.digest,
+          destinations: proposal.artifacts.map((artifact) => artifact.path),
+          classes: ["mutate_overwrite"],
+        },
+      ],
+    });
+    expect(awaitingCliRerun(granted, PUBLICATION)).toBe(true);
   });
 });

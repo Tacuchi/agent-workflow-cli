@@ -317,6 +317,44 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     expect(sucesor?.obligations.map((o) => o.text)).toEqual([TRASPASO]);
   });
 
+  /**
+   * AC-03 of spec 052: the settlement publication re-run after its effect — the
+   * run's write failed once the successor note landed — recognizes that note
+   * instead of refusing "no hay saldo que publicar".
+   */
+  it("repetir la publicación del saldo después de su efecto la reconoce, sin nota gemela", async () => {
+    await publishIncident([
+      { text: COMPENSACION, kind: "compensation", declared: true },
+      { text: TRASPASO, kind: "handoff", declared: true },
+    ]);
+    const walk = walker();
+    await walk.walkTo(RUN, "plan-exec.settlement-authoring");
+    const owed = (await current()).state.settlement?.compensations ?? [];
+    await answer({
+      decisions: {
+        settlement: owed.map((o) => ({
+          note: o.note,
+          index: o.index,
+          outcome: "settled",
+          evidence: "npm test -- tests/unit/f1.test.ts en verde",
+        })),
+      },
+    });
+    await walk.walkTo(RUN, "plan-exec.plan-done");
+    const landed = (await chainOf()).map((note) => note.id);
+    expect(landed).toContain("DEC-002");
+
+    const { state } = await current();
+    const again = await walk.executor()(
+      { operation: "plan-exec.settlement-publish" },
+      { session: SESSION, code: RUN.code, scope: state.scope },
+    );
+    expect(again.ok).toBe(true);
+    expect(again.summary).toContain("DEC-002");
+    expect(again.effects).toEqual(["mutate_overwrite"]);
+    expect((await chainOf()).map((note) => note.id)).toEqual(landed);
+  });
+
   it("T6.2 · el fixture del incidente ENTERO atraviesa el cierre y su traspaso sobrevive", async () => {
     // Las dos obligaciones legadas del incidente, y sólo la compensación
     // declarada: el sucesor tiene que clasificar el traspaso que arrastra por la

@@ -22,7 +22,9 @@ import {
   renderRetirementPreview,
   retirementPreview,
 } from "../../src/application/retirement/preview.js";
+import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
+import { newRunState } from "../../src/domain/flow/run-state.js";
 import type { RetirementProposal } from "../../src/domain/retirement/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -301,6 +303,33 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     const exec = await session("algo-plan-exec", [planFile("024")]);
     // El plan cerró: la sesión que lo llevó ahí no vuelve a ser incompleta por selección.
     write(planFile("024"), PLAN("024", "025", "done").replace("### F1", "### F1"));
+
+    const outcome = await prepare("reset", `session:${exec}`);
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) return;
+    expect(outcome.rejection.code).toBe("RESET_SESSION_CONVERGED");
+  });
+
+  /**
+   * A finished run is judged by its own recorded end, never by counting it
+   * against today's longer journey: a v9 run that walked 25.x's shorter journey
+   * to the end is converged, and resetting it would undo delivered work.
+   */
+  it("una corrida terminada contra un recorrido más corto sigue convergida y no se resetea", async () => {
+    write(specFile("025"), SPEC("025"));
+    write(planFile("024"), PLAN("024", "025"));
+    const exec = await session("vieja-plan-exec", [planFile("024")]);
+    const { digest: _seal, journey_base: _base, ...fresh } = newRunState("plan-exec", exec);
+    const finished = {
+      ...fresh,
+      version: 9,
+      applied: ["chassis.docs-boundary", "plan-exec.session", "chassis.finalize"],
+      boundary: null,
+    };
+    writeFileSync(
+      join(paths.cwdSessionsDir(), exec, ".flow-run.json"),
+      JSON.stringify({ ...finished, digest: semanticDigest(finished) }),
+    );
 
     const outcome = await prepare("reset", `session:${exec}`);
     expect(outcome.ok).toBe(false);

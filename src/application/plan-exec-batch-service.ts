@@ -316,6 +316,51 @@ export function preparePlanExecDoneSeal(
   };
 }
 
+/** What an annulment reopens: the tasks and phases the annulled batches closed. */
+export interface PreparePlanExecAnnulmentInput {
+  plan: string;
+  tasks: readonly string[];
+  phases: readonly number[];
+}
+
+export interface PreparedPlanExecAnnulment {
+  before_digest: string;
+  after_digest: string;
+  content: string;
+  /** The plan carried a `done` seal, which reopened work makes incoherent. */
+  unsealed: boolean;
+}
+
+/**
+ * The plan-document half of `aw flow annul`: the exact bytes that reopen the
+ * annulled batches — their boxes unticked, their phases `pendiente` — and, when
+ * the plan was sealed `done`, the seal taken off, because `done` with open work
+ * is a contradiction. Everything else in the document stays byte-identical.
+ */
+export function preparePlanExecAnnulment(
+  text: string,
+  input: PreparePlanExecAnnulmentInput,
+): { ok: true; prepared: PreparedPlanExecAnnulment } | { ok: false; failure: CapabilityFailure } {
+  const unticked = markTasks(text, new Set(input.tasks), " ");
+  if (!unticked.ok) return unticked;
+  const phased = rewritePhases(
+    unticked.content,
+    normalizePhaseUpdates(input.phases.map((phase) => ({ phase, state: "pendiente" }))),
+  );
+  if (!phased.ok) return phased;
+  const unsealed = parsePlanStatus(phased.content).declared === "done";
+  const content = unsealed ? rewritePlanReopenPreamble(phased.content) : phased.content;
+  return {
+    ok: true,
+    prepared: {
+      before_digest: baseDigest(text),
+      after_digest: baseDigest(content),
+      content,
+      unsealed,
+    },
+  };
+}
+
 export interface PublishPlanExecBatchInput extends PreparePlanExecBatchPublicationInput {
   root: string;
   location: FlowRunLocation;
@@ -565,7 +610,12 @@ interface StagedBatchPublication {
 
 type BatchTextRewrite = { ok: true; content: string } | { ok: false; failure: CapabilityFailure };
 
-function markTasks(text: string, wanted: ReadonlySet<string>): BatchTextRewrite {
+/** Set the box of every `wanted` task to `mark` — `x` to credit, a space to reopen. */
+function markTasks(
+  text: string,
+  wanted: ReadonlySet<string>,
+  mark: "x" | " " = "x",
+): BatchTextRewrite {
   const seen = new Set<string>();
   const lines = text.split("\n").map((line) => {
     const match = /^(\s*[-*]\s*)\[([ xX])\](\s+.*)$/.exec(line);
@@ -573,7 +623,7 @@ function markTasks(text: string, wanted: ReadonlySet<string>): BatchTextRewrite 
     const id = taskIdOf(match[3] ?? "");
     if (id === null || !wanted.has(id)) return line;
     seen.add(id);
-    return `${match[1]}[x]${match[3]}`;
+    return `${match[1]}[${mark}]${match[3]}`;
   });
   const missing = [...wanted].filter((id) => !seen.has(id));
   if (missing.length > 0) {
@@ -685,6 +735,25 @@ function rewritePlanDonePreamble(
     lines[assuranceAt] = `> Assurance: ${assurance}`;
   }
   return lines.join("\n");
+}
+
+/**
+ * Reopen the plan preamble: `> Estado: open`, and the closure and assurance lines
+ * that only a `done` plan carries removed. Never a `> Estado:` owned by a phase.
+ */
+function rewritePlanReopenPreamble(text: string): string {
+  const scanned = scanMarkdown(text);
+  const [title, ...rest] = scanned.headings;
+  const firstSection = title?.level === 1 ? rest[0] : title;
+  const end = firstSection?.line ?? scanned.lines.length;
+  const kept: string[] = [];
+  for (const [index, line] of scanned.lines.entries()) {
+    const bare = line.replace(/\*/g, "");
+    const preamble = index < end && !scanned.fenced[index];
+    if (preamble && (PLAN_CLOSURE.test(bare) || PLAN_ASSURANCE.test(bare))) continue;
+    kept.push(preamble && PLAN_STATUS.test(bare) ? "> Estado: open" : line);
+  }
+  return kept.join("\n");
 }
 
 function taskIdOf(text: string): string | null {

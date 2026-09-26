@@ -206,6 +206,17 @@ export async function recordPublication(
   );
 }
 
+/** The run was restarted: which registry was archived, so the trail can find it. */
+export async function recordFlowRestart(
+  deps: CustodyWriteDeps,
+  sessionFolder: string,
+  archive: string,
+): Promise<CustodyUpdate> {
+  return extendCustody(deps.fs, sessionPathOf(deps.paths, sessionFolder), (custody) =>
+    withEffect(custody, { ...effectNow("flow_restarted", { paths: [archive] }) }),
+  );
+}
+
 /** The run adopted a flow: which one, so the trail says what this session IS. */
 export async function recordFlowAdoption(
   deps: CustodyWriteDeps,

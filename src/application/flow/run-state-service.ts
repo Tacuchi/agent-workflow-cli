@@ -15,21 +15,26 @@
 
 import { dirname, join } from "node:path";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
+import { journeyOfFlow } from "../../domain/flow/authority.js";
 import {
+  FLOW_RUN_STATE_CONTINUABLE,
   FLOW_RUN_STATE_FILE,
-  FLOW_RUN_STATE_VERSION,
   type FlowRunRead,
   type FlowRunState,
+  alignToJourney,
   attemptCounterKeyForIteration,
   legacyRunNeedsAdoption,
   parseRunState,
+  restartInvocation,
   serializeRunState,
+  upgradeContinuable,
   withAttemptCounters,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { LockBusyError, type LockOptions, acquireLock } from "../lock-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
+import { journeyForRun } from "./run-journey.js";
 
 /**
  * The attempt counter: outside the run state's seal, and outside its FOLDER.
@@ -107,12 +112,11 @@ export async function readRun(fs: FileSystemPort, location: FlowRunLocation): Pr
       failure: {
         code: "FLOW_RUN_ABSENT",
         message: `la sesión '${location.session}' no tiene estado de corrida`,
-        action:
-          "es una sesión legacy: adoptala con 'aw flow advance --session <código> --flow <flow> --adopt'",
+        action: `arrancala con 'aw flow advance --session ${location.session} --flow <flow> --adopt'`,
       },
     };
   }
-  const parsed = parseRunState(await fs.readText(location.statePath));
+  const parsed = parseRunState(await fs.readText(location.statePath), location.session);
   if (!parsed.ok) return parsed;
   // Reconciled on the way OUT, never on the way in: whoever restored an older
   // state has already handed it to us, and raising the floor here is what makes
@@ -122,16 +126,20 @@ export async function readRun(fs: FileSystemPort, location: FlowRunLocation): Pr
   if (!counters.ok) return counters;
   const rolledBack = checkAgainstSealedFloor(parsed.state, counters.value);
   if (rolledBack !== null) return { ok: false, failure: rolledBack };
-  return {
-    ok: true,
-    // Reading historical state is deliberately non-mutating. A v7–v9 run stays
-    // itself until `aw flow advance --adopt` explicitly accepts v10's batch
-    // semantics; merely asking status/resume must never re-stamp it.
-    state: withAttemptCounters(parsed.state, {
-      floor: counters.value.attempts,
-      grants: counters.value.granted,
-    }),
-  };
+  const reconciled = withAttemptCounters(parsed.state, {
+    floor: counters.value.attempts,
+    grants: counters.value.granted,
+  });
+  // Reading historical state is deliberately non-mutating: a v7–v10 run stays
+  // itself, and asking status/resume must never re-stamp it. A continuable run
+  // is upgraded and aligned HERE, the one place every reader passes — advance,
+  // submit, recover, prove, the internal driver and the board — so none of them
+  // can resolve a boundary from a cursor another one sees differently. Nothing
+  // is written: the next mutation persists what this returns.
+  if (legacyRunNeedsAdoption(reconciled)) return { ok: true, state: reconciled };
+  const upgraded = upgradeContinuable(reconciled);
+  const base = journeyOfFlow(upgraded.flow).map((decision) => decision.id);
+  return { ok: true, state: alignToJourney(upgraded, journeyForRun(upgraded), base) };
 }
 
 /**
@@ -163,8 +171,7 @@ function checkAgainstSealedFloor(
   return {
     code: "FLOW_RUN_COUNTER_ROLLED_BACK",
     message: `el contador de intentos quedó detrás del estado sellado: '${lost[0]}' declara ${lost[1]} y el contador no los tiene`,
-    action:
-      "el contador se borró o se restauró una copia anterior: restaurá el archivo de intentos de la corrida, o descartá la corrida entera y re-adoptá la sesión con 'aw flow advance --flow <flow> --adopt' — no se reconstruye desde el estado, que es justo lo que una restauración rebobina",
+    action: `el contador se borró o se restauró una copia anterior: restaurá el archivo de intentos de la corrida, o corré '${restartInvocation(state.session)}', que archiva la corrida entera y re-adopta — no se reconstruye desde el estado, que es justo lo que una restauración rebobina`,
   };
 }
 
@@ -195,8 +202,7 @@ async function readCounters(fs: FileSystemPort, location: FlowRunLocation): Prom
     failure: {
       code: "FLOW_RUN_COUNTER_INVALID",
       message: `el contador de intentos de la corrida ${why}`,
-      action:
-        "no se avanza con una contabilidad de intentos ilegible ni con una que fue editada fuera del CLI: restaurá el archivo, o descartá la corrida entera y re-adoptá la sesión con 'aw flow advance --flow <flow> --adopt'",
+      action: `no se avanza con una contabilidad de intentos ilegible ni con una que fue editada fuera del CLI: restaurá el archivo, o corré '${restartInvocation(location.session)}', que archiva la corrida entera y re-adopta`,
     },
   });
   let parsed: unknown;
@@ -350,8 +356,121 @@ export interface ApplyOptions extends LockOptions {
   expectDigest?: string;
   /** Allow a missing state: the mutation receives `null` and creates the run. */
   allowAbsent?: boolean;
-  /** Only explicit `flow advance --adopt` may write a readable v7–v9 run. */
-  allowLegacyAdoption?: boolean;
+}
+
+/** The run's own lock, or the refusal that names who holds it. */
+async function takeRunLock(
+  fs: FileSystemPort,
+  location: FlowRunLocation,
+  options: LockOptions,
+): Promise<
+  | { ok: true; lock: Awaited<ReturnType<typeof acquireLock>> }
+  | { ok: false; failure: CapabilityFailure }
+> {
+  await fs.mkdirp(location.dir);
+  try {
+    return { ok: true, lock: await acquireLock(location.lockPath, fs, options) };
+  } catch (err) {
+    if (!(err instanceof LockBusyError)) throw err;
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_RUN_LOCKED",
+        message: `otra invocación tiene la corrida tomada (pid ${err.holder.pid} desde ${err.holder.ts})`,
+        action:
+          "esperá a que termine y volvé a correr 'aw flow advance': no se pisan transiciones aplicadas",
+      },
+    };
+  }
+}
+
+/** The archived registry of a restarted run: where it went and what it held. */
+export interface RunArchive {
+  /** Session-relative file name of the archive. */
+  path: string;
+  /** The registry bytes exactly as they were, or null when there was none. */
+  state: string | null;
+  /** The attempt counter exactly as it was, or null when there was none. */
+  counters: string | null;
+}
+
+const ARCHIVE_SCHEMA = "workline.flow-run-archive/v1";
+
+/**
+ * Archive the run's registry and its counter, and seat a new run — one lock.
+ *
+ * The archive is a dated, sealed file inside the session folder, so what the old
+ * run answered survives and the trace can name it. `seed` sees the old bytes and
+ * the archive's name before anything is written: a seed that refuses (no flow to
+ * adopt) leaves the run exactly as it was. The counter is not archived into the
+ * new run's floor: a restart pays for its fresh attempts with the whole run, the
+ * same trade an adoption makes.
+ */
+export async function restartUnderLock(
+  fs: FileSystemPort,
+  location: FlowRunLocation,
+  causeOf: () => Promise<string>,
+  seed: (
+    cause: string,
+    archived: RunArchive,
+  ) => { ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure },
+  options: LockOptions & { at?: Date } = {},
+): Promise<
+  { ok: true; state: FlowRunState; archive: RunArchive } | { ok: false; failure: CapabilityFailure }
+> {
+  const { at: now = new Date(), ...lockOptions } = options;
+  const taken = await takeRunLock(fs, location, lockOptions);
+  if (!taken.ok) return taken;
+  try {
+    const readIfThere = async (path: string) =>
+      (await fs.exists(path)) ? await fs.readText(path) : null;
+    const state = await readIfThere(location.statePath);
+    const counters = await readIfThere(location.countersPath);
+    if (state === null && counters === null) {
+      return {
+        ok: false,
+        failure: {
+          code: "FLOW_RUN_ABSENT",
+          message: `la sesión '${location.session}' no tiene una corrida que reiniciar`,
+          action: `arrancala con 'aw flow advance --session ${location.session} --flow <flow> --adopt': no hay nada que archivar`,
+        },
+      };
+    }
+    // Read under the same lock that archives, so the cause recorded is the state
+    // that was really replaced, not one another invocation moved past.
+    const cause = await causeOf();
+    const seal = semanticDigest({ state, counters });
+    const stamp = now.toISOString().replace(/[-:.]/g, "");
+    const archive: RunArchive = {
+      path: `${FLOW_RUN_STATE_FILE}.archived-${stamp}-${seal.slice(0, 12)}.json`,
+      state,
+      counters,
+    };
+    const seeded = seed(cause, archive);
+    if (!seeded.ok) return seeded;
+    await fs.writeText(
+      join(location.dir, archive.path),
+      `${JSON.stringify(
+        {
+          schema: ARCHIVE_SCHEMA,
+          session: location.session,
+          archived_at: now.toISOString(),
+          cause,
+          state,
+          counters,
+          seal,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    const fresh = await resetCounters(fs, location, seeded.state);
+    if (!fresh.ok) return fresh;
+    await fs.writeText(location.statePath, serializeRunState(fresh.state));
+    return { ok: true, state: fresh.state, archive };
+  } finally {
+    await taken.lock.release();
+  }
 }
 
 /**
@@ -361,33 +480,16 @@ export interface ApplyOptions extends LockOptions {
  * caller had — which is what makes this a compare-and-swap instead of a hopeful
  * overwrite.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: lock acquisition, state validation, counter-before-state persistence, and release must remain one visibly ordered transaction.
 export async function applyUnderLock<T>(
   fs: FileSystemPort,
   location: FlowRunLocation,
   mutate: (current: FlowRunState | null) => Promise<FlowRunMutation<T>> | FlowRunMutation<T>,
   options: ApplyOptions = {},
 ): Promise<FlowRunMutation<T>> {
-  const { expectDigest, allowAbsent, allowLegacyAdoption, ...lockOptions } = options;
-  await fs.mkdirp(location.dir);
-
-  let lock: Awaited<ReturnType<typeof acquireLock>>;
-  try {
-    lock = await acquireLock(location.lockPath, fs, lockOptions);
-  } catch (err) {
-    if (err instanceof LockBusyError) {
-      return {
-        ok: false,
-        failure: {
-          code: "FLOW_RUN_LOCKED",
-          message: `otra invocación tiene la corrida tomada (pid ${err.holder.pid} desde ${err.holder.ts})`,
-          action:
-            "esperá a que termine y volvé a correr 'aw flow advance': no se pisan transiciones aplicadas",
-        },
-      };
-    }
-    throw err;
-  }
+  const { expectDigest, allowAbsent, ...lockOptions } = options;
+  const taken = await takeRunLock(fs, location, lockOptions);
+  if (!taken.ok) return taken;
+  const lock = taken.lock;
 
   try {
     const current = await readRun(fs, location);
@@ -396,13 +498,13 @@ export async function applyUnderLock<T>(
       if (!absent || allowAbsent !== true) return { ok: false, failure: current.failure };
     }
     const state = current.ok ? current.state : null;
-    if (state !== null && legacyRunNeedsAdoption(state) && allowLegacyAdoption !== true) {
+    if (state !== null && legacyRunNeedsAdoption(state)) {
       return {
         ok: false,
         failure: {
           code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED",
-          message: `la corrida v${state.version} se puede leer, pero no continuar sin adopción explícita`,
-          action: `corré 'aw flow advance --code ${state.session} --flow ${state.flow} --adopt' para adoptar v${FLOW_RUN_STATE_VERSION} sin inventar batches históricos`,
+          message: `la corrida v${state.version} se puede leer, pero no continuar: este CLI continúa desde la v${FLOW_RUN_STATE_CONTINUABLE.at(-1)}`,
+          action: `corré '${restartInvocation(state.session)}': archiva el registro dentro de la sesión y re-adopta el flow '${state.flow}' — continuar su cursor inventaría límites de lote que la corrida nunca declaró`,
         },
       };
     }

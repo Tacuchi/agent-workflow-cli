@@ -261,10 +261,10 @@ describe("una propuesta se aprueba una vez y se publica entera", () => {
       input_digest: gate.resolved.seal,
       choice: "Aprobar y guardar",
     });
-    // El código es el del contrato de ejecución —la evidencia que la fila exigía
-    // no está— y la causa material viaja en el mensaje y en la próxima acción, que
-    // es donde tiene que estar para que alguien pueda hacer algo con ella.
-    expect(blocked.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+    // El rechazo es de la operación interna, no de una evidencia que alguien tenga
+    // que devolver: la causa material viaja en el mensaje y la recuperación de la
+    // fila en la próxima acción, que es donde alguien puede hacer algo con ellas.
+    expect(blocked.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
     expect(blocked.error?.message).toContain("cambió después de preparar la propuesta");
     expect(blocked.next_action).toContain("volvé a preparar");
     // Nada se pisó: lo que hay en disco sigue siendo lo del tercero.

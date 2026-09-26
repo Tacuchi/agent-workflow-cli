@@ -45,12 +45,15 @@ import {
   type FlowRunEvent,
   type FlowRunState,
   applyTransition,
+  attemptsAt,
   currentBatchIteration,
+  grantAttempts,
   restatesLastEvent,
   withActionAttempted,
   withAttempt,
   withBoundary,
   withEvent,
+  withExhaustedRerunSpent,
   withPendingAction,
   withPlanExecBatchStageForTransition,
   withProposal,
@@ -60,6 +63,7 @@ import { semanticDigest } from "../semantic-operation/protocol.js";
 import { sessionNumericCode } from "../session-resolver.js";
 import {
   advanceFlowRun,
+  awaitingCliRerun,
   directiveFor,
   effectsOfTransition,
   failedExecutionAttempt,
@@ -258,16 +262,17 @@ function accept(
   const outputDigest = semanticDigest({ output: outcome.output });
 
   if (verdict !== null) {
+    const refused = refusalOf(pending, outcome, verdict.detail);
     const failure: Extract<FlowRunEvent, { kind: "failed" }> = {
       kind: "failed",
       transition: pending.decision.id,
       ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
       operation: pending.plan.operation,
-      code: verdict.detail.code,
+      code: refused.code,
       // What the operation really found, not the contract's restatement of it:
       // the trace is where "which precondition was missing" has to survive.
       message: outcome.summary,
-      recovery: verdict.detail.action,
+      recovery: refused.action,
       // What it applied ANYWAY. A failed operation that got partway is the case
       // where handing the boundary back as answerable would put a second answer
       // on top of a half-applied effect, and this is the only record of it.
@@ -279,20 +284,14 @@ function accept(
     // fact — the attempt history is where "how many times" belongs, and that is
     // charged right below, every time, precisely because the event is not.
     const traced = restatesLastEvent(state, failure) ? state : withEvent(state, failure);
-    // The try the cap counts: the action RAN and came back refused. Charged here
-    // rather than on the way into the next advance, so somebody who fixes the
-    // cause gets the run that would have worked instead of a degradation.
-    const failed = withAttempt(
-      traced,
-      failedExecutionAttempt(actionState, pending.decision, {
-        code: verdict.detail.code,
-        message: outcome.summary,
-      }),
-    );
+    const failed = chargeRefusal(traced, actionState, pending, {
+      code: refused.code,
+      message: outcome.summary,
+    });
     const resolved = resolveBoundary(failed, journey);
     const built = directiveFor(failed, resolved, [], {
       ...(verdict.detail.outcome === undefined ? {} : { outcome: verdict.detail.outcome }),
-      nextAction: `${outcome.summary} — ${verdict.detail.action}`,
+      nextAction: `${outcome.summary} — ${refused.action}`,
     });
     if (!built.ok) return { ok: false, failure: built.failure };
     return {
@@ -301,14 +300,10 @@ function accept(
       value: {
         directive: {
           ...built.directive,
-          // The verdict's own code, exactly as an external result would get: an
-          // internal execution that reported a private vocabulary would make the
-          // same refusal readable one way from one producer and another way from
-          // the other. The material cause travels as the message.
           error: resolved.error ?? {
-            code: verdict.detail.code,
-            message: `${verdict.message}: ${outcome.summary}`,
-            action: verdict.detail.action,
+            code: refused.code,
+            message: outcome.summary,
+            action: refused.action,
           },
         },
         advanced: false,
@@ -316,7 +311,14 @@ function accept(
     };
   }
 
-  let next = withEvent(state, {
+  // A re-run that recognized its effect gives back what the mismatch charged. The
+  // charges sit on the key the next batch's copy of this row will read — after a
+  // publication the loop already names that batch — so keeping them would start
+  // it exhausted. A grant, never a deletion: the monotone counter does not move.
+  const forgiven = awaitingCliRerun(actionState, pending.decision)
+    ? grantAttempts(state, pending.decision.id, attemptsAt(state, pending.decision.id))
+    : state;
+  let next = withEvent(forgiven, {
     kind: "executed",
     transition: pending.decision.id,
     ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
@@ -348,6 +350,48 @@ function accept(
     state: advanced.state,
     value: { directive: advanced.directive, advanced: true },
   };
+}
+
+/** The code an internal operation's own refusal carries. */
+export const INTERNAL_ACTION_REFUSED = "FLOW_INTERNAL_ACTION_REFUSED";
+
+/**
+ * What a refused internal step tells the person: the cause the operation found
+ * and the row's recovery.
+ *
+ * An operation that REFUSED is a precondition to repair, not evidence to send:
+ * dressing it as the verdict of an external result told whoever had to fix the
+ * workspace to "return each demanded validation". Any other verdict over an
+ * operation that did complete — it applied less than the row declares — is a
+ * defect of the CLI itself, and keeps the verdict's own code.
+ */
+function refusalOf(
+  pending: PendingInternal,
+  outcome: InternalActionOutcome,
+  verdict: { code: string; action: string },
+): { code: string; action: string } {
+  if (outcome.ok) return verdict;
+  return { code: INTERNAL_ACTION_REFUSED, action: pending.action.recovery };
+}
+
+/**
+ * The try the cap counts: the action RAN and came back refused.
+ *
+ * Charged here rather than on the way into the next advance, so somebody who
+ * fixes the cause gets the run that would have worked instead of a degradation.
+ * The CLI's own re-run of an exhausted boundary is not a try: it charges nothing
+ * and spends the re-run instead, so the boundary is exhausted as before.
+ */
+function chargeRefusal(
+  traced: FlowRunState,
+  actionState: FlowRunState,
+  pending: PendingInternal,
+  refusal: { code: string; message: string },
+): FlowRunState {
+  if (awaitingCliRerun(actionState, pending.decision)) {
+    return withExhaustedRerunSpent(traced, pending.decision.id);
+  }
+  return withAttempt(traced, failedExecutionAttempt(actionState, pending.decision, refusal));
 }
 
 /**

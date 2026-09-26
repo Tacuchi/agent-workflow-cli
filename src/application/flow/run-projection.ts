@@ -20,6 +20,7 @@ import {
   attemptReconciliationsOf,
   checkAgainstJourney,
   legacyRunNeedsAdoption,
+  restartInvocation,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
@@ -29,7 +30,8 @@ import { locateRun, readRun } from "./run-state-service.js";
 
 export interface FlowRunProjection {
   flow: string;
-  boundary: FlowBoundaryKind;
+  /** `unstarted`: a run seeded at session creation that no advance has walked yet. */
+  boundary: FlowBoundaryKind | "unstarted";
   transition: string | null;
   title: string | null;
   /** The exact invocation to run, at an `execution` boundary. Never a paraphrase. */
@@ -78,7 +80,7 @@ export async function projectRun(
       transition: null,
       title: null,
       invocation: null,
-      command: `aw flow advance --code ${folder} --adopt`,
+      command: restartInvocation(folder),
       summary: `corrida ilegible (${read.failure.code}): ${read.failure.action}`,
       // Unreadable means unreadable: a scope quoted off a state the engine
       // refuses would be the one field of this projection nobody could trust.
@@ -94,8 +96,8 @@ export async function projectRun(
       transition: read.state.boundary,
       title: null,
       invocation: null,
-      command: `aw flow advance --code ${folder} --flow ${read.state.flow} --adopt`,
-      summary: `corrida legacy v${read.state.version}: requiere adopción explícita antes de continuar`,
+      command: restartInvocation(folder),
+      summary: `corrida v${read.state.version}, anterior a la v11: no se continúa; sale archivada y re-adoptada por 'aw flow restart'`,
       scope: read.state.scope,
       assurance: null,
       repairs: attemptReconciliationsOf(read.state),
@@ -110,11 +112,27 @@ export async function projectRun(
       transition: read.state.boundary,
       title: null,
       invocation: null,
-      command: `aw flow advance --code ${folder}`,
+      command: restartInvocation(folder),
       summary: `${incoherent.message} — ${incoherent.action}`,
       scope: read.state.scope,
       assurance: read.state.assurance,
       repairs: attemptReconciliationsOf(read.state),
+    };
+  }
+  // Seeded at session creation and never advanced: its first boundaries are the
+  // CLI's own, so naming one would describe a question nobody is going to ask.
+  if (read.state.applied.length === 0 && read.state.boundary === null) {
+    return {
+      flow: read.state.flow,
+      boundary: "unstarted",
+      transition: null,
+      title: null,
+      invocation: null,
+      command: `aw flow advance --code ${folder}`,
+      summary: `sin arrancar: corré 'aw flow advance --code ${folder}'`,
+      scope: read.state.scope,
+      assurance: read.state.assurance,
+      repairs: [],
     };
   }
   const resolved = resolveBoundary(read.state, journey);

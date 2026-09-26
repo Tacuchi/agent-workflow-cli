@@ -80,6 +80,7 @@ import {
   checkAgainstJourney,
   currentBatchIteration,
   degradeTransition,
+  exhaustedRerunSpent,
   positionDigest,
   reconcileAttemptsAt,
   settlementAmbiguous,
@@ -411,7 +412,7 @@ function blockedCause(
   // Read once and passed down: `conflictClause` and the unanswerable check both
   // want it, and each call replays the run's attempt history.
   const accounting = attemptAccountingAt(state, stopped.id);
-  if (exhausted(state, stopped)) {
+  if (exhausted(state, stopped) && !awaitingCliRerun(state, stopped)) {
     // Two different situations wear the same code, and saying which one this is
     // matters: one continues on the next advance, the other cannot. Reporting the
     // stricter message for both would tell somebody their run is stuck when it is
@@ -513,6 +514,29 @@ function exhausted(state: FlowRunState, decision: FlowDecision): boolean {
 }
 
 /**
+ * Whether an exhausted boundary is still owed its one re-run by the CLI.
+ *
+ * The cap exists against repeated EXTERNAL answers. An internal, idempotent
+ * operation that recognizes its own applied effect is not one more answer — and
+ * its exhaustion may be exactly that: the effect landed and the run's write did
+ * not. So before blocking or degrading it, the CLI runs it once more; the re-run
+ * charges nothing, and only a refused re-run lets the boundary be exhausted as
+ * before. Nobody else may answer it in that window.
+ */
+export function awaitingCliRerun(state: FlowRunState, decision: FlowDecision): boolean {
+  if (!exhausted(state, decision) || internalActionOf(decision) === null) return false;
+  if (actionOf(decision)?.idempotent !== true || exhaustedRerunSpent(state, decision.id)) {
+    return false;
+  }
+  // Only a row the CLI can run NOW: one still waiting on an authorization would
+  // stand as that authorization, which nobody could answer inside the window.
+  return (
+    authorizeTransition(decision, state.authorizations, subjectOf(state, decision)).missing
+      .length === 0
+  );
+}
+
+/**
  * Whether the registry says this CLI owns the step.
  *
  * The vocabulary has one member, so every row shipped in {@link FLOW_DECISIONS}
@@ -603,7 +627,7 @@ function nothingToSettle(state: FlowRunState, decision: FlowDecision): string | 
  * degradation but `aw flow recover`, and the block says so.
  */
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
-  if (!exhausted(state, decision)) return null;
+  if (!exhausted(state, decision) || awaitingCliRerun(state, decision)) return null;
   if (!owned(decision)) return null;
   // Degradation is what a GAP that cannot close deserves. When the exhaustion
   // comes from a bookkeeping mismatch the automatic reconciliation could not

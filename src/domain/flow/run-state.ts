@@ -32,8 +32,9 @@ import { type DecisionNote, normalizeObligations, validateDecisionNote } from ".
 import type { DecisionPreview } from "../decision-preview.js";
 import type { LocalProposal } from "../proposal.js";
 import type { PlanReconciliation } from "../reconciliation.js";
-import type { FlowChoiceOutcome, FlowDecision } from "./authority.js";
+import { type FlowChoiceOutcome, type FlowDecision, journeyOfFlow } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
+import { V11_JOURNEY_BASE } from "./journey-baseline.js";
 import {
   type AssuranceStatus,
   type RouteDecision,
@@ -55,18 +56,45 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 11;
+export const FLOW_RUN_STATE_VERSION = 12;
+
+/**
+ * The versions this CLI CONTINUES without adoption, newest first.
+ *
+ * v12 added the `aligned`, `restarted` and `annulled` trace kinds and `journey_base`, whose truthful value
+ * for a v11 run is the journey 25.6.1 walked. So a v11 run keeps walking after
+ * an upgrade: {@link upgradeContinuable} re-stamps it without touching the
+ * cursor, the answers or the attempts. Every later version joins this set with its own
+ * upgrade step, which is what keeps "v11 or later survives an update" true
+ * without an exception per release.
+ */
+export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 11];
 
 /**
  * The versions this CLI READS, newest first.
  *
- * Versions 9, 8 and 7 remain readable for status, recovery evidence and an
- * explicit adoption. They are NOT writable execution state: v10 records batches
- * and their append-only iteration trace, so continuing an old cursor by merely
- * changing `version` would invent a batch boundary the old run never declared.
- * An active legacy run must be adopted explicitly before any mutation.
+ * Versions 10 to 7 remain readable for status and recovery evidence only. They
+ * are NOT continuable execution state: continuing an old cursor by merely
+ * changing `version` would invent a batch boundary the old run never declared,
+ * so their way out is `aw flow restart`.
  */
-export const FLOW_RUN_STATE_READABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 10, 9, 8, 7];
+export const FLOW_RUN_STATE_READABLE: readonly number[] = [
+  ...FLOW_RUN_STATE_CONTINUABLE,
+  10,
+  9,
+  8,
+  7,
+];
+
+/**
+ * One upgrade step per continuable version, keyed by the version it upgrades FROM.
+ *
+ * A step may only add what the next version introduced with a truthful default;
+ * the cursor, the answers, the approvals and the attempts pass through untouched.
+ */
+const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => FlowRunState>> = {
+  11: (state) => ({ ...state, version: 12, journey_base: [...V11_JOURNEY_BASE[state.flow]] }),
+};
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
 export const FLOW_RUN_STATE_FILE = ".flow-run.json";
@@ -575,7 +603,14 @@ export function recoveryBlockedAt(state: FlowRunState, transition: string): Reco
 function declaresMaterialEffect(event: FlowRunEvent): boolean {
   // A reconciliation moved the run's own counters and nothing else: it can no
   // more block a recovery than reading the file could.
-  if (event.kind === "reconciled") return false;
+  if (
+    event.kind === "reconciled" ||
+    event.kind === "aligned" ||
+    event.kind === "restarted" ||
+    event.kind === "annulled"
+  ) {
+    return false;
+  }
   if (event.kind !== "failed") return touchesTheWorld(event.effects);
   if (event.effects === undefined) return true;
   return event.code === "FLOW_EFFECT_PARTIAL" || touchesTheWorld(event.effects);
@@ -702,6 +737,57 @@ export type FlowRunEvent =
       operation: string;
       /** Every repair applied, with the conflict it answered and its two values. */
       repairs: AttemptRepair[];
+    }
+  | {
+      /**
+       * A boundary the installed build added BEFORE the run's position.
+       *
+       * Nobody answered it and nothing ran: the run had already walked past the
+       * place the new row occupies when the CLI was updated. It enters the cursor
+       * as skipped, and this line is what lets a reader tell "passed over by the
+       * update" from "its condition did not hold".
+       */
+      kind: "aligned";
+      transition: string;
+      /** See {@link FlowRunAttempt.batch_iteration}. */
+      batch_iteration?: number;
+      operation: string;
+      /** The index the inserted boundary took in `applied`. */
+      position: number;
+      reason: string;
+    }
+  | {
+      /**
+       * The run this one replaced, and why: `aw flow restart` archived it inside
+       * the session and seeded this run. The first event of the new run, so the
+       * trace never starts from a blank page nobody can explain.
+       */
+      kind: "restarted";
+      transition: string;
+      /** See {@link FlowRunAttempt.batch_iteration}. */
+      batch_iteration?: number;
+      operation: string;
+      /** Session-relative path of the archived registry. */
+      archive: string;
+      /** The state that made the old run unusable, as `CODE: message`. */
+      cause: string;
+    }
+  | {
+      /**
+       * Batches a person annulled with `aw flow annul`: the plan reopened their
+       * phases and tasks, and this run re-infers them. Always right after the
+       * `restarted` event of the same re-adoption.
+       */
+      kind: "annulled";
+      transition: string;
+      /** See {@link FlowRunAttempt.batch_iteration}. */
+      batch_iteration?: number;
+      operation: string;
+      batches: string[];
+      phases: number[];
+      tasks: string[];
+      /** The approval digest of the preview that authorized it. */
+      digest: string;
     }
   | {
       kind: "failed";
@@ -1023,6 +1109,25 @@ export interface FlowRunState {
   /** Attempts a recovery gave back per transition — also from the sidecar. */
   attempt_grants?: Record<string, number>;
   /**
+   * Exhausted internal boundaries whose one CLI re-run already came back refused,
+   * keyed like the attempt counter (per batch iteration).
+   *
+   * An exhausted internal row is re-run once by the CLI before it blocks or
+   * degrades, because the exhaustion may be the write that failed AFTER its
+   * effect. Absent means none was spent, and it is never written by default.
+   */
+  exhausted_reruns?: string[];
+  /**
+   * The base journey of the build that wrote this cursor — the registry list, not
+   * plan-exec's expanded copies.
+   *
+   * Provenance, not a pin: the run always walks the installed journey. What this
+   * answers is which rows a newer build ADDED, which is the only gap alignment may
+   * fill; a row missing from the cursor that the base already had is a hole, and
+   * is refused. Optional only while reading v7–v11; every v12 state carries it.
+   */
+  journey_base?: string[];
+  /**
    * v10 plan-exec batches. Optional only while reading v7–v9; every v10 state
    * carries the two empty arrays when it has not inferred its first batch yet.
    */
@@ -1131,6 +1236,7 @@ export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
     flow,
     session,
     scope: null,
+    journey_base: journeyOfFlow(flow).map((decision) => decision.id),
     applied: [],
     skipped: [],
     boundary: null,
@@ -1269,30 +1375,44 @@ export function grantAttempts(
   return sealRunState({ ...withoutSeal(state), attempt_grants: granted });
 }
 
-/**
- * Explicitly adopt a readable legacy state into v10.
- *
- * This function is intentionally NOT called by the reader. Calling it is the
- * durable act of adoption after the caller has named the flow and accepted that
- * no pre-v10 batch is being reconstructed. Empty batch arrays mean exactly
- * "legacy history preserved; no v10 batch claimed", never "the old run had no
- * batches".
- */
-export function atCurrentVersion(state: FlowRunState): FlowRunState {
-  if (state.version === FLOW_RUN_STATE_VERSION) return state;
+/** Whether this exhausted boundary already spent the one re-run the CLI gives it. */
+export function exhaustedRerunSpent(state: FlowRunState, transition: string): boolean {
+  return (state.exhausted_reruns ?? []).includes(attemptCounterKey(state, transition));
+}
+
+/** Record that the CLI's one re-run of this exhausted boundary came back refused. */
+export function withExhaustedRerunSpent(state: FlowRunState, transition: string): FlowRunState {
+  if (exhaustedRerunSpent(state, transition)) return state;
   return sealRunState({
     ...withoutSeal(state),
-    version: FLOW_RUN_STATE_VERSION,
-    batches: [],
-    batch_trace: [],
-    batch_loop: { pending: true, iteration: 1 },
-    handoff: null,
-    selected_choice: null,
-    decision_preparation: null,
-    route_proposal: null,
-    route_decisions: null,
-    assurance: "verified",
+    exhausted_reruns: [...(state.exhausted_reruns ?? []), attemptCounterKey(state, transition)],
   });
+}
+
+/**
+ * Forget a spent re-run: `aw flow recover` gives the boundary a fresh budget,
+ * and a later exhaustion is a new episode that is owed its own re-run.
+ */
+export function withoutExhaustedRerun(state: FlowRunState, transition: string): FlowRunState {
+  if (!exhaustedRerunSpent(state, transition)) return state;
+  const key = attemptCounterKey(state, transition);
+  return sealRunState({
+    ...withoutSeal(state),
+    exhausted_reruns: (state.exhausted_reruns ?? []).filter((spent) => spent !== key),
+  });
+}
+
+/**
+ * The one exit from a run the CLI cannot continue: archive it inside the session
+ * and adopt a new one. Named in every refusal whose state it resolves.
+ */
+export function restartInvocation(session: string): string {
+  return `aw flow restart --session ${session}`;
+}
+
+/** The action of every refusal over a registry this CLI cannot use as it is. */
+function unusableRemedy(session: string): string {
+  return `corré '${restartInvocation(session)}': archiva el registro dentro de la sesión, re-adopta su flow y lo deja en la traza — o restaurá una copia íntegra del archivo`;
 }
 
 /** Keep the sealed preview the person is choosing over; no cursor moves here. */
@@ -1320,9 +1440,27 @@ export function withRouteDecisions(
   });
 }
 
-/** Whether a parsed state needs the explicit adoption boundary before mutation. */
+/** Whether a parsed state is outside the continuable set and cannot be mutated. */
 export function legacyRunNeedsAdoption(state: FlowRunState): boolean {
-  return state.version !== FLOW_RUN_STATE_VERSION;
+  return !FLOW_RUN_STATE_CONTINUABLE.includes(state.version);
+}
+
+/**
+ * Walk a continuable state up to the version this CLI writes, one step at a time.
+ *
+ * Re-sealed once at the end: the file on disk was already verified against its
+ * own seal, and the upgraded state is persisted by the next write, never here.
+ * A legacy state comes back unchanged — reading one must never re-stamp it.
+ */
+export function upgradeContinuable(state: FlowRunState): FlowRunState {
+  if (legacyRunNeedsAdoption(state) || state.version === FLOW_RUN_STATE_VERSION) return state;
+  let current = state;
+  while (current.version !== FLOW_RUN_STATE_VERSION) {
+    const step = CONTINUABLE_UPGRADES[current.version];
+    if (step === undefined) return state;
+    current = step(current);
+  }
+  return sealRunState(withoutSeal(current));
 }
 
 /** Record one inferred or declared batch, refusing duplicate ids at the caller's boundary. */
@@ -1835,31 +1973,25 @@ function union(current: readonly EffectClass[], added: readonly EffectClass[]): 
  *
  * Order matters: shape before version before seal. A file whose version is
  * unknown must not be judged by a digest rule that version may not even use.
+ *
+ * Every refusal names the command that works IN that state: `--adopt` only adopts
+ * a session with no registry at all, so an unreadable, tampered or too-old one
+ * leaves through `aw flow restart`, and one written by a newer CLI through
+ * updating this one. `session` names the run in those commands.
  */
-export function parseRunState(raw: string): FlowRunRead {
+export function parseRunState(raw: string, session = "<código>"): FlowRunRead {
+  const restart = unusableRemedy(session);
   if (raw.trim().length === 0) {
-    return refuse(
-      "FLOW_RUN_INVALID",
-      "el estado de corrida está vacío",
-      "reconstruí la corrida con 'aw flow advance --adopt', o restaurá el archivo",
-    );
+    return refuse("FLOW_RUN_INVALID", "el estado de corrida está vacío", restart);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return refuse(
-      "FLOW_RUN_INVALID",
-      "el estado de corrida no es JSON válido",
-      "no se avanza sobre un estado ilegible: restauralo o re-adoptá la sesión con 'aw flow advance --adopt'",
-    );
+    return refuse("FLOW_RUN_INVALID", "el estado de corrida no es JSON válido", restart);
   }
   if (!isRecord(parsed)) {
-    return refuse(
-      "FLOW_RUN_INVALID",
-      "el estado de corrida no es un objeto JSON",
-      "restauralo o re-adoptá la sesión con 'aw flow advance --adopt'",
-    );
+    return refuse("FLOW_RUN_INVALID", "el estado de corrida no es un objeto JSON", restart);
   }
   if (!FLOW_RUN_STATE_READABLE.includes(parsed.version as number)) {
     // No silent migration, in either direction: a version outside the readable
@@ -1867,21 +1999,24 @@ export function parseRunState(raw: string): FlowRunRead {
     // fabricate the very history this file exists to make trustworthy — or comes
     // from a build ahead of this one, whose fields this build would ignore.
     // Refusing with the cause is what keeps the second case from being silent.
+    const newer = typeof parsed.version === "number" && parsed.version > FLOW_RUN_STATE_VERSION;
     return refuse(
       "FLOW_RUN_VERSION_UNSUPPORTED",
-      `versión de estado de corrida no soportada: ${String(parsed.version)}`,
-      `esta versión del CLI lee ${FLOW_RUN_STATE_READABLE.join(" y ")} y escribe la ${FLOW_RUN_STATE_VERSION}: actualizá el CLI, o re-adoptá la sesión con 'aw flow advance --flow <flow> --adopt' (no hay migración automática)`,
+      `versión de estado de corrida no soportada: ${String(parsed.version)} (este CLI lee de la ${FLOW_RUN_STATE_READABLE.at(-1)} a la ${FLOW_RUN_STATE_VERSION})`,
+      newer
+        ? `la escribió un CLI más nuevo que este: actualizalo con 'aw self update' y seguí la corrida — reiniciarla descartaría lo que esa versión sí continúa`
+        : restart,
     );
   }
-  const shape = checkShape(parsed);
+  const shape = checkShape(parsed, restart);
   if (shape !== null) return { ok: false, failure: shape };
 
   const state = parsed as unknown as FlowRunState;
   if (semanticDigest(withoutSeal(state)) !== state.digest) {
     return refuse(
       "FLOW_RUN_TAMPERED",
-      "el estado de corrida no coincide con su propio sello",
-      "fue editado fuera del CLI: descartá el archivo y re-adoptá la sesión con 'aw flow advance --adopt'",
+      "el estado de corrida no coincide con su propio sello: fue editado fuera del CLI",
+      restart,
     );
   }
   return { ok: true, state };
@@ -1906,11 +2041,15 @@ export function checkAgainstJourney(
   const ids = journey.map((decision) => decision.id);
   for (const [index, applied] of state.applied.entries()) {
     if (ids[index] === applied) continue;
+    // The cause decides the repair, so it is named: a row this build no longer
+    // has was renamed or retired, one it has elsewhere was reordered.
+    const cause = ids.includes(applied)
+      ? "el recorrido instalado la tiene en otra posición"
+      : "el recorrido instalado ya no tiene esa frontera";
     return {
       code: "FLOW_RUN_AHEAD_OF_JOURNEY",
-      message: `el estado dice haber aplicado '${applied}' donde el recorrido tiene '${ids[index] ?? "(nada)"}'`,
-      action:
-        "el estado no corresponde a este recorrido: revisá el flow de la corrida o re-adoptá la sesión",
+      message: `el estado dice haber aplicado '${applied}' donde el recorrido tiene '${ids[index] ?? "(nada)"}': ${cause}`,
+      action: unusableRemedy(state.session),
     };
   }
   const next = ids[state.applied.length] ?? null;
@@ -1918,18 +2057,120 @@ export function checkAgainstJourney(
     return {
       code: "FLOW_RUN_AHEAD_OF_JOURNEY",
       message: `la frontera vigente dice '${state.boundary}' y el recorrido sigue en '${next ?? "(nada)"}'`,
-      action:
-        "recalculá la frontera avanzando de nuevo; no se responde sobre una frontera que el estado no sostiene",
+      action: unusableRemedy(state.session),
     };
   }
   return null;
 }
 
-function checkShape(parsed: Record<string, unknown>): CapabilityFailure | null {
+/** The trace operation that names an alignment, so status and tests read one spelling. */
+export const JOURNEY_ALIGNMENT_OPERATION = "flow.journey-alignment";
+
+const ALIGNMENT_REASON =
+  "la versión instalada agregó esta frontera en un tramo que la corrida ya había recorrido: entra omitida, sin pedirse";
+
+/**
+ * Align a continuable run's cursor with the journey the installed build walks.
+ *
+ * The only difference this repairs is a boundary the installed build ADDED to
+ * the base journey the run recorded (`journey_base`) and that sits before the
+ * run's position. "Before the position" includes the rows ahead of the boundary
+ * the run is standing on: that boundary is the one it was answering, and a
+ * sealed or attempted action there must not be thrown away for a row nobody
+ * asked it about. A row added AFTER the boundary is left alone and asked when
+ * the run gets there.
+ *
+ * Every other difference comes back untouched, for {@link checkAgainstJourney}
+ * to refuse with its cause: a row the recorded base already had and the cursor
+ * lacks is a hole, not an addition; a reorder or a retirement moves an id that
+ * keys attempts, counters, trace and approvals.
+ *
+ * `base` is the installed REGISTRY journey; `journey` is what the run walks
+ * (plan-exec's expanded copies included). Pure: the aligned state is persisted
+ * by the run's next write, never by a read.
+ */
+export function alignToJourney(
+  state: FlowRunState,
+  journey: readonly FlowDecision[],
+  base: readonly string[],
+): FlowRunState {
+  const recorded = state.journey_base;
+  if (recorded === undefined || sameIds(recorded, base)) return state;
+  const addedIds = new Set(base.filter((id) => !recorded.includes(id)));
+  const ids = journey.map((decision) => decision.id);
+  const applied: string[] = [];
+  const added: { transition: string; position: number }[] = [];
+  let cursor = 0;
+  // Everything from `cursor` up to the next occurrence of `target` must be rows
+  // the installed build added; only then are they inserted, in journey order.
+  const insertUntil = (target: string): boolean => {
+    let next = cursor;
+    while (next < ids.length && ids[next] !== target) {
+      if (!addedIds.has(ids[next] as string)) return false;
+      next += 1;
+    }
+    if (next >= ids.length) return false;
+    for (; cursor < next; cursor += 1) {
+      added.push({ transition: ids[cursor] as string, position: applied.length });
+      applied.push(ids[cursor] as string);
+    }
+    return true;
+  };
+  for (const id of state.applied) {
+    if (ids[cursor] !== id && !insertUntil(id)) return state;
+    applied.push(id);
+    cursor += 1;
+  }
+  if (state.boundary !== null && ids[cursor] !== state.boundary && !insertUntil(state.boundary)) {
+    return state;
+  }
+  const events: FlowRunEvent[] = added.map((row) => {
+    const iteration = segmentIterationAt(state.flow, applied, row.position);
+    return {
+      kind: "aligned",
+      transition: row.transition,
+      ...(iteration === null ? {} : { batch_iteration: iteration }),
+      operation: JOURNEY_ALIGNMENT_OPERATION,
+      position: row.position,
+      reason: ALIGNMENT_REASON,
+    };
+  });
+  return sealRunState({
+    ...withoutSeal(state),
+    journey_base: [...base],
+    applied,
+    skipped: [...state.skipped, ...added.map((row) => row.transition)],
+    events: [...state.events, ...events],
+  });
+}
+
+function sameIds(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+/**
+ * Which plan-exec batch copy a cursor position falls inside, or null outside one.
+ *
+ * Two copies of the same added row differ only by the batch they belong to, so
+ * the trace names it the way every other per-batch event does.
+ */
+function segmentIterationAt(
+  flow: WorklineFlow,
+  applied: readonly string[],
+  position: number,
+): number | null {
+  if (flow !== "plan-exec") return null;
+  const before = applied.slice(0, position);
+  const opened = before.lastIndexOf("plan-exec.batch-eligibility-signal");
+  if (opened < 0 || before.lastIndexOf("plan-exec.batch-close") > opened) return null;
+  return before.filter((id) => id === "plan-exec.batch-eligibility-signal").length;
+}
+
+function checkShape(parsed: Record<string, unknown>, remedy: string): CapabilityFailure | null {
   const invalid = (why: string): CapabilityFailure => ({
     code: "FLOW_RUN_INVALID",
     message: `el estado de corrida ${why}`,
-    action: "restauralo o re-adoptá la sesión con 'aw flow advance --adopt'",
+    action: remedy,
   });
 
   if (!(WORKLINE_FLOWS as readonly unknown[]).includes(parsed.flow)) {
@@ -1967,13 +2208,20 @@ function checkRecordShape(
 ): CapabilityFailure | null {
   const common = checkCommonRecordShape(parsed, invalid);
   if (common !== null) return common;
-  if (parsed.version === FLOW_RUN_STATE_VERSION || parsed.version === 10) {
+  const version = parsed.version as number;
+  if (version >= 10) {
     const v10 = checkV10RecordShape(parsed, invalid);
     if (v10 !== null) return v10;
   }
-  if (parsed.version === FLOW_RUN_STATE_VERSION) {
+  if (version >= 11) {
     const v11 = checkV11RecordShape(parsed, invalid);
     if (v11 !== null) return v11;
+  }
+  if (version >= 12 && !isStringArray(parsed.journey_base)) {
+    return invalid("no dice contra qué recorrido se escribió su cursor");
+  }
+  if (parsed.exhausted_reruns !== undefined && !isStringArray(parsed.exhausted_reruns)) {
+    return invalid("declara vueltas de fronteras agotadas que no son transiciones");
   }
   if (typeof parsed.digest !== "string") return invalid("no trae su sello");
   return null;
@@ -2611,27 +2859,43 @@ function isEvent(entry: unknown): boolean {
   ) {
     return false;
   }
-  if (entry.kind === "executed") {
-    return (
+  return EVENT_BODIES.get(entry.kind as string)?.(entry) === true;
+}
+
+const nonEmpty = (value: unknown): boolean => typeof value === "string" && value.trim().length > 0;
+
+/**
+ * What each trace kind demands beyond the common fields; an unknown kind has no
+ * entry. A Map, not an object: a kind spelled like an Object.prototype member
+ * must not find a function nobody declared.
+ */
+const EVENT_BODIES: ReadonlyMap<string, (entry: Record<string, unknown>) => boolean> = new Map(
+  Object.entries({
+    executed: (entry) =>
       typeof entry.summary === "string" &&
       typeof entry.output_digest === "string" &&
       isEffectClassArray(entry.effects) &&
-      isStringArray(entry.evidence)
-    );
-  }
-  if (entry.kind === "reconciled") return isRepairArray(entry.repairs);
-  if (entry.kind === "failed") {
-    return (
+      isStringArray(entry.evidence),
+    reconciled: (entry) => isRepairArray(entry.repairs),
+    restarted: (entry) => nonEmpty(entry.archive) && nonEmpty(entry.cause),
+    annulled: (entry) =>
+      isStringArray(entry.batches) &&
+      entry.batches.length > 0 &&
+      Array.isArray(entry.phases) &&
+      entry.phases.every((phase) => Number.isInteger(phase) && (phase as number) > 0) &&
+      isStringArray(entry.tasks) &&
+      nonEmpty(entry.digest),
+    aligned: (entry) =>
+      Number.isInteger(entry.position) && (entry.position as number) >= 0 && nonEmpty(entry.reason),
+    failed: (entry) =>
       typeof entry.code === "string" &&
       typeof entry.message === "string" &&
       typeof entry.recovery === "string" &&
       // ABSENT-or-well-formed, never defaulted: a version 7 trace has no such
       // field, and the guard that reads it treats its absence as the refusal.
-      (entry.effects === undefined || isEffectClassArray(entry.effects))
-    );
-  }
-  return false;
-}
+      (entry.effects === undefined || isEffectClassArray(entry.effects)),
+  } satisfies Record<FlowRunEvent["kind"], (entry: Record<string, unknown>) => boolean>),
+);
 
 /** A repair is well-formed when its rule is one of the three and its values are numbers. */
 function isRepairArray(value: unknown): value is AttemptRepair[] {

@@ -161,6 +161,10 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
     it("queda AGOTADA en vez de degradarse, y el recorrido no se declara terminado", async () => {
       for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await advance();
       expect(runs).toBe(MAX_BOUNDARY_ATTEMPTS);
+      // Agotada por intentos, el CLI la corre UNA vez más sin cobrar: la
+      // agotaría igual el desfase de una escritura que falló después del efecto.
+      await advance();
+      expect(runs).toBe(MAX_BOUNDARY_ATTEMPTS + 1);
       const exhausted = await advance();
       const after = await state(WRITE_SESSION);
 
@@ -174,8 +178,9 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
       expect(exhausted.error?.code).toBe("FLOW_BOUNDARY_EXHAUSTED");
       // Y no es un callejón: el bloqueo enseña la salida soportada.
       expect(exhausted.error?.action).toContain("aw flow recover");
-      // Agotada quiere decir agotada: la acción ya no se vuelve a ejecutar.
-      expect(runs).toBe(MAX_BOUNDARY_ATTEMPTS);
+      // Agotada quiere decir agotada: pasada su única vuelta, la acción ya no
+      // se vuelve a ejecutar.
+      expect(runs).toBe(MAX_BOUNDARY_ATTEMPTS + 1);
     });
 
     it("y su salida declarada funciona: recover la devuelve a ejecutable", async () => {

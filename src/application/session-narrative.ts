@@ -221,6 +221,33 @@ async function materialTrace(
       });
       continue;
     }
+    if (event.kind === "annulled") {
+      sequence.push({
+        state: "aplicado",
+        text: `se anularon ${event.batches.join(", ")}: ${event.phases.map((phase) => `F${phase}`).join(", ")} volvieron a pendiente`,
+        detail: `${event.operation} · tareas ${event.tasks.join(", ")} · aprobado ${event.digest.slice(0, 12)}`,
+        source,
+      });
+      continue;
+    }
+    if (event.kind === "restarted") {
+      sequence.push({
+        state: "aplicado",
+        text: `la corrida se reinició: la anterior quedó archivada en ${event.archive}`,
+        detail: `${event.operation} · ${event.cause}`,
+        source,
+      });
+      continue;
+    }
+    if (event.kind === "aligned") {
+      sequence.push({
+        state: "aplicado",
+        text: `${event.transition} entró omitida al actualizar el CLI`,
+        detail: `${event.operation} · posición ${event.position} · ${event.reason}`,
+        source,
+      });
+      continue;
+    }
     sequence.push({
       state: "fallido",
       text: `${event.message} — ${event.recovery}`,

@@ -6,18 +6,25 @@ import {
   applyUnderLock,
   locateRun,
   readRun,
+  restartUnderLock,
 } from "../../src/application/flow/run-state-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
-import type { FlowDecision } from "../../src/domain/flow/authority.js";
+import {
+  type FlowDecision,
+  journeyForState,
+  journeyOfFlow,
+} from "../../src/domain/flow/authority.js";
 import {
   FLOW_RUN_STATE_READABLE,
   FLOW_RUN_STATE_VERSION,
   type FlowRunAttempt,
   type FlowRunState,
+  JOURNEY_ALIGNMENT_OPERATION,
+  type PlanExecBatch,
+  alignToJourney,
   applyAttemptReconciliation,
   applyTransition,
-  atCurrentVersion,
   attemptAccountingAt,
   attemptReconciliationsOf,
   attemptsAt,
@@ -31,6 +38,7 @@ import {
   reconcileAttemptsAt,
   serializeRunState,
   skipTransition,
+  upgradeContinuable,
   withActionAttempted,
   withAttempt,
   withAttemptCounters,
@@ -40,6 +48,7 @@ import {
   withPendingAction,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { decisionsOf, loadJourneyFixtures, v11StateAt } from "../helpers/journey-fixtures.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -223,8 +232,9 @@ describe("estado de corrida — fail-closed", () => {
       const read = parseRunState(JSON.stringify(older));
       if (read.ok) throw new Error(`un estado v${older.version} no puede leerse como el vigente`);
       expect(read.failure.code).toBe("FLOW_RUN_VERSION_UNSUPPORTED");
-      expect(read.failure.action).toContain("--adopt");
-      expect(read.failure.action).toContain("migración automática");
+      // Too old to read: `--adopt` would not adopt it; restart archives it.
+      expect(read.failure.action).toContain("aw flow restart");
+      expect(read.failure.action).not.toContain("--adopt");
     }
   });
 
@@ -250,14 +260,10 @@ describe("estado de corrida — fail-closed", () => {
     if (!read.ok) throw new Error(`un ledger de la versión anterior se lee: ${read.failure.code}`);
     expect(read.state.attempt_floor).toBeUndefined();
     expect(read.state.degraded).toBeUndefined();
-    // Sólo una adopción explícita lo re-sella con la vigente. Leerlo o pedir
-    // status jamás inventa los límites de batch que la corrida legacy no tuvo.
-    const stamped = atCurrentVersion(read.state);
-    expect(stamped.version).toBe(FLOW_RUN_STATE_VERSION);
-    expect(stamped.batches).toEqual([]);
-    expect(stamped.batch_trace).toEqual([]);
+    // Leerlo no lo re-sella ni lo sube: de la v10 hacia atrás sólo se lee, y su
+    // salida es `aw flow restart`, no una migración que inventaría sus lotes.
     expect(legacyRunNeedsAdoption(read.state)).toBe(true);
-    expect(parseRunState(JSON.stringify(stamped)).ok).toBe(true);
+    expect(upgradeContinuable(read.state)).toBe(read.state);
   });
 
   it("los pasos omitidos son un subconjunto de los que la corrida pasó", () => {
@@ -415,9 +421,9 @@ describe("estado de corrida — sobre un workspace real", () => {
     expect(read.state.session).toBe(SESSION);
   });
 
-  it("una corrida v9 se puede leer pero rechaza toda escritura hasta --adopt", async () => {
+  it("una corrida v9 se puede leer, rechaza toda escritura y sale archivada por restart", async () => {
     const location = locateRun(paths, SESSION);
-    const { digest: _seal, ...current } = newRunState("quick", SESSION);
+    const { digest: _seal, journey_base: _base, ...current } = newRunState("quick", SESSION);
     const legacy = { ...current, version: 9 };
     await writeFile(
       location.statePath,
@@ -434,24 +440,25 @@ describe("estado de corrida — sobre un workspace real", () => {
       state: state as FlowRunState,
       value: null,
     }));
-    if (refused.ok) throw new Error("una corrida legacy no puede escribirse sin adopción");
+    if (refused.ok) throw new Error("una corrida anterior a la v11 no puede escribirse");
     expect(refused.failure.code).toBe("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
-    expect(refused.failure.action).toContain("--adopt");
+    expect(refused.failure.action).toContain(`aw flow restart --session ${SESSION}`);
 
-    const adopted = await applyUnderLock(
+    const restarted = await restartUnderLock(
       fs,
       location,
-      (state) => ({
-        ok: true as const,
-        state: atCurrentVersion(state as FlowRunState),
-        value: null,
+      async () => "prueba",
+      () => ({
+        ok: true,
+        state: newRunState("quick", SESSION),
       }),
-      { allowLegacyAdoption: true },
     );
-    expect(adopted.ok).toBe(true);
-    if (!adopted.ok) return;
-    expect(adopted.state.version).toBe(FLOW_RUN_STATE_VERSION);
-    expect(adopted.state.batches).toEqual([]);
+    if (!restarted.ok) throw new Error(`esperaba reiniciar: ${restarted.failure.code}`);
+    const reread = await readRun(fs, location);
+    if (!reread.ok) throw new Error(`la corrida nueva no se relee: ${reread.failure.code}`);
+    expect(reread.state.version).toBe(FLOW_RUN_STATE_VERSION);
+    const archived = JSON.parse(await readFile(join(location.dir, restarted.archive.path), "utf8"));
+    expect(JSON.parse(archived.state).version).toBe(9);
   });
 
   it("un estado manipulado en disco se rechaza con acción y no avanza", async () => {
@@ -772,5 +779,278 @@ describe("reconciliación de la contabilidad — lo que la habilita es la unicid
     // No es trabajo pendiente: la traza no la anota como paso ni como bloqueo.
     expect(back.state.boundary).toBeNull();
     expect(back.state.degraded ?? []).toEqual([]);
+  });
+});
+
+/**
+ * AC-08: the cursor is aligned with the installed journey, never the journey
+ * pinned to the run. What a newer build ADDED before the run's position enters
+ * as skipped with its trace; what it added ahead is asked; a reorder or a
+ * retirement is refused with its cause.
+ */
+describe("alineación del cursor con el recorrido instalado", () => {
+  const SESSION_EXEC = "002-prueba-plan-exec";
+  const OLD = loadJourneyFixtures()[0]?.journeys["plan-exec"] ?? [];
+  const ADDED = "plan-exec.frontera-agregada";
+  const at = (id: string) => OLD.indexOf(id);
+  const insert = (ids: readonly string[], index: number, id: string) => [
+    ...ids.slice(0, index),
+    id,
+    ...ids.slice(index),
+  ];
+  // Stopped on implementation, the way a run looks while its batch is being built.
+  // Upgraded the way readRun does it, so it records 25.6.1 as its base journey.
+  const stopped = () =>
+    upgradeContinuable(
+      v11StateAt(
+        "plan-exec",
+        SESSION_EXEC,
+        OLD.slice(0, at("plan-exec.implementation")),
+        "plan-exec.implementation",
+      ),
+    );
+  const installed = (state: FlowRunState, ids: readonly string[]) =>
+    journeyForState(state, decisionsOf(ids));
+  // `ids` plays the installed registry journey; the run recorded OLD.
+  const align = (state: FlowRunState, ids: readonly string[]) =>
+    alignToJourney(state, installed(state, ids), ids);
+
+  it("una frontera agregada en el tramo recorrido entra omitida, con su traza, sin pedirse", () => {
+    const state = stopped();
+    const ids = insert(OLD, at("plan-exec.source-scope") + 1, ADDED);
+    const aligned = align(state, ids);
+
+    expect(aligned.applied).toEqual(ids.slice(0, ids.indexOf("plan-exec.implementation")));
+    expect(aligned.skipped).toContain(ADDED);
+    // The run now stands on the installed journey: the next read aligns nothing.
+    expect(aligned.journey_base).toEqual(ids);
+    expect(align(aligned, ids)).toBe(aligned);
+    expect(aligned.boundary).toBe("plan-exec.implementation");
+    expect(checkAgainstJourney(aligned, installed(aligned, ids))).toBeNull();
+    expect(aligned.events.at(-1)).toMatchObject({
+      kind: "aligned",
+      transition: ADDED,
+      operation: JOURNEY_ALIGNMENT_OPERATION,
+      position: ids.indexOf(ADDED),
+    });
+    // The trace kind is part of the file format: it survives a round trip.
+    expect(parseRunState(serializeRunState(aligned)).ok).toBe(true);
+  });
+
+  it("una frontera agregada entre lo aplicado y la frontera vigente también entra omitida", () => {
+    const state = stopped();
+    const ids = insert(OLD, at("plan-exec.implementation"), ADDED);
+    const aligned = align(state, ids);
+    expect(aligned.skipped).toContain(ADDED);
+    expect(aligned.boundary).toBe("plan-exec.implementation");
+    expect(checkAgainstJourney(aligned, installed(aligned, ids))).toBeNull();
+  });
+
+  it("una frontera agregada por delante no se toca: se pide al llegar", () => {
+    const state = stopped();
+    const ids = insert(OLD, at("plan-exec.implementation") + 1, ADDED);
+    const aligned = align(state, ids);
+    expect(aligned.applied).toEqual(state.applied);
+    expect(aligned.skipped).toEqual(state.skipped);
+    expect(aligned.events).toEqual(state.events);
+    expect(aligned.journey_base).toEqual(ids);
+    expect(checkAgainstJourney(aligned, installed(aligned, ids))).toBeNull();
+    // It is the row right after the one the run is answering.
+    expect(ids[aligned.applied.length + 1]).toBe(ADDED);
+  });
+
+  it("un reordenamiento del tramo recorrido no se alinea: se rechaza con su causa", () => {
+    const state = stopped();
+    const ids = [...OLD];
+    [ids[4], ids[5]] = [ids[5] as string, ids[4] as string];
+    const aligned = align(state, ids);
+    expect(aligned).toBe(state);
+    const refused = checkAgainstJourney(aligned, installed(aligned, ids));
+    expect(refused?.code).toBe("FLOW_RUN_AHEAD_OF_JOURNEY");
+    expect(refused?.message).toContain("otra posición");
+  });
+
+  it("una frontera recorrida que el recorrido ya no tiene se rechaza con su causa", () => {
+    const state = stopped();
+    const ids = OLD.filter((id) => id !== "plan-exec.entry-gate");
+    const aligned = align(state, ids);
+    expect(aligned).toBe(state);
+    const refused = checkAgainstJourney(aligned, installed(aligned, ids));
+    expect(refused?.code).toBe("FLOW_RUN_AHEAD_OF_JOURNEY");
+    expect(refused?.message).toContain("ya no tiene");
+  });
+
+  describe("una corrida v11 de plan-exec en su segundo lote", () => {
+    const first = OLD.indexOf("plan-exec.batch-eligibility-signal");
+    const last = OLD.indexOf("plan-exec.batch-close");
+    const segment = OLD.slice(first, last + 1);
+    const batch = (iteration: number, published: boolean): PlanExecBatch => ({
+      id: `batch-${iteration}`,
+      iteration,
+      mode: "continuous",
+      phases: [iteration],
+      tasks: [`T${iteration}.1`],
+      plan_digest: `plan-antes-${iteration}`,
+      ...(published ? { published_plan_digest: `plan-despues-${iteration}` } : {}),
+      stage: published ? "closed" : "implementing",
+    });
+    const secondBatch = (journeyIds: readonly string[]) => {
+      const cut = journeyIds.indexOf("plan-exec.implementation", first + segment.length);
+      return v11StateAt(
+        "plan-exec",
+        SESSION_EXEC,
+        journeyIds.slice(0, cut),
+        "plan-exec.implementation",
+        {
+          batches: [batch(1, true), batch(2, false)],
+          batch_loop: { pending: true, iteration: 2 },
+          observations: [
+            {
+              transition: "plan-exec.batch-eligibility-signal",
+              signals: ["plan.recovery-boundary"],
+            },
+          ],
+        },
+      );
+    };
+    const twoCopies = [...OLD.slice(0, first), ...segment, ...segment, ...OLD.slice(last + 1)];
+
+    it("sigue en su lote con sus respuestas después de actualizar el CLI", async () => {
+      const workdir = await mkdtemp(join(tmpdir(), "aw-flow-run-align-"));
+      try {
+        const paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+        const location = locateRun(paths, SESSION_EXEC);
+        await mkdir(location.dir, { recursive: true });
+        const before = secondBatch(twoCopies);
+        await writeFile(location.statePath, serializeRunState(before), "utf8");
+
+        const read = await readRun(new NodeFileSystem(), location);
+        if (!read.ok) throw new Error(`esperaba continuar la corrida v11: ${read.failure.code}`);
+        expect(read.state.version).toBe(FLOW_RUN_STATE_VERSION);
+        expect(read.state.applied).toEqual(before.applied);
+        expect(read.state.boundary).toBe("plan-exec.implementation");
+        expect(read.state.observations).toEqual(before.observations);
+        expect(read.state.batches).toEqual(before.batches);
+        expect(
+          checkAgainstJourney(read.state, journeyForState(read.state, journeyOfFlow("plan-exec"))),
+        ).toBeNull();
+      } finally {
+        await rm(workdir, { recursive: true, force: true });
+      }
+    });
+
+    it("una frontera agregada al tramo repetible entra omitida en cada copia ya recorrida", () => {
+      const state = upgradeContinuable(secondBatch(twoCopies));
+      // After implementation: the first copy walked past it, the second copy is
+      // standing on implementation, so there the new row is still ahead.
+      const ids = insert(OLD, at("plan-exec.implementation") + 1, ADDED);
+      const aligned = align(state, ids);
+      expect(aligned.applied.filter((id) => id === ADDED)).toHaveLength(1);
+      expect(aligned.boundary).toBe("plan-exec.implementation");
+      expect(checkAgainstJourney(aligned, installed(aligned, ids))).toBeNull();
+      // Before the boundary in both copies: both walked past it.
+      const earlier = insert(OLD, at("plan-exec.batch-inference") + 1, ADDED);
+      const both = align(state, earlier);
+      expect(both.applied.filter((id) => id === ADDED)).toHaveLength(2);
+      expect(
+        both.events.filter((event) => event.kind === "aligned").map((e) => e.batch_iteration),
+      ).toEqual([1, 2]);
+      expect(checkAgainstJourney(both, installed(both, earlier))).toBeNull();
+    });
+  });
+});
+
+/**
+ * The other half of AC-08: alignment fills only what the installed build ADDED.
+ * A hole in a cursor whose journey did not change is exactly the mis-accounting
+ * spec 052 exists to stop, so it is still refused — through `readRun`, which is
+ * what every reader goes through.
+ */
+describe("alineación — sólo lo que agregó el build instalado", () => {
+  const SESSION_GAP = "003-prueba-hueco";
+  let workdir: string;
+  let location: ReturnType<typeof locateRun>;
+  const fs = new NodeFileSystem();
+  const INSTALLED = journeyOfFlow("plan-exec").map((decision) => decision.id);
+  const at = (id: string) => INSTALLED.indexOf(id);
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-flow-run-gap-"));
+    const paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+    location = locateRun(paths, SESSION_GAP);
+    await mkdir(location.dir, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  const readBack = async (state: FlowRunState) => {
+    await writeFile(location.statePath, serializeRunState(state), "utf8");
+    const read = await readRun(fs, location);
+    if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
+    return read.state;
+  };
+
+  it("un cursor al que le falta una frontera recorrida se sigue rechazando", async () => {
+    const holed = INSTALLED.slice(0, at("plan-exec.implementation")).filter(
+      (id) => id !== "plan-exec.entry-gate",
+    );
+    const read = await readBack(
+      v11StateAt("plan-exec", SESSION_GAP, holed, "plan-exec.implementation"),
+    );
+    expect(read.applied).toEqual(holed);
+    expect(read.events.some((event) => event.kind === "aligned")).toBe(false);
+    expect(checkAgainstJourney(read, journeyForState(read))?.code).toBe(
+      "FLOW_RUN_AHEAD_OF_JOURNEY",
+    );
+  });
+
+  it("una frontera vigente adelantada sobre filas sin recorrer se sigue rechazando", async () => {
+    const read = await readBack(
+      v11StateAt(
+        "plan-exec",
+        SESSION_GAP,
+        INSTALLED.slice(0, at("plan-exec.implementation")),
+        "plan-exec.batch-close",
+      ),
+    );
+    expect(read.skipped).toEqual([]);
+    expect(checkAgainstJourney(read, journeyForState(read))?.code).toBe(
+      "FLOW_RUN_AHEAD_OF_JOURNEY",
+    );
+  });
+
+  it("la subida de v11 conserva los intentos, su piso y lo perdonado", async () => {
+    const transition = "plan-exec.entry-gate";
+    const seeded = await applyUnderLock(
+      fs,
+      location,
+      () => {
+        let state = newRunState("plan-exec", SESSION_GAP);
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+          state = withAttempt(state, {
+            invocation_id: `sello-${attempt}`,
+            attempt: 1,
+            request_digest: `pedido-${attempt}`,
+            parent_request_digest: null,
+            transition,
+          });
+        }
+        return { ok: true as const, state: grantAttempts(state, transition, 1), value: null };
+      },
+      { allowAbsent: true },
+    );
+    if (!seeded.ok) throw new Error(`esperaba sembrar la corrida: ${seeded.failure.code}`);
+    // The same run as 25.6.1 would have written it: v11, no provenance, same counter.
+    const { digest: _seal, journey_base: _base, ...rest } = seeded.state;
+    const v11 = { ...rest, version: 11 };
+    const read = await readBack({ ...v11, digest: semanticDigest(v11) } as FlowRunState);
+
+    expect(read.version).toBe(FLOW_RUN_STATE_VERSION);
+    expect(read.attempts).toEqual(seeded.state.attempts);
+    expect(read.attempt_floor).toEqual(seeded.state.attempt_floor);
+    expect(read.attempt_grants).toEqual(seeded.state.attempt_grants);
+    expect(attemptsAt(read, transition)).toBe(attemptsAt(seeded.state, transition));
   });
 });

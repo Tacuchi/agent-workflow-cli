@@ -27,6 +27,45 @@ interface NodeError extends Error {
   code?: string;
 }
 
+/**
+ * The codes a transient hold on the destination answers a rename with.
+ *
+ * An antivirus or an indexer opening the file for a few milliseconds makes
+ * Windows refuse the replace with EPERM, EACCES or EBUSY. The hold ends on its
+ * own, so the rename is retried with a growing wait; anything else fails at once.
+ */
+const TRANSIENT_RENAME_CODES = new Set(["EPERM", "EACCES", "EBUSY"]);
+const RENAME_FIRST_WAIT_MS = 10;
+/** Long enough for a scan to let go, short enough that a command never looks hung. */
+const RENAME_TOTAL_WAIT_MS = 2000;
+
+/** Rename, riding out a transient hold; past the cap the FIRST error propagates. */
+async function renameRidingOutHolds(from: string, to: string): Promise<void> {
+  let waited = 0;
+  let wait = RENAME_FIRST_WAIT_MS;
+  let first: unknown = null;
+  for (;;) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (err) {
+      first ??= err;
+      const code = (err as NodeError).code;
+      if (
+        code === undefined ||
+        !TRANSIENT_RENAME_CODES.has(code) ||
+        waited >= RENAME_TOTAL_WAIT_MS
+      ) {
+        throw first;
+      }
+      const pause = Math.min(wait, RENAME_TOTAL_WAIT_MS - waited);
+      await new Promise((resolve) => setTimeout(resolve, pause));
+      waited += pause;
+      wait *= 2;
+    }
+  }
+}
+
 export class NodeFileSystem implements FileSystemPort {
   private static writeCounter = 0;
 
@@ -42,13 +81,14 @@ export class NodeFileSystem implements FileSystemPort {
    * Atomic write: stage to `<path>.<pid>.<n>.tmp` and rename onto `path`.
    * `rename` is atomic on POSIX/NTFS within the same filesystem, so a concurrent
    * reader either sees the previous full content or the new full content — never
-   * a half-written file. On failure, the tmp is best-effort unlinked.
+   * a half-written file. A transient hold on the destination is ridden out (see
+   * {@link TRANSIENT_RENAME_CODES}). On failure, the tmp is best-effort unlinked.
    */
   async writeText(path: string, content: string): Promise<void> {
     const tmpPath = `${path}.${process.pid}.${++NodeFileSystem.writeCounter}.tmp`;
     try {
       await writeFile(tmpPath, content, "utf8");
-      await rename(tmpPath, path);
+      await renameRidingOutHolds(tmpPath, path);
     } catch (err) {
       try {
         await unlink(tmpPath);

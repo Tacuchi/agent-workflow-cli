@@ -1,5 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { WORKLINE_FLOWS } from "../../src/application/capability/compose.js";
 import { advanceFlowRun } from "../../src/application/flow/advance.js";
+import { advanceFlow } from "../../src/application/flow/flow-service.js";
+import { projectRun } from "../../src/application/flow/run-projection.js";
+import { PathsService } from "../../src/application/paths-service.js";
+import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js";
 import { groupCommands, renderGroupedCommandLines } from "../../src/cli/help-groups.js";
 import type { FlowAuthority, FlowDecision } from "../../src/domain/flow/authority.js";
@@ -14,6 +22,8 @@ import {
   withAttemptCounters,
   withEvent,
 } from "../../src/domain/flow/run-state.js";
+import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
  * One invocation exhausts the deterministic steps and stops at the first
@@ -301,4 +311,58 @@ describe("aw flow advance — la contabilidad propia se repara antes de resolver
     expect(result.state.attempt_grants ?? {}).toEqual({});
     expect(result.state.attempt_floor).toEqual({ [STOPPED]: 4 });
   });
+});
+
+/**
+ * AC-10 of spec 052: a session created for a flow starts its run on its first
+ * `aw flow advance` — no `--flow`, no `--adopt`, no `FLOW_RUN_ABSENT` and no
+ * "legacy" for a session that is not one.
+ */
+describe("la primera advance de una sesión recién creada arranca su corrida", () => {
+  let workdir: string;
+  let paths: PathsService;
+  const fs = new NodeFileSystem();
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-flow-advance-seed-"));
+    paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  for (const flow of WORKLINE_FLOWS) {
+    it(`${flow}: la sesión nace con su corrida y la primera advance la camina`, async () => {
+      const created = await runSessionCreate(fs, paths, {
+        type: flow === "quick" ? "quick" : flow === "plan-exec" ? "exec" : "refine",
+        name: `sembrada-${flow}`,
+        objetivo: "arrancar sin adoptar",
+      });
+      if ("error" in created) throw new Error(`esperaba crear la sesión: ${created.error}`);
+      expect(created.sessionCreate.flow).toBe(flow);
+      // Status and resume say it has not started — not a question nobody asks.
+      const projected = await projectRun(fs, paths, created.sessionCreate.folder);
+      expect(projected?.boundary).toBe("unstarted");
+      // A `--flow` that names another flow is refused, never walked silently.
+      const other = WORKLINE_FLOWS.find((candidate) => candidate !== flow) as string;
+      const mismatch = await advanceFlow(fs, paths, {
+        code: created.sessionCreate.folder,
+        flow: other,
+        adopt: true,
+      });
+      expect(mismatch).toMatchObject({
+        ok: false,
+        failure: { code: "FLOW_ADOPTION_FLOW_MISMATCH" },
+      });
+
+      const first = await advanceFlow(fs, paths, {
+        code: created.sessionCreate.folder,
+        adopt: false,
+      });
+      if (!first.ok) throw new Error(`esperaba arrancar sin --adopt: ${JSON.stringify(first)}`);
+      expect(first.directive.flow).toBe(flow);
+      expect(first.directive.applied.length).toBeGreaterThan(0);
+    });
+  }
 });

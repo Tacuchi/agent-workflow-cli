@@ -1008,7 +1008,7 @@ describe("resume y status proyectan la frontera vigente", () => {
     expect(execution?.summary).not.toContain("quick.session-create");
   });
 
-  it("una corrida anterior al cutover no se proyecta: entra por re-adopción", async () => {
+  it("una corrida anterior al cutover no se proyecta: sale por aw flow restart", async () => {
     const stale = {
       version: 2,
       flow: "quick",
@@ -1030,9 +1030,9 @@ describe("resume y status proyectan la frontera vigente", () => {
     const projected = await projectRun(fs, paths, SESSION);
     expect(projected?.boundary).toBe("blocked");
     expect(projected?.summary).toContain("FLOW_RUN_VERSION_UNSUPPORTED");
-    // Exacto, no "contiene --adopt": el flag con el que se identifica la sesión es
-    // el que el comando `flow` lee, y proyectar otro deja un comando que no corre.
-    expect(projected?.command).toBe(`aw flow advance --code ${SESSION} --adopt`);
+    // Exacto: el comando que corre en ESTE estado. `--adopt` no adopta un
+    // registro ilegible; `restart` lo archiva y re-adopta.
+    expect(projected?.command).toBe(`aw flow restart --session ${SESSION}`);
     // Y el archivo sigue intacto: proyectar es leer.
     const raw = await readFile(join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE), "utf8");
     expect(raw).toContain('"version":2');

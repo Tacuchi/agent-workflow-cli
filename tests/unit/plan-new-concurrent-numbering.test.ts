@@ -339,7 +339,7 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
       choice: "Aprobar y guardar",
     });
 
-    expect(blocked.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+    expect(blocked.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
     expect(blocked.error?.message).toContain("cambió después de preparar la propuesta");
     expect(await readFile(join(workdir, reserved(alpha)), "utf8")).toBe("# otra cosa\n");
   });
