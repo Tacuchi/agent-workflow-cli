@@ -7,7 +7,7 @@
     "agent-workflow": "dist/cli/main.js",
     "aw": "dist/cli/main.js"
   },
-  "files": ["dist", "skills", "LICENSE", "README.md"],
+  "files": ["dist", "skills", "LICENSE", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc",
     "build:watch": "node scripts/clean-dist.mjs && tsc --watch",

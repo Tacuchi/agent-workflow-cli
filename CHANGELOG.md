@@ -4,6 +4,14 @@ All notable changes to `@tacuchi/agent-workflow-cli` are documented in this file
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+**Contratos.** Cada versión posterior a la 25.6.1 declara una sección `### Contrato`, y `aw self update` la muestra antes de instalar. Un cambio de contrato es todo cambio que hace fallar o cambiar de sentido algo que ya funcionaba: flags y argumentos, sobres JSON, la gramática que validan los gates de spec y plan, el recorrido y la versión del estado de corrida, los formatos persistidos (ledger, libros, marcadores) y los hooks instalados.
+
+- La sección trae una viñeta por cambio, con tres partes rotuladas y en este orden: `**Deja de valer:**`, `**Lo reemplaza:**` y `**Qué hacer:**`.
+- Una versión que no cambia ningún contrato lo dice con una sola línea: `Ninguno.`
+- Una versión sin la sección no cuenta como «sin cambios»: `tests/unit/changelog-contract.test.ts` impide publicarla.
+- `### Migration` sigue como notas libres.
+- Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
+
 ## [25.6.1] — 2026-09-16
 
 ### Fixed
@@ -193,6 +201,10 @@ Todo lo de esta versión vive en la pestaña `[Skills]` del TUI y en una reparac
 - **Una entrada MCP ajena homónima ya no deja una conexión imposible de retirar.** La TUI identifica el host y archivo en conflicto, explica la acción manual y `remove` elimina el registro y los recibos de Workline cuando no queda ningún descriptor propio. Las entradas ajenas no se modifican; si una de ellas oculta todavía un descriptor propio, la eliminación sigue fallando de forma segura y conserva el registro con una recuperación concreta.
 
 ## [25.1.0] — 2026-09-02
+
+### Contrato
+
+- **Deja de valer:** una corrida de `aw flow` empezada con la 25.0.1 o antes. El recorrido suma `chassis.route-evaluation` delante de QUICK, SPEC-refine y PLAN, y una corrida que ya pasó ese punto se rechaza con `FLOW_RUN_AHEAD_OF_JOURNEY`. **Lo reemplaza:** el recorrido con ruta adaptativa, en el estado de corrida v11. **Qué hacer:** terminá o cerrá las corridas en vuelo antes de actualizar; una que quede rechazada se cierra con `aw session-close --code <NNN>` y se empieza de nuevo.
 
 ### Added
 
@@ -450,6 +462,11 @@ Guía de migración: [`docs/migracion-baseline-y-decisiones.md`](docs/migracion-
 
 ## [22.0.0] — 2026-08-15
 
+### Contrato
+
+- **Deja de valer:** `aw mcp dbhub <conexión>` con la conexión como argumento posicional, por ejemplo un `.mcp.json` con `["mcp","dbhub","qtc-cert"]`. Se rechaza con `INVALID_INPUT`. **Lo reemplaza:** `--instance <nombre>`, sobre las conexiones que registra `aw self mcp use-env` en `mcp-connections.json`. **Qué hacer:** reescribí cada invocación, incluidos los `.mcp.json` versionados, como `aw mcp dbhub --instance <nombre>`.
+- **Deja de valer:** un plan sin `> Límite de ejecución: checkout`, sin `> Fuentes:` por fase y `_(fuentes: …)_` por tarea, o que cierra con una comprobación contra un producto desplegado, un host o una conexión remota. `plan-exec` no lo inicia. **Lo reemplaza:** el contrato de fuentes: cada fase cierra con evidencia local del checkout, sobre fuentes declaradas en `AGENTS.md > Fuentes`, y lo desplegado pasa a handoff operativo. **Qué hacer:** refiná cada plan v21 abierto con `/w:plan-refine` antes de ejecutarlo.
+
 ### Breaking
 
 - **Los marcadores QTC se retiran de inmediato.** No habrá alias, lectura dual ni migración automática en v22. Un workspace o integración que todavía los use debe migrarlos con v21.17.0 antes de actualizar.
@@ -490,6 +507,10 @@ Guía de migración: [`docs/migracion-baseline-y-decisiones.md`](docs/migracion-
 ## [21.16.0] — 2026-08-15
 
 **Validar y aplicar una exportación exigían repetir los mismos flags de alcance, y aun repitiéndolos el rechazo por vencimiento llegaba igual por dos causas que nadie controlaba.** El protocolo rearma el pedido desde el workspace en cada etapa —diseño deliberado—, pero el sello cubría además el próximo número correlativo del destino y la fecha del día: numerar en ese directorio entre dos etapas, o cruzar la medianoche, vencía una preparación cuyo alcance no había cambiado. Y el mensaje sugería volver a preparar, que es una pista falsa.
+
+### Contrato
+
+- **Deja de valer:** que `validate` y `apply` de `aw export-*` re-deriven el alcance de los flags de la invocación. Repetir un flag de alcance con otro valor que el de `prepare` se rechaza. **Lo reemplaza:** el alcance viaja sellado con lo preparado y vuelve en el sobre: `validate` y `apply` leen el `scope` del request. **Qué hacer:** copiá el `scope` del request tal cual en el sobre y no repitas `--sessions`, `--since`, `--source` ni `--date` con otros valores.
 
 ### Added
 
@@ -639,6 +660,10 @@ Guía de migración: [`docs/migracion-baseline-y-decisiones.md`](docs/migracion-
 ## [21.10.0] — 2026-08-14
 
 **Dos recorridos concurrentes ya no se pisan, y el probe multihost que lo demuestra encontró tres defectos que ningún test de un proceso podía ver.** Hasta acá `plan-new` reclamaba un correlativo que después su propio guardado rechazaba llenar, `plan-exec` leía y commiteaba el checkout compartido sin adquirir ninguna unidad, y el cierre no miraba si quedaba una unidad viva — así que dos flujos sobre la misma fuente se atribuían trabajo ajeno y dejaban unidades huérfanas. Ahora la reserva pertenece a la corrida, cada `plan-exec` fija su alcance y edita sólo dentro de su unidad, y la integración precede al sello del plan. La conformidad se verificó end-to-end con dos hosts reales (Codex y Claude Code) sobre la misma máquina y el mismo workspace, en el caso limpio y en el conflictivo.
+
+### Contrato
+
+- **Deja de valer:** una corrida de `aw flow` guardada con el estado de corrida v6, que escriben la 21.9.0 y las anteriores. Esta versión escribe la v7 y lee sólo esa: la v6 se rechaza con `FLOW_RUN_VERSION_UNSUPPORTED`. **Lo reemplaza:** el estado de corrida v7. **Qué hacer:** terminá o cerrá las corridas en vuelo antes de actualizar; después, re-adoptá cada sesión con `aw flow advance --flow <flow> --adopt`. No hay migración automática.
 
 ### Added
 
