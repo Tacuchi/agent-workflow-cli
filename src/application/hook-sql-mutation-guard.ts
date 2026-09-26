@@ -1,25 +1,33 @@
 // Patterns and display name are read from the runtime config (Phase 3 agnostic CLI).
+import { type SqlLexicalMark, type SqlStatement, scanSql } from "../domain/sql-lexer.js";
 import type { EnvPort } from "../ports/env.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
 import { parseHookPayload } from "./hook-common.js";
 
-const MUTATION_KEYWORDS = [
-  "INSERT",
-  "UPDATE",
-  "DELETE",
-  "TRUNCATE",
-  "MERGE",
-  "CREATE",
-  "ALTER",
-  "DROP",
-  "GRANT",
-  "REVOKE",
-  "COPY",
-];
+// The spec's closed list of reads (S051/AC-12): anything else is blocked, even
+// without a mutation keyword, because a mutation list lets through what it omits.
+const READ_STATEMENTS = new Set(["SELECT", "VALUES", "TABLE", "SHOW"]);
+const EXPLAIN_LEGACY_OPTIONS = new Set(["ANALYZE", "ANALYSE", "VERBOSE"]);
+const STATEMENT_DISPLAY_CHARS = 120;
 
-const MUTATION_PATTERN = new RegExp(`\\b(${MUTATION_KEYWORDS.join("|")})\\b`, "i");
-const COMMENT_LINE_RE = /--[^\n]*/g;
-const COMMENT_BLOCK_RE = /\/\*[\s\S]*?\*\//g;
+const REASONS = {
+  undelimited:
+    "el SQL no se puede delimitar: hay un literal, un identificador o un comentario sin cerrar",
+  into: "lleva INTO: SELECT … INTO crea una tabla, no la lee",
+  noRead: "no empieza con una lectura",
+  withShape: "el WITH no tiene la forma nombre AS (…)",
+  explainShape: "las opciones de EXPLAIN no cierran su paréntesis",
+} as const;
+
+// PostgreSQL reads these differently than MySQL; an execute_sql tool may talk
+// to either, and the other reading could hide a second statement.
+const MARK_REASONS: Record<SqlLexicalMark, string> = {
+  hash: "tiene un # fuera de un literal, que otro motor lee como comentario",
+  backtick: "tiene un backtick fuera de un literal, que otro motor lee como identificador",
+  "backslash-quote":
+    "tiene una \\ antes de una comilla, que otro motor lee como escape y cierra el literal en otro lugar",
+  "executable-comment": "tiene un comentario /*! … */, que MySQL ejecuta como SQL",
+};
 
 export interface SqlGuardResult {
   exitCode: 0 | 2;
@@ -58,11 +66,11 @@ export function runSqlMutationGuard(input: SqlGuardInput): SqlGuardResult {
 
   const sql = extractSql(payload.tool_input);
   if (!sql) return { exitCode: 0 };
-  const keyword = findMutation(sql);
-  if (keyword === null) return { exitCode: 0 };
+  const blocked = findNonRead(sql);
+  if (blocked === null) return { exitCode: 0 };
 
   const display = input.runtime.displayName ?? "agent-workflow";
-  const msg = formatBlockMessage(toolName, serverFull, keyword, display);
+  const msg = formatBlockMessage(toolName, serverFull, blocked, display);
   return { exitCode: 2, stderr: msg };
 }
 
@@ -99,28 +107,142 @@ function extractSql(toolInput: unknown): string {
   return "";
 }
 
-function findMutation(sql: string): string | null {
-  const cleaned = stripComments(sql);
-  const m = cleaned.match(MUTATION_PATTERN);
-  return m?.[1] ? m[1].toUpperCase() : null;
+interface NonReadStatement {
+  statement: string;
+  reason: string;
 }
 
-function stripComments(sql: string): string {
-  return sql.replace(COMMENT_BLOCK_RE, " ").replace(COMMENT_LINE_RE, " ");
+function findNonRead(sql: string): NonReadStatement | null {
+  const scan = scanSql(sql);
+  if (!scan.ok) {
+    return {
+      statement: `entrada completa · ${displayStatement(sql)}`,
+      reason: REASONS.undelimited,
+    };
+  }
+  // An empty or comment-only statement runs nothing; it is neither counted nor classified.
+  const statements = scan.statements.filter((s) => s.tokens.length > 0 || s.marks.length > 0);
+  for (const [position, statement] of statements.entries()) {
+    const reason = classifyStatement(statement);
+    if (reason === null) continue;
+    const text = displayStatement(sql.slice(statement.start, statement.end));
+    return { statement: `${position + 1} de ${statements.length} · ${text}`, reason };
+  }
+  return null;
+}
+
+/** Returns why the statement is not a read, or null when it reads. */
+function classifyStatement(statement: SqlStatement): string | null {
+  const mark = statement.marks[0];
+  if (mark !== undefined) return MARK_REASONS[mark];
+  const { tokens } = statement;
+  const shape = classifyRange(tokens, 0, tokens.length);
+  if (shape !== null) return shape;
+  return tokens.includes("INTO") ? REASONS.into : null;
+}
+
+function classifyRange(tokens: readonly string[], start: number, end: number): string | null {
+  let index = start;
+  while (index < end && tokens[index] === "(") index += 1;
+  const first = index < end ? tokens[index] : undefined;
+  if (first === undefined || first === ")" || first === ",") return REASONS.noRead;
+  if (READ_STATEMENTS.has(first)) return null;
+  if (first === "WITH") return classifyWith(tokens, index + 1, end);
+  if (first === "EXPLAIN") return classifyExplain(tokens, index + 1, end);
+  return `${first} no es una lectura`;
+}
+
+/**
+ * Only a top-level WITH may hold data-modifying parts, so each part's body and
+ * the main statement are classified; nested WITHs recurse through classifyRange.
+ */
+function classifyWith(tokens: readonly string[], start: number, end: number): string | null {
+  let index = tokens[start] === "RECURSIVE" ? start + 1 : start;
+  for (;;) {
+    const part = classifyWithPart(tokens, index, end);
+    if (typeof part === "string") return part;
+    index = part.next;
+    if (tokens[index] !== ",") break;
+    index += 1;
+  }
+  const main = classifyRange(tokens, index, end);
+  return main === null ? null : `la sentencia principal del WITH: ${main}`;
+}
+
+/** Reads `name [(columns)] AS [NOT] [MATERIALIZED] (body)`; returns why it fails or where it ends. */
+function classifyWithPart(
+  tokens: readonly string[],
+  start: number,
+  end: number,
+): string | { next: number } {
+  const as = indexAtDepth(tokens, "AS", start, end);
+  if (as < 0) return REASONS.withShape;
+  let open = as + 1;
+  if (tokens[open] === "NOT") open += 1;
+  if (tokens[open] === "MATERIALIZED") open += 1;
+  const close = tokens[open] === "(" ? matchingParen(tokens, open, end) : -1;
+  if (close < 0) return REASONS.withShape;
+  const body = classifyRange(tokens, open + 1, close);
+  return body === null ? { next: close + 1 } : `una parte del WITH: ${body}`;
+}
+
+/** EXPLAIN is classified by what it explains, with or without ANALYZE. */
+function classifyExplain(tokens: readonly string[], start: number, end: number): string | null {
+  let index = start;
+  if (tokens[index] === "(") {
+    const close = matchingParen(tokens, index, end);
+    if (close < 0) return REASONS.explainShape;
+    index = close + 1;
+  } else {
+    while (EXPLAIN_LEGACY_OPTIONS.has(tokens[index] ?? "")) index += 1;
+  }
+  const target = classifyRange(tokens, index, end);
+  return target === null ? null : `EXPLAIN de otra sentencia: ${target}`;
+}
+
+function indexAtDepth(tokens: readonly string[], word: string, start: number, end: number): number {
+  let depth = 0;
+  for (let index = start; index < end; index += 1) {
+    const token = tokens[index];
+    if (token === "(") depth += 1;
+    else if (token === ")") depth -= 1;
+    else if (depth === 0 && token === word) return index;
+    if (depth < 0) return -1;
+  }
+  return -1;
+}
+
+function matchingParen(tokens: readonly string[], open: number, end: number): number {
+  let depth = 0;
+  for (let index = open; index < end; index += 1) {
+    if (tokens[index] === "(") depth += 1;
+    else if (tokens[index] === ")") depth -= 1;
+    if (depth === 0) return index;
+  }
+  return -1;
+}
+
+function displayStatement(text: string): string {
+  const compact = text.replace(/\s+/g, " ").trim();
+  return compact.length > STATEMENT_DISPLAY_CHARS
+    ? `${compact.slice(0, STATEMENT_DISPLAY_CHARS)}…`
+    : compact;
 }
 
 function formatBlockMessage(
   toolName: string,
   server: string,
-  keyword: string,
+  blocked: NonReadStatement,
   display: string,
 ): string {
   return `${[
     `[${display} sql-mutation-guard] Bloqueado por shared-contract §30 (política BD universal).`,
     `  Tool      : ${toolName}`,
     `  Servidor  : ${server}`,
-    `  Keyword   : ${keyword}`,
+    `  Sentencia : ${blocked.statement}`,
+    `  Motivo    : ${blocked.reason}`,
     "",
+    "Sólo pasan lecturas: SELECT sin INTO, WITH de lecturas, EXPLAIN de una lectura, SHOW, VALUES y TABLE.",
     "Las mutaciones a BD (DML/DDL) NO se ejecutan desde una sesión.",
     "Materializá el cambio como script SQL en docs/scripts/ del workspace",
     "de la fuente y pedile al usuario que lo aplique manualmente.",
