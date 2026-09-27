@@ -31,7 +31,7 @@ export const FLOW_CONTROL: readonly BoundaryOption[] = [
   },
   {
     label: "Cerrar",
-    consequence: "el recorrido queda detenido acá, con su estado y su frontera persistidos",
+    consequence: "se cierra la sesión y se conserva lo pendiente para retomarlo al reabrir",
   },
 ];
 

@@ -603,7 +603,7 @@ function approvalAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       failure: {
         code: "FLOW_APPROVAL_MISSING",
         message: "esta frontera necesita una aprobación de efecto y no llegó ninguna",
-        action: `volvé a invocar con --approval ${input.expectedApproval ?? "<digest>"}, o respondé '${STOP_LABEL}' para no autorizarla`,
+        action: `volvé a invocar con --approval ${input.expectedApproval ?? "<digest>"}, o respondé '${STOP_LABEL}' para cerrar la sesión conservando lo pendiente sin autorizar ese efecto`,
       },
     };
   }

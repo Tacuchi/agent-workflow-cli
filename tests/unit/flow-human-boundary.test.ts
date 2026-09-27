@@ -20,6 +20,7 @@ import {
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 // The engine walks only what the CLI owns, and no tranche is migrated yet: over the
 // live rows this run would stop at its first `legacy` boundary and this file would
@@ -210,17 +211,20 @@ describe("frontera humana — sobre una corrida real", () => {
     );
   });
 
-  it("declinar es una respuesta real y no aplica nada", async () => {
-    const before = await readFile(statePath(), "utf8");
+  it("Cerrar conserva la frontera sin normalizar y cierra en el mismo submit", async () => {
     const result = await submitFlow(fs, paths, {
       code: "001",
       raw: JSON.stringify({ input_digest: await seal(), choice: "Cerrar" }),
       approval: null,
+      executor: testExecutor(fs, paths),
     });
-    if (!result.ok) throw new Error("declinar viaja ok:true");
-    expect(result.directive.outcome).toBe("cancelled");
-    expect(result.directive.error?.code).toBe("FLOW_BOUNDARY_DECLINED");
-    expect(result.directive.boundary.transition).toBe("plan-exec.normalization-consent");
-    expect(await readFile(statePath(), "utf8")).toBe(before);
+    if (!result.ok) throw new Error("el cierre viaja ok:true");
+    expect(result.directive.outcome).toBe("completed");
+    expect(result.directive.error).toBeNull();
+    const after = await readRun(fs, locateRun(paths, SESSION));
+    if (!after.ok) throw new Error(after.failure.code);
+    expect(after.state.applied).not.toContain("plan-exec.normalization-consent");
+    expect(after.state.applied.at(-1)).toBe("chassis.finalize");
+    expect(await fs.exists(join(paths.cwdSessionsDir(), SESSION, ".closed"))).toBe(true);
   });
 });
