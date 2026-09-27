@@ -94,6 +94,8 @@ export interface CommitReceipt {
 
 export interface GitPort {
   isGitRepo(repoPath: string): Promise<boolean>;
+  /** Optional local git configuration; absent keys return null. */
+  readConfig?(repoPath: string, key: string): Promise<string | null>;
   currentBranch(repoPath: string): Promise<string | undefined>;
   isDirty(repoPath: string): Promise<boolean>;
   changedFiles(repoPath: string): Promise<string[]>;

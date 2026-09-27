@@ -22,7 +22,12 @@ import {
   type ProveFlowResult,
   proveFlowBoundary,
 } from "../../application/flow/prove.js";
-import { type SubmitFlowResult, submitFlow } from "../../application/flow/submit.js";
+import {
+  type FlowCheckReceipt,
+  type SubmitFlowResult,
+  checkFlow,
+  submitFlow,
+} from "../../application/flow/submit.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -57,7 +62,7 @@ import type { CliContext } from "../types.js";
  * directive whose action carried the proof — would make the run look like it had
  * moved when nothing did.
  */
-type FlowResult = FlowDirective | CheckoutProofReceipt | AnnulPreview;
+type FlowResult = FlowDirective | CheckoutProofReceipt | AnnulPreview | FlowCheckReceipt;
 
 const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul", "retract"] as const;
 
@@ -94,7 +99,8 @@ const ENVELOPE = [
   "",
   "  human           choice: la etiqueta literal de una de las alternativas que la directiva emitió.",
   "",
-  "  authorization   --approval <digest> con el digest que la directiva nombra en `siguiente:` — NO es el state_digest · choice: opcional, y con `Cerrar` o `Compactar` no se pide aprobación.",
+  "  authorization   --approval <digest> se exige sólo en fronteras authorization; el digest está en expects.approval.digest y NO es el state_digest. En semantic, human y execution se ignora --approval. Con `Cerrar` o `Compactar` no se pide aprobación.",
+  "  submit --check  lee este mismo sobre y lista sus violaciones sin registrar intento, avanzar ni ejecutar acciones internas.",
 ].join("\n");
 
 /**
@@ -143,10 +149,10 @@ const CHECKOUT = [
   "  las dos cosas pasó, porque estabilizar y recapturar no son el mismo arreglo.",
   "",
   "  Y conviene usarlo: una prueba cuya forma no coincide con su `kind` vuelve como",
-  "  `WORKLINE_CHECKOUT_PROOF_INVALID` — nombrando el kind, los campos esperados y las claves que",
-  "  llegaron — y ESO GASTA UN INTENTO de la frontera. `FLOW_RESULT_INVALID` queda para el resultado",
-  "  o la lista `validations` que incumplen su propia forma, y no cobra. Capturar con `prove` caza el",
-  "  defecto de forma antes del submit, gratis.",
+  "  `WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID`, sin gastar intento. Los errores de tipo, forma,",
+  "  literal, digest, invocación, gramática del plan o prueba vencida tampoco gastan. Sólo gasta",
+  "  un rechazo que juzga la decisión o afirmación de la respuesta: ejecución inconclusa, evidencia",
+  "  que no pasa, alcance o decisión que la frontera no acepta, o respuesta vacía.",
 ].join("\n");
 
 /**
@@ -208,7 +214,7 @@ export const flowCommand: CliCommand<FlowResult> = {
     known: ["code", "session", "flow", "host"],
     actions: {
       advance: { known: ["adopt"] },
-      submit: { known: ["approval"] },
+      submit: { known: ["approval", "check"] },
       prove: { known: ["source", "artifact"] },
       recover: { known: ["transition"] },
       retract: { known: ["signal"] },
@@ -280,6 +286,16 @@ ${CHECKOUT}`,
 
     if (verb === "submit") {
       const approval = args.values.get("approval");
+      if (args.flags.has("--check"))
+        return projectCheck(
+          await checkFlow(ctx.fs, ctx.paths, {
+            ...session,
+            raw: await readRequiredStdin(),
+            approval: approval ?? null,
+            executor,
+            git: ctx.git,
+          }),
+        );
       return project(
         await submitFlow(ctx.fs, ctx.paths, {
           ...session,
@@ -306,11 +322,22 @@ ${CHECKOUT}`,
     // Derived from the same payload the JSON carries — never a second narrative.
     if (result.data === undefined) return "";
     const data = result.data;
+    if ("check" in data)
+      return data.valid
+        ? "sobre válido: 0 violaciones\n"
+        : `${data.violations.map((item) => `${item.field}: ${item.message}`).join("\n")}\n`;
     if ("proof" in data) return `${renderProofHuman(data)}\n`;
     if ("batches" in data) return `${renderAnnulHuman(data)}\n`;
     return `${renderDirectiveHuman(data, context.detail)}\n`;
   },
 };
+
+function projectCheck(result: Awaited<ReturnType<typeof checkFlow>>): CommandResult<FlowResult> {
+  if (result.ok) return { ok: true, data: result.receipt, exitCode: 0 };
+  if ("session" in result)
+    return failSessionResolution(result.session) as CommandResult<FlowResult>;
+  return failSemantic(result.failure);
+}
 
 async function retractVerb(
   args: ParsedArgs,
@@ -335,6 +362,7 @@ function renderProofHuman(receipt: CheckoutProofReceipt): string {
     `frontera: ${receipt.boundary ?? "recorrido terminado"}`,
     `evidencia exigida: ${receipt.evidence.join(", ")}`,
     `checkout probado (local de esta corrida): ${receipt.checkout.source} → ${receipt.checkout.root}`,
+    ...receipt.warnings.map((warning) => `aviso: ${warning}`),
     "prevalidada con la misma política que aplica submit: pasa",
     `dónde va: ${receipt.usage}`,
     "",

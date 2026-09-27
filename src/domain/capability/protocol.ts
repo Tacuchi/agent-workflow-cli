@@ -52,6 +52,14 @@ export interface CapabilityFailure {
   message: string;
   /** One valid next action — never a dead end. */
   action: string;
+  /** Independent problems in one answer; code/message above remain the first. */
+  violations?: {
+    code: string;
+    field: string;
+    expected?: string;
+    received?: string;
+    message: string;
+  }[];
 }
 
 export type CapabilityRoute = CapabilityExposure;

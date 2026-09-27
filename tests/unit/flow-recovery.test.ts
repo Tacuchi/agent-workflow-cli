@@ -181,16 +181,19 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_INTERNAL_ACTION_EXTERNAL_RESULT: "envelope",
       // La decisión llegó y no resolvió el gap: eso es lo que el techo cuenta.
       FLOW_ANSWER_AMBIGUOUS: "evaluated",
-      FLOW_SIGNAL_UNKNOWN: "evaluated",
-      FLOW_CHOICE_UNKNOWN: "evaluated",
-      FLOW_APPROVAL_MISSING: "evaluated",
-      FLOW_APPROVAL_MISMATCH: "evaluated",
-      FLOW_ACTION_MISMATCH: "evaluated",
+      FLOW_SIGNAL_UNKNOWN: "envelope",
+      FLOW_CHOICE_UNKNOWN: "envelope",
+      FLOW_APPROVAL_MISSING: "envelope",
+      FLOW_APPROVAL_MISMATCH: "envelope",
+      FLOW_ACTION_MISMATCH: "envelope",
       FLOW_EXECUTION_NOT_COMPLETED: "evaluated",
       FLOW_EVIDENCE_MISSING: "evaluated",
-      WORKLINE_CHECKOUT_PROOF_MISSING: "evaluated",
+      WORKLINE_CHECKOUT_PROOF_MISSING: "envelope",
       WORKLINE_CHECKOUT_PROOF_INVALID: "evaluated",
-      WORKLINE_CHECKOUT_PROOF_STALE: "evaluated",
+      WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID: "envelope",
+      WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH: "envelope",
+      WORKLINE_CHECKOUT_UNOBSERVABLE: "envelope",
+      WORKLINE_CHECKOUT_PROOF_STALE: "envelope",
       FLOW_EFFECT_PARTIAL: "evaluated",
       PLAN_EXEC_BATCH_UNCHANGED: "evaluated",
       PLAN_VALIDATION_ONLY_NOT_APPROVED: "evaluated",
@@ -202,36 +205,78 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       PLAN_TEST_FAILURES_UNREADABLE: "evaluated",
       PLAN_TEST_FAILURE_NEW: "evaluated",
       FLOW_SCOPE_INVALID: "evaluated",
+      FLOW_SCOPE_SHAPE_INVALID: "envelope",
       FLOW_SCOPE_UNKNOWN_SOURCE: "evaluated",
       FLOW_SCOPE_NOT_IN_PLAN: "evaluated",
-      FLOW_SCOPE_PLAN_UNREADABLE: "evaluated",
-      FLOW_SCOPE_PLAN_OUTSIDE_CANON: "evaluated",
-      FLOW_HANDOFF_PLAN_MISSING: "evaluated",
-      FLOW_PREVIEW_INVALID: "evaluated",
-      FLOW_DECISION_SCOPE_MISSING: "evaluated",
-      FLOW_DECISION_INPUT_INVALID: "evaluated",
-      FLOW_DECISION_PLAN_UNREADABLE: "evaluated",
+      FLOW_SCOPE_PLAN_UNREADABLE: "envelope",
+      FLOW_SCOPE_PLAN_OUTSIDE_CANON: "envelope",
+      FLOW_HANDOFF_PLAN_MISSING: "envelope",
+      FLOW_PREVIEW_INVALID: "envelope",
+      FLOW_DECISION_SCOPE_MISSING: "envelope",
+      FLOW_DECISION_INPUT_INVALID: "envelope",
+      FLOW_DECISION_PLAN_UNREADABLE: "envelope",
       FLOW_DECISION_LINEAGE_INVALID: "evaluated",
-      FLOW_DECISION_SPEC_UNREADABLE: "evaluated",
+      FLOW_DECISION_SPEC_UNREADABLE: "envelope",
       FLOW_DECISION_UNRESOLVABLE: "evaluated",
-      FLOW_DECISION_PREPARATION_FAILED: "evaluated",
-      FLOW_DECISION_PREVIEW_ABSENT: "evaluated",
+      FLOW_DECISION_PREPARATION_FAILED: "envelope",
+      FLOW_DECISION_PREVIEW_ABSENT: "envelope",
       FLOW_SETTLEMENT_INVALID: "evaluated",
       FLOW_SETTLEMENT_INCOMPLETE: "evaluated",
-      PLAN_SOURCE_BOUNDARY_MISSING: "evaluated",
-      PLAN_SOURCE_UNKNOWN: "evaluated",
-      PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
-      PLAN_SOURCE_EXTERNAL_CLOSURE: "evaluated",
-      PLAN_SOURCE_LOCAL_PROOF_MISSING: "evaluated",
+      PLAN_SOURCE_BOUNDARY_MISSING: "envelope",
+      PLAN_SOURCE_UNKNOWN: "envelope",
+      PLAN_TASK_SOURCE_OUTSIDE_PHASE: "envelope",
+      PLAN_SOURCE_EXTERNAL_CLOSURE: "envelope",
+      PLAN_SOURCE_LOCAL_PROOF_MISSING: "envelope",
       // La gramática del plan no gasta: el linaje ausente se corrige en la cabecera.
       PLAN_LINEAGE_UNSEALED: "envelope",
       FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",
-      FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "evaluated",
-      FLOW_PROPOSAL_BASE_UNREADABLE: "evaluated",
-      FLOW_ROUTE_DECISION_INVALID: "evaluated",
-      FLOW_ROUTE_PROPOSAL_INVALID: "evaluated",
-      FLOW_ROUTE_SUBSTITUTION_INVALID: "evaluated",
+      FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "envelope",
+      FLOW_PROPOSAL_BASE_UNREADABLE: "envelope",
+      FLOW_ROUTE_DECISION_INVALID: "envelope",
+      FLOW_ROUTE_PROPOSAL_INVALID: "envelope",
+      FLOW_ROUTE_SUBSTITUTION_INVALID: "envelope",
       FLOW_ROUTE_HARD_GATE: "evaluated",
+      NOTE_NOT_OBJECT: "envelope",
+      NOTE_SCHEMA_UNKNOWN: "envelope",
+      NOTE_ID_INVALID: "envelope",
+      NOTE_DECISION_MISSING: "envelope",
+      NOTE_REASON_MISSING: "envelope",
+      NOTE_CONSUMERS_MISSING: "envelope",
+      NOTE_EVIDENCE_PRESERVED_MISSING: "envelope",
+      NOTE_EVIDENCE_INVALIDATED_MISSING: "envelope",
+      NOTE_OBLIGATIONS_MISSING: "envelope",
+      NOTE_OBLIGATIONS_INVALID: "envelope",
+      NOTE_OBLIGATION_KIND_MISSING: "envelope",
+      NOTE_RESUME_POINT_MISSING: "envelope",
+      NOTE_DATE_INVALID: "envelope",
+      NOTE_DIGEST_MISSING: "envelope",
+      NOTE_DIGEST_MISMATCH: "envelope",
+      NOTE_SCOPE_INVALID: "envelope",
+      NOTE_SUPERSEDES_INVALID: "envelope",
+      NOTE_ASSERTIONS_MISSING: "envelope",
+      NOTE_ASSERTIONS_INVALID: "envelope",
+      NOTE_ASSERTIONS_DUPLICATE: "envelope",
+      NOTE_LINEAGE_MISSING: "envelope",
+      NOTE_LINEAGE_INVALID: "envelope",
+      NOTE_LINEAGE_DIGEST_INVALID: "envelope",
+      NOTE_EXECUTION_STATE_MISSING: "envelope",
+      NOTE_INDEX_UNREADABLE: "envelope",
+      NOTE_INDEX_INVALID: "envelope",
+      NOTE_INDEX_SCHEMA_UNKNOWN: "envelope",
+      NOTE_ALREADY_PUBLISHED: "control",
+      NOTE_SUPERSEDES_ABSENT: "evaluated",
+      NOTE_REWRITES_BASELINE: "evaluated",
+      CONTRACT_BASELINE_ABSENT: "envelope",
+      CONTRACT_ASSERTION_ABSENT: "evaluated",
+      CONTRACT_OVERLAP: "evaluated",
+      CONTRACT_CONTRADICTION: "evaluated",
+      DECISION_BASE_ABSENT: "envelope",
+      PROPOSAL_LOCKED: "control",
+      PROPOSAL_BASELINE_UNSEALED: "envelope",
+      PROPOSAL_APPROVAL_MISMATCH: "envelope",
+      PROPOSAL_APPROVAL_MISSING: "envelope",
+      PROPOSAL_BASE_GONE: "envelope",
+      PROPOSAL_BASE_STALE: "envelope",
       // Una respuesta real que no aplica nada, o la misma dos veces.
       // Y la compensación que sigue pendiente: decir la verdad sobre trabajo que
       // no se hizo no puede costarle a la corrida uno de sus intentos.
@@ -266,11 +311,17 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       "src/domain/flow/execution-result.ts",
       "src/application/flow/submit.ts",
       "src/application/plan-lineage-seal.ts",
+      "src/domain/decision-note.ts",
+      "src/domain/effective-contract.ts",
+      "src/application/decision-note-service.ts",
+      "src/application/decision-registration-service.ts",
+      "src/application/local-proposal.ts",
+      "src/application/source-boundary-policy.ts",
     ];
     const emitted = new Set<string>();
     for (const file of sources) {
       const raw = await readFile(join(process.cwd(), file), "utf8");
-      for (const match of raw.matchAll(/code:\s*"([A-Z][A-Z_]+)"/g)) {
+      for (const match of raw.matchAll(/(?:code:\s*|fail\(\s*)"([A-Z][A-Z_]+)"/g)) {
         const code = match[1];
         if (code !== undefined && !notARejection.has(code)) emitted.add(code);
       }
@@ -284,7 +335,12 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
   it("un código que nadie clasificó gasta: el techo no se desactiva por omisión", () => {
     expect(spendsAttempt("FLOW_ANSWER_INVALID")).toBe(false);
     expect(spendsAttempt("FLOW_BOUNDARY_PAUSED")).toBe(false);
-    expect(spendsAttempt("FLOW_SIGNAL_UNKNOWN")).toBe(true);
+    expect(spendsAttempt("FLOW_SIGNAL_UNKNOWN")).toBe(false);
+    expect(spendsAttempt("FLOW_SCOPE_SHAPE_INVALID")).toBe(false);
+    expect(spendsAttempt("FLOW_SCOPE_NOT_IN_PLAN")).toBe(true);
+    expect(spendsAttempt("FLOW_EXECUTION_NOT_COMPLETED")).toBe(true);
+    expect(spendsAttempt("FLOW_ANSWER_AMBIGUOUS")).toBe(true);
+    expect(spendsAttempt("FLOW_ROUTE_HARD_GATE")).toBe(true);
     expect(spendsAttempt("FLOW_SCOPE_UNKNOWN_SOURCE")).toBe(true);
     expect(spendsAttempt("FLOW_CODIGO_QUE_NO_EXISTE")).toBe(true);
   });
@@ -369,7 +425,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
   async function refuseObserve(): Promise<FlowDirective> {
     tried += 1;
     return submit(
-      JSON.stringify({ input_digest: await seal(), signals: [`fixture.inventada-${tried}`] }),
+      JSON.stringify({ input_digest: await seal(), signals: [], attempt_marker: tried }),
     );
   }
 
@@ -395,11 +451,21 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     });
 
     it("una respuesta evaluada e insuficiente sí gasta, y a las tres agota", async () => {
-      expect((await refuseObserve()).error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+      expect((await refuseObserve()).error?.code).toBe("FLOW_ANSWER_AMBIGUOUS");
       expect(attemptsAt(await state(), "fixture.observe")).toBe(1);
       await refuseObserve();
       const last = await refuseObserve();
       expect(last.error?.code).toBe("FLOW_BOUNDARY_EXHAUSTED");
+      expect(attemptsAt(await state(), "fixture.observe")).toBe(MAX_BOUNDARY_ATTEMPTS);
+    });
+  });
+
+  describe("los controles escapan incluso de una frontera agotada o de ejecución", () => {
+    it("Compactar se anuncia y no consume otro intento en una frontera agotada", async () => {
+      for (let i = 0; i < MAX_BOUNDARY_ATTEMPTS; i += 1) await refuseObserve();
+      const paused = await submit(JSON.stringify({ choice: "Compactar" }));
+      expect(paused.next_action).toContain("checkpoint-write");
+      expect(paused.next_action).toContain("Cerrar");
       expect(attemptsAt(await state(), "fixture.observe")).toBe(MAX_BOUNDARY_ATTEMPTS);
     });
   });
@@ -1134,6 +1200,17 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       expect(directive.attempt_accounting?.conflicts.length).toBeGreaterThan(0);
     });
 
+    it("un replay con ordinal divergente rechaza dentro de la directiva sin sumar gasto", async () => {
+      await refuseObserve();
+      await corruptChain();
+      const before = attemptAccountingAt(await state(), "fixture.observe");
+      const reply = await answerObserve();
+      expect(reply.boundary.transition).toBe("fixture.observe");
+      expect(reply.error).not.toBeNull();
+      expect(reply.attempt_accounting?.spent).toBe(before.spent);
+      expect(attemptAccountingAt(await state(), "fixture.observe").spent).toBe(before.spent);
+    });
+
     it("AC-05: una frontera que no puede rendir su ordinal no se ofrece como contestable", async () => {
       await refuseObserve();
       await corruptChain();
@@ -1233,31 +1310,23 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
      * El quinto defecto del mismo ledger, y el único que no necesita que nadie
      * toque el estado a mano: lo produce el camino de producción.
      *
-     * Un reenvío del MISMO sobre se reconoce, se vuelve a evaluar y persiste su
-     * fila con el ordinal del gemelo — a propósito, para que siga contando
-     * contra el techo. A partir de ahí las filas dicen dos y el ordinal más alto
-     * dice uno, y la respuesta siguiente se numeraba por filas: llegaba como
-     * intento 3 a un ledger que sólo admite el 2. La frontera quedaba sin forma
-     * de contestarse, y `recover` se negaba porque reproducir dos filas
-     * idénticas nunca falla. El fixture `corruptChain` de arriba evita el gemelo
-     * idéntico a propósito, y su comentario da por sentado que ése no desfasa la
-     * corrida: esa suposición ES el defecto.
+     * El rechazo se vuelve a explicar, pero su segundo envío es el mismo intento:
+     * no se añade una fila con el ordinal anterior ni se agota por duplicación.
      */
-    it("un reenvío idéntico deja la frontera contestable, y sigue gastando intento", async () => {
+    it("dos reenvíos idénticos dejan una fila y un solo gasto", async () => {
       const raw = JSON.stringify({
         input_digest: await seal(),
-        signals: ["fixture.inventada-reenviada"],
+        signals: [],
       });
-      expect((await submit(raw)).error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
-      expect((await submit(raw)).error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+      expect((await submit(raw)).error?.code).toBe("FLOW_ANSWER_AMBIGUOUS");
+      expect((await submit(raw)).error?.code).toBe("FLOW_ANSWER_AMBIGUOUS");
+      expect((await submit(raw)).error?.code).toBe("FLOW_ANSWER_AMBIGUOUS");
 
       const resent = attemptAccountingAt(await state(), "fixture.observe");
-      // El reenvío se persiste con el ordinal del gemelo y cuenta contra el
-      // techo: es lo que termina degradando la frontera en vez de dejar a quien
-      // contesta dando vueltas.
-      expect(resent.ordinals).toEqual([1, 1]);
-      expect(resent.spent).toBe(2);
-      expect(resent.available).toBe(MAX_BOUNDARY_ATTEMPTS - 2);
+      expect(resent.ordinals).toEqual([1]);
+      expect(resent.spent).toBe(1);
+      expect(resent.available).toBe(MAX_BOUNDARY_ATTEMPTS - 1);
+      expect(resent.conflicts).toEqual([]);
       // Y no es una divergencia: el contenido es el mismo, así que nada que
       // `recover` tenga que destrabar.
       expect(resent.unanswerable).toBeNull();
@@ -1267,7 +1336,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       const applied = await answerObserve();
       expect(applied.boundary.transition).toBe("fixture.board");
       expect((await state()).applied).toContain("fixture.observe");
-      expect(attemptAccountingAt(await state(), "fixture.observe").ordinals).toEqual([1, 1, 2]);
+      expect(attemptAccountingAt(await state(), "fixture.observe").ordinals).toEqual([1, 2]);
     });
 
     it("sin reenvíos la cadena sigue numerando densa, 1, 2, 3", async () => {

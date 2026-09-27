@@ -100,7 +100,7 @@ describe("atribución del defecto de forma", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("esperaba un rechazo");
-    expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID");
     expect(result.failure.message).toContain("inspection");
     expect(result.failure.message).toContain("artifact");
     expect(result.failure.message).toContain("program");
@@ -118,7 +118,7 @@ describe("atribución del defecto de forma", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("esperaba un rechazo");
-    expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID");
     expect(result.failure.message).toContain("command");
     expect(result.failure.message).toContain("artifact");
   });
@@ -134,7 +134,7 @@ describe("atribución del defecto de forma", () => {
 
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("esperaba un rechazo");
-    expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID");
     expect(result.failure.message).toContain("inspeccion");
     // El typo es la forma más probable de llegar acá, así que es el caso que más
     // necesita una frase usable: antes decía «espera X (trae: X)», con las dos
@@ -184,8 +184,8 @@ describe("atribución del defecto de forma", () => {
       invocation,
     });
     if (nested.ok) throw new Error("esperaba un rechazo");
-    expect(nested.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
-    expect(spendsAttempt(nested.failure.code)).toBe(true);
+    expect(nested.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID");
+    expect(spendsAttempt(nested.failure.code)).toBe(false);
 
     // Y el contenedor mal formado sigue siendo gratis: es el sobre, no una decisión.
     expect(spendsAttempt("FLOW_RESULT_INVALID")).toBe(false);

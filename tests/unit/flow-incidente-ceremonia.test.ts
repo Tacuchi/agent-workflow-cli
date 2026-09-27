@@ -283,7 +283,8 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
       const current = await state();
       const refused = await answer({
         input_digest: current.resolved.seal,
-        signals: ["plan.senal-que-no-existe"],
+        signals: [],
+        attempt_marker: turn,
       });
       expect(refused.error).not.toBeNull();
     }

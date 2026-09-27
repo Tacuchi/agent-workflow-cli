@@ -23,7 +23,7 @@ import {
   placementOf,
   realizationOf,
 } from "../../src/domain/flow/authority.js";
-import { PAUSE_LABEL, STOP_LABEL } from "../../src/domain/flow/directive.js";
+import { PAUSE_LABEL, STOP_LABEL, renderDirectiveHuman } from "../../src/domain/flow/directive.js";
 import { ROUTE_ACCEPT_LABEL } from "../../src/domain/flow/route.js";
 import { docsBoundaryBreach } from "../../src/domain/flow/rules.js";
 import { MAX_BOUNDARY_ATTEMPTS, newRunState } from "../../src/domain/flow/run-state.js";
@@ -62,7 +62,11 @@ const CODE = "008";
 const SRC = resolve(__dirname, "..", "..");
 
 /** Cross the new route boundary so legacy chassis cases exercise their own gate. */
-async function acceptDefaultRoute(paths: PathsService, choice = ROUTE_ACCEPT_LABEL): Promise<void> {
+async function acceptDefaultRoute(
+  paths: PathsService,
+  choice = ROUTE_ACCEPT_LABEL,
+  conventions: string | string[] = "fixture",
+): Promise<void> {
   const current = await readRun(fs, locateRun(paths, SESSION));
   if (!current.ok) throw new Error(current.failure.code);
   const initial = resolveBoundary(current.state, journeyOfFlow(current.state.flow));
@@ -80,7 +84,7 @@ async function acceptDefaultRoute(paths: PathsService, choice = ROUTE_ACCEPT_LAB
           basis: {
             intention: "fixture",
             checkout: "fixture",
-            conventions: "fixture",
+            conventions,
             adopted_decisions: "fixture",
           },
           controls: [],
@@ -255,7 +259,7 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
       executor: testExecutor(fs, paths),
     });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptDefaultRoute(paths);
+    await acceptDefaultRoute(paths, ROUTE_ACCEPT_LABEL, ["fixture", "equivalente"]);
   });
 
   afterEach(async () => {
@@ -263,6 +267,12 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
   });
 
   const statePath = (): string => join(paths.cwdSessionsDir(), SESSION, ".flow-run.json");
+
+  it("une una lista de basis en texto antes de persistir la propuesta", async () => {
+    const read = await readRun(fs, locateRun(paths, SESSION));
+    if (!read.ok) throw new Error(read.failure.code);
+    expect(read.state.route_proposal?.basis.conventions).toBe("fixture\nequivalente");
+  });
 
   async function seal(): Promise<string> {
     const read = await readRun(fs, locateRun(paths, SESSION));
@@ -282,7 +292,7 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
     tried += 1;
     const result = await submitFlow(fs, paths, {
       code: CODE,
-      raw: JSON.stringify({ input_digest: await seal(), signals: [`quick.inventada-${tried}`] }),
+      raw: JSON.stringify({ input_digest: await seal(), signals: [], attempt_marker: tried }),
       approval: null,
       executor: testExecutor(fs, paths),
     });
@@ -295,7 +305,7 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
 
   it("los primeros intentos contestan su motivo; el que pasa el tope degrada", async () => {
     for (let attempt = 1; attempt < MAX_BOUNDARY_ATTEMPTS; attempt += 1) {
-      expect((await refused()).code, `intento ${attempt}`).toBe("FLOW_SIGNAL_UNKNOWN");
+      expect((await refused()).code, `intento ${attempt}`).toBe("FLOW_ANSWER_AMBIGUOUS");
     }
     // El que alcanza el tope ya no vuelve a preguntar lo mismo: degrada.
     const degraded = await refused();
@@ -304,6 +314,32 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
     // un gap sin destino es la convergencia fingida.
     expect(degraded.action).toContain("Open questions");
     expect(degraded.action).toContain("BACKLOG");
+  });
+
+  it("el render humano de un rechazo muestra el gasto y los controles", async () => {
+    await refused();
+    const current = await advanceFlow(fs, paths, {
+      code: CODE,
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    if (!current.ok) throw new Error("sin directiva después del rechazo");
+    const human = renderDirectiveHuman(current.directive);
+    expect(human).toContain("intentos: 1 de 3 gastados");
+    expect(human).toContain("Compactar | Cerrar");
+  });
+
+  it("Cerrar sale de una frontera agotada del recorrido real", async () => {
+    for (let i = 0; i < MAX_BOUNDARY_ATTEMPTS; i += 1) await refused();
+    const closed = await submitFlow(fs, paths, {
+      code: CODE,
+      raw: JSON.stringify({ choice: "Cerrar" }),
+      approval: null,
+      executor: testExecutor(fs, paths),
+    });
+    if (!closed.ok) throw new Error(JSON.stringify(closed));
+    expect(closed.directive.error).toBeNull();
+    expect(await fs.exists(join(paths.cwdSessionsDir(), SESSION, ".closed"))).toBe(true);
   });
 
   it("agotada, ya no se contesta — pero el recorrido SIGUE, que es lo que degradar significa", async () => {
@@ -377,8 +413,8 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
     // llamador convertido en staleness, cambiando un motivo preciso por uno vago.
     const first = await refused();
     const second = await refused();
-    expect(first.code).toBe("FLOW_SIGNAL_UNKNOWN");
-    expect(second.code).toBe("FLOW_SIGNAL_UNKNOWN");
+    expect(first.code).toBe("FLOW_ANSWER_AMBIGUOUS");
+    expect(second.code).toBe("FLOW_ANSWER_AMBIGUOUS");
   });
 
   it("una respuesta válida no gasta intentos: el tope cuenta lo que NO resolvió", async () => {

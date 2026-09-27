@@ -6,10 +6,13 @@ import { nodeFromDocPath } from "../../domain/workline-node.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { parsePhases } from "../parsers/phases.js";
+import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseTasks } from "../parsers/tasks.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { planBoundaryAction, planGrammarAtEntry } from "../plan-lint-service.js";
 import { deriveInputs } from "../session-create-service.js";
 import { readCustody } from "../session-custody-service.js";
+import { sourceAliasesOfPlan } from "../source-boundary-policy.js";
 
 /** Resolve before scope exists; custody outranks a descriptor that may be ambiguous. */
 async function entryPlan(
@@ -56,13 +59,29 @@ export async function observePlanEntry(
   } catch {
     return { plan, phases_without_open_tasks: null };
   }
+  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const failure = planGrammarAtEntry(text, block?.fuentes.map((source) => source.alias) ?? [])[0];
+  const grammar_failure =
+    failure === undefined
+      ? undefined
+      : {
+          code: failure.code,
+          message: failure.message,
+          action: planBoundaryAction(failure.code, "execution-entry"),
+        };
   const phases = parsePhases(text).items;
+  const sources = sourceAliasesOfPlan(text);
   // Entry must remain readable even when its finding is malformed phase numbering.
   if (
     phases.some((phase) => !Number.isSafeInteger(phase.n) || phase.n < 1) ||
     new Set(phases.map((phase) => phase.n)).size !== phases.length
   ) {
-    return { plan, phases_without_open_tasks: null };
+    return {
+      plan,
+      phases_without_open_tasks: null,
+      sources,
+      ...(grammar_failure && { grammar_failure }),
+    };
   }
   const open = new Set(
     parseTasks(text)
@@ -71,6 +90,8 @@ export async function observePlanEntry(
   );
   return {
     plan,
+    sources,
+    ...(grammar_failure && { grammar_failure }),
     phases_without_open_tasks: phases
       .filter((phase) => phase.state !== "validada" && !open.has(phase.n))
       .map((phase) => phase.n),

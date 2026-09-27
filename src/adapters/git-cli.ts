@@ -95,7 +95,16 @@ export class GitCliAdapter implements GitPort {
 
   async isGitRepo(repoPath: string): Promise<boolean> {
     const result = await this.process.run("git", ["rev-parse", "--git-dir"], this.opts(repoPath));
-    return result.code === 0;
+    if (result.code === 0) return true;
+    if (/not a git repository/i.test(result.stderr)) return false;
+    throw this.failed("rev-parse", repoPath, result.stderr);
+  }
+
+  async readConfig(repoPath: string, key: string): Promise<string | null> {
+    const result = await this.process.run("git", ["config", "--get", key], this.opts(repoPath));
+    if (result.code === 1) return null;
+    if (result.code !== 0) throw this.failed(`config --get ${key}`, repoPath, result.stderr);
+    return result.stdout.trim();
   }
 
   async currentBranch(repoPath: string): Promise<string | undefined> {

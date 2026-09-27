@@ -791,7 +791,11 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     await walkTo("plan-exec.entry-gap-recognition", []);
     const { state } = await current();
     expect(state.scope).toBeNull();
-    expect(state.plan_exec_entry).toEqual({ plan: PLAN_DOC, phases_without_open_tasks: [2, 4] });
+    expect(state.plan_exec_entry).toMatchObject({
+      plan: PLAN_DOC,
+      phases_without_open_tasks: [2, 4],
+    });
+    expect(state.plan_exec_entry?.grammar_failure?.code).toBe("PLAN_SOURCE_BOUNDARY_MISSING");
   });
 
   it.each(["F0", "F1\n> Estado: pendiente\n\n### F1"])(
@@ -803,7 +807,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       );
       await sealPlanInput();
       await walkTo("plan-exec.entry-gap-recognition", []);
-      expect((await current()).state.plan_exec_entry).toEqual({
+      expect((await current()).state.plan_exec_entry).toMatchObject({
         plan: PLAN_DOC,
         phases_without_open_tasks: null,
       });
@@ -1292,7 +1296,10 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
     await walkTo("plan-exec", EXEC_SESSION, EXEC_CODE, "plan-exec.source-scope", NADA);
     const scope = await state(EXEC_SESSION);
     const entered = await answer(EXEC_CODE, bodyFor(scope.resolved, NADA));
+    expect(entered.boundary.kind).toBe("blocked");
     expect(entered.error?.action).toContain("aw plan lint");
+    expect(entered.error?.action).toContain("/w:plan-refine");
+    expect((await state(EXEC_SESSION)).state.scope).toBeNull();
 
     const linted = await lintPlan(fs, paths, DOC);
     if (!linted.ok) throw new Error(linted.failure.message);

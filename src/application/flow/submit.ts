@@ -57,6 +57,7 @@ import {
 } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
 import { isBatchReview } from "../../domain/flow/batch-review.js";
+import { routeShape, settlementList, sourceList } from "../../domain/flow/decision-schema.js";
 import {
   type FlowDirective,
   PAUSE_LABEL,
@@ -95,6 +96,7 @@ import {
   withAttempt,
   withBoundary,
   withContinuation,
+  withDecisionDate,
   withDecisionPreparation,
   withEvent,
   withFixPreview,
@@ -198,6 +200,65 @@ export type SubmitFlowResult =
   | { ok: true; directive: FlowDirective }
   | { ok: false; failure: CapabilityFailure }
   | { ok: false; session: SessionResolutionError };
+
+export interface FlowCheckReceipt {
+  check: true;
+  valid: boolean;
+  error: CapabilityFailure | null;
+  violations: NonNullable<CapabilityFailure["violations"]>;
+}
+
+/** The same decision against the current boundary, without a run lock or writes. */
+export async function checkFlow(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: SubmitFlowInput,
+): Promise<
+  | { ok: true; receipt: FlowCheckReceipt }
+  | { ok: false; failure: CapabilityFailure }
+  | { ok: false; session: SessionResolutionError }
+> {
+  const canon = await resolveCoreDocsCanon(fs, paths);
+  if (!canon.ok)
+    return {
+      ok: false,
+      failure: { code: "DOCS_CANON_INVALID", message: canon.error, action: "corregí [docs]" },
+    };
+  const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "read",
+    ...(input.code !== undefined ? { code: input.code } : {}),
+    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+    allowClosed: false,
+    bind: false,
+  });
+  if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
+  const session = resolution.session.folder;
+  const read = await readRun(fs, locateRun(paths, session));
+  if (!read.ok) return { ok: false, failure: read.failure };
+  const snapshot = await observe(fs, paths, input.raw, session, input.git);
+  const decision = await decide(fs, paths, read.state, input, snapshot, true);
+  if (!decision.ok) return { ok: false, failure: decision.failure };
+  const error = decision.value.directive.error;
+  return {
+    ok: true,
+    receipt: {
+      check: true,
+      valid: error === null,
+      error,
+      violations:
+        error?.violations ??
+        (error === null
+          ? []
+          : [
+              {
+                code: error.code,
+                field: "answer",
+                message: error.message,
+              },
+            ]),
+    },
+  };
+}
 
 export async function submitFlow(
   fs: FileSystemPort,
@@ -340,6 +401,8 @@ interface Observation {
   plans: readonly PlanArtifactBoundary[];
   /** `null` when this caller has no live Git reader (pure/test callers). */
   checkouts: CheckoutState[] | null;
+  /** Git measurement failed; an empty eligible set must not hide stderr. */
+  checkoutFailure: CapabilityFailure | null;
   /**
    * Each scoped source's fingerprint, observed only while the run stands on the
    * phase validation — the one boundary that compares a batch with its base.
@@ -359,13 +422,15 @@ async function observe(
 ): Promise<Observation> {
   const root = await resolveWorkspaceRootFrom(fs, paths);
   const plans = await observePlanArtifacts(fs, paths, raw);
+  const checkouts = await observeCheckouts(fs, paths, session, git);
   return {
     root,
     quickCheckouts: await observeQuickCheckouts(fs, paths, session, git),
     destinations: await observeDestinations(fs, paths, raw),
     scope: await observeScope(fs, paths, raw),
     plans: plans.evidence,
-    checkouts: await observeCheckouts(fs, paths, session, git),
+    checkouts: checkouts.states,
+    checkoutFailure: checkouts.failure,
     scoped: await observeBatchSources(fs, paths, session, git),
     preexisting: await observePreexistingFailures(fs, paths, session, root),
     validation_only_current: await observeValidationOnly(fs, paths, session, root),
@@ -615,8 +680,8 @@ async function observeCheckouts(
   paths: PathsService,
   session: string,
   git: GitPort | undefined,
-): Promise<CheckoutState[] | null> {
-  if (git === undefined) return null;
+): Promise<{ states: CheckoutState[] | null; failure: CapabilityFailure | null }> {
+  if (git === undefined) return { states: null, failure: null };
   // The SAME resolution the directive published, from the same function: two
   // callers computing this apart is what made a rejection claim the tree moved
   // when all that differed was the directory each side measured.
@@ -625,10 +690,22 @@ async function observeCheckouts(
   for (const candidate of candidates) {
     // An unreadable checkout is deliberately absent from the eligible set: a proof
     // against it fails closed instead of being treated as a clean tree.
-    const state = await observeCheckout(fs, git, candidate);
+    let state: CheckoutState | null;
+    try {
+      state = await observeCheckout(fs, git, candidate);
+    } catch (error) {
+      return {
+        states,
+        failure: {
+          code: "WORKLINE_CHECKOUT_UNOBSERVABLE",
+          message: error instanceof Error ? error.message : String(error),
+          action: "corregí el fallo de git en ese checkout y recapturá la prueba",
+        },
+      };
+    }
     if (state !== null) states.push(state);
   }
-  return states;
+  return { states, failure: null };
 }
 
 /**
@@ -704,10 +781,25 @@ async function decide(
   state: FlowRunState,
   input: SubmitFlowInput,
   snapshot: Observation,
+  checkOnly = false,
 ): Promise<SubmitDecision> {
   const journey = journeyForRun(state);
+  // Human controls are exits from the run, not answers to the current kind of
+  // boundary. They remain usable with an exhausted or incoherent attempt ledger.
+  const control = controlFromRaw(input.raw);
+  if (control === STOP_LABEL) return closeFromAnswer(state);
+  if (control === PAUSE_LABEL) {
+    const standing = resolveBoundary(state, journey);
+    return reject(state, standing, `'${PAUSE_LABEL}': la frontera queda en pie`, {
+      code: "FLOW_BOUNDARY_PAUSED",
+      action: `escribí el CHECKPOINT con 'aw checkpoint-write --code ${state.session}' y retomá con 'aw flow advance --code ${state.session}'`,
+      outcome: "needs_input",
+    });
+  }
   const incoherent = checkAgainstJourney(state, journey);
-  if (incoherent !== null) return { ok: false, failure: incoherent };
+  if (incoherent !== null) {
+    return reject(state, resolveBoundary(state, journey), incoherent.message, incoherent);
+  }
 
   const resolved = resolveBoundary(state, journey);
   if (resolved.stopped === null) {
@@ -778,6 +870,16 @@ async function decide(
   const drifted = actionDrift(state, resolved, cost);
   if (drifted !== null) return drifted;
 
+  if (resolved.kind === "execution" && snapshot.checkoutFailure !== null) {
+    return reject(
+      state,
+      resolved,
+      snapshot.checkoutFailure.message,
+      snapshot.checkoutFailure,
+      cost,
+    );
+  }
+
   // 2 · The boundary in force decides what is admissible.
   const admissible = admit(
     state,
@@ -803,6 +905,7 @@ async function decide(
   if (route.kind === "adjust") {
     return adjustRouteProposal(state, journey);
   }
+  if (checkOnly && resolved.kind === "execution") return checked(state, resolved);
   const accepted = route.kind === "accept" ? withRouteDecisions(state, route.decisions) : state;
   // Sealed with the transition it earned, in the same state publication: a batch
   // is never seen validated without the proofs that validated it.
@@ -877,26 +980,36 @@ async function decide(
   // preview showed. Neither ever applies the step by itself.
   const scoped = scopeFrom(routed, resolved.stopped, parsed.answer, snapshot.scope);
   if ("failure" in scoped) {
-    return reject(
-      state,
-      resolved,
-      scoped.failure.message,
-      { code: scoped.failure.code, action: scoped.failure.action },
-      cost,
-    );
+    // A run without an input plan only learns the plan's identity at source-scope.
+    // Once its grammar is read, asking for another scope cannot repair the plan:
+    // retain that observation and show a blocked boundary with the refine action.
+    const grammar = snapshot.scope.boundary_failures?.[0];
+    if (grammar !== undefined && scoped.failure.code === grammar.code && snapshot.scope.plan) {
+      const blocked = withPlanExecEntry(state, {
+        plan: snapshot.scope.plan,
+        phases_without_open_tasks: state.plan_exec_entry?.phases_without_open_tasks ?? null,
+        grammar_failure: {
+          ...scoped.failure,
+          action: `${scoped.failure.action}; corregí el plan con /w:plan-refine antes de reanudar ejecución`,
+        },
+      });
+      const refusal = reject(
+        blocked,
+        resolveBoundary(blocked, journey),
+        scoped.failure.message,
+        scoped.failure,
+        cost,
+      );
+      return refusal.ok ? { ...refusal, persist: true } : refusal;
+    }
+    return reject(state, resolved, scoped.failure.message, scoped.failure, cost);
   }
   // The closure-evidence gate runs over the proposed bytes BEFORE the seal: a
   // plan whose validation names no observable check of the checkout is refused
   // while it is being written, not when somebody tries to execute it.
   const evidence = planEvidenceFrom(resolved.stopped, parsed.answer, snapshot.plans);
   if (evidence !== null) {
-    return reject(
-      state,
-      resolved,
-      evidence.failure.message,
-      { code: evidence.failure.code, action: evidence.failure.action },
-      cost,
-    );
+    return reject(state, resolved, evidence.failure.message, evidence.failure, cost);
   }
   const sealed = sealFrom(
     scoped.state,
@@ -906,13 +1019,7 @@ async function decide(
     snapshot.baselines,
   );
   if ("failure" in sealed) {
-    return reject(
-      state,
-      resolved,
-      sealed.failure.message,
-      { code: sealed.failure.code, action: sealed.failure.action },
-      cost,
-    );
+    return reject(state, resolved, sealed.failure.message, sealed.failure, cost);
   }
   const preparedForGate = await prepareDecisionForGate(
     fs,
@@ -923,6 +1030,7 @@ async function decide(
     cost,
   );
   if (!preparedForGate.ok) return preparedForGate.decision;
+  if (checkOnly) return checked(state, resolved);
   const settlement = recordSettlement(preparedForGate.state, parsed.answer, resolved, cost);
   if (!settlement.ok) return settlement.decision;
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
@@ -984,7 +1092,34 @@ async function decide(
   const outcome = holds
     ? holdAfterApproval(selectedState, walked, identity)
     : applyAndAdvance(selectedState, walked, resolved.stopped, identity, parsed.answer);
-  return standalone === null ? outcome : withStandaloneGuidance(outcome, standalone);
+  const directed = standalone === null ? outcome : withStandaloneGuidance(outcome, standalone);
+  if (!directed.ok || !preparedForGate.warnings?.length) return directed;
+  return {
+    ...directed,
+    value: {
+      ...directed.value,
+      directive: {
+        ...directed.value.directive,
+        next_action: `${preparedForGate.warnings.join("; ")}; ${directed.value.directive.next_action}`,
+      },
+    },
+  };
+}
+
+function controlFromRaw(raw: string): string | null {
+  try {
+    const body: unknown = JSON.parse(raw);
+    if (!isRecord(body)) return null;
+    return body.choice === PAUSE_LABEL || body.choice === STOP_LABEL ? body.choice : null;
+  } catch {
+    return null;
+  }
+}
+
+function checked(state: FlowRunState, resolved: ResolvedBoundary): SubmitDecision {
+  const built = directiveFor(state, resolved, []);
+  if (!built.ok) return { ok: false, failure: built.failure };
+  return { ok: true, state, value: { directive: built.directive, advanced: false } };
 }
 
 /**
@@ -1097,12 +1232,7 @@ function routeAnswer(
     };
   }
   const candidate = answer.decisions.route;
-  if (
-    !isRecord(candidate) ||
-    !isRecord(candidate.summary) ||
-    !isRecord(candidate.basis) ||
-    !Array.isArray(candidate.controls)
-  ) {
+  if (!routeShape(candidate)) {
     return {
       kind: "failure",
       failure: {
@@ -1128,17 +1258,26 @@ function routeAnswer(
   const declaredSummary = summary as Record<(typeof summaryFields)[number], string>;
   const basis = candidate.basis;
   const basisFields = ["intention", "checkout", "conventions", "adopted_decisions"] as const;
-  if (basisFields.some((field) => !nonBlank(basis[field]))) {
+  const asText = (value: unknown): string | null => {
+    if (nonBlank(value)) return value.trim();
+    if (Array.isArray(value) && value.length > 0 && value.every(nonBlank))
+      return value.map((entry: string) => entry.trim()).join("\n");
+    return null;
+  };
+  const invalidBasis = basisFields.find((field) => asText(basis[field]) === null);
+  if (invalidBasis !== undefined) {
     return {
       kind: "failure",
       failure: {
         code: "FLOW_ROUTE_PROPOSAL_INVALID",
-        message: "la ruta no explica intención, checkout, convenciones y decisiones adoptadas",
+        message: `decisions.route.basis.${invalidBasis} espera texto o lista de textos no vacíos; recibió ${Array.isArray(basis[invalidBasis]) ? "lista inválida" : typeof basis[invalidBasis]}`,
         action: "completá cada campo de decisions.route.basis con una observación concreta",
       },
     };
   }
-  const declaredBasis = basis as Record<(typeof basisFields)[number], string>;
+  const declaredBasis = Object.fromEntries(
+    basisFields.map((field) => [field, asText(basis[field])]),
+  ) as Record<(typeof basisFields)[number], string>;
   const configured = new Map(
     journey.flatMap((decision) => {
       const control = routeControlOf(decision);
@@ -1307,18 +1446,34 @@ function scopeFrom(
   if (!scopesSources(stopped)) return { state };
 
   const asked = answer.decisions.sources;
-  const sources = Array.isArray(asked)
-    ? asked.filter((alias): alias is string => typeof alias === "string").map((a) => a.trim())
+  const sources = sourceList(asked)
+    ? asked.map((entry) =>
+        typeof entry === "string"
+          ? entry.trim()
+          : isRecord(entry) && typeof entry.alias === "string" && Object.keys(entry).length === 1
+            ? entry.alias.trim()
+            : null,
+      )
     : null;
-  if (sources === null || sources.length === 0 || sources.some((alias) => alias.length === 0)) {
+  if (sources?.some((alias) => alias === null)) {
+    const at = sources.findIndex((alias) => alias === null);
     return {
       failure: invalidScope(
-        "esta frontera fija qué fuentes edita la corrida y la respuesta no trae ninguna",
+        `decisions.sources[${at}] espera un alias de texto o {alias: string}; recibió ${Array.isArray(asked) && asked[at] === null ? "null" : typeof (asked as unknown[])[at]}`,
+        "cada fuente es un alias de texto o un objeto {alias} sin otras claves",
+      ),
+    };
+  }
+  if (sources === null || sources.length === 0 || sources.some((alias) => alias?.length === 0)) {
+    return {
+      failure: invalidScope(
+        `decisions.sources espera una lista no vacía de alias de texto o {alias: string}; recibió ${Array.isArray(asked) ? "lista vacía" : typeof asked}`,
         "devolvé en 'decisions.sources' los alias exactos que el plan afecta, y en 'decisions.plan' su documento",
       ),
     };
   }
-  if (new Set(sources).size !== sources.length) {
+  const aliases = sources as string[];
+  if (new Set(aliases).size !== aliases.length) {
     return {
       failure: invalidScope(
         "el scope declara la misma fuente dos veces",
@@ -1330,7 +1485,7 @@ function scopeFrom(
   if (plan === null || plan.length === 0) {
     return {
       failure: invalidScope(
-        "el scope no dice qué plan ejecuta esta corrida",
+        `decisions.plan espera una ruta de texto no vacía; recibió ${typeof answer.decisions.plan}`,
         `devolvé en 'decisions.plan' la ruta del plan dentro del workspace (${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md)`,
       ),
     };
@@ -1345,7 +1500,7 @@ function scopeFrom(
     };
   }
   const declared = snapshot.declared;
-  if (declared === null && sources.some((alias) => alias !== "workspace")) {
+  if (declared === null && aliases.some((alias) => alias !== "workspace")) {
     return {
       failure: {
         code: "FLOW_SCOPE_UNKNOWN_SOURCE",
@@ -1355,7 +1510,7 @@ function scopeFrom(
     };
   }
   const declaredAliases = declared ?? [];
-  const unknown = sources.filter(
+  const unknown = aliases.filter(
     (alias) => alias !== "workspace" && !declaredAliases.includes(alias),
   );
   if (unknown.length > 0) {
@@ -1384,12 +1539,19 @@ function scopeFrom(
         code: structural.code,
         message: structural.message,
         action: planBoundaryAction(structural.code, "execution-entry"),
+        violations: snapshot.boundary_failures.map((failure) => ({
+          code: failure.code,
+          field: failure.line ? `plan:${failure.line}` : "plan",
+          expected: "gramática de fuentes y prueba local del plan",
+          received: failure.message,
+          message: failure.message,
+        })),
       },
     };
   }
   const declaredByPlan = snapshot.sources;
-  const missing = declaredByPlan.filter((alias) => !sources.includes(alias));
-  const extra = sources.filter((alias) => !declaredByPlan.includes(alias));
+  const missing = declaredByPlan.filter((alias) => !aliases.includes(alias));
+  const extra = aliases.filter((alias) => !declaredByPlan.includes(alias));
   if (missing.length > 0 || extra.length > 0) {
     const difference = [
       ...(missing.length > 0 ? [`faltan ${missing.join(", ")}`] : []),
@@ -1407,7 +1569,7 @@ function scopeFrom(
   return {
     state: withScope(state, {
       plan,
-      sources,
+      sources: aliases,
       ...(snapshot.final_validation === null
         ? {}
         : { final_validation: snapshot.final_validation }),
@@ -1438,7 +1600,7 @@ type SelectedDecisionRegistration =
   | { ok: false; decision: SubmitDecision };
 
 type GateDecisionPreparation =
-  | { ok: true; state: FlowRunState }
+  | { ok: true; state: FlowRunState; warnings?: string[] }
   | { ok: false; decision: SubmitDecision };
 
 /**
@@ -1661,7 +1823,7 @@ function ratified(
 }
 
 function readDeclarations(value: unknown): FlowSettlementDeclaration[] | null {
-  if (!Array.isArray(value)) return null;
+  if (!settlementList(value)) return null;
   const out: FlowSettlementDeclaration[] = [];
   for (const entry of value) {
     const read = readDeclaration(entry);
@@ -1731,6 +1893,10 @@ async function prepareDecisionForGate(
       ),
     };
   }
+  const dated = withDecisionDate(
+    state,
+    state.decision_date ?? new Date().toISOString().slice(0, 10),
+  );
   // The plan of the scope decides WHICH preparation this is. A standalone plan has
   // no spec to compose against, so calling `preparePlanExecDecision` for it would
   // refuse with `FLOW_DECISION_LINEAGE_INVALID` and leave the run with handoffs as
@@ -1738,7 +1904,7 @@ async function prepareDecisionForGate(
   const standalone = await standaloneDecisionFor(fs, snapshot.root, plan, candidate);
   if (standalone !== null) {
     return standalone.ok
-      ? { ok: true, state: withDecisionPreparation(state, standalone.preparation) }
+      ? { ok: true, state: withDecisionPreparation(dated, standalone.preparation) }
       : {
           ok: false,
           decision: reject(state, resolved, standalone.failure.message, standalone.failure, cost),
@@ -1749,23 +1915,33 @@ async function prepareDecisionForGate(
     session: state.session,
     plan,
     value: candidate,
+    date: dated.decision_date ?? new Date().toISOString().slice(0, 10),
   });
   if (!prepared.ok) {
+    const refused = reject(
+      dated,
+      resolveBoundary(dated, journeyForRun(dated)),
+      prepared.failure.message,
+      prepared.failure,
+      cost,
+    );
     return {
       ok: false,
-      decision: reject(state, resolved, prepared.failure.message, prepared.failure, cost),
+      decision: refused.ok ? { ...refused, persist: true } : refused,
     };
   }
   switch (prepared.kind) {
     case "settled":
       return {
         ok: true,
-        state: withDecisionPreparation(state, { kind: "settled", decision: prepared.decision }),
+        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
+        state: withDecisionPreparation(dated, { kind: "settled", decision: prepared.decision }),
       };
     case "reused":
       return {
         ok: true,
-        state: withDecisionPreparation(state, {
+        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
+        state: withDecisionPreparation(dated, {
           kind: "reused",
           note: prepared.note,
           decision: prepared.decision,
@@ -1775,7 +1951,8 @@ async function prepareDecisionForGate(
     case "prepared":
       return {
         ok: true,
-        state: withDecisionPreparation(state, {
+        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
+        state: withDecisionPreparation(dated, {
           kind: "prepared",
           note: prepared.prepared.note,
           preview: prepared.prepared.preview,
@@ -1969,7 +2146,7 @@ function withStandaloneGuidance(
  * cannot tell them apart, and neither could the table that decides the charge.
  */
 function invalidScope(message: string, action: string): CapabilityFailure {
-  return { code: "FLOW_SCOPE_INVALID", message, action };
+  return { code: "FLOW_SCOPE_SHAPE_INVALID", message, action };
 }
 
 /**
@@ -1987,6 +2164,8 @@ function planEvidenceFrom(
 ): { failure: CapabilityFailure } | null {
   if (proposalContractOf(stopped) === null || answer.artifacts.length === 0) return null;
   const proposed = new Set(answer.artifacts.map((artifact) => artifact.path.trim()));
+  const violations: NonNullable<CapabilityFailure["violations"]> = [];
+  let first: CapabilityFailure | null = null;
   for (const plan of observed) {
     if (!proposed.has(plan.path)) continue;
     const failure = plan.failures[0];
@@ -1997,15 +2176,22 @@ function planEvidenceFrom(
       (candidate) => candidate !== failure && candidate.code === "PLAN_LINEAGE_UNSEALED",
     );
     const also = lineage === undefined ? "" : ` · además: ${lineage.message}`;
-    return {
-      failure: {
-        code: failure.code,
-        message: `'${plan.path}': ${failure.message}${also}`,
-        action: planBoundaryAction(failure.code, "proposal"),
-      },
+    first ??= {
+      code: failure.code,
+      message: `'${plan.path}': ${failure.message}${also}`,
+      action: planBoundaryAction(failure.code, "proposal"),
     };
+    violations.push(
+      ...plan.failures.map((entry) => ({
+        code: entry.code,
+        field: entry.line ? `${plan.path}:${entry.line}` : plan.path,
+        expected: "plan con prueba local y linaje sellado",
+        received: entry.message,
+        message: entry.message,
+      })),
+    );
   }
-  return null;
+  return first === null ? null : { failure: { ...first, violations } };
 }
 
 /**
@@ -2260,13 +2446,7 @@ function admit(
     // consults. A resend, a decline and a pause are not failed tries either, and
     // they are classified there rather than being exempted here.
     return {
-      decision: reject(
-        state,
-        resolved,
-        parsed.failure.message,
-        { code: parsed.failure.code, action: parsed.failure.action },
-        cost,
-      ),
+      decision: reject(state, resolved, parsed.failure.message, parsed.failure, cost),
     };
   }
   // Pause leaves the boundary standing; stop places the shared close intention.
@@ -2700,10 +2880,10 @@ function resendCheck(
   const ledger = new AttemptLedger();
   for (const past of state.attempts) {
     const replay = ledger.record(past);
-    if (!replay.ok) return { ok: false, failure: replay.failure };
+    if (!replay.ok) return reject(state, resolved, replay.failure.message, replay.failure);
   }
   const verdict = ledger.record(identity);
-  if (!verdict.ok) return { ok: false, failure: verdict.failure };
+  if (!verdict.ok) return reject(state, resolved, verdict.failure.message, verdict.failure);
   if (verdict.kind === "new") return null;
   // The TWIN's transition, not this submission's: the identity is built over the
   // boundary in force, and a resent applied answer is being sent at the next one.
@@ -2713,9 +2893,8 @@ function resendCheck(
       past.invocation_id === identity.invocation_id &&
       past.request_digest === identity.request_digest,
   );
-  // The twin was refused: this is a retry of the same wrong answer, so it gets
-  // the same real diagnosis again and counts toward the cap, which is what
-  // eventually degrades the boundary instead of leaving the caller looping.
+  // A refused twin gets its real diagnosis again, but the same request cannot
+  // create another row. Only a different insufficient answer spends again.
   if (twin !== undefined && twinWasRefused(state, twin)) return null;
   return reject(
     state,
@@ -2755,14 +2934,19 @@ function twinWasRefused(state: FlowRunState, twin: FlowRunAttempt): boolean {
  * recoverable — an unbounded loop inside the very mechanism that exists to bound
  * one. One place decides, one table says which codes count.
  *
- * `cost` is absent only where there is no boundary to charge: a run that already
- * finished, or one that never stopped at anything.
+ * `cost` is also absent for mechanical controls and replay failures, which never
+ * charge a boundary even when it is still open.
  */
 function reject(
   state: FlowRunState,
   resolved: ResolvedBoundary,
   message: string,
-  detail: { code: string; action: string; outcome?: CapabilityOutcome },
+  detail: {
+    code: string;
+    action: string;
+    outcome?: CapabilityOutcome;
+    violations?: CapabilityFailure["violations"];
+  },
   cost?: RejectionCost,
 ): SubmitDecision {
   // A refused answer is the one rejection that CHANGES the run: the attempt is
@@ -2775,7 +2959,16 @@ function reject(
       ? state
       : withEvent(state, cost.trace);
   const after =
-    cost !== undefined && spendsAttempt(detail.code) ? withAttempt(traced, cost.identity) : traced;
+    cost !== undefined &&
+    spendsAttempt(detail.code) &&
+    !state.attempts.some(
+      (past) =>
+        past.invocation_id === cost.identity.invocation_id &&
+        past.attempt === cost.identity.attempt &&
+        past.request_digest === cost.identity.request_digest,
+    )
+      ? withAttempt(traced, cost.identity)
+      : traced;
   const now =
     cost === undefined || after === state ? resolved : resolveBoundary(after, cost.journey);
   const built = directiveFor(after, now, [], {
@@ -2783,7 +2976,7 @@ function reject(
     // `completed`, an open one `needs_input`. Hardcoding one here would let a
     // rejection at the end of a run claim work is still pending.
     ...(detail.outcome === undefined ? {} : { outcome: detail.outcome }),
-    nextAction: `${message} — ${now.error?.action ?? detail.action}`,
+    nextAction: `${message} — ${detail.code === "FLOW_BOUNDARY_PAUSED" ? detail.action : (now.error?.action ?? detail.action)}`,
   });
   if (!built.ok) return { ok: false, failure: built.failure };
   // Rewritten with the rejection's own code so the reason is machine-readable and
@@ -2792,7 +2985,12 @@ function reject(
   // longer a way forward, and reporting the payload's error would suggest it is.
   const directive: FlowDirective = {
     ...built.directive,
-    error: now.error ?? { code: detail.code, message, action: detail.action },
+    error: (detail.code === "FLOW_BOUNDARY_PAUSED" ? null : now.error) ?? {
+      code: detail.code,
+      message,
+      action: detail.action,
+      ...(detail.violations ? { violations: detail.violations } : {}),
+    },
   };
   return {
     ok: true,
@@ -2837,14 +3035,9 @@ function attemptIdentity(
   const rowIteration = iterationOf(state, transition);
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
   const twin = prior.find((past) => past.request_digest === digest);
-  // The next ordinal, asked with the SAME expression `AttemptLedger.record`
-  // validates it against. Counting rows instead is a second reading of one fact,
-  // and the two part the moment a resend is persisted: a recognized resend is
-  // re-evaluated and its row kept wearing the twin's ordinal — deliberately, so
-  // it still counts toward the cap — so the rows say two while the highest
-  // ordinal says one, and the next answer arrives as attempt 3 where the ledger
-  // accepts only 2. Nobody can answer that boundary, and `recover` reads the
-  // chain as coherent because replaying two identical rows never fails.
+  // A twin reuses its ordinal only for the ledger's resend verdict; reject does
+  // not persist it again. A new answer takes highest + 1, never the row count of
+  // a legacy ledger that may still contain identical twins.
   const highest = Math.max(0, ...prior.map((past) => past.attempt));
   const attempt = twin?.attempt ?? highest + 1;
   const parent =

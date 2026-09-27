@@ -193,9 +193,9 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
         "FLOW_SCOPE_PLAN_UNREADABLE",
       ],
       // Y una corrida que no aísla ninguna fuente no tiene dónde escribir.
-      ["sin fuentes", { plan: UNO.plan, sources: [] }, "FLOW_SCOPE_INVALID"],
-      ["fuente repetida", { plan: UNO.plan, sources: [ALIAS, ALIAS] }, "FLOW_SCOPE_INVALID"],
-      ["sin plan", { sources: [ALIAS] }, "FLOW_SCOPE_INVALID"],
+      ["sin fuentes", { plan: UNO.plan, sources: [] }, "FLOW_SCOPE_SHAPE_INVALID"],
+      ["fuente repetida", { plan: UNO.plan, sources: [ALIAS, ALIAS] }, "FLOW_SCOPE_SHAPE_INVALID"],
+      ["sin plan", { sources: [ALIAS] }, "FLOW_SCOPE_SHAPE_INVALID"],
     ];
     for (const [caso, decisions, code] of casos) {
       const directive = await declareScope(UNO, decisions);
@@ -206,10 +206,17 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
       expect(resolved.stopped?.id, caso).toBe("plan-exec.source-scope");
       const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
       expect(listed.units, caso).toEqual([]);
-      // Un rechazo gasta un intento, así que cada caso corre sobre su propia
-      // corrida: tres seguidos agotarían la frontera y eso mediría otra cosa.
+      // Reiniciar el fixture evita que rechazos de contenido anteriores agoten
+      // la frontera antes de verificar la siguiente forma o fuente.
       rmSync(join(deps.paths.cwdSessionsDir(), UNO.folder, FLOW_RUN_STATE_FILE), { force: true });
     }
+  });
+
+  it("acepta fuentes como objetos {alias} sin filtrar silenciosamente el scope", async () => {
+    const directive = await declareScope(UNO, { plan: UNO.plan, sources: [{ alias: ALIAS }] });
+    expect(directive.error).toBeNull();
+    const { state } = await walk.current(UNO.folder);
+    expect(state.scope?.sources).toEqual([ALIAS]);
   });
 
   it("cada corrida fija su propio plan y adquiere su propia unidad antes de escribir", async () => {

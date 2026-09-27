@@ -12,10 +12,8 @@ export const SOURCE_BOUNDED_EVIDENCE = "workline.source-bounded";
  * to learn it was to have a proof rejected — which is the one thing a boundary's
  * attempts cannot afford.
  *
- * Deliberately NOT part of {@link CheckoutProof}: a proof that carried its own root
- * would look transferable between hosts, and it is not. The transferable half is the
- * resolution RULE, which `aw flow --help` states; the path is an observation of this
- * run on this machine.
+ * A proof may now carry the root for diagnosis; it is not authorization and never
+ * enters the checkout digest. The resolution rule remains the portable half.
  */
 export interface CheckoutIdentity {
   /** The eligible alias: `workspace`, or one of this session's isolated units. */
@@ -28,6 +26,8 @@ export interface CheckoutIdentity {
 export interface CheckoutProof {
   kind: "command" | "inspection";
   source: string;
+  /** Optional local root measured by prove; old proofs omit it. */
+  root?: string;
   relative_cwd: string;
   checkout_digest: string;
   invocation: { program: string; args: string[] } | { artifact: string };

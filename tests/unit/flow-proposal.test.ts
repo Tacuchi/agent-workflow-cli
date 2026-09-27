@@ -602,11 +602,11 @@ describe("Refinar vuelve a la redacción en los tres flujos que lo ofrecen", () 
       if (!resumed.ok) throw new Error("esperaba retomar la corrida");
       expect(resumed.directive.boundary.transition).toBe(scenario.authoring);
 
-      // En la copia, reintentar la misma evidencia rechazada vuelve a diagnosticarse
-      // y a cobrarse: la copia no hereda el «ya se aplicó» de la primera pasada.
+      // En la copia, un rechazo idéntico vuelve a diagnosticarse sin duplicar
+      // su fila ni su gasto; la nueva propuesta sigue pudiendo publicarse.
       await walkToConfirmation(scenario.bytes("v2"), 2);
       const second = await current();
-      expect(attemptAccountingAt(second.state, scenario.gate).spent).toBe(3);
+      expect(attemptAccountingAt(second.state, scenario.gate).spent).toBe(2);
       const published = await answer({
         input_digest: second.resolved.seal,
         choice: "Aprobar y guardar",

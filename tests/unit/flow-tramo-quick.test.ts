@@ -700,6 +700,30 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     throw new Error(`el recorrido nunca llegó a '${id}'`);
   }
 
+  it("Cerrar sale desde una frontera de ejecución antes de leer el resultado", async () => {
+    await declare([]);
+    // The same real route that reaches the convergence execution boundary.
+    for (let step = 0; step < 25; step += 1) {
+      const { resolved } = await current();
+      if (resolved.stopped?.id === "quick.convergence-gate") break;
+      if (resolved.kind === "execution") await answer(resultFor(resolved));
+      else if (resolved.kind === "semantic")
+        await answer({
+          input_digest: resolved.seal,
+          decisions: decisionsFor(resolved.stopped?.id),
+        });
+      else await answer({ input_digest: resolved.seal, choice: "Resolver la frontera" });
+    }
+    expect((await current()).resolved.stopped?.id).toBe("quick.convergence-gate");
+    expect((await current()).resolved.kind).toBe("execution");
+    const paused = await answer({ choice: "Compactar" });
+    expect(paused.next_action).toContain("checkpoint-write");
+    expect((await current()).resolved.kind).toBe("execution");
+    const closed = await answer({ choice: "Cerrar" });
+    expect(closed.error).toBeNull();
+    expect(await fs.exists(join(paths.cwdSessionsDir(), SESSION, ".closed"))).toBe(true);
+  });
+
   it("por debajo del umbral el preview se declara y NADIE lo aprueba", async () => {
     await declare(["quick.needs-architecture"]);
     const preview = await reach(FIX_PREVIEW_TRANSITION);
@@ -731,7 +755,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(resumed.resolved.stopped?.id).toBe("quick.deliverable-authoring");
   });
 
-  it("por encima del umbral: sin preview gasta un intento, con preview lo aprueba una persona", async () => {
+  it("por encima del umbral: sin preview no gasta, con preview lo aprueba una persona", async () => {
     await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
     const preview = await reach(FIX_PREVIEW_TRANSITION);
     expect(attemptAccountingAt(preview.state, FIX_PREVIEW_TRANSITION).spent).toBe(0);
@@ -745,9 +769,8 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(refused.error?.code).toBe("FLOW_PREVIEW_INVALID");
     const charged = await current();
     expect(charged.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
-    // El GASTO, no sólo el código: la tabla de rechazos lo clasifica `evaluated`
-    // porque la respuesta se leyó, y el default de esa tabla es fail-closed.
-    expect(attemptAccountingAt(charged.state, FIX_PREVIEW_TRANSITION).spent).toBe(1);
+    // Una estructura incompleta no declara todavía el enfoque que se evalúa.
+    expect(attemptAccountingAt(charged.state, FIX_PREVIEW_TRANSITION).spent).toBe(0);
 
     const declared = await answer({
       input_digest: charged.resolved.seal,
@@ -848,7 +871,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
    * neutralizarla no ponía nada rojo y un preview vacío llegaba a la frontera
    * donde una persona lo aprueba como «exactamente lo previsualizado».
    */
-  it("un preview al que le falta la intención o la forma del diff se rechaza y gasta", async () => {
+  it("un preview al que le falta la intención o la forma del diff se rechaza sin gastar", async () => {
     await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
     const preview = await reach(FIX_PREVIEW_TRANSITION);
 
@@ -860,7 +883,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(sinIntencion.error?.message).toContain("qué arregla o qué forma tendrá el diff");
     const first = await current();
     expect(first.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
-    expect(attemptAccountingAt(first.state, FIX_PREVIEW_TRANSITION).spent).toBe(1);
+    expect(attemptAccountingAt(first.state, FIX_PREVIEW_TRANSITION).spent).toBe(0);
 
     // Y una forma del diff EN BLANCO no es una forma del diff: la rama mira el
     // contenido, no la presencia de la clave. Con la lista vacía, que es legítima,
@@ -872,7 +895,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(enBlanco.error?.code).toBe("FLOW_PREVIEW_INVALID");
     const second = await current();
     expect(second.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
-    expect(attemptAccountingAt(second.state, FIX_PREVIEW_TRANSITION).spent).toBe(2);
+    expect(attemptAccountingAt(second.state, FIX_PREVIEW_TRANSITION).spent).toBe(0);
   });
 
   /**
@@ -894,7 +917,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(sinArchivos.error?.message).toContain("lista de archivos a tocar");
     const first = await current();
     expect(first.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
-    expect(attemptAccountingAt(first.state, FIX_PREVIEW_TRANSITION).spent).toBe(1);
+    expect(attemptAccountingAt(first.state, FIX_PREVIEW_TRANSITION).spent).toBe(0);
 
     // Y la lista se mide elemento por elemento: una ruta de verdad al lado de algo
     // que no es una ruta sigue siendo una lista, y no es la lista que se pidió.
@@ -907,7 +930,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(conBasura.error?.code).toBe("FLOW_PREVIEW_INVALID");
     const second = await current();
     expect(second.state.applied).not.toContain(FIX_PREVIEW_TRANSITION);
-    expect(attemptAccountingAt(second.state, FIX_PREVIEW_TRANSITION).spent).toBe(2);
+    expect(attemptAccountingAt(second.state, FIX_PREVIEW_TRANSITION).spent).toBe(0);
   });
 
   /**

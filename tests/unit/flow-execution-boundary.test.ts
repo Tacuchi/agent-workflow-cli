@@ -455,7 +455,7 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
    * quemando el techo de la frontera, así que dos typos del sobre más un intento
    * real la agotaban antes de haberla podido contestar una sola vez.
    */
-  it("un sobre que no es un resultado no gasta intento; una invocación distinta sí", async () => {
+  it("un sobre que no es un resultado y una invocación mal copiada no gastan intento", async () => {
     await reachSeed();
     await submit(JSON.stringify({ input_digest: await seal(), confirmed: true }));
     expect(attemptsAt(await state(), "fixture.seed")).toBe(0);
@@ -463,7 +463,7 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
     await submit(JSON.stringify({ ...resto, input_digest: await seal() }));
     expect(attemptsAt(await state(), "fixture.seed")).toBe(0);
 
-    // Y lo que sí llegó a evaluarse: el resultado dice haber corrido otra cosa.
+    // Una invocación mal copiada tampoco juzga la ejecución ni su evidencia.
     await submit(
       JSON.stringify(
         seedResult(await seal(), {
@@ -476,7 +476,7 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
         }),
       ),
     );
-    expect(attemptsAt(await state(), "fixture.seed")).toBe(1);
+    expect(attemptsAt(await state(), "fixture.seed")).toBe(0);
   });
 
   /**

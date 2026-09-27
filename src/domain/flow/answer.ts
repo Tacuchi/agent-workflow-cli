@@ -16,13 +16,14 @@
  * and the person would never see the boundary they have to answer over.
  */
 
+import { resolve } from "node:path";
 import type {
   SemanticArtifact,
   SemanticRequest,
 } from "../../application/semantic-operation/protocol.js";
 import { parseSemanticArtifacts } from "../../application/semantic-operation/protocol.js";
 import { COMPLETENESS_VALUES, type Completeness } from "../capability/descriptor.js";
-import { type EffectClass, isEffectClass } from "../capability/effects.js";
+import { EFFECT_CLASSES, type EffectClass, isEffectClass } from "../capability/effects.js";
 import {
   CAPABILITY_OUTCOMES,
   type CapabilityFailure,
@@ -37,6 +38,7 @@ import {
   type DelegatedAction,
   type DelegatedInvocation,
   type FlowDecision,
+  effectsOf,
   proposalContractOf,
 } from "./authority.js";
 import { BATCH_REVIEW_CONTRACT, isBatchReview } from "./batch-review.js";
@@ -84,6 +86,38 @@ export type FlowAnswerParse =
   | { ok: true; answer: FlowAnswer }
   | { ok: false; failure: CapabilityFailure };
 
+type Violation = NonNullable<CapabilityFailure["violations"]>[number];
+
+/** Preserve the first code/message while publishing every independent defect. */
+function collected(
+  entries: readonly { failure: CapabilityFailure; violation: Violation }[],
+): CapabilityFailure {
+  const first = entries[0];
+  if (first === undefined) throw new Error("no hay violaciones para entregar");
+  return {
+    ...first.failure,
+    violations: entries.map((entry) => entry.violation),
+  };
+}
+
+function violation(
+  failure: CapabilityFailure,
+  field: string,
+  expected: string,
+  received: unknown,
+): { failure: CapabilityFailure; violation: Violation } {
+  return {
+    failure,
+    violation: {
+      code: failure.code,
+      field,
+      expected,
+      received: Array.isArray(received) ? "lista" : received === null ? "null" : typeof received,
+      message: failure.message,
+    },
+  };
+}
+
 /**
  * Which rejections COUNT as an attempt at the boundary, and which never reached
  * it.
@@ -107,14 +141,11 @@ export type FlowAnswerParse =
  *   raises). At an execution boundary the decision IS the result and at an
  *   authoring one it IS the bytes: with neither there, there is nothing to judge,
  *   and charging for it charges for the envelope.
- * - `evaluated` — the decision arrived and did not resolve the gap. A signal
- *   outside the declared vocabulary, a label that is not one of the emitted
- *   alternatives, an approval over other effects or none at all, a result about a
- *   different invocation, an execution that did not complete or left its effect
- *   half-applied, a scope naming sources the workspace or the plan does not, a
- *   proposal reaching past what its row declares — and an answer that declares
- *   nothing at all, which is the feigned convergence the chassis degrades and
- *   exactly what the cap is for.
+ * - `evaluated` — the decision arrived and did not resolve the gap. An execution
+ *   that did not complete or left its effect half-applied, a scope naming sources
+ *   the workspace or the plan does not, a proposal reaching past what its row
+ *   declares, or an answer that declares nothing at all. Unknown literals,
+ *   malformed proofs, copied digests and invocations are envelope errors.
  * - `control` — a real answer that deliberately applies nothing, or the same
  *   answer arriving twice. Pausing to compact, stopping the run, and a resend are
  *   all decisions somebody made on purpose; charging them would make the flow
@@ -161,17 +192,20 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // action, so charging the envelope would punish choosing the wrong verb.
   FLOW_INTERNAL_ACTION_EXTERNAL_RESULT: "envelope",
   FLOW_ANSWER_AMBIGUOUS: "evaluated",
-  FLOW_SIGNAL_UNKNOWN: "evaluated",
-  FLOW_CHOICE_UNKNOWN: "evaluated",
-  FLOW_APPROVAL_MISSING: "evaluated",
-  FLOW_APPROVAL_MISMATCH: "evaluated",
-  FLOW_ACTION_MISMATCH: "evaluated",
+  FLOW_SIGNAL_UNKNOWN: "envelope",
+  FLOW_CHOICE_UNKNOWN: "envelope",
+  FLOW_APPROVAL_MISSING: "envelope",
+  FLOW_APPROVAL_MISMATCH: "envelope",
+  FLOW_ACTION_MISMATCH: "envelope",
   // The execution verdict's own vocabulary: it judges a result that WAS read.
   FLOW_EXECUTION_NOT_COMPLETED: "evaluated",
   FLOW_EVIDENCE_MISSING: "evaluated",
-  WORKLINE_CHECKOUT_PROOF_MISSING: "evaluated",
+  WORKLINE_CHECKOUT_PROOF_MISSING: "envelope",
   WORKLINE_CHECKOUT_PROOF_INVALID: "evaluated",
-  WORKLINE_CHECKOUT_PROOF_STALE: "evaluated",
+  WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID: "envelope",
+  WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH: "envelope",
+  WORKLINE_CHECKOUT_UNOBSERVABLE: "envelope",
+  WORKLINE_CHECKOUT_PROOF_STALE: "envelope",
   FLOW_EFFECT_PARTIAL: "evaluated",
   // The phase validation's own: the proofs were read and they are not this
   // batch's — nothing changed since its base, or they already credited another.
@@ -184,58 +218,95 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   PLAN_PREEXISTING_FAILURES_INVALID: "evaluated",
   PLAN_TEST_FAILURES_UNREADABLE: "evaluated",
   PLAN_TEST_FAILURE_NEW: "evaluated",
-  // The scope boundary's own vocabulary. Its answer is `decisions.sources` plus
-  // `decisions.plan`, and every one of these means the CLI read them and found
-  // them wanting — a decision that did not resolve the gap.
+  // The scope boundary distinguishes malformed fields and unavailable documents
+  // from a proposed source set that the workspace or plan cannot accept.
   FLOW_SCOPE_INVALID: "evaluated",
+  FLOW_SCOPE_SHAPE_INVALID: "envelope",
   FLOW_SCOPE_UNKNOWN_SOURCE: "evaluated",
   FLOW_SCOPE_NOT_IN_PLAN: "evaluated",
-  FLOW_SCOPE_PLAN_UNREADABLE: "evaluated",
+  FLOW_SCOPE_PLAN_UNREADABLE: "envelope",
   // The submitted scope named a plan and the CLI read it, but its location
   // violates the canonical documentation boundary.
-  FLOW_SCOPE_PLAN_OUTSIDE_CANON: "evaluated",
-  FLOW_HANDOFF_PLAN_MISSING: "evaluated",
-  // El preview del arreglo llegó y no declara lo que la frontera pide: archivos,
-  // intención y forma esperada del diff. La respuesta SE LEYÓ, así que gasta — y
-  // la frontera anuncia la forma exacta, así que el primer intento puede traerla.
-  FLOW_PREVIEW_INVALID: "evaluated",
-  // The plan-exec deviation choice was syntactically admissible but its durable
-  // consequence could not be derived or published against the live lineage.
-  // These are evaluated rather than envelope refusals: the gate read the choice
-  // and the workspace facts needed to act on it.
-  FLOW_DECISION_SCOPE_MISSING: "evaluated",
-  FLOW_DECISION_INPUT_INVALID: "evaluated",
-  FLOW_DECISION_PLAN_UNREADABLE: "evaluated",
+  FLOW_SCOPE_PLAN_OUTSIDE_CANON: "envelope",
+  FLOW_HANDOFF_PLAN_MISSING: "envelope",
+  // El preview sin archivos, intención o forma del diff sigue incompleto.
+  FLOW_PREVIEW_INVALID: "envelope",
+  // The choice itself can be refused (evaluated); missing shape or an unreadable
+  // live baseline cannot be charged to its author.
+  FLOW_DECISION_SCOPE_MISSING: "envelope",
+  FLOW_DECISION_INPUT_INVALID: "envelope",
+  FLOW_DECISION_PLAN_UNREADABLE: "envelope",
   FLOW_DECISION_LINEAGE_INVALID: "evaluated",
-  FLOW_DECISION_SPEC_UNREADABLE: "evaluated",
+  FLOW_DECISION_SPEC_UNREADABLE: "envelope",
   FLOW_DECISION_UNRESOLVABLE: "evaluated",
-  FLOW_DECISION_PREPARATION_FAILED: "evaluated",
-  FLOW_DECISION_PREVIEW_ABSENT: "evaluated",
+  FLOW_DECISION_PREPARATION_FAILED: "envelope",
+  FLOW_DECISION_PREVIEW_ABSENT: "envelope",
   // The settlement's own vocabulary. Both mean the CLI READ the declaration and
   // compared it against what the plan really owes — a declaration that answers
   // for the wrong obligations, or that leaves one unanswered.
   FLOW_SETTLEMENT_INVALID: "evaluated",
   FLOW_SETTLEMENT_INCOMPLETE: "evaluated",
-  PLAN_SOURCE_BOUNDARY_MISSING: "evaluated",
-  PLAN_SOURCE_UNKNOWN: "evaluated",
-  PLAN_TASK_SOURCE_OUTSIDE_PHASE: "evaluated",
-  PLAN_SOURCE_EXTERNAL_CLOSURE: "evaluated",
-  PLAN_SOURCE_LOCAL_PROOF_MISSING: "evaluated",
+  PLAN_SOURCE_BOUNDARY_MISSING: "envelope",
+  PLAN_SOURCE_UNKNOWN: "envelope",
+  PLAN_TASK_SOURCE_OUTSIDE_PHASE: "envelope",
+  PLAN_SOURCE_EXTERNAL_CLOSURE: "envelope",
+  PLAN_SOURCE_LOCAL_PROOF_MISSING: "envelope",
   // The plan's grammar does not spend: a plan published without its lineage is
   // refused for what its header says, and fixing the header is the whole answer.
   PLAN_LINEAGE_UNSEALED: "envelope",
   // The authoring boundary's: the bytes arrived and what they would do is not
   // what the row declares, or their destination could not be read.
   FLOW_PROPOSAL_BEYOND_CONTRACT: "evaluated",
-  FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "evaluated",
-  FLOW_PROPOSAL_BASE_UNREADABLE: "evaluated",
-  // The adaptive route boundary read the proposal or the accepted disposition
-  // and rejected it: malformed route data, a replacement without its agreed
-  // validation/risk, or an attempt to make an unconfigured hard gate optional.
-  FLOW_ROUTE_DECISION_INVALID: "evaluated",
-  FLOW_ROUTE_PROPOSAL_INVALID: "evaluated",
-  FLOW_ROUTE_SUBSTITUTION_INVALID: "evaluated",
+  FLOW_PROPOSAL_DESTINATION_UNOBSERVED: "envelope",
+  FLOW_PROPOSAL_BASE_UNREADABLE: "envelope",
+  // Route shape is free; attempting to bypass a hard gate is evaluated.
+  FLOW_ROUTE_DECISION_INVALID: "envelope",
+  FLOW_ROUTE_PROPOSAL_INVALID: "envelope",
+  FLOW_ROUTE_SUBSTITUTION_INVALID: "envelope",
   FLOW_ROUTE_HARD_GATE: "evaluated",
+  // The author's draft is a shape; a contradictory claim or a scope the
+  // contract refuses is content. A moved baseline or publication is state.
+  NOTE_NOT_OBJECT: "envelope",
+  NOTE_SCHEMA_UNKNOWN: "envelope",
+  NOTE_ID_INVALID: "envelope",
+  NOTE_DECISION_MISSING: "envelope",
+  NOTE_REASON_MISSING: "envelope",
+  NOTE_CONSUMERS_MISSING: "envelope",
+  NOTE_EVIDENCE_PRESERVED_MISSING: "envelope",
+  NOTE_EVIDENCE_INVALIDATED_MISSING: "envelope",
+  NOTE_OBLIGATIONS_MISSING: "envelope",
+  NOTE_OBLIGATIONS_INVALID: "envelope",
+  NOTE_OBLIGATION_KIND_MISSING: "envelope",
+  NOTE_RESUME_POINT_MISSING: "envelope",
+  NOTE_DATE_INVALID: "envelope",
+  NOTE_DIGEST_MISSING: "envelope",
+  NOTE_DIGEST_MISMATCH: "envelope",
+  NOTE_SCOPE_INVALID: "envelope",
+  NOTE_SUPERSEDES_INVALID: "envelope",
+  NOTE_ASSERTIONS_MISSING: "envelope",
+  NOTE_ASSERTIONS_INVALID: "envelope",
+  NOTE_ASSERTIONS_DUPLICATE: "envelope",
+  NOTE_LINEAGE_MISSING: "envelope",
+  NOTE_LINEAGE_INVALID: "envelope",
+  NOTE_LINEAGE_DIGEST_INVALID: "envelope",
+  NOTE_EXECUTION_STATE_MISSING: "envelope",
+  NOTE_INDEX_UNREADABLE: "envelope",
+  NOTE_INDEX_INVALID: "envelope",
+  NOTE_INDEX_SCHEMA_UNKNOWN: "envelope",
+  NOTE_ALREADY_PUBLISHED: "control",
+  NOTE_SUPERSEDES_ABSENT: "evaluated",
+  NOTE_REWRITES_BASELINE: "evaluated",
+  CONTRACT_BASELINE_ABSENT: "envelope",
+  CONTRACT_ASSERTION_ABSENT: "evaluated",
+  CONTRACT_OVERLAP: "evaluated",
+  CONTRACT_CONTRADICTION: "evaluated",
+  DECISION_BASE_ABSENT: "envelope",
+  PROPOSAL_LOCKED: "control",
+  PROPOSAL_BASELINE_UNSEALED: "envelope",
+  PROPOSAL_APPROVAL_MISMATCH: "envelope",
+  PROPOSAL_APPROVAL_MISSING: "envelope",
+  PROPOSAL_BASE_GONE: "envelope",
+  PROPOSAL_BASE_STALE: "envelope",
   // A compensation the run declared STILL PENDING is not a malformed answer and
   // not a failed check: it is the truthful one. The closure stays where it is
   // until the work is done, and charging an attempt for saying so would make
@@ -382,43 +453,68 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
   const proposes = proposalContractOf(input.decision);
   const declared = new Set(input.decision.signals ?? []);
   const raw = body.signals;
+  const issues: { failure: CapabilityFailure; violation: Violation }[] = [];
   if (raw !== undefined && !isStringArray(raw)) {
-    return { ok: false, failure: invalid("'signals' tiene que ser una lista de identificadores") };
+    issues.push(
+      violation(
+        invalid("'signals' tiene que ser una lista de identificadores"),
+        "signals",
+        "string[]",
+        raw,
+      ),
+    );
   }
-  const signals = raw ?? [];
+  const signals = isStringArray(raw) ? raw : [];
   const decisions = body.decisions;
   if (decisions !== undefined && !isRecord(decisions)) {
-    return { ok: false, failure: invalid("'decisions' tiene que ser un objeto") };
+    issues.push(
+      violation(invalid("'decisions' tiene que ser un objeto"), "decisions", "objeto", decisions),
+    );
   }
   // A flow control IS an answer, including here. It used to die on the emptiness
   // check below — a semantic boundary demands signals or decisions — and
   // `FLOW_ANSWER_AMBIGUOUS` is an EVALUATED rejection, so asking to compact cost
   // an attempt at exactly the boundary somebody was trying to pause.
   const control = flowControlOf(body);
-  const substance = checkSubstance(body, {
-    decision: input.decision,
-    signals,
-    decisions,
-    proposes: proposes !== null,
-    control,
-  });
-  if (substance !== null) return { ok: false, failure: substance };
+  const substance =
+    issues.length > 0
+      ? null
+      : checkSubstance(body, {
+          decision: input.decision,
+          signals,
+          decisions,
+          proposes: proposes !== null,
+          control,
+        });
+  if (substance !== null)
+    issues.push(
+      violation(substance, "artifacts", "respuesta con contenido para la frontera", body.artifacts),
+    );
   const artifacts = proposes === null ? EMPTY : parseArtifacts(body.artifacts, input);
-  if (!Array.isArray(artifacts)) return { ok: false, failure: artifacts.failure };
+  if (!Array.isArray(artifacts))
+    issues.push(
+      violation(artifacts.failure, "artifacts", "lista de {path, content}", body.artifacts),
+    );
   for (const signal of signals) {
     if (declared.has(signal)) continue;
-    return {
-      ok: false,
-      failure: {
-        code: "FLOW_SIGNAL_UNKNOWN",
-        message: `'${signal}' no está en el vocabulario que esta frontera admite`,
-        action: `declarás solo: ${[...declared].join(", ") || "(ninguna señal en esta frontera)"}`,
-      },
+    const failure = {
+      code: "FLOW_SIGNAL_UNKNOWN",
+      message: `'${signal}' no está en el vocabulario que esta frontera admite`,
+      action: `declarás solo: ${[...declared].join(", ") || "(ninguna señal en esta frontera)"}`,
     };
+    issues.push(violation(failure, "signals", [...declared].join(" | ") || "ninguna", signal));
   }
   if (new Set(signals).size !== signals.length) {
-    return { ok: false, failure: invalid("la misma señal viene declarada dos veces") };
+    issues.push(
+      violation(
+        invalid("la misma señal viene declarada dos veces"),
+        "signals",
+        "identificadores únicos",
+        signals,
+      ),
+    );
   }
+  if (issues.length > 0) return { ok: false, failure: collected(issues) };
   return {
     ok: true,
     answer: {
@@ -430,7 +526,7 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       // boundary has no alternatives of its own to pick from.
       choice: control,
       result: null,
-      artifacts,
+      artifacts: artifacts as SemanticArtifact[],
     },
   };
 }
@@ -536,11 +632,30 @@ function parseArtifacts(
   }
   const parsed = parseSemanticArtifacts(raw, request);
   if (!parsed.ok) {
+    const individual = Array.isArray(raw)
+      ? raw.flatMap((entry, index) => {
+          const checked = parseSemanticArtifacts([entry], request);
+          return checked.ok
+            ? []
+            : [
+                violation(
+                  checked.failure,
+                  `artifacts[${index}]`,
+                  "{path: ruta permitida, content: string}",
+                  entry,
+                ).violation,
+              ];
+        })
+      : [];
     return {
       failure: {
         code: parsed.failure.code,
         message: parsed.failure.message,
         action: parsed.failure.action,
+        violations:
+          individual.length > 0
+            ? individual
+            : [violation(parsed.failure, "artifacts", "lista de {path, content}", raw).violation],
       },
     };
   }
@@ -666,73 +781,91 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
   if (action === null) {
     return { ok: false, failure: badResult("esta frontera no declara ninguna acción delegada") };
   }
+  const issues: { failure: CapabilityFailure; violation: Violation }[] = [];
+  const add = (failure: CapabilityFailure, field: string, expected: string, value: unknown) => {
+    issues.push(violation(failure, field, expected, value));
+  };
   const outcome = body.outcome;
   // Absent and out-of-vocabulary are DIFFERENT failures and no longer share a
   // sentence. They used to, and the sentence described only the second one.
   if (outcome === undefined) {
-    return { ok: false, failure: badResult(missingOutcome(body)) };
-  }
-  if (
+    add(badResult(missingOutcome(body)), "outcome", CAPABILITY_OUTCOMES.join(" | "), outcome);
+  } else if (
     typeof outcome !== "string" ||
     !(CAPABILITY_OUTCOMES as readonly string[]).includes(outcome)
   ) {
-    return {
-      ok: false,
-      failure: badResult(
+    add(
+      badResult(
         `'outcome' tiene que ser uno de: ${CAPABILITY_OUTCOMES.join(", ")} — una confirmación booleana o una narración no son un resultado`,
       ),
-    };
+      "outcome",
+      CAPABILITY_OUTCOMES.join(" | "),
+      outcome,
+    );
   }
   const invocation = readInvocation(body.invocation);
   if (invocation === null) {
-    return {
-      ok: false,
-      failure: {
+    add(
+      {
         code: "FLOW_RESULT_INVALID",
-        message: "el resultado no declara la invocación que se ejecutó",
+        message: `el resultado no declara la invocación que se ejecutó: invocation espera {program: string, args: string[], target: string, input: string|null}; recibió ${Array.isArray(body.invocation) ? "lista" : typeof body.invocation}`,
         action:
           "devolvé 'invocation' con el programa, los argumentos y el target que corriste: sin eso, nada distingue una ejecución de una afirmación",
       },
-    };
+      "invocation",
+      "{program, args, target, input}",
+      body.invocation,
+    );
+  } else {
+    const mismatch = invocationMismatch(action.invocation, invocation);
+    if (mismatch !== null)
+      add(
+        {
+          code: "FLOW_ACTION_MISMATCH",
+          message: `el resultado corresponde a otra invocación: ${mismatch}`,
+          action: `ejecutá exactamente '${[action.invocation.program, ...action.invocation.args].join(" ")}' en ${action.invocation.target} y devolvé su resultado`,
+        },
+        "invocation",
+        "invocación sellada",
+        body.invocation,
+      );
   }
-  const mismatch = invocationMismatch(action.invocation, invocation);
-  if (mismatch !== null) {
-    return {
-      ok: false,
-      failure: {
-        code: "FLOW_ACTION_MISMATCH",
-        message: `el resultado corresponde a otra invocación: ${mismatch}`,
-        action: `ejecutá exactamente '${[action.invocation.program, ...action.invocation.args].join(" ")}' en ${action.invocation.target} y devolvé su resultado`,
-      },
-    };
-  }
-  const read = readValidations(body.validations);
+  const read = readValidations(body.validations, action.evidence);
   if (!read.ok) {
-    // The rejection lands on the half that is actually wrong: a diagnosable nested
-    // proof is the proof's, and only a container breaking its own shape is the
-    // envelope's. Reserving FLOW_RESULT_INVALID for the latter is the point.
-    return {
-      ok: false,
-      failure:
-        read.defect !== null
-          ? proofShapeFailure(read.defect)
-          : badResult(badValidations(body.validations, action.evidence)),
-    };
+    issues.push(...read.issues);
   }
-  const validations = read.validations;
-  const effects = readLedger(body.effects);
+  const effects = readLedger(
+    body.effects,
+    outcome === "completed" ? effectsOf(input.decision) : [],
+  );
   if (effects === null) {
-    return {
-      ok: false,
-      failure: badResult(
-        "'effects' tiene que traer el registro planned/approved/applied del resultado",
+    const ledger = body.effects;
+    const field = isRecord(ledger) && ledger.applied !== undefined ? "effects.applied" : "effects";
+    const unknown =
+      isRecord(ledger) && Array.isArray(ledger.applied)
+        ? ledger.applied.find((effect) => !isEffectClass(effect))
+        : undefined;
+    add(
+      badResult(
+        unknown === undefined
+          ? "'effects' tiene que traer el registro planned/approved/applied del resultado"
+          : `'effects.applied' trae la clase ${JSON.stringify(unknown)}; las válidas son ${EFFECT_CLASSES.join(", ")}`,
       ),
-    };
+      field,
+      "{planned: EffectClass[], approved: EffectClass[], applied: EffectClass[]}",
+      field === "effects" ? ledger : (ledger as Record<string, unknown>).applied,
+    );
   }
   const output = readOutput(body.output);
   if (output === undefined) {
-    return { ok: false, failure: badResult("'output' tiene que ser un OperationOutput o null") };
+    add(
+      badResult("'output' tiene que ser un OperationOutput o null"),
+      "output",
+      "OperationOutput | null",
+      body.output,
+    );
   }
+  if (issues.length > 0) return { ok: false, failure: collected(issues) };
   return {
     ok: true,
     answer: {
@@ -740,7 +873,13 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
       signals: [],
       decisions: {},
       choice: null,
-      result: { outcome: outcome as CapabilityOutcome, invocation, output, validations, effects },
+      result: {
+        outcome: outcome as CapabilityOutcome,
+        invocation: invocation as DelegatedInvocation,
+        output: output as OperationOutput | null,
+        validations: read.ok ? read.validations : [],
+        effects: effects as EffectLedger,
+      },
       artifacts: EMPTY,
     },
   };
@@ -803,12 +942,13 @@ function badValidations(value: unknown, evidence: readonly string[]): string {
     if (!isRecord(entry)) return `la validación ${index + 1} no es un objeto; se espera ${shape}`;
     const keys = Object.keys(entry);
     const seen = keys.length > 0 ? ` (trae: ${keys.join(", ")})` : " (viene vacía)";
-    if (typeof entry.id !== "string") return `la validación ${index + 1} no trae 'id'${seen}`;
+    if (typeof entry.id !== "string")
+      return `la validación ${index + 1} no trae 'id': validations[${index}].id espera string; recibió ${typeof entry.id}${seen}`;
     if (typeof entry.passed !== "boolean") {
-      return `la validación '${entry.id}' no trae 'passed' booleano${seen}`;
+      return `validations[${index}].passed espera boolean; recibió ${typeof entry.passed}${seen}`;
     }
     if (entry.detail !== undefined && entry.detail !== null && typeof entry.detail !== "string") {
-      return `la validación '${entry.id}' trae un 'detail' que no es texto: ahí va la salida real del comando`;
+      return `validations[${index}].detail espera string o null; recibió ${typeof entry.detail}: ahí va la salida real del comando`;
     }
   }
   return `'validations' tiene que ser ${shape}`;
@@ -821,7 +961,8 @@ function invocationMismatch(sealed: DelegatedInvocation, ran: DelegatedInvocatio
   if (sealed.args.length !== ran.args.length || sealed.args.some((arg, i) => arg !== ran.args[i])) {
     return `argumentos '${ran.args.join(" ")}' en vez de '${sealed.args.join(" ")}'`;
   }
-  if (sealed.target !== ran.target) return `target '${ran.target}' en vez de '${sealed.target}'`;
+  if (resolve(sealed.target) !== resolve(ran.target))
+    return `target '${ran.target}' en vez de '${sealed.target}'`;
   if ((sealed.input ?? null) !== (ran.input ?? null)) return "otro input";
   return null;
 }
@@ -837,35 +978,68 @@ function readInvocation(value: unknown): DelegatedInvocation | null {
 }
 
 /**
- * `defect: null` means the CONTAINER broke its own shape; a defect present means
- * the container was fine and one nested proof was not. The two are different
- * rejections with different corrective actions, and collapsing them is what made
- * a correct `validations` list get blamed for a malformed proof.
+ * A container defect and a nested proof defect keep their own codes, even when
+ * several independent fields in the same list need correcting.
  */
 type ValidationsRead =
   | { ok: true; validations: ValidationOutcome[] }
-  | { ok: false; defect: ProofShapeDefect | null };
+  | { ok: false; issues: { failure: CapabilityFailure; violation: Violation }[] };
 
-function readValidations(value: unknown): ValidationsRead {
+function readValidations(value: unknown, evidence: readonly string[]): ValidationsRead {
   if (value === undefined) return { ok: true, validations: [] };
-  if (!Array.isArray(value)) return { ok: false, defect: null };
+  const bad = () => badResult(badValidations(value, evidence));
+  if (!Array.isArray(value))
+    return {
+      ok: false,
+      issues: [violation(bad(), "validations", "lista de {id, passed, detail}", value)],
+    };
   const out: ValidationOutcome[] = [];
-  for (const entry of value) {
-    if (!isRecord(entry)) return { ok: false, defect: null };
-    if (typeof entry.id !== "string" || typeof entry.passed !== "boolean") {
-      return { ok: false, defect: null };
+  const issues: { failure: CapabilityFailure; violation: Violation }[] = [];
+  const add = (failure: CapabilityFailure, field: string, expected: string, received: unknown) => {
+    issues.push(violation(failure, field, expected, received));
+  };
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) {
+      add(bad(), `validations[${index}]`, "{id, passed, detail}", entry);
+      continue;
+    }
+    const field = `validations[${index}]`;
+    if (typeof entry.id !== "string") {
+      add(bad(), `${field}.id`, "string", entry.id);
+    }
+    if (typeof entry.passed !== "boolean") {
+      add(bad(), `${field}.passed`, "boolean", entry.passed);
     }
     const detail = entry.detail === undefined ? null : entry.detail;
-    if (detail !== null && typeof detail !== "string") return { ok: false, defect: null };
-    if (entry.proof === undefined) {
+    if (detail !== null && typeof detail !== "string") {
+      add(bad(), `${field}.detail`, "string | null", detail);
+    }
+    if (entry.proof === undefined || entry.proof === null) {
+      if (
+        typeof entry.id !== "string" ||
+        typeof entry.passed !== "boolean" ||
+        (detail !== null && typeof detail !== "string")
+      )
+        continue;
       out.push({ id: entry.id, passed: entry.passed, detail });
       continue;
     }
     const read = readCheckoutProof(entry.proof);
-    if (!read.ok) return { ok: false, defect: read.defect };
+    if (!read.ok) {
+      const failure = proofShapeFailure(read.defect);
+      const suffix = read.defect.where === "proof" ? "" : `.${read.defect.where}`;
+      add(failure, `${field}.proof${suffix}`, read.defect.expected.join(" | "), entry.proof);
+      continue;
+    }
+    if (
+      typeof entry.id !== "string" ||
+      typeof entry.passed !== "boolean" ||
+      (detail !== null && typeof detail !== "string")
+    )
+      continue;
     out.push({ id: entry.id, passed: entry.passed, detail, proof: read.proof });
   }
-  return { ok: true, validations: out };
+  return issues.length === 0 ? { ok: true, validations: out } : { ok: false, issues };
 }
 
 /**
@@ -999,18 +1173,22 @@ function proofShapeFailure(defect: ProofShapeDefect): CapabilityFailure {
         ? `el 'proof' de kind '${defect.kind}' trae una 'invocation' que ese kind no acepta: espera ${defect.expected.join(", ")} y ${received}`
         : `el 'proof' de kind '${defect.kind ?? "(ausente)"}' no satisface la forma de su kind: espera ${defect.expected.join(", ")} (${received})`;
   return {
-    code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+    code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
     message,
     action:
       "corregí el 'proof' anidado, no la lista 'validations': un kind 'command' pide {program, args} y un 'inspection' pide {artifact} — sin 'target' ni 'input', aunque la directiva los traiga. 'aw flow prove' lo produce ya bien formado y sin gastar intento",
   };
 }
 
-function readLedger(value: unknown): EffectLedger | null {
+function readLedger(
+  value: unknown,
+  defaultApplied: readonly EffectClass[] = [],
+): EffectLedger | null {
   if (!isRecord(value)) return null;
   const planned = readEffectClasses(value.planned);
   const approved = readEffectClasses(value.approved);
-  const applied = readEffectClasses(value.applied);
+  const applied =
+    value.applied === undefined ? [...defaultApplied] : readEffectClasses(value.applied);
   if (planned === null || approved === null || applied === null) return null;
   return { planned, approved, applied };
 }

@@ -113,6 +113,20 @@ export interface DecisionNote {
 
 export const NOTE_SCHEMA = "workline.decision-note/v1";
 
+/** Fields the author decides; schema, date, id, digest and lineage are derived. */
+export const NOTE_AUTHOR_FIELDS = {
+  decision: "string",
+  reason: "string",
+  supersedes_assertions: "string[]",
+  supersedes_note: "DEC-NNN | null",
+  scope: "functional | plan-only",
+  consumers: "string[]",
+  evidence_preserved: "string[]",
+  evidence_invalidated: "string[]",
+  obligations: "{text: string, kind: compensation|handoff}[]",
+  resume_point: "string",
+} as const;
+
 const NOTE_ID_RE = /^DEC-(?:[0-9]{3}|[1-9][0-9]{3,})$/;
 const CALENDAR_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const CRITERION_RE = new RegExp(`^${CRITERION_GLOBAL.source}$`);

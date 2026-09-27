@@ -75,6 +75,32 @@ function journey(): FlowDecision[] {
 }
 
 describe("estado de corrida — ida y vuelta", () => {
+  it("gemelos legados cuentan una vez; ordinal repetido con otro digest sigue en conflicto", () => {
+    const row: FlowRunAttempt = {
+      invocation_id: "sello",
+      attempt: 1,
+      request_digest: "pedido-a",
+      parent_request_digest: null,
+      transition: "fixture.observe",
+    };
+    const run = newRunState("quick", SESSION);
+    const twin = {
+      ...run,
+      attempts: [row, { ...row }],
+      attempt_floor: { "fixture.observe": 2 },
+    };
+    const accounting = attemptAccountingAt(twin, "fixture.observe");
+    expect(accounting).toMatchObject({ rows: 1, floor: 1, spent: 1, ordinals: [1] });
+    expect(accounting.conflicts).toEqual([]);
+    expect(reconcileAttemptsAt(twin, "fixture.observe").ambiguous).toBeNull();
+
+    const divergent = {
+      ...twin,
+      attempts: [row, { ...row, request_digest: "pedido-b" }],
+    };
+    expect(attemptAccountingAt(divergent, "fixture.observe").unanswerable).not.toBeNull();
+    expect(reconcileAttemptsAt(divergent, "fixture.observe").ambiguous?.scope).toBe("accounting");
+  });
   it("el registro admite sólo validación explícita y conserva la partición y fases del crédito", () => {
     const batch: PlanExecBatch = {
       id: "batch-1",
@@ -783,7 +809,10 @@ describe("reconciliación de la contabilidad — lo que la habilita es la unicid
   });
 
   it("un ordinal repetido no se repara: cuál fila fue primero es una adivinanza", () => {
-    const twice = withRows(newRunState("quick", SESSION), row(1, null), row(1, null));
+    const twice = withRows(newRunState("quick", SESSION), row(1, null), {
+      ...row(1, null),
+      request_digest: "otro-pedido",
+    });
     const plan = reconcileAttemptsAt(twice, TRANSITION);
     expect(plan.repairs).toEqual([]);
     expect(plan.ambiguous).toMatchObject({ scope: "accounting" });

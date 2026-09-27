@@ -11,8 +11,14 @@
 import { basename, join } from "node:path";
 import type { CapabilityFailure } from "../domain/capability/protocol.js";
 import { type DecisionQuestion, resolveDecision } from "../domain/decision-choice.js";
-import type { DecisionNote, ObligationKind } from "../domain/decision-note.js";
+import {
+  type DecisionNote,
+  NOTE_AUTHOR_FIELDS,
+  NOTE_SCHEMA,
+  type ObligationKind,
+} from "../domain/decision-note.js";
 import { type BaselineInput, composeEffectiveContract } from "../domain/effective-contract.js";
+import { noteDraftShape } from "../domain/flow/decision-schema.js";
 import type { FlowDecisionPreparation } from "../domain/flow/run-state.js";
 import { specBaselineDigest } from "../domain/lineage.js";
 import { baseDigest } from "../domain/proposal.js";
@@ -37,19 +43,27 @@ import type { PathsService } from "./paths-service.js";
 /** The only human-supplied portion of the durable decision gate. */
 export interface PlanExecDecisionAnswer {
   question: DecisionQuestion;
-  /** All note fields except id, digest and lineage; those are derived here. */
+  /** The author's fields; schema, date, id, digest and lineage are derived here. */
   draft: Omit<DecisionNote, "id" | "digest" | "lineage">;
 }
 
 export type PlanExecDecisionPreparation =
-  | { ok: true; kind: "settled"; decision: string }
-  | { ok: true; kind: "reused"; note: string; decision: string; resume_point: string }
+  | { ok: true; kind: "settled"; decision: string; warnings?: string[] }
+  | {
+      ok: true;
+      kind: "reused";
+      note: string;
+      decision: string;
+      resume_point: string;
+      warnings?: string[];
+    }
   | {
       ok: true;
       kind: "prepared";
       prepared: PreparedDecision;
       baseline: BaselineInput;
       indexPath: string;
+      warnings?: string[];
     }
   | { ok: false; failure: CapabilityFailure };
 
@@ -82,6 +96,8 @@ export interface PreparePlanExecDecisionInput {
   plan: string;
   /** `decisions.decision` from the selected gate answer. */
   value: unknown;
+  /** Date already fixed in this run; direct callers may omit it. */
+  date?: string;
 }
 
 /**
@@ -92,7 +108,7 @@ export async function preparePlanExecDecision(
   fs: FileSystemPort,
   input: PreparePlanExecDecisionInput,
 ): Promise<PlanExecDecisionPreparation> {
-  const answer = parseAnswer(input.value);
+  const answer = parseAnswer(input.value, input.date ?? new Date().toISOString().slice(0, 10));
   if (!answer.ok) return answer;
   const read = await readLineage(fs, input);
   if (!read.ok) return read;
@@ -113,7 +129,12 @@ export async function preparePlanExecDecision(
   );
   switch (resolution.kind) {
     case "settled":
-      return { ok: true, kind: "settled", decision: resolution.behavior.summary };
+      return {
+        ok: true,
+        kind: "settled",
+        decision: resolution.behavior.summary,
+        warnings: answer.warnings,
+      };
     case "reused": {
       const note = chain.read.index.notes.find((entry) => entry.id === resolution.note);
       return {
@@ -122,6 +143,7 @@ export async function preparePlanExecDecision(
         note: resolution.note,
         decision: resolution.decision,
         resume_point: note?.resume_point ?? "",
+        warnings: answer.warnings,
       };
     }
     case "unresolvable":
@@ -163,6 +185,7 @@ export async function preparePlanExecDecision(
           prepared: prepared.prepared,
           baseline: lineage.baseline,
           indexPath: lineage.indexPath,
+          warnings: answer.warnings,
         };
       }
       if (prepared.status === "already") {
@@ -172,9 +195,10 @@ export async function preparePlanExecDecision(
           note: prepared.note.id,
           decision: prepared.note.decision,
           resume_point: prepared.resume_point,
+          warnings: answer.warnings,
         };
       }
-      return noteFailure(prepared.failures[0]);
+      return noteFailures(prepared.failures);
     }
   }
 }
@@ -401,22 +425,66 @@ export async function readLineage(
 
 function parseAnswer(
   value: unknown,
-): { ok: true; value: PlanExecDecisionAnswer } | { ok: false; failure: CapabilityFailure } {
-  if (!isRecord(value) || !isQuestion(value.question) || !isRecord(value.draft)) {
+  date: string,
+):
+  | { ok: true; value: PlanExecDecisionAnswer; warnings: string[] }
+  | { ok: false; failure: CapabilityFailure } {
+  if (!noteDraftShape(value) || !isQuestion(value.question)) {
     return fail(
       "FLOW_DECISION_INPUT_INVALID",
-      "'decisions.decision' debe traer question (assertions y behaviors) y draft de nota",
+      `decisions.decision espera {question: {assertions: string[], behaviors: object[]}, draft: object}; recibió ${!isRecord(value) ? typeof value : !isQuestion(value.question) ? `question: ${typeof value.question}` : `draft: ${typeof value.draft}`}`,
       "devolvé la pregunta que queda abierta y todos los campos de la nota; el CLI deriva id, digests y lineage",
     );
   }
+  const accepted = new Set([
+    ...Object.keys(NOTE_AUTHOR_FIELDS),
+    "schema",
+    "date",
+    "id",
+    "digest",
+    "lineage",
+  ]);
+  const unknown = Object.keys(value.draft).filter((key) => !accepted.has(key));
   const rawDraft = Object.fromEntries(
-    Object.entries(value.draft).filter(([key]) => !["id", "digest", "lineage"].includes(key)),
+    Object.entries(value.draft).filter(([key]) => Object.hasOwn(NOTE_AUTHOR_FIELDS, key)),
   );
   return {
     ok: true,
+    warnings: unknown.map(
+      (field) => `se descartó decisions.decision.draft.${field}: campo desconocido`,
+    ),
     value: {
       question: value.question,
-      draft: rawDraft as unknown as Omit<DecisionNote, "id" | "digest" | "lineage">,
+      draft: {
+        ...rawDraft,
+        schema: NOTE_SCHEMA,
+        date: value.draft.date === undefined ? date : value.draft.date,
+      } as Omit<DecisionNote, "id" | "digest" | "lineage">,
+    },
+  };
+}
+
+function noteFailures(failures: readonly { code: string; message: string; action: string }[]): {
+  ok: false;
+  failure: CapabilityFailure;
+} {
+  const first = failures[0];
+  if (first === undefined) return noteFailure(undefined);
+  return {
+    ok: false,
+    failure: {
+      ...first,
+      violations: failures.map((failure) => {
+        const field = /'([a-z_]+)'/.exec(failure.message)?.[1] ?? "draft";
+        return {
+          code: failure.code,
+          field: `decisions.decision.draft.${field}`,
+          expected:
+            NOTE_AUTHOR_FIELDS[field as keyof typeof NOTE_AUTHOR_FIELDS] ?? "campo del autor",
+          received: "ausente o inválido",
+          message: failure.message,
+        };
+      }),
     },
   };
 }

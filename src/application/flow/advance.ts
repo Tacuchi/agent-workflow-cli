@@ -27,6 +27,7 @@
 
 import { type EffectClass, touchesTheWorld } from "../../domain/capability/effects.js";
 import type { CapabilityFailure, CapabilityOutcome } from "../../domain/capability/protocol.js";
+import { NOTE_AUTHOR_FIELDS, NOTE_SCHEMA } from "../../domain/decision-note.js";
 import {
   DOCS_BOUNDARY,
   type DelegatedAction,
@@ -51,6 +52,7 @@ import {
   effectApprovalDigest,
 } from "../../domain/flow/authorization.js";
 import { BATCH_REVIEW_CONTRACT } from "../../domain/flow/batch-review.js";
+import { decisionFieldsFor } from "../../domain/flow/decision-schema.js";
 import {
   type DirectiveProposal,
   type FlowBoundary,
@@ -525,6 +527,9 @@ function blockedCause(
   stopped: FlowDecision,
   emitted: { unbound: string | null; outside: string | null },
 ): CapabilityFailure | null {
+  if (stopped.id === "plan-exec.source-scope" && state.plan_exec_entry?.grammar_failure) {
+    return state.plan_exec_entry.grammar_failure;
+  }
   if (!owned(stopped)) {
     return {
       code: "FLOW_TRANSITION_UNOWNED",
@@ -1093,6 +1098,7 @@ export function directiveFor(
           document: resolved.stopped.document,
         };
   const planned = resolved.authorization?.planned ?? [];
+  const transition = resolved.stopped?.id ?? null;
   const built = buildFlowDirective({
     flow: state.flow,
     session: state.session,
@@ -1117,6 +1123,31 @@ export function directiveFor(
       decisions: state.route_decisions ?? [],
       assurance: state.assurance,
     },
+    expects: {
+      effects: resolved.stopped === null ? [] : [...effectsOfTransition(state, resolved.stopped)],
+      approval: {
+        required: resolved.kind === "authorization",
+        digest:
+          resolved.kind === "authorization" && transition !== null
+            ? effectApprovalDigest(transition, planned)
+            : null,
+      },
+      decisions: decisionFieldsFor(transition),
+      note:
+        transition === "plan-exec.deviation-recognition"
+          ? { schema: NOTE_SCHEMA, fields: { ...NOTE_AUTHOR_FIELDS } }
+          : null,
+      source_scope:
+        transition === "plan-exec.source-scope"
+          ? {
+              aliases: state.plan_exec_entry?.sources ?? null,
+              rule:
+                state.plan_exec_entry?.sources === undefined
+                  ? "derivar la unión de > Fuentes: del plan en decisions.plan"
+                  : null,
+            }
+          : null,
+    },
     authorizations: resolved.authorization?.covered ?? [],
     // The cause of a block travels with the boundary that declares it: a
     // `blocked` directive without its error is refused at construction.
@@ -1133,7 +1164,7 @@ export function directiveFor(
     // being prose.
     attemptAccounting:
       resolved.stopped === null ? null : attemptAccountingAt(state, resolved.stopped.id),
-    nextAction: overrides.nextAction ?? nextActionFor(state, boundary, resolved),
+    nextAction: `${overrides.nextAction ?? nextActionFor(state, boundary, resolved)}${resolved.stopped === null ? "" : " · controles: Compactar | Cerrar"}`,
   });
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state, directive: built.directive };
@@ -1185,7 +1216,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
       : ` Devolvé en 'artifacts' los bytes exactos que hay que escribir, cada uno con su 'path' dentro de ${proposes.destinations.join(", ")}. El CLI sella la propuesta, la muestra como vista previa y la escribe entera o no la escribe: vos no armás digests, envelopes ni referencias.`;
   const decisionDraft =
     decision.id === "plan-exec.deviation-recognition"
-      ? " Si la desviación puede resolverse registrando una decisión, incluí en 'decisions.decision' su question y draft completos ahora: el CLI preparará y mostrará el preview sellado antes de que una persona elija registrarlo. Cada obligación del draft va como { text, kind }: 'compensation' es trabajo que este linaje debe y bloquea su cierre, 'handoff' es trabajo que queda a cargo de otra gente y no lo bloquea."
+      ? ` Si la desviación puede resolverse registrando una decisión, incluí en 'decisions.decision' su question y draft completos ahora: el CLI preparará y mostrará el preview sellado antes de que una persona elija registrarlo. El autor declara ${Object.keys(NOTE_AUTHOR_FIELDS).join(", ")}; schema y date las completa el CLI. Cada obligación del draft va como { text, kind }: 'compensation' es trabajo que este linaje debe y bloquea su cierre, 'handoff' es trabajo que queda a cargo de otra gente y no lo bloquea.`
       : "";
   // La misma pista que el borrador de decisión, y por el mismo motivo: la forma
   // exacta se dice ANTES para que el primer intento la traiga. Acá pesa el doble,

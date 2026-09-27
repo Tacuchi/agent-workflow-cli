@@ -47,7 +47,7 @@ import {
   trancheOfFlow,
 } from "./authority.js";
 import type { AssuranceStatus, RouteDecision, RouteProposal } from "./route.js";
-import type { AttemptAccounting, FlowFixPreview } from "./run-state.js";
+import { type AttemptAccounting, type FlowFixPreview, MAX_BOUNDARY_ATTEMPTS } from "./run-state.js";
 
 export const FLOW_DIRECTIVE_VERSION = 2;
 
@@ -237,6 +237,8 @@ export interface FlowDirective {
     assurance: AssuranceStatus;
   };
   effects: EffectLedger;
+  /** Structured answer requirements for the boundary in force. */
+  expects: FlowExpectations;
   /**
    * Effect classes covered AT THE BOUNDARY IN FORCE — never a run-wide permit.
    *
@@ -264,6 +266,14 @@ export interface FlowDirective {
   next_action: string;
 }
 
+export interface FlowExpectations {
+  effects: EffectClass[];
+  approval: { required: boolean; digest: string | null };
+  decisions: Record<string, string>;
+  note: { schema: string; fields: Record<string, string> } | null;
+  source_scope: { aliases: string[] | null; rule: string | null } | null;
+}
+
 /**
  * The directive's closed key set.
  *
@@ -289,6 +299,7 @@ export const FLOW_DIRECTIVE_KEYS = [
   "fix_preview",
   "route",
   "effects",
+  "expects",
   "authorizations",
   "degradations",
   "error",
@@ -350,6 +361,7 @@ export interface BuildDirectiveInput {
     assurance: AssuranceStatus;
   };
   effects?: Partial<EffectLedger>;
+  expects?: FlowExpectations;
   authorizations?: readonly EffectClass[];
   degradations?: readonly Degradation[];
   error?: CapabilityFailure | null;
@@ -388,6 +400,13 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
       planned: [...(input.effects?.planned ?? [])],
       approved: [...(input.effects?.approved ?? [])],
       applied: [...(input.effects?.applied ?? [])],
+    },
+    expects: input.expects ?? {
+      effects: [],
+      approval: { required: false, digest: null },
+      decisions: {},
+      note: null,
+      source_scope: null,
     },
     authorizations: [...(input.authorizations ?? [])],
     degradations: [...(input.degradations ?? [])],
@@ -894,6 +913,12 @@ function effectLines(directive: FlowDirective): string[] {
   }
   if (directive.error !== null) {
     lines.push(`error ${directive.error.code}: ${directive.error.message}`);
+  }
+  if (directive.attempt_accounting !== null) {
+    const count = directive.attempt_accounting;
+    lines.push(
+      `intentos: ${count.spent} de ${MAX_BOUNDARY_ATTEMPTS} gastados · ${count.available} disponibles`,
+    );
   }
   return lines;
 }

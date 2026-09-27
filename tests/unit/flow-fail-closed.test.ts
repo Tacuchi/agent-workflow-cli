@@ -237,19 +237,18 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     // «esto ya se había aplicado» —con outcome `completed`— le dice a quien
     // ejecuta que la corrida terminó cuando está trabada, y le tapa la causa real
     // para siempre: cada reintento recibía lo mismo.
-    const bad = JSON.stringify({ input_digest: await seal(), signals: ["señal.inventada"] });
+    const bad = JSON.stringify({ input_digest: await seal(), signals: [] });
     const first = await submit(bad);
-    expect(first.error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+    expect(first.error?.code).toBe("FLOW_ANSWER_AMBIGUOUS");
 
     const again = await submit(bad);
-    expect(again.error?.code).toBe("FLOW_SIGNAL_UNKNOWN");
+    expect(again.error?.code).toBe("FLOW_ANSWER_AMBIGUOUS");
     expect(again.outcome).not.toBe("completed");
 
-    // Y cuenta para el tope, que es lo que termina degradando la frontera en vez
-    // de dejar a quien contesta en un bucle con el mismo error.
+    // Un reenvío idéntico no duplica gasto; una respuesta NUEVA de contenido sí.
     const read = await readRun(fs, locateRun(paths, SESSION));
     if (!read.ok) throw new Error("esperaba leer la corrida");
-    expect(read.state.attempts).toHaveLength(4);
+    expect(read.state.attempts).toHaveLength(3);
     expect(read.state.applied).not.toContain(read.state.boundary);
   });
 

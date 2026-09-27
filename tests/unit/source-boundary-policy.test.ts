@@ -127,7 +127,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
       invocation: { artifact: "docs/resultado.md" },
     } as unknown as typeof proof;
     expect(validateCheckoutProof(mismatched, [{ source: "cli", digest }])?.code).toBe(
-      "WORKLINE_CHECKOUT_PROOF_INVALID",
+      "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
     );
   });
 
@@ -206,6 +206,16 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
     ]);
     expect(failure?.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
     expect(failure?.message).toContain("workspace, ui");
+  });
+
+  it("distingue una raíz ajena del digest vencido y conserva pruebas anteriores sin raíz", () => {
+    const checkout = [{ source: "cli", root: "/checkout/actual", digest }];
+    expect(validateCheckoutProof(proof, checkout)).toBeNull();
+    const other = validateCheckoutProof({ ...proof, root: "/checkout/otro" }, checkout);
+    expect(other?.code).toBe("WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH");
+    expect(other?.message).toContain("/checkout/otro");
+    expect(other?.message).toContain("/checkout/actual");
+    expect(validateCheckoutProof({ ...proof, root: "/checkout/x/../actual" }, checkout)).toBeNull();
   });
 
   it("dice que no hay ninguna elegible cuando no se pudo observar checkout alguno", () => {

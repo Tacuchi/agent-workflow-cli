@@ -1,3 +1,4 @@
+import { resolve } from "node:path";
 import { isPlanHandoffHeading } from "../domain/plan-handoff.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type {
@@ -25,6 +26,8 @@ export type SourceBoundaryCode =
   | "PLAN_SOURCE_LOCAL_PROOF_MISSING"
   | "WORKLINE_CHECKOUT_PROOF_MISSING"
   | "WORKLINE_CHECKOUT_PROOF_INVALID"
+  | "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID"
+  | "WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH"
   | "WORKLINE_CHECKOUT_PROOF_STALE";
 
 export interface SourceBoundaryFailure {
@@ -755,6 +758,16 @@ export function validateCheckoutProof(
         `checkout adquirido (elegibles: ${eligibleSources(states)})`,
     };
   }
+  if (
+    proof.root !== undefined &&
+    current.root !== undefined &&
+    resolve(proof.root) !== resolve(current.root)
+  ) {
+    return {
+      code: "WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH",
+      message: `la prueba se midió sobre ${proof.root} y el checkout es ${current.root}`,
+    };
+  }
   if (current.digest !== proof.checkout_digest) {
     return {
       code: "WORKLINE_CHECKOUT_PROOF_STALE",
@@ -849,7 +862,7 @@ function unknownSources(
 function proofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
   if (proof.source.trim().length === 0 || proof.checkout_digest.trim().length === 0) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
       message: "la prueba debe declarar source y checkout_digest no vacíos",
     };
   }
@@ -866,7 +879,7 @@ function proofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
 function commandProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
   if (!("program" in proof.invocation)) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba command debe declarar una invocación command",
     };
   }
@@ -876,7 +889,7 @@ function commandProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null
     !proof.invocation.args.every((arg) => typeof arg === "string")
   ) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba command debe declarar program y args de texto",
     };
   }
@@ -891,7 +904,7 @@ function commandProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null
 function inspectionProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
   if (!("artifact" in proof.invocation)) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba inspection debe declarar una invocación inspection",
     };
   }
@@ -900,7 +913,7 @@ function inspectionProofFailure(proof: CheckoutProof): SourceBoundaryFailure | n
     proof.invocation.artifact.trim().length === 0
   ) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba inspection debe declarar su artifact",
     };
   }

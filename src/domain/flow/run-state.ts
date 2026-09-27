@@ -274,11 +274,21 @@ function spendAt(
   transition: string,
 ): { rows: FlowRunAttempt[]; floor: number; granted: number; spent: number } {
   const iteration = iterationOf(state, transition);
-  const rows = state.attempts.filter(
+  const recorded = state.attempts.filter(
     (attempt) => attempt.transition === transition && sameIteration(attempt, iteration),
   );
+  const seen = new Set<string>();
+  const rows = recorded.filter((attempt) => {
+    const key = `${attempt.invocation_id}:${attempt.attempt}:${attempt.request_digest}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const key = attemptCounterKey(state, transition);
-  const floor = state.attempt_floor?.[key] ?? 0;
+  // Old runs may hold a twin row and a counter raised over that twin. Removing
+  // both copies of the same resend from the reading preserves the anti-rollback
+  // excess, which is the portion the monotone floor still has to protect.
+  const floor = Math.max(0, (state.attempt_floor?.[key] ?? 0) - (recorded.length - rows.length));
   const granted = state.attempt_grants?.[key] ?? 0;
   return { rows, floor, granted, spent: Math.max(0, Math.max(rows.length, floor) - granted) };
 }
@@ -542,11 +552,12 @@ function conflictCause(accounting: AttemptAccounting, field: string): string {
 
 /** The first ordinal a single invocation records twice, or `null`. */
 function repeatedOrdinal(state: FlowRunState): number | null {
-  const seen = new Map<string, Set<number>>();
+  const seen = new Map<string, Map<number, string>>();
   for (const row of state.attempts) {
-    const ordinals = seen.get(row.invocation_id) ?? new Set<number>();
-    if (ordinals.has(row.attempt)) return row.attempt;
-    ordinals.add(row.attempt);
+    const ordinals = seen.get(row.invocation_id) ?? new Map<number, string>();
+    const previous = ordinals.get(row.attempt);
+    if (previous !== undefined && previous !== row.request_digest) return row.attempt;
+    ordinals.set(row.attempt, row.request_digest);
     seen.set(row.invocation_id, ordinals);
   }
   return null;
@@ -1196,7 +1207,11 @@ export interface FlowChoiceSelection {
 export interface PlanExecEntry {
   plan: string | null;
   phases_without_open_tasks: number[] | null;
+  /** Aliases of the input plan before source-scope fixes the run's scope. */
+  sources?: string[];
   approved_without_changes?: number[];
+  /** A malformed input plan cannot be repaired by resending its source scope. */
+  grammar_failure?: CapabilityFailure;
 }
 
 export interface FlowRunState {
@@ -1208,6 +1223,8 @@ export interface FlowRunState {
   scope: FlowRunScope | null;
   /** Absent on older runs; never infer a successful entry reading from absence. */
   plan_exec_entry?: PlanExecEntry;
+  /** Calendar date fixed on the first decision preparation, never on a retry. */
+  decision_date?: string;
   /**
    * Transition ids the run has already passed, in order — the journey's CURSOR.
    *
@@ -1936,6 +1953,12 @@ export function withPlanExecEntry(state: FlowRunState, entry: PlanExecEntry): Fl
   return sealRunState({ ...withoutSeal(state), plan_exec_entry: entry });
 }
 
+export function withDecisionDate(state: FlowRunState, date: string): FlowRunState {
+  return state.decision_date === date
+    ? state
+    : sealRunState({ ...withoutSeal(state), decision_date: date });
+}
+
 /** Both the human exit and the structural rule deliver the same recoverable destination. */
 export function planRefineHandoff(
   state: FlowRunState,
@@ -2654,12 +2677,31 @@ function checkCommonRecordShape(
   if (!isPlanExecEntry(parsed.plan_exec_entry)) {
     return invalid("declara una entrada de plan-exec sin plan o con fases inválidas");
   }
+  if (
+    parsed.decision_date !== undefined &&
+    (typeof parsed.decision_date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(parsed.decision_date))
+  ) {
+    return invalid("declara una fecha de decisión inválida");
+  }
   return null;
 }
 
 function isPlanExecEntry(value: unknown): value is PlanExecEntry | undefined {
   if (value === undefined) return true;
   if (!isRecord(value) || !(value.plan === null || isNonEmptyString(value.plan))) return false;
+  if (
+    value.sources !== undefined &&
+    (value.plan === null || !Array.isArray(value.sources) || !value.sources.every(isNonEmptyString))
+  )
+    return false;
+  if (
+    value.grammar_failure !== undefined &&
+    (!isRecord(value.grammar_failure) ||
+      !isNonEmptyString(value.grammar_failure.code) ||
+      !isNonEmptyString(value.grammar_failure.message) ||
+      !isNonEmptyString(value.grammar_failure.action))
+  )
+    return false;
   const phases = value.phases_without_open_tasks;
   const approval = value.approved_without_changes;
   if (

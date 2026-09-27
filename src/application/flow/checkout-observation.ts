@@ -77,9 +77,9 @@ export async function resolveCheckoutCandidates(
 /**
  * Observe one checkout: its digest, and whether that digest survives recomputation.
  *
- * `null` means the root is not an observable git checkout — absent, unreadable, or
- * not a repo. That is deliberately NOT reported as a clean tree: a proof against it
- * fails closed instead.
+ * `null` means the root is absent or not a git checkout. A git read failure throws
+ * with its stderr so prove and submit can explain it rather than reporting no
+ * eligible sources. Neither outcome is treated as a clean tree.
  *
  * One function for both callers, because there were briefly two copies of this same
  * five-command protocol and two copies is how they drift. `submit` keeps an unstable
@@ -116,8 +116,10 @@ export async function observeCheckout(
       // reader is sent to look for a change in a tree that may be intact.
       root: identity.root,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    throw new Error(
+      `no se pudo medir '${identity.source}' en ${identity.root}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
@@ -242,7 +244,12 @@ export async function publishObservedCheckouts(
   if (git === undefined) return directive;
   const observed: CheckoutIdentity[] = [];
   for (const candidate of await resolveCheckoutCandidates(fs, paths, session)) {
-    if ((await observeCheckout(fs, git, candidate)) !== null) observed.push(candidate);
+    try {
+      if ((await observeCheckout(fs, git, candidate)) !== null) observed.push(candidate);
+    } catch {
+      // A directive only advertises roots it observed successfully; prove and
+      // submit surface the original git diagnostic on their own read paths.
+    }
   }
   return withObservedCheckouts(directive, observed);
 }

@@ -10,8 +10,10 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js";
 import { groupCommands, renderGroupedCommandLines } from "../../src/cli/help-groups.js";
+import { NOTE_AUTHOR_FIELDS, NOTE_SCHEMA } from "../../src/domain/decision-note.js";
 import type { FlowAuthority, FlowDecision } from "../../src/domain/flow/authority.js";
 import { decisionsOfScope } from "../../src/domain/flow/authority.js";
+import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import {
   type FlowRunAttempt,
   type FlowRunState,
@@ -59,6 +61,81 @@ function trace(directive: { applied: { transition: string }[] }): string[] {
 }
 
 describe("aw flow advance — agota los pasos deterministas", () => {
+  it("expects publica efectos, aprobación y forma por clase de frontera", () => {
+    const authorization = advanceFlowRun({
+      state: newRunState("quick", "001-p-quick"),
+      journey: [{ ...decision("fixture.guardar", "cli"), effects: ["mutate_overwrite"] }],
+    });
+    if (!authorization.ok) throw new Error("sin autorización");
+    expect(authorization.directive.expects.approval).toEqual({
+      required: true,
+      digest: effectApprovalDigest("fixture.guardar", ["mutate_overwrite"]),
+    });
+    expect(authorization.directive.expects.effects).toEqual(["mutate_overwrite"]);
+
+    const semantic = advanceFlowRun({
+      state: newRunState("plan-exec", "001-p-plan-exec"),
+      journey: [decision("plan-exec.deviation-recognition", "agent")],
+    });
+    if (!semantic.ok) throw new Error("sin semántica");
+    expect(semantic.directive.expects.approval).toEqual({ required: false, digest: null });
+    expect(semantic.directive.expects.decisions.decision).toContain("question");
+    expect(semantic.directive.expects.note).toEqual({
+      schema: NOTE_SCHEMA,
+      fields: NOTE_AUTHOR_FIELDS,
+    });
+
+    const execution = advanceFlowRun({
+      state: newRunState("quick", "001-p-quick"),
+      journey: [
+        {
+          ...decision("fixture.ejecutar", "cli"),
+          effects: ["read_only"],
+          action: {
+            invocation: { program: "aw", args: ["status"], target: ".", input: null },
+            execution: { kind: "external", reason: "la corre el host" },
+            evidence: ["salida"],
+            idempotent: true,
+            recovery: "reintentá",
+          },
+        },
+      ],
+    });
+    if (!execution.ok) throw new Error("sin ejecución");
+    expect(execution.directive.expects).toMatchObject({
+      effects: ["read_only"],
+      approval: { required: false, digest: null },
+      decisions: {},
+    });
+  });
+
+  it("source-scope publica aliases del plan de entrada o la regla de derivación", () => {
+    const row = [decision("plan-exec.source-scope", "agent")];
+    const known = advanceFlowRun({
+      state: {
+        ...newRunState("plan-exec", "001-p-plan-exec"),
+        plan_exec_entry: {
+          plan: "docs/plans/001-plan-p.md",
+          phases_without_open_tasks: [],
+          sources: ["cli", "workspace"],
+        },
+      },
+      journey: row,
+    });
+    if (!known.ok) throw new Error("sin source-scope");
+    expect(known.directive.expects.source_scope).toEqual({
+      aliases: ["cli", "workspace"],
+      rule: null,
+    });
+    const unknown = advanceFlowRun({
+      state: newRunState("plan-exec", "001-p-plan-exec"),
+      journey: row,
+    });
+    if (!unknown.ok) throw new Error("sin source-scope de reserva");
+    expect(unknown.directive.expects.source_scope?.aliases).toBeNull();
+    expect(unknown.directive.expects.source_scope?.rule).toContain("decisions.plan");
+  });
+
   it("una sola invocación aplica las tres y devuelve la directiva de la cuarta", () => {
     const result = advanceFlowRun({ state: newRunState("quick", "001-p-quick"), journey: JOURNEY });
     if (!result.ok) throw new Error(`esperaba avanzar: ${result.failure.code}`);
@@ -269,17 +346,27 @@ describe("aw flow advance — la contabilidad propia se repara antes de resolver
   });
 
   it("un ordinal repetido sigue bloqueando, y la acción nombra recuperar en vez de degradar", () => {
-    const twice = withAttemptCounters(parked(row(1, null), row(1, null), row(1, null)), {
-      floor: {},
-      grants: {},
-    });
+    const twice = withAttemptCounters(
+      parked(
+        row(1, null),
+        {
+          ...row(1, null),
+          request_digest: "otro-pedido",
+        },
+        row(1, null),
+      ),
+      {
+        floor: {},
+        grants: {},
+      },
+    );
     const result = advanceFlowRun({ state: twice, journey: JOURNEY });
     if (!result.ok) throw new Error("esperaba una directiva con su bloqueo");
 
     const error = result.directive.error;
     if (error === null) throw new Error("esperaba que la frontera siguiera bloqueada");
     expect(error.action).toContain("aw flow recover --session");
-    expect(error.action).toContain("lo roto es la contabilidad de la corrida, no el gap");
+    expect(error.action).toContain("no se pide un ordinal que el propio ledger va a rechazar");
     // La degradación NO se ofrece: degradar un gap que no es el problema no lo arregla.
     expect(error.action).not.toContain("degradá el gap");
     expect(attemptReconciliationsOf(result.state)).toEqual([]);

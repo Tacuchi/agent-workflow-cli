@@ -21,7 +21,7 @@ import {
   type CheckoutState,
   validateCheckoutProof,
 } from "../../application/source-boundary-policy.js";
-import type { EffectClass } from "../capability/effects.js";
+import { EFFECT_CLASSES, type EffectClass } from "../capability/effects.js";
 import type { CapabilityOutcome } from "../capability/protocol.js";
 import { type CheckoutProof, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
 import type { FlowExecutionResult } from "./answer.js";
@@ -103,7 +103,7 @@ export function executionVerdict(
   const partial = declared.filter((effect) => !applied.has(effect));
   if (partial.length > 0) {
     return {
-      message: `la invocación declara completa pero no aplicó ${partial.join(", ")}`,
+      message: `la invocación declara completa pero no aplicó ${partial.join(", ")}; las clases válidas son ${EFFECT_CLASSES.join(", ")}`,
       detail: { code: "FLOW_EFFECT_PARTIAL", action: action.recovery, outcome: "needs_input" },
     };
   }

@@ -4,13 +4,15 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { proveFlowBoundary } from "../../src/application/flow/prove.js";
+import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
+import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { validateCheckoutProof } from "../../src/application/source-boundary-policy.js";
 import { flowCommand } from "../../src/cli/commands/flow.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
-import { FLOW_RUN_STATE_FILE } from "../../src/domain/flow/run-state.js";
+import { FLOW_RUN_STATE_FILE, attemptAccountingAt } from "../../src/domain/flow/run-state.js";
 import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 import type { GitPort } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -59,7 +61,12 @@ const fs = new NodeFileSystem();
 
 /** A git double whose fingerprint can be made to disagree with itself. */
 function gitDouble(
-  options: { fingerprints?: string[]; isRepo?: boolean; throws?: boolean } = {},
+  options: {
+    fingerprints?: string[];
+    isRepo?: boolean;
+    throws?: boolean;
+    config?: string | null;
+  } = {},
 ): GitPort {
   const queue = [...(options.fingerprints ?? [])];
   return {
@@ -67,7 +74,7 @@ function gitDouble(
       return options.isRepo ?? true;
     },
     async head() {
-      if (options.throws === true) throw new Error("git no está disponible");
+      if (options.throws === true) throw new Error("fatal: índice ilegible en checkout");
       return "abc1234";
     },
     async isDirty() {
@@ -78,6 +85,9 @@ function gitDouble(
     },
     async checkoutFingerprint() {
       return queue.shift() ?? "huella-estable";
+    },
+    async readConfig() {
+      return options.config ?? null;
     },
   } as unknown as GitPort;
 }
@@ -119,6 +129,7 @@ describe("aw flow prove", () => {
     // invocation object is the natural mistake, because it is right there.
     expect(receipt.proof.invocation).toEqual({ program: "aw", args: ["status", "--json"] });
     expect(receipt.proof.source).toBe("workspace");
+    expect(receipt.proof.root).toBe(workdir);
     // Dónde va, con el id EXACTO: el validador no busca, lee el ítem que se llama
     // así. Colgar la prueba de otro ítem de la lista se lee como una prueba que no
     // llegó, y eso cobra un intento.
@@ -198,6 +209,106 @@ describe("aw flow prove", () => {
     if (result.ok) throw new Error("esperaba un fallo cerrado");
     if ("session" in result) throw new Error("esperaba un fallo de capacidad");
     expect(result.failure.code).toBe("FLOW_PROVE_CHECKOUT_UNOBSERVABLE");
+    expect(result.failure.message).toContain("fatal: índice ilegible");
+  });
+
+  it("submit muestra el stderr de git sin decir elegibles: ninguna ni gastar intento", async () => {
+    const before = await readFile(statePath(), "utf8");
+    const run = await advanceFlow(fs, paths, { code: "001", adopt: false });
+    if (!run.ok) throw new Error("no se pudo leer la frontera");
+    const result = await submitFlow(fs, paths, {
+      code: "001",
+      approval: null,
+      git: gitDouble({ throws: true }),
+      raw: JSON.stringify({ input_digest: run.directive.state_digest, outcome: "completed" }),
+      executor: async () => ({ ok: true, summary: "", output: "", effects: [] }),
+    });
+    if (!result.ok) throw new Error("el rechazo no volvió dentro de la directiva");
+    expect(result.directive.error?.message).toContain("fatal: índice ilegible");
+    expect(result.directive.error?.message).not.toContain("elegibles: ninguna");
+    expect(await readFile(statePath(), "utf8")).toBe(before);
+  });
+
+  it("en Windows avisa por core.longpaths ausente y calla cuando está activo", async () => {
+    const missing = await proveFlowBoundary(fs, paths, {
+      code: "001",
+      git: gitDouble(),
+      platform: "win32",
+    });
+    if (!missing.ok) throw new Error("sin prueba de Windows");
+    expect(missing.receipt.warnings).toEqual([expect.stringContaining("core.longpaths")]);
+    const ready = await proveFlowBoundary(fs, paths, {
+      code: "001",
+      git: gitDouble({ config: "true" }),
+      platform: "win32",
+    });
+    if (!ready.ok) throw new Error("sin prueba de Windows configurado");
+    expect(ready.receipt.warnings).toEqual([]);
+  });
+
+  it("una prueba vencida por otro árbol deja el intento en uno y una nueva acredita", async () => {
+    const boundary = await advanceFlow(fs, paths, { code: "001", adopt: false });
+    if (!boundary.ok) throw new Error("sin frontera");
+    const executor = async () => ({ ok: true, summary: "", output: "", effects: [] });
+    const one = await submitFlow(fs, paths, {
+      code: "001",
+      approval: null,
+      executor,
+      git: gitDouble(),
+      raw: JSON.stringify({
+        input_digest: boundary.directive.state_digest,
+        outcome: "failed",
+        invocation: boundary.directive.action?.invocation,
+        validations: [],
+        effects: { planned: ["read_only"], approved: [], applied: [] },
+      }),
+    });
+    if (!one.ok) throw new Error("no quedó el primer intento");
+    expect(one.directive.error?.code).toBe("FLOW_EXECUTION_NOT_COMPLETED");
+
+    const captured = await proveFlowBoundary(fs, paths, {
+      code: "001",
+      git: gitDouble({ fingerprints: ["antes", "antes"] }),
+    });
+    if (!captured.ok) throw new Error("no se capturó la prueba anterior");
+    const envelope = (proof: typeof captured.receipt.proof) =>
+      JSON.stringify({
+        input_digest: boundary.directive.state_digest,
+        outcome: "completed",
+        invocation: boundary.directive.action?.invocation,
+        validations: [
+          { id: "prueba.tablero", passed: true, detail: "resultado real" },
+          { id: SOURCE_BOUNDED_EVIDENCE, passed: true, detail: "checkout observado", proof },
+        ],
+        effects: { planned: ["read_only"], approved: [], applied: ["read_only"] },
+      });
+    const stale = await submitFlow(fs, paths, {
+      code: "001",
+      approval: null,
+      executor,
+      git: gitDouble({ fingerprints: ["después", "después"] }),
+      raw: envelope(captured.receipt.proof),
+    });
+    if (!stale.ok) throw new Error("el rechazo stale salió de la directiva");
+    expect(stale.directive.error?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    const read = await readRun(fs, locateRun(paths, SESSION));
+    if (!read.ok) throw new Error("sin estado");
+    expect(attemptAccountingAt(read.state, "fixture.source-bounded").spent).toBe(1);
+
+    const fresh = await proveFlowBoundary(fs, paths, {
+      code: "001",
+      git: gitDouble({ fingerprints: ["después", "después"] }),
+    });
+    if (!fresh.ok) throw new Error("no se recapturó");
+    const accepted = await submitFlow(fs, paths, {
+      code: "001",
+      approval: null,
+      executor,
+      git: gitDouble({ fingerprints: ["después", "después"] }),
+      raw: envelope(fresh.receipt.proof),
+    });
+    if (!accepted.ok) throw new Error("la prueba nueva no entró");
+    expect(accepted.directive.error).toBeNull();
   });
 
   it("una fuente que no es elegible se rechaza nombrando las que sí", async () => {
