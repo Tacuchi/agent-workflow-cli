@@ -313,12 +313,13 @@ async function withLegacyDigest(
 
 interface DecisionLineage {
   baseline: BaselineInput;
+  specText: string;
   planNumber: string;
   planText: string;
   indexPath: string;
 }
 
-async function readLineage(
+export async function readLineage(
   fs: FileSystemPort,
   input: { root: string; plan: string },
 ): Promise<{ ok: true; value: DecisionLineage } | { ok: false; failure: CapabilityFailure }> {
@@ -392,6 +393,7 @@ async function readLineage(
       },
       planNumber,
       planText,
+      specText,
       indexPath: noteIndexPath(DEFAULT_DOCS_CANON.decision, relation.number, slug),
     },
   };

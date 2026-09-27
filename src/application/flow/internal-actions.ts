@@ -71,6 +71,7 @@ import {
 import { settlePlanExecObligations } from "../plan-exec-decision-service.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
+import { canonicalArtifactPath } from "../session-artifacts.js";
 import { runSessionClose } from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
 import { readCustody } from "../session-custody-service.js";
@@ -79,6 +80,7 @@ import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
 import { observeScopedFingerprints } from "./checkout-observation.js";
 import { preserveBoundaryClose } from "./close-artifacts.js";
+import { closeDocumentGuidance } from "./close-document-guidance.js";
 import { projectRun } from "./run-projection.js";
 import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
@@ -538,6 +540,9 @@ async function artifacts(
   // The presence report, without the narrative: this operation checks that the
   // artifacts are THERE, and projecting the session's whole reading to answer
   // that would be work nobody asked for on every advance.
+  if (dump?.includes("objetivo") && dump.includes("checkpoint")) {
+    await seedMissingCheckpoint(deps, run);
+  }
   const report = await runArtifactsCommand(deps.fs, deps.env, deps.paths, {
     code: run.code,
     noNarrative: true,
@@ -571,13 +576,20 @@ async function artifacts(
   }
 
   const dumped = await readSessionArtifacts(deps.fs, deps.paths, run.code, [...dump], deps.runtime);
-  const output = canonicalJson({ report, dump: dumped });
+  const script = dump.includes("scripts") ? await rootScript(deps, run) : null;
+  const output = canonicalJson({ report, dump: dumped, root_script: script });
   if (dumped.error !== undefined) {
     return refusal("session.artifacts", String(dumped.hint ?? dumped.error), output);
   }
-  const empty = dump.filter((kind) => !hasContent(dumped[kind]));
+  const empty = dump.filter(
+    (kind) => !hasContent(dumped[kind]) && !(kind === "scripts" && hasContent(script)),
+  );
   if (empty.length > 0) {
-    return refusal("session.artifacts", `sin contenido: ${empty.join(", ")}`, output);
+    return refusal(
+      "session.artifacts",
+      `sin contenido: ${empty.join(", ")}${empty.includes("scripts") ? " (SCRIPTS.sql o scripts/*.sql)" : ""}`,
+      output,
+    );
   }
   // `objetivo` is the artifact that carries the success criteria, so demanding it
   // is demanding them: a SESSION.md with a criteria heading and nothing under it
@@ -597,6 +609,29 @@ async function artifacts(
     output,
     effects: SEEDED_EFFECTS,
   };
+}
+
+async function seedMissingCheckpoint(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<void> {
+  const folder = join(deps.paths.cwdSessionsDir(), run.session);
+  const checkpoint = canonicalArtifactPath(folder, "checkpoint");
+  if (await deps.fs.exists(checkpoint)) return;
+  const session = canonicalArtifactPath(folder, "session");
+  if (!(await deps.fs.exists(session))) return;
+  const objective = parseMdSectionBilingual(await deps.fs.readText(session), "Objective")?.trim();
+  if (!objective || objective.includes("_[AI:")) return;
+  await deps.fs.publishTextExclusive(
+    checkpoint,
+    `# CHECKPOINT\n\n## Completed\n\n## Pending / Next\n\n${objective}\n`,
+  );
+}
+
+/** Only this evidence reader accepts the root script; exports keep their dump. */
+async function rootScript(deps: InternalActionDeps, run: InternalActionRun) {
+  const path = canonicalArtifactPath(join(deps.paths.cwdSessionsDir(), run.session), "scripts_sql");
+  return (await deps.fs.exists(path)) ? { path, content: await deps.fs.readText(path) } : null;
 }
 
 /** A new refine must be bound to an existing plan; only pre-custody sessions degrade. */
@@ -1426,6 +1461,7 @@ async function close(
   const pending = boundaryClose
     ? await preserveBoundaryClose(deps.fs, deps.paths, deps.git, read.state, listed.units)
     : [];
+  const documents = read.ok ? await closeDocumentGuidance(deps.fs, deps.paths, read.state) : [];
   const result = await runSessionClose(
     deps.fs,
     deps.paths,
@@ -1451,13 +1487,14 @@ async function close(
     return refusal("session.close", `la sesión no cerró: ${why}`, canonicalJson(result));
   }
   const closed = result.sessionClose;
+  if (documents.length > 0) closed.outdated_documents = documents;
   if (boundaryClose) {
     closed.pending_work = pending;
     closed.reopen = `aw session-resume --code ${run.session} --reopen`;
   }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

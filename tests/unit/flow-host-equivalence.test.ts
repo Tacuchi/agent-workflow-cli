@@ -229,7 +229,11 @@ function answerFor(
     };
   }
   return {
-    body: { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" },
+    body: {
+      input_digest: resolved.seal,
+      choice:
+        stopped.id === "quick.gate-choice" ? "Seguir en quick" : (resolved.choices[0]?.label ?? ""),
+    },
     approval: null,
   };
 }

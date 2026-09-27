@@ -1373,9 +1373,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       {
         label: "Cambiar a SPEC",
         consequence:
-          "no se crea sesión quick: la línea de trabajo pasa al flow SPEC con el objetivo original",
+          "se cierra la sesión quick conservando lo pendiente y se entrega el pedido a /w:spec-new",
         recommended: true,
-        outcome: { kind: "continue" },
+        outcome: { kind: "handoff", destination: "spec-new" },
       },
       {
         label: "Seguir en quick",
@@ -1475,7 +1475,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       ],
       idempotent: true,
       recovery:
-        "sembrá lo que falte (objetivo, criterios de éxito y CHECKPOINT.Pending) y volvé a devolver el dump: sembrar de nuevo lo ya escrito no rompe nada",
+        "completá el objetivo y los criterios de éxito y corré aw flow advance: el CLI siembra el CHECKPOINT que falta sin reemplazar lo escrito",
     },
   },
   {
@@ -1585,12 +1585,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "quick.db-touched",
     scope: "quick",
-    title: "reconocer si la tarea llegó a tocar una base de datos",
+    title: "reconocer si la tarea mutó una base de datos; leer no declara la señal",
     authority: "agent",
     ownership: "cli-owned",
     document: DB_SCRIPTS_ONLY,
     attribution: PLAN_ATTRIBUTION,
-    // A quick that never went near a database has no statement to derive and no
+    // A read-only quick has no mutation statement to derive and no
     // `SCRIPTS.sql` to hand back, so the row below it used to demand an artifact
     // that should not exist. Declaring the signal is what lets the rule apply
     // exactly where it has something to govern.
@@ -1607,7 +1607,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     effects: ["local_additive"],
     condition: {
       threshold: { observed: "quick.db-touched", of: ["quick.db-touched"], min: 1 },
-      otherwise: "la tarea no tocó ninguna base de datos: no hay sentencia que derivar",
+      otherwise: "la tarea no mutó la base de datos: las lecturas no exigen scripts",
     },
     // Migrated with the PLAN tranche and not with QUICK, for the same reason
     // CODE-POLICIES was: `plan-exec` reads this module too, and retiring its rule
@@ -1625,7 +1625,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["quick.scripts-derivados"],
       idempotent: true,
       recovery:
-        "escribí el DDL o DML en el SCRIPTS.sql de la sesión y volvé a devolver el dump; ejecutarlo no es una alternativa que este contrato admita",
+        "escribí el DDL o DML en SCRIPTS.sql o scripts/*.sql de la sesión y corré aw flow advance; si sólo leíste la base, retirá la señal con aw flow retract --session <código> --signal quick.db-touched; el CLI no ejecuta SQL",
     },
   },
   {

@@ -252,9 +252,8 @@ without subagents runs a clean re-read instead, and the closing report declares 
 
 ## Delta 6 — Completion / close
 
-- A phase closes when its `> Estado:` reads `validada`: work done, exit condition true and proof
-  passed. In a continuous batch every phase waits for the batch review; an operative handoff leaves
-  the affected phase `bloqueada` and the unit uncommitted.
+- A phase closes as `validada` only after its exit, proof and batch review pass. An operative handoff leaves it `bloqueada` and uncommitted.
+- Check each known outdated spec/plan line with `aw amend apply … --check` before closing; propose its path, edit only with approval.
 - **The plan's own state is the third axis, and it stays `open` during the whole run.** Every phase `validada` is **not** the plan closed: the final validation still has to run. Keep `> Estado: open` under the title while executing — stamping it on the first write if the plan carries none — and never write `done` from the counters — a legacy plan with every box ticked is not closed by that fact (§ *Legacy plans degrade safely*).
 - **Every phase `validada` + final validation passed** unlocks completion, and the mark is written
   **after Git**: commit each unit, integrate it, and only then seal `done`. A run that isolates its
@@ -269,7 +268,7 @@ without subagents runs a clean re-read instead, and the closing report declares 
   is not `done` and the session does not close while a unit is still alive.
 - **Marking done = ONE status line in the plan-doc**, under the title's blockquote: `> Estado: done`, updated in place on a re-run. The machine value **stands alone** — the date and session go on their own `> Cierre: YYYY-MM-DD · sesión NNN` line right under it, for the same reason a blocker never rides on a phase's state line. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
-- **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
+- **No automatic export**: session artifacts stay there; only a later explicit `export-*` promotes them to `docs/`.
 
 ## Sequence
 

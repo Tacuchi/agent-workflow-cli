@@ -248,6 +248,15 @@ async function materialTrace(
       });
       continue;
     }
+    if (event.kind === "retracted") {
+      sequence.push({
+        state: "aplicado",
+        text: `se retiró la señal '${event.signal}' antes de aplicarla`,
+        detail: `${event.operation} · ${event.observations.length} observación(es) corregidas`,
+        source,
+      });
+      continue;
+    }
     if (event.kind === "route-refused") {
       sequence.push({
         state: "aplicado",
