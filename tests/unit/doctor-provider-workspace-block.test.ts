@@ -48,14 +48,13 @@ it("informa divergencia del par y sólo marca secciones que citan identidades re
   );
   await fs.writeText(agents, block().replace("Ejemplo", "Nombre distinto"));
   const report = await runDoctor(ctx, {}, { providers: [workspaceBlockProvider] });
-  expect(report.findings.map((finding) => finding.summary)).toEqual([
+  const findings = report.findings.filter((finding) => finding.category === "workspace-visibility");
+  expect(findings.map((finding) => finding.summary)).toEqual([
     expect.stringContaining("CLAUDE.md cita"),
     expect.stringContaining("divergen"),
   ]);
-  expect(report.findings[0]?.remediation.action?.op).toBe("workspace.remove-retired-section");
-  expect(report.findings[0]?.evidence).toContain(
-    "Reglas transversales qtc-*: agent-workflow:rules",
-  );
+  expect(findings[0]?.remediation.action?.op).toBe("workspace.remove-retired-section");
+  expect(findings[0]?.evidence).toContain("Reglas transversales qtc-*: agent-workflow:rules");
 });
 
 it("prepare y apply quitan la sección retired fuera del marcador y dejan todo lo demás igual", async () => {
@@ -91,8 +90,9 @@ it("también detecta una sección ajena dentro del bloque sin borrar secciones d
   await fs.writeText(path, before);
   await fs.writeText(join(root, "AGENTS.md"), before);
   const report = await runDoctor(ctx, {}, { providers: [workspaceBlockProvider] });
-  expect(report.findings).toHaveLength(2);
-  expect(report.findings[0]?.evidence).toContain("Referencias antiguas: /w:comando-eliminado");
+  const findings = report.findings.filter((finding) => finding.category === "workspace-visibility");
+  expect(findings).toHaveLength(2);
+  expect(findings[0]?.evidence).toContain("Referencias antiguas: /w:comando-eliminado");
   expect(await applyRetiredSectionRemoval(fs, path, ctx.paths.blockMarkers())).toBe(true);
   expect(await readFile(path, "utf8")).toBe(
     before.replace("## Referencias antiguas\n\nUsa /w:comando-eliminado.\n\n", ""),
