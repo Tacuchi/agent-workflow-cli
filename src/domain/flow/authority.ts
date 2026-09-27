@@ -3727,6 +3727,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "sources", reason: "inventario de fuentes del workspace" },
   { command: "set-working-branch", reason: "configuración declarativa de rama" },
   { command: "set-qa-branch", reason: "configuración declarativa de rama" },
+  { command: "set-pipeline", reason: "configuración declarativa de build y test por fuente" },
   { command: "remove-source", reason: "operación de configuración del workspace" },
   { command: "git-flow", reason: "utilidad de ramas sin recorrido de flow" },
   { command: "merge-state", reason: "lectura del estado de una fusión" },

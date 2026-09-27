@@ -54,6 +54,7 @@ import { sessionCreateCommand } from "./session-create.js";
 import { sessionResumeCommand } from "./session-resume.js";
 import { sessionsCommand } from "./sessions.js";
 import { setQaBranchCommand, setWorkingBranchCommand } from "./set-branch.js";
+import { setPipelineCommand } from "./set-pipeline.js";
 import { settleCommand } from "./settle.js";
 import { skillIndexCommand } from "./skill-index.js";
 import { skillsCommand } from "./skills.js";
@@ -94,6 +95,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   generateLaunchCommand,
   setWorkingBranchCommand,
   setQaBranchCommand,
+  setPipelineCommand,
   removeSourceCommand,
   gitFlowCommand,
   mergeStateCommand,

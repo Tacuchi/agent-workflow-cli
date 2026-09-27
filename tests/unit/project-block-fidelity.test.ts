@@ -205,3 +205,17 @@ describe("project-block · una sección propia dentro del bloque sobrevive (AC-0
     expect(once.match(/## Notas/g)).toHaveLength(1);
   });
 });
+
+it("Pipeline es sección propia después de Status y conserva una nota sin adoptarla", () => {
+  const block = renderProjectBlock({ ...BASE, pipeline: { core: { build: "npm run build" } } });
+  const annotated = block.replace(
+    "- core: build `npm run build`",
+    "- core: build `npm run build`\nNota del equipo",
+  );
+  expect(annotated.indexOf("## Pipeline")).toBeGreaterThan(annotated.indexOf("## Status"));
+  expect(parseProjectBlock(annotated)?.preserved_lines).toContainEqual({
+    slot: "pipeline",
+    text: "Nota del equipo",
+  });
+  expect(rewrite(annotated)).toContain("- core: build `npm run build`\nNota del equipo");
+});

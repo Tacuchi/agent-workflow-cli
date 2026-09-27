@@ -313,6 +313,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       ],
       workingBranches: { core: "feature/a", plugin: "feature/b" },
       qaBranches: { core: "desarrollo", plugin: "qa/plugin" },
+      pipeline: { core: { test: "npm test" }, plugin: { build: "ninguno" } },
       lastActivity: FIXED_TS,
     });
 
@@ -326,9 +327,14 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     if ("error" in result) throw new Error(result.error);
     expect(result.working_branches).toEqual({ core: "feature/a" });
     expect(result.qa_branches).toEqual({ core: "desarrollo" });
-    expect(result.dropped_lines).toEqual(["  - plugin: feature/b", "  - plugin: qa/plugin"]);
+    expect(result.dropped_lines).toEqual([
+      "  - plugin: feature/b",
+      "  - plugin: qa/plugin",
+      "- plugin: build ninguno",
+    ]);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
     expect(claude).not.toContain("plugin");
+    expect(claude).toContain("- core: test `npm test`");
   });
 
   it("removeAliases of the last source leaves an empty fuentes table", async () => {
