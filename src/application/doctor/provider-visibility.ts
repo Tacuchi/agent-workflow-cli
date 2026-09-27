@@ -13,6 +13,8 @@ import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.j
  * a directory that is not a workspace has not misconfigured anything.
  */
 import { harnessForMcpHost } from "../../domain/harnesses.js";
+import { isWorkingBranch, resolveSourceBranches } from "../branch-resolver.js";
+import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { runVisibilityDoctor } from "../visibility-doctor-service.js";
 import type { VisibilityHostReport } from "../visibility-doctor-service.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
@@ -87,9 +89,55 @@ export const visibilityProvider: DoctorProvider = {
         ),
       );
 
+    findings.push(...(await prodUpstreamFindings(input)));
     return { coverage: [...dedupe(coverages), ...uncovered], findings };
   },
 };
+
+/** Each local work branch tracking PROD is a warning, never an automatic git edit. */
+async function prodUpstreamFindings(input: DoctorProviderInput): Promise<DoctorFinding[]> {
+  const block = await readWorkspaceBlock(
+    input.ctx.fs,
+    input.workspaceDir,
+    input.ctx.paths.blockMarkers(),
+  );
+  if (block === null) return [];
+  const findings: DoctorFinding[] = [];
+  for (const source of block.fuentes) {
+    // Portable sources without a resolved local path cannot have local branch data.
+    const path = source.path;
+    if (path === null || !(await input.ctx.git.isGitRepo(path))) continue;
+    const roles = resolveSourceBranches(source, block);
+    for (const branch of await input.ctx.git.localBranches(path)) {
+      if (!isWorkingBranch(branch, roles)) continue;
+      const upstream = await input.ctx.git.upstreamBranch(path, branch);
+      if (!upstream?.startsWith("refs/remotes/")) continue;
+      const [, ...tracked] = upstream.slice("refs/remotes/".length).split("/");
+      if (tracked.join("/") !== roles.prod) continue;
+      findings.push({
+        id: doctorFindingId("workspace", CATEGORY, `upstream:${source.alias}:${branch}`),
+        host: "workspace",
+        category: CATEGORY,
+        resource: { kind: "rama", name: `${source.alias}/${branch}`, locator: path },
+        state: "warning",
+        summary: `${source.alias}: la rama ${branch} rastrea PROD (${upstream})`,
+        impact: "un git pull sin argumentos puede traer PROD a la rama de trabajo",
+        evidence: [`rama de PROD: ${roles.prod}`, `upstream de ${branch}: ${upstream}`],
+        ownership: "n/a",
+        remediation: {
+          kind: "manual",
+          action: null,
+          guidance: [`git -C ${shellQuote(path)} branch --unset-upstream ${shellQuote(branch)}`],
+        },
+      });
+    }
+  }
+  return findings;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
 
 function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
   const resource = `${report.scope}:visibilidad`;

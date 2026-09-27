@@ -124,6 +124,46 @@ function registeredHostStatus() {
 }
 
 describe("McpTab — user-scope install", () => {
+  async function installToast(
+    result: unknown,
+  ): Promise<{ tone: string; title: string; body: string }> {
+    const onToast = vi.fn();
+    const { stdin, unmount } = render(<McpTab ctx={ctx} isActive onToast={onToast} />);
+    await tick();
+    stdin.write(ENTER); // detail
+    await tick();
+    stdin.write(ENTER); // host picker
+    await tick();
+    vi.mocked(selfMcpConfig).mockResolvedValueOnce(result as never);
+    stdin.write(ENTER); // chosen host
+    await tick();
+    const toast = onToast.mock.calls
+      .map(([value]) => value as { tone: string; title: string; body: string })
+      .find((value) => value.title.includes("Installed") || value.title.includes("Install failed"));
+    unmount();
+    if (!toast) throw new Error("la instalación no presentó su resultado");
+    return toast;
+  }
+
+  it("titula Installed si el descriptor quedó aunque la verificación dé nota", async () => {
+    const toast = await installToast({
+      ok: false,
+      data: { installed: true, summary: "Conexión instalada. Verificación posterior pendiente." },
+    });
+    expect(toast.title).toBe("Installed · alpha");
+    expect(toast.tone).toBe("ok");
+    expect(toast.body).toContain("Verificación posterior pendiente");
+  });
+
+  it("titula Install failed si el conflicto impidió escribir", async () => {
+    const toast = await installToast({
+      ok: true,
+      data: { installed: false, summary: "No se instaló 'alpha': conflicto." },
+    });
+    expect(toast.title).toBe("Install failed · alpha");
+    expect(toast.tone).toBe("err");
+  });
+
   it("agrega el estado de todos los hosts, no sólo el de Codex", async () => {
     const { lastFrame } = render(<McpTab ctx={ctx} isActive />);
     await tick();

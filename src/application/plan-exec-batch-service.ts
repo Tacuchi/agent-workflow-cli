@@ -14,17 +14,21 @@ import type { AssuranceStatus } from "../domain/flow/route.js";
 import {
   type FlowRunState,
   type PlanExecBatch,
+  iterationOf,
+  sameIteration,
   withPlanExecBatchLoop,
   withPlanExecBatchPublication,
   withPlanExecBatchPublicationPrepared,
   withPlanExecBatchStage,
 } from "../domain/flow/run-state.js";
+import { approvedValidationOnly } from "../domain/flow/unchanged-phase.js";
 import { baseDigest, sealProposal } from "../domain/proposal.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type FlowRunLocation, applyUnderLock } from "./flow/run-state-service.js";
 import { applyLocalProposal } from "./local-proposal.js";
 import { scanMarkdown } from "./markdown.js";
-import { type PhaseState, parsePhases } from "./parsers/phases.js";
+import { parseExecutionBatches } from "./parsers/execution-batches.js";
+import { type PhaseItem, type PhaseState, parsePhases } from "./parsers/phases.js";
 import { parsePlanStatus } from "./parsers/plan-status.js";
 import { type TaskItem, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
@@ -51,6 +55,7 @@ export interface InferPlanExecBatchInput {
   iteration: number;
   mode: PlanExecBatch["mode"];
   phases: number[];
+  partition?: PlanExecBatch["partition"];
 }
 
 export type BatchInference =
@@ -77,20 +82,27 @@ export function inferPlanExecBatch(text: string, input: InferPlanExecBatchInput)
       `el batch nombra fases que el plan no declara: ${absent.map((phase) => `F${phase}`).join(", ")}`,
     );
   }
-  const openTasks = parseTasks(text).items.filter(
-    (task) => task.status === "open" && task.phase !== undefined && phases.includes(task.phase),
-  );
+  const openTasks = parseTasks(text)
+    .items // A batch only owns work still open when its snapshot is sealed. Already
+    // checked tasks stay evidence of an earlier iteration; including them here
+    // would let a retry appear to re-accredit somebody else's completed work.
+    .filter(
+      (task) => task.status === "open" && task.phase !== undefined && phases.includes(task.phase),
+    );
+  const tasks = openTasks
+    .map((task) => taskIdOf(task.text))
+    .filter((id): id is string => id !== null);
   if (input.validation_only && openTasks.length > 0) {
     return fail(
       "PLAN_VALIDATION_ONLY_HAS_TASKS",
       "una fase con tareas abiertas no puede acreditarse como validación sin cambios",
     );
   }
-  // Checked tasks remain evidence of previous work, never re-accredited here.
-  const tasks = openTasks
-    .map((task) => taskIdOf(task.text))
-    .filter((id): id is string => id !== null);
-  if ((!input.validation_only && tasks.length === 0) || new Set(tasks).size !== tasks.length) {
+  if (
+    tasks.length !== openTasks.length ||
+    (!input.validation_only && tasks.length === 0) ||
+    new Set(tasks).size !== tasks.length
+  ) {
     return fail(
       "PLAN_EXEC_BATCH_INVALID",
       "las fases del batch no exponen tareas Tn.m únicas que el CLI pueda acreditar",
@@ -107,8 +119,129 @@ export function inferPlanExecBatch(text: string, input: InferPlanExecBatchInput)
       tasks,
       plan_digest: baseDigest(text),
       stage: "inferred",
+      ...(tasks.length === 0 ? { validation_only: true } : {}),
+      ...(input.partition === undefined
+        ? {}
+        : {
+            partition: {
+              ...input.partition,
+              effective: { mode: input.mode, phases: [...phases] },
+            },
+          }),
     },
   };
+}
+
+/** Infer from phase state, then narrow by the declared partition and live signals. */
+export function inferNextPlanExecBatch(text: string, state: FlowRunState): BatchInference {
+  const phases = parsePhases(text).items;
+  if (
+    phases.some(
+      (phase, index) =>
+        !Number.isSafeInteger(phase.n) ||
+        phase.n < 1 ||
+        (index > 0 && phase.n <= (phases[index - 1]?.n ?? 0)),
+    )
+  ) {
+    return fail(
+      "PLAN_EXEC_BATCH_PHASES_INVALID",
+      "las fases no tienen numeración positiva única en orden",
+      "corregí el orden de las fases con plan-refine antes de inferir el lote",
+    );
+  }
+  const first = phases.findIndex((phase) => phase.state !== "validada");
+  if (first < 0) return noPendingPhases(text);
+  const pending = phases
+    .slice(first)
+    .filter((phase) => phase.state !== "validada")
+    .map((phase) => phase.n);
+  const openPhase = pending[0];
+  if (openPhase === undefined)
+    return fail("PLAN_EXEC_BATCH_INVALID", "no hay una fase inicial legible");
+  const declared = parseExecutionBatches(text);
+  const row = declared.rows.find((batch) => batch.phases.includes(openPhase));
+  let effective =
+    declared.status === "invalid"
+      ? { mode: "isolated" as const, phases: [openPhase] }
+      : {
+          mode: row?.mode ?? ("continuous" as const),
+          phases: (row?.phases ?? pending).filter((phase) => pending.includes(phase)),
+        };
+  let reason =
+    declared.status === "invalid"
+      ? `sección ilegible: ${declared.reason}`
+      : row === undefined
+        ? "sin sección: rango máximo pendiente"
+        : `fila declarada ${row.id}`;
+  const transition = "plan-exec.batch-eligibility-signal";
+  const observation = [...state.observations]
+    .reverse()
+    .find(
+      (item) =>
+        item.transition === transition && sameIteration(item, iterationOf(state, transition)),
+    );
+  if (observation !== undefined && observation.signals.length > 0) {
+    effective = { mode: "isolated", phases: [openPhase] };
+    reason += `; aislado por ${observation.signals.join(", ")}`;
+  }
+  const open = new Set(
+    parseTasks(text)
+      .items.filter((task) => task.status === "open")
+      .map((task) => task.phase),
+  );
+  if (!open.has(openPhase)) {
+    effective = {
+      ...effective,
+      phases: consecutiveValidationPhases(phases.slice(first), effective.phases, open),
+    };
+    reason += "; sólo validación, sin tareas abiertas";
+  }
+  const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
+  const inferred = inferPlanExecBatch(text, {
+    id: `batch-${iteration}`,
+    iteration,
+    ...effective,
+    ...(open.has(openPhase) ? {} : { validation_only: true }),
+    partition: { declared: declared.status === "valid" ? declared.rows : null, effective, reason },
+  });
+  if (!inferred.ok || inferred.batch.kind !== "validation-only") return inferred;
+  if (!approvedValidationOnly(state, inferred.batch)) {
+    return fail(
+      "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
+      `F${openPhase} no tiene tareas abiertas ni aprobación de validación sin cambios al entrar`,
+      "reanudá el consentimiento de entrada; si ya pasó sin observar esta fase, usá aw flow restart para observarla y aprobarla",
+    );
+  }
+  return inferred;
+}
+
+function noPendingPhases(text: string): BatchInference {
+  if (parseTasks(text).open > 0) {
+    return fail(
+      "PLAN_EXEC_BATCH_PHASES_INVALID",
+      "hay tareas abiertas pero no fases pendientes legibles",
+      "normalizá con plan-refine las líneas Estado de las fases; las tareas abiertas no habilitan la validación final",
+    );
+  }
+  return fail(
+    "PLAN_EXEC_BATCH_NONE_OPEN",
+    "el plan no tiene fases ni tareas pendientes",
+    "reanudá la corrida para que exponga la validación final",
+  );
+}
+
+/** Stop at any intervening phase, even a validated one: validation-only is consecutive. */
+function consecutiveValidationPhases(
+  phases: PhaseItem[],
+  range: number[],
+  open: Set<number | undefined>,
+): number[] {
+  const consecutive: number[] = [];
+  for (const phase of phases) {
+    if (phase.state === "validada" || open.has(phase.n) || !range.includes(phase.n)) break;
+    consecutive.push(phase.n);
+  }
+  return consecutive;
 }
 
 export interface PreparePlanExecBatchPublicationInput {
@@ -230,6 +363,19 @@ export function preparePlanExecBatchPublication(
       "PLAN_EXEC_BATCH_PHASE_UNKNOWN",
       `el plan no declara F${unknownPhase.phase}`,
       "re-inferí el batch sobre el plan vigente",
+    );
+  }
+  if (
+    input.transition === "plan-exec.batch-close" &&
+    (!sameSet(
+      updates.map((update) => String(update.phase)),
+      input.batch.phases.map(String),
+    ) ||
+      updates.some((update) => update.state !== "validada"))
+  ) {
+    return fail(
+      "PLAN_EXEC_BATCH_PHASE_SET_INVALID",
+      "el cierre debe validar todas las fases del batch juntas",
     );
   }
   const marked = markTasks(text, new Set(completed));

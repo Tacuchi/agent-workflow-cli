@@ -938,6 +938,20 @@ export interface FlowRunScope {
   plan: string;
   /** `workspace` plus declared aliases this run may touch — non-empty, no repeats. */
   sources: string[];
+  /** Commands resolved from the scoped plan and versioned source declarations. */
+  final_validation?: FinalValidationSource[];
+}
+
+export interface FinalValidationCommand {
+  command: string | null;
+  origin: "plan" | "source" | null;
+  action?: string;
+}
+
+export interface FinalValidationSource {
+  alias: string;
+  build: FinalValidationCommand;
+  test: FinalValidationCommand;
 }
 
 /** The bounded lifecycle of one repeatable plan-execution batch. */
@@ -980,6 +994,12 @@ export interface PlanExecBatchPublication {
  * before publication. The plan digest makes a moved document stale rather than
  * letting a previously inferred batch mark a different task.
  */
+export interface PlanExecBatchRange {
+  id: string;
+  mode: "continuous" | "isolated";
+  phases: number[];
+}
+
 export interface PlanExecBatch {
   id: string;
   /** Only validates an approved entry phase; its task set must be empty. */
@@ -1006,6 +1026,16 @@ export interface PlanExecBatch {
   base?: Record<string, string | null>;
   /** Per source, the checkout digest of the proof that credited this batch. */
   credit?: Record<string, string>;
+  /** Phases demonstrated by that credit; absent on legacy credits. */
+  credit_phases?: number[];
+  /** True only for a range with no open tasks, whose proof is supplied by validation. */
+  validation_only?: boolean;
+  /** Declared partition and the effective range sealed for this iteration. */
+  partition?: {
+    declared: PlanExecBatchRange[] | null;
+    effective: Omit<PlanExecBatchRange, "id">;
+    reason: string;
+  };
   review?: BatchReview;
 }
 
@@ -1666,7 +1696,9 @@ export function withPlanExecBatchCredit(
   if (!batches.some((batch) => batch.id === batchId)) return state;
   return sealRunState({
     ...withoutSeal(state),
-    batches: batches.map((batch) => (batch.id === batchId ? { ...batch, credit } : batch)),
+    batches: batches.map((batch) =>
+      batch.id === batchId ? { ...batch, credit, credit_phases: [...batch.phases] } : batch,
+    ),
   });
 }
 
@@ -2877,6 +2909,23 @@ function isScope(value: unknown): value is FlowRunScope | null {
   if (!isRecord(value)) return false;
   if (typeof value.plan !== "string" || value.plan.trim().length === 0) return false;
   if (!isStringArray(value.sources) || value.sources.length === 0) return false;
+  if (
+    value.final_validation !== undefined &&
+    (!Array.isArray(value.final_validation) ||
+      !value.final_validation.every(
+        (entry: unknown) =>
+          isRecord(entry) &&
+          typeof entry.alias === "string" &&
+          [entry.build, entry.test].every(
+            (item) =>
+              isRecord(item) &&
+              (item.command === null || typeof item.command === "string") &&
+              (item.origin === null || item.origin === "plan" || item.origin === "source") &&
+              (item.action === undefined || typeof item.action === "string"),
+          ),
+      ))
+  )
+    return false;
   return value.sources.every((alias) => alias.trim().length > 0);
 }
 
@@ -2901,6 +2950,9 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
         (phase) => typeof phase === "number" && Number.isInteger(phase) && phase > 0,
       ) ||
       !isStringArray(entry.tasks) ||
+      (entry.validation_only !== undefined && typeof entry.validation_only !== "boolean") ||
+      (entry.validation_only === true && entry.tasks.length !== 0) ||
+      (entry.validation_only === false && entry.kind === "validation-only") ||
       (entry.kind === "validation-only" ? entry.tasks.length !== 0 : entry.tasks.length === 0) ||
       (entry.kind !== undefined && entry.kind !== "validation-only") ||
       new Set(entry.tasks).size !== entry.tasks.length ||
@@ -2916,6 +2968,9 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
       !(PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string) ||
       !isSourceMap(entry.base, true) ||
       !isSourceMap(entry.credit, false) ||
+      !isBatchPartition(entry.partition, entry.phases, entry.mode) ||
+      (entry.credit_phases !== undefined &&
+        (entry.credit === undefined || !samePhaseRange(entry.credit_phases, entry.phases))) ||
       (entry.review !== undefined && !isBatchReview(entry.review))
     ) {
       return false;
@@ -2924,6 +2979,40 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
     iterations.add(entry.iteration);
     return true;
   });
+}
+
+function samePhaseRange(value: unknown, phases: unknown[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === phases.length &&
+    value.every((phase, index) => phase === phases[index])
+  );
+}
+
+function isBatchPartition(value: unknown, phases: unknown[], mode: unknown): boolean {
+  if (value === undefined) return true;
+  if (
+    !isRecord(value) ||
+    !isNonEmptyString(value.reason) ||
+    !isRecord(value.effective) ||
+    value.effective.mode !== mode ||
+    !samePhaseRange(value.effective.phases, phases)
+  )
+    return false;
+  return (
+    value.declared === null ||
+    (Array.isArray(value.declared) &&
+      value.declared.length > 0 &&
+      value.declared.every(
+        (row) =>
+          isRecord(row) &&
+          isNonEmptyString(row.id) &&
+          (row.mode === "continuous" || row.mode === "isolated") &&
+          Array.isArray(row.phases) &&
+          row.phases.length > 0 &&
+          row.phases.every((phase) => Number.isSafeInteger(phase) && phase > 0),
+      ))
+  );
 }
 
 /** Absent, or a non-empty alias → digest map; `nullable` admits an unobserved source. */

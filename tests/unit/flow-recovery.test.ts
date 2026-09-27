@@ -197,6 +197,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       PLAN_EXEC_PROOF_REUSED: "evaluated",
       PLAN_EXEC_BATCH_REVIEW_INVALID: "evaluated",
       PLAN_TEST_RUN_NOT_EXECUTED: "evaluated",
+      PLAN_FINAL_PIPELINE_MISSING: "evaluated",
       PLAN_PREEXISTING_FAILURES_INVALID: "evaluated",
       PLAN_TEST_FAILURES_UNREADABLE: "evaluated",
       PLAN_TEST_FAILURE_NEW: "evaluated",

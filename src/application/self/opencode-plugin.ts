@@ -189,6 +189,7 @@ export default async () => ({
     };
     for (const guard of GUARDS) {
       if (!guard.tools.includes(input.tool)) continue;
+      if (guard.command.includes("hook git-commit-advisor") && !/\\bgit\\s+commit\\b/.test(subject)) continue;
       const blocked = await ask(guard, payload);
       if (blocked !== null) throw new Error(blocked);
     }

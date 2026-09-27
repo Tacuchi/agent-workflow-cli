@@ -885,6 +885,15 @@ export class GitCliAdapter implements GitPort {
       .filter((line) => line.length > 0);
   }
 
+  async upstreamBranch(repoPath: string, branch: string): Promise<string | null> {
+    const result = await this.mustRun(
+      "for-each-ref upstream",
+      ["for-each-ref", "--format=%(upstream)", `refs/heads/${branch}`],
+      repoPath,
+    );
+    return result.stdout.trim() || null;
+  }
+
   async originFetchRefspecs(repoPath: string): Promise<string[]> {
     const result = await this.process.run(
       "git",

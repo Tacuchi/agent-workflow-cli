@@ -76,6 +76,7 @@ import {
   isRouteDisposition,
 } from "../../domain/flow/route.js";
 import {
+  type FinalValidationSource,
   type FlowDecisionPreparation,
   type FlowFixPreview,
   type FlowRunAttempt,
@@ -151,6 +152,7 @@ import {
   sourceAliasesOfPlan,
   type validatePlanSourceBoundary,
 } from "../source-boundary-policy.js";
+import { readSourcePipelines, resolveFinalValidation } from "../source-pipeline.js";
 import {
   type ResolvedBoundary,
   actionDigest,
@@ -319,6 +321,7 @@ interface ScopeSnapshot {
   plan: string | null;
   /** Exact aliases declared structurally by the plan's phases. */
   sources: string[] | null;
+  final_validation: FinalValidationSource[] | null;
   /** Structural policy failures; `null` means the plan could not be read. */
   boundary_failures: ReturnType<typeof validatePlanSourceBoundary> | null;
   /** A plan outside the resolved core canon is never a flow scope. */
@@ -546,6 +549,7 @@ async function observeScope(
     declared: null,
     plan: null,
     sources: null,
+    final_validation: null,
     boundary_failures: null,
     plan_error: null,
   };
@@ -589,6 +593,11 @@ async function observeScope(
     declared,
     plan,
     sources: sourceAliasesOfPlan(text),
+    final_validation: resolveFinalValidation(
+      text,
+      sourceAliasesOfPlan(text),
+      await readSourcePipelines(fs, paths),
+    ),
     boundary_failures: planGrammarAtEntry(text, declared),
     plan_error: null,
   };
@@ -1395,7 +1404,15 @@ function scopeFrom(
       },
     };
   }
-  return { state: withScope(state, { plan, sources }) };
+  return {
+    state: withScope(state, {
+      plan,
+      sources,
+      ...(snapshot.final_validation === null
+        ? {}
+        : { final_validation: snapshot.final_validation }),
+    }),
+  };
 }
 
 /**

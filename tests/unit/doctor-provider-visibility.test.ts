@@ -8,6 +8,7 @@ import type { DoctorProviderInput, DoctorTargetHost } from "../../src/applicatio
 import { PathsService } from "../../src/application/paths-service.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { HARNESSES, type HarnessId } from "../../src/domain/harnesses.js";
+import type { GitPort } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -53,6 +54,7 @@ beforeEach(() => {
     fs: new NodeFileSystem(),
     env: new FakeEnv(home, workspace),
     paths: new PathsService(NS, home, workspace),
+    git: { isGitRepo: async () => false } as GitPort,
   } as unknown as CliContext;
 });
 

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { FinalValidationCommand, FinalValidationSource } from "../domain/flow/run-state.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import {
   BLOCK_MIRROR_FILES,
@@ -6,6 +7,7 @@ import {
   parseProjectBlock,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { finalValidationOverrides } from "./source-boundary-policy.js";
 
 export type PipelineValue =
   | { kind: "command"; command: string }
@@ -65,4 +67,32 @@ export async function readSourcePipelines(
     }
   }
   return [...result.values()];
+}
+
+/** A plan override is per command and per source; `ninguno` is never a runnable command. */
+export function resolveFinalValidation(
+  plan: string,
+  aliases: readonly string[],
+  pipelines: readonly SourcePipeline[],
+): FinalValidationSource[] {
+  const overrides = finalValidationOverrides(plan);
+  return aliases
+    .filter((alias) => alias !== "workspace")
+    .map((alias) => {
+      const override = overrides.find((item) => item.alias === alias);
+      const source = pipelines.find((item) => item.alias === alias);
+      const command = (field: "build" | "test"): FinalValidationCommand => {
+        const fromPlan = override?.[field];
+        if (fromPlan !== undefined) return { command: fromPlan, origin: "plan" };
+        const fromSource = source?.[field];
+        if (fromSource?.kind === "command")
+          return { command: fromSource.command, origin: "source" };
+        return {
+          command: null,
+          origin: null,
+          action: `declará ${field === "test" ? "tests" : "build"} para '${alias}' en el pipeline versionado de la fuente (aw set-pipeline ${alias} ${field} <comando>) o en ## Validations del plan con Validación final · \`${alias}\` · ${field === "test" ? "tests" : "build"} \`<comando>\``,
+        };
+      };
+      return { alias, build: command("build"), test: command("test") };
+    });
 }

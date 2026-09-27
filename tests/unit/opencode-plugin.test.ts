@@ -123,6 +123,30 @@ describe("generación del plugin", () => {
     expect(source).toContain("code === 2");
   });
 
+  it("no lanza el advisor para Bash ordinario y sí para git commit", async () => {
+    const { source } = buildOpencodePlugin(TEMPLATE);
+    const calls: string[] = [];
+    const global = globalThis as typeof globalThis & { __awTestSpawn?: (command: string) => void };
+    global.__awTestSpawn = (command) => {
+      calls.push(command);
+      throw new Error("spawn observado");
+    };
+    try {
+      const module = await import(
+        `data:text/javascript,${encodeURIComponent(source.replace('import { spawn } from "node:child_process";', "const spawn = (command) => globalThis.__awTestSpawn(command);"))}`
+      );
+      const hookBefore = (await module.default())["tool.execute.before"];
+      await hookBefore({ tool: "bash", sessionID: "x" }, { args: { command: "git status" } });
+      expect(calls).toEqual([]);
+      await expect(
+        hookBefore({ tool: "bash", sessionID: "x" }, { args: { command: "git commit -m cambio" } }),
+      ).rejects.toThrow("spawn observado");
+      expect(calls).toEqual(["sh"]);
+    } finally {
+      global.__awTestSpawn = undefined;
+    }
+  });
+
   it("el encabezado del módulo dice qué omite, así nadie supone paridad", () => {
     const { source } = buildOpencodePlugin(TEMPLATE);
     expect(source).toContain("Omitted, with its reason");

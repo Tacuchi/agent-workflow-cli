@@ -57,6 +57,11 @@ const PLAN_TEXT = [
   "",
   "- [ ] T4.1 — cuatro _(fuentes: workspace)_",
   "",
+  // These regressions require two independent credits, not the legacy default partition.
+  "## Execution batches",
+  "- B1 · isolated · F3",
+  "- B2 · isolated · F4",
+  "",
 ].join("\n");
 
 function git(repo: string, ...args: string[]): string {

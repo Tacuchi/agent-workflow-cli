@@ -358,6 +358,23 @@ describe("aw amend — la corrección directa de una redacción cerrada", () => 
     expect(refused.failure.action).toContain("el recorrido que lo tiene");
   });
 
+  it.each(["- B1 · isolated · F1", "lote ilegible"])(
+    "protege las filas declaradas aunque no formen una partición legible: %s",
+    async (row) => {
+      const text = planText.replace("- B1 · isolated · F1", row);
+      await writeFile(join(workdir, PLAN), text, "utf8");
+      const refused = await amendDocument(fs, env, paths, {
+        target: PLAN,
+        from: row,
+        to: `${row} modificado`,
+        declaration: "corrección editorial",
+      });
+      expect(refused.status).toBe("failed");
+      if (refused.status === "failed") expect(refused.failure.code).toBe("AMEND_CONTRACT_TOUCHED");
+      expect(await read(PLAN)).toBe(text);
+    },
+  );
+
   it("la reversión devuelve los bytes exactos y queda como su propio evento", async () => {
     const original = await read(PLAN);
     const applied = await amendDocument(fs, env, paths, {

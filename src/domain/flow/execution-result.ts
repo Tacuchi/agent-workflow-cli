@@ -66,6 +66,8 @@ export function executionVerdict(
       },
     };
   }
+  const missingCommands = missingFinalCommands(action);
+  if (missingCommands !== null) return missingCommands;
   const missing = action.evidence.filter((id) => {
     const found = result.validations.find((validation) => validation.id === id);
     return found === undefined || !found.passed || (found.detail ?? "").trim().length === 0;
@@ -118,6 +120,27 @@ export function executionVerdict(
   return null;
 }
 
+function missingFinalCommands(action: DelegatedAction): ExecutionRefusal | null {
+  if (action.final_validation === undefined) return null;
+  const missing = action.final_validation.flatMap((source) =>
+    (["build", "test"] as const).flatMap((field) => {
+      const command = source[field];
+      return command.command === null
+        ? [command.action ?? `${source.alias} · ${field}: declaralo en la fuente o en el plan`]
+        : [];
+    }),
+  );
+  if (missing.length === 0 && action.final_validation.length > 0) return null;
+  return {
+    message: `faltan comandos de validación final: ${missing.join("; ") || "no se resolvió ninguna fuente de código"}`,
+    detail: {
+      code: "PLAN_FINAL_PIPELINE_MISSING",
+      action: action.recovery,
+      outcome: "needs_input",
+    },
+  };
+}
+
 function validationTestEvidence(
   result: FlowExecutionResult,
   preexisting: readonly TestFailure[] | null,
@@ -125,7 +148,8 @@ function validationTestEvidence(
   for (const validation of result.validations) {
     if (
       validation.id !== "plan.validaciones-de-fase-verdes" &&
-      validation.id !== "plan.validacion-final-verde"
+      validation.id !== "plan.validacion-final-verde" &&
+      !/^plan\.final-validation\..+\.tests$/.test(validation.id)
     )
       continue;
     const problem = testRunProblem(validation.detail ?? "");
