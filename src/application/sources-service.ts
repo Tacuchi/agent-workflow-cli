@@ -24,6 +24,7 @@ export interface SourcesInput {
 export interface EnrichedSource extends ProjectFuente {
   expected_work_branch: string | null;
   expected_origin?: string;
+  working_branch_notice?: string;
   current_branch: string | null;
   match: boolean | null;
   dirty: boolean | null;
@@ -120,6 +121,11 @@ export async function runSources(
         main_branch: src.main_branch,
         expected_work_branch: expected,
         expected_origin: effective.origin,
+        ...(effective.origin === "none"
+          ? {
+              working_branch_notice: `rama de trabajo no declarada para ${src.alias}; usá 'aw set-working-branch ${src.alias} <rama>'`,
+            }
+          : {}),
         other_workspaces: others,
       } as EnrichedSource);
     } else {
@@ -127,6 +133,11 @@ export async function runSources(
       enriched.push({
         ...checked,
         expected_origin: effective.origin,
+        ...(effective.origin === "none"
+          ? {
+              working_branch_notice: `rama de trabajo no declarada para ${src.alias}; usá 'aw set-working-branch ${src.alias} <rama>'`,
+            }
+          : {}),
         other_workspaces: others,
         ...(others.some(
           (hub) => hub.working_branch !== null && hub.working_branch === checked.current_branch,

@@ -12,12 +12,12 @@ export const BRANCH_ROLE_FALLBACKS: Required<DefaultBranches> = {
   qa: "qa",
 };
 
-/** Branch roles of one source, fully resolved (never null). */
+/** Branch roles of one source; work needs a declaration. */
 export interface SourceBranchRoles {
   /** Base/PROD branch: Fuentes cell → default `principal`. */
   prod: string;
-  /** Working branch: Status `Ramas de trabajo` → default `desarrollo`. */
-  work: string;
+  /** Working branch: Status `Ramas de trabajo`, or none. */
+  work: string | null;
   /** QA branch: Status `Ramas QA` → default `qa`. */
   qa: string;
   /** Development branch: workspace default `desarrollo` (no per-source value). */
@@ -36,8 +36,9 @@ export function resolveDefaultBranches(
 }
 
 /**
- * Resolve every branch role for a source: per-source value → workspace default
- * → hardcoded fallback. Single chain shared by git-flow and the Project tab, so
+ * Resolve the working role from its own declaration; environment roles still
+ * have workspace defaults and a hardcoded floor. Shared by git-flow and the
+ * Project tab, so
  * what the TUI shows is what the flows act on.
  */
 export function resolveSourceBranches(
@@ -47,7 +48,7 @@ export function resolveSourceBranches(
   const defaults = resolveDefaultBranches(block?.default_branches);
   return {
     prod: source.main_branch || defaults.principal,
-    work: block?.working_branches[source.alias] || defaults.desarrollo,
+    work: block?.working_branches[source.alias] || null,
     qa: block?.qa_branches[source.alias] || defaults.qa,
     dev: defaults.desarrollo,
   };

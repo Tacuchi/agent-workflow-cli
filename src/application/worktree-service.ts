@@ -92,7 +92,7 @@ export interface WorktreeError {
 
 export type WorktreeEnsureOutput = IsolationUnit & {
   visibility: "attached" | "unavailable";
-  base: string;
+  base: string | null;
 };
 
 /**
@@ -425,6 +425,7 @@ async function integrateUnit(
   target: ResolvedTarget,
 ): Promise<WorktreeIntegrateOutput | WorktreeError> {
   const { source, path, branch, base, identity } = target;
+  if (base === null) return undeclaredWorkBranch(source.alias);
   if (!(await deps.git.isGitRepo(source.path))) {
     return {
       error: "not_a_repo",
@@ -464,9 +465,14 @@ async function integrateUnit(
   }
 
   await ensureWorklineMaterialized(deps.fs, deps.paths);
-  const merged = await withCwdLock(deps.fs, deps.paths, () => integrateLocked(deps, target), {
-    waitMs: INTEGRATE_LOCK_WAIT_MS,
-  });
+  const merged = await withCwdLock(
+    deps.fs,
+    deps.paths,
+    () => integrateLocked(deps, { ...target, base }),
+    {
+      waitMs: INTEGRATE_LOCK_WAIT_MS,
+    },
+  );
   if ("error" in merged) {
     return {
       error: "integration_locked",
@@ -521,7 +527,7 @@ type LockedIntegration =
 /** All ref reads, occupancy checks and the move happen under the integration lock. */
 async function integrateLocked(
   deps: WorktreeDeps,
-  target: ResolvedTarget,
+  target: ResolvedTarget & { base: string },
 ): Promise<LockedIntegration> {
   const { source, path, branch, base, roles } = target;
   const current = await deps.git.currentBranch(source.path);
@@ -608,7 +614,7 @@ interface ResolvedTarget {
   path: string;
   branch: string;
   /** Branch the unit is cut FROM: the source's declared working branch. */
-  base: string;
+  base: string | null;
   roles: ReturnType<typeof resolveSourceBranches>;
 }
 
@@ -723,7 +729,7 @@ async function resolveTarget(
       recorded?.unit_path ?? previous?.path ?? unitPath(await canonicalUnitsRoot(deps), identity),
     branch:
       recorded?.unit_branch ?? previous?.branch ?? unitBranch(session, deps.paths.workspaceDir()),
-    base: sealed ?? effective?.branch ?? roles.work,
+    base: sealed ?? effective?.branch ?? null,
     roles,
   };
 }
@@ -743,6 +749,14 @@ function sessionRefusal(resolution: SessionResolutionError): WorktreeError {
     error: "session_unresolved",
     message: `una unidad de aislamiento pertenece a una sesión: ${resolution.message}`,
     hint: resolution.action,
+  };
+}
+
+function undeclaredWorkBranch(alias: string): WorktreeError {
+  return {
+    error: "working_branch_undeclared",
+    message: `rama de trabajo no declarada para ${alias}`,
+    hint: `usá 'aw set-working-branch ${alias} <rama>'`,
   };
 }
 
@@ -823,7 +837,7 @@ async function ensureUnit(
     // Idempotent: the unit is already there, on its own branch. The baseline is
     // sealed here too — it is idempotent by alias, so the FIRST reading wins and a
     // second `ensure` can never overwrite it with a state the session produced.
-    const sealed = await sealBaseline(deps, target);
+    const sealed = base === null ? null : await sealBaseline(deps, { ...target, base });
     if (sealed !== null) return sealed;
     return { ...unitOf(target, false), base, visibility: await attach(deps, path) };
   }
@@ -862,16 +876,23 @@ async function ensureUnit(
     };
   }
   const from = exists ? null : base;
+  if (from === null && !exists) return undeclaredWorkBranch(source.alias);
+  if (from !== null && !(await deps.git.branchExists(source.path, from))) {
+    return {
+      error: "base_missing",
+      message: `la rama base '${from}' no existe en ${source.alias}`,
+      hint: `restaurá '${from}' antes de abrir la unidad`,
+    };
+  }
   try {
     await deps.git.worktreeAdd(source.path, path, branch, from);
   } catch (err) {
     return {
       error: "worktree_add_failed",
       message: (err as Error).message,
-      hint: `verificá que la rama base '${base}' exista en ${source.alias}`,
     };
   }
-  const sealed = await sealBaseline(deps, target);
+  const sealed = base === null ? null : await sealBaseline(deps, { ...target, base });
   if (sealed !== null) return sealed;
   return { ...unitOf(target, true), base, visibility: await attach(deps, path) };
 }
@@ -889,7 +910,7 @@ async function ensureUnit(
  */
 async function sealBaseline(
   deps: WorktreeDeps,
-  target: ResolvedTarget,
+  target: ResolvedTarget & { base: string },
 ): Promise<WorktreeError | null> {
   const update = await recordUnitTaken(deps, target.identity.session, {
     alias: target.source.alias,
@@ -1091,7 +1112,7 @@ async function baseForReclaim(
   deps: WorktreeDeps,
   alias: string,
   session: string,
-  fallback: string,
+  fallback: string | null,
 ): Promise<string | null> {
   const read = await readCustody(deps.fs, join(deps.paths.cwdSessionsDir(), session));
   if (read.status === "unreadable") return null;
@@ -1173,8 +1194,8 @@ async function sweepOne(
       retained: {
         ...where,
         reason: "unreadable",
-        detail: "la custodia no permite leer la base sellada",
-        next: `revisá la custodia de ${candidate.session} antes de recoger`,
+        detail: `no se pudo determinar la base sellada ni una rama de trabajo para ${source.alias}`,
+        next: `revisá la custodia de ${candidate.session} o usá 'aw set-working-branch ${source.alias} <rama>' antes de recoger`,
       },
     };
   const verdict = await reclaimability(
