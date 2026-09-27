@@ -23,12 +23,14 @@ import {
   type SignalThreshold,
   conditionOf,
 } from "./authority.js";
+import type { RowIteration } from "./run-state.js";
 
 /** What the agent declared at one boundary, as the run persisted it. */
 export interface DeclaredObservation {
   transition: string;
   signals: readonly string[];
   batch_iteration?: number;
+  reentry_iteration?: number;
 }
 
 /**
@@ -42,7 +44,7 @@ export function thresholdFired(
   rule: SignalThreshold,
   journey: readonly FlowDecision[],
   observations: readonly DeclaredObservation[],
-  batchIteration: number | null = null,
+  iteration: RowIteration = {},
 ): boolean {
   const observed = journey.find((decision) => decision.id === rule.observed);
   if (observed === undefined) return false;
@@ -56,9 +58,8 @@ export function thresholdFired(
     .filter(
       (observation) =>
         observation.transition === rule.observed &&
-        (batchIteration === null
-          ? observation.batch_iteration === undefined
-          : observation.batch_iteration === batchIteration),
+        observation.batch_iteration === iteration.batch_iteration &&
+        observation.reentry_iteration === iteration.reentry_iteration,
     )
     .flatMap((observation) => observation.signals)
     .filter((signal) => vocabulary.has(signal));
@@ -77,7 +78,7 @@ export function skipReason(
   decision: FlowDecision,
   journey: readonly FlowDecision[],
   observations: readonly DeclaredObservation[],
-  batchIteration: number | null = null,
+  iteration: RowIteration = {},
 ): string | null {
   const condition = conditionOf(decision);
   if (condition === null) return null;
@@ -85,7 +86,7 @@ export function skipReason(
   // That is the doctrine's own default — "borderline continues without asking" —
   // and it is the direction that assumes nothing: the alternative would emit a
   // question on zero observations and then read the answer as if it had cause.
-  if (thresholdFired(condition.threshold, journey, observations, batchIteration)) return null;
+  if (thresholdFired(condition.threshold, journey, observations, iteration)) return null;
   return condition.otherwise;
 }
 

@@ -1187,9 +1187,9 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     });
 
     it("el contrato persistido no se movió: una prueba lo fija", () => {
-      // La v12 agregó tipos de traza; la v11 se sigue continuando con su paso
-      // de subida, y de la v10 hacia atrás sólo se lee.
-      expect(FLOW_RUN_STATE_VERSION).toBe(12);
+      // La v12 agregó tipos de traza y la v13 las reentradas; la v11 y la v12 se
+      // siguen continuando con su paso de subida, y de la v10 hacia atrás sólo se lee.
+      expect(FLOW_RUN_STATE_VERSION).toBe(13);
     });
 
     it("renumerar la cadena no devuelve intentos: el techo lo siguen fijando piso y grants", async () => {

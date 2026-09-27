@@ -48,8 +48,10 @@ import {
   effectsOf,
   internalActionOf,
   isRouteEvaluation,
+  occurrenceAt,
   proposalContractOf,
   publishApprovalOf,
+  reentryOf,
   routeControlOf,
   scopesSources,
 } from "../../domain/flow/authority.js";
@@ -77,8 +79,9 @@ import {
   type FlowSettlementDeclaration,
   applyTransition,
   checkAgainstJourney,
-  currentBatchIteration,
+  iterationOf,
   restatesLastEvent,
+  sameIteration,
   settlementAmbiguous,
   withApproval,
   withAttempt,
@@ -91,6 +94,7 @@ import {
   withObservation,
   withPlanExecBatchStageForTransition,
   withProposal,
+  withReentry,
   withRouteDecisions,
   withRouteProposal,
   withScope,
@@ -774,9 +778,12 @@ async function decide(
   if (preview.preview !== null) {
     selectedState = withFixPreview(selectedState, preview.preview);
   }
+  // A redraft recorded by `grantOf` inserted rows after this boundary, so the
+  // transition is applied against the journey as it now reads.
+  const walked = journeyForRun(selectedState);
   const outcome = holds
-    ? holdAfterApproval(selectedState, journey, identity)
-    : applyAndAdvance(selectedState, journey, resolved.stopped, identity, parsed.answer);
+    ? holdAfterApproval(selectedState, walked, identity)
+    : applyAndAdvance(selectedState, walked, resolved.stopped, identity, parsed.answer);
   return standalone === null ? outcome : withStandaloneGuidance(outcome, standalone);
 }
 
@@ -1693,11 +1700,11 @@ function standaloneDecisionEvent(
   transition: string,
   record: StandaloneDecisionRecord,
 ): FlowRunEvent {
-  const batchIteration = currentBatchIteration(state, transition);
+  const rowIteration = iterationOf(state, transition);
   return {
     kind: "executed",
     transition,
-    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+    ...rowIteration,
     operation: "plan-exec.standalone-decision",
     summary: record.decision,
     output_digest: record.digest,
@@ -1897,6 +1904,31 @@ function sealFrom(
 }
 
 /**
+ * The redraft a confirmation row's alternative asked for, or `null`.
+ *
+ * It unseats any standing proposal and records a reentry from the flow's
+ * authoring row, so the run walks the redraft and its gate again instead of
+ * carrying on to a publication with nothing to publish and a finalize that
+ * closes the session. Independent of whether a proposal is seated: a proposal
+ * the run gave up on is exactly when redrafting matters most.
+ */
+function redraftOf(
+  state: FlowRunState,
+  stopped: FlowDecision,
+  answer: FlowAnswer,
+  journey: readonly FlowDecision[],
+): FlowRunState | null {
+  const redraft = reentryOf(stopped);
+  if (redraft === null || answer.choice !== redraft.label) return null;
+  return withReentry(withProposal(state, null), {
+    kind: "refine",
+    transition: stopped.id,
+    occurrence: occurrenceAt(journey, state.applied.length),
+    from: redraft.from,
+  });
+}
+
+/**
  * The grant this answer produced, scoped to what it was given over.
  *
  * `Aprobar y guardar` at a publishing row is one decision that covers the whole
@@ -1916,8 +1948,11 @@ function grantOf(
   journey: readonly FlowDecision[],
 ): FlowRunState {
   const stopped = resolved.stopped;
+  if (stopped === null) return state;
+  const redrafted = redraftOf(state, stopped, answer, journey);
+  if (redrafted !== null) return redrafted;
   const proposal = state.proposal;
-  const approve = stopped === null ? null : publishApprovalOf(stopped);
+  const approve = publishApprovalOf(stopped);
   if (approve !== null && proposal !== null) {
     if (answer.choice === approve) {
       return withApproval(state, {
@@ -1926,13 +1961,11 @@ function grantOf(
         classes: [...proposal.requires_approval],
       });
     }
-    // Declining unseats the proposal, and that is what makes `Refinar` cost
-    // nothing: the publication downstream finds nothing to publish and is skipped
-    // saying so, instead of stopping to ask for an authorization over bytes the
+    // Declining unseats the proposal: no authorization is asked over bytes the
     // person just turned down.
     return withProposal(state, null);
   }
-  const link = stopped === null ? null : approvalGrantOf(stopped);
+  const link = approvalGrantOf(stopped);
   if (link !== null && answer.choice === link.approve) {
     const target = journey.find((row) => row.id === link.transition);
     // A link to a transition this journey does not walk grants nothing: the
@@ -2099,11 +2132,11 @@ function declaredTrace(
   const applied = answer.result?.effects.applied ?? [];
   if (!touchesTheWorld(applied) && verdict.detail.code !== "FLOW_EFFECT_PARTIAL") return null;
   const invocation = resolved.action?.invocation;
-  const batchIteration = currentBatchIteration(state, stopped.id);
+  const rowIteration = iterationOf(state, stopped.id);
   return {
     kind: "failed",
     transition: stopped.id,
-    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+    ...rowIteration,
     // What was really run, named the way whoever ran it would recognize it: an
     // external execution has no internal operation id to quote.
     operation:
@@ -2376,7 +2409,7 @@ function resendCheck(
   // The twin was refused: this is a retry of the same wrong answer, so it gets
   // the same real diagnosis again and counts toward the cap, which is what
   // eventually degrades the boundary instead of leaving the caller looping.
-  if (twin !== undefined && !state.applied.includes(twin.transition)) return null;
+  if (twin !== undefined && twinWasRefused(state, twin)) return null;
   return reject(
     state,
     resolved,
@@ -2387,6 +2420,21 @@ function resendCheck(
       outcome: "completed",
     },
     cost,
+  );
+}
+
+/**
+ * Whether the attempt a resend matches never advanced anything.
+ *
+ * Its transition missing from `applied` says so. So does its transition being
+ * the boundary still standing at the same iteration: a repeated row (a batch or
+ * a redraft copy) has its id in `applied` from an earlier walk, and that earlier
+ * walk is not this one.
+ */
+function twinWasRefused(state: FlowRunState, twin: FlowRunAttempt): boolean {
+  if (!state.applied.includes(twin.transition)) return true;
+  return (
+    twin.transition === state.boundary && sameIteration(twin, iterationOf(state, twin.transition))
   );
 }
 
@@ -2479,7 +2527,7 @@ function attemptIdentity(
   transition: string,
 ): FlowRunAttempt {
   const digest = semanticDigest({ payload: input.raw, approval: input.approval });
-  const batchIteration = currentBatchIteration(state, transition);
+  const rowIteration = iterationOf(state, transition);
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
   const twin = prior.find((past) => past.request_digest === digest);
   // The next ordinal, asked with the SAME expression `AttemptLedger.record`
@@ -2504,7 +2552,7 @@ function attemptIdentity(
     // The seal moves with the state; the transition does not while the run
     // stands there. It is what the cap counts over.
     transition,
-    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+    ...rowIteration,
   };
 }
 
@@ -2513,10 +2561,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function observationFor(state: FlowRunState, transition: string, signals: string[]) {
-  const batchIteration = currentBatchIteration(state, transition);
+  const rowIteration = iterationOf(state, transition);
   return {
     transition,
     signals,
-    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+    ...rowIteration,
   };
 }

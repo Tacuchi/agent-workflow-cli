@@ -379,7 +379,7 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
     expect((await current()).state.proposal).toBeNull();
   });
 
-  it("Refinar no produce ningún efecto y deja la propuesta intacta", async () => {
+  it("Refinar no produce ningún efecto y vuelve a la redacción con la sesión abierta", async () => {
     await walkTo("spec-refine.save-confirmation", []);
     const gate = await current();
 
@@ -387,14 +387,13 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
     const after = await current();
     expect(existsSync(join(workdir, "docs/specs/001-spec-tramo.md"))).toBe(false);
     expect(after.state.authorizations).toEqual([]);
-    // Y la publicación no vuelve como una segunda pregunta: se salta DICIENDO que
-    // no se escribió nada, en vez de pedir autorizar una sobreescritura que la
-    // persona acaba de rechazar.
     expect(after.state.proposal).toBeNull();
-    expect(after.state.skipped).toContain("spec-refine.publication");
-    expect(
-      refined.applied.find((step) => step.transition === "spec-refine.publication")?.reason,
-    ).toContain("no se escribió nada");
+    // Ni la publicación ni el cierre se caminan: la corrida vuelve a la frontera
+    // de redacción, y la sesión sigue abierta para la nueva propuesta.
+    expect(refined.boundary.transition).toBe("spec-refine.content-authoring");
+    expect(after.state.applied).not.toContain("spec-refine.publication");
+    expect(after.state.applied).not.toContain("chassis.finalize");
+    expect(existsSync(join(paths.cwdSessionsDir(), SESSION, ".closed"))).toBe(false);
   });
 
   it("el recorrido llega al gate de división y lo pregunta él mismo, sin remitir a nada", async () => {

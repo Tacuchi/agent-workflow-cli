@@ -52,6 +52,18 @@ describe("runSessionResume --reopen", () => {
     expect(await fs.exists(closedMarker)).toBe(false);
   });
 
+  it("una sesión sin corrida se reabre como antes: sin corrida que reabrir", async () => {
+    const fs = buildFs({ closed: true });
+    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+      code: "003",
+      reopen: true,
+    });
+    if ("error" in result || "sessionError" in result) throw new Error("unexpected error");
+    expect(result.state).toBe("active");
+    expect(result.run).toBeUndefined();
+    expect(result.run_error).toBeUndefined();
+  });
+
   it("without reopen, a closed session stays closed (read-only resume)", async () => {
     const fs = buildFs({ closed: true });
     const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
