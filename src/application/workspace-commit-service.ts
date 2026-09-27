@@ -6,6 +6,7 @@ import { readClaimEvents } from "./claims-ledger.js";
 import { locateRun, readRun } from "./flow/run-state-service.js";
 import type { PathsService } from "./paths-service.js";
 import { semanticDigest } from "./semantic-operation/protocol.js";
+import { sessionEvidencePaths, sessionScratchReferences } from "./session-archive-service.js";
 import { readCustody } from "./session-custody-service.js";
 import { listSessionFolders, readSessionState, resolveSessionTarget } from "./session-resolver.js";
 
@@ -27,6 +28,8 @@ interface CommitInput {
   code?: string;
   exportPath?: string;
   approval?: string;
+  /** Predict the consented scratchpad copy while closing, before the archive exists. */
+  withEvidence?: boolean;
 }
 
 /** Prepare an exact pathspec; re-derive it before applying an approval, never use `git add .`. */
@@ -60,7 +63,7 @@ export async function runWorkspaceCommit(
   const head = await git.head(repo);
   if (!branch || !head) return { error: "el repositorio necesita una rama y un HEAD legibles" };
   const selected = input.code
-    ? await sessionPaths(fs, paths, input.code)
+    ? await sessionPaths(fs, paths, input.code, input.withEvidence === true)
     : await exportPaths(fs, paths, input.exportPath as string);
   if ("error" in selected) return selected;
   const pathspec = selected.paths.map((path) => safeRepoPath(repo, canonicalRoot, path));
@@ -113,6 +116,7 @@ async function sessionPaths(
   fs: FileSystemPort,
   paths: PathsService,
   code: string,
+  withEvidence: boolean,
 ): Promise<{ paths: string[]; excluded: string[]; message: string } | { error: string }> {
   const resolved = await resolveSessionTarget(fs, paths, {
     code,
@@ -184,6 +188,12 @@ async function sessionPaths(
     }
     await collect(join(path, "scripts"), "scripts", true);
     await collect(join(path, "evidence"), "evidence", false);
+    if (withEvidence) {
+      const citations = await sessionScratchReferences(fs, path);
+      for (const { destination } of await sessionEvidencePaths(fs, path, citations)) {
+        archived.push(relative(paths.workspaceDir(), join(archive, relative(path, destination))));
+      }
+    }
   }
   const ledger = await readClaimEvents(fs, paths);
   if (ledger.unreadable)

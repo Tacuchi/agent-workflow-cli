@@ -1650,6 +1650,12 @@ async function close(
             const commit = await runWorkspaceCommit(deps.fs, deps.git, undefined, deps.paths, {
               code: run.session,
               approval: accepted.approval,
+              withEvidence:
+                read.ok &&
+                read.state.events.some(
+                  (event) =>
+                    event.kind === "executed" && event.operation === "workspace.evidence-approved",
+                ),
             });
             if ("committed" in commit && commit.committed)
               result.sessionClose.commit_receipt = commit.committed;

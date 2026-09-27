@@ -9,9 +9,9 @@ import type { CliContext } from "../types.js";
 
 export const workspaceCommitCommand: CliCommand<WorkspaceCommitResult> = {
   name: "workspace-commit",
-  flags: { known: ["code", "export", "approval"] },
+  flags: { known: ["code", "export", "approval", "with-evidence"] },
   describe:
-    "Prepare an exact workspace commit, or apply only after approval. Usage: aw workspace-commit prepare --code <sesión>|--export <docs/ruta> · aw workspace-commit apply --code <sesión>|--export <docs/ruta> --approval <digest>.",
+    "Prepare an exact workspace commit, or apply only after approval. Usage: aw workspace-commit prepare --code <sesión> [--with-evidence] | --export <docs/ruta> · aw workspace-commit apply --code <sesión>|--export <docs/ruta> --approval <digest>. --with-evidence previews the scratchpad copies approved at the flow close.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceCommitResult>> {
     const action = args.rest[0];
     if (action !== "prepare" && action !== "apply")
@@ -34,11 +34,18 @@ export const workspaceCommitCommand: CliCommand<WorkspaceCommitResult> = {
       };
     const code = args.values.get("code");
     const exportPath = args.values.get("export");
+    if (args.flags.has("--with-evidence") && (code === undefined || action !== "prepare"))
+      return {
+        ok: false,
+        error: { code: "INVALID_INPUT", message: "--with-evidence requiere prepare --code" },
+        exitCode: 1,
+      };
     const approval = args.values.get("approval");
     const result = await runWorkspaceCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
       ...(code !== undefined ? { code } : {}),
       ...(exportPath !== undefined ? { exportPath } : {}),
       ...(approval !== undefined ? { approval } : {}),
+      ...(args.flags.has("--with-evidence") ? { withEvidence: true } : {}),
     });
     if ("error" in result)
       return {

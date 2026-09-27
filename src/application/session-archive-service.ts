@@ -39,6 +39,22 @@ export async function copySessionEvidence(
   citations: readonly string[],
 ): Promise<string[]> {
   const copied: string[] = [];
+  for (const { citation, destination } of await sessionEvidencePaths(fs, sessionPath, citations)) {
+    await fs.mkdirp(dirname(destination));
+    if (await fs.exists(destination)) await fs.remove(destination);
+    await fs.publishBytesExclusive(destination, await fs.readBytes(citation));
+    copied.push(relative(sessionPath, destination));
+  }
+  return copied;
+}
+
+/** The same allowlisted destinations for the pre-close pathspec and the actual copy. */
+export async function sessionEvidencePaths(
+  fs: FileSystemPort,
+  sessionPath: string,
+  citations: readonly string[],
+): Promise<Array<{ citation: string; destination: string }>> {
+  const eligible: Array<{ citation: string; destination: string }> = [];
   const temp = await fs.realPath(tmpdir());
   for (const citation of citations) {
     const source = await fs.realPath(citation);
@@ -48,12 +64,9 @@ export async function copySessionEvidence(
     const stat = await fs.lstat(citation);
     if (stat?.type !== "file" || stat.isSymlink) continue;
     const destination = join(sessionPath, "evidence", inside);
-    await fs.mkdirp(dirname(destination));
-    if (await fs.exists(destination)) await fs.remove(destination);
-    await fs.publishBytesExclusive(destination, await fs.readBytes(citation));
-    copied.push(relative(sessionPath, destination));
+    eligible.push({ citation, destination });
   }
-  return copied;
+  return eligible;
 }
 
 /** Replace the versioned minimum without exposing a partially copied archive. */

@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
@@ -21,11 +21,19 @@ const SESSION = "001-cierre-quick";
 
 describe("frontera humana de commit del workspace", () => {
   let root: string;
+  let scratch: string | null = null;
   afterEach(() => {
     if (root) rmSync(root, { recursive: true, force: true });
+    if (scratch) rmSync(dirname(scratch), { recursive: true, force: true });
+    scratch = null;
   });
 
-  async function close(choice: string, includeApproval: boolean, failHistory = false) {
+  async function close(
+    choice: string,
+    includeApproval: boolean,
+    failHistory = false,
+    evidence = false,
+  ) {
     root = mkdtempSync(join(tmpdir(), "aw-close-commit-"));
     const workspace = join(root, "uno");
     const dir = join(workspace, ".workflow", "sessions", SESSION);
@@ -56,6 +64,14 @@ describe("frontera humana de commit del workspace", () => {
       join(dir, "SESSION.md"),
       "# SESSION\n\n## Objective\ncerrar\n\n## Origin\n- pedido\n\n## Success criteria\n- [x] cerrado\n",
     );
+    if (evidence) {
+      scratch = join(mkdtempSync(join(tmpdir(), "aw-evidencia-")), "prueba.txt");
+      writeFileSync(scratch, "prueba del cierre\n");
+      await fs.writeText(
+        join(dir, "CONCLUSIONS.md"),
+        `# CONCLUSIONS\n\nEvidencia: \`${scratch}\`\n`,
+      );
+    }
     const ids = journeyOfFlow("quick").map((step) => step.id);
     const state = stateWrittenAt(
       FLOW_RUN_STATE_VERSION,
@@ -82,9 +98,14 @@ describe("frontera humana de commit del workspace", () => {
     expect(standing.directive.boundary.transition).toBe("chassis.commit-choice");
     const before = git("rev-parse", "HEAD").trim();
     const prepared = await import("../../src/application/workspace-commit-service.js").then((mod) =>
-      mod.runWorkspaceCommit(fs, adapter, process, paths, { code: SESSION }),
+      mod.runWorkspaceCommit(fs, adapter, process, paths, {
+        code: SESSION,
+        withEvidence: evidence,
+      }),
     );
     if (!("proposal" in prepared)) throw new Error(JSON.stringify(prepared));
+    if (evidence)
+      expect(prepared.proposal.paths.some((path) => path.includes("/evidence/"))).toBe(true);
     const answer = await submitFlow(fs, paths, {
       code: SESSION,
       raw: JSON.stringify({
@@ -124,6 +145,25 @@ describe("frontera humana de commit del workspace", () => {
     expect(result.git("show", "--pretty=format:", "--name-only", "HEAD")).toContain(
       "uno/.workflow/archive/001-cierre-quick/CHECKPOINT.md",
     );
+  });
+
+  it("la misma aprobación copia evidencia efímera y la incluye en el commit final", async () => {
+    const result = await close(
+      "Copiar evidencia y aprobar commit del workspace",
+      true,
+      false,
+      true,
+    );
+    expect(result.after).not.toBe(result.before);
+    expect(result.directive.applied.some((item) => item.transition === "chassis.finalize")).toBe(
+      true,
+    );
+    const evidencePath = result
+      .git("show", "--pretty=format:", "--name-only", "HEAD")
+      .split("\n")
+      .find((path) => path.includes("/evidence/"));
+    expect(evidencePath).toBeTruthy();
+    expect(result.git("show", `HEAD:${evidencePath}`)).toBe("prueba del cierre\n");
   });
 
   it("una fila HISTORY que no se pudo cerrar impide el commit aprobado", async () => {

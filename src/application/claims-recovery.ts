@@ -73,7 +73,8 @@ export interface SlotState {
   /** Already fenced by a previous revocation: its release is a completion, not a new one. */
   revoked: boolean;
   /**
-   * The owner is still an ACTIVE session — `null` when there is no owner.
+   * The owner is active or paused — `null` when there is no owner.
+   * Historical field name retained for the workline index; it means live ownership.
    *
    * The difference decides which action is sanctioned, and getting it wrong is
    * destructive: a reservation whose owner is still running is finished or closed
@@ -82,6 +83,8 @@ export interface SlotState {
    * publish into the number it is holding.
    */
   ownerActive: boolean | null;
+  /** A paused owner retains the claim but must resume before finishing it. */
+  ownerPaused: boolean;
   /**
    * The bytes are still exactly this owner's marker.
    *
@@ -126,7 +129,7 @@ function slotOf(
   fileName: string,
   text: string,
   events: readonly ClaimEvent[],
-  activeOwners: ReadonlySet<string>,
+  liveOwners: ReadonlyMap<string, "active" | "paused">,
 ): SlotState | null {
   const correlative = leadingCorrelative(fileName);
   if (correlative === null) return null;
@@ -143,7 +146,8 @@ function slotOf(
       ...base,
       kind: "reservation",
       owner: markerOwner,
-      ownerActive: activeOwners.has(markerOwner),
+      ownerActive: liveOwners.has(markerOwner),
+      ownerPaused: liveOwners.get(markerOwner) === "paused",
       revoked: false,
       intact: true,
     };
@@ -158,7 +162,8 @@ function slotOf(
       ...base,
       kind: "reservation",
       owner: open.owner,
-      ownerActive: activeOwners.has(open.owner),
+      ownerActive: liveOwners.has(open.owner),
+      ownerPaused: liveOwners.get(open.owner) === "paused",
       revoked: false,
       intact: false,
     };
@@ -168,6 +173,7 @@ function slotOf(
     kind: "legacy-placeholder",
     owner: null,
     ownerActive: null,
+    ownerPaused: false,
     revoked: false,
     intact: false,
   };
@@ -185,7 +191,7 @@ async function walkSlots(
   fs: FileSystemPort,
   docs: string,
   events: readonly ClaimEvent[],
-  activeOwners: ReadonlySet<string>,
+  liveOwners: ReadonlyMap<string, "active" | "paused">,
   into: SlotState[],
 ): Promise<void> {
   for (const category of await fs.list(docs)) {
@@ -207,7 +213,7 @@ async function walkSlots(
         entry.name,
         await fs.readText(markerPath),
         events,
-        activeOwners,
+        liveOwners,
       );
       if (slot === null) continue;
       const claim = claimOfSlot(slot);
@@ -224,16 +230,18 @@ async function walkSlots(
  * reservation of a live session is that session's to finish or close, and only a
  * slot nobody is finishing may be recovered.
  */
-async function activeSessionFolders(
+async function liveSessionFolders(
   fs: FileSystemPort,
   paths: PathsService,
-): Promise<ReadonlySet<string>> {
-  const active = new Set<string>();
+): Promise<ReadonlyMap<string, "active" | "paused">> {
+  const live = new Map<string, "active" | "paused">();
   for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
-    if ((await readSessionState(fs, folder.path)) !== "active") continue;
-    active.add(folder.name);
+    const state = await readSessionState(fs, folder.path);
+    // Abandoned is a close without completion (plan 061), so its remaining
+    // reservations may be recovered. Paused is not a close: its claims survive.
+    if (state === "active" || state === "paused") live.set(folder.name, state);
   }
-  return active;
+  return live;
 }
 
 /**
@@ -263,19 +271,19 @@ export async function scanSlots(
         "claims.jsonl tiene una transferencia sin resolver; reintentá cuando el candado quede libre",
     };
   }
-  let activeOwners: ReadonlySet<string>;
+  let liveOwners: ReadonlyMap<string, "active" | "paused">;
   try {
-    activeOwners = await activeSessionFolders(fs, paths);
+    liveOwners = await liveSessionFolders(fs, paths);
   } catch (error) {
     return {
       slots: [],
-      error: `no se pudo comprobar qué sesiones están activas: ${error instanceof Error ? error.message : String(error)}`,
+      error: `no se pudo comprobar qué sesiones conservan sus reservas: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
   const sorted = (): SlotState[] => slots.sort((a, b) => a.path.localeCompare(b.path));
   if (!(await fs.exists(docs))) return { slots };
   try {
-    await walkSlots(fs, docs, ledger.events, activeOwners, slots);
+    await walkSlots(fs, docs, ledger.events, liveOwners, slots);
   } catch (error) {
     return {
       slots: sorted(),
@@ -337,6 +345,15 @@ export async function previewRecovery(
       action:
         scan.error ??
         "corré 'aw claims' para ver los correlativos recuperables; un documento publicado no se recupera",
+    };
+  }
+  // A paused session has promised to return. Explicit recovery of an active
+  // owner's claim remains available for abandoned work within an active run;
+  // a paused owner's stale approval must not irrevocably fence its reservation.
+  if (slot.ownerPaused && !slot.revoked) {
+    return {
+      error: `'${target}' sigue reservado por la sesión ${slot.owner}`,
+      action: sanctionedActionFor(slot),
     };
   }
   return {
@@ -500,8 +517,10 @@ export function sanctionedActionFor(slot: SlotState): string {
   // that revokes its own slot irrevocably, and the flow reads this very field as
   // "the sanctioned next command". Closing the owner releases an intact
   // reservation as part of closing, which is the action that actually resolves it.
-  if (slot.ownerActive === true && slot.owner !== null) {
-    return `aw session-close --code ${slot.owner}`;
+  if (slot.ownerActive === true && !slot.revoked && slot.owner !== null) {
+    return slot.ownerPaused
+      ? `aw session-resume --code ${slot.owner}`
+      : `aw session-close --code ${slot.owner}`;
   }
   const confirm = slot.intact ? "" : " --confirm-no-producer";
   return `aw claims recover ${slot.path}${confirm}`;

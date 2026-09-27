@@ -1286,6 +1286,13 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         recommended: false,
         outcome: { kind: "continue" },
       },
+      {
+        label: "Copiar evidencia y aprobar commit del workspace",
+        consequence:
+          "se copia la evidencia efímera a la sesión, se archiva y entra en el commit aprobado del cierre; nunca hace push",
+        recommended: false,
+        outcome: { kind: "continue" },
+      },
     ],
   },
   {

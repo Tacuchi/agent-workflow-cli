@@ -956,10 +956,11 @@ async function decide(
   // mark work, validate or commit; a decision selection is durably recorded
   // even while its registration is handled by the decision bridge below.
   const selected = choiceOutcomeOf(resolved.stopped, parsed.answer.choice);
+  const withEvidence = parsed.answer.choice === "Copiar evidencia y aprobar commit del workspace";
   let approvedWorkspaceCommit: { approval: string; message: string; paths: string[] } | null = null;
   if (
     resolved.stopped.id === "chassis.commit-choice" &&
-    parsed.answer.choice === "Aprobar commit del workspace"
+    (parsed.answer.choice === "Aprobar commit del workspace" || withEvidence)
   ) {
     if (!input.git || !input.process)
       return reject(
@@ -974,6 +975,7 @@ async function decide(
       );
     const prepared = await runWorkspaceCommit(fs, input.git, input.process, paths, {
       code: state.session,
+      withEvidence,
     });
     if ("error" in prepared)
       return reject(
@@ -986,17 +988,19 @@ async function decide(
         },
         cost,
       );
-    if (parsed.answer.decisions.commit_approval !== prepared.proposal.approval)
+    if (parsed.answer.decisions.commit_approval !== prepared.proposal.approval) {
+      const command = `aw workspace-commit prepare --code ${state.session}${withEvidence ? " --with-evidence" : ""}`;
       return reject(
         state,
         resolved,
         "la aprobación no coincide con la lista de rutas y el mensaje",
         {
           code: "WORKSPACE_COMMIT_APPROVAL_INVALID",
-          action: `revisá aw workspace-commit prepare --code ${state.session} y contestá con decisions.commit_approval: ${prepared.proposal.approval}`,
+          action: `revisá ${command} y contestá con decisions.commit_approval: ${prepared.proposal.approval}`,
         },
         cost,
       );
+    }
     approvedWorkspaceCommit = prepared.proposal;
   }
   if (selected?.kind === "handoff") {
@@ -1159,7 +1163,7 @@ async function decide(
   }
   if (
     resolved.stopped.id === "chassis.commit-choice" &&
-    parsed.answer.choice === "Copiar evidencia y cerrar"
+    (parsed.answer.choice === "Copiar evidencia y cerrar" || withEvidence)
   ) {
     selectedState = withEvent(selectedState, {
       kind: "executed",

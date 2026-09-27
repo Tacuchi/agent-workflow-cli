@@ -19,6 +19,7 @@ import {
 import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { acquireLock } from "../../src/application/lock-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { runSessionResume } from "../../src/application/session-resume-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -338,6 +339,37 @@ describe("aw claims recover", () => {
     expect(sanctionedActionFor(slot)).not.toContain("claims recover");
   });
 
+  it("una sesión PAUSADA conserva su claim y puede retomarlo sin recuperación", async () => {
+    const reserved = await claimSlot("plan-alpha.md", OWNER);
+    const target = `docs/plans/${reserved.next}-plan-alpha.md`;
+    const beforePause = await previewRecovery(fs, paths, target);
+    if ("error" in beforePause) throw new Error(beforePause.error);
+    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
+    writeFileSync(join(dir, ".paused"), "");
+
+    const slot = (await scanSlots(fs, paths)).slots[0];
+    if (slot === undefined) throw new Error("esperaba la reserva pausada");
+    expect(sanctionedActionFor(slot)).toBe(`aw session-resume --code ${OWNER}`);
+    expect(await previewRecovery(fs, paths, target)).toHaveProperty("error");
+    expect(
+      await applyRecovery(fs, paths, {
+        target,
+        approval: beforePause.proposal.digest,
+      }),
+    ).toHaveProperty("error");
+    expect(existsSync(join(workspace, target))).toBe(true);
+
+    expect(await runSessionResume(fs, env, paths, { code: OWNER })).toHaveProperty(
+      "state",
+      "active",
+    );
+    expect((await scanSlots(fs, paths)).slots[0]?.ownerActive).toBe(true);
+    expect(openClaimsOf((await readClaimEvents(fs, paths)).events, OWNER)).toHaveLength(1);
+    expect(existsSync(join(workspace, target))).toBe(true);
+  });
+
   it("la reserva de una sesión CERRADA sí ofrece la recuperación", async () => {
     const dir = join(workspace, ".workflow", "sessions", OWNER);
     mkdirSync(dir, { recursive: true });
@@ -351,6 +383,19 @@ describe("aw claims recover", () => {
 
     expect(slot.ownerActive).toBe(false);
     expect(sanctionedActionFor(slot)).toBe("aw claims recover docs/plans/001-plan-alpha.md");
+  });
+
+  it("una abandonada es cierre sin completar: su reserva sí es recuperable", async () => {
+    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
+    await claimSlot("plan-alpha.md", OWNER);
+    writeFileSync(join(dir, ".abandoned"), "");
+    const slot = (await scanSlots(fs, paths)).slots[0];
+    if (slot === undefined) throw new Error("esperaba la reserva abandonada");
+    expect(slot.ownerActive).toBe(false);
+    expect(sanctionedActionFor(slot)).toBe("aw claims recover docs/plans/001-plan-alpha.md");
+    expect(await previewRecovery(fs, paths, slot.path)).toHaveProperty("proposal");
   });
 
   it("un placeholder legacy no tiene dueño vivo que consultar", async () => {
