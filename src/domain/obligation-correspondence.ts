@@ -16,6 +16,7 @@
  * item, and the plan item quoting a shorter note — and the minimum length is
  * what stops a common fragment from matching everything.
  */
+import { isPlanHandoffHeading } from "./plan-handoff.js";
 
 /** Below this, a containment is a coincidence rather than a citation. */
 const MIN_CORRESPONDENCE_CHARS = 24;
@@ -28,7 +29,7 @@ const MIN_CORRESPONDENCE_CHARS = 24;
  * second is work explicitly NOT taken on. Nothing else counts — a step named in
  * the tasks is precisely the work the lineage owes.
  */
-const HANDOFF_SECTION_RE = /^##\s+(handoff\b.*|open questions|preguntas abiertas)\s*$/i;
+const OPEN_QUESTIONS_RE = /^(?:open questions|preguntas abiertas)$/i;
 const SECTION_RE = /^##\s+/;
 const FENCE_RE = /^\s*(?:```|~~~)/;
 const ITEM_RE = /^\s*(?:[-*+]|\d+[.)])\s+(.*)$/;
@@ -60,7 +61,8 @@ export function planHandoffItems(planText: string): string[] {
     }
     if (fenced) continue;
     if (SECTION_RE.test(line)) {
-      inside = HANDOFF_SECTION_RE.test(line);
+      const title = line.replace(/^##\s+/, "").trim();
+      inside = isPlanHandoffHeading(title) || OPEN_QUESTIONS_RE.test(title);
       continue;
     }
     if (!inside) continue;

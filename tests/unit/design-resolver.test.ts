@@ -11,6 +11,7 @@ import {
 } from "../../src/application/design/design-resolver-service.js";
 import type { SpecDesignReference } from "../../src/domain/design/reference.js";
 import { MemFs } from "../helpers/mem-fs.js";
+import { SIMPLE_FOLDER, publishedSimpleDesign } from "../helpers/published-simple-design.js";
 
 const fixture = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../fixtures/design/${name}`, import.meta.url)), "utf8");
@@ -43,6 +44,19 @@ async function resolve(fs: MemFs, ref: SpecDesignReference) {
 }
 
 describe("resolveBaselineReference — el hint válido", () => {
+  it("el hint DESIGN.md de r1 sigue válido tras la tercera revisión simple", async () => {
+    const { fs, r1Digest } = await publishedSimpleDesign();
+    const result = await resolve(fs, {
+      baseline: { package: "DES-001", revision: 1 },
+      baseline_hint: `${SIMPLE_FOLDER}/DESIGN.md`,
+      digest: r1Digest,
+    });
+    if (!result.ok) throw new Error(result.failure.message);
+    expect(result.value.hint).toBe("valid");
+    expect(result.value.path).toBe(`${SIMPLE_FOLDER}/revisions/DESIGN-r001.md`);
+    expect(result.value.declared_hint).toBeUndefined();
+  });
+
   it("resuelve y reporta el hint como vigente", async () => {
     const result = await resolve(workspace(), reference());
     if (!result.ok) throw new Error(result.failure.message);

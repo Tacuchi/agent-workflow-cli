@@ -56,6 +56,7 @@ import {
   scopesSources,
 } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
+import { isBatchReview } from "../../domain/flow/batch-review.js";
 import {
   type FlowDirective,
   PAUSE_LABEL,
@@ -84,6 +85,7 @@ import {
   applyTransition,
   checkAgainstJourney,
   iterationOf,
+  planRefineHandoff,
   restartInvocation,
   restatesLastEvent,
   sameIteration,
@@ -98,7 +100,9 @@ import {
   withHandoff,
   withObservation,
   withPlanExecBatchCredit,
+  withPlanExecBatchReview,
   withPlanExecBatchStageForTransition,
+  withPlanExecEntry,
   withProposal,
   withQuickCheckouts,
   withReentry,
@@ -108,6 +112,12 @@ import {
   withSelectedChoice,
   withSettlementDeclarations,
 } from "../../domain/flow/run-state.js";
+import type { TestFailure } from "../../domain/flow/test-run-evidence.js";
+import {
+  APPROVE_UNCHANGED_PHASE,
+  UNCHANGED_PHASE_CONSENT,
+  approvedValidationOnly,
+} from "../../domain/flow/unchanged-phase.js";
 import { type SpecBaseline, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
@@ -119,8 +129,10 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { parseMdSectionBilingual } from "../markdown.js";
+import { parsePhases } from "../parsers/phases.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
+import { parseTasks } from "../parsers/tasks.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import {
   commitStoredPlanExecDecision,
@@ -157,6 +169,7 @@ import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import { closeAtBoundaryState } from "./close-at-boundary.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
+import { observePlanEntry } from "./plan-entry.js";
 import { observeQuickCheckouts } from "./quick-checkouts.js";
 import { journeyForRun } from "./run-journey.js";
 import { type FlowRunMutation, applyUnderLock, locateRun, readRun } from "./run-state-service.js";
@@ -314,6 +327,8 @@ interface ScopeSnapshot {
 
 interface Observation {
   quickCheckouts: Record<string, string> | null;
+  validation_only_current: boolean;
+  preexisting: TestFailure[] | null;
   /** Resolved once for this submit; decision registration uses the same root. */
   root: string;
   destinations: DestinationSnapshot;
@@ -349,6 +364,8 @@ async function observe(
     plans: plans.evidence,
     checkouts: await observeCheckouts(fs, paths, session, git),
     scoped: await observeBatchSources(fs, paths, session, git),
+    preexisting: await observePreexistingFailures(fs, paths, session, root),
+    validation_only_current: await observeValidationOnly(fs, paths, session, root),
     baselines: plans.baselines,
   };
 }
@@ -384,6 +401,55 @@ async function observeBatchSources(
 }
 
 const PHASE_VALIDATION = "plan-exec.validation-execution";
+
+async function observeValidationOnly(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: string,
+  root: string,
+): Promise<boolean> {
+  const read = await readRun(fs, locateRun(paths, session));
+  if (!read.ok || read.state.boundary !== PHASE_VALIDATION || read.state.scope === null)
+    return false;
+  const batch = read.state.batches?.find(
+    (item) => item.iteration === read.state.batch_loop?.iteration,
+  );
+  if (batch === undefined || !approvedValidationOnly(read.state, batch)) return false;
+  try {
+    const text = await fs.readText(join(root, read.state.scope.plan));
+    return !parseTasks(text).items.some(
+      (task) => task.status === "open" && batch.phases.includes(task.phase ?? -1),
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function observePreexistingFailures(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: string,
+  root: string,
+): Promise<TestFailure[] | null> {
+  const read = await readRun(fs, locateRun(paths, session));
+  if (!read.ok || read.state.boundary !== PHASE_VALIDATION) return [];
+  const state = read.state;
+  if (state.scope === null) return null;
+  const batch = state.batches?.find((entry) => entry.iteration === state.batch_loop?.iteration);
+  if (batch === undefined) return [];
+  try {
+    const phases = parsePhases(await fs.readText(join(root, state.scope.plan))).items;
+    const selected = phases.filter((phase) => batch.phases.includes(phase.n));
+    if (
+      selected.length !== batch.phases.length ||
+      selected.some((phase) => phase.preexisting_failures === null)
+    )
+      return null;
+    return selected.flatMap((phase) => phase.preexisting_failures ?? []);
+  } catch {
+    return null;
+  }
+}
 
 type BaselineSnapshot = ReadonlyMap<string, SpecBaseline>;
 
@@ -712,6 +778,8 @@ async function decide(
     cost,
     snapshot.checkouts,
     snapshot.scoped,
+    snapshot.preexisting,
+    snapshot.validation_only_current,
   );
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
@@ -729,10 +797,32 @@ async function decide(
   const accepted = route.kind === "accept" ? withRouteDecisions(state, route.decisions) : state;
   // Sealed with the transition it earned, in the same state publication: a batch
   // is never seen validated without the proofs that validated it.
-  const routed =
+  let routed =
     parsed.credit === undefined
       ? accepted
       : withPlanExecBatchCredit(accepted, parsed.credit.batch, parsed.credit.proofs);
+  if (
+    state.flow === "plan-exec" &&
+    [
+      "plan-exec.entry-gate",
+      "plan-exec.entry-gap-recognition",
+      "plan-exec.normalization-consent",
+    ].includes(resolved.stopped.id)
+  ) {
+    routed = withPlanExecEntry(routed, await observePlanEntry(fs, paths, state));
+  }
+  if (
+    resolved.stopped.id === UNCHANGED_PHASE_CONSENT &&
+    parsed.answer.choice === APPROVE_UNCHANGED_PHASE
+  ) {
+    const entry = state.plan_exec_entry;
+    if (entry?.plan && entry.phases_without_open_tasks) {
+      routed = withPlanExecEntry(routed, {
+        ...entry,
+        approved_without_changes: [...entry.phases_without_open_tasks],
+      });
+    }
+  }
 
   // The registry, not the Spanish consequence text, owns what a selected
   // alternative does. A handoff must stop before any later plan-exec row can
@@ -747,7 +837,7 @@ async function decide(
         ? await specPathOfScopedPlan(fs, paths, snapshot.root, state.scope?.plan ?? null)
         : null;
     return applyAndHandoff(
-      state,
+      routed,
       journey,
       resolved.stopped,
       identity,
@@ -2117,6 +2207,8 @@ function admit(
   cost: RejectionCost,
   checkouts: readonly CheckoutState[] | null,
   scoped: Record<string, string | null> | null,
+  preexisting: readonly TestFailure[] | null,
+  validationOnlyCurrent: boolean,
 ): Admitted | { decision: SubmitDecision } {
   const expectedApproval =
     resolved.kind === "authorization"
@@ -2184,7 +2276,17 @@ function admit(
   // run with its evidence and its whole effect keeps the boundary standing: the
   // work stays pending, with the recovery the action declared.
   if (resolved.kind !== "execution") return parsed;
-  return earned(state, resolved, stopped, parsed, cost, checkouts, scoped);
+  return earned(
+    state,
+    resolved,
+    stopped,
+    parsed,
+    cost,
+    checkouts,
+    scoped,
+    preexisting,
+    validationOnlyCurrent,
+  );
 }
 
 function closeFromAnswer(state: FlowRunState): SubmitDecision {
@@ -2217,6 +2319,8 @@ function earned(
   cost: RejectionCost,
   checkouts: readonly CheckoutState[] | null,
   scoped: Record<string, string | null> | null,
+  preexisting: readonly TestFailure[] | null,
+  validationOnlyCurrent: boolean,
 ): Admitted | { decision: SubmitDecision } {
   // The row's `effects` are the ceiling and the sealed proposal is what really
   // happens: demanding an overwrite from a publication that only creates files
@@ -2226,6 +2330,7 @@ function earned(
     resolved.action,
     effectsOfTransition(state, stopped),
     checkouts,
+    preexisting,
   );
   if (verdict !== null) {
     const trace = declaredTrace(state, stopped, resolved, parsed.answer, verdict);
@@ -2236,7 +2341,14 @@ function earned(
       }),
     };
   }
-  const credited = batchCredit(state, stopped, parsed.answer, resolved, scoped);
+  const credited = batchCredit(
+    state,
+    stopped,
+    parsed.answer,
+    resolved,
+    scoped,
+    validationOnlyCurrent,
+  );
   if (credited === null) return parsed;
   if (!credited.ok) {
     return {
@@ -2257,6 +2369,7 @@ function batchCredit(
   answer: FlowAnswer,
   resolved: ResolvedBoundary,
   scoped: Record<string, string | null> | null,
+  validationOnlyCurrent: boolean,
 ):
   | { ok: true; credit: { batch: string; proofs: Record<string, string> } }
   | { ok: false; refusal: ExecutionRefusal }
@@ -2270,7 +2383,13 @@ function batchCredit(
   if (batch === undefined) return null;
   const verdict = batchCreditVerdict(
     answer.result,
-    { batch, batches, sources: state.scope.sources, scoped },
+    {
+      batch,
+      batches,
+      sources: state.scope.sources,
+      scoped,
+      validation_only_approved: validationOnlyCurrent && approvedValidationOnly(state, batch),
+    },
     resolved.action?.recovery ?? "",
   );
   if (!verdict.ok) return verdict;
@@ -2385,6 +2504,9 @@ function applyAndAdvance(
     answer.signals.length > 0
       ? withObservation(approved, observationFor(approved, stopped.id, answer.signals))
       : approved;
+  if (stopped.answer_contract === "batch-review" && isBatchReview(answer.decisions.review)) {
+    next = withPlanExecBatchReview(next, answer.decisions.review);
+  }
   next = withPlanExecBatchStageForTransition(
     applyTransition(next, stopped.id, effectsOfTransition(next, stopped)),
     stopped.id,
@@ -2455,20 +2577,7 @@ function applyAndHandoff(
   specPath: string | null,
   request: string | null,
 ): SubmitDecision {
-  const plan = state.scope?.plan ?? null;
-  if (outcome.destination === "plan-refine" && plan === null) {
-    const resolved = resolveBoundary(state, journey);
-    return reject(
-      state,
-      resolved,
-      "la entrega a plan-refine no tiene el plan que debe reabrir",
-      {
-        code: "FLOW_HANDOFF_PLAN_MISSING",
-        action: "fijá el scope de plan-exec antes de elegir una escalación a plan-refine",
-      },
-      { journey, identity },
-    );
-  }
+  const plan = state.scope?.plan ?? state.plan_exec_entry?.plan ?? null;
   const fixPreview = state.fix_preview ?? null;
   const packageBody = {
     plan,
@@ -2503,12 +2612,17 @@ function applyAndHandoff(
     stopped.id,
   );
   next = withAttempt(next, identity);
-  next = withHandoff(next, {
-    destination: outcome.destination,
-    command,
-    package: packageBody,
-    package_digest: semanticDigest(packageBody),
-  });
+  next = withHandoff(
+    next,
+    outcome.destination === "plan-refine"
+      ? planRefineHandoff(state, answer.decisions, answer.choice ?? "")
+      : {
+          destination: outcome.destination,
+          command,
+          package: packageBody,
+          package_digest: semanticDigest(packageBody),
+        },
+  );
   next = withBoundary(next, journey[next.applied.length]?.id ?? null);
   if (state.flow === "quick" && outcome.destination === "spec-new") {
     const closing = closeAtBoundaryState(next);

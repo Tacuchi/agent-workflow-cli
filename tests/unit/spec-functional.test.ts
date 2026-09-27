@@ -849,7 +849,11 @@ describe("criterios AC-nn — el rótulo de la doctrina es direccionable", () =>
 
 // ── la ida completa, sobre una corrida real de plan-exec ──────────────────────
 
-const fs = new NodeFileSystem();
+const fs = new (class extends NodeFileSystem {
+  override async exists(path: string): Promise<boolean> {
+    return path === "/tmp/acme" || super.exists(path);
+  }
+})();
 const SESSION = "151-valvula-plan-exec";
 const CODE = "151";
 const ALIAS = "acme";

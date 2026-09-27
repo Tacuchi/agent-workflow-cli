@@ -50,18 +50,22 @@ And **always** forbidden, even when the user asks for a commit: `--no-verify` (r
 
 ### Branch verification (before editing)
 
-The expected branch is **never assumed from the current branch** — the user may have switched it by hand. Verify against the flow's own line of work before any `Write/Edit`: its isolation unit's branch when the source has units (`aw worktree`), the source's declared work branch when it has none.
+The expected branch is **never assumed from the current branch** — the user may have switched it by hand. Verify before any `Write/Edit`: the session's isolation unit branch when it owns a unit (`aw worktree`); otherwise its document's own, inherited, or registered work branch (in that order). An unrelated unit does not block a document editing the shared checkout in its expected branch.
 
 **Primary mechanism**: `aw check-branch --source <alias>` (or `--file <path-of-the-imminent-edit>`; `--strict` returns exit 2 on mismatch — useful as a gate). It returns the per-source fields already computed: `alias`, `path`, `main_branch` (base), `expected_work_branch`, `current_branch`, `match` (`current == expected`), `dirty` (uncommitted changes). **Fallback** (loose repo without workspace/CLI): compute them with direct read-only git (`git branch --show-current` + `git status --porcelain`) plus the session's declared branch.
 
 Cases:
 
 - **`match=true`** → OK, edit.
-- **`match=false, dirty=false`** (Case A — different branch, clean repo) → *structured-choice*: `git checkout <expected>` / keep current and update the session's expectation / cancel.
+- **`match=false, dirty=false`** (Case A — different branch, clean repo) → *structured-choice*: `git checkout <expected>` / confirm `aw doc-branch set --doc <tipo:NNN> --source <alias> --rama <actual>` to use the current branch for this document / cancel.
 - **`match=false, dirty=true`** (Case B — different branch + uncommitted changes) → **pause and wait for manual resolution**. Never propose checkout (it could lose work). Ask the user to commit/stash/discard and to say when to continue.
-- **Cross-source (hub)**: if the touched sources point to different branches without declaring it, **hard gate** — block progress with *structured-choice* (align all / declare the divergence explicitly / cancel).
+- **Cross-source (hub)**: `aw sources --code <NNN>` checks each source against its own expected branch; different branch names are fine when every source matches. Pause only the divergent sources.
 - **Detached HEAD** → treat as Case A.
 - **Source outside git** (`is_repo=false`) → report, do not block.
+
+To request a document branch, first run `aw doc-branch show --code <NNN>` (or `--doc <tipo:NNN>`), ask the person to confirm or change its proposed name, then run `aw doc-branch set --code <NNN> --source <alias> --rama <nombre>`. No branch is registered just by showing a proposal.
+
+Closing, releasing or reclaiming a unit preserves the document branch and its base. A later cleanup may remove only an `aw/*` unit branch already contained in that base (decision `S049/AC-10`); it never deletes either protected branch.
 
 ### Commits — propose-then-execute, one source at a time
 
@@ -99,11 +103,11 @@ Autonomous `git merge` is forbidden (above), **but** resolving an **in-progress*
 
 **The mechanics live in the CLI** (`aw fix-git prepare | apply | commit`); what follows is the reasoning it expects from you. Never edit a conflicted file, `git add` or `git commit` by hand here — see [`../../commands/fix-git.md`](../../commands/fix-git.md) for the exact invocations.
 
-1. **Detect + identify**: `aw fix-git prepare` (read-only) returns the merge direction (**theirs → ours**), the conflicted paths and, per path, its three index stages with their blob hashes. `aw merge-state` remains the lighter inspector when you only need the state.
-2. **Analyze each conflict's intent** **before** resolving — never pick a side blindly. The request already carries the three versions: `base` (common ancestor), `ours` (destination) and `theirs` (origin). Add `git log --merge -p -- <file>` when the *why* of a hunk is not evident, and read the surrounding code for coherence.
-3. **Resolve** by composing the complete resolved file: pick **ours**, **theirs**, **combine** both intents, or **rewrite** to satisfy both — with no `<<<<<<<` / `=======` / `>>>>>>>` left. The CLI writes and stages it; a leftover marker is rejected, and so is a path that is no longer in conflict.
-4. **Ask** (*structured-choice*) when the intent is **ambiguous** or both sides are **incoherent** with each other (not combinable without losing something): answer `state: "ambiguous"` so nothing is written, then ask one content question per doubtful file/hunk (≤3 + `flow` control), options "Ours (`<destination>`)" / "Theirs (`<origin>`)" / "Combine" / "Edit manually". **Never invent** a resolution under real doubt. A **binary** conflict is never resolved automatically: propose `git checkout --ours|--theirs`.
-5. **Proposed commit**: completing the merge is a `git commit` (the merge commit) → **propose-then-execute** like any commit (canonical format above; outside a session → 1 line without the `session<NNN>` tag; never `--no-verify`/`--amend`/`push`). It is a **separate, confirmed** invocation — `aw fix-git commit --message "<msg>" --confirm` — which refuses while any file stays unmerged. The `git-commit-advisor` hook gates it.
+1. **Detect + identify**: `aw merge-state` reports unreadable sources and units, never "no merge" when they could not be inspected. `aw fix-git prepare` (read-only) summarizes each conflict's path, `kind`, binary, bytes, EOL, allowed resolutions and max bytes; it warns about multiple merge bases (virtual base). It seals the index-stage hashes but does not ship the full contents by default. Repeat `--show <path>` for each file whose three versions are needed. `--adapt <path>` includes a tracked file merged cleanly but needing a semantic adjustment, including after all conflicts were resolved while MERGE_HEAD remains.
+2. **Analyze intent** before resolving — never pick a side blindly. With `--show` read `base` (ancestor), `ours` (destination), `theirs` (origin). Add `git log --merge -p -- <file>` when the *why* of a hunk is not evident, and read adjacent code for coherence.
+3. **Resolve** with a complete text `{path,content}` without conflict markers, or a `resolution` `{path,choice}` where `choice` is `ours`, `theirs` or `delete`. A binary takes the intact `ours`/`theirs` blob via the CLI; absent stage → `delete`. Apply a subset and repeat prepare/apply for the remaining files. The CLI updates the index with Git plumbing and checks out with repo attributes/EOL, with no hand-run `git add` or `git checkout`.
+4. **Ask** (*structured-choice*) when intent is ambiguous or both sides are incoherent: answer `state: "ambiguous"`, ask one content question per doubtful file/hunk (≤3 + `flow` control), with consequences for each option. Never guess. A binary is not an exception to the intent rule — choosing `ours`/`theirs` still needs evidence.
+5. **Proposed commit**: `aw fix-git commit --message "<msg>"` without `--confirm` previews the message, build, included files and `left_out`. After approval repeat with `--confirm` and a **long host timeout**: it runs the versioned source build in the merge repo and refuses failed/undeclared builds or unmerged files. `ninguno` or `--skip-build "<motivo>"` is explicit and visible with its origin; the result also warns if build ran on a tree different from the commit. Never hand-run `git commit`, `--no-verify`, `--amend` or push.
 6. **Escape hatch**: if the merge must not complete, `git merge --abort` **after user confirmation** (*structured-choice*) — leaves the repo as before the merge.
 
 > **Resume via git**: the merge state in `.git` (MERGE_HEAD + index) **is** the checkpoint; re-running `/w:fix-git` resumes from the remaining conflicts. No session, no artifact.

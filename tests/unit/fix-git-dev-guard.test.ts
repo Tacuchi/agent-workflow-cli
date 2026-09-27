@@ -121,6 +121,7 @@ describe("aw fix-git no cierra un merge que trae desarrollo a una rama de trabaj
       defaultBranches: { desarrollo: DEV },
       workingBranches: { core: "feature/a" },
       qaBranches: {},
+      pipeline: { core: { build: "exit 23" } },
       markers: paths.blockMarkers(),
     });
     if (withBlock) writeFileSync(join(root, "CLAUDE.md"), block, "utf8");
@@ -129,6 +130,7 @@ describe("aw fix-git no cierra un merge que trae desarrollo a una rama de trabaj
       env: new FakeEnv(home, root),
       paths,
       git: new GitCliAdapter(new NodeProcess()),
+      process: new NodeProcess(),
     } as unknown as CliContext;
   }
 
@@ -139,8 +141,11 @@ describe("aw fix-git no cierra un merge que trae desarrollo a una rama de trabaj
     return head;
   }
 
-  const commit = (opts: { path?: string } = {}) =>
-    args(["commit"], { ...opts, flags: ["--confirm"], message: "cierra el merge" });
+  const commit = (opts: { path?: string } = {}) => {
+    const parsed = args(["commit"], { ...opts, flags: ["--confirm"], message: "cierra el merge" });
+    parsed.values.set("skip-build", "fixture sin build de aplicación");
+    return parsed;
+  };
 
   it("desarrollo mezclado en una rama de trabajo se rechaza en prepare y en commit, sin commit nuevo", async () => {
     const head = startMerge(source, DEV);

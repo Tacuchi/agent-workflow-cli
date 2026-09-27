@@ -83,7 +83,7 @@ describe("runResume — without a target it follows the documental priority", ()
       kind: "plan-open",
       number: "009",
       objective: "plan 009 — x",
-      progress: "2/4 tareas (50%)",
+      progress: "tareas 2/4",
       command: "/w:plan-exec docs/plans/009-plan-x.md",
     });
   });
@@ -127,6 +127,16 @@ describe("runResume — without a target it follows the documental priority", ()
 // ── explicit target ──────────────────────────────────────────────────────────
 
 describe("runResume — an explicit target wins over the pipeline", () => {
+  it("una spec reemplazada no recomienda refinar ni planificar, incluso al pedir su ruta", async () => {
+    const fs = workspace();
+    fs.file(
+      "/cwd/docs/specs/030-spec-vieja.md",
+      "---\nstatus: superseded\nsuperseded_by: docs/specs/031-spec-nueva.md\n---\n# Spec\n",
+    );
+    expect((await resume(fs)).status).toBe("idle");
+    const target = await resume(fs, { target: "docs/specs/030-spec-vieja.md" });
+    expect(target).toMatchObject({ status: "invalid_target", action: "reemplazada por 031" });
+  });
   it("resolves a plan by its path even when a spec outranks it", async () => {
     const fs = workspace();
     fs.file("/cwd/docs/specs/001-spec-borrador.md", DRAFT);

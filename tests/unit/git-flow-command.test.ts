@@ -34,7 +34,11 @@ function args(opts: ArgOpts): ParsedArgs {
   };
 }
 
-const fs = new NodeFileSystem();
+const fs = new (class extends NodeFileSystem {
+  override async exists(path: string): Promise<boolean> {
+    return path.startsWith("/repo/") || super.exists(path);
+  }
+})();
 
 describe("git-flow command", () => {
   let cwd: string;

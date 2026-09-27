@@ -43,12 +43,14 @@ import {
   publishApprovalOf,
   routeControlOf,
 } from "../../domain/flow/authority.js";
+import { journeyForState } from "../../domain/flow/authority.js";
 import {
   type SealedSubject,
   type TransitionAuthorization,
   authorizeTransition,
   effectApprovalDigest,
 } from "../../domain/flow/authorization.js";
+import { BATCH_REVIEW_CONTRACT } from "../../domain/flow/batch-review.js";
 import {
   type DirectiveProposal,
   type FlowBoundary,
@@ -82,6 +84,7 @@ import {
   degradeTransition,
   exhaustedRerunSpent,
   iterationOf,
+  planRefineHandoff,
   positionDigest,
   reconcileAttemptsAt,
   sameIteration,
@@ -90,10 +93,13 @@ import {
   skipTransition,
   withBoundary,
   withEvent,
+  withHandoff,
   withPendingAction,
+  withPendingBatchReview,
   withPlanExecBatchStageForTransition,
   withRouteDecisions,
 } from "../../domain/flow/run-state.js";
+import { UNCHANGED_PHASE_CONSENT } from "../../domain/flow/unchanged-phase.js";
 import {
   type SemanticRequest,
   buildSemanticRequest,
@@ -122,6 +128,10 @@ export type AdvanceResult =
 export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   const incoherent = checkAgainstJourney(input.state, input.journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
+  const reviewed = withPendingBatchReview(input.state);
+  if (reviewed !== input.state) {
+    return advanceFlowRun({ ...input, state: reviewed, journey: journeyForState(reviewed) });
+  }
 
   // The run repairs its OWN bookkeeping first, and only when the mismatch has
   // exactly one reading. No boundary is opened, no attempt is charged, no
@@ -232,6 +242,19 @@ function walk(
       decision.id,
     );
     applied.push(stepOf(decision));
+    if (decision.handoff?.destination === "plan-refine") {
+      state = withHandoff(
+        state,
+        planRefineHandoff(
+          state,
+          {
+            reason: "brecha estructural detectada en la entrada; refinar antes de abrir unidades",
+          },
+          "plan.entry-gap-structural",
+        ),
+      );
+      break;
+    }
   }
   return { state, applied };
 }
@@ -255,6 +278,7 @@ function passOver(
   // copy of a conditional row still reads the observation made before the copy.
   const observed = conditionOf(decision)?.threshold.observed ?? decision.id;
   const conditional =
+    validationOnlySkip(state, decision) ??
     routeSkipReason(state, decision) ??
     skipReason(decision, journey, state.observations, iterationOf(state, observed)) ??
     nothingToPublish(state, decision) ??
@@ -296,6 +320,24 @@ function noQuickCode(state: FlowRunState, decision: FlowDecision): string | null
 }
 
 /** A route can alter only a transition that opted in through the registry. */
+function validationOnlySkip(state: FlowRunState, decision: FlowDecision): string | null {
+  if (decision.id === UNCHANGED_PHASE_CONSENT) {
+    return (state.plan_exec_entry?.phases_without_open_tasks?.length ?? 0) > 0
+      ? null
+      : "la entrada no detectó fases sin tareas abiertas: no hay validación sin cambios que consentir";
+  }
+  if (
+    decision.id === "plan-exec.implementation" &&
+    state.batches?.some(
+      (batch) =>
+        batch.iteration === state.batch_loop?.iteration && batch.kind === "validation-only",
+    )
+  ) {
+    return "este lote sólo valida una fase aprobada sin tareas abiertas: no se reimplementa";
+  }
+  return null;
+}
+
 function routeSkipReason(state: FlowRunState, decision: FlowDecision): string | null {
   const control = routeControlOf(decision);
   if (control === null || control.consequences.omit === undefined) return null;
@@ -318,7 +360,7 @@ const ROUTE_REFUSAL_OPERATION = "flow.route-refusal";
  */
 function withRefusedRoute(state: FlowRunState, decision: FlowDecision): FlowRunState {
   const control = routeControlOf(decision);
-  if (control === null || control.consequences.omit !== undefined) return state;
+  if (control?.consequences.omit !== undefined) return state;
   if (dispositionOf(state.route_decisions, decision.id)?.disposition !== "omit") return state;
   const applied = withRouteDecisions(
     state,
@@ -690,6 +732,8 @@ function nothingToSettle(state: FlowRunState, decision: FlowDecision): string | 
  * degradation but `aw flow recover`, and the block says so.
  */
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
+  if (decision.id === UNCHANGED_PHASE_CONSENT) return null;
+  if (decision.answer_contract !== undefined) return null;
   if (!exhausted(state, decision) || awaitingCliRerun(state, decision)) return null;
   if (!owned(decision)) return null;
   // Degradation is what a GAP that cannot close deserves. When the exhaustion
@@ -1011,7 +1055,7 @@ export function directiveFor(
               ? "human"
               : resolved.stopped.authority,
           ownership: resolved.stopped.ownership,
-          title: resolved.stopped.title,
+          title: boundaryTitle(state, resolved.stopped),
           document: resolved.stopped.document,
         };
   const planned = resolved.authorization?.planned ?? [];
@@ -1074,6 +1118,14 @@ export function directiveFor(
  * proposal that reaches outside the folders the row declared never gets sealed —
  * let alone approved.
  */
+function boundaryTitle(state: FlowRunState, decision: FlowDecision): string {
+  if (decision.id !== UNCHANGED_PHASE_CONSENT) return decision.title;
+  const phases = state.plan_exec_entry?.phases_without_open_tasks
+    ?.map((phase) => `F${phase}`)
+    .join(", ");
+  return `${decision.title}: ${state.plan_exec_entry?.plan} — ${phases}`;
+}
+
 export function boundaryRequest(decision: FlowDecision, state: FlowRunState): SemanticRequest {
   const vocabulary = decision.signals ?? [];
   const proposes = proposalContractOf(decision);
@@ -1107,7 +1159,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${settlementDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${decision.answer_contract === "batch-review" ? BATCH_REVIEW_CONTRACT : ""} ${taxonomy}${authoring}${decisionDraft}${settlementDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:

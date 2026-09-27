@@ -193,19 +193,37 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
     expect(readFileSync(join(source, "local.txt"), "utf-8")).toBe("trabajo del usuario\n");
   });
 
-  it("rechaza —nunca cambia de rama sola— si el checkout está en otra rama", async () => {
+  it("integra sin mover el checkout cuando está en otra rama", async () => {
     const unit = await ensure("103");
     commitIn(unit.path, "uno.txt", "x\n", "trabajo");
+    const committed = git(unit.path, "rev-parse", "HEAD");
     git(source, "checkout", "-b", "otra-rama");
 
-    const refused = await runWorktree(deps, {
+    const result = await runWorktree(deps, {
       action: "integrate",
       alias: "acme",
       sessionCode: "103",
     });
 
-    expect(refused).toMatchObject({ error: "checkout_off_branch" });
+    expect(result).toMatchObject({ integrated: true, into: "main", released: true });
+    expect(git(source, "rev-parse", "main")).toBe(committed);
     expect(git(source, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("otra-rama");
+  });
+
+  it("rechaza una rama de rol divergente si el checkout está en otra rama", async () => {
+    const unit = await ensure("103");
+    commitIn(unit.path, "unidad.txt", "unidad\n", "trabajo");
+    commitIn(source, "main.txt", "main\n", "base avanzada");
+    git(source, "checkout", "-b", "otra-rama");
+    const main = git(source, "rev-parse", "main");
+    const result = await runWorktree(deps, {
+      action: "integrate",
+      alias: "acme",
+      sessionCode: "103",
+    });
+    expect(result).toMatchObject({ error: "checkout_off_branch" });
+    expect(git(source, "rev-parse", "main")).toBe(main);
+    expect(existsSync(unit.path)).toBe(true);
   });
 
   it("aw status lleva la unidad por sesión activa y las huérfanas con su acción", async () => {
@@ -359,9 +377,8 @@ ${work}
       alias: "alfa",
       sessionCode: "103",
     })) as WorktreeEnsureOutput;
-    // La sesión tomó la unidad de alfa y nunca la editó; y el checkout de alfa
-    // está en otra rama, así que integrar se niega antes de mezclar nada. Sin
-    // recogida al cierre esa unidad vacía se queda ahí hasta que alguien la vea.
+    // La sesión tomó la unidad de alfa y nunca la editó. Integrar con el checkout
+    // en otra rama reconoce que la base ya contiene la unidad y la libera.
     git(sources.alfa as string, "checkout", "-b", "otra-rama");
 
     const result = (await runWorktree(deps, {
@@ -369,12 +386,10 @@ ${work}
       sessionCode: "103",
     })) as WorktreeIntegrateSessionOutput;
 
-    expect(result.results[0]).toMatchObject({ error: "checkout_off_branch", alias: "alfa" });
-    expect(result.reclaimed.map((u) => u.alias)).toEqual(["alfa"]);
-    expect(result.reclaimed[0]?.reason).toBe("already_on_work_branch");
+    expect(result.results[0]).toMatchObject({ integrated: true, alias: "alfa", released: true });
+    expect(result.reclaimed).toEqual([]);
     expect(result.retained).toEqual([]);
-    // No queda unidad que sostener, así que tampoco queda integración pendiente:
-    // la negativa sigue en `results`, que es donde se lee por qué pasó.
+    // No queda unidad que sostener ni integración pendiente.
     expect(result.pending).toEqual([]);
     expect(result.next).toBeNull();
     expect(existsSync(unit.path)).toBe(false);

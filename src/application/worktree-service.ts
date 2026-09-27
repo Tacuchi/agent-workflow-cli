@@ -9,14 +9,20 @@ import {
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
-import { resolveSourceBranches } from "./branch-resolver.js";
+import { isWorkingBranch, resolveSourceBranches } from "./branch-resolver.js";
+import { documentOfSession, resolveDocBranch } from "./doc-branch-ledger.js";
 import { locateRun, readRun } from "./flow/run-state-service.js";
 import { withCwdLock } from "./lock-service.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { recordIntegration, recordUnitTaken } from "./session-custody-recorder.js";
+import { readCustody } from "./session-custody-service.js";
 import {
   type SessionResolutionError,
   listSessionFolders,
@@ -83,7 +89,10 @@ export interface WorktreeError {
   occupant?: { path: string; branch: string };
 }
 
-export type WorktreeEnsureOutput = IsolationUnit & { visibility: "attached" | "unavailable" };
+export type WorktreeEnsureOutput = IsolationUnit & {
+  visibility: "attached" | "unavailable";
+  base: string;
+};
 
 /**
  * One live unit as the list reports it: what it is, plus what its tree is doing.
@@ -106,7 +115,7 @@ export interface WorktreeListOutput {
   units: ListedUnit[];
   orphans: OrphanUnit[];
   /** Sources whose worktrees could not be read; their units are NOT in the lists. */
-  unreadable: Array<{ alias: string; error: string }>;
+  unreadable: Array<{ alias: string; error: string; code?: "SOURCE_PATH_MISSING" }>;
   /** The session the list was narrowed to, when the caller named one. */
   session?: string;
 }
@@ -238,7 +247,7 @@ export interface WorktreeReclaimOutput {
   reclaimed: ReclaimedUnit[];
   retained: RetainedUnit[];
   /** Sources whose trees could not be read; nothing of theirs was collected. */
-  unreadable: Array<{ alias: string; error: string }>;
+  unreadable: Array<{ alias: string; error: string; code?: "SOURCE_PATH_MISSING" }>;
   /** What to run for the first retained unit; `null` when nothing was retained. */
   next: string | null;
 }
@@ -410,9 +419,13 @@ async function integrateUnit(
     };
   }
 
-  // Both preconditions are refusals BEFORE anything moves: a merge started over
-  // uncommitted work is the one state where "report the conflict" is no longer
-  // enough, because the losing side was never recorded anywhere.
+  if ((await deps.git.operationState(path)) !== "clean") {
+    return {
+      error: "unit_operation_in_progress",
+      message: `la unidad ${path} tiene una operación git pendiente`,
+      hint: `resolvé el merge con aw fix-git --path ${path} antes de integrar otra vez`,
+    };
+  }
   if (await deps.git.isDirty(path)) {
     return {
       error: "unit_not_committed",
@@ -420,7 +433,8 @@ async function integrateUnit(
       hint: "commiteá el trabajo del flujo en su unidad antes de integrarlo",
     };
   }
-  if (await deps.git.isDirty(source.path)) {
+  const current = await deps.git.currentBranch(source.path);
+  if (current === base && (await deps.git.isDirty(source.path))) {
     return {
       error: "checkout_dirty",
       message: `el checkout principal de ${source.alias} tiene cambios sin commitear`,
@@ -428,44 +442,10 @@ async function integrateUnit(
     };
   }
 
-  // Never switch the user's branch to make the command succeed. The declared
-  // working branch is where the checkout is SUPPOSED to be — the git-safe
-  // invariant says so — and a checkout that is somewhere else is a state the
-  // person has to see, not one to be quietly corrected under a merge.
-  const current = await deps.git.currentBranch(source.path);
-  if (current !== base) {
-    return {
-      error: "checkout_off_branch",
-      message: `el checkout principal de ${source.alias} está en '${current}' y la integración va a '${base}'`,
-      hint: `posicioná el checkout en '${base}' y volvé a integrar; la integración nunca cambia de rama por su cuenta`,
-    };
-  }
-  // The merge goes through GitPort, so it would otherwise bypass the command
-  // filesystem guard. All refusal/precondition reads are complete above; from
-  // here on this operation may change a source checkout.
   await ensureWorklineMaterialized(deps.fs, deps.paths);
-  // The merge itself is the serialized part, and only it. Two runs integrating
-  // into the same checkout would fight over one index and one MERGE_HEAD, and the
-  // loser would find a repository mid-merge it never started. Waiting rather than
-  // failing fast for the same reason a correlative claim waits: by the time this
-  // lock is taken there is committed work with nowhere else to go, so losing the
-  // race would lose real work instead of a retry.
-  //
-  // The pre-merge HEAD is read INSIDE the lock, next to the merge it describes.
-  // Reading it outside would leave a window in which another integration lands
-  // between the read and the merge, and the receipt would then attribute this
-  // integration over a value the branch no longer had.
-  const merged = await withCwdLock(
-    deps.fs,
-    deps.paths,
-    async () => {
-      const before = await deps.git.head(source.path).catch(() => null);
-      const merge = await deps.git.merge(source.path, branch);
-      if (merge.ok) return { ok: true as const, before };
-      return { ok: false as const, conflicted: merge.conflicted };
-    },
-    { waitMs: INTEGRATE_LOCK_WAIT_MS },
-  );
+  const merged = await withCwdLock(deps.fs, deps.paths, () => integrateLocked(deps, target), {
+    waitMs: INTEGRATE_LOCK_WAIT_MS,
+  });
   if ("error" in merged) {
     return {
       error: "integration_locked",
@@ -474,7 +454,8 @@ async function integrateUnit(
     };
   }
 
-  if (!merged.ok) {
+  if (merged.state === "refused") return merged.refusal;
+  if (merged.state === "conflict") {
     return {
       alias: source.alias,
       source_path: source.path,
@@ -486,16 +467,17 @@ async function integrateUnit(
       // The unit SURVIVES a conflict: its commits are the only copy of one side
       // of the merge, and releasing it here would delete them to tidy up.
       released: false,
-      next: `aw fix-git --path ${source.path}`,
+      next: `aw fix-git --path ${merged.path}`,
     };
   }
-
-  await recordIntegration(deps, identity.session, {
-    alias: source.alias,
-    sourcePath: source.path,
-    into: base,
-    before: merged.before,
-  });
+  if (merged.before !== null && merged.after !== null && merged.before !== merged.after) {
+    await recordIntegration(deps, identity.session, {
+      alias: source.alias,
+      into: base,
+      before: merged.before,
+      after: merged.after,
+    });
+  }
   const release = await releaseUnit(deps, target);
   return {
     alias: source.alias,
@@ -510,13 +492,103 @@ async function integrateUnit(
   };
 }
 
+type LockedIntegration =
+  | { state: "done"; before: string | null; after: string | null }
+  | { state: "conflict"; conflicted: string[]; path: string }
+  | { state: "refused"; refusal: WorktreeError };
+
+/** All ref reads, occupancy checks and the move happen under the integration lock. */
+async function integrateLocked(
+  deps: WorktreeDeps,
+  target: ResolvedTarget,
+): Promise<LockedIntegration> {
+  const { source, path, branch, base, roles } = target;
+  const current = await deps.git.currentBranch(source.path);
+  if (current === base) {
+    const before = await deps.git.head(source.path);
+    const merge = await deps.git.merge(source.path, branch);
+    return merge.ok
+      ? { state: "done", before, after: await deps.git.head(source.path) }
+      : { state: "conflict", conflicted: merge.conflicted, path: source.path };
+  }
+
+  const ref = `refs/heads/${base}`;
+  const before = await deps.git.refValue(source.path, ref);
+  if (before === null)
+    return {
+      state: "refused",
+      refusal: {
+        error: "target_missing",
+        message: `la rama destino '${base}' no existe en local`,
+        hint: `restaurá ${base} antes de integrar; la unidad queda intacta`,
+      },
+    };
+  const trees = await deps.git.worktreeList(source.path);
+  const occupied = trees.find((tree) => tree.branch === base && !samePath(tree.path, source.path));
+  if (occupied)
+    return {
+      state: "refused",
+      refusal: {
+        error: "target_occupied",
+        message: `${base} está puesta en otro árbol: ${occupied.path}`,
+        hint: `liberá ese árbol antes de mover la referencia ${ref}`,
+      },
+    };
+  let head = await deps.git.head(path);
+  if (head === null)
+    return {
+      state: "refused",
+      refusal: {
+        error: "unit_not_committed",
+        message: `la unidad ${path} no tiene HEAD`,
+      },
+    };
+  if (await deps.git.isAncestor(source.path, head, before)) {
+    return { state: "done", before, after: before };
+  }
+  if (!(await deps.git.isAncestor(source.path, before, head))) {
+    if (!isWorkingBranch(base, roles))
+      return {
+        state: "refused",
+        refusal: {
+          error: "checkout_off_branch",
+          message: `la rama de rol ${base} no admite integración divergente fuera de su checkout`,
+          hint: `posicioná el checkout en '${base}' y volvé a integrar`,
+        },
+      };
+    const merge = await deps.git.merge(path, base);
+    if (!merge.ok) return { state: "conflict", conflicted: merge.conflicted, path };
+    head = await deps.git.head(path);
+    if (head === null)
+      return {
+        state: "refused",
+        refusal: {
+          error: "unit_not_committed",
+          message: `no se pudo leer HEAD de la unidad ${path} después del merge`,
+        },
+      };
+  }
+  const moved = await deps.git.updateRefCas(source.path, ref, head, before);
+  if (!moved.ok)
+    return {
+      state: "refused",
+      refusal: {
+        error: "integration_raced",
+        message: `la referencia ${ref} avanzó durante la integración: ${moved.why}`,
+        hint: `la unidad queda intacta: volvé a correr aw worktree integrate --source ${source.alias} --code ${target.identity.session}`,
+      },
+    };
+  return { state: "done", before, after: head };
+}
+
 interface ResolvedTarget {
-  source: ProjectFuente;
+  source: ProjectFuente & { path: string };
   identity: UnitIdentity;
   path: string;
   branch: string;
   /** Branch the unit is cut FROM: the source's declared working branch. */
   base: string;
+  roles: ReturnType<typeof resolveSourceBranches>;
 }
 
 async function resolveTarget(
@@ -533,7 +605,7 @@ async function resolveTarget(
     return {
       error: "no_sources_declared",
       message: "el bloque WORKSPACE no declara ninguna fuente",
-      hint: "declará la fuente en la tabla Fuentes antes de pedir una unidad",
+      hint: "declará la fuente con aw add-source <alias>:<ruta>:<rama> antes de pedir una unidad",
     };
   }
   if (input.alias === undefined) {
@@ -552,6 +624,13 @@ async function resolveTarget(
     };
   }
 
+  let sourcePath: string;
+  try {
+    sourcePath = await requireSourcePath(deps.fs, source);
+  } catch (err) {
+    return { error: "SOURCE_PATH_MISSING", message: (err as Error).message };
+  }
+
   const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
     intent: "write",
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
@@ -564,12 +643,39 @@ async function resolveTarget(
     alias: source.alias,
     session,
   };
+  const roles = resolveSourceBranches(source, block);
+  const custody = await readCustody(deps.fs, join(deps.paths.cwdSessionsDir(), session));
+  if (custody.status === "unreadable")
+    return {
+      error: "custody_unreadable",
+      message: `la custodia de ${session} no se puede leer: ${custody.reason}`,
+    };
+  const sealed =
+    custody.status === "present"
+      ? custody.custody.sources.find((s) => s.alias === source.alias)?.base_branch
+      : undefined;
+  const effective =
+    sealed === undefined
+      ? await resolveDocBranch(
+          deps.fs,
+          deps.paths,
+          source,
+          block,
+          await documentOfSession(deps.fs, deps.paths, session),
+        )
+      : null;
+  if (effective?.origin === "unreadable")
+    return {
+      error: "custody_unreadable",
+      message: effective.reason ?? "custodia ilegible",
+    };
   return {
-    source,
+    source: { ...source, path: sourcePath },
     identity,
     path: unitPath(await canonicalUnitsRoot(deps), identity),
     branch: unitBranch(session),
-    base: resolveSourceBranches(source, block).work,
+    base: sealed ?? effective?.branch ?? roles.work,
+    roles,
   };
 }
 
@@ -653,7 +759,7 @@ async function ensureUnit(
     // second `ensure` can never overwrite it with a state the session produced.
     const sealed = await sealBaseline(deps, target);
     if (sealed !== null) return sealed;
-    return { ...unitOf(target, false), visibility: await attach(deps, path) };
+    return { ...unitOf(target, false), base, visibility: await attach(deps, path) };
   }
 
   const occupant = existing.find((w) => w.branch === branch);
@@ -682,7 +788,7 @@ async function ensureUnit(
   }
   const sealed = await sealBaseline(deps, target);
   if (sealed !== null) return sealed;
-  return { ...unitOf(target, true), visibility: await attach(deps, path) };
+  return { ...unitOf(target, true), base, visibility: await attach(deps, path) };
 }
 
 /**
@@ -789,7 +895,7 @@ async function reclaimUnits(
     return {
       error: "no_sources_declared",
       message: "el bloque WORKSPACE no declara ninguna fuente",
-      hint: "declará la fuente en la tabla Fuentes antes de pedir una recogida",
+      hint: "declará la fuente con aw add-source <alias>:<ruta>:<rama> antes de pedir una recogida",
     };
   }
   if (input.alias !== undefined && !sources.some((s) => s.alias === input.alias)) {
@@ -811,7 +917,11 @@ async function reclaimUnits(
     if (input.alias !== undefined && source.alias !== input.alias) continue;
     const swept = await sweepSource(deps, source, { root, key, only, sessions, block });
     if ("error" in swept) {
-      unreadable.push({ alias: source.alias, error: swept.error });
+      unreadable.push({
+        alias: source.alias,
+        error: swept.error,
+        ...(swept.code ? { code: swept.code } : {}),
+      });
       continue;
     }
     reclaimed.push(...swept.reclaimed);
@@ -838,22 +948,36 @@ async function sweepSource(
     sessions: SessionStates;
     block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
   },
-): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] } | { error: string }> {
-  if (!(await deps.git.isGitRepo(source.path))) return { reclaimed: [], retained: [] };
+): Promise<
+  | { reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }
+  | { error: string; code?: "SOURCE_PATH_MISSING" }
+> {
+  let repo: string;
+  try {
+    repo = await requireSourcePath(deps.fs, source);
+  } catch (err) {
+    return { error: (err as Error).message, code: "SOURCE_PATH_MISSING" };
+  }
+  if (!(await deps.git.isGitRepo(repo))) return { reclaimed: [], retained: [] };
   let trees: WorktreeEntry[];
   try {
-    trees = await deps.git.worktreeList(source.path);
+    trees = await deps.git.worktreeList(repo);
   } catch (err) {
     return { error: (err as Error).message };
   }
-  const work = resolveSourceBranches(source, ctx.block).work;
   const reclaimed: ReclaimedUnit[] = [];
   const retained: RetainedUnit[] = [];
   const vanished: ReclaimedUnit[] = [];
   for (const tree of trees) {
     const candidate = candidateOf(tree, ctx);
     if (candidate === null) continue;
-    const swept = await sweepOne(deps, source, tree, work, candidate);
+    const work = await baseForReclaim(
+      deps,
+      source.alias,
+      candidate.session,
+      resolveSourceBranches(source, ctx.block).work,
+    );
+    const swept = await sweepOne(deps, { ...source, path: repo }, tree, work, candidate);
     if ("retained" in swept) {
       retained.push(swept.retained);
       continue;
@@ -865,17 +989,30 @@ async function sweepSource(
     else reclaimed.push(swept.reclaimed);
   }
   if (vanished.length > 0) {
-    const settled = await prune(deps, source, vanished);
+    const settled = await prune(deps, { ...source, path: repo }, vanished);
     reclaimed.push(...settled.reclaimed);
     retained.push(...settled.retained);
   }
   return { reclaimed, retained };
 }
 
+async function baseForReclaim(
+  deps: WorktreeDeps,
+  alias: string,
+  session: string,
+  fallback: string,
+): Promise<string | null> {
+  const read = await readCustody(deps.fs, join(deps.paths.cwdSessionsDir(), session));
+  if (read.status === "unreadable") return null;
+  return read.status === "present"
+    ? (read.custody.sources.find((source) => source.alias === alias)?.base_branch ?? fallback)
+    : fallback;
+}
+
 /** The vanished trees git dropped, or the same ones still listed and why. */
 async function prune(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   vanished: ReclaimedUnit[],
 ): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }> {
   await ensureWorklineMaterialized(deps.fs, deps.paths);
@@ -917,9 +1054,9 @@ function candidateOf(
 /** One candidate, weighed and then collected or left standing. */
 async function sweepOne(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   tree: WorktreeEntry,
-  work: string,
+  work: string | null,
   candidate: { session: string; alias: string; orphan: OrphanUnit["reason"] | null },
 ): Promise<{ reclaimed: ReclaimedUnit; prune: boolean } | { retained: RetainedUnit }> {
   const where = {
@@ -934,6 +1071,15 @@ async function sweepOne(
     // was, so there is no work this can lose.
     return { reclaimed: { ...where, reason: candidate.orphan }, prune: true };
   }
+  if (work === null)
+    return {
+      retained: {
+        ...where,
+        reason: "unreadable",
+        detail: "la custodia no permite leer la base sellada",
+        next: `revisá la custodia de ${candidate.session} antes de recoger`,
+      },
+    };
   const verdict = await reclaimability(
     deps,
     source,
@@ -977,7 +1123,7 @@ async function sweepOne(
  */
 async function reclaimability(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   tree: WorktreeEntry,
   work: string,
   orphan: OrphanUnit["reason"] | null,
@@ -1036,6 +1182,13 @@ async function reclaimability(
       `revisá ${tree.path} a mano: sin HEAD no se puede decidir si sus commits ya están en '${work}'`,
     );
   }
+  if ((await deps.git.refValue(source.path, `refs/heads/${work}`)) === null) {
+    return held(
+      "unreadable",
+      `la base sellada '${work}' ya no existe en local`,
+      `restaurá '${work}' antes de recoger la unidad ${tree.path}`,
+    );
+  }
   if (!(await deps.git.isAncestor(source.path, tree.head, work))) {
     return held(
       "commits_outside_work_branch",
@@ -1048,7 +1201,7 @@ async function reclaimability(
 
 /** How the work of a unit that is not on the working branch gets back onto it. */
 function recoveryFor(
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   tree: WorktreeEntry,
   orphan: OrphanUnit["reason"] | null,
   work: string,
@@ -1103,7 +1256,11 @@ async function listUnits(
       // Reported, never skipped in silence: a source whose trees cannot be read
       // would otherwise show up as "no units", which is the one answer that is
       // certainly wrong — its flows are exactly the ones nobody would clean up.
-      unreadable.push({ alias: source.alias, error: scanned.error });
+      unreadable.push({
+        alias: source.alias,
+        error: scanned.error,
+        ...(scanned.code ? { code: scanned.code } : {}),
+      });
       continue;
     }
     units.push(...scanned.units);
@@ -1123,14 +1280,22 @@ async function scanSource(
   deps: WorktreeDeps,
   source: ProjectFuente,
   ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
-): Promise<{ units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string }> {
+): Promise<
+  { units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string; code?: "SOURCE_PATH_MISSING" }
+> {
   const empty = { units: [], orphans: [] };
   // Not a repo is not unreadable: it has no worktrees to report, and calling it
   // an error would put every non-git source in front of the reader forever.
-  if (!(await deps.git.isGitRepo(source.path))) return empty;
+  let repo: string;
+  try {
+    repo = await requireSourcePath(deps.fs, source);
+  } catch (err) {
+    return { error: (err as Error).message, code: "SOURCE_PATH_MISSING" };
+  }
+  if (!(await deps.git.isGitRepo(repo))) return empty;
   let trees: WorktreeEntry[];
   try {
-    trees = await deps.git.worktreeList(source.path);
+    trees = await deps.git.worktreeList(repo);
   } catch (err) {
     return { error: (err as Error).message };
   }
@@ -1141,7 +1306,7 @@ async function scanSource(
     if (identity === null || identity.workspaceKey !== ctx.key) continue;
     if (ctx.only !== null && identity.session !== ctx.only) continue;
     const reason = orphanReason(identity.session, ctx.sessions, tree.prunable);
-    if (reason === null) units.push(await liveUnit(deps, identity, source.path, tree));
+    if (reason === null) units.push(await liveUnit(deps, identity, repo, tree));
     else orphans.push(orphanOf(identity, tree, reason));
   }
   return { units, orphans };

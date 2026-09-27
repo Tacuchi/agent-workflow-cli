@@ -3,6 +3,7 @@ import {
   type StatusOutput,
   runStatusCommand,
 } from "../../application/status-service.js";
+import { specDetail } from "../../application/workline-index-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand, HumanRenderContext } from "../registry.js";
@@ -47,7 +48,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
     lines.push(...renderAssuranceAlerts(data, lines.at(-1)));
     // An implicit Workline root is still a valid read-only workspace.  Empty
     // means exactly no pending work; it never suggests a mandatory init gate.
-    if (lines.length === 2) {
+    if (lines.length === 2 && !context.detail) {
       return `${header} — sin pendientes\n`;
     }
     if (context.detail) lines.push("", ...renderDetail(data));
@@ -60,6 +61,7 @@ const GROUP_TITLES: Record<PipelineItem["kind"], string> = {
   "spec-unplanned": "Specs sin plan",
   "plan-open": "Planes abiertos",
   "plan-handoff": "Planes cerrados con traspaso vigente",
+  "plan-pass": "Planes cerrados con pase pendiente",
   // Kept because the model keeps the class: a loose checkpoint is reported as a
   // notice now, so nothing reaches this row — and the day something does, it is
   // titled rather than rendered as a blank group.
@@ -72,6 +74,7 @@ const KIND_NOUNS: Record<PipelineItem["kind"], string> = {
   "spec-unplanned": "spec",
   "plan-open": "plan",
   "plan-handoff": "traspaso",
+  "plan-pass": "pase",
   "checkpoint-orphan": "sesión",
 };
 
@@ -249,6 +252,9 @@ function renderDetail(data: StatusOutput): string[] {
     `Terminado: ${done.length} plan(es) done de ${data.plans.length}`,
     `Sesiones: ${data.counts.sessions_active} activa(s), ${data.counts.sessions_closed} cerrada(s)`,
   ];
+  for (const spec of data.specs.filter((item) => item.status === "superseded")) {
+    lines.push(`  · spec ${spec.number} — ${specDetail(spec, data.plans).next}`);
+  }
   for (const plan of done.filter((p) => p.assurance !== null && p.assurance !== "verified")) {
     lines.push(`  · plan ${plan.number} — done · no verificado (${plan.assurance})`);
   }

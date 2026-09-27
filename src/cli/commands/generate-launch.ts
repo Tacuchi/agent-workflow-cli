@@ -35,7 +35,19 @@ export const generateLaunchCommand: CliCommand<GenerateLaunchResult> = {
     if ("error" in data) {
       return fail<GenerateLaunchResult>("INVALID_INPUT", data.hint ?? data.error);
     }
-    return { ok: data.ok, data, exitCode: data.ok ? 0 : 1 };
+    return data.ok
+      ? { ok: true, data, exitCode: 0 }
+      : {
+          ok: false,
+          data,
+          error: {
+            code: "SOURCE_PATH_MISSING",
+            message:
+              data.unreadable_sources?.map((item) => item.error).join("; ") ??
+              "ruta de fuente ausente",
+          },
+          exitCode: 1,
+        };
   },
 
   /**
@@ -55,7 +67,7 @@ export const generateLaunchCommand: CliCommand<GenerateLaunchResult> = {
       lines.push(`  Alias no declarados: ${data.unknown_aliases.join(", ")}`);
     }
     if (data.missing_sources?.length) {
-      lines.push(`  Sin ruta en disco: ${data.missing_sources.join(", ")}`);
+      for (const source of data.unreadable_sources ?? []) lines.push(`  ${source.error}`);
     }
     return `${lines.join("\n")}\n`;
   },

@@ -20,14 +20,14 @@ export const worktreeCommand: CliCommand = {
   describe:
     "Isolation unit of a flow: one git worktree of a source on its own branch, so concurrent flows never share a working tree. " +
     "The unit lives at ~/<ns>/worktrees/<workspace>/<alias>/<session> on branch aw/<session>; the path IS the registry and " +
-    "`git worktree list` its live view. `integrate` merges the flow's branch into the source's declared working branch and gives the unit back — " +
+    "`git worktree list` its live view. `integrate` moves work to the unit's sealed base, without switching the checkout, and gives the unit back — " +
     "one source with --source, or every unit of the session in alias order with only --code; a conflict is reported with its plan, files and " +
-    "source path and routed to `aw fix-git --path`, never resolved on its own. " +
+    "path where the merge stopped and routed to `aw fix-git --path <reported path>`, never resolved on its own. " +
     "`list` shows every unit and orphan of the workspace, or only one session's with --code, each with its branch, dirty state and HEAD. " +
     "`reclaim` collects the residue in one act — every orphan of the workspace, or one session's units with --code — reaching sessions that are " +
     "closed or gone without reopening any. A unit that still custodies work SURVIVES: uncommitted changes, a half-resolved git operation, commits " +
-    "outside the source's working branch, or a read that could not be completed. It reports what it collected and what it retained, with the reason " +
-    "and the next step for each retention; it never uses --force and never deletes a branch. " +
+    "outside the unit's sealed base, or a read that could not be completed. It reports what it collected and what it retained, with the reason " +
+    "and the next step for each retention; it never uses --force and preserves the document and base branches. " +
     "Usage: aw worktree ensure|list|release|integrate|reclaim [--source <alias>] [--code <NNN>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const action = args.rest[0] as WorktreeInput["action"] | undefined;

@@ -1,7 +1,11 @@
 import { isAbsolute, relative } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import { readWorkspaceBlock } from "../parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { resolveCheckoutCandidates } from "./checkout-observation.js";
@@ -36,10 +40,14 @@ async function readQuickCheckouts(
   const root = await resolveWorkspaceRootFrom(fs, paths);
   const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
   const units = await resolveCheckoutCandidates(fs, paths, session);
-  const sources = [{ alias: "workspace", path: root }, ...(block?.fuentes ?? [])];
+  const sources: ProjectFuente[] = [
+    { alias: "workspace", path: root, main_branch: null },
+    ...(block?.fuentes ?? []),
+  ];
   const result: Record<string, string> = {};
   for (const source of sources) {
-    const checkout = units.find((unit) => unit.source === source.alias)?.root ?? source.path;
+    const sourcePath = await requireSourcePath(fs, source);
+    const checkout = units.find((unit) => unit.source === source.alias)?.root ?? sourcePath;
     if (!(await git.isGitRepo(checkout))) return null;
     const runtime = relative(checkout, paths.cwdRoot());
     const exclude = runtime && !runtime.startsWith("..") && !isAbsolute(runtime) ? [runtime] : [];

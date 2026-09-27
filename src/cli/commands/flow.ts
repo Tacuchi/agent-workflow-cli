@@ -247,7 +247,7 @@ ${CHECKOUT}`,
     // not a walk. It reads the boundary, captures its proof and stops — nothing is
     // applied, no attempt is spent, and the tree it measures is left untouched.
     if (verb === "prove") {
-      const source = args.values.get("source");
+      const source = flagValue(args, "source");
       const artifact = args.values.get("artifact");
       return projectProof(
         await proveFlowBoundary(ctx.fs, ctx.paths, {
@@ -385,7 +385,7 @@ function renderAnnulHuman(preview: AnnulPreview): string {
     `anular en ${preview.plan}: ${preview.batches.map((batch) => batch.id).join(", ")}`,
     ...preview.batches.map(
       (batch) =>
-        `  ${batch.id}: ${batch.phases.map((phase) => `F${phase}`).join(", ")} vuelven a pendiente · reabre ${batch.tasks.join(", ")}`,
+        `  ${batch.id}: ${batch.phases.map((phase) => `F${phase}`).join(", ")} vuelven a pendiente · ${batch.kind === "validation-only" ? "validación sin cambios, no reabre tareas" : `reabre ${batch.tasks.join(", ")}`}`,
     ),
     ...(preview.unseals_done ? ["  el plan pierde su sello done"] : []),
     "no se escribió nada y git no se toca",

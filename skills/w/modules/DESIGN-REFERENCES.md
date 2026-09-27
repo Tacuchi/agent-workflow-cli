@@ -23,16 +23,16 @@ identical for both, and the mode decides which task-pin form is legal.
   digest: `sha256:<64 hex>`
 ```
 
-A simple design's hint is its `DESIGN.md`.
+A simple design hints `DESIGN.md`; archiving its revision keeps the hint valid.
 
 - `package` pins **identity and revision**. `latest`, a folder slug, a bare
   `DES-001` or a title are rejected: each answers a different question next year.
-- `baseline_hint` is a **location hint**, never the identity. A renamed dossier
-  keeps the reference valid and reports the hint as stale.
+- `baseline_hint` is a **location hint**, never identity. A renamed dossier
+  warns stale; archiving a simple revision does not.
 - `digest` seals the exact bytes; one that no longer matches never resolves
   quietly.
-- Several designs are several blocks. One named in prose **without being pinned**
-  is reported, not ignored.
+- Several designs are several blocks. A bare id warns only if the plan pins or
+  attempts a reference; `DES-001@alias` always warns.
 
 **Never in the document**: Screen Specifications, flow graphs, state inventories,
 region or component tables, mockups, embedded images. Those live at their own
@@ -87,12 +87,10 @@ claim.
 
 ## quick — read it, never rewrite it
 
-`quick` **reads and validates** (`aw designs`, `aw designs --plan`); it changes
-nothing a baseline seals — normative content, a maturity, an approval. A tweak
-that needs a new state or a redrawn journey **escalates with the evidence it
-gathered**: `plan-refine` for the package, `spec-refine` when behavior or
-acceptance moves. Editing silently moves the revision while every consumer stays
-pinned to the old digest.
+`quick` **reads and validates** (`aw designs`, `aw designs --plan`); it never
+changes sealed content, maturity or approval. A new state or journey escalates with the
+evidence it gathered: `plan-refine` for the package, `spec-refine` when behavior
+or acceptance moves.
 
 ## plan-refine — the delta, and only the delta
 

@@ -40,6 +40,7 @@ import {
   withPlanExecBatchLoop,
   withSettlement,
 } from "../../domain/flow/run-state.js";
+import { approvedValidationOnly } from "../../domain/flow/unchanged-phase.js";
 import { type LocalProposal, sealProposal } from "../../domain/proposal.js";
 import { type PendingObligation, obligationExit } from "../../domain/reconciliation.js";
 import type { EnvPort } from "../../ports/env.js";
@@ -74,6 +75,7 @@ import { canonicalJson } from "../semantic-operation/protocol.js";
 import { canonicalArtifactPath } from "../session-artifacts.js";
 import { runSessionClose } from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
+import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
@@ -150,9 +152,9 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
   return async (plan, run) => {
     switch (plan.operation) {
       case "workspace.board":
-        return board(deps);
+        return board(deps, run);
       case "session.artifacts":
-        return artifacts(deps, run, plan.dump ?? null);
+        return artifacts(deps, run, plan.dump ?? null, run.session.endsWith("-plan-refine"));
       case "session.close":
         return close(deps, run);
       case "worktree.ensure":
@@ -489,13 +491,33 @@ async function recordCompletedClaims(
   }
 }
 
-async function board(deps: InternalActionDeps): Promise<InternalActionOutcome> {
+async function board(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
   const data = await runStatusCommand(deps.fs, deps.env, deps.paths, { git: deps.git });
   const counts = data.counts;
+  const custody = run.session.endsWith("-plan-new")
+    ? await readCustody(deps.fs, locateRun(deps.paths, run.session).dir)
+    : null;
+  const superseded =
+    custody?.status === "present"
+      ? data.specs.find(
+          (spec) =>
+            spec.status === "superseded" &&
+            custody.custody.artifacts.some(
+              (artifact) => artifact.role === "input" && artifact.path === spec.file,
+            ),
+        )
+      : undefined;
+  const warning =
+    superseded === undefined
+      ? null
+      : `la spec ${superseded.number} fue reemplazada${superseded.superseded_by ? ` por ${superseded.superseded_by}` : ""}: plan-new debe usar el reemplazo`;
   return {
     ok: true,
-    summary: `tablero: ${counts.specs} specs, ${counts.plans} planes, ${counts.sessions_active} sesiones activas, ${counts.pending} pendientes`,
-    output: canonicalJson(data),
+    summary: `tablero: ${counts.specs} specs, ${counts.plans} planes, ${counts.sessions_active} sesiones activas, ${counts.pending} pendientes${warning ? `; aviso: ${warning}` : ""}`,
+    output: canonicalJson(warning ? { ...data, spec_readiness_warning: warning } : data),
     effects: ["read_only"],
   };
 }
@@ -514,6 +536,7 @@ async function artifacts(
   deps: InternalActionDeps,
   run: InternalActionRun,
   dump: readonly string[] | null,
+  planRefine = false,
 ): Promise<InternalActionOutcome> {
   // The presence report, without the narrative: this operation checks that the
   // artifacts are THERE, and projecting the session's whole reading to answer
@@ -540,10 +563,14 @@ async function artifacts(
     );
   }
 
+  const destination = planRefine ? await refineDestination(deps, run, canonicalJson(report)) : "";
+  if (typeof destination !== "string") return destination;
+  const legacyWarning = destination;
+
   if (dump === null) {
     return {
       ok: true,
-      summary: `sesión ${report.session}: SESSION.md presente, ${report.artifacts.session.criterios_count} criterios, ${report.artifacts.decisiones_count} decisiones`,
+      summary: `sesión ${report.session}: SESSION.md presente, ${report.artifacts.session.criterios_count} criterios, ${report.artifacts.decisiones_count} decisiones${legacyWarning}`,
       output: canonicalJson(report),
       effects: SEEDED_EFFECTS,
     };
@@ -579,7 +606,7 @@ async function artifacts(
   }
   return {
     ok: true,
-    summary: `sesión ${report.session}: ${dump.join(", ")} con contenido, ${report.artifacts.session.criterios_count} criterios`,
+    summary: `sesión ${report.session}: ${dump.join(", ")} con contenido, ${report.artifacts.session.criterios_count} criterios${legacyWarning}`,
     output,
     effects: SEEDED_EFFECTS,
   };
@@ -606,6 +633,31 @@ async function seedMissingCheckpoint(
 async function rootScript(deps: InternalActionDeps, run: InternalActionRun) {
   const path = canonicalArtifactPath(join(deps.paths.cwdSessionsDir(), run.session), "scripts_sql");
   return (await deps.fs.exists(path)) ? { path, content: await deps.fs.readText(path) } : null;
+}
+
+/** A new refine must be bound to an existing plan; only pre-custody sessions degrade. */
+async function refineDestination(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  report: string,
+): Promise<string | InternalActionOutcome> {
+  const custody = await readCustody(deps.fs, locateRun(deps.paths, run.session).dir);
+  if (custody.status === "unreadable") {
+    return refusal("session.artifacts", `custodia ilegible: ${custody.reason}`, report);
+  }
+  if (custody.status === "absent") {
+    return "; sesión legada sin custodia: no se puede verificar su plan destino";
+  }
+  for (const artifact of custody.custody.artifacts) {
+    if (artifact.role !== "input" || !/^docs\/plans\/\d{3,}-plan-[^/]+\.md$/.test(artifact.path))
+      continue;
+    if (await deps.fs.exists(join(deps.paths.workspaceDir(), artifact.path))) return "";
+  }
+  return refusal(
+    "session.artifacts",
+    "plan-refine exige un plan destino existente: creá la sesión con --input docs/plans/PPP-plan-<slug>.md o el descriptor <slug>-plan-refine, del que session-create deriva el plan",
+    canonicalJson({ report, custody: custody.custody.artifacts.map((artifact) => artifact.path) }),
+  );
 }
 
 /**
@@ -951,6 +1003,13 @@ async function closeBatch(
     );
   }
   // A batch born with a base was meant to be credited at its phase validation.
+  if (validationOnlyCloseMissing(live.state, batch)) {
+    return refusal(
+      "plan-exec.batch-close",
+      "el lote de sólo validación carece de aprobación o de evidencia acreditada",
+      canonicalJson({ code: "PLAN_VALIDATION_ONLY_NOT_APPROVED", batch: batch.id }),
+    );
+  }
   // Reaching the close without that credit — an exhausted validation degraded
   // past, a route that skipped it — would publish its tasks as done on no proof.
   if (batch.base !== undefined && batch.credit === undefined) {
@@ -961,6 +1020,13 @@ async function closeBatch(
     );
   }
   const phaseUpdates = phaseUpdatesForClosedBatch(text, batch);
+  if (batch.review === undefined && batch.published_plan_digest === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      `el batch ${batch.id} no tiene revisión registrada; completá review-findings con un revisor distinto y las correcciones revisadas`,
+      canonicalJson({ code: "PLAN_EXEC_BATCH_REVIEW_MISSING", batch: batch.id }),
+    );
+  }
   if (!phaseUpdates.ok) {
     return refusal(
       "plan-exec.batch-close",
@@ -1018,6 +1084,13 @@ async function closeBatch(
  * already names the NEXT batch — or nothing, when it was the last one. The
  * publisher then confirms it through its own already-applied path.
  */
+function validationOnlyCloseMissing(state: FlowRunState, batch: PlanExecBatch): boolean {
+  return (
+    batch.kind === "validation-only" &&
+    (!approvedValidationOnly(state, batch) || batch.credit === undefined)
+  );
+}
+
 function batchToClose(state: FlowRunState): PlanExecBatch | undefined {
   const batches = state.batches ?? [];
   const open = batches.find((batch) => batch.published_plan_digest === undefined);
@@ -1349,6 +1422,13 @@ function phaseUpdatesForClosedBatch(
 }
 
 function inferNextBatch(text: string, state: FlowRunState): ReturnType<typeof inferPlanExecBatch> {
+  const first = parsePhases(text).items.find((phase) => phase.state !== "validada");
+  if (
+    first !== undefined &&
+    !parseTasks(text).items.some((task) => task.status === "open" && task.phase === first.n)
+  ) {
+    return inferValidationOnly(text, state, first.n);
+  }
   // `inferPlanExecBatch` itself validates that the phase has real, uniquely
   // labelled Tn.m tasks. We only choose the first still-open phase from the
   // document, which is a deterministic batch boundary rather than a claimed one.
@@ -1383,6 +1463,37 @@ function inferNextBatch(text: string, state: FlowRunState): ReturnType<typeof in
     iteration,
     mode: "continuous",
     phases: [openPhase],
+  });
+}
+
+function inferValidationOnly(
+  text: string,
+  state: FlowRunState,
+  phase: number,
+): ReturnType<typeof inferPlanExecBatch> {
+  const entry = state.plan_exec_entry;
+  if (
+    entry?.plan !== state.scope?.plan ||
+    !entry?.phases_without_open_tasks?.includes(phase) ||
+    !entry.approved_without_changes?.includes(phase)
+  ) {
+    return {
+      ok: false,
+      failure: {
+        code: "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
+        message: `F${phase} no tiene tareas abiertas ni aprobación de validación sin cambios al entrar`,
+        action:
+          "reanudá el consentimiento de entrada; si la corrida ya lo pasó sin observar esta fase, reinicializá con aw flow restart para observarla y aprobarla antes de validar",
+      },
+    };
+  }
+  const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
+  return inferPlanExecBatch(text, {
+    id: `batch-${iteration}`,
+    iteration,
+    mode: "isolated",
+    phases: [phase],
+    validation_only: true,
   });
 }
 

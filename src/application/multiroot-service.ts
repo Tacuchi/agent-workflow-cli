@@ -6,7 +6,7 @@ import { type ClaudeResult, attachClaude, detachClaude } from "./multiroot/claud
 import { type CodexResult, attachCodex, detachCodex } from "./multiroot/codex.js";
 import { type OzAttachNoop, attachOz, detachOz } from "./multiroot/oz.js";
 import { type WarpResult, attachWarp, detachWarp } from "./multiroot/warp.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface MultirootInput {
@@ -47,7 +47,13 @@ export async function runMultiroot(
   mode: Mode,
   input: MultirootInput,
 ): Promise<MultirootResult | MultirootError> {
-  const { paths, scopeDir, scope } = await resolveScopeAndPaths(fs, pathsService, input);
+  let resolved: Awaited<ReturnType<typeof resolveScopeAndPaths>>;
+  try {
+    resolved = await resolveScopeAndPaths(fs, pathsService, input);
+  } catch (err) {
+    return { error: "SOURCE_PATH_MISSING", hint: (err as Error).message };
+  }
+  const { paths, scopeDir, scope } = resolved;
 
   if (input.fromSources && paths.length === 0) {
     return {
@@ -143,5 +149,5 @@ async function readSourcesFromProject(
     pathsService.blockMarkers(),
     (b) => b.fuentes.length > 0,
   );
-  return block ? block.fuentes.map((f) => f.path).filter((p) => p && p.length > 0) : [];
+  return block ? Promise.all(block.fuentes.map((f) => requireSourcePath(fs, f))) : [];
 }

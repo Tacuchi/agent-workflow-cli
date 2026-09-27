@@ -52,7 +52,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
   // Single line: [Workline] renders it with truncate — the doctrinal detail
   // lives in the `w` bundle, not in the TUI.
   overview:
-    "3 flows (SPEC · PLAN · QUICK) drive convergent loops — each a persistent goal that runs until its Success criteria are green (verification-first).",
+    "3 flows (SPEC · PLAN · QUICK) drive convergent loops — each a persistent goal that runs until its Success criteria are green (verification-first). Pipelines: aw set-pipeline.",
 
   // The model's 3 FLOWS + optional runtime materialization + export-* family.
   phases: [

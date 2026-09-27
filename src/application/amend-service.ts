@@ -164,16 +164,18 @@ export async function amendDocument(
   if (input.check) return checkAmendment(resolved, input);
 
   const closed = closureOf(kind, text);
-  if (closed !== null) {
-    return fail(
+  const openFailure = () =>
+    fail(
       "AMEND_TARGET_OPEN",
       `'${document}' ${closed}: la corrección directa es para documentos ya cerrados`,
       "mientras el documento está abierto lo escribe el recorrido que lo tiene: corregí ahí, o cerralo antes de corregirlo por esta vía",
     );
+  if (closed !== null && (kind === "plan" || !/status:\s*superseded\b/i.test(input.to))) {
+    return openFailure();
   }
   const located = locate(text, input.from, input.to);
   if ("failure" in located) return { status: "failed", failure: located.failure };
-
+  if (closed !== null && !isSupersedingCorrection(text, located.after)) return openFailure();
   const guard = contractGuard(kind, text, located.after);
   if (guard !== null) {
     return fail(
@@ -414,7 +416,27 @@ function closureOf(kind: "spec" | "plan", text: string): string | null {
     return status.declared === "done" ? null : `declara '> Estado: ${status.declared}'`;
   }
   const status = specStatus(text);
-  return status === "ready-for-plan" ? null : `declara 'status: ${status ?? "ausente"}'`;
+  return status === "ready-for-plan" || status === "superseded"
+    ? null
+    : `declara 'status: ${status ?? "ausente"}'`;
+}
+
+/** Replacing a spec only changes its two frontmatter scalars, even when it is still a draft. */
+function isSupersedingCorrection(before: string, after: string): boolean {
+  if (specStatus(after) !== "superseded") return false;
+  const withoutMarks = (text: string): string | null => {
+    const lines = text.split(/\r?\n/);
+    if (lines[0]?.trim() !== "---") return null;
+    const end = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+    if (end < 0) return null;
+    return lines
+      .filter(
+        (line, index) => index > end || index === 0 || !/^(?:status|superseded_by)\s*:/i.test(line),
+      )
+      .join("\n");
+  };
+  const beforeBody = withoutMarks(before);
+  return beforeBody !== null && beforeBody === withoutMarks(after);
 }
 
 /** The spec's frontmatter `status`, or `null` when it declares none. */
