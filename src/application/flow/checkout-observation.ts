@@ -11,7 +11,7 @@
  * {@link observeCheckout}.
  */
 
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
@@ -20,6 +20,7 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { readWorkspaceBlock, requireSourcePath } from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { readCustody } from "../session-custody-service.js";
 import { type CheckoutState, checkoutDigest } from "../source-boundary-policy.js";
 
 /**
@@ -51,6 +52,7 @@ export async function resolveCheckoutCandidates(
     try {
       const units = await fs.realPath(paths.userUnitsDir());
       const key = workspaceKey(paths.workspaceDir());
+      const custody = await readCustody(fs, join(paths.cwdSessionsDir(), session));
       for (const source of block.fuentes) {
         try {
           await requireSourcePath(fs, source);
@@ -59,7 +61,11 @@ export async function resolveCheckoutCandidates(
           // The caller of observeScopedFingerprints reports the typed reason.
           continue;
         }
-        const unit = unitPath(units, { workspaceKey: key, alias: source.alias, session });
+        const unit =
+          custody.status === "present"
+            ? (custody.custody.sources.find((entry) => entry.alias === source.alias)?.unit_path ??
+              unitPath(units, { workspaceKey: key, alias: source.alias, session }))
+            : unitPath(units, { workspaceKey: key, alias: source.alias, session });
         // Only a unit this session actually TOOK is published. Listing every alias
         // the workspace block declares would advertise roots the validator then
         // refuses as ineligible — the same divergence between what a run shows and

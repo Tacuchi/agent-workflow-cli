@@ -38,6 +38,7 @@ export interface FlagContract {
  */
 const RUNTIME_FLAGS: ReadonlySet<string> = new Set([
   "namespace",
+  "workspace",
   "format",
   "json",
   "detail",

@@ -67,6 +67,7 @@ import { toolCommand } from "./tool.js";
 import { visibilityCommand } from "./visibility.js";
 import { workspaceInitCommand } from "./workspace-init.js";
 import { workspaceMigrateCommand } from "./workspace-migrate.js";
+import { workspaceMoveCommand } from "./workspace-move.js";
 import { worktreeCommand } from "./worktree.js";
 
 export const ALL_COMMANDS: readonly CliCommand[] = [
@@ -86,6 +87,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   sessionCreateCommand,
   stackCommand,
   workspaceInitCommand,
+  workspaceMoveCommand,
   addSourceCommand,
   skillIndexCommand,
   contextBudgetCommand,

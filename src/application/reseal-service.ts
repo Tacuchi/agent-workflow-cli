@@ -242,6 +242,7 @@ export async function prepareReseal(
       // The plan's CURRENT digest, so the write lands on the bytes the preview
       // was computed from and on no others.
       bases: [{ path: planPath, digest: baseDigest(planText) }],
+      scope: { workspace_root: paths.workspaceDir() },
       effects: ["mutate_overwrite"],
       requiresApproval: ["mutate_overwrite"],
     }),

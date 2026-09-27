@@ -482,6 +482,7 @@ export async function prepareExport(
       dir: policy.dir,
       ...(category === "manuals" ? { existing_manuals: existingManuals } : {}),
       scope,
+      workspace: paths.workspaceDir(),
     },
     sealed: "el material del alcance o el destino declarado de la categoría",
     scope,

@@ -69,6 +69,7 @@ export function baseDigest(text: string): string {
 export interface ProposalScope {
   sensitive_sources: boolean;
   scope_expanded: boolean;
+  workspace_root?: string;
 }
 
 /** What a person sees before deciding: destination, weight, and whether it replaces. */
@@ -120,6 +121,7 @@ export function sealProposal(input: SealProposalInput): LocalProposal {
     scope: {
       sensitive_sources: input.scope?.sensitive_sources === true,
       scope_expanded: input.scope?.scope_expanded === true,
+      ...(input.scope?.workspace_root ? { workspace_root: input.scope.workspace_root } : {}),
     },
     effects: [...input.effects],
     requires_approval: [...input.requiresApproval],

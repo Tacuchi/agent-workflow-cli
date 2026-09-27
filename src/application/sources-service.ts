@@ -1,7 +1,9 @@
+import { dirname } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { documentOfSession, readDocBranches, resolveDocBranch } from "./doc-branch-ledger.js";
+import { declaringHubs } from "./hub-registry.js";
 import {
   type ProjectFuente,
   readWorkspaceBlock,
@@ -29,6 +31,8 @@ export interface EnrichedSource extends ProjectFuente {
   is_repo: boolean;
   error: string | null;
   error_code?: "SOURCE_PATH_MISSING";
+  other_workspaces?: Array<{ root: string; working_branch: string | null }>;
+  shared_branch_warning?: string;
 }
 
 export interface DivergentSource {
@@ -56,6 +60,7 @@ export async function runSources(
   input: SourcesInput,
 ): Promise<SourcesOutput> {
   const cwd = paths.workspaceDir();
+  const ownRoot = await fs.realPath(cwd).catch(() => cwd);
   const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
   const verbose = input.verbose === true;
 
@@ -101,6 +106,12 @@ export async function runSources(
   for (const src of sources) {
     const effective = await resolveDocBranch(fs, paths, src, block, document, ledger);
     const expected = effective.branch;
+    const others =
+      src.path === null
+        ? []
+        : (await declaringHubs(fs, dirname(paths.userRoot()), paths.namespace, src.path))
+            .filter((hub) => hub.root !== ownRoot)
+            .map((hub) => ({ root: hub.root, working_branch: hub.workingBranch }));
     if (input.skipGit === true) {
       // Mirror Python: skip_git produces only alias/path/main_branch/expected_work_branch.
       enriched.push({
@@ -109,11 +120,24 @@ export async function runSources(
         main_branch: src.main_branch,
         expected_work_branch: expected,
         expected_origin: effective.origin,
+        other_workspaces: others,
       } as EnrichedSource);
     } else {
+      const checked = await checkSourceBranch(fs, git, src, expected);
       enriched.push({
-        ...(await checkSourceBranch(fs, git, src, expected)),
+        ...checked,
         expected_origin: effective.origin,
+        other_workspaces: others,
+        ...(others.some(
+          (hub) => hub.working_branch !== null && hub.working_branch === checked.current_branch,
+        )
+          ? {
+              shared_branch_warning: `El checkout está en la rama de trabajo de otro workspace: ${others
+                .filter((hub) => hub.working_branch === checked.current_branch)
+                .map((hub) => hub.root)
+                .join(", ")}`,
+            }
+          : {}),
       });
     }
   }

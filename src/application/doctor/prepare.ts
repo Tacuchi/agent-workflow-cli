@@ -151,7 +151,7 @@ export async function prepareDoctorBatch(
   // versión de CLI, sin marcas de tiempo, sin el informe entero. Dos corridas
   // sobre el mismo estado tienen que sellar igual, o «un reintento idéntico no
   // vuelve a preguntar» deja de ser cierto.
-  const digest = semanticDigest({ batch, read_set: readSet });
+  const digest = semanticDigest({ batch, read_set: readSet, workspace: ctx.paths.workspaceDir() });
   return {
     ok: true,
     kind: "sealed",

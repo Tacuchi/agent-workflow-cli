@@ -171,6 +171,7 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   FLOW_ANSWER_MISSING: "envelope",
   FLOW_ANSWER_INVALID: "envelope",
   FLOW_ANSWER_STALE: "envelope",
+  WORKSPACE_MISMATCH: "envelope",
   FLOW_ANSWER_NOT_EXPECTED: "envelope",
   FLOW_RESULT_INVALID: "envelope",
   FLOW_ARTIFACTS_MISSING: "envelope",

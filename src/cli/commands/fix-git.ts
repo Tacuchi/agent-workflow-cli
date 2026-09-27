@@ -78,6 +78,7 @@ export const fixGitCommand: CliCommand<FixGitData> = {
     const adapt = stage === "prepare" ? args.valuesMulti.get("adapt") : echoedAdapt;
     const show = stage === "prepare" ? args.valuesMulti.get("show") : undefined;
     const prepared = await prepareFixGit(ctx.git, target.path, target.alias, roles, {
+      workspace: ctx.paths.workspaceDir(),
       ...(show ? { show } : {}),
       ...(adapt ? { adapt } : {}),
     });

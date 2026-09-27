@@ -5,6 +5,9 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { readWorkspaceBlock, requireSourcePath } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
+import { readCustody } from "./session-custody-service.js";
+import { listSessionFolders } from "./session-resolver.js";
+import { hubUnitPaths } from "./unit-membership.js";
 
 export type VisibilityDriftStatus =
   | "ok"
@@ -139,6 +142,17 @@ async function readDeclaredFuentes(
       pathsFound.push(await requireSourcePath(fs, source));
     } catch (err) {
       errors.push((err as Error).message);
+    }
+  }
+  const unitsRoot = await fs.realPath(paths.userUnitsDir()).catch(() => paths.userUnitsDir());
+  const owns = await hubUnitPaths(fs, paths, unitsRoot);
+  for (const session of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    const custody = await readCustody(fs, session.path);
+    if (custody.status !== "present") continue;
+    for (const source of custody.custody.sources) {
+      if (source.unit_path && owns(source.unit_path) && (await fs.exists(source.unit_path))) {
+        pathsFound.push(source.unit_path);
+      }
     }
   }
   return { paths: pathsFound, errors };

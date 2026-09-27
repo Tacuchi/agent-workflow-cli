@@ -43,6 +43,10 @@ const FILE = "src/feature.ts";
 const UNO = { code: "201", folder: "201-alpha-plan-exec", plan: "docs/plans/041-plan-alpha.md" };
 const DOS = { code: "202", folder: "202-beta-plan-exec", plan: "docs/plans/042-plan-beta.md" };
 
+function expectedUnitBranch(workspace: string, session: string): string {
+  return `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session}`;
+}
+
 function git(repo: string, ...args: string[]): string {
   return execFileSync("git", args, {
     cwd: repo,
@@ -224,8 +228,12 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
 
     // Dos árboles distintos, cada uno en la rama de SU sesión.
     expect(units.uno).not.toBe(units.dos);
-    expect(git(units.uno, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(`aw/${UNO.folder}`);
-    expect(git(units.dos, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(`aw/${DOS.folder}`);
+    expect(git(units.uno, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(
+      expectedUnitBranch(workspace, UNO.folder),
+    );
+    expect(git(units.dos, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(
+      expectedUnitBranch(workspace, DOS.folder),
+    );
 
     // Y el scope quedó en el estado dirigido, no en la memoria de nadie: es lo
     // que hace distinguibles a dos corridas que por lo demás son idénticas.
@@ -332,7 +340,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     expect(mine.session).toBe(UNO.folder);
     expect(mine.units).toHaveLength(1);
     expect(mine.units[0]?.path).toBe(units.uno);
-    expect(mine.units[0]?.branch).toBe(`aw/${UNO.folder}`);
+    expect(mine.units[0]?.branch).toBe(expectedUnitBranch(workspace, UNO.folder));
     expect(mine.units[0]?.dirty).toBe(false);
     expect(mine.units[0]?.head).toBe(sha);
 
@@ -370,7 +378,9 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
       expect(resumed.proposal.file).toBe(run.folder);
       expect(resumed.proposal.scope?.plan).toBe(run.plan);
       expect(resumed.proposal.units?.map((u) => u.path)).toEqual([unit]);
-      expect(resumed.proposal.units?.map((u) => u.branch)).toEqual([`aw/${run.folder}`]);
+      expect(resumed.proposal.units?.map((u) => u.branch)).toEqual([
+        expectedUnitBranch(workspace, run.folder),
+      ]);
     }
   });
 

@@ -103,7 +103,7 @@ export async function prepareFixGit(
   repo: string,
   alias: string | null,
   roles?: FixGitRoles,
-  options: { show?: string[]; adapt?: string[] } = {},
+  options: { show?: string[]; adapt?: string[]; workspace?: string } = {},
 ): Promise<SemanticParse<FixGitPrepared>> {
   if (!(await git.isGitRepo(repo))) {
     return { ok: false, failure: notRepo(repo) };
@@ -191,7 +191,10 @@ export async function prepareFixGit(
     operation: OPERATION,
     // Sealed over the hashes, not the content: the seal must change exactly
     // when the conflict changes, and only then.
-    inputs: context.conflicts,
+    inputs:
+      options.workspace === undefined
+        ? context.conflicts
+        : { conflicts: context.conflicts, workspace: options.workspace },
     contract: CONTRACT,
     inventory: {
       context: contextView,
@@ -212,7 +215,14 @@ export async function prepareFixGit(
       ),
       max_bytes: item.max_bytes,
     })),
-    ...(adapt.length ? { scope: { adapt } } : {}),
+    ...(options.workspace || adapt.length
+      ? {
+          scope: {
+            ...(options.workspace ? { workspace: options.workspace } : {}),
+            ...(adapt.length ? { adapt } : {}),
+          },
+        }
+      : {}),
     readSet: [...paths, ...adapt],
     readSetBytes:
       stages.reduce((sum, s) => sum + totalBytes(s), 0) +

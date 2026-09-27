@@ -16,6 +16,7 @@ import {
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { resolveSessionTarget } from "./session-resolver.js";
+import { hubUnitPaths } from "./unit-membership.js";
 
 export interface CheckBranchInput {
   alias?: string;
@@ -95,7 +96,7 @@ export async function runCheckBranch(
   // The isolation verdict comes FIRST, and only when the source actually has
   // units: with none, nobody is running isolated and the check is exactly the
   // one this workspace had before the feature existed.
-  const units = await unitsOf(git, paths, unitsRoot, located);
+  const units = await unitsOf(fs, git, paths, unitsRoot, located);
   if (units.length > 0) {
     return unitVerdict(fs, git, paths, unitsRoot, located, block, units, input);
   }
@@ -334,6 +335,7 @@ async function unitVerdict(
 
 /** Units of `source` that belong to THIS workspace, read from git itself. */
 async function unitsOf(
+  fs: FileSystemPort,
   git: GitPort,
   paths: PathsService,
   unitsRoot: string,
@@ -349,13 +351,13 @@ async function unitsOf(
     // block out of a failed read.
     return [];
   }
-  const key = paths.workspaceDir();
+  const owns = await hubUnitPaths(fs, paths, unitsRoot);
   const refs: UnitRef[] = [];
   for (const tree of trees) {
     if (tree.main) continue;
     const identity = parseUnitPath(unitsRoot, tree.path);
     if (identity === null || identity.alias !== source.alias) continue;
-    if (identity.workspaceKey !== workspaceKeyOf(key)) continue;
+    if (!owns(tree.path)) continue;
     refs.push({
       session: identity.session,
       path: tree.path,
@@ -404,7 +406,7 @@ function unitFor(session: string, paths: PathsService, unitsRoot: string, alias:
   return {
     session,
     path: `${unitsRoot}/${workspaceKeyOf(paths.workspaceDir())}/${alias}/${session}`,
-    branch: unitBranch(session),
+    branch: unitBranch(session, paths.workspaceDir()),
   };
 }
 

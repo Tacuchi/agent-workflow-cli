@@ -138,7 +138,8 @@ export async function preparePersist(
       // The seal covers the whole inventory: a document appearing anywhere in
       // docs/ between prepare and apply invalidates the duplicate check AND the
       // consultative numbering the answer reasoned over.
-      inputs: inventory,
+      inputs: { inventory, workspace: cwd },
+      scope: { workspace: cwd },
       contract: CONTRACT,
       inventory,
       allowedDestinations: Object.values(categories).map((c) => c.dir),

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +31,10 @@ import { runWorktree } from "../../src/application/worktree-service.js";
 import type { RetirementProposal } from "../../src/domain/retirement/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+
+function movedBranch(workspace: string, folder: string): string {
+  return `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${folder}`;
+}
 
 function git(repo: string, ...args: string[]): string {
   return execFileSync("git", args, {
@@ -437,7 +442,13 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
 
     const proposal = await proposalFor("discard", "plan:024");
     expect(proposal.units).toEqual([
-      { alias: "acme", session: folder, path: ensured.path, branch: `aw/${folder}`, repo: source },
+      {
+        alias: "acme",
+        session: folder,
+        path: ensured.path,
+        branch: movedBranch(workspace, folder),
+        repo: source,
+      },
     ]);
 
     const outcome = await applyRetirement(deps, {
@@ -448,15 +459,15 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
 
-    expect(outcome.result.units_released).toEqual([`acme:aw/${folder}`]);
+    expect(outcome.result.units_released).toEqual([`acme:${movedBranch(workspace, folder)}`]);
     expect(outcome.result.pending_reconciliation).toEqual([]);
     expect(existsSync(ensured.path)).toBe(false);
     expect(git(source, "worktree", "list", "--porcelain")).not.toContain(folder);
     // La rama sobrevive: es la única alcanzabilidad de los commits de la sesión, y
     // borrarla los volvería inalcanzables. Retirar la unidad no es borrar historia.
-    expect(git(source, "rev-parse", "--verify", `refs/heads/aw/${folder}`)).toMatch(
-      /^[0-9a-f]{40}$/,
-    );
+    expect(
+      git(source, "rev-parse", "--verify", `refs/heads/${movedBranch(workspace, folder)}`),
+    ).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it("una unidad con trabajo sin commitear se REPORTA, nunca se fuerza", async () => {
@@ -480,7 +491,9 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (!outcome.ok) return;
 
     expect(outcome.result.units_released).toEqual([]);
-    expect(outcome.result.pending_reconciliation).toEqual([`acme:aw/${folder}`]);
+    expect(outcome.result.pending_reconciliation).toEqual([
+      `acme:${movedBranch(workspace, folder)}`,
+    ]);
     expect(readFileSync(join(ensured.path, "a-medio-hacer.txt"), "utf-8")).toBe(
       "trabajo sin commitear\n",
     );

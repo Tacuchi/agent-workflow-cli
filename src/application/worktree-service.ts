@@ -29,6 +29,7 @@ import {
   resolveSessionTarget,
   sessionFolderMatches,
 } from "./session-resolver.js";
+import { hubUnitPaths } from "./unit-membership.js";
 import { ensureWorklineMaterialized } from "./workspace-materialization-service.js";
 
 /**
@@ -674,6 +675,32 @@ async function resolveTarget(
     custody.status === "present"
       ? custody.custody.sources.find((s) => s.alias === source.alias)?.base_branch
       : undefined;
+  const recorded =
+    custody.status === "present"
+      ? custody.custody.sources.find((s) => s.alias === source.alias)
+      : undefined;
+  if (recorded?.unit_path) {
+    const oldIdentity = parseUnitPath(await canonicalUnitsRootForRead(deps), recorded.unit_path);
+    if (oldIdentity?.alias === source.alias && oldIdentity.session === session)
+      identity.workspaceKey = oldIdentity.workspaceKey;
+  }
+  let previous: WorktreeEntry | undefined;
+  if (custody.status === "absent") {
+    const root = await canonicalUnitsRootForRead(deps);
+    const owns = await hubUnitPaths(deps.fs, deps.paths, root);
+    try {
+      previous = (await deps.git.worktreeList(sourcePath)).find((tree) => {
+        const found = parseUnitPath(root, tree.path);
+        return found?.session === session && found.alias === source.alias && owns(tree.path);
+      });
+    } catch {
+      /* a broken git inventory is reported by ensure/list itself */
+    }
+    if (previous) {
+      const found = parseUnitPath(root, previous.path);
+      if (found) identity.workspaceKey = found.workspaceKey;
+    }
+  }
   const effective =
     sealed === undefined
       ? await resolveDocBranch(
@@ -692,8 +719,10 @@ async function resolveTarget(
   return {
     source: { ...source, path: sourcePath },
     identity,
-    path: unitPath(await canonicalUnitsRoot(deps), identity),
-    branch: unitBranch(session),
+    path:
+      recorded?.unit_path ?? previous?.path ?? unitPath(await canonicalUnitsRoot(deps), identity),
+    branch:
+      recorded?.unit_branch ?? previous?.branch ?? unitBranch(session, deps.paths.workspaceDir()),
     base: sealed ?? effective?.branch ?? roles.work,
     roles,
   };
@@ -774,6 +803,23 @@ async function ensureUnit(
 
   const mine = existing.find((w) => samePath(w.path, path));
   if (mine !== undefined) {
+    const custody = await readCustody(
+      deps.fs,
+      join(deps.paths.cwdSessionsDir(), target.identity.session),
+    );
+    const recorded =
+      custody.status === "present"
+        ? custody.custody.sources.find((s) => s.alias === source.alias)
+        : undefined;
+    if (
+      custody.status === "present" &&
+      (recorded?.unit_path !== path || recorded.unit_branch !== branch || mine.branch !== branch)
+    ) {
+      return {
+        error: "unit_foreign",
+        message: `La unidad ${path} no está registrada en la custodia de esta sesión.`,
+      };
+    }
     // Idempotent: the unit is already there, on its own branch. The baseline is
     // sealed here too — it is idempotent by alias, so the FIRST reading wins and a
     // second `ensure` can never overwrite it with a state the session produced.
@@ -796,7 +842,26 @@ async function ensureUnit(
   // An existing branch is checked out, not recreated: a flow that released its
   // unit and asks again must land back on its own commits, not on a fresh branch
   // that silently drops them.
-  const from = (await deps.git.branchExists(source.path, branch)) ? null : base;
+  const exists = await deps.git.branchExists(source.path, branch);
+  const custody = await readCustody(
+    deps.fs,
+    join(deps.paths.cwdSessionsDir(), target.identity.session),
+  );
+  const recorded =
+    custody.status === "present"
+      ? custody.custody.sources.find((s) => s.alias === source.alias)
+      : undefined;
+  if (
+    exists &&
+    custody.status === "present" &&
+    (recorded?.unit_branch !== branch || recorded.unit_path !== path)
+  ) {
+    return {
+      error: "unit_foreign",
+      message: `La rama ${branch} no está registrada en la custodia de esta sesión.`,
+    };
+  }
+  const from = exists ? null : base;
   try {
     await deps.git.worktreeAdd(source.path, path, branch, from);
   } catch (err) {
@@ -928,6 +993,7 @@ async function reclaimUnits(
   const key = workspaceKey(deps.paths.workspaceDir());
   const root = await canonicalUnitsRootForRead(deps);
   const sessions = await sessionStates(deps);
+  const owns = await hubUnitPaths(deps.fs, deps.paths, root);
   const only = input.sessionCode ?? null;
 
   const reclaimed: ReclaimedUnit[] = [];
@@ -935,7 +1001,7 @@ async function reclaimUnits(
   const unreadable: WorktreeReclaimOutput["unreadable"] = [];
   for (const source of sources) {
     if (input.alias !== undefined && source.alias !== input.alias) continue;
-    const swept = await sweepSource(deps, source, { root, key, only, sessions, block });
+    const swept = await sweepSource(deps, source, { root, key, only, sessions, block, owns });
     if ("error" in swept) {
       unreadable.push({
         alias: source.alias,
@@ -970,6 +1036,7 @@ async function sweepSource(
     key: string;
     only: string | null;
     sessions: SessionStates;
+    owns: (path: string) => boolean;
     block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
   },
 ): Promise<
@@ -1062,10 +1129,16 @@ async function prune(
 /** The identity and residue state of a tree this sweep may act on; `null` otherwise. */
 function candidateOf(
   tree: WorktreeEntry,
-  ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
+  ctx: {
+    root: string;
+    key: string;
+    only: string | null;
+    sessions: SessionStates;
+    owns: (path: string) => boolean;
+  },
 ): { session: string; alias: string; orphan: OrphanUnit["reason"] | null } | null {
   const identity = tree.main ? null : parseUnitPath(ctx.root, tree.path);
-  if (identity === null || identity.workspaceKey !== ctx.key) return null;
+  if (identity === null || !ctx.owns(tree.path)) return null;
   if (ctx.only !== null && !sessionFolderMatches(identity.session, ctx.only)) return null;
   const orphan = orphanReason(identity.session, ctx.sessions, tree.prunable);
   // Outside a named session only residue is touched: a live session's unit is
@@ -1270,12 +1343,13 @@ async function listUnits(
   const key = workspaceKey(deps.paths.workspaceDir());
   const root = await canonicalUnitsRootForRead(deps);
   const sessions = await sessionStates(deps);
+  const owns = await hubUnitPaths(deps.fs, deps.paths, root);
 
   const units: ListedUnit[] = [];
   const orphans: OrphanUnit[] = [];
   const unreadable: WorktreeListOutput["unreadable"] = [];
   for (const source of block?.fuentes ?? []) {
-    const scanned = await scanSource(deps, source, { root, key, only, sessions });
+    const scanned = await scanSource(deps, source, { root, key, only, sessions, owns });
     if ("error" in scanned) {
       // Reported, never skipped in silence: a source whose trees cannot be read
       // would otherwise show up as "no units", which is the one answer that is
@@ -1303,7 +1377,13 @@ async function listUnits(
 async function scanSource(
   deps: WorktreeDeps,
   source: ProjectFuente,
-  ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
+  ctx: {
+    root: string;
+    key: string;
+    only: string | null;
+    sessions: SessionStates;
+    owns: (path: string) => boolean;
+  },
 ): Promise<
   { units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string; code?: "SOURCE_PATH_MISSING" }
 > {
@@ -1327,7 +1407,7 @@ async function scanSource(
   const orphans: OrphanUnit[] = [];
   for (const tree of trees) {
     const identity = tree.main ? null : parseUnitPath(ctx.root, tree.path);
-    if (identity === null || identity.workspaceKey !== ctx.key) continue;
+    if (identity === null || !ctx.owns(tree.path)) continue;
     if (ctx.only !== null && identity.session !== ctx.only) continue;
     const reason = orphanReason(identity.session, ctx.sessions, tree.prunable);
     if (reason === null) units.push(await liveUnit(deps, identity, repo, tree));

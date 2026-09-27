@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -333,7 +334,9 @@ describe("session custody — what a run received, created and changed", () => {
     expect(recorded?.alias).toBe("acme");
     expect(recorded?.branch).toBe("main");
     expect(recorded?.baseline_head).toBe(head);
-    expect(recorded?.unit_branch).toBe(`aw/${session.folder}`);
+    expect(recorded?.unit_branch).toBe(
+      `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session.folder}`,
+    );
     expect(recorded?.unit_path).toBe(unit.path);
     // The pre-existing dirt is named, so it can never be attributed to this run.
     expect(recorded?.dirty_paths).toContain("ajeno.txt");

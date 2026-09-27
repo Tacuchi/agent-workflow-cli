@@ -4,6 +4,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { Namespace } from "../runtime/namespace.js";
 import { WORKLINE_MARKER_FILE } from "../runtime/workline-marker.js";
+import { resolveWorkspaceDirectory } from "../runtime/workspace-resolution.js";
 import { localDateIso } from "./dates.js";
 
 export interface ProjectBlockMarkers {
@@ -204,17 +205,17 @@ export async function resolveWorkspaceRootFrom(
   paths: PathsService,
   from: string = paths.workspaceDir(),
 ): Promise<string> {
-  const start = from;
-  const wfMarker = join(`.${paths.namespace}`, "sessions");
-  let dir = start;
-  while (true) {
-    try {
-      if ((await fs.stat(join(dir, wfMarker))).type === "dir") return dir;
-    } catch {
-      // No canonical marker at this level; keep looking upward.
-    }
-    const parent = dirname(dir);
-    if (parent === dir) return start;
-    dir = parent;
-  }
+  if (from === paths.workspaceDir()) return from;
+  const resolved = await resolveWorkspaceDirectory(
+    fs,
+    {
+      root: paths.workspaceDir(),
+      namespace: paths.namespace,
+      namespaceSource: "default",
+      materialized: true,
+    },
+    from,
+    dirname(paths.userRoot()),
+  );
+  return resolved.root;
 }

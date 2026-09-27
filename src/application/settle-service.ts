@@ -222,6 +222,7 @@ export async function prepareSettle(
   // overwritten by a yes given over an older reading.
   const sealed = semanticDigest({
     operation: "settle.obligations",
+    workspace: paths.workspaceDir(),
     plan: listing.plan,
     plan_digest: specBaselineDigest(planText),
     spec_digest: baseline.digest,

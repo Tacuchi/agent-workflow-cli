@@ -3732,6 +3732,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
  */
 export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
+    command: "workspace-move",
+    reason:
+      "mudanza o reparación puntual de un hub; valida el destino y las referencias vivas antes de mover, sin abrir una corrida adicional",
+  },
+  {
     command: "spec-new",
     reason:
       "comando `/w:` de una sola pasada que no abre loop: sin corrida que dirigir, su gate de división lo aplica el propio comando con la regla de modules/SPLIT-GATE.md, que por eso conserva su enunciado",

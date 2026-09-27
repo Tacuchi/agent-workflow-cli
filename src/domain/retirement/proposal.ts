@@ -229,6 +229,7 @@ export interface ReadSetEntry {
 
 export interface RetirementProposal {
   version: number;
+  workspace_root?: string;
   mode: RetirementMode;
   target: WorklineNodeId;
   /** In removal order: descendants before what they hang from. */
@@ -270,6 +271,7 @@ export function sealRetirementProposal(input: SealRetirementInput): RetirementPr
 export function retirementDigest(body: Omit<RetirementProposal, "digest">): string {
   return semanticDigest({
     version: body.version,
+    ...(body.workspace_root ? { workspace_root: body.workspace_root } : {}),
     mode: body.mode,
     target: body.target,
     closure: body.closure,

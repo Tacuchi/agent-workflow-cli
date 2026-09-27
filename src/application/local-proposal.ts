@@ -102,6 +102,20 @@ export async function applyLocalProposal(
   paths: PathsService,
   input: ApplyProposalInput,
 ): Promise<ProposalApply> {
+  if (
+    input.proposal.scope.workspace_root &&
+    input.proposal.scope.workspace_root !== paths.workspaceDir()
+  ) {
+    return {
+      ok: false,
+      applied: [],
+      failure: {
+        code: "WORKSPACE_MISMATCH",
+        message: `Propuesta preparada en ${input.proposal.scope.workspace_root}; workspace actual ${paths.workspaceDir()}.`,
+        action: "vuelve al workspace de preparación o prepara una propuesta nueva aquí",
+      },
+    };
+  }
   const gate = checkApproval(input);
   if (gate !== null) return { ok: false, failure: gate, applied: [] };
 
