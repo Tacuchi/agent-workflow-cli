@@ -41,6 +41,14 @@ import {
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 describe("catálogo único de hosts", () => {
+  it("UserPromptSubmit se instala sólo en Claude y Kimi", () => {
+    for (const host of HARNESSES) {
+      if (host.hooks === null) continue;
+      expect(host.hooks.events.UserPromptSubmit.state, host.id).toBe(
+        host.id === "claude-code" || host.id === "kimi" ? "carried" : "omitted",
+      );
+    }
+  });
   it("la TUI proyecta exactamente los hosts del dominio, en su orden", () => {
     expect(HOSTS.map((h) => h.id)).toEqual([...HOST_INSTALL_TARGETS]);
     // Y `agents` NO está entre ellos: es destino compartido.

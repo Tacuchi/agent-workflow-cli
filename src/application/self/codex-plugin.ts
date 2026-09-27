@@ -67,7 +67,7 @@ export function buildCodexPluginBundle(
   return {
     files: {
       ".codex-plugin/plugin.json": `${JSON.stringify(descriptor, null, 2)}\n`,
-      "hooks.json": `${JSON.stringify(template, null, 2)}\n`,
+      "hooks.json": `${JSON.stringify({ ...template, hooks: Object.fromEntries(Object.entries(template.hooks).filter(([event]) => event !== "UserPromptSubmit")) }, null, 2)}\n`,
     },
     install_commands: [
       "codex plugin marketplace add <bundle path>",

@@ -1,5 +1,11 @@
 {
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [{ "type": "command", "command": "agent-workflow hook turn-start", "timeout": 10 }]
+      }
+    ],
     "SessionStart": [
       {
         "matcher": "startup|resume|clear",

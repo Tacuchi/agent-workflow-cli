@@ -106,6 +106,72 @@ describe("runBranchCheckHook — expected = WORKSPACE working branch", () => {
     expect(r.stderr).toBeUndefined();
   });
 
+  it("rechaza desarrollo antes de permitir una rama sin expectativa", async () => {
+    writeFileSync(
+      join(workspace, "CLAUDE.md"),
+      buildBlock({ sourcePath, workingBranch: "feature/x" }),
+    );
+    const r = await runBranchCheckHook({
+      stdin: editStdin(join(sourcePath, "code.ts")),
+      fs,
+      env,
+      paths,
+      git: fakeGit({ current: "development" }),
+    });
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("development");
+    expect(r.stderr).toContain("feature/x");
+  });
+
+  it("rechaza desarrollo incluso cuando no hay rama esperada declarada", async () => {
+    writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sourcePath }));
+    const r = await runBranchCheckHook({
+      stdin: editStdin(join(sourcePath, "code.ts")),
+      fs,
+      env,
+      paths,
+      git: fakeGit({ current: "development" }),
+    });
+    expect(r.exitCode).toBe(2);
+    expect(r.stderr).toContain("development");
+  });
+
+  it("permite una excepción declarada sin editar configuración del host", async () => {
+    writeFileSync(
+      join(workspace, "CLAUDE.md"),
+      buildBlock({ sourcePath, workingBranch: "feature/x" }).replace(
+        "- Última actividad:",
+        "- Ramas de excepción:\n  - acme: hotfix/fix\n- Última actividad:",
+      ),
+    );
+    const r = await runBranchCheckHook({
+      stdin: editStdin(join(sourcePath, "code.ts")),
+      fs,
+      env,
+      paths,
+      git: fakeGit({ current: "hotfix/fix" }),
+    });
+    expect(r.exitCode).toBe(0);
+  });
+
+  it("ignora una excepción PROD escrita a mano en el bloque", async () => {
+    writeFileSync(
+      join(workspace, "CLAUDE.md"),
+      buildBlock({ sourcePath, workingBranch: "feature/x" }).replace(
+        "- Última actividad:",
+        "- Ramas de excepción:\n  - acme: main\n- Última actividad:",
+      ),
+    );
+    const result = await runBranchCheckHook({
+      stdin: editStdin(join(sourcePath, "code.ts")),
+      fs,
+      env,
+      paths,
+      git: fakeGit({ current: "main" }),
+    });
+    expect(result.exitCode).toBe(2);
+  });
+
   it("no-ops when the source declares NO working branch (main is base, not expected)", async () => {
     writeFileSync(join(workspace, "CLAUDE.md"), buildBlock({ sourcePath }));
     const r = await runBranchCheckHook({

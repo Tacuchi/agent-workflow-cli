@@ -204,7 +204,7 @@ async function ensureUnits(
     );
   }
   const acquired: IsolationUnit[] = [];
-  for (const alias of scope.sources) {
+  for (const alias of scope.isolation === "in-place" ? [] : scope.sources) {
     // `workspace` is the documentary/control checkout itself. It is a valid
     // source-bounded proof surface, but never a source repository that needs a
     // per-session Git worktree.
@@ -242,7 +242,10 @@ async function ensureUnits(
   }
   return {
     ok: true,
-    summary: `unidades de ${run.session}: ${acquired.map((unit) => `${unit.alias} → ${unit.branch}`).join(", ")}`,
+    summary:
+      scope.isolation === "in-place"
+        ? "in-place: sin unidad"
+        : `unidades de ${run.session}: ${acquired.map((unit) => `${unit.alias} → ${unit.branch}`).join(", ")}`,
     output: canonicalJson({ plan: scope.plan, units: acquired }),
     // The tree IS there, however it got there — the same reading `proposal.publish`
     // makes of a re-entry that finds the bytes already written. Crediting nothing
@@ -308,7 +311,11 @@ async function recordBatchBase(
         deps.git.currentBranch(root),
         deps.git.dirtyPaths(root),
       ]);
-      if (head === null || branch === undefined || dirty.length > 0) {
+      if (
+        head === null ||
+        branch === undefined ||
+        (run.scope?.isolation !== "in-place" && dirty.length > 0)
+      ) {
         return {
           ok: false,
           failure: {
@@ -1096,7 +1103,12 @@ async function closeBatch(
     );
   }
   if (!legacyPlanExecCommits(live.state)) {
-    const gitFailure = await verifyBatchGitState(deps, run, batch);
+    const gitFailure = await verifyBatchGitState(
+      deps,
+      run,
+      batch,
+      run.scope?.isolation === "in-place",
+    );
     if (gitFailure !== null)
       return refusal("plan-exec.batch-close", gitFailure.message, canonicalJson(gitFailure));
   }
@@ -1363,6 +1375,15 @@ async function sealPlanDone(
 
 /** The plan seal says exactly which evidence was absent or substituted. */
 function planDoneClosure(state: FlowRunState, session: string): string {
+  const destination =
+    state.scope?.isolation === "in-place"
+      ? `commits en el checkout (${(state.batches ?? [])
+          .flatMap((batch) =>
+            Object.values(batch.commit_result ?? {}).map((receipt) => receipt.branch),
+          )
+          .filter((branch): branch is string => branch !== null)
+          .join(", ")}); sin integración`
+      : "commits e integración";
   const decisions = state.route_decisions ?? [];
   const controls = new Map(
     (state.route_proposal?.controls ?? []).map((control) => [control.transition, control]),
@@ -1380,15 +1401,15 @@ function planDoneClosure(state: FlowRunState, session: string): string {
       (substitution): substitution is NonNullable<typeof substitution> => substitution !== null,
     );
   if (state.assurance === "unverified_accepted") {
-    return `evidencia omitida en la propuesta aceptada (${omitted.join("; ") || "sin detalle"}); commits e integración acreditados por la corrida ${session}; no se afirma que la validación pasó`;
+    return `evidencia omitida en la propuesta aceptada (${omitted.join("; ") || "sin detalle"}); ${destination} acreditados por la corrida ${session}; no se afirma que la validación pasó`;
   }
   if (state.assurance === "partially_verified") {
-    return `validación sustituta pendiente (${substitutions.map((substitution) => substitution.validation).join(", ") || "sin detalle"}); riesgo aceptado: ${substitutions.map((substitution) => substitution.risk).join(", ") || "assurance parcial"}; commits e integración acreditados por la corrida ${session}`;
+    return `validación sustituta pendiente (${substitutions.map((substitution) => substitution.validation).join(", ") || "sin detalle"}); riesgo aceptado: ${substitutions.map((substitution) => substitution.risk).join(", ") || "assurance parcial"}; ${destination} acreditados por la corrida ${session}`;
   }
   if (substitutions.length > 0) {
-    return `validación sustituta ejecutada (${substitutions.map((substitution) => substitution.validation).join(", ")}); commits e integración acreditados por la corrida ${session}`;
+    return `validación sustituta ejecutada (${substitutions.map((substitution) => substitution.validation).join(", ")}); ${destination} acreditados por la corrida ${session}`;
   }
-  return `validación final, commits e integración acreditados por la corrida ${session}`;
+  return `validación final, ${destination} acreditados por la corrida ${session}`;
 }
 
 /** The documentary checks that must pass in the same critical section as done. */

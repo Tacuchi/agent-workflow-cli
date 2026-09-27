@@ -21,6 +21,7 @@ import type { GitPort } from "../../ports/git.js";
 import { readWorkspaceBlock, requireSourcePath } from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { type CheckoutState, checkoutDigest } from "../source-boundary-policy.js";
+import { locateRun, readRun } from "./run-state-service.js";
 
 /**
  * The alias→root map a run's source-bounded evidence is measured against.
@@ -48,6 +49,21 @@ export async function resolveCheckoutCandidates(
   }
   const candidates: CheckoutIdentity[] = [{ source: "workspace", root }];
   if (block !== null) {
+    const live = await readRun(fs, locateRun(paths, session));
+    const inPlace =
+      live.ok && live.state.flow === "plan-exec" && live.state.scope?.isolation === "in-place";
+    if (inPlace) {
+      for (const alias of live.state.scope?.sources ?? []) {
+        const source = block.fuentes.find((item) => item.alias === alias);
+        if (!source) continue;
+        try {
+          candidates.push({ source: alias, root: await requireSourcePath(fs, source) });
+        } catch {
+          // A missing source is never advertised as an eligible checkout.
+        }
+      }
+      return candidates;
+    }
     try {
       const units = await fs.realPath(paths.userUnitsDir());
       const key = workspaceKey(paths.workspaceDir());

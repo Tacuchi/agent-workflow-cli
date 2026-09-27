@@ -11,6 +11,7 @@ import { appendDocBranch } from "../../src/application/doc-branch-ledger.js";
 import { runBranchCheckHook } from "../../src/application/hook-branch-check.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { type WorktreeEnsureOutput, runWorktree } from "../../src/application/worktree-service.js";
+import { newRunState, serializeRunState, withScope } from "../../src/domain/flow/run-state.js";
 import { sealCustody } from "../../src/domain/session/custody.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -127,6 +128,27 @@ describe("runBranchCheckHook — la línea de trabajo es la unidad del flujo", (
       sessionCode: code,
     })) as WorktreeEnsureOutput;
   }
+
+  it("plan-exec in-place verifica la rama del checkout aunque exista la unidad de otra sesión", async () => {
+    await ensure("103");
+    const folder = "104-dos-plan-exec";
+    writeFileSync(
+      join(deps.paths.cwdSessionsDir(), folder, ".flow-run.json"),
+      serializeRunState(
+        withScope(newRunState("plan-exec", folder), {
+          plan: "docs/plans/072-plan-test.md",
+          sources: ["acme"],
+          isolation: "in-place",
+        }),
+      ),
+    );
+    bind(CONTEXT_B, folder);
+    const verdict = await runBranchCheckHook({
+      ...deps,
+      stdin: edit(join(source, "README.md"), CONTEXT_B),
+    });
+    expect(verdict.exitCode).toBe(0);
+  });
 
   it("una unidad del plan no bloquea el checkout del quick en su propia rama", async () => {
     const quick = "105-cambio-quick";
