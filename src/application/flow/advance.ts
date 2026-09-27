@@ -99,6 +99,7 @@ import {
   withPlanExecBatchStageForTransition,
   withRouteDecisions,
 } from "../../domain/flow/run-state.js";
+import { UNCHANGED_PHASE_CONSENT } from "../../domain/flow/unchanged-phase.js";
 import {
   type SemanticRequest,
   buildSemanticRequest,
@@ -277,6 +278,7 @@ function passOver(
   // copy of a conditional row still reads the observation made before the copy.
   const observed = conditionOf(decision)?.threshold.observed ?? decision.id;
   const conditional =
+    validationOnlySkip(state, decision) ??
     routeSkipReason(state, decision) ??
     skipReason(decision, journey, state.observations, iterationOf(state, observed)) ??
     nothingToPublish(state, decision) ??
@@ -294,6 +296,24 @@ function passOver(
 }
 
 /** A route can alter only a transition that opted in through the registry. */
+function validationOnlySkip(state: FlowRunState, decision: FlowDecision): string | null {
+  if (decision.id === UNCHANGED_PHASE_CONSENT) {
+    return (state.plan_exec_entry?.phases_without_open_tasks?.length ?? 0) > 0
+      ? null
+      : "la entrada no detectó fases sin tareas abiertas: no hay validación sin cambios que consentir";
+  }
+  if (
+    decision.id === "plan-exec.implementation" &&
+    state.batches?.some(
+      (batch) =>
+        batch.iteration === state.batch_loop?.iteration && batch.kind === "validation-only",
+    )
+  ) {
+    return "este lote sólo valida una fase aprobada sin tareas abiertas: no se reimplementa";
+  }
+  return null;
+}
+
 function routeSkipReason(state: FlowRunState, decision: FlowDecision): string | null {
   const control = routeControlOf(decision);
   if (control === null || control.consequences.omit === undefined) return null;
@@ -688,6 +708,7 @@ function nothingToSettle(state: FlowRunState, decision: FlowDecision): string | 
  * degradation but `aw flow recover`, and the block says so.
  */
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
+  if (decision.id === UNCHANGED_PHASE_CONSENT) return null;
   if (decision.answer_contract !== undefined) return null;
   if (!exhausted(state, decision) || awaitingCliRerun(state, decision)) return null;
   if (!owned(decision)) return null;
@@ -998,7 +1019,7 @@ export function directiveFor(
               ? "human"
               : resolved.stopped.authority,
           ownership: resolved.stopped.ownership,
-          title: resolved.stopped.title,
+          title: boundaryTitle(state, resolved.stopped),
           document: resolved.stopped.document,
         };
   const planned = resolved.authorization?.planned ?? [];
@@ -1061,6 +1082,14 @@ export function directiveFor(
  * proposal that reaches outside the folders the row declared never gets sealed —
  * let alone approved.
  */
+function boundaryTitle(state: FlowRunState, decision: FlowDecision): string {
+  if (decision.id !== UNCHANGED_PHASE_CONSENT) return decision.title;
+  const phases = state.plan_exec_entry?.phases_without_open_tasks
+    ?.map((phase) => `F${phase}`)
+    .join(", ");
+  return `${decision.title}: ${state.plan_exec_entry?.plan} — ${phases}`;
+}
+
 export function boundaryRequest(decision: FlowDecision, state: FlowRunState): SemanticRequest {
   const vocabulary = decision.signals ?? [];
   const proposes = proposalContractOf(decision);

@@ -112,6 +112,11 @@ import {
   withSettlementDeclarations,
 } from "../../domain/flow/run-state.js";
 import type { TestFailure } from "../../domain/flow/test-run-evidence.js";
+import {
+  APPROVE_UNCHANGED_PHASE,
+  UNCHANGED_PHASE_CONSENT,
+  approvedValidationOnly,
+} from "../../domain/flow/unchanged-phase.js";
 import { type SpecBaseline, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
@@ -125,6 +130,7 @@ import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { parsePhases } from "../parsers/phases.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
+import { parseTasks } from "../parsers/tasks.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import {
   commitStoredPlanExecDecision,
@@ -317,6 +323,7 @@ interface ScopeSnapshot {
 }
 
 interface Observation {
+  validation_only_current: boolean;
   preexisting: TestFailure[] | null;
   /** Resolved once for this submit; decision registration uses the same root. */
   root: string;
@@ -353,6 +360,7 @@ async function observe(
     checkouts: await observeCheckouts(fs, paths, session, git),
     scoped: await observeBatchSources(fs, paths, session, git),
     preexisting: await observePreexistingFailures(fs, paths, session, root),
+    validation_only_current: await observeValidationOnly(fs, paths, session, root),
     baselines: plans.baselines,
   };
 }
@@ -388,6 +396,29 @@ async function observeBatchSources(
 }
 
 const PHASE_VALIDATION = "plan-exec.validation-execution";
+
+async function observeValidationOnly(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: string,
+  root: string,
+): Promise<boolean> {
+  const read = await readRun(fs, locateRun(paths, session));
+  if (!read.ok || read.state.boundary !== PHASE_VALIDATION || read.state.scope === null)
+    return false;
+  const batch = read.state.batches?.find(
+    (item) => item.iteration === read.state.batch_loop?.iteration,
+  );
+  if (batch === undefined || !approvedValidationOnly(read.state, batch)) return false;
+  try {
+    const text = await fs.readText(join(root, read.state.scope.plan));
+    return !parseTasks(text).items.some(
+      (task) => task.status === "open" && batch.phases.includes(task.phase ?? -1),
+    );
+  } catch {
+    return false;
+  }
+}
 
 async function observePreexistingFailures(
   fs: FileSystemPort,
@@ -743,6 +774,7 @@ async function decide(
     snapshot.checkouts,
     snapshot.scoped,
     snapshot.preexisting,
+    snapshot.validation_only_current,
   );
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
@@ -773,6 +805,18 @@ async function decide(
     ].includes(resolved.stopped.id)
   ) {
     routed = withPlanExecEntry(routed, await observePlanEntry(fs, paths, state));
+  }
+  if (
+    resolved.stopped.id === UNCHANGED_PHASE_CONSENT &&
+    parsed.answer.choice === APPROVE_UNCHANGED_PHASE
+  ) {
+    const entry = state.plan_exec_entry;
+    if (entry?.plan && entry.phases_without_open_tasks) {
+      routed = withPlanExecEntry(routed, {
+        ...entry,
+        approved_without_changes: [...entry.phases_without_open_tasks],
+      });
+    }
   }
 
   // The registry, not the Spanish consequence text, owns what a selected
@@ -2149,6 +2193,7 @@ function admit(
   checkouts: readonly CheckoutState[] | null,
   scoped: Record<string, string | null> | null,
   preexisting: readonly TestFailure[] | null,
+  validationOnlyCurrent: boolean,
 ): Admitted | { decision: SubmitDecision } {
   const expectedApproval =
     resolved.kind === "authorization"
@@ -2216,7 +2261,17 @@ function admit(
   // run with its evidence and its whole effect keeps the boundary standing: the
   // work stays pending, with the recovery the action declared.
   if (resolved.kind !== "execution") return parsed;
-  return earned(state, resolved, stopped, parsed, cost, checkouts, scoped, preexisting);
+  return earned(
+    state,
+    resolved,
+    stopped,
+    parsed,
+    cost,
+    checkouts,
+    scoped,
+    preexisting,
+    validationOnlyCurrent,
+  );
 }
 
 function closeFromAnswer(state: FlowRunState): SubmitDecision {
@@ -2250,6 +2305,7 @@ function earned(
   checkouts: readonly CheckoutState[] | null,
   scoped: Record<string, string | null> | null,
   preexisting: readonly TestFailure[] | null,
+  validationOnlyCurrent: boolean,
 ): Admitted | { decision: SubmitDecision } {
   // The row's `effects` are the ceiling and the sealed proposal is what really
   // happens: demanding an overwrite from a publication that only creates files
@@ -2270,7 +2326,14 @@ function earned(
       }),
     };
   }
-  const credited = batchCredit(state, stopped, parsed.answer, resolved, scoped);
+  const credited = batchCredit(
+    state,
+    stopped,
+    parsed.answer,
+    resolved,
+    scoped,
+    validationOnlyCurrent,
+  );
   if (credited === null) return parsed;
   if (!credited.ok) {
     return {
@@ -2291,6 +2354,7 @@ function batchCredit(
   answer: FlowAnswer,
   resolved: ResolvedBoundary,
   scoped: Record<string, string | null> | null,
+  validationOnlyCurrent: boolean,
 ):
   | { ok: true; credit: { batch: string; proofs: Record<string, string> } }
   | { ok: false; refusal: ExecutionRefusal }
@@ -2304,7 +2368,13 @@ function batchCredit(
   if (batch === undefined) return null;
   const verdict = batchCreditVerdict(
     answer.result,
-    { batch, batches, sources: state.scope.sources, scoped },
+    {
+      batch,
+      batches,
+      sources: state.scope.sources,
+      scoped,
+      validation_only_approved: validationOnlyCurrent && approvedValidationOnly(state, batch),
+    },
     resolved.action?.recovery ?? "",
   );
   if (!verdict.ok) return verdict;

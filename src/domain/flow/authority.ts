@@ -2691,6 +2691,24 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ],
   },
   {
+    id: "plan-exec.unchanged-phase-consent",
+    scope: "plan-exec",
+    title: "aprobar la validación sin cambios de las fases detectadas al entrar",
+    authority: "human",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    alternatives: [
+      {
+        label: "Aprobar validación sin cambios",
+        consequence:
+          "se validan con evidencia real sólo las fases sin tareas abiertas observadas al entrar; no se cierra ninguna tarea y el crédito se puede anular",
+        recommended: true,
+        outcome: { kind: "continue" },
+      },
+    ],
+  },
+  {
     id: "plan-exec.source-scope",
     scope: "plan-exec",
     title: "fijar el plan de la corrida y las fuentes exactas que va a editar",

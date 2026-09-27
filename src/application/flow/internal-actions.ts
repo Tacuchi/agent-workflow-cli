@@ -40,6 +40,7 @@ import {
   withPlanExecBatchLoop,
   withSettlement,
 } from "../../domain/flow/run-state.js";
+import { approvedValidationOnly } from "../../domain/flow/unchanged-phase.js";
 import { type LocalProposal, sealProposal } from "../../domain/proposal.js";
 import { type PendingObligation, obligationExit } from "../../domain/reconciliation.js";
 import type { EnvPort } from "../../ports/env.js";
@@ -967,6 +968,13 @@ async function closeBatch(
     );
   }
   // A batch born with a base was meant to be credited at its phase validation.
+  if (validationOnlyCloseMissing(live.state, batch)) {
+    return refusal(
+      "plan-exec.batch-close",
+      "el lote de sólo validación carece de aprobación o de evidencia acreditada",
+      canonicalJson({ code: "PLAN_VALIDATION_ONLY_NOT_APPROVED", batch: batch.id }),
+    );
+  }
   // Reaching the close without that credit — an exhausted validation degraded
   // past, a route that skipped it — would publish its tasks as done on no proof.
   if (batch.base !== undefined && batch.credit === undefined) {
@@ -1041,6 +1049,13 @@ async function closeBatch(
  * already names the NEXT batch — or nothing, when it was the last one. The
  * publisher then confirms it through its own already-applied path.
  */
+function validationOnlyCloseMissing(state: FlowRunState, batch: PlanExecBatch): boolean {
+  return (
+    batch.kind === "validation-only" &&
+    (!approvedValidationOnly(state, batch) || batch.credit === undefined)
+  );
+}
+
 function batchToClose(state: FlowRunState): PlanExecBatch | undefined {
   const batches = state.batches ?? [];
   const open = batches.find((batch) => batch.published_plan_digest === undefined);
@@ -1372,6 +1387,13 @@ function phaseUpdatesForClosedBatch(
 }
 
 function inferNextBatch(text: string, state: FlowRunState): ReturnType<typeof inferPlanExecBatch> {
+  const first = parsePhases(text).items.find((phase) => phase.state !== "validada");
+  if (
+    first !== undefined &&
+    !parseTasks(text).items.some((task) => task.status === "open" && task.phase === first.n)
+  ) {
+    return inferValidationOnly(text, state, first.n);
+  }
   // `inferPlanExecBatch` itself validates that the phase has real, uniquely
   // labelled Tn.m tasks. We only choose the first still-open phase from the
   // document, which is a deterministic batch boundary rather than a claimed one.
@@ -1406,6 +1428,37 @@ function inferNextBatch(text: string, state: FlowRunState): ReturnType<typeof in
     iteration,
     mode: "continuous",
     phases: [openPhase],
+  });
+}
+
+function inferValidationOnly(
+  text: string,
+  state: FlowRunState,
+  phase: number,
+): ReturnType<typeof inferPlanExecBatch> {
+  const entry = state.plan_exec_entry;
+  if (
+    entry?.plan !== state.scope?.plan ||
+    !entry?.phases_without_open_tasks?.includes(phase) ||
+    !entry.approved_without_changes?.includes(phase)
+  ) {
+    return {
+      ok: false,
+      failure: {
+        code: "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
+        message: `F${phase} no tiene tareas abiertas ni aprobación de validación sin cambios al entrar`,
+        action:
+          "reanudá el consentimiento de entrada; si la corrida ya lo pasó sin observar esta fase, reinicializá con aw flow restart para observarla y aprobarla antes de validar",
+      },
+    };
+  }
+  const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
+  return inferPlanExecBatch(text, {
+    id: `batch-${iteration}`,
+    iteration,
+    mode: "isolated",
+    phases: [phase],
+    validation_only: true,
   });
 }
 
