@@ -62,6 +62,7 @@ import {
   PLAN_EXEC_BATCH_LOOP_TRANSITIONS,
   applyTransition,
   newRunState,
+  sealRunState,
   serializeRunState,
   settlementAmbiguous,
   settlementOwed,
@@ -76,6 +77,7 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { batchReview } from "../helpers/batch-review.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
 const SPEC = {
   path: "docs/specs/033-spec-x.md",
@@ -88,6 +90,52 @@ const PLAN = {
   digest: `sha256:${"2".repeat(64)}`,
 };
 const AT = { session: "167-x-plan-exec", phase: "cierre", date: "2026-09-03" };
+
+describe("plan-done exige validación final aplicada de verdad", () => {
+  const session = "052-validacion-plan-exec";
+  const plan = "docs/plans/052-plan-validacion.md";
+  const scope = { plan, sources: ["workspace"] };
+  const ids = journeyOfFlow("plan-exec").map((row) => row.id);
+  const beforeDone = ids.slice(0, ids.indexOf("plan-exec.plan-done"));
+
+  it.each(["ausente", "omitida", "degradada"])("niega el sello si está %s", async (condition) => {
+    const fs = new MemFs();
+    const paths = new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
+    const applied =
+      condition === "ausente"
+        ? beforeDone.filter((id) => id !== "plan-exec.final-validation")
+        : beforeDone;
+    const state = withScope(newRunState("plan-exec", session), scope);
+    const { digest: _digest, ...unsigned } = state;
+    fs.file(
+      join(paths.cwdSessionsDir(), session, FLOW_RUN_STATE_FILE),
+      serializeRunState(
+        sealRunState({
+          ...unsigned,
+          applied,
+          skipped: condition === "ausente" ? [] : ["plan-exec.final-validation"],
+          ...(condition === "degradada"
+            ? {
+                degraded: [{ transition: "plan-exec.final-validation", cause: "agotar evidencia" }],
+              }
+            : {}),
+        }),
+      ),
+    );
+    const executor = internalActionExecutor({
+      fs,
+      paths,
+      env: new FakeEnv("/home", "/cwd"),
+      git: new RecordingGit(),
+    });
+    const outcome = await executor(
+      { operation: "plan-exec.plan-done" },
+      { session, code: "052", scope, proposal: null },
+    );
+    expect(outcome.ok).toBe(false);
+    expect(outcome.output).toContain("plan-exec.final-validation");
+  });
+});
 
 function note(over: Partial<DecisionNote> = {}): DecisionNote {
   const body: Omit<DecisionNote, "digest"> = {

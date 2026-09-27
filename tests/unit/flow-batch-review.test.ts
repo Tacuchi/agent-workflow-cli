@@ -52,6 +52,10 @@ describe("cada lote exige y conserva su revisión", () => {
           `- [ ] T${n}.1 — trabajo _(fuentes: workspace)_`,
         ]),
         "",
+        "## Execution batches",
+        "- B1 · isolated · F1",
+        "- B2 · isolated · F2",
+        "",
       ].join("\n"),
     );
     walk = planExecWalk(

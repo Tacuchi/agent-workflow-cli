@@ -369,6 +369,8 @@ export function actionDigest(action: DelegatedAction): string {
     target: action.invocation.target,
     input: action.invocation.input,
     evidence: [...action.evidence],
+    ...(action.requirements === undefined ? {} : { requirements: [...action.requirements] }),
+    ...(action.final_validation === undefined ? {} : { final_validation: action.final_validation }),
   });
 }
 
@@ -439,12 +441,44 @@ function emittedAction(
   if (declared === null) return { action: null, unbound: null, outside: null };
   const bound = bindAction(declared, runBinding(state));
   if (!bound.ok) return { action: null, unbound: bound.unbound, outside: null };
+  const action =
+    stopped?.id === "plan-exec.final-validation"
+      ? finalValidationAction(bound.action, state)
+      : bound.action;
   // Checked on the BOUND form: a placeholder could resolve into a path, so
   // validating the template would be validating something nobody runs.
-  const outside = docsBoundaryBreach(bound.action, state.flow);
+  const outside = docsBoundaryBreach(action, state.flow);
   return outside === null
-    ? { action: bound.action, unbound: null, outside: null }
+    ? { action, unbound: null, outside: null }
     : { action: null, unbound: null, outside };
+}
+
+function finalValidationAction(action: DelegatedAction, state: FlowRunState): DelegatedAction {
+  const sources = state.scope?.final_validation ?? [];
+  if (sources.length === 0 && state.scope?.sources.every((alias) => alias === "workspace"))
+    return action;
+  const requirements = sources.flatMap((source) =>
+    (["build", "test"] as const).map((field) => {
+      const value = source[field];
+      return `${source.alias} · ${field === "test" ? "tests" : "build"}: ${value.command === null ? `faltante — ${value.action}` : `\`${value.command}\` (${value.origin === "plan" ? "plan" : "fuente"})`}`;
+    }),
+  );
+  if (requirements.length === 0)
+    requirements.push(
+      "faltan declaraciones: declará build y tests por fuente en su pipeline versionado o en ## Validations del plan",
+    );
+  return {
+    ...action,
+    requirements,
+    final_validation: sources,
+    evidence:
+      sources.length === 0
+        ? ["plan.final-validation.missing"]
+        : sources.flatMap((source) => [
+            `plan.final-validation.${source.alias}.build`,
+            `plan.final-validation.${source.alias}.tests`,
+          ]),
+  };
 }
 
 /**
@@ -1019,7 +1053,7 @@ export function directiveFor(
               ? "human"
               : resolved.stopped.authority,
           ownership: resolved.stopped.ownership,
-          title: boundaryTitle(state, resolved.stopped),
+          title: validationTitle(state, resolved.stopped),
           document: resolved.stopped.document,
         };
   const planned = resolved.authorization?.planned ?? [];
@@ -1067,6 +1101,14 @@ export function directiveFor(
   });
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state, directive: built.directive };
+}
+
+/** The proof covers this entire range; no new field is required in the answer envelope. */
+function validationTitle(state: FlowRunState, stopped: FlowDecision): string {
+  if (stopped.id !== "plan-exec.validation-execution") return boundaryTitle(state, stopped);
+  const batch = state.batches?.find((item) => item.iteration === state.batch_loop?.iteration);
+  if (batch === undefined) return stopped.title;
+  return `${stopped.title}: ${batch.phases.map((phase) => `F${phase}`).join(", ")}${batch.kind === "validation-only" ? " (sólo validación)" : ""}`;
 }
 
 /**
