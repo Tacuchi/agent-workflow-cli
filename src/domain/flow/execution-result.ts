@@ -176,6 +176,7 @@ function failureEvidence(
 
 /** What a batch's phase validation is judged against, beyond the live checkouts. */
 export interface BatchCreditInput {
+  validation_only_approved?: boolean;
   /** The batch this iteration walks. */
   batch: PlanExecBatch;
   /** Every batch of the run, the current one included. */
@@ -225,6 +226,9 @@ export function batchCreditVerdict(
     }
     credit[source] = (own[0] as CheckoutProof).checkout_digest;
   }
+  if (input.batch.kind === "validation-only") {
+    return validationOnlyCredit(input, credit, recovery);
+  }
   const creditedBy = new Map(
     input.batches
       .filter((batch) => batch.id !== input.batch.id)
@@ -271,4 +275,25 @@ export function batchCreditVerdict(
     "PLAN_EXEC_BATCH_UNCHANGED",
     `el batch ${input.batch.id} no cambió su checkout desde ${since}: ${why}`,
   );
+}
+
+function validationOnlyCredit(
+  input: BatchCreditInput,
+  credit: Record<string, string>,
+  recovery: string,
+): ReturnType<typeof batchCreditVerdict> {
+  if (input.validation_only_approved === true && input.batch.tasks.length === 0)
+    return { ok: true, credit };
+  return {
+    ok: false,
+    refusal: {
+      message:
+        "el lote sin cambios exige aprobación previa y ninguna tarea abierta al entrar ni ahora",
+      detail: {
+        code: "PLAN_VALIDATION_ONLY_NOT_APPROVED",
+        action: recovery,
+        outcome: "needs_input",
+      },
+    },
+  };
 }

@@ -967,6 +967,8 @@ export interface PlanExecBatchPublication {
  */
 export interface PlanExecBatch {
   id: string;
+  /** Only validates an approved entry phase; its task set must be empty. */
+  kind?: "validation-only";
   iteration: number;
   mode: "continuous" | "isolated";
   phases: number[];
@@ -1147,6 +1149,7 @@ export interface FlowChoiceSelection {
 export interface PlanExecEntry {
   plan: string | null;
   phases_without_open_tasks: number[] | null;
+  approved_without_changes?: number[];
 }
 
 export interface FlowRunState {
@@ -2521,6 +2524,17 @@ function isPlanExecEntry(value: unknown): value is PlanExecEntry | undefined {
   if (value === undefined) return true;
   if (!isRecord(value) || !(value.plan === null || isNonEmptyString(value.plan))) return false;
   const phases = value.phases_without_open_tasks;
+  const approval = value.approved_without_changes;
+  if (
+    approval !== undefined &&
+    (value.plan === null ||
+      !Array.isArray(phases) ||
+      !Array.isArray(approval) ||
+      approval.length === 0 ||
+      new Set(approval).size !== approval.length ||
+      !approval.every((phase) => phases.includes(phase)))
+  )
+    return false;
   return (
     phases === null ||
     (Array.isArray(phases) &&
@@ -2782,7 +2796,8 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
         (phase) => typeof phase === "number" && Number.isInteger(phase) && phase > 0,
       ) ||
       !isStringArray(entry.tasks) ||
-      entry.tasks.length === 0 ||
+      (entry.kind === "validation-only" ? entry.tasks.length !== 0 : entry.tasks.length === 0) ||
+      (entry.kind !== undefined && entry.kind !== "validation-only") ||
       new Set(entry.tasks).size !== entry.tasks.length ||
       typeof entry.plan_digest !== "string" ||
       entry.plan_digest.length === 0 ||

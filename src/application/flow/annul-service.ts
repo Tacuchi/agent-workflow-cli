@@ -34,7 +34,7 @@ export interface AnnulFlowInput extends RestartFlowInput {
 export interface AnnulPreview {
   session: string;
   plan: string;
-  batches: { id: string; phases: number[]; tasks: string[] }[];
+  batches: { id: string; phases: number[]; tasks: string[]; kind?: "validation-only" }[];
   phases: number[];
   tasks: string[];
   /** The plan was sealed `done`; applying takes the seal off. */
@@ -191,7 +191,7 @@ async function annulmentOf(
   });
   const digest = annulDigest(
     session,
-    annulled.map((batch) => batch.id),
+    annulled.map((batch) => ({ id: batch.id, kind: batch.kind ?? "changes" })),
     proposal.digest,
   );
   return {
@@ -205,6 +205,7 @@ async function annulmentOf(
         id: batch.id,
         phases: batch.phases,
         tasks: batch.tasks,
+        ...(batch.kind === "validation-only" ? { kind: batch.kind } : {}),
       })),
       phases,
       tasks,
@@ -222,7 +223,11 @@ async function annulmentOf(
  * one is a no-op once the plan is already reopened), and a digest shown for
  * `--from 4` must not apply `--from 3` and record batches nobody approved.
  */
-function annulDigest(session: string, batches: readonly string[], proposal: string): string {
+function annulDigest(
+  session: string,
+  batches: readonly { id: string; kind: string }[],
+  proposal: string,
+): string {
   return semanticDigest({ operation: ANNUL_OPERATION, session, batches, proposal });
 }
 
