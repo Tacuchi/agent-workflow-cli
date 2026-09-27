@@ -23,7 +23,7 @@
 import { basename, join } from "node:path";
 import type { DecisionNote, NoteFailure, ObligationKind } from "../domain/decision-note.js";
 import { type BaselineInput, composeEffectiveContract } from "../domain/effective-contract.js";
-import { specBaselineDigest } from "../domain/lineage.js";
+import { legacySpecBaselineDigest, specBaselineDigest } from "../domain/lineage.js";
 import { type PlanReconciliation, reconciliationOf } from "../domain/reconciliation.js";
 import { type ObligationSettlement, deriveSettlementNote } from "../domain/settlement.js";
 import type { EnvPort } from "../ports/env.js";
@@ -372,6 +372,7 @@ async function readLineage(
     number: relation.number,
     digest: functionalSpecDigest(specText),
     legacy_digest: specBaselineDigest(specText),
+    legacy_eol_digest: legacySpecBaselineDigest(specText),
     criteria: parseSpecCriteria(specText, relation.number),
   };
   const chain = await readNoteIndex(

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { digestOf } from "../../src/application/design/digest.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { designsCommand } from "../../src/cli/commands/designs.js";
 import { parseArgv } from "../../src/cli/parser.js";
@@ -153,6 +154,59 @@ function brokenContent(): MemFs {
 }
 
 describe("aw designs — el gate de contenido sobre lo ya publicado", () => {
+  it("--id y --deep juzgan cada baseline simple; EOL sólo avisa sin romper ok", async () => {
+    const folder = "docs/designs/003-design-simple";
+    const doc = "# Diseño\n\n## Objetivo\n\nFuncionar.\n";
+    const manifest = JSON.parse(MANIFEST) as Record<string, unknown>;
+    const digest = digestOf(new TextEncoder().encode(doc));
+    manifest.id = "DES-003";
+    manifest.mode = "simple";
+    manifest.catalog = {
+      flows: [],
+      screens: [],
+      rules: [],
+      tokens: [],
+      renditions: [],
+      assets: [],
+    };
+    manifest.currentness = [];
+    manifest.baselines = [
+      {
+        revision: 1,
+        path: "revisions/DESIGN-r001.md",
+        digest,
+        parent_baseline: null,
+        published: "2026-08-01",
+      },
+      {
+        revision: 2,
+        path: "DESIGN.md",
+        digest,
+        parent_baseline: "DES-003@r1",
+        published: "2026-08-02",
+      },
+    ];
+    manifest.current_baseline = { revision: 2, path: "DESIGN.md", digest };
+    manifest.governance = { reviews: [], revocations: [] };
+    manifest.relations = { specs: [], plans: [] };
+    const fs = new MemFs({ lenient: true })
+      .file(`${WS}/${folder}/design-manifest.json`, JSON.stringify(manifest))
+      .file(`${WS}/${folder}/DESIGN.md`, doc.replace(/\n/g, "\r\n"))
+      .file(`${WS}/${folder}/revisions/DESIGN-r001.md`, doc);
+    const good = await run(fs, ["--id", "DES-003"]);
+    const data = good.data as { package: { ok: boolean; warnings: Array<{ code: string }> } };
+    expect(data.package.ok).toBe(true);
+    expect(data.package.warnings.map((w) => w.code)).toEqual(["DESIGN_EOL_CHANGED"]);
+    const text = designsCommand.renderHuman?.(await run(fs, ["--deep"]), { detail: false }) ?? "";
+    expect(text).toContain("sólo cambió el fin de línea");
+    fs.file(`${WS}/${folder}/revisions/DESIGN-r001.md`, `${doc}contenido alterado`);
+    const bad = (await run(fs, ["--id", "DES-003"])).data as {
+      package: { ok: boolean; failures: Array<{ code: string }> };
+    };
+    expect(bad.package.ok).toBe(false);
+    expect(bad.package.failures.map((f) => f.code)).toContain("DESIGN_DIGEST_MISMATCH");
+  });
+
   it("--id siempre lo corre: el package roto sale ok:false con los hallazgos reales", async () => {
     const result = await run(brokenContent(), ["--id", "DES-001"]);
     const data = result.data as {

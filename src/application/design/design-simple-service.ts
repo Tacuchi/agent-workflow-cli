@@ -15,7 +15,6 @@
  * one approval covers.
  */
 
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
   DESIGNS_DIR,
@@ -45,6 +44,7 @@ import {
   withConsumerRelation,
 } from "./consumer-document.js";
 import type { DesignIndex } from "./design-index-service.js";
+import { compareDesignDigest, designDigestMismatch, designEolWarning, digestOf } from "./digest.js";
 
 /** Where a simple design is about to be written, and under which identity. */
 export interface SimpleTarget {
@@ -190,6 +190,7 @@ export interface SimpleProposalInput {
 
 export interface SimpleProposal {
   artifacts: ProposalArtifact[];
+  warnings: DesignFailure[];
   /** The manifest this revision was computed from, for the compare-and-swap. */
   base: ProposalBase | null;
   /** The digest the reference of this revision will pin. */
@@ -239,8 +240,9 @@ export async function buildSimpleProposal(
     if (consumerBase !== null) return { ok: false, failures: [consumerBase] };
   }
 
-  const digest = `sha256:${createHash("sha256").update(input.document, "utf8").digest("hex")}`;
+  const digest = digestOf(new TextEncoder().encode(input.document));
   const artifacts: ProposalArtifact[] = [];
+  const warnings: DesignFailure[] = [];
 
   // The outgoing revision first: it has to exist at its archived path before the
   // manifest starts saying that is where it lives.
@@ -259,9 +261,18 @@ export async function buildSimpleProposal(
         ],
       };
     }
+    const previous = await fs.readBytes(previousAbs);
+    const expected = target.manifest.baselines.find(
+      (b) => b.revision === target.supersedes,
+    )?.digest;
+    const comparison = compareDesignDigest(previous, expected ?? "");
+    if (comparison.kind === "different") {
+      return { ok: false, failures: [designDigestMismatch(documentPath)] };
+    }
+    if (comparison.kind === "eol-only") warnings.push(designEolWarning(documentPath));
     artifacts.push({
       path: `${target.path}/${archivedDesignPath(target.supersedes)}`,
-      content: await fs.readText(previousAbs),
+      content: new TextDecoder().decode(comparison.matchingBytes),
       overwrite: false,
     });
   }
@@ -296,6 +307,7 @@ export async function buildSimpleProposal(
     ok: true,
     value: {
       artifacts,
+      warnings,
       // The target's manifest and base came from the same index read.  Do not
       // re-read now: a concurrent update must make this proposal stale at
       // apply, never bless candidate bytes derived from the earlier manifest.

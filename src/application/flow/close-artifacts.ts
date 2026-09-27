@@ -91,6 +91,20 @@ async function uncommittedSources(
       continue;
     }
     if (!(await git.isGitRepo(repo))) continue;
+    if (state.flow === "plan-exec" && state.scope?.isolation === "in-place") {
+      const declared = (state.batches ?? []).flatMap(
+        (batch) =>
+          batch.commit_proposal?.sources.find((item) => item.alias === source.alias)?.paths ?? [],
+      );
+      const own = (await git.dirtyPaths(repo))
+        .filter((entry) => declared.includes(entry.path))
+        .map((entry) => entry.path);
+      if (own.length)
+        pending.push(
+          `${source.alias}: rutas de la corrida sin commitear en ${repo}: ${own.join(", ")}.`,
+        );
+      continue;
+    }
     if (await git.isDirty(repo)) {
       pending.push(`${source.alias}: cambios sin commitear en ${repo}.`);
     }

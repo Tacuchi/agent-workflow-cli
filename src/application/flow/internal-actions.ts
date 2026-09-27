@@ -43,7 +43,7 @@ import {
   withSettlement,
 } from "../../domain/flow/run-state.js";
 import { approvedValidationOnly } from "../../domain/flow/unchanged-phase.js";
-import { type LocalProposal, sealProposal } from "../../domain/proposal.js";
+import { type LocalProposal, canonicalEol, sealProposal } from "../../domain/proposal.js";
 import { type PendingObligation, obligationExit } from "../../domain/reconciliation.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -71,6 +71,7 @@ import {
   publishPlanExecBatch,
 } from "../plan-exec-batch-service.js";
 import { settlePlanExecObligations } from "../plan-exec-decision-service.js";
+import { sealedPlanPath } from "../plan-exec-plan-diff.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { canonicalArtifactPath } from "../session-artifacts.js";
@@ -204,7 +205,7 @@ async function ensureUnits(
     );
   }
   const acquired: IsolationUnit[] = [];
-  for (const alias of scope.sources) {
+  for (const alias of scope.isolation === "in-place" ? [] : scope.sources) {
     // `workspace` is the documentary/control checkout itself. It is a valid
     // source-bounded proof surface, but never a source repository that needs a
     // per-session Git worktree.
@@ -242,7 +243,10 @@ async function ensureUnits(
   }
   return {
     ok: true,
-    summary: `unidades de ${run.session}: ${acquired.map((unit) => `${unit.alias} → ${unit.branch}`).join(", ")}`,
+    summary:
+      scope.isolation === "in-place"
+        ? "in-place: sin unidad"
+        : `unidades de ${run.session}: ${acquired.map((unit) => `${unit.alias} → ${unit.branch}`).join(", ")}`,
     output: canonicalJson({ plan: scope.plan, units: acquired }),
     // The tree IS there, however it got there — the same reading `proposal.publish`
     // makes of a re-entry that finds the bytes already written. Crediting nothing
@@ -308,7 +312,11 @@ async function recordBatchBase(
         deps.git.currentBranch(root),
         deps.git.dirtyPaths(root),
       ]);
-      if (head === null || branch === undefined || dirty.length > 0) {
+      if (
+        head === null ||
+        branch === undefined ||
+        (run.scope?.isolation !== "in-place" && dirty.length > 0)
+      ) {
         return {
           ok: false,
           failure: {
@@ -422,7 +430,7 @@ async function publish(
     ok: true,
     summary: result.already_applied
       ? `la propuesta ya estaba aplicada: ${destinations.join(", ")} sin cambios`
-      : `publicado: ${result.written.join(", ")}`,
+      : `publicado: ${result.written.join(", ")}${result.notice === undefined ? "" : `; aviso: ${result.notice}`}`,
     output: canonicalJson({ ...result, digest: proposal.digest, destinations, claims }),
     // Only what really landed. A re-entry that found the bytes already there
     // credits the same classes — the effect IS applied — and the summary is what
@@ -856,6 +864,28 @@ async function inferBatch(
           value: { batch: null, created: false, no_work: true },
         };
       }
+      // Store the exact plan text BEFORE publishing the inferred state. A retry
+      // either sees the same addressed copy or refuses rather than losing its base.
+      try {
+        const snapshot = sealedPlanPath(location.dir, next.batch.plan_digest);
+        await deps.fs.mkdirp(join(location.dir, ".plan-seals"));
+        const saved = await deps.fs.publishTextExclusive(snapshot, text);
+        if (
+          !saved.created &&
+          canonicalEol(await deps.fs.readText(snapshot)) !== canonicalEol(text)
+        ) {
+          throw new Error("la copia direccionada no coincide con el plan inferido");
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          failure: {
+            code: "PLAN_EXEC_BATCH_SNAPSHOT_UNAVAILABLE",
+            message: `no se pudo guardar la copia sellada: ${String(error)}`,
+            action: "revisá el almacenamiento de la sesión y reintentá la inferencia",
+          },
+        };
+      }
       return {
         ok: true,
         state: withPlanExecBatch(current, next.batch),
@@ -1096,7 +1126,12 @@ async function closeBatch(
     );
   }
   if (!legacyPlanExecCommits(live.state)) {
-    const gitFailure = await verifyBatchGitState(deps, run, batch);
+    const gitFailure = await verifyBatchGitState(
+      deps,
+      run,
+      batch,
+      run.scope?.isolation === "in-place",
+    );
     if (gitFailure !== null)
       return refusal("plan-exec.batch-close", gitFailure.message, canonicalJson(gitFailure));
   }
@@ -1135,11 +1170,12 @@ async function closeBatch(
     ok: true,
     summary: published.already_applied
       ? `batch ${published.batch.id} ya estaba publicado en ${run.scope.plan}`
-      : `batch ${published.batch.id} publicado: ${published.written.join(", ")}`,
+      : `batch ${published.batch.id} publicado: ${published.written.join(", ")}${published.notice === undefined ? "" : `; aviso: ${published.notice}`}`,
     output: canonicalJson({
       batch: published.batch,
       written: published.written,
       already_applied: published.already_applied,
+      ...(published.notice === undefined ? {} : { notice: published.notice }),
     }),
     effects: ["mutate_overwrite"],
     state,
@@ -1363,6 +1399,15 @@ async function sealPlanDone(
 
 /** The plan seal says exactly which evidence was absent or substituted. */
 function planDoneClosure(state: FlowRunState, session: string): string {
+  const destination =
+    state.scope?.isolation === "in-place"
+      ? `commits en el checkout (${(state.batches ?? [])
+          .flatMap((batch) =>
+            Object.values(batch.commit_result ?? {}).map((receipt) => receipt.branch),
+          )
+          .filter((branch): branch is string => branch !== null)
+          .join(", ")}); sin integración`
+      : "commits e integración";
   const decisions = state.route_decisions ?? [];
   const controls = new Map(
     (state.route_proposal?.controls ?? []).map((control) => [control.transition, control]),
@@ -1380,15 +1425,15 @@ function planDoneClosure(state: FlowRunState, session: string): string {
       (substitution): substitution is NonNullable<typeof substitution> => substitution !== null,
     );
   if (state.assurance === "unverified_accepted") {
-    return `evidencia omitida en la propuesta aceptada (${omitted.join("; ") || "sin detalle"}); commits e integración acreditados por la corrida ${session}; no se afirma que la validación pasó`;
+    return `evidencia omitida en la propuesta aceptada (${omitted.join("; ") || "sin detalle"}); ${destination} acreditados por la corrida ${session}; no se afirma que la validación pasó`;
   }
   if (state.assurance === "partially_verified") {
-    return `validación sustituta pendiente (${substitutions.map((substitution) => substitution.validation).join(", ") || "sin detalle"}); riesgo aceptado: ${substitutions.map((substitution) => substitution.risk).join(", ") || "assurance parcial"}; commits e integración acreditados por la corrida ${session}`;
+    return `validación sustituta pendiente (${substitutions.map((substitution) => substitution.validation).join(", ") || "sin detalle"}); riesgo aceptado: ${substitutions.map((substitution) => substitution.risk).join(", ") || "assurance parcial"}; ${destination} acreditados por la corrida ${session}`;
   }
   if (substitutions.length > 0) {
-    return `validación sustituta ejecutada (${substitutions.map((substitution) => substitution.validation).join(", ")}); commits e integración acreditados por la corrida ${session}`;
+    return `validación sustituta ejecutada (${substitutions.map((substitution) => substitution.validation).join(", ")}); ${destination} acreditados por la corrida ${session}`;
   }
-  return `validación final, commits e integración acreditados por la corrida ${session}`;
+  return `validación final, ${destination} acreditados por la corrida ${session}`;
 }
 
 /** The documentary checks that must pass in the same critical section as done. */

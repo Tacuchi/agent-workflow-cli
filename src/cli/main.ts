@@ -7,6 +7,7 @@ const argv = process.argv.slice(2);
 const hook = argv[0] === "hook" ? argv[1] : undefined;
 const scoped =
   hook === "branch-check" ||
+  hook === "turn-start" ||
   hook === "git-commit-advisor" ||
   argv[0] === "checkpoint-write" ||
   argv[0] === "resume-summary" ||

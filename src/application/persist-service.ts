@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives } from "../domain/correlative.js";
 import { withSpecBaseline } from "../domain/lineage.js";
+import { baseDigest } from "../domain/proposal.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -175,7 +176,7 @@ async function readCategory(
         number: match[1],
         slug: match[2] ?? "",
         summary: summarize(text),
-        digest: semanticDigest(text),
+        digest: baseDigest(text),
       });
     } catch {
       // skip unreadable doc

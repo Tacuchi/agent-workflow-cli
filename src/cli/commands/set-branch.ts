@@ -29,7 +29,7 @@ type PrepareBranch = (alias: string, rama: string, ctx: CliContext) => Promise<B
 function makeSetBranchCommand(
   name: string,
   label: string,
-  key: "workingBranches" | "qaBranches",
+  key: "workingBranches" | "qaBranches" | "exceptionBranches",
   prepare?: PrepareBranch,
 ): CliCommand {
   return {
@@ -41,7 +41,7 @@ function makeSetBranchCommand(
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
       const alias = args.rest[0];
       const rama = args.rest[1];
-      if (!alias || !rama) {
+      if (!alias || !rama || args.rest.length !== 2) {
         return fail("INVALID_INPUT", `Usage: aw ${name} <alias> <rama>`);
       }
 
@@ -51,7 +51,11 @@ function makeSetBranchCommand(
       const branches = { [alias]: rama };
       const data = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
         op: "init",
-        ...(key === "workingBranches" ? { workingBranches: branches } : { qaBranches: branches }),
+        ...(key === "workingBranches"
+          ? { workingBranches: branches }
+          : key === "qaBranches"
+            ? { qaBranches: branches }
+            : { exceptionBranches: branches }),
         verbose: args.flags.has("--verbose"),
       });
       if ("error" in data) {
@@ -115,3 +119,30 @@ export const setWorkingBranchCommand = makeSetBranchCommand(
 );
 
 export const setQaBranchCommand = makeSetBranchCommand("set-qa-branch", "QA", "qaBranches");
+
+const checkExceptionBranch: PrepareBranch = async (alias, rama, ctx) => {
+  const block = await readWorkspaceBlock(
+    ctx.fs,
+    ctx.paths.workspaceDir(),
+    ctx.paths.blockMarkers(),
+  );
+  const source = block?.fuentes.find((entry) => entry.alias === alias);
+  if (!source || !rama.trim())
+    return { refusal: fail("INVALID_INPUT", `fuente ${alias} desconocida o rama vacía`) };
+  const { dev, prod } = resolveSourceBranches(source, block);
+  if (rama === dev || rama === prod)
+    return {
+      refusal: fail(
+        "INVALID_INPUT",
+        `${rama} es la rama de desarrollo o PROD; no puede declararse excepción`,
+      ),
+    };
+  return { notice: `rama de excepción ${rama} declarada para ${alias}` };
+};
+
+export const setExceptionBranchCommand = makeSetBranchCommand(
+  "set-exception-branch",
+  "exception",
+  "exceptionBranches",
+  checkExceptionBranch,
+);

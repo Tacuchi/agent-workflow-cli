@@ -1,4 +1,5 @@
 import { type TestFailure, isTestFailure } from "../../domain/flow/test-run-evidence.js";
+import { canonicalEol } from "../../domain/proposal.js";
 import { type MarkdownHeading, scanMarkdown } from "../markdown.js";
 import { parsePlanSourceBoundary } from "../source-boundary-policy.js";
 
@@ -67,8 +68,9 @@ interface Scan {
  * it waits on without that reason ever qualifying the machine state.
  */
 export function parsePhases(text: string): ParsedPhases {
+  const canonical = canonicalEol(text);
   const scan: Scan = { items: [], current: null, stated: false, inTasks: false, anyStated: false };
-  const { lines, fenced, headings } = scanMarkdown(text);
+  const { lines, fenced, headings } = scanMarkdown(canonical);
   const headingByLine = new Map(headings.map((h) => [h.line, h]));
 
   for (let i = 0; i < lines.length; i++) {
@@ -83,7 +85,7 @@ export function parsePhases(text: string): ParsedPhases {
 
   if (!scan.anyStated) return { total: 0, validated: 0, blocked: 0, items: [] };
   const sourcesByPhase = new Map(
-    parsePlanSourceBoundary(text).phases.map((phase) => [phase.n, phase.sources]),
+    parsePlanSourceBoundary(canonical).phases.map((phase) => [phase.n, phase.sources]),
   );
   const items = scan.items.map((phase) => ({
     ...phase,

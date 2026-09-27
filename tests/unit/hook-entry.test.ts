@@ -50,6 +50,7 @@ describe("entrada delgada del dist construido", () => {
     const { cwd, home } = fixture();
     for (const args of [
       ["hook", "branch-check"],
+      ["hook", "turn-start"],
       ["checkpoint-write"],
       ["resume-summary"],
       ["auto-compact-on-close"],

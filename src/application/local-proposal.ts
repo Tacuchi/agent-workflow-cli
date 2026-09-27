@@ -23,7 +23,7 @@ import { dirname, join } from "node:path";
 import type { EffectClass } from "../domain/capability/effects.js";
 import type { CapabilityFailure } from "../domain/capability/protocol.js";
 import type { LocalProposal, ProposalArtifact } from "../domain/proposal.js";
-import { baseDigest } from "../domain/proposal.js";
+import { matchTextSeal } from "../domain/proposal.js";
 import { FOLDER_RESERVATION_MARKER, reservationOwnerOf } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { appendClaimEvent, claimOfDocsPath } from "./claims-ledger.js";
@@ -42,6 +42,8 @@ export interface ProposalApproval {
 export interface AppliedProposal {
   written: string[];
   applied: EffectClass[];
+  /** Report a CAS that succeeded only after normalizing document line endings. */
+  notice?: string;
   /**
    * The bytes were already on disk, so nothing was written this time.
    *
@@ -154,7 +156,14 @@ export async function applyLocalProposal(
 
   return {
     ok: true,
-    result: { written: outcome.written, applied, already_applied: false },
+    result: {
+      written: outcome.written,
+      applied,
+      already_applied: false,
+      ...(outcome.eol_only.length === 0
+        ? {}
+        : { notice: `fin de línea distinto en: ${outcome.eol_only.join(", ")}` }),
+    },
   };
 }
 
@@ -162,7 +171,7 @@ export async function applyLocalProposal(
 type CriticalProposalOutcome =
   | { kind: "already" }
   | { kind: "refused"; failure: CapabilityFailure }
-  | { kind: "written"; written: string[] };
+  | { kind: "written"; written: string[]; eol_only: string[] };
 
 /**
  * Re-read, seal and publish while holding the workspace lock.
@@ -190,8 +199,8 @@ async function applyCritical(
     return { kind: "already" };
   }
 
-  const stale = await checkBases(fs, input);
-  if (stale !== null) return { kind: "refused", failure: stale };
+  const bases = await checkBases(fs, input);
+  if ("failure" in bases) return { kind: "refused", failure: bases.failure };
 
   const sealed = await sealBaseline(fs, input);
   if (sealed !== null) return { kind: "refused", failure: sealed };
@@ -211,7 +220,7 @@ async function applyCritical(
     };
   }
   await consumeFolderReservation(fs, paths, input);
-  return { kind: "written", written: published.value.written };
+  return { kind: "written", written: published.value.written, eol_only: bases.eol_only };
 }
 
 async function consumeFolderReservation(
@@ -226,7 +235,7 @@ async function consumeFolderReservation(
   const markerPath = join(input.root, markerBase.path);
   if (!(await fs.exists(markerPath))) return;
   const marker = await fs.readText(markerPath);
-  if (baseDigest(marker) !== markerBase.digest)
+  if (matchTextSeal(markerBase.digest, marker) === null)
     throw new Error("la reserva del diseño cambió antes de consumirse");
   const owner = reservationOwnerOf(marker);
   const claim = owner === null ? null : claimOfDocsPath(dirname(markerBase.path), owner);
@@ -357,26 +366,32 @@ async function alreadyLanded(
 async function checkBases(
   fs: FileSystemPort,
   input: ApplyProposalInput,
-): Promise<CapabilityFailure | null> {
+): Promise<{ eol_only: string[] } | { failure: CapabilityFailure }> {
+  const eol_only: string[] = [];
   for (const base of input.proposal.bases) {
     const absolute = join(input.root, base.path);
     if (!(await fs.exists(absolute))) {
       return {
-        code: "PROPOSAL_BASE_GONE",
-        message: `la base '${base.path}' ya no existe`,
-        action: "volvé a preparar la operación sobre la base vigente",
+        failure: {
+          code: "PROPOSAL_BASE_GONE",
+          message: `la base '${base.path}' ya no existe`,
+          action: "volvé a preparar la operación sobre la base vigente",
+        },
       };
     }
-    const current = baseDigest(await fs.readText(absolute));
-    if (current !== base.digest) {
+    const match = matchTextSeal(base.digest, await fs.readText(absolute));
+    if (match === null) {
       return {
-        code: "PROPOSAL_BASE_STALE",
-        message: `'${base.path}' cambió después de preparar la propuesta`,
-        action: "volvé a preparar la operación sobre la base vigente y revisá el resultado",
+        failure: {
+          code: "PROPOSAL_BASE_STALE",
+          message: `'${base.path}' cambió después de preparar la propuesta`,
+          action: "volvé a preparar la operación sobre la base vigente y revisá el resultado",
+        },
       };
     }
+    if (match === "eol-only") eol_only.push(base.path);
   }
-  return null;
+  return { eol_only };
 }
 
 export interface PartialEffect {

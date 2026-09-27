@@ -6,7 +6,7 @@ import {
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
-import { expectedWorkBranch, findOwningSource } from "./branch-resolver.js";
+import { expectedWorkBranch, findOwningSource, resolveSourceBranches } from "./branch-resolver.js";
 import { documentOfSession, readDocBranches, resolveDocBranch } from "./doc-branch-ledger.js";
 import { normalizePath } from "./multiroot/paths.js";
 import {
@@ -149,6 +149,36 @@ export async function runCheckBranch(
     remedy: identity?.kind === "unresolved" ? identity.action : null,
   };
 
+  const current = (await git.currentBranch(repo)) ?? null;
+  const dev = resolveSourceBranches(located, block).dev;
+  if (current === dev && current !== expected) {
+    return {
+      match: false,
+      reason: "on_development_branch",
+      alias: located.alias,
+      path: repo,
+      current_branch: current,
+      expected_work_branch: expected,
+      ...extra,
+      is_repo: true,
+    };
+  }
+  if (
+    current &&
+    current !== resolveSourceBranches(located, block).prod &&
+    block?.exception_branches?.[located.alias] === current
+  ) {
+    return {
+      match: true,
+      reason: "exception_branch",
+      alias: located.alias,
+      path: repo,
+      current_branch: current,
+      expected_work_branch: expected,
+      ...extra,
+      is_repo: true,
+    };
+  }
   if (expected === null) {
     return {
       match: true,
@@ -191,7 +221,6 @@ export async function runCheckBranch(
     };
   }
 
-  const current = (await git.currentBranch(repo)) ?? null;
   const match = current === expected;
   return {
     ...located,
@@ -299,6 +328,31 @@ async function unitVerdict(
         error: effective.reason ?? "custodia ilegible",
       };
     }
+    const current = (await git.currentBranch(target.path)) ?? null;
+    if (current === resolveSourceBranches(target, block).dev && current !== branch)
+      return {
+        ...base,
+        match: false,
+        reason: "on_development_branch",
+        current_branch: current,
+        expected_work_branch: branch,
+        expected_origin: effective.origin,
+        is_repo: true,
+      };
+    if (
+      current &&
+      current !== resolveSourceBranches(target, block).prod &&
+      block?.exception_branches?.[target.alias] === current
+    )
+      return {
+        ...base,
+        match: true,
+        reason: "exception_branch",
+        current_branch: current,
+        expected_work_branch: branch,
+        expected_origin: effective.origin,
+        is_repo: true,
+      };
     if (branch === null)
       return {
         ...base,
@@ -307,7 +361,6 @@ async function unitVerdict(
         expected_work_branch: null,
         expected_origin: effective.origin,
       };
-    const current = (await git.currentBranch(target.path)) ?? null;
     return {
       ...base,
       expected_work_branch: branch,

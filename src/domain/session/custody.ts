@@ -31,6 +31,7 @@
  */
 
 import { semanticDigest } from "../../application/semantic-operation/protocol.js";
+import { baseDigest, legacyBaseDigest } from "../proposal.js";
 import type { WorklineNodeId } from "../workline-node.js";
 
 /** Bumped only when a reader can no longer trust the older shape. */
@@ -158,9 +159,7 @@ export interface SessionCustody {
 }
 
 /** The one way to digest a baseline's bytes, shared with the proposal's bases. */
-export function baselineDigest(text: string): string {
-  return semanticDigest(text);
-}
+export const baselineDigest = baseDigest;
 
 /** A baseline for a path that was not there. Explicit, never an absent field. */
 export const ABSENT_BASELINE: CustodyBaseline = {
@@ -212,7 +211,7 @@ export function sealCustody(input: SealCustodyInput): SessionCustody {
  * can see. Content travels as its own digest so the seal stays a fixed size
  * whatever the preserved bytes weigh.
  */
-export function custodyDigest(body: Omit<SessionCustody, "digest">): string {
+export function custodyDigest(body: Omit<SessionCustody, "digest">, legacy = false): string {
   return semanticDigest({
     version: body.version,
     subject: body.subject,
@@ -227,7 +226,12 @@ export function custodyDigest(body: Omit<SessionCustody, "digest">): string {
           existed: a.before.existed,
           digest: a.before.digest,
           bytes: a.before.bytes,
-          content_digest: a.before.content === null ? null : baselineDigest(a.before.content),
+          content_digest:
+            a.before.content === null
+              ? null
+              : legacy
+                ? legacyBaseDigest(a.before.content)
+                : baseDigest(a.before.content),
         },
       }))
       .sort((a, b) => order(a.path, b.path)),
@@ -273,7 +277,10 @@ export function custodyCompleteness(custody: SessionCustody): CustodyCompletenes
       why: `este CLI sella y lee la versión ${CUSTODY_VERSION}`,
     });
   }
-  if (custody.digest !== custodyDigest(stripDigest(custody))) {
+  if (
+    custody.digest !== custodyDigest(stripDigest(custody)) &&
+    custody.digest !== custodyDigest(stripDigest(custody), true)
+  ) {
     gaps.push({
       what: "sello de la custodia",
       why: "el registro no coincide con su digest: fue editado fuera del CLI",

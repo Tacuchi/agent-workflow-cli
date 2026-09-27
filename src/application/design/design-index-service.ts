@@ -59,6 +59,7 @@ export interface DesignPackageEntry {
   manifest: DesignManifest | null;
   ok: boolean;
   failures: DesignFailure[];
+  warnings?: DesignFailure[];
 }
 
 export interface DesignIndex {

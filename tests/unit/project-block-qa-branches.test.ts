@@ -3,6 +3,20 @@ import { parseProjectBlock } from "../../src/application/parsers/project-block.j
 import { blockFromParsed, renderProjectBlock } from "../../src/application/render/project-block.js";
 
 describe("project-block qa_branches", () => {
+  it("round-trips modo in-place y rama de excepción sin absorber notas ajenas", () => {
+    const first = renderProjectBlock({
+      proyecto: "X",
+      fuentes: [{ alias: "core", path: "/p", main_branch: "main" }],
+      stack: {},
+      editMode: "in-place",
+      exceptionBranches: { core: "hotfix/unico" },
+    });
+    const parsed = parseProjectBlock(first);
+    if (!parsed) throw new Error("expected parsed block");
+    expect(parsed?.edit_mode).toBe("in-place");
+    expect(parsed?.exception_branches).toEqual({ core: "hotfix/unico" });
+    expect(blockFromParsed(parsed)).toBe(first);
+  });
   it("renders a 'Ramas QA actuales' section when qaBranches is non-empty", () => {
     const out = renderProjectBlock({
       proyecto: "X",

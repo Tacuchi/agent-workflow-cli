@@ -31,7 +31,7 @@
  */
 
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
-import type { FlowExecutionResult } from "../../domain/flow/answer.js";
+import { type FlowExecutionResult, spendsAttempt } from "../../domain/flow/answer.js";
 import {
   type DelegatedAction,
   type FlowDecision,
@@ -372,6 +372,19 @@ function refusalOf(
   session: string,
 ): { code: string; action: string } {
   if (outcome.ok) return verdict;
+  if (pending.decision.id === "plan-exec.batch-close") {
+    try {
+      const output = JSON.parse(outcome.output) as { failure?: { code?: string } };
+      if (output.failure?.code === "PLAN_EXEC_BATCH_STALE") {
+        return {
+          code: "PLAN_EXEC_BATCH_STALE",
+          action: `mostrá el diff y re-sellá con 'aw flow recover --session ${session} --reinfer-batch'; después volvé a validar y revisar el lote`,
+        };
+      }
+    } catch {
+      // A malformed internal result follows the ordinary refusal path.
+    }
+  }
   // Composed here and not in the registry: several recoveries still say "return
   // the reading", written for when a caller could answer the row, and rewording
   // them would move the sealed action of every internal row.
@@ -395,6 +408,7 @@ function chargeRefusal(
   pending: PendingInternal,
   refusal: { code: string; message: string },
 ): FlowRunState {
+  if (!spendsAttempt(refusal.code)) return traced;
   if (awaitingCliRerun(actionState, pending.decision)) {
     return withExhaustedRerunSpent(traced, pending.decision.id);
   }

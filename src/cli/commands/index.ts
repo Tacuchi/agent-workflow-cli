@@ -55,7 +55,12 @@ import { sessionCloseCommand } from "./session-close.js";
 import { sessionCreateCommand } from "./session-create.js";
 import { sessionResumeCommand } from "./session-resume.js";
 import { sessionsCommand } from "./sessions.js";
-import { setQaBranchCommand, setWorkingBranchCommand } from "./set-branch.js";
+import {
+  setExceptionBranchCommand,
+  setQaBranchCommand,
+  setWorkingBranchCommand,
+} from "./set-branch.js";
+import { setEditModeCommand } from "./set-edit-mode.js";
 import { setPipelineCommand } from "./set-pipeline.js";
 import { settleCommand } from "./settle.js";
 import { skillIndexCommand } from "./skill-index.js";
@@ -101,6 +106,8 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   generateLaunchCommand,
   setWorkingBranchCommand,
   setQaBranchCommand,
+  setExceptionBranchCommand,
+  setEditModeCommand,
   setPipelineCommand,
   removeSourceCommand,
   gitFlowCommand,

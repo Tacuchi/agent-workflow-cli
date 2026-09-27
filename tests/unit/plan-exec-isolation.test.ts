@@ -252,6 +252,25 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     expect(uno.resolved.stopped?.id).toBe("plan-exec.implementation");
   });
 
+  it("un plan exige unidad aunque su workspace declare in-place", async () => {
+    writeFileSync(
+      join(workspace, "CLAUDE.md"),
+      block(source, otro).replace("## Status", "## Status\n\n- Modo de edición: in-place"),
+    );
+    writeFileSync(
+      join(workspace, UNO.plan),
+      readFileSync(join(workspace, UNO.plan), "utf8").replace(
+        "> Límite de ejecución: checkout",
+        "> Límite de ejecución: checkout\n> Aislamiento: unidad",
+      ),
+    );
+    await walk.walkTo(UNO, "plan-exec.implementation");
+    const { state } = await walk.current(UNO.folder);
+    expect(state.scope?.isolation).toBe("unit");
+    const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
+    expect(listed.units.some((unit) => unit.session === UNO.folder)).toBe(true);
+  });
+
   it("reanudar reutiliza la misma unidad en vez de cortar otra", async () => {
     const first = await bothIsolated();
     // Un segundo `advance` sobre una corrida ya parada: idempotente por contrato,

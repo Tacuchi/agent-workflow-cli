@@ -383,7 +383,10 @@ async function applyStage(
     {
       kind: "completed",
       output: {
-        value: { written: applied.result.written },
+        value: {
+          written: applied.result.written,
+          ...(applied.result.notice === undefined ? {} : { notice: applied.result.notice }),
+        },
         reference: null,
         completeness: "complete",
       },

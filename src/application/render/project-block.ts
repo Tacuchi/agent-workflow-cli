@@ -26,6 +26,8 @@ export interface RenderProjectBlockInput {
   defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
+  exceptionBranches?: Record<string, string>;
+  editMode?: "in-place" | "unit";
   /** Foreign lines carried over from the block being rewritten, put back in place. */
   preservedLines?: PreservedLine[];
   /** Path used in "Histórico:"; absent when the record has not been created. */
@@ -44,6 +46,8 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   // Each slot re-emits the foreign lines that followed the entry it names, so a
   // hand-written note lands back exactly where its author put it.
   statusLines.push(...slotLines(kept, "status:start"));
+  if (input.editMode) statusLines.push(`- Modo de edición: ${input.editMode}`);
+  statusLines.push(...slotLines(kept, "status:edit-mode"));
   // Defaults go FIRST: an older CLI's parser ignores an unknown `- ` line only
   // while no branch section is open — after one, it would swallow them. This
   // parser no longer needs the ordering, but blocks are read by both.
@@ -56,6 +60,14 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const qa = formatQaBranches(input.qaBranches);
   if (qa !== null) statusLines.push(qa);
   statusLines.push(...slotLines(kept, "status:qa"));
+  if (input.exceptionBranches && Object.keys(input.exceptionBranches).length)
+    statusLines.push(
+      "- Ramas de excepción:",
+      ...Object.entries(input.exceptionBranches).map(
+        ([alias, branch]) => `  - ${alias}: ${branch}`,
+      ),
+    );
+  statusLines.push(...slotLines(kept, "status:exceptions"));
   statusLines.push(...slotLines(kept, "status:activity"));
   if (input.historicoPath !== undefined)
     statusLines.push(`- Histórico: \`${input.historicoPath}\``);
@@ -119,6 +131,12 @@ export function blockFromParsed(
     defaultBranches: overrides.defaultBranches ?? parsed.default_branches,
     workingBranches: overrides.workingBranches ?? parsed.working_branches,
     qaBranches: overrides.qaBranches ?? parsed.qa_branches,
+    ...((overrides.exceptionBranches ?? parsed.exception_branches)
+      ? { exceptionBranches: overrides.exceptionBranches ?? parsed.exception_branches }
+      : {}),
+    ...((overrides.editMode ?? parsed.edit_mode)
+      ? { editMode: overrides.editMode ?? parsed.edit_mode }
+      : {}),
   };
   const preserved = overrides.preservedLines ?? parsed.preserved_lines;
   if (preserved !== undefined) input.preservedLines = preserved;

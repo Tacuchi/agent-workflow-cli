@@ -81,6 +81,20 @@ const PLAN_TEXT = [
 ].join("\n");
 
 describe("aw plan lint — la gramática entera de un plan, sin corrida", () => {
+  it("rechaza una cabecera de aislamiento mal escrita antes de ejecutarla", () => {
+    const invalid = PLAN_TEXT.replace(
+      "> Límite de ejecución: checkout",
+      "> Límite de ejecución: checkout\n> Aislamiento: unidadd",
+    );
+    expect(planGrammarAtEntry(invalid, ["cli"]).map((failure) => failure.code)).toContain(
+      "PLAN_ISOLATION_INVALID",
+    );
+    expect(
+      planGrammarAtEntry(invalid.replace("unidadd", "unidad"), ["cli"]).map(
+        (failure) => failure.code,
+      ),
+    ).not.toContain("PLAN_ISOLATION_INVALID");
+  });
   let root: string;
   let paths: PathsService;
 
