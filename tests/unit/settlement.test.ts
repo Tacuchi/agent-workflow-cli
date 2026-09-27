@@ -73,6 +73,7 @@ import {
 import { baseDigest } from "../../src/domain/proposal.js";
 import { deriveSettlementNote } from "../../src/domain/settlement.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { batchReview } from "../helpers/batch-review.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 
@@ -893,7 +894,7 @@ describe("el cierre del último batch es lo que le dice al cierre qué se debe",
     )) {
       run = applyTransition(run, row.id);
     }
-    run = withPlanExecBatch(run, inferred.batch);
+    run = withPlanExecBatch(run, { ...inferred.batch, review: batchReview() });
     await writeFile(
       join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE),
       serializeRunState(run),

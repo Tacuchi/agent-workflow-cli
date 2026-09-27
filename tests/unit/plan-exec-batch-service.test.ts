@@ -28,6 +28,8 @@ import {
   withPlanExecBatchLoop,
   withPlanExecBatchPublication,
   withPlanExecBatchPublicationPrepared,
+  withPlanExecEntry,
+  withScope,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
@@ -134,7 +136,12 @@ describe("plan-exec batch publication", () => {
 
   it("forma un lote de sólo validación con las fases consecutivas ya implementadas", () => {
     const text = `${PLAN.replaceAll("[ ]", "[x]")}\n### F5 — sin tareas\n> Estado: pendiente\n\n### F6 — trabajo\n> Estado: pendiente\n- [ ] T6.1 — pendiente\n`;
-    const inferred = inferNextPlanExecBatch(text, newRunState("plan-exec", "001-exec"));
+    const plan = "docs/plans/032-plan-batch.md";
+    const run = withPlanExecEntry(
+      withScope(newRunState("plan-exec", "001-exec"), { plan, sources: ["workspace"] }),
+      { plan, phases_without_open_tasks: [4, 5], approved_without_changes: [4, 5] },
+    );
+    const inferred = inferNextPlanExecBatch(text, run);
     if (!inferred.ok) throw new Error(inferred.failure.message);
     expect(inferred.batch).toMatchObject({ phases: [4, 5], tasks: [], validation_only: true });
     expect(
@@ -288,6 +295,16 @@ describe("plan-exec batch publication", () => {
         closure: "no debe cerrar",
       }),
     ).toMatchObject({ ok: false, failure: { code: "PLAN_EXEC_DONE_TASKS_OPEN" } });
+  });
+
+  it("sella done con casillas legadas y un pase pendiente dentro del traspaso", () => {
+    const plan = `${PLAN.replace("> Estado: en ejecución\n- [ ] T4.1", "> Estado: validada\n- [x] T4.1").replace("- [ ] T4.2", "- [x] T4.2")}\n## Handoff operativo\n- [ ] registrar el pase\n- Pase a cert: corte-1\n`;
+    const sealed = preparePlanExecDoneSeal(plan, {
+      plan: "docs/plans/032-plan-batch.md",
+      closure: "sesión 131",
+    });
+    expect(sealed).toMatchObject({ ok: true });
+    expect(parseTasks(plan)).toMatchObject({ total: 9, closed: 9 });
   });
 });
 

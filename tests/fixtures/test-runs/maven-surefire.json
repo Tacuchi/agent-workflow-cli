@@ -1,0 +1,10 @@
+{
+  "failures": "[ERROR] com.example.ExampleTest.one -- Time elapsed: 0.01 s <<< FAILURE!\njava.lang.AssertionError\n[ERROR] com.example.ExampleTest.two -- Time elapsed: 0.01 s <<< FAILURE!\n[ERROR] Tests run: 3, Failures: 2, Errors: 0, Skipped: 0",
+  "identities": [
+    { "file": "com.example.ExampleTest", "case": "one" },
+    { "file": "com.example.ExampleTest", "case": "two" }
+  ],
+  "green": "[INFO] Running com.example.ExampleTest\n[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.123 s -- in com.example.ExampleTest\n[INFO] BUILD SUCCESS",
+  "empty": "[INFO] No tests to run.",
+  "load": "[ERROR] There was an error in the forked process\n[ERROR] TestEngine with ID 'junit-jupiter' failed to discover tests"
+}

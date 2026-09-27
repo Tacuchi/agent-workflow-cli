@@ -21,6 +21,7 @@ import {
   withPlanExecBatchPublicationPrepared,
   withPlanExecBatchStage,
 } from "../domain/flow/run-state.js";
+import { approvedValidationOnly } from "../domain/flow/unchanged-phase.js";
 import { baseDigest, sealProposal } from "../domain/proposal.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type FlowRunLocation, applyUnderLock } from "./flow/run-state-service.js";
@@ -49,6 +50,7 @@ export interface BatchPhaseUpdate {
 }
 
 export interface InferPlanExecBatchInput {
+  validation_only?: true;
   id: string;
   iteration: number;
   mode: PlanExecBatch["mode"];
@@ -90,7 +92,17 @@ export function inferPlanExecBatch(text: string, input: InferPlanExecBatchInput)
   const tasks = openTasks
     .map((task) => taskIdOf(task.text))
     .filter((id): id is string => id !== null);
-  if (tasks.length !== openTasks.length || new Set(tasks).size !== tasks.length) {
+  if (input.validation_only && openTasks.length > 0) {
+    return fail(
+      "PLAN_VALIDATION_ONLY_HAS_TASKS",
+      "una fase con tareas abiertas no puede acreditarse como validación sin cambios",
+    );
+  }
+  if (
+    tasks.length !== openTasks.length ||
+    (!input.validation_only && tasks.length === 0) ||
+    new Set(tasks).size !== tasks.length
+  ) {
     return fail(
       "PLAN_EXEC_BATCH_INVALID",
       "las fases del batch no exponen tareas Tn.m únicas que el CLI pueda acreditar",
@@ -100,6 +112,7 @@ export function inferPlanExecBatch(text: string, input: InferPlanExecBatchInput)
     ok: true,
     batch: {
       id: input.id,
+      ...(input.validation_only ? { kind: "validation-only" as const } : {}),
       iteration: input.iteration,
       mode: input.mode,
       phases,
@@ -184,12 +197,22 @@ export function inferNextPlanExecBatch(text: string, state: FlowRunState): Batch
     reason += "; sólo validación, sin tareas abiertas";
   }
   const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
-  return inferPlanExecBatch(text, {
+  const inferred = inferPlanExecBatch(text, {
     id: `batch-${iteration}`,
     iteration,
     ...effective,
+    ...(open.has(openPhase) ? {} : { validation_only: true }),
     partition: { declared: declared.status === "valid" ? declared.rows : null, effective, reason },
   });
+  if (!inferred.ok || inferred.batch.kind !== "validation-only") return inferred;
+  if (!approvedValidationOnly(state, inferred.batch)) {
+    return fail(
+      "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
+      `F${openPhase} no tiene tareas abiertas ni aprobación de validación sin cambios al entrar`,
+      "reanudá el consentimiento de entrada; si ya pasó sin observar esta fase, usá aw flow restart para observarla y aprobarla",
+    );
+  }
+  return inferred;
 }
 
 function noPendingPhases(text: string): BatchInference {
@@ -266,6 +289,17 @@ export function preparePlanExecBatchPublication(
     );
   }
   const parsedTasks = parseTasks(text).items;
+  if (
+    input.batch.kind === "validation-only" &&
+    parsedTasks.some(
+      (task) => task.status === "open" && input.batch.phases.includes(task.phase ?? -1),
+    )
+  ) {
+    return fail(
+      "PLAN_VALIDATION_ONLY_HAS_TASKS",
+      "el lote de validación sin cambios ahora tiene tareas abiertas",
+    );
+  }
   const byId = new Map(
     parsedTasks
       .map((task) => [taskIdOf(task.text), task] as const)

@@ -78,6 +78,7 @@ describe("estado de corrida — ida y vuelta", () => {
   it("el registro admite sólo validación explícita y conserva la partición y fases del crédito", () => {
     const batch: PlanExecBatch = {
       id: "batch-1",
+      kind: "validation-only",
       iteration: 1,
       mode: "continuous",
       phases: [1, 2],
@@ -984,7 +985,14 @@ describe("alineación del cursor con el recorrido instalado", () => {
         const read = await readRun(new NodeFileSystem(), location);
         if (!read.ok) throw new Error(`esperaba continuar la corrida v11: ${read.failure.code}`);
         expect(read.state.version).toBe(FLOW_RUN_STATE_VERSION);
-        expect(read.state.applied).toEqual(before.applied);
+        const expected = [...before.applied];
+        expected.splice(
+          expected.indexOf("plan-exec.source-scope"),
+          0,
+          "plan-exec.unchanged-phase-consent",
+        );
+        expect(read.state.applied).toEqual(expected);
+        expect(read.state.skipped).toContain("plan-exec.unchanged-phase-consent");
         expect(read.state.boundary).toBe("plan-exec.implementation");
         expect(read.state.observations).toEqual(before.observations);
         expect(read.state.batches).toEqual(before.batches);

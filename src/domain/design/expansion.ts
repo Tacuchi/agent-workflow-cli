@@ -98,6 +98,8 @@ export type DesignRouteMode = "simple" | "package";
 
 /** The facts the CLI reads to derive its own half of the vocabulary. */
 export interface StructuralFacts {
+  /** Mode of the targeted manifest; null for a new design. */
+  mode: DesignRouteMode | null;
   /** The invocation reads a source the policy marked sensitive. */
   sensitiveSources: boolean;
   /** The result, or part of it, leaves the machine. */
@@ -119,7 +121,7 @@ export interface StructuralFacts {
  */
 export function deriveStructuralSignals(facts: StructuralFacts): string[] {
   const fired: string[] = [];
-  if (facts.governanceRecords > 0 || facts.publishedRevisions > 1) {
+  if (facts.mode === "package" && (facts.governanceRecords > 0 || facts.publishedRevisions > 1)) {
     fired.push("design.governance-or-system-reuse");
   }
   if (

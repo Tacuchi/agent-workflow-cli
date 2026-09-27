@@ -193,7 +193,13 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       WORKLINE_CHECKOUT_PROOF_STALE: "evaluated",
       FLOW_EFFECT_PARTIAL: "evaluated",
       PLAN_EXEC_BATCH_UNCHANGED: "evaluated",
+      PLAN_VALIDATION_ONLY_NOT_APPROVED: "evaluated",
       PLAN_EXEC_PROOF_REUSED: "evaluated",
+      PLAN_EXEC_BATCH_REVIEW_INVALID: "evaluated",
+      PLAN_TEST_RUN_NOT_EXECUTED: "evaluated",
+      PLAN_PREEXISTING_FAILURES_INVALID: "evaluated",
+      PLAN_TEST_FAILURES_UNREADABLE: "evaluated",
+      PLAN_TEST_FAILURE_NEW: "evaluated",
       FLOW_SCOPE_INVALID: "evaluated",
       FLOW_SCOPE_UNKNOWN_SOURCE: "evaluated",
       FLOW_SCOPE_NOT_IN_PLAN: "evaluated",
@@ -1274,7 +1280,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     it("el contrato persistido no se movió: una prueba lo fija", () => {
       // La v12 agregó tipos de traza y la v13 las reentradas, la base y la acreditación
       // de cada lote; la v11 y la v12 se siguen continuando con su paso de subida, y de la v10 hacia atrás sólo se lee.
-      expect(FLOW_RUN_STATE_VERSION).toBe(13);
+      expect(FLOW_RUN_STATE_VERSION).toBe(14);
     });
 
     it("renumerar la cadena no devuelve intentos: el techo lo siguen fijando piso y grants", async () => {

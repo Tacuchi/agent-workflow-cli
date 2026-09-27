@@ -74,6 +74,8 @@ const COMMAND_VALUE_FLAGS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 // `values.get()`, or it silently sees `undefined`.
 const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   "source",
+  "show",
+  "adapt",
   "fuente",
   "working-branch",
   "qa-branch",

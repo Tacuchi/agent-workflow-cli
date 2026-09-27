@@ -145,6 +145,38 @@ const READY = "---\nstatus: ready-for-plan\n---\n\n# Spec\n";
 const DRAFT = "---\nstatus: draft\n---\n\n# Spec\n";
 
 describe("buildWorklineIndex — the spec→plan relation drives what is unplanned", () => {
+  it("superseded elimina drafts y ready del pipeline sin alterar el baseline funcional", async () => {
+    const fs = workspace();
+    const original = "---\nstatus: ready-for-plan\n---\n# Spec\n\n## Requirement\nUn resultado.\n";
+    fs.file("/cwd/docs/specs/053-spec-vieja.md", original);
+    fs.file("/cwd/docs/specs/054-spec-borrador.md", DRAFT);
+    fs.file(
+      "/cwd/docs/plans/053-plan-viejo.md",
+      [
+        "# Plan",
+        "> Estado: open",
+        "> Derived from docs/specs/053-spec-vieja.md",
+        `> Baseline: docs/specs/053-spec-vieja.md@${functionalSpecDigest(original)}`,
+        "## Tasks",
+        "- [ ] T1",
+      ].join("\n"),
+    );
+    const replaced = (text: string) =>
+      text.replace(
+        /status: (?:draft|ready-for-plan)/,
+        "status: superseded\nsuperseded_by: docs/specs/055-spec-nueva.md",
+      );
+    fs.file("/cwd/docs/specs/053-spec-vieja.md", replaced(original));
+    fs.file("/cwd/docs/specs/054-spec-borrador.md", replaced(DRAFT));
+    const out = await index(fs);
+    expect(out.specs.map((s) => [s.status, s.refined])).toEqual([
+      ["superseded", false],
+      ["superseded", false],
+    ]);
+    expect(out.pipeline.map((row) => row.kind)).toEqual(["plan-open"]);
+    expect(out.specs[0]).toMatchObject({ superseded_by: "docs/specs/055-spec-nueva.md" });
+    expect(out.plans[0]?.baseline.status).toBe("aligned");
+  });
   it("does not fall back to literal docs paths when [docs] is invalid", async () => {
     const fs = workspace();
     fs.file("/cwd/.workflow/skills.toml", '[docs]\nplan = "knowledge/plans"\n');
@@ -211,6 +243,117 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
 });
 
 describe("buildWorklineIndex — pipeline order", () => {
+  it("mantiene un plan done con pase cert pendiente hasta applied y exige el corte vinculado", async () => {
+    const fs = workspace();
+    fs.file(
+      "/cwd/docs/plans/074-plan-pase.md",
+      [
+        "# Plan 074",
+        "> Estado: done",
+        "## Tasks",
+        "### F1 — entrega",
+        "> Estado: validada",
+        "> Fuentes: agent-workflow-cli",
+        "- [x] T1 _(fuentes: agent-workflow-cli)_",
+        "## Handoff operativo",
+        "- Pase a CeRt: corte-1",
+        "- [ ] traspaso legado",
+      ].join("\n"),
+    );
+    const declared = {
+      version: 1,
+      at: "2026-09-27",
+      event: "declared",
+      pass: {
+        version: "corte-1",
+        sources: ["agent-workflow-cli"],
+        plans: [{ kind: "plan", key: "074" }],
+      },
+    };
+    const book = "/cwd/.workflow/release-passes.jsonl";
+    const row = async () => (await index(fs)).pipeline.find((item) => item.number === "074");
+    expect((await index(fs)).plans[0]).toMatchObject({ plan_state: "done", tasks_total: 1 });
+    expect(await row()).toMatchObject({
+      kind: "plan-pass",
+      priority: 4,
+      command: "aw release-pass declare --version corte-1 --sources agent-workflow-cli --plans 074",
+    });
+    expect((await row())?.detail.next).toContain("sin registrar");
+    fs.file(book, `${JSON.stringify(declared)}\n`);
+    expect(await row()).toMatchObject({
+      kind: "plan-pass",
+      command: "aw release-pass applied --version corte-1 --environment cert --detail <hecho>",
+    });
+    fs.file(
+      book,
+      [
+        declared,
+        {
+          version: 1,
+          at: "2026-09-27",
+          event: "applied",
+          pass_version: "corte-1",
+          application: { environment: "cert", detail: "desplegado", at: "2026-09-27" },
+        },
+      ]
+        .map(JSON.stringify)
+        .join("\n"),
+    );
+    expect(await row()).toBeUndefined();
+  });
+
+  it("un pase a PROD sólo se salda al llegar el pase vinculado a producción", async () => {
+    const fs = workspace();
+    fs.file(
+      "/cwd/docs/plans/075-plan-pase.md",
+      "# Plan\n> Estado: done\n## Tasks\n- [x] T1\n## Handoff operativo\n- Pase a PROD: corte-2\n",
+    );
+    const declared = {
+      version: 1,
+      at: "2026-09-27",
+      event: "declared",
+      pass: {
+        version: "corte-2",
+        sources: ["cli"],
+        plans: [{ kind: "plan", key: "075" }],
+      },
+    };
+    const book = "/cwd/.workflow/release-passes.jsonl";
+    fs.file(
+      book,
+      [
+        declared,
+        {
+          version: 1,
+          at: "2026-09-27",
+          event: "applied",
+          pass_version: "corte-2",
+          application: { environment: "prod", detail: "SQL", at: "2026-09-27" },
+        },
+      ]
+        .map(JSON.stringify)
+        .join("\n"),
+    );
+    expect((await index(fs)).pipeline.find((item) => item.number === "075")?.kind).toBe(
+      "plan-pass",
+    );
+    fs.file(
+      book,
+      [
+        declared,
+        {
+          version: 1,
+          at: "2026-09-27",
+          event: "arrived",
+          pass_version: "corte-2",
+          arrival: { source: "cli", kind: "deployment", detail: "desplegado", at: "2026-09-27" },
+        },
+      ]
+        .map(JSON.stringify)
+        .join("\n"),
+    );
+    expect((await index(fs)).pipeline.find((item) => item.number === "075")).toBeUndefined();
+  });
   // La cuarta clase salió del pipeline de trabajo del usuario: la mecánica de
   // sesión la maneja el workline central, así que un checkpoint suelto se reporta
   // como aviso y deja de competir con un plan abierto por la atención de alguien.
@@ -560,7 +703,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     const item = await planItem(detailWorkspace(detailPlan({ f2: "validada" })));
     expect(item.detail.next).toBe("todo ejecutado: falta la validación final y el cierre");
     expect(item.detail.obligation).toBe(false);
-    expect(item.detail.progress).toBe("2/2 tareas (100%) · fases 2/2");
+    expect(item.detail.progress).toBe("tareas 2/2 · fases 2/2");
   });
 
   it("7 · y si queda fase por validar, el paso es continuar por ella", async () => {

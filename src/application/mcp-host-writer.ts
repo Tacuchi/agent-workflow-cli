@@ -11,7 +11,6 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { parse as parseToml } from "smol-toml";
 import {
   type McpEntry,
   type McpHost,
@@ -23,6 +22,7 @@ import {
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
 import { backupFile, escapeRegex, purgeStaleBackups } from "./multiroot/paths.js";
 import { resolveWarpGlobalMcpPath, resolveWarpProjectMcpPath } from "./multiroot/warp.js";
+import { parseToml } from "./parsers/toml.js";
 
 export interface ScopeInput {
   scopeDir: string;

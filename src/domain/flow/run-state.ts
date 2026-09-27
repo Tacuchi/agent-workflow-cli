@@ -40,6 +40,7 @@ import {
   journeyOfFlow,
 } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
+import { type BatchReview, isBatchReview } from "./batch-review.js";
 import { V11_JOURNEY_BASE } from "./journey-baseline.js";
 import {
   type AssuranceStatus,
@@ -63,7 +64,7 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 13;
+export const FLOW_RUN_STATE_VERSION = 14;
 
 /**
  * The versions this CLI CONTINUES without adoption, newest first.
@@ -82,7 +83,7 @@ export const FLOW_RUN_STATE_VERSION = 13;
  * and the `route-refused` trace kind. A v12 run has none of them either, and a
  * batch without `base` is read as the one that was in flight when the CLI updated.
  */
-export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 12, 11];
+export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 13, 12, 11];
 
 /**
  * The versions this CLI READS, newest first.
@@ -109,6 +110,8 @@ export const FLOW_RUN_STATE_READABLE: readonly number[] = [
 const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => FlowRunState>> = {
   11: (state) => ({ ...state, version: 12, journey_base: [...V11_JOURNEY_BASE[state.flow]] }),
   12: (state) => ({ ...state, version: 13 }),
+  // Historical reviews are never fabricated. A still-open batch must supply one.
+  13: (state) => ({ ...state, version: 14 }),
 };
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
@@ -970,6 +973,8 @@ export interface PlanExecBatchRange {
 
 export interface PlanExecBatch {
   id: string;
+  /** Only validates an approved entry phase; its task set must be empty. */
+  kind?: "validation-only";
   iteration: number;
   mode: "continuous" | "isolated";
   phases: number[];
@@ -1002,6 +1007,7 @@ export interface PlanExecBatch {
     effective: Omit<PlanExecBatchRange, "id">;
     reason: string;
   };
+  review?: BatchReview;
 }
 
 /** The base a batch had in the run a restart or an annulment archived. */
@@ -1159,6 +1165,7 @@ export interface FlowChoiceSelection {
 export interface PlanExecEntry {
   plan: string | null;
   phases_without_open_tasks: number[] | null;
+  approved_without_changes?: number[];
 }
 
 export interface FlowRunState {
@@ -1660,6 +1667,33 @@ export function withPlanExecBatchCredit(
       batch.id === batchId ? { ...batch, credit, credit_phases: [...batch.phases] } : batch,
     ),
   });
+}
+
+/** Record only the current iteration's review, never borrowing one from a prior batch. */
+export function withPlanExecBatchReview(state: FlowRunState, review: BatchReview): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    batches: (state.batches ?? []).map((batch) =>
+      batch.iteration === state.batch_loop?.iteration ? { ...batch, review } : batch,
+    ),
+  });
+}
+
+/** A legacy close may have passed the old untyped review. Insert a fresh, answerable copy. */
+export function withPendingBatchReview(state: FlowRunState): FlowRunState {
+  const review = "plan-exec.review-findings";
+  if (state.flow !== "plan-exec" || state.boundary !== "plan-exec.batch-close") return state;
+  const batch = (state.batches ?? []).find((entry) => entry.published_plan_digest === undefined);
+  if (batch === undefined || batch.review !== undefined) return state;
+  return withBoundary(
+    withReentry(state, {
+      kind: "review",
+      transition: "plan-exec.batch-close",
+      from: review,
+      occurrence: state.applied.filter((id) => id === "plan-exec.batch-close").length + 1,
+    }),
+    review,
+  );
 }
 
 /** Record one inferred or declared batch, refusing duplicate ids at the caller's boundary. */
@@ -2508,6 +2542,17 @@ function isPlanExecEntry(value: unknown): value is PlanExecEntry | undefined {
   if (value === undefined) return true;
   if (!isRecord(value) || !(value.plan === null || isNonEmptyString(value.plan))) return false;
   const phases = value.phases_without_open_tasks;
+  const approval = value.approved_without_changes;
+  if (
+    approval !== undefined &&
+    (value.plan === null ||
+      !Array.isArray(phases) ||
+      !Array.isArray(approval) ||
+      approval.length === 0 ||
+      new Set(approval).size !== approval.length ||
+      !approval.every((phase) => phases.includes(phase)))
+  )
+    return false;
   return (
     phases === null ||
     (Array.isArray(phases) &&
@@ -2769,9 +2814,11 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
         (phase) => typeof phase === "number" && Number.isInteger(phase) && phase > 0,
       ) ||
       !isStringArray(entry.tasks) ||
-      (entry.tasks.length === 0 && entry.validation_only !== true) ||
       (entry.validation_only !== undefined && typeof entry.validation_only !== "boolean") ||
       (entry.validation_only === true && entry.tasks.length !== 0) ||
+      (entry.validation_only === false && entry.kind === "validation-only") ||
+      (entry.kind === "validation-only" ? entry.tasks.length !== 0 : entry.tasks.length === 0) ||
+      (entry.kind !== undefined && entry.kind !== "validation-only") ||
       new Set(entry.tasks).size !== entry.tasks.length ||
       typeof entry.plan_digest !== "string" ||
       entry.plan_digest.length === 0 ||
@@ -2787,7 +2834,8 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
       !isSourceMap(entry.credit, false) ||
       !isBatchPartition(entry.partition, entry.phases, entry.mode) ||
       (entry.credit_phases !== undefined &&
-        (entry.credit === undefined || !samePhaseRange(entry.credit_phases, entry.phases)))
+        (entry.credit === undefined || !samePhaseRange(entry.credit_phases, entry.phases))) ||
+      (entry.review !== undefined && !isBatchReview(entry.review))
     ) {
       return false;
     }
@@ -3270,7 +3318,7 @@ function isObservationArray(value: unknown): value is FlowObservation[] {
   );
 }
 
-const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen"];
+const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen", "review"];
 
 /** Absent, or reentries each with its kind, its boundary, its occurrence and its origin. */
 function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
@@ -3280,6 +3328,9 @@ function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
     (entry) =>
       isRecord(entry) &&
       REENTRY_KINDS.includes(entry.kind as string) &&
+      (entry.kind !== "review" ||
+        (entry.transition === "plan-exec.batch-close" &&
+          entry.from === "plan-exec.review-findings")) &&
       nonEmpty(entry.transition) &&
       Number.isInteger(entry.occurrence) &&
       (entry.occurrence as number) >= 1 &&

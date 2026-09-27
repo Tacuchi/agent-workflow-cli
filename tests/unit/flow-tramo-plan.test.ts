@@ -31,6 +31,7 @@ import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { attemptAccountingAt } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
+import { batchReview } from "../helpers/batch-review.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 import { testExecutor } from "../helpers/test-executor.js";
 
@@ -468,7 +469,9 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
         decisions:
           stopped.scopes_sources === true
             ? { plan: PLAN_DOC, sources: [ALIAS] }
-            : { paso: stopped.id },
+            : stopped.answer_contract === "batch-review"
+              ? { review: batchReview() }
+              : { paso: stopped.id },
       };
     }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
@@ -833,6 +836,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
 
   it("la primera fase sin tareas abiertas llega a su validación sin saltearse", async () => {
     await writeFile(join(workdir, PLAN_DOC), fourPhases().replace("- [ ] T1.1", "- [x] T1.1"));
+    await sealPlanInput();
     await walkTo("plan-exec.validation-execution", []);
     expect((await current()).state.batches?.[0]).toMatchObject({
       phases: [1],
@@ -1101,7 +1105,11 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
       input_digest: resolved.seal,
       signals: [],
       decisions:
-        stopped.scopes_sources === true ? { plan: DOC, sources: [ALIAS] } : { paso: stopped.id },
+        stopped.scopes_sources === true
+          ? { plan: DOC, sources: [ALIAS] }
+          : stopped.answer_contract === "batch-review"
+            ? { review: batchReview() }
+            : { paso: stopped.id },
     };
   }
 

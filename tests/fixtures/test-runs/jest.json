@@ -1,0 +1,10 @@
+{
+  "failures": "FAIL tests/example.test.js\n  ● suite › one\n    expect(received).toBe(expected)\n  ● suite › two\nTest Suites: 1 failed, 1 total\nTests: 2 failed, 1 passed, 3 total",
+  "identities": [
+    { "file": "tests/example.test.js", "case": "suite › one" },
+    { "file": "tests/example.test.js", "case": "suite › two" }
+  ],
+  "green": "PASS tests/example.test.js\nTest Suites: 1 passed, 1 total\nTests:       1 passed, 1 total",
+  "empty": "No tests found, exiting with code 1",
+  "load": "FAIL tests/example.test.js\n  ● Test suite failed to run\n    Cannot find module './missing' from 'tests/example.test.js'"
+}

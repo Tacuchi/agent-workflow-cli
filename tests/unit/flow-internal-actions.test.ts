@@ -17,6 +17,11 @@ import {
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import {
+  baselineOf,
+  birthCustody,
+  writeCustody,
+} from "../../src/application/session-custody-service.js";
 import { flowCommand } from "../../src/cli/commands/flow.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -169,6 +174,74 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     writeFile(join(paths.cwdSessionsDir(), SESSION, "SESSION.md"), body, "utf8");
 
   const statePath = (): string => join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE);
+
+  it("plan-refine exige plan existente con custodia; legada avisa y plan-new nombra reemplazo", async () => {
+    const folder = "002-destino-plan-refine";
+    const dir = join(paths.cwdSessionsDir(), folder);
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "SESSION.md"),
+      "# SESSION\n## Objective\nRefinar\n## Success criteria\n- [ ] un plan\n",
+    );
+    const run = { session: folder, code: "002", scope: null, proposal: null };
+    const legacy = await executor({ operation: "session.artifacts" }, run);
+    expect(legacy.ok).toBe(true);
+    expect(legacy.summary).toContain("sesión legada");
+    const custody = async (artifacts: Awaited<ReturnType<typeof baselineOf>>[]) =>
+      writeCustody(
+        fs,
+        dir,
+        birthCustody({
+          subject: { kind: "session", key: folder },
+          subjectPath: dir,
+          parents: [],
+          artifacts,
+          created: "2026-09-27",
+        }),
+      );
+    await custody([]);
+    const missing = await executor({ operation: "session.artifacts" }, run);
+    expect(missing.ok).toBe(false);
+    expect(missing.summary).toContain("--input docs/plans/PPP-plan-<slug>.md");
+    expect(missing.summary).toContain("<slug>-plan-refine");
+    const planPath = "docs/plans/002-plan-destino.md";
+    await custody([await baselineOf(fs, workdir, planPath)]);
+    expect((await executor({ operation: "session.artifacts" }, run)).ok).toBe(false);
+    await mkdir(join(workdir, "docs/plans"), { recursive: true });
+    await writeFile(join(workdir, planPath), "# Plan\n");
+    expect((await executor({ operation: "session.artifacts" }, run)).ok).toBe(true);
+    await writeFile(join(dir, ".custody.json"), "{invalid");
+    expect((await executor({ operation: "session.artifacts" }, run)).summary).toContain(
+      "custodia ilegible",
+    );
+
+    const specPath = "docs/specs/003-spec-vieja.md";
+    const newFolder = "003-vieja-plan-new";
+    const newDir = join(paths.cwdSessionsDir(), newFolder);
+    await mkdir(join(workdir, "docs/specs"), { recursive: true });
+    await writeFile(
+      join(workdir, specPath),
+      "---\nstatus: superseded\nsuperseded_by: docs/specs/004-spec-nueva.md\n---\n# Spec\n",
+    );
+    await mkdir(newDir, { recursive: true });
+    await writeCustody(
+      fs,
+      newDir,
+      birthCustody({
+        subject: { kind: "session", key: newFolder },
+        subjectPath: newDir,
+        parents: [{ kind: "spec", key: "003" }],
+        artifacts: [await baselineOf(fs, workdir, specPath)],
+        created: "2026-09-27",
+      }),
+    );
+    const board = await executor(
+      { operation: "workspace.board" },
+      { session: newFolder, code: "003", scope: null, proposal: null },
+    );
+    expect(board.ok).toBe(true);
+    expect(board.summary).toContain("docs/specs/004-spec-nueva.md");
+  });
 
   async function state(): Promise<FlowRunState> {
     const read = await readRun(fs, locateRun(paths, SESSION));

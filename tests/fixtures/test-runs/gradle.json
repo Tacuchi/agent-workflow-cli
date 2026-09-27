@@ -1,0 +1,10 @@
+{
+  "failures": "com.example.ExampleTest > one() FAILED\n    org.opentest4j.AssertionFailedError\ncom.example.ExampleTest > two() FAILED\n3 tests completed, 2 failed\nFAILURE: Build failed with an exception.\n> There were failing tests. See the report at: file:///workspace/build/reports/tests/test/index.html",
+  "identities": [
+    { "file": "com.example.ExampleTest", "case": "one()" },
+    { "file": "com.example.ExampleTest", "case": "two()" }
+  ],
+  "green": "> Task :compileTestJava NO-SOURCE\n> Task :processTestResources NO-SOURCE\n> Task :test\nBUILD SUCCESSFUL in 2s\n3 actionable tasks: 3 executed",
+  "empty": "> Task :test NO-SOURCE\nBUILD SUCCESSFUL in 1s",
+  "load": "FAILURE: Build failed with an exception.\n> Could not complete execution for Gradle Test Executor 1."
+}

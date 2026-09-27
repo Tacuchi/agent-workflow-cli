@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
@@ -487,6 +487,182 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // Y el retiro igual converge: la fila está, y lo que no se pudo dar de baja
     // queda declarado en el resultado en vez de forzado o silenciado.
     expect(rowsFor(proposal.digest)).toBe(1);
+  });
+
+  it.each([
+    { mode: "reset", commits: 2 },
+    { mode: "discard", commits: 1 },
+  ] as const)(
+    "$mode retira una sesión con unidad integrada y liberada sobre su destino real",
+    async ({ mode, commits }) => {
+      const folder = await session("algo-plan-exec", [planPath]);
+      const ensured = await runWorktree(deps, {
+        action: "ensure",
+        alias: "acme",
+        sessionCode: folder,
+      });
+      if ("error" in ensured) throw new Error(ensured.message);
+      const baseline = git(source, "rev-parse", "HEAD^{tree}");
+      writeFileSync(join(ensured.path, "trabajo.txt"), "de la sesión\n");
+      git(ensured.path, "add", "trabajo.txt");
+      const receipt = await deps.git.commit(ensured.path, "trabajo de la sesión");
+      await recordCommit(deps, folder, "acme", receipt);
+      if (commits === 2) {
+        // Plain git is also covered by the recorded integration, without a commit receipt.
+        writeFileSync(join(ensured.path, "trabajo.txt"), "trabajo completado\n");
+        git(ensured.path, "commit", "-qam", "terminar trabajo");
+      }
+      const unitHead = git(ensured.path, "rev-parse", "HEAD");
+      expect(
+        await runWorktree(deps, { action: "integrate", alias: "acme", sessionCode: folder }),
+      ).toMatchObject({ integrated: true, released: true });
+      expect(existsSync(ensured.path)).toBe(false);
+      const operationState = vi.spyOn(deps.git, "operationState");
+      const localChanges = vi.spyOn(deps.git, "localChanges");
+      const head = vi.spyOn(deps.git, "head");
+
+      const proposal = await proposalFor(mode, "plan:024");
+      expect(proposal.dirty).toEqual([]);
+      expect(proposal.publication).toMatchObject({
+        ref: "refs/heads/main",
+        expected_old: unitHead,
+        expected_tree: baseline,
+      });
+      expect(proposal.reverts).toHaveLength(commits);
+      const outcome = await applyRetirement(deps, {
+        mode,
+        target: "plan:024",
+        approval: proposal.digest,
+      });
+      expect(outcome.ok).toBe(true);
+      if (!outcome.ok) return;
+      expect(outcome.result.pending_reconciliation).toEqual([]);
+      expect(git(source, "rev-parse", "HEAD^{tree}")).toBe(baseline);
+      expect(git(source, "merge-base", "--is-ancestor", receipt.after, "main")).toBe("");
+      expect(git(source, "rev-parse", ensured.branch)).toBe(unitHead);
+      expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
+      expect(existsSync(join(workspace, planPath))).toBe(mode === "reset");
+      expect(rowsFor(proposal.digest)).toBe(1);
+      for (const read of [operationState, localChanges, head]) {
+        expect(read).not.toHaveBeenCalledWith(ensured.path);
+      }
+    },
+  );
+
+  async function integratedMerge(insideUnit: boolean) {
+    const folder = await session("algo-plan-exec", [planPath]);
+    const ensured = await runWorktree(deps, {
+      action: "ensure",
+      alias: "acme",
+      sessionCode: folder,
+    });
+    if ("error" in ensured) throw new Error(ensured.message);
+    writeFileSync(join(ensured.path, "trabajo.txt"), "de la sesión\n");
+    git(ensured.path, "add", "trabajo.txt");
+    const receipt = await deps.git.commit(ensured.path, "trabajo propio");
+    await recordCommit(deps, folder, "acme", receipt);
+    writeFileSync(join(source, "ajeno.txt"), "trabajo ajeno\n");
+    git(source, "add", "ajeno.txt");
+    git(source, "commit", "-qm", "trabajo ajeno");
+    const before = git(source, "rev-parse", "HEAD");
+    if (insideUnit) git(ensured.path, "merge", "--no-edit", "main");
+    expect(
+      await runWorktree(deps, { action: "integrate", alias: "acme", sessionCode: folder }),
+    ).toMatchObject({ integrated: true, released: true });
+    return { folder, ensured, before, after: git(source, "rev-parse", "HEAD") };
+  }
+
+  it.each([false, true])(
+    "revierte el merge integrado conservando el destino previo (merge en unidad: %s)",
+    async (insideUnit) => {
+      const { before, after } = await integratedMerge(insideUnit);
+      const proposal = await proposalFor("reset", "plan:024");
+      expect(proposal.reverts).toHaveLength(1);
+      expect(proposal.reverts[0]).toMatchObject({
+        commit: after,
+        ref: "refs/heads/main",
+        mainline: insideUnit ? 2 : 1,
+      });
+      expect(
+        await applyRetirement(deps, {
+          mode: "reset",
+          target: "plan:024",
+          approval: proposal.digest,
+        }),
+      ).toMatchObject({ ok: true });
+      expect(git(source, "rev-parse", "HEAD^{tree}")).toBe(
+        git(source, "rev-parse", `${before}^{tree}`),
+      );
+      expect(readFileSync(join(source, "ajeno.txt"), "utf-8")).toBe("trabajo ajeno\n");
+      expect(existsSync(join(source, "trabajo.txt"))).toBe(false);
+    },
+  );
+
+  it.each([
+    ["destino sucio", "cambios locales"],
+    ["otra rama", "no está en el checkout"],
+    ["rama ausente", "todo el trabajo"],
+    ["unidad reaparecida", "no se pudo verificar su liberación"],
+    ["fuente ilegible", "no se pudo verificar"],
+  ])("rechaza sin efectos un retiro integrado no verificable: %s", async (fault, reason) => {
+    const { folder, ensured, after } = await integratedMerge(false);
+    if (fault === "destino sucio") writeFileSync(join(source, "ajeno.txt"), "otro trabajo local\n");
+    if (fault === "otra rama") git(source, "checkout", "-qb", "otra");
+    if (fault === "rama ausente") git(source, "branch", "-d", ensured.branch);
+    if (fault === "unidad reaparecida")
+      git(source, "worktree", "add", ensured.path, ensured.branch);
+    if (fault === "fuente ilegible") rmSync(source, { recursive: true });
+    const outcome = await applyRetirement(deps, {
+      mode: "discard",
+      target: "plan:024",
+      approval: "0".repeat(64),
+    });
+    expect(outcome).toMatchObject({
+      ok: false,
+      rejection: { message: expect.stringContaining(reason) },
+    });
+    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(PLAN_OPEN);
+    expect(history()).not.toContain("## Retiros");
+    if (fault !== "fuente ilegible") expect(git(source, "rev-parse", "main")).toBe(after);
+    if (fault === "destino sucio") {
+      expect(readFileSync(join(source, "ajeno.txt"), "utf-8")).toBe("otro trabajo local\n");
+    }
+  });
+
+  it("no retira sólo la última de varias integraciones ocultando el trabajo anterior", async () => {
+    const { folder } = await integratedMerge(false);
+    const second = await runWorktree(deps, {
+      action: "ensure",
+      alias: "acme",
+      sessionCode: folder,
+    });
+    if ("error" in second) throw new Error(second.message);
+    writeFileSync(join(second.path, "segundo.txt"), "segunda integración\n");
+    git(second.path, "add", "segundo.txt");
+    git(second.path, "commit", "-qm", "segundo trabajo");
+    expect(
+      await runWorktree(deps, { action: "integrate", alias: "acme", sessionCode: folder }),
+    ).toMatchObject({ integrated: true, released: true });
+
+    expect(await prepareRetirement(deps, { mode: "reset", target: "plan:024" })).toMatchObject({
+      ok: false,
+      rejection: { message: expect.stringContaining("varias integraciones") },
+    });
+    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(readFileSync(join(source, "trabajo.txt"), "utf-8")).toBe("de la sesión\n");
+    expect(readFileSync(join(source, "segundo.txt"), "utf-8")).toBe("segunda integración\n");
+  });
+
+  it("no acredita una integración que ya no está en el destino", async () => {
+    const { folder, before } = await integratedMerge(false);
+    git(source, "update-ref", "refs/heads/main", before);
+    expect(await prepareRetirement(deps, { mode: "reset", target: "plan:024" })).toMatchObject({
+      ok: false,
+      rejection: { message: expect.stringContaining("ya no contiene la integración") },
+    });
+    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(git(source, "rev-parse", "main")).toBe(before);
   });
 
   it("un lock de workspace ocupado bloquea sin tocar nada", async () => {

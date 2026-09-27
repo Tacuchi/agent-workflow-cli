@@ -146,6 +146,23 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
     );
   });
 
+  it("acepta el pase operativo sin tratar su texto remoto como cierre", async () => {
+    const clean = PLAN_TEXT.replace(
+      "**Validación de fase:** la rúbrica queda verde.",
+      "**Validación de fase:** `npx vitest run tests/unit/b.test.ts` pasa.",
+    ).replace(
+      "- AC-04: la spec queda cubierta.",
+      "- AC-04: `npx vitest run tests/unit/c.test.ts`.",
+    );
+    await writeFile(
+      join(root, PLAN),
+      `${clean}\n## Handoff operativo\n\n- Pase a PROD: corte-1\n- [ ] legada: deploy https://example.org\n`,
+    );
+    const result = await run(PLAN);
+    expect(result.exitCode).toBe(0);
+    expect(result.data?.violations).toEqual([]);
+  });
+
   it("la proyección humana nombra línea, código, gate y regla de cada violación", async () => {
     const result = await run(PLAN);
     const human = planCommand.renderHuman?.(result, { detail: false }) ?? "";
