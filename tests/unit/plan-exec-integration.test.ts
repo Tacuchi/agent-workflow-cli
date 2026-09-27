@@ -7,6 +7,7 @@ import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { prepareFixGit } from "../../src/application/fix-git-service.js";
+import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import {
@@ -18,6 +19,7 @@ import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { FLOW_DECISIONS, internalActionOf } from "../../src/domain/flow/authority.js";
+import { serializeRunState, withPlanExecBatchUpdate } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { planExecWalk } from "../helpers/plan-exec-walk.js";
@@ -271,6 +273,17 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     const dos = await unitOf(DOS);
     commitIn(uno, COMPARTIDO, "export const version = 1;\n", "alpha");
     commitIn(dos, COMPARTIDO, "export const version = 2;\n", "beta");
+
+    // This integration regression represents an in-flight pre-per-batch-commit
+    // run: Git was already committed by its old tail, before the new snapshot
+    // contract existed. The new path has its own real-git commit tests.
+    const old = await readRun(deps.fs, locateRun(deps.paths, DOS.folder));
+    if (!old.ok) throw new Error(old.failure.message);
+    const historical = withPlanExecBatchUpdate(old.state, "batch-1", (batch) => ({
+      ...batch,
+      snapshot: undefined,
+    }));
+    writeFileSync(locateRun(deps.paths, DOS.folder).statePath, serializeRunState(historical));
 
     await walk.walkTo(DOS, "plan-exec.unit-integration");
     // La frontera existe y es de autorización: integrar escribe en la rama que

@@ -25,6 +25,7 @@
 import type { WorklineFlow } from "../../application/capability/compose.js";
 import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
 import { canonicalJson, semanticDigest } from "../../application/semantic-operation/protocol.js";
+import type { CommitReceipt, DirtyPath } from "../../ports/git.js";
 import { type EffectClass, isEffectClass, touchesTheWorld } from "../capability/effects.js";
 import { AttemptLedger } from "../capability/protocol.js";
 import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js";
@@ -138,6 +139,8 @@ export interface FlowRunAttempt {
    * that does not move while the run stands there, which is the transition id.
    */
   transition: string;
+  /** Grant-only row: keeps resend identity/ordinal but costs no attempt of the authorized step. */
+  approval?: boolean;
   /**
    * The plan-exec batch iteration this attempt belongs to, when the same
    * transition is walked again for a later batch.  It keeps the per-boundary
@@ -278,7 +281,15 @@ function spendAt(
   const key = attemptCounterKey(state, transition);
   const floor = state.attempt_floor?.[key] ?? 0;
   const granted = state.attempt_grants?.[key] ?? 0;
-  return { rows, floor, granted, spent: Math.max(0, Math.max(rows.length, floor) - granted) };
+  return {
+    rows,
+    floor,
+    granted,
+    spent: Math.max(
+      0,
+      Math.max(rows.filter((row) => row.approval !== true).length, floor) - granted,
+    ),
+  };
 }
 
 /**
@@ -356,24 +367,25 @@ export function attemptAccountingAt(state: FlowRunState, transition: string): At
   // — and a projection that disagrees with the state it describes is the very
   // thing this reading exists to stop. It cannot mask a real divergence: a
   // counter that runs AHEAD of the rows stays ahead of this maximum.
-  const floor = Math.max(read, rows.length);
+  const paid = rows.filter((row) => row.approval !== true).length;
+  const floor = Math.max(read, paid);
   const ordinals = rows.map((attempt) => attempt.attempt);
   const conflicts: AttemptConflict[] = [];
-  if (floor > rows.length) {
+  if (floor > paid) {
     conflicts.push({
       between: [
         { name: "attempt_floor", value: floor },
-        { name: "attempts", value: rows.length },
+        { name: "attempts", value: paid },
       ],
       cause:
         "el contador monótono declara más intentos que las filas persistidas: o se restauró una copia anterior del ledger, o una escritura murió entre el contador y el estado",
     });
   }
-  if (granted > Math.max(rows.length, floor)) {
+  if (granted > Math.max(paid, floor)) {
     conflicts.push({
       between: [
         { name: "attempt_grants", value: granted },
-        { name: "attempts", value: Math.max(rows.length, floor) },
+        { name: "attempts", value: Math.max(paid, floor) },
       ],
       cause: "se perdonan más intentos de los que esta transición llegó a registrar",
     });
@@ -480,7 +492,8 @@ export function reconcileAttemptsAt(
     };
   }
   const { rows, floor: read, granted, spent } = spendAt(state, transition);
-  const floor = Math.max(read, rows.length);
+  const paid = rows.filter((row) => row.approval !== true).length;
+  const floor = Math.max(read, paid);
   const accounting = attemptAccountingAt(state, transition);
   const repairs: AttemptRepair[] = [];
   // What is repaired is the EFFECTIVE spend, not the raw difference between the
@@ -489,7 +502,7 @@ export function reconcileAttemptsAt(
   // against that difference would forgive it again on every single advance and
   // quietly remove the cap. Written against the spend, the second reading finds
   // `spent === rows` and has nothing to do.
-  const unforgiven = spent - rows.length;
+  const unforgiven = spent - paid;
   if (unforgiven > 0) {
     repairs.push({
       rule: "forgive-counter-excess",
@@ -499,7 +512,7 @@ export function reconcileAttemptsAt(
       after: granted + unforgiven,
     });
   }
-  const recorded = Math.max(rows.length, floor);
+  const recorded = Math.max(paid, floor);
   if (granted > recorded) {
     repairs.push({
       rule: "clamp-grants",
@@ -933,6 +946,7 @@ export const PLAN_EXEC_BATCH_STAGES = [
   "deviation",
   "validating",
   "reviewing",
+  "batch-committing",
   "closed",
   "committing",
   "integrating",
@@ -1008,6 +1022,15 @@ export interface PlanExecBatch {
     reason: string;
   };
   review?: BatchReview;
+  /** Git state at acquisition; absent on batches born before per-batch commits. */
+  snapshot?: Record<string, { head: string; branch: string; dirty: DirtyPath[] }>;
+  commit_proposal?: {
+    sources: { alias: string; paths: string[]; dirty: DirtyPath[]; message: string }[];
+    digest: string;
+    approved_digest?: string;
+  };
+  /** Each receipt is sealed as soon as that source lands. An empty object means no changes. */
+  commit_result?: Record<string, CommitReceipt>;
 }
 
 /** The base a batch had in the run a restart or an annulment archived. */
@@ -1669,6 +1692,32 @@ export function withPlanExecBatchCredit(
   });
 }
 
+export function withPlanExecBatchUpdate(
+  state: FlowRunState,
+  id: string,
+  update: (batch: PlanExecBatch) => PlanExecBatch,
+): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    batches: (state.batches ?? []).map((batch) => (batch.id === id ? update(batch) : batch)),
+  });
+}
+
+/** Old runs that closed even one batch without a commit result stay on the old tail. */
+export function legacyPlanExecCommits(state: FlowRunState): boolean {
+  if (state.skipped.includes("plan-exec.batch-commit-proposal")) return true;
+  const acquired = state.applied.filter(
+    (transition) => transition === "plan-exec.unit-acquisition",
+  ).length;
+  return (state.batches ?? []).some(
+    (batch) =>
+      (batch.published_plan_digest !== undefined && batch.commit_result === undefined) ||
+      (batch.iteration === state.batch_loop?.iteration &&
+        batch.snapshot === undefined &&
+        acquired >= batch.iteration),
+  );
+}
+
 /** Record only the current iteration's review, never borrowing one from a prior batch. */
 export function withPlanExecBatchReview(state: FlowRunState, review: BatchReview): FlowRunState {
   return sealRunState({
@@ -1764,6 +1813,7 @@ const PLAN_EXEC_BATCH_STAGE_BY_TRANSITION: Readonly<Record<string, PlanExecBatch
   "plan-exec.deviation-recognition": "deviation",
   "plan-exec.validation-execution": "validating",
   "plan-exec.review-findings": "reviewing",
+  "plan-exec.batch-commit": "batch-committing",
   // These only occur after the final batch publication. They therefore extend
   // the last closed batch's trace instead of fabricating a new one for Git/done.
   "plan-exec.final-validation": "validating",
@@ -1845,6 +1895,9 @@ export const PLAN_EXEC_BATCH_LOOP_TRANSITIONS = new Set<string>([
   "plan-exec.validation-execution",
   "plan-exec.deferred-check",
   "plan-exec.review-findings",
+  "plan-exec.batch-commit-proposal",
+  "plan-exec.batch-commit-authorization",
+  "plan-exec.batch-commit",
   "plan-exec.batch-close",
 ]);
 
@@ -2833,6 +2886,9 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
       !isSourceMap(entry.base, true) ||
       !isSourceMap(entry.credit, false) ||
       !isBatchPartition(entry.partition, entry.phases, entry.mode) ||
+      !isBatchSnapshot(entry.snapshot) ||
+      !isBatchCommitProposal(entry.commit_proposal) ||
+      !isBatchCommitResult(entry.commit_result) ||
       (entry.credit_phases !== undefined &&
         (entry.credit === undefined || !samePhaseRange(entry.credit_phases, entry.phases))) ||
       (entry.review !== undefined && !isBatchReview(entry.review))
@@ -2843,6 +2899,61 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
     iterations.add(entry.iteration);
     return true;
   });
+}
+
+function isBatchSnapshot(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    isRecord(value) &&
+    Object.values(value).every(
+      (entry) =>
+        isRecord(entry) &&
+        isNonEmptyString(entry.head) &&
+        isNonEmptyString(entry.branch) &&
+        Array.isArray(entry.dirty) &&
+        entry.dirty.every(
+          (path) => isRecord(path) && isNonEmptyString(path.path) && isNonEmptyString(path.digest),
+        ),
+    )
+  );
+}
+
+function isBatchCommitProposal(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.digest) &&
+    (value.approved_digest === undefined || isNonEmptyString(value.approved_digest)) &&
+    Array.isArray(value.sources) &&
+    value.sources.every(
+      (item) =>
+        isRecord(item) &&
+        isNonEmptyString(item.alias) &&
+        isNonEmptyString(item.message) &&
+        isStringArray(item.paths) &&
+        item.paths.length > 0 &&
+        Array.isArray(item.dirty) &&
+        item.dirty.length === item.paths.length &&
+        item.dirty.every(
+          (path) => isRecord(path) && isNonEmptyString(path.path) && isNonEmptyString(path.digest),
+        ),
+    )
+  );
+}
+
+function isBatchCommitResult(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    isRecord(value) &&
+    Object.values(value).every(
+      (receipt) =>
+        isRecord(receipt) &&
+        isNonEmptyString(receipt.after) &&
+        (receipt.before === null || isNonEmptyString(receipt.before)) &&
+        (receipt.branch === null || isNonEmptyString(receipt.branch)) &&
+        isStringArray(receipt.parents),
+    )
+  );
 }
 
 function samePhaseRange(value: unknown, phases: unknown[]): boolean {
@@ -2929,6 +3040,7 @@ function isPlanExecBatchTraceArray(
       typeof entry.iteration === "number" &&
       Number.isInteger(entry.iteration) &&
       typeof entry.transition === "string" &&
+      (entry.approval === undefined || entry.approval === true) &&
       entry.transition.length > 0 &&
       (PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string) &&
       (entry.kind === "entered" || entry.kind === "completed" || entry.kind === "blocked")

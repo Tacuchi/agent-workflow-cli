@@ -105,6 +105,7 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
             SESSION,
             ids.slice(0, position),
             ids[position] ?? null,
+            fixture.run_state_version >= 12 ? { journey_base: ids } : {},
           );
           await writeFile(location.statePath, serializeRunState(before), "utf8");
 
@@ -135,6 +136,7 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
           SESSION,
           ids.slice(0, stopped),
           ids[stopped] ?? null,
+          fixture.run_state_version >= 12 ? { journey_base: ids } : {},
         );
         await writeFile(location.statePath, serializeRunState(before), "utf8");
         const written = await applyUnderLock(fs, location, (state) =>
@@ -252,6 +254,62 @@ describe("una corrida que refinó una o dos veces sigue alineada", () => {
       expect(read.state.reentries).toBeUndefined();
     });
   }
+});
+
+describe("una corrida v14 en la segunda copia del tramo previo al commit por lote", () => {
+  it("inserta omitidas las filas nuevas ya atravesadas y conserva la frontera vigente", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aw-journey-batch-commit-"));
+    try {
+      const paths = new PathsService(normalizeNamespace("workflow"), root, root);
+      const session = "236-compat-plan-exec";
+      const location = locateRun(paths, session);
+      await mkdir(location.dir, { recursive: true });
+      const newer = journeyOfFlow("plan-exec").map((row) => row.id);
+      const prior = newer.filter((id) => !id.startsWith("plan-exec.batch-commit"));
+      const first = prior.indexOf("plan-exec.batch-eligibility-signal");
+      const last = prior.indexOf("plan-exec.batch-close");
+      const priorWalk = [
+        ...prior.slice(0, first),
+        ...prior.slice(first, last + 1),
+        ...prior.slice(first),
+      ];
+      const secondClose = priorWalk.lastIndexOf("plan-exec.batch-close");
+      const batch = (id: string, iteration: number, closed: boolean) => ({
+        id,
+        iteration,
+        mode: "isolated" as const,
+        phases: [iteration],
+        tasks: [`T${iteration}.1`],
+        plan_digest: "plan",
+        stage: closed ? ("closed" as const) : ("reviewing" as const),
+        ...(closed ? { published_plan_digest: "after" } : {}),
+      });
+      const before = stateWrittenAt(
+        14,
+        "plan-exec",
+        session,
+        priorWalk.slice(0, secondClose),
+        "plan-exec.batch-close",
+        {
+          journey_base: prior,
+          batches: [batch("batch-1", 1, true), batch("batch-2", 2, false)],
+          batch_loop: { pending: true, iteration: 2 },
+        },
+      );
+      await writeFile(location.statePath, serializeRunState(before));
+      const read = await readRun(new NodeFileSystem(), location);
+      if (!read.ok) throw new Error(read.failure.message);
+      expect(checkAgainstJourney(read.state, journeyForRun(read.state))).toBeNull();
+      expect(read.state.boundary).toBe("plan-exec.batch-close");
+      expect(
+        read.state.applied.filter((id) => id === "plan-exec.batch-commit-proposal"),
+      ).toHaveLength(2);
+      expect(read.state.skipped.filter((id) => id === "plan-exec.batch-commit")).toHaveLength(2);
+      expect(read.state.batches?.[0]?.commit_result).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("expandJourney: el cierre en frontera y la reapertura", () => {

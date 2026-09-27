@@ -32,6 +32,7 @@ import { attemptAccountingAt } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { batchReview } from "../helpers/batch-review.js";
+import { RecordingGit } from "../helpers/fake-git.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 import { testExecutor } from "../helpers/test-executor.js";
 
@@ -58,6 +59,7 @@ import { testExecutor } from "../helpers/test-executor.js";
  */
 
 const fs = new NodeFileSystem();
+const git = new RecordingGit();
 const SESSION = "031-tramo-plan-plan-exec";
 const CODE = "031";
 
@@ -421,6 +423,12 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   async function answer(body: unknown, approval: string | null = null): Promise<FlowDirective> {
     const result = await submitFlow(fs, paths, {
       code: CODE,
+      ...(body &&
+      typeof body === "object" &&
+      "decisions" in body &&
+      (await current()).resolved.stopped?.id === "plan-exec.batch-commit-proposal"
+        ? { git }
+        : {}),
       raw: JSON.stringify(body),
       approval,
       executor: testExecutor(fs, paths),
@@ -501,7 +509,10 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
         approval,
       );
     }
-    throw new Error(`el recorrido nunca llegó a '${id}'`);
+    const { resolved } = await current();
+    throw new Error(
+      `el recorrido nunca llegó a '${id}'; quedó en ${resolved.stopped?.id} (${resolved.kind}): ${JSON.stringify(resolved.error)}`,
+    );
   }
 
   it("la sesión de ejecución no se da por abierta sin leerla", async () => {
@@ -769,6 +780,9 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     const validatedOnly = await readFile(join(workdir, PLAN_DOC), "utf8");
     for (const phase of expected) expect(validatedOnly).toContain(`- [ ] T${phase}.1`);
     await answer(bodyFor((await current()).resolved, []));
+    // No source files changed in this fixture: the CLI seals a no-changes proposal
+    // and skips authorization/commit before publishing the joint phase credit.
+    await answer(bodyFor((await current()).resolved, []));
     const closed = await readFile(join(workdir, PLAN_DOC), "utf8");
     for (const phase of expected) expect(closed).toContain(`- [x] T${phase}.1`);
   }
@@ -882,86 +896,48 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(after.resolved.stopped?.id).toBe("plan-exec.validation-execution");
   });
 
-  it("aprobar los commits ES el grant, y el commit sigue exigiendo su resultado real", async () => {
-    await walkTo("plan-exec.commit-authorization", []);
-    const approval = await current();
-    expect(approval.resolved.kind).toBe("human");
-    expect(approval.resolved.choices.map((choice) => choice.label)).toEqual([
-      "Aprobar los commits del batch",
-      "Dejar el batch sin commitear",
-      "Compactar",
-      "Cerrar",
-    ]);
-
-    const approved = await answer({
-      input_digest: approval.resolved.seal,
-      choice: "Aprobar los commits del batch",
+  it("sin rutas de fuente salta commits nuevos y cola vieja; sólo integra después de validar", async () => {
+    await walkTo("plan-exec.batch-commit-proposal", []);
+    expect((await current()).state.batches?.[0]?.review).toBeDefined();
+    const submitted = await answer({
+      input_digest: (await current()).resolved.seal,
+      decisions: { messages: {} },
     });
-    // La aprobación aplicó la preferencia Y registró el grant sobre el sello
-    // exacto de la ejecución del commit: decidir una vez es autorizar una vez, y
-    // el grant no cubre ninguna otra transición. Lo siguiente ES el commit, que es
-    // el orden que el aislamiento impone: primero se registra el trabajo en la
-    // unidad, después se lo lleva a la rama compartida, y sólo al final se sella el
-    // plan.
-    expect(approved.boundary.transition).toBe("plan-exec.commit-execution");
+    expect(submitted.error).toBeNull();
     const after = await current();
-    expect(after.state.applied).toContain("plan-exec.commit-authorization");
-    expect(after.state.applied).not.toContain("plan-exec.commit-execution");
-    const commitSeal = effectApprovalDigest("plan-exec.commit-execution", [
-      ...effectsOf(rowOf(EXEC, "plan-exec.commit-execution")),
-    ]);
-    expect(after.state.authorizations.map((grant) => grant.digest)).toContain(commitSeal);
-
-    // El commit no re-pregunta: el grant humano ya viaja con la corrida y la
-    // frontera emitida nombra la invocación — que todavía tiene que volver con el
-    // estado git real. Y esa invocación es la lectura por unidad, ligada al código
-    // de la sesión: el commit del batch aterriza en la rama de la unidad, y leer el
-    // checkout compartido acá dejaría verde un batch que no commiteó nada.
-    expect(after.resolved.kind).toBe("execution");
-    expect(approved.action?.invocation.args).toEqual(["worktree", "list", "--code", SESSION]);
-    // El grant no aplicó nada: la transición del commit sigue pendiente de su
-    // salida real (el `execute` del ledger es el de la validación ya corrida).
-    const committed = await answer(resultFor(after.resolved));
-
-    // Y acá está la frontera que el grant del commit NO cubre: integrar escribe en
-    // la rama que todos leen, no en los libros de la corrida, así que se pregunta.
-    // Que sea una autorización distinta es el enunciado: aprobar los commits de un
-    // batch no es aprobar que aterricen sobre el trabajo de otro.
-    expect(committed.boundary.transition).toBe("plan-exec.unit-integration");
-    expect(committed.boundary.kind).toBe("authorization");
-    const pending = await current();
-    const authorized = await answer(
-      { input_digest: pending.resolved.seal, choice: "Autorizar el efecto" },
+    expect(after.state.batches?.[0]?.commit_result).toEqual({});
+    await walkTo("plan-exec.unit-integration", []);
+    const integrated = await current();
+    expect(integrated.state.skipped).toEqual(
+      expect.arrayContaining([
+        "plan-exec.batch-commit-authorization",
+        "plan-exec.batch-commit",
+        "plan-exec.commit-enablement",
+        "plan-exec.commit-authorization",
+        "plan-exec.commit-execution",
+      ]),
+    );
+    expect(after.state.applied).toContain("plan-exec.batch-close");
+    expect(integrated.resolved.stopped?.id).toBe("plan-exec.unit-integration");
+    expect(integrated.resolved.kind).toBe("authorization");
+    const granted = await answer(
+      { input_digest: integrated.resolved.seal, choice: "Autorizar el efecto" },
       effectApprovalDigest(
         "plan-exec.unit-integration",
-        pending.resolved.authorization?.planned ?? [],
+        integrated.resolved.authorization?.planned ?? [],
       ),
     );
-    expect(authorized.boundary.kind).toBe("execution");
-    expect(authorized.action?.invocation.args).toEqual([
-      "worktree",
-      "integrate",
-      "--code",
-      SESSION,
-    ]);
-
-    // Recién después del merge se sella el plan: el `done` es la marca de avance
-    // del propio plan-doc (custodia de la corrida) y ahora es verdad de una rama
-    // que alguien puede leer. El sello lo corre el CLI en cuanto el merge se
-    // acredita: nadie lo contesta, y lo que lo prueba es la operación que corrió.
-    const integrated = await answer(resultFor((await current()).resolved));
-    expect(integrated.error).toBeNull();
-    const closed = await current();
-    expect(closed.state.applied).toContain("plan-exec.unit-integration");
-    expect(closed.state.applied.indexOf("plan-exec.plan-done")).toBeGreaterThan(
-      closed.state.applied.indexOf("plan-exec.unit-integration"),
-    );
+    expect(granted.boundary.transition).toBe("plan-exec.unit-integration");
+    expect(granted.boundary.kind).toBe("execution");
+    expect(granted.attempt_accounting?.spent).toBe(0);
     expect(
-      closed.state.events.find(
-        (event) => event.kind === "executed" && event.transition === "plan-exec.plan-done",
+      (await current()).state.attempts.some(
+        (attempt) => attempt.transition === "plan-exec.unit-integration" && attempt.approval,
       ),
-    ).toMatchObject({ operation: "plan-exec.plan-done" });
-    expect(await readFile(join(workdir, PLAN_DOC), "utf8")).toContain("> Estado: done");
+    ).toBe(true);
+    const complete = await answer(resultFor((await current()).resolved));
+    expect(complete.error).toBeNull();
+    expect((await current()).state.applied).toContain("plan-exec.plan-done");
   });
 });
 

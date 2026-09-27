@@ -161,15 +161,20 @@ export async function recordCommit(
   receipt: CommitReceipt,
 ): Promise<CustodyUpdate> {
   return extendCustody(deps.fs, sessionPathOf(deps.paths, sessionFolder), (custody) =>
-    withEffect(custody, {
-      ...effectNow("commit", {
-        alias,
-        before: receipt.before,
-        after: receipt.after,
-        parents: receipt.parents,
-        ref: receipt.branch === null ? null : `refs/heads/${receipt.branch}`,
-      }),
-    }),
+    custody.effects.some(
+      (effect) =>
+        effect.kind === "commit" && effect.alias === alias && effect.after === receipt.after,
+    )
+      ? custody
+      : withEffect(custody, {
+          ...effectNow("commit", {
+            alias,
+            before: receipt.before,
+            after: receipt.after,
+            parents: receipt.parents,
+            ref: receipt.branch === null ? null : `refs/heads/${receipt.branch}`,
+          }),
+        }),
   );
 }
 

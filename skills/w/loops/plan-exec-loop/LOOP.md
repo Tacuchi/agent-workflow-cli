@@ -281,8 +281,6 @@ plan-exec-loop(PPP-plan-<slug>.md):
   batches = infer_effective_batches(pending phases, plan + live checkout)
       may merge/split declared rows without asking; legacy absence is allowed
       record batches + declaration drift in CHECKPOINT
-  commit_authorization = explicit conditional pre-authorization from the user, if any
-      record it before editing; otherwise approval is deferred to each green batch close
   for each Batch in batches:
     verify every affected source's branch; mismatch → stop + human
     seed CHECKPOINT.Next = Batch Bn (mode + phases + tasks)
@@ -306,10 +304,9 @@ plan-exec-loop(PPP-plan-<slug>.md):
     if any proof/check/review/exit condition is not green:
       preserve actual states + combined uncommitted diff; record unblocking action; stop
     set every Batch phase > Estado: validada; update CHECKPOINT
-    prepare exactly one commit per affected source, in its own isolation unit
-      pre-authorized → commit without another question
-      else → one consolidated approval for all source commits
-      rejected → changes stay; record "batch uncommitted"
+    propose one message and exact paths per changed source; show them for batch approval
+      approved → CLI commits those paths, verifies git and stores receipts before the next batch
+      Cerrar → persist the pending batch and its uncommitted changes
     if last Batch + final validation green:
       integrate: aw worktree integrate --code NNN            # every unit, alias order, live branch
         conflict → keep unit + merge; report plan/source/files; aw fix-git --path <reported merge path>

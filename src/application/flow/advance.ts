@@ -84,6 +84,7 @@ import {
   degradeTransition,
   exhaustedRerunSpent,
   iterationOf,
+  legacyPlanExecCommits,
   planRefineHandoff,
   positionDigest,
   reconcileAttemptsAt,
@@ -97,6 +98,7 @@ import {
   withPendingAction,
   withPendingBatchReview,
   withPlanExecBatchStageForTransition,
+  withPlanExecBatchUpdate,
   withRouteDecisions,
 } from "../../domain/flow/run-state.js";
 import { UNCHANGED_PHASE_CONSENT } from "../../domain/flow/unchanged-phase.js";
@@ -278,6 +280,7 @@ function passOver(
   // copy of a conditional row still reads the observation made before the copy.
   const observed = conditionOf(decision)?.threshold.observed ?? decision.id;
   const conditional =
+    batchCommitSkip(state, decision) ??
     validationOnlySkip(state, decision) ??
     routeSkipReason(state, decision) ??
     skipReason(decision, journey, state.observations, iterationOf(state, observed)) ??
@@ -286,13 +289,47 @@ function passOver(
   const degraded = conditional === null ? exhaustionSkip(state, decision) : null;
   const reason = conditional ?? degraded;
   if (reason === null) return null;
+  const passed =
+    degraded === null
+      ? skipTransition(state, decision.id)
+      : degradeTransition(state, decision.id, degraded);
+  const batch = (state.batches ?? []).find(
+    (item) => item.iteration === state.batch_loop?.iteration,
+  );
   return {
     state:
-      degraded === null
-        ? skipTransition(state, decision.id)
-        : degradeTransition(state, decision.id, degraded),
+      decision.id === "plan-exec.batch-commit-authorization" &&
+      batch?.commit_proposal?.sources.length === 0
+        ? withPlanExecBatchUpdate(passed, batch.id, (item) => ({ ...item, commit_result: {} }))
+        : passed,
     step: skippedStepOf(decision, reason),
   };
+}
+
+function batchCommitSkip(state: FlowRunState, decision: FlowDecision): string | null {
+  const old = legacyPlanExecCommits(state);
+  if (decision.id.startsWith("plan-exec.batch-commit")) {
+    if (old)
+      return "la corrida cerró un lote sin recibo antes de actualizar: conserva la cola de commit heredada";
+    const batch = (state.batches ?? []).find(
+      (item) => item.iteration === state.batch_loop?.iteration,
+    );
+    if (
+      decision.id !== "plan-exec.batch-commit-proposal" &&
+      batch?.commit_proposal?.sources.length === 0
+    )
+      return "propuesta sin cambios: no hay commits que autorizar ni ejecutar";
+  }
+  if (
+    [
+      "plan-exec.commit-enablement",
+      "plan-exec.commit-authorization",
+      "plan-exec.commit-execution",
+    ].includes(decision.id) &&
+    !old
+  )
+    return "los commits ya se crearon y verificaron al cerrar cada lote";
+  return null;
 }
 
 /** A route can alter only a transition that opted in through the registry. */
@@ -1091,6 +1128,14 @@ function validationTitle(state: FlowRunState, stopped: FlowDecision): string {
  * let alone approved.
  */
 function boundaryTitle(state: FlowRunState, decision: FlowDecision): string {
+  if (decision.id === "plan-exec.batch-commit-authorization") {
+    const batch = state.batches?.find((item) => item.iteration === state.batch_loop?.iteration);
+    const preview =
+      batch?.commit_proposal?.sources
+        .map((source) => `${source.alias}: ${source.message} — ${source.paths.join(", ")}`)
+        .join("; ") ?? "sin propuesta";
+    return `${decision.title}: ${preview}`;
+  }
   if (decision.id !== UNCHANGED_PHASE_CONSENT) return decision.title;
   const phases = state.plan_exec_entry?.phases_without_open_tasks
     ?.map((phase) => `F${phase}`)

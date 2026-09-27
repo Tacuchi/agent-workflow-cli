@@ -984,7 +984,9 @@ describe("una acción interna sólo la acredita el CLI", () => {
     });
     if (!advanced.ok) throw new Error(`esperaba avanzar: ${JSON.stringify(advanced)}`);
     const credited = await current();
-    expect(credited.applied).toContain("plan-exec.batch-close");
+    expect(credited.applied, JSON.stringify(advanced.directive.error)).toContain(
+      "plan-exec.batch-close",
+    );
     expect(credited.batches?.[0]?.published_plan_digest).toBeDefined();
     expect(
       credited.events.filter(

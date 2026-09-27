@@ -36,6 +36,7 @@ const CUSTODY_ROWS = [
   "chassis.finalize",
   "quick.convergence-gate",
   "plan-exec.validation-execution",
+  "plan-exec.batch-commit",
   "plan-exec.batch-close",
   // El saldo del cierre: lo que aterriza es el sucesor de una nota cuyo registro
   // una persona ya autorizó en el gate de desviación, derivado —nunca redactado—

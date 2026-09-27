@@ -6,9 +6,9 @@ closing-review invariants.
 
 ## Safe git — verified branch + proposed commits
 
-Sources are edited on a **verified** branch (`aw check-branch`), and the unit's commits are
-**proposed**: exactly one commit per affected source — at effective-batch close in plan-exec, at task
-close in quick — never `push`/`--amend`/`--no-verify`, and never a destructive clean or a branch
+Sources are edited on a **verified** branch (`aw check-branch`), and commits are
+**proposed**: in plan-exec the CLI commits only the batch's approved paths once per source; in quick
+the task closes with one proposed commit. Never `push`/`--amend`/`--no-verify`, a destructive clean or a branch
 switch without confirmation. A **rejected** commit leaves the changes in the tree and the unit
 recorded as uncommitted in `CHECKPOINT` and `BACKLOG`. Between units each working tree is clean or
 explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles

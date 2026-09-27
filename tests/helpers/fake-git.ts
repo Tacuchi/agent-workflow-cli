@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import type {
   AheadBehind,
   GitPort,
@@ -131,6 +132,14 @@ export class RecordingGit implements GitPort {
     return this.opts.changed ?? [];
   }
 
+  async head(_repo: string): Promise<string | null> {
+    return "a".repeat(40);
+  }
+
+  async dirtyPaths(_repo: string): Promise<{ path: string; digest: string }[]> {
+    return (this.opts.changed ?? []).map((path) => ({ path, digest: `changed:${path}` }));
+  }
+
   /** Every boundary IS its repository root: nothing here reads a nested one. */
   async repoPrefix(): Promise<string | null> {
     return "";
@@ -245,6 +254,7 @@ export class RecordingGit implements GitPort {
 
   async worktreeAdd(repo: string, path: string, branch: string, _base: string | null) {
     this.calls.push({ op: "worktreeAdd", repo, arg: `${branch} ${path}` });
+    await mkdir(path, { recursive: true });
   }
 
   async worktreeRemove(repo: string, path: string): Promise<void> {

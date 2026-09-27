@@ -740,6 +740,7 @@ describe("la escritura del registro falla después del efecto", () => {
         ),
         approval,
         executor,
+        ...(resolved.stopped?.id === "plan-exec.batch-commit-proposal" ? { git: deps.git } : {}),
       }).catch(swallowOurs);
     }
   }

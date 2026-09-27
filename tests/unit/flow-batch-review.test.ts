@@ -178,6 +178,7 @@ describe("cada lote exige y conserva su revisión", () => {
     const legacy = sealRunState({
       ...body,
       version: 13,
+      journey_base: body.journey_base?.filter((id) => !id.startsWith("plan-exec.batch-commit")),
       skipped: omitted ? [...body.skipped, REVIEW] : body.skipped,
     });
     await writeFile(locateRun(paths, RUN.folder).statePath, serializeRunState(legacy));
@@ -185,7 +186,17 @@ describe("cada lote exige y conserva su revisión", () => {
     const advanced = await advanceFlow(fs, paths, { code: RUN.code, executor: walk.executor() });
     if (!advanced.ok) throw new Error(JSON.stringify(advanced));
     expect(advanced.directive.boundary.transition).toBe(REVIEW);
-    expect((await walk.current(RUN.folder)).state.applied).toEqual(passed.applied);
+    const aligned = (await walk.current(RUN.folder)).state;
+    expect(aligned.applied.filter((id) => !id.startsWith("plan-exec.batch-commit"))).toEqual(
+      passed.applied,
+    );
+    expect(aligned.skipped).toEqual(
+      expect.arrayContaining([
+        "plan-exec.batch-commit-proposal",
+        "plan-exec.batch-commit-authorization",
+        "plan-exec.batch-commit",
+      ]),
+    );
     expect((await answer(batchReview())).error).toBeNull();
     expect(await readFile(join(root, RUN.plan), "utf8")).toContain("[x] T1.1");
   });
@@ -200,6 +211,7 @@ describe("cada lote exige y conserva su revisión", () => {
     expect(
       (await walk.current(RUN.folder)).state.batches?.map((b) => b.review?.reviewer.id),
     ).toEqual(["reviewer-1", "reviewer-2"]);
+    await walk.walkTo(RUN, "plan-exec.final-validation");
     expect(await readFile(join(root, RUN.plan), "utf8")).toContain("[x] T2.1");
   });
 });

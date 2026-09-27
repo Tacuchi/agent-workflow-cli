@@ -92,6 +92,12 @@ export interface CommitReceipt {
   parents: string[];
 }
 
+/** Uncommitted path and its present bytes/status; deletion has a stable digest too. */
+export interface DirtyPath {
+  path: string;
+  digest: string;
+}
+
 export interface GitPort {
   isGitRepo(repoPath: string): Promise<boolean>;
   currentBranch(repoPath: string): Promise<string | undefined>;
@@ -229,6 +235,15 @@ export interface GitPort {
    * and it is the only thing a revert proposal is allowed to build on.
    */
   commit(repoPath: string, message: string): Promise<CommitReceipt>;
+  /** Stage and commit exactly these repo-relative paths, without staged changes elsewhere. */
+  commitPaths(repoPath: string, message: string, paths: string[]): Promise<CommitReceipt>;
+  /** NUL-safe changed paths and per-path digests; no clean-looking fallback on error. */
+  dirtyPaths(repoPath: string): Promise<DirtyPath[]>;
+  /** Inspect a commit's exact message and changed path names on recovery. */
+  commitInfo(
+    repoPath: string,
+    sha: string,
+  ): Promise<{ message: string; paths: string[]; parents: string[] }>;
   /**
    * `git worktree list --porcelain`.
    *

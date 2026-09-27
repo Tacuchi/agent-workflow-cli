@@ -1598,17 +1598,31 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     }
   });
 
-  it("Git closes one source commit with final approval or conditional pre-authorization", async () => {
+  it("el CLI crea el commit por lote tras revisión, aprobación y rutas exactas", async () => {
     const policies = await readRel("loops/CODE-POLICIES.md");
-    expect(policies).toContain("exactly one commit");
+    expect(policies).toContain("CLI commits only the batch's approved paths once per source");
     expect(policies).toContain("intentionally co-mingles");
     expect(policies).toContain("its internal phases in one reviewed commit");
     // The gating moved: approving is a preference, committing is an effect that
     // comes back as the sources' real git state, and neither can be reached
     // without the delegated validation that precedes them.
     const batches = await readRel("modules/PLAN-EXECUTION-BATCHES.md");
-    expect(batches).toContain("a check that never ran is not a green batch");
-    expect(labelsOf("plan-exec.commit-authorization")[0]).toBe("Aprobar los commits del batch");
+    expect(batches).toContain("An unrun check is never green");
+    expect(labelsOf("plan-exec.batch-commit-authorization")[0]).toBe(
+      "Aprobar los commits del lote",
+    );
+    const rows = decisionsOfScope("plan-exec").map((row) => row.id);
+    expect(rows.indexOf("plan-exec.batch-commit-proposal")).toBeGreaterThan(
+      rows.indexOf("plan-exec.review-findings"),
+    );
+    expect(rows.indexOf("plan-exec.batch-commit")).toBeLessThan(
+      rows.indexOf("plan-exec.batch-close"),
+    );
+    const owned = decisionsOfScope("plan-exec").find((row) => row.id === "plan-exec.batch-commit");
+    expect(owned?.action?.execution).toEqual({
+      kind: "internal",
+      operation: "plan-exec.batch-commit",
+    });
     const commit = decisionsOfScope("plan-exec").find(
       (row) => row.id === "plan-exec.commit-execution",
     );
@@ -1627,17 +1641,17 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     // de verdad protege: commitear, integrar, y recién entonces sellar.
     expect(exec).toContain("commit each unit, integrate it, and only then seal `done`");
     expect(exec).toContain("a session holding a live unit does NOT close");
-    expect(batches).toContain("instead of asking a second time");
+    expect(batches).toContain("`done` is sealed after git/integration in the workspace plan");
     expect(exec).toContain("if plan is not done:");
     expect(exec).toContain("then mark plan done");
-    expect(exec).toContain("one consolidated approval for all source commits");
+    expect(exec).toContain("CLI commits those paths, verifies git and stores receipts");
   });
 
-  it("CHECKPOINT carries the effective group, drift and reusable authorization", async () => {
+  it("CHECKPOINT carries the effective group, drift and batch receipt", async () => {
     const checkpoint = await readRel("artifacts/artifacts-core/CHECKPOINT.md");
     expect(checkpoint).toContain("effective batch");
     expect(checkpoint).toContain("declared-vs-live regrouping");
-    expect(checkpoint).toContain("conditional commit authorization");
+    expect(checkpoint).toContain("approved commit proposal/receipts");
     expect(checkpoint).toContain("Continuous-batch phases move together");
   });
 });
