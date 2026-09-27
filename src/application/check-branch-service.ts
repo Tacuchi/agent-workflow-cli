@@ -8,7 +8,11 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
 import { expectedWorkBranch, findOwningSource } from "./branch-resolver.js";
 import { normalizePath } from "./multiroot/paths.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { resolveSessionTarget } from "./session-resolver.js";
 
@@ -70,32 +74,44 @@ export async function runCheckBranch(
   if (!target) {
     return { match: true, reason: "file_not_in_managed_source" };
   }
+  let repo: string;
+  try {
+    repo = await requireSourcePath(fs, target);
+  } catch (err) {
+    return {
+      match: false,
+      alias: target.alias,
+      reason: "SOURCE_PATH_MISSING",
+      error: (err as Error).message,
+    };
+  }
+  const located = { ...target, path: repo };
 
   // The isolation verdict comes FIRST, and only when the source actually has
   // units: with none, nobody is running isolated and the check is exactly the
   // one this workspace had before the feature existed.
-  const units = await unitsOf(git, paths, unitsRoot, target);
+  const units = await unitsOf(git, paths, unitsRoot, located);
   if (units.length > 0) {
-    return unitVerdict(fs, paths, unitsRoot, target, units, input);
+    return unitVerdict(fs, paths, unitsRoot, located, units, input);
   }
 
   // Expected work branch comes from the WORKSPACE block working_branches for the
   // owning source. Decoupled from sessions/flow.
-  const expected = expectedWorkBranch(target, block?.working_branches ?? {});
+  const expected = expectedWorkBranch(located, block?.working_branches ?? {});
 
   if (expected === null) {
     return {
       match: true,
       reason: "no_expected_branch_declared",
-      alias: target.alias,
-      path: target.path,
+      alias: located.alias,
+      path: repo,
     };
   }
 
   // Live git status
-  if (!(await fs.exists(target.path))) {
+  if (!(await fs.exists(repo))) {
     return {
-      ...target,
+      ...located,
       match: false,
       expected_work_branch: expected,
       current_branch: null,
@@ -107,9 +123,9 @@ export async function runCheckBranch(
       work_branch: expected,
     };
   }
-  if (!(await git.isGitRepo(target.path))) {
+  if (!(await git.isGitRepo(repo))) {
     return {
-      ...target,
+      ...located,
       match: false,
       expected_work_branch: expected,
       current_branch: null,
@@ -122,14 +138,14 @@ export async function runCheckBranch(
     };
   }
 
-  const current = (await git.currentBranch(target.path)) ?? null;
+  const current = (await git.currentBranch(repo)) ?? null;
   const match = current === expected;
   return {
-    ...target,
+    ...located,
     expected_work_branch: expected,
     current_branch: current,
     match,
-    ...(await treeState(git, target.path)),
+    ...(await treeState(git, repo)),
     is_repo: true,
     error: null,
     session_code: input.sessionCode ?? null,
@@ -157,7 +173,7 @@ async function unitVerdict(
   fs: FileSystemPort,
   paths: PathsService,
   unitsRoot: string,
-  target: ProjectFuente,
+  target: ProjectFuente & { path: string },
   units: UnitRef[],
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
@@ -229,6 +245,7 @@ async function unitsOf(
 ): Promise<UnitRef[]> {
   let trees: WorktreeEntry[];
   try {
+    if (source.path === null) return [];
     trees = await git.worktreeList(source.path);
   } catch {
     // A source whose trees cannot be listed answers "no units", which lands on

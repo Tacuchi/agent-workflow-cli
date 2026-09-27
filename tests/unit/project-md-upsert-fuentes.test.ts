@@ -18,6 +18,8 @@ function makePaths(home: string): PathsService {
 }
 
 describe("project-md-upsert --init with --fuente / --main-branch", () => {
+  // These source paths represent repos on the other host, not paths on this test host.
+  // Relative declarations stay portable and need no filesystem fixture.
   const fs = new NodeFileSystem();
   let cwd: string;
   let env: FakeEnv;
@@ -36,18 +38,18 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   it("renders 1 fuente from --fuente alias:path:rama", async () => {
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core | main |");
+    expect(claude).toContain("| core | ../repo/core | main |");
   });
 
   it("writes defaultBranches and merges them per role across calls", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       defaultBranches: { principal: "main", desarrollo: "development", qa: "qa" },
       lastActivity: FIXED_TS,
     });
@@ -68,7 +70,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   it("leaves the block without a defaults entry when none is given", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       lastActivity: FIXED_TS,
     });
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
@@ -79,34 +81,34 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core" },
-        { alias: "plugin", path: "/repo/plugin" },
+        { alias: "core", path: "../repo/core" },
+        { alias: "plugin", path: "../repo/plugin" },
       ],
       mainBranch: "certificacion",
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core | certificacion |");
-    expect(claude).toContain("| plugin | /repo/plugin | certificacion |");
+    expect(claude).toContain("| core | ../repo/core | certificacion |");
+    expect(claude).toContain("| plugin | ../repo/plugin | certificacion |");
   });
 
   it("renders 3 fuentes with mixed per-fuente rama and --main-branch fallback", async () => {
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core", mainBranch: "main" },
-        { alias: "plugin", path: "/repo/plugin" },
-        { alias: "marketplace", path: "/repo/marketplace", mainBranch: "stable" },
+        { alias: "core", path: "../repo/core", mainBranch: "main" },
+        { alias: "plugin", path: "../repo/plugin" },
+        { alias: "marketplace", path: "../repo/marketplace", mainBranch: "stable" },
       ],
       mainBranch: "certificacion",
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core | main |");
-    expect(claude).toContain("| plugin | /repo/plugin | certificacion |");
-    expect(claude).toContain("| marketplace | /repo/marketplace | stable |");
+    expect(claude).toContain("| core | ../repo/core | main |");
+    expect(claude).toContain("| plugin | ../repo/plugin | certificacion |");
+    expect(claude).toContain("| marketplace | ../repo/marketplace | stable |");
   });
 
   it("deja la celda VACÍA cuando no hay ni rama por fuente ni --main-branch", async () => {
@@ -115,12 +117,12 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     // inalcanzable ese default y pisaba lo que el usuario fija en [Config].
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core" }],
+      fuentes: [{ alias: "core", path: "../repo/core" }],
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core |  |");
+    expect(claude).toContain("| core | ../repo/core |  |");
     expect(claude).not.toContain("certificacion");
 
     // Y la fuente resuelve entonces por el default del workspace.
@@ -137,8 +139,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core" },
-        { alias: "plugin", path: "/repo/plugin" },
+        { alias: "core", path: "../repo/core" },
+        { alias: "plugin", path: "../repo/plugin" },
       ],
       mainBranch: "certificacion",
       workingBranches: { core: "feature/upgrade", plugin: "feature/upgrade" },
@@ -156,8 +158,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core" },
-        { alias: "plugin", path: "/repo/plugin" },
+        { alias: "core", path: "../repo/core" },
+        { alias: "plugin", path: "../repo/plugin" },
       ],
       mainBranch: "certificacion",
       qaBranches: { core: "desarrollo", plugin: "desarrollo" },
@@ -173,7 +175,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   it("preserves existing qa_branches and merges new ones on re-init", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core" }],
+      fuentes: [{ alias: "core", path: "../repo/core" }],
       qaBranches: { core: "desarrollo" },
       lastActivity: FIXED_TS,
     });
@@ -192,29 +194,29 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/old-core", mainBranch: "main" },
-        { alias: "extra", path: "/repo/extra", mainBranch: "main" },
+        { alias: "core", path: "../repo/old-core", mainBranch: "main" },
+        { alias: "extra", path: "../repo/extra", mainBranch: "main" },
       ],
       lastActivity: FIXED_TS,
     });
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/new-core", mainBranch: "stable" }],
+      fuentes: [{ alias: "core", path: "../repo/new-core", mainBranch: "stable" }],
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/new-core | stable |");
-    expect(claude).toContain("| extra | /repo/extra | main |");
-    expect(claude).not.toContain("/repo/old-core");
+    expect(claude).toContain("| core | ../repo/new-core | stable |");
+    expect(claude).toContain("| extra | ../repo/extra | main |");
+    expect(claude).not.toContain("../repo/old-core");
   });
 
   it("removeAliases prunes a source from fuentes + working + qa branches", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core", mainBranch: "main" },
-        { alias: "plugin", path: "/repo/plugin", mainBranch: "main" },
+        { alias: "core", path: "../repo/core", mainBranch: "main" },
+        { alias: "plugin", path: "../repo/plugin", mainBranch: "main" },
       ],
       workingBranches: { core: "feature/a", plugin: "feature/b" },
       qaBranches: { core: "desarrollo", plugin: "qa/plugin" },
@@ -227,8 +229,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core | main |");
-    expect(claude).not.toContain("/repo/plugin");
+    expect(claude).toContain("| core | ../repo/core | main |");
+    expect(claude).not.toContain("../repo/plugin");
     expect(claude).toContain("- core: feature/a");
     expect(claude).not.toContain("plugin: feature/b");
     expect(claude).toContain("  - core: desarrollo");
@@ -238,7 +240,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   it("una nota humana dentro del bloque sobrevive al re-init en LOS DOS archivos", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       workingBranches: { core: "feature/x" },
       lastActivity: FIXED_TS,
     });
@@ -266,7 +268,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   it("una nota escrita SÓLO en AGENTS.md no se pierde (el bloque vive en dos archivos)", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       lastActivity: FIXED_TS,
     });
     const nota = "- Recordatorio: pedir acceso al repo de plugins";
@@ -287,7 +289,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       proyecto: "Nombre viejo\n\nDescripción larga escrita a mano.\n\n- Un detalle importante.",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       lastActivity: FIXED_TS,
     });
 
@@ -308,8 +310,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core", mainBranch: "main" },
-        { alias: "plugin", path: "/repo/plugin", mainBranch: "main" },
+        { alias: "core", path: "../repo/core", mainBranch: "main" },
+        { alias: "plugin", path: "../repo/plugin", mainBranch: "main" },
       ],
       workingBranches: { core: "feature/a", plugin: "feature/b" },
       qaBranches: { core: "desarrollo", plugin: "qa/plugin" },
@@ -318,7 +320,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
 
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       replaceFuentes: true,
       verbose: true,
       lastActivity: FIXED_TS,
@@ -334,7 +336,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
   it("removeAliases of the last source leaves an empty fuentes table", async () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core", mainBranch: "main" }],
+      fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       lastActivity: FIXED_TS,
     });
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
@@ -344,7 +346,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     });
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).not.toContain("/repo/core");
+    expect(claude).not.toContain("../repo/core");
     expect(claude).toContain("Sin fuentes declaradas");
   });
 });

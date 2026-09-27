@@ -105,6 +105,20 @@ function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
     ownership: "ours" as const,
   };
   const findings: DoctorFinding[] = [];
+  if (report.status === "source-path-missing") {
+    return [
+      {
+        ...base,
+        id: doctorFindingId(host, CATEGORY, `${resource}:fuente-sin-ruta`),
+        state: "warning",
+        summary: `${host} no puede verificar la visibilidad: falta una ruta de fuente en este host`,
+        impact:
+          "la comparación de rutas es incompleta; ninguna ruta registrada se considera sobrante",
+        evidence: [report.detail ?? "ruta de fuente ausente"],
+        remediation: { kind: "manual", action: null, guidance: ["aw add-source <alias>:<ruta>"] },
+      },
+    ];
+  }
   if (report.missing.length > 0) {
     findings.push({
       ...base,

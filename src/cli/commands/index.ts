@@ -5,6 +5,7 @@
 // directly (order here = order in the grouped `--help` listing).
 
 import type { CliCommand } from "../registry.js";
+import { addSourceCommand } from "./add-source.js";
 import { amendCommand } from "./amend.js";
 import { capabilityCommand } from "./capability.js";
 import { checkBranchCommand } from "./check-branch.js";
@@ -83,6 +84,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   sessionCreateCommand,
   stackCommand,
   workspaceInitCommand,
+  addSourceCommand,
   skillIndexCommand,
   contextBudgetCommand,
   contextPlanCommand,

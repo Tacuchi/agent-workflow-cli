@@ -126,6 +126,9 @@ export class PathsService {
   cwdHistoryFile(): string {
     return join(this.cwdRoot(), "HISTORY.md");
   }
+  cwdLocalConfigFile(): string {
+    return join(this.cwdRoot(), "local.json");
+  }
   /**
    * The workspace's own mark — what the resolver reads to tell a Workline
    * workspace from a host tool's directory that happens to hold a `sessions/`.

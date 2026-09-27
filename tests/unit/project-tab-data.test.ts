@@ -79,7 +79,7 @@ function buildDeps({
     fs: {
       exists: async (p: string) => {
         existsPaths?.push(p);
-        return p === "/ws/CLAUDE.md";
+        return p === "/ws/CLAUDE.md" || p.startsWith("/src/") || p.startsWith("/ws/repos/");
       },
       readText: async (p: string) => (p === "/ws/CLAUDE.md" ? claudeMd : ""),
       list: async () => [],

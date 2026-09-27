@@ -127,7 +127,7 @@ function formatFuentesTable(fuentes: ProjectFuente[]): string {
   const lines = ["| Alias | Path | Rama principal |", "|---|---|---|"];
   for (const f of fuentes) {
     const alias = f.alias;
-    const path = f.path;
+    const path = f.declared_path ?? f.path ?? "(local)";
     // Undeclared base branch → empty cell (round-trips back to null; the
     // workspace default `principal` is what resolves it, not a literal here).
     const main = f.main_branch ?? "";

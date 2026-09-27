@@ -109,7 +109,7 @@ function buildCtx(
   return {
     logger: opts.logger,
     fs: {
-      exists: async (p: string) => p === "/ws/CLAUDE.md",
+      exists: async (p: string) => p === "/ws/CLAUDE.md" || /^\/src\/(alpha|beta|s\d+)$/.test(p),
       readText: async () => md,
       // The process registry now serializes its read-modify-write on the
       // workspace lock, so the stub answers the lock's own calls too.
@@ -526,6 +526,8 @@ function buildLaunchCtx(
     fs: {
       exists: async (p: string) =>
         p === "/ws/CLAUDE.md" ||
+        p === "/src/alpha" ||
+        p === "/src/beta" ||
         p === "/ws/.workflow/launch/alpha/launch.json" ||
         p === "/ws/.workflow/processes.json",
       readText: async (p: string) => {
@@ -647,7 +649,9 @@ describe("ProjectTab — «Enviar a PROD» pasa por confirm-prod (SCR-002@r7)", 
     const ctx = buildCtx({ pushed, brokenRepos: ["/src/beta"] });
     const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
     await tick();
-    stdin.write(DOWN); // alpha → all sources (beta no se lista: no es un repo)
+    stdin.write(DOWN); // alpha → beta: incluso una fuente no repo sigue visible
+    await tick();
+    stdin.write(DOWN); // beta → all sources
     await tick();
     stdin.write(ENTER);
     await tick();
@@ -822,6 +826,19 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
     expect(lastFrame() ?? "").toContain("sin comando de arranque detectable");
   });
 
+  it("lanzar una fuente sin ruta informa el alias y cómo declararlo", async () => {
+    const ctx = buildCtx();
+    ctx.fs.exists = async (path: string) => path === "/ws/CLAUDE.md";
+    const { stdin, lastFrame } = render(<ProjectTab ctx={ctx} isActive />);
+    await tick();
+    stdin.write(ENTER); // panel de alpha, que ahora no tiene ruta en este host
+    await tick();
+    stdin.write(ENTER); // Lanzar en local
+    await tick();
+    expect(lastFrame()).toContain("la ruta de la fuente alpha no existe en este host");
+    expect(lastFrame()).toContain("aw add-source");
+  });
+
   /** The rendered row of a source (assertions cannot pass on chrome elsewhere). */
   function sourceRow(frame: string, alias: string): string {
     return frame.split("\n").find((l) => l.includes(alias)) ?? "";
@@ -977,6 +994,8 @@ describe("ProjectTab — lanzamiento local + procesos en segundo plano", () => {
       fs: {
         exists: async (p: string) =>
           p === "/ws/CLAUDE.md" ||
+          p === "/src/alpha" ||
+          p === "/src/beta" ||
           p === "/ws/.workflow/launch/alpha/launch.json" ||
           p === "/ws/.workflow/processes.json",
         readText: async (p: string) => {

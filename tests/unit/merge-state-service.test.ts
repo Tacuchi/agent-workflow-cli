@@ -14,6 +14,7 @@ function paths(): PathsService {
 }
 
 function blockWith(fs: FakeFs, fuentes: { alias: string; path: string }[]): FakeFs {
+  for (const fuente of fuentes) fs.file(`${fuente.path}/.git`, "");
   fs.file(
     "/cwd/CLAUDE.md",
     renderProjectBlock({

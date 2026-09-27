@@ -71,6 +71,7 @@ const STATUS_MARK: Record<VisibilityDriftStatus, string> = {
   "extra-paths": "✗",
   "no-settings": "✗",
   "no-project-block": "✗",
+  "source-path-missing": "✗",
   "global-pollution": "✗",
 };
 

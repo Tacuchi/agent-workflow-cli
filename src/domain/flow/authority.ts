@@ -3728,6 +3728,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "set-working-branch", reason: "configuración declarativa de rama" },
   { command: "set-qa-branch", reason: "configuración declarativa de rama" },
   { command: "remove-source", reason: "operación de configuración del workspace" },
+  { command: "add-source", reason: "operación de configuración del workspace" },
   { command: "git-flow", reason: "utilidad de ramas sin recorrido de flow" },
   { command: "merge-state", reason: "lectura del estado de una fusión" },
   { command: "attach-multiroot", reason: "configuración de multiroot" },

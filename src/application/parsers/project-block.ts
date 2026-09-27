@@ -1,6 +1,11 @@
-import { isAbsolute, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { parseMdSection } from "../markdown.js";
+import {
+  absoluteOnAnyHost,
+  localSourcePath,
+  readWorkspaceLocalConfig,
+} from "../workspace-local-config.js";
 
 /**
  * Read the workspace project block from `<dir>/CLAUDE.md` or `<dir>/AGENTS.md`
@@ -13,11 +18,15 @@ export async function readWorkspaceBlock(
   markers: ProjectBlockMarkers,
   accept: (block: ParsedProjectBlock) => boolean = () => true,
 ): Promise<ParsedProjectBlock | null> {
+  const namespace =
+    /^<!-- ([A-Z][A-Z0-9_-]*)-PROJECT-START -->$/.exec(markers.start)?.[1]?.toLowerCase() ??
+    "workflow";
+  const local = await readWorkspaceLocalConfig(fs, join(dir, `.${namespace}`, "local.json"));
   for (const name of BLOCK_MIRROR_FILES) {
     const path = join(dir, name);
     if (!(await fs.exists(path))) continue;
     const parsed = parseProjectBlock(await fs.readText(path), markers);
-    const block = parsed === null ? null : resolveWorkspaceBlockSources(parsed, dir);
+    const block = parsed === null ? null : resolveWorkspaceBlockSources(parsed, dir, local);
     if (block !== null && accept(block)) return block;
   }
   return null;
@@ -28,7 +37,10 @@ export const BLOCK_MIRROR_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
 
 export interface ProjectFuente {
   alias: string;
-  path: string;
+  path: string | null;
+  /** The original table cell; never replace it with a machine-local coordinate. */
+  declared_path?: string;
+  path_reason?: string;
   /** Declared base branch. `null` when the Fuentes cell is empty → the workspace default applies. */
   main_branch: string | null;
 }
@@ -43,19 +55,63 @@ export interface ProjectFuente {
  * consumed.
  */
 export function resolveWorkspaceSourcePath(workspace: string, sourcePath: string): string {
-  if (sourcePath.length === 0 || isAbsolute(sourcePath)) return sourcePath;
+  if (sourcePath.length === 0 || absoluteOnAnyHost(sourcePath)) return sourcePath;
   return resolve(workspace, sourcePath);
+}
+
+export class SourcePathMissingError extends Error {
+  readonly code = "SOURCE_PATH_MISSING";
+  constructor(alias: string, reason: string) {
+    super(
+      `la ruta de la fuente ${alias} no existe en este host (${reason}); declárala con aw add-source ${alias}:<ruta>`,
+    );
+    this.name = "SourcePathMissingError";
+  }
+}
+
+export async function requireSourcePath(
+  fs: FileSystemPort,
+  source: ProjectFuente,
+): Promise<string> {
+  if (source.path === null || !(await fs.exists(source.path))) {
+    throw new SourcePathMissingError(source.alias, source.path_reason ?? "ruta ausente");
+  }
+  return source.path;
 }
 
 /** Apply the WORKSPACE source-coordinate rule to a parsed block. */
 export function resolveWorkspaceBlockSources(
   block: ParsedProjectBlock,
   workspace: string,
+  local: Awaited<ReturnType<typeof readWorkspaceLocalConfig>> = {
+    config: { version: 1, sources: {} },
+    error: null,
+  },
 ): ParsedProjectBlock {
-  const fuentes = block.fuentes.map((source) => ({
-    ...source,
-    path: resolveWorkspaceSourcePath(workspace, source.path),
-  }));
+  const fuentes = block.fuentes.map((source) => {
+    const declared = source.declared_path ?? source.path ?? "";
+    const localPath = localSourcePath(local.config, source.alias);
+    const legacyLocal = declared === "(local)" || declared === join(workspace, "(local)");
+    const path =
+      local.error !== null
+        ? null
+        : localPath !== undefined
+          ? resolveWorkspaceSourcePath(workspace, localPath)
+          : declared.length === 0 || legacyLocal
+            ? null
+            : resolveWorkspaceSourcePath(workspace, declared);
+    return {
+      ...source,
+      declared_path: declared,
+      path,
+      ...(path === null
+        ? {
+            path_reason:
+              local.error !== null ? `local.json ilegible: ${local.error}` : "sin ruta local",
+          }
+        : {}),
+    };
+  });
   return { ...block, fuentes };
 }
 
@@ -146,6 +202,8 @@ export const DEFAULT_PROJECT_BLOCK_MARKERS: ProjectBlockMarkers = {
  */
 export const BLOCK_PLACEHOLDER_PROYECTO = "_Describe el proyecto aquí: qué es y por qué existe._";
 export const BLOCK_PLACEHOLDER_FUENTES =
+  "_Sin fuentes declaradas. Usa `aw add-source <alias>:<ruta>:<rama>`._";
+const LEGACY_FUENTES_PLACEHOLDER =
   "_Sin fuentes declaradas. Edita manualmente o usa `project-md-upsert --init`._";
 export const BLOCK_PLACEHOLDER_STACK = "_Stack sin detectar._";
 /** Emitted by the pre-TypeScript generator for an undetectable stack. */
@@ -251,7 +309,7 @@ function parseFuentesTable(text: string): FuentesParse {
     const line = raw.trim();
     if (line.length === 0) continue;
     if (!line.startsWith("|")) {
-      if (line !== BLOCK_PLACEHOLDER_FUENTES) {
+      if (line !== BLOCK_PLACEHOLDER_FUENTES && line !== LEGACY_FUENTES_PLACEHOLDER) {
         preserved.push({ slot: "fuentes", text: trimTrailing(raw) });
       }
       continue;

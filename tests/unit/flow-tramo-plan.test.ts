@@ -51,7 +51,11 @@ import { testExecutor } from "../helpers/test-executor.js";
  *    `SPLIT-GATE` y `DESIGN-REFERENCES` siguen siendo de la doctrina.
  */
 
-const fs = new NodeFileSystem();
+const fs = new (class extends NodeFileSystem {
+  override async exists(path: string): Promise<boolean> {
+    return path === "/tmp/acme" || super.exists(path);
+  }
+})();
 const SESSION = "031-tramo-plan-plan-exec";
 const CODE = "031";
 

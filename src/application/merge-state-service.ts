@@ -2,7 +2,7 @@ import { isAbsolute, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface MergeStateInput {
@@ -26,6 +26,8 @@ export interface RepoMergeState {
   merge_origin: string | null;
   conflicted_files: string[];
   dirty: boolean;
+  error?: string;
+  error_code?: "SOURCE_PATH_MISSING";
 }
 
 export interface MergeStateOutput {
@@ -49,7 +51,22 @@ export async function runMergeState(
   const targets = await resolveTargets(fs, env, paths, input);
   const repos: RepoMergeState[] = [];
   for (const t of targets) {
-    repos.push(await inspectRepo(git, t.alias, t.path));
+    repos.push(
+      t.error
+        ? {
+            alias: t.alias,
+            path: "(local)",
+            is_repo: false,
+            is_merging: false,
+            current_branch: null,
+            merge_origin: null,
+            conflicted_files: [],
+            dirty: false,
+            error: t.error,
+            ...(t.alias !== null ? { error_code: "SOURCE_PATH_MISSING" as const } : {}),
+          }
+        : await inspectRepo(git, t.alias, t.path),
+    );
   }
   return { repos, any_merging: repos.some((r) => r.is_merging) };
 }
@@ -59,7 +76,7 @@ async function resolveTargets(
   _env: EnvPort,
   paths: PathsService,
   input: MergeStateInput,
-): Promise<{ alias: string | null; path: string }[]> {
+): Promise<{ alias: string | null; path: string; error?: string }[]> {
   const cwd = paths.workspaceDir();
   if (input.path !== undefined) {
     const p = isAbsolute(input.path) ? input.path : join(cwd, input.path);
@@ -69,7 +86,7 @@ async function resolveTargets(
     const fuentes = await readFuentes(fs, paths, cwd);
     if (input.source !== undefined) {
       const f = fuentes.find((x) => x.alias === input.source);
-      return f ? [{ alias: f.alias, path: f.path }] : [];
+      return f ? [f] : [];
     }
     return fuentes.map((f) => ({ alias: f.alias, path: f.path }));
   }
@@ -80,7 +97,7 @@ async function readFuentes(
   fs: FileSystemPort,
   paths: PathsService,
   cwd: string,
-): Promise<{ alias: string; path: string }[]> {
+): Promise<{ alias: string; path: string; error?: string }[]> {
   try {
     const block = await readWorkspaceBlock(
       fs,
@@ -88,7 +105,15 @@ async function readFuentes(
       paths.blockMarkers(),
       (candidate) => candidate.fuentes.length > 0,
     );
-    return block?.fuentes.map((f) => ({ alias: f.alias, path: f.path })) ?? [];
+    return await Promise.all(
+      (block?.fuentes ?? []).map(async (f) => {
+        try {
+          return { alias: f.alias, path: await requireSourcePath(fs, f) };
+        } catch (err) {
+          return { alias: f.alias, path: "(local)", error: (err as Error).message };
+        }
+      }),
+    );
   } catch {
     // no workspace / unreadable block → no sources (graceful)
     return [];

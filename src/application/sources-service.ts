@@ -2,7 +2,11 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { expectedWorkBranch } from "./branch-resolver.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
@@ -21,6 +25,7 @@ export interface EnrichedSource extends ProjectFuente {
   changed_files: string[];
   is_repo: boolean;
   error: string | null;
+  error_code?: "SOURCE_PATH_MISSING";
 }
 
 export interface DivergentSource {
@@ -120,20 +125,24 @@ async function checkSourceBranch(
     is_repo: false,
     error: null,
   };
-  if (!(await fs.exists(source.path))) {
-    base.error = `Path does not exist: ${source.path}`;
+  let repo: string;
+  try {
+    repo = await requireSourcePath(fs, source);
+  } catch (err) {
+    base.error = (err as Error).message;
+    base.error_code = "SOURCE_PATH_MISSING";
     return base;
   }
-  if (!(await git.isGitRepo(source.path))) {
+  if (!(await git.isGitRepo(repo))) {
     base.error = "Not a git repository";
     return base;
   }
   base.is_repo = true;
-  const current = (await git.currentBranch(source.path)) ?? null;
+  const current = (await git.currentBranch(repo)) ?? null;
   base.current_branch = current;
   base.match = expected === null ? null : current === expected;
   try {
-    const changed = await git.changedFiles(source.path);
+    const changed = await git.changedFiles(repo);
     base.changed_files = changed;
     base.dirty = changed.length > 0;
   } catch {

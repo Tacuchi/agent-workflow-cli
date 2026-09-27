@@ -10,7 +10,7 @@ import {
   validateFixGit,
 } from "../../application/fix-git-service.js";
 import { runMergeState } from "../../application/merge-state-service.js";
-import { readWorkspaceBlock } from "../../application/parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "../../application/parsers/project-block.js";
 import type {
   SemanticFailure,
   SemanticRequest,
@@ -50,6 +50,9 @@ export const fixGitCommand: CliCommand<FixGitData> = {
         "REPO_NOT_FOUND",
         "no se pudo resolver el repositorio: pasá --source <alias> o --path <ruta>",
       );
+    }
+    if ("error" in target) {
+      return fail(target.alias === null ? "REPO_NOT_FOUND" : "SOURCE_PATH_MISSING", target.error);
     }
 
     const roles = await rolesOf(ctx, target);
@@ -188,15 +191,39 @@ async function rolesOf(
 async function resolveRepo(
   args: ParsedArgs,
   ctx: CliContext,
-): Promise<{ path: string; alias: string | null } | null> {
+): Promise<
+  { path: string; alias: string | null } | { alias: string | null; error: string } | null
+> {
   // `source` and `path` are MULTI_VALUE_FLAGS: they route to `valuesMulti`,
   // so `values.get()` silently returns undefined. `flagValue` reads both.
   const source = flagValue(args, "source");
   const path = flagValue(args, "path");
+  if (path !== undefined) {
+    const block = await readWorkspaceBlock(
+      ctx.fs,
+      ctx.paths.workspaceDir(),
+      ctx.paths.blockMarkers(),
+    );
+    const declared = block?.fuentes.find(
+      (item) => item.path === path || item.declared_path === path,
+    );
+    if (declared !== undefined) {
+      try {
+        await requireSourcePath(ctx.fs, declared);
+      } catch (err) {
+        return { alias: declared.alias, error: (err as Error).message };
+      }
+    }
+  }
   const state = await runMergeState(ctx.fs, ctx.git, ctx.env, ctx.paths, {
     ...(source !== undefined ? { source } : {}),
     ...(path !== undefined ? { path } : {}),
   });
   const repo = state.repos[0];
-  return repo === undefined ? null : { path: repo.path, alias: repo.alias };
+  if (repo === undefined) return null;
+  if (repo.error !== undefined) return { alias: repo.alias, error: repo.error };
+  if (!(await ctx.fs.exists(repo.path))) {
+    return { alias: repo.alias, error: `no existe el repositorio en este host: ${repo.path}` };
+  }
+  return { path: repo.path, alias: repo.alias };
 }

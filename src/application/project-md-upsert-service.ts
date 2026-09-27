@@ -1,4 +1,4 @@
-import { basename, join } from "node:path";
+import { basename, isAbsolute, join, relative, sep } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { withCwdLock } from "./lock-service.js";
@@ -17,6 +17,12 @@ import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { type RenderProjectBlockInput, renderProjectBlock } from "./render/project-block.js";
 import { detectStackDict } from "./stack-detect.js";
+import {
+  absoluteOnAnyHost,
+  localSourcePath,
+  readWorkspaceLocalConfig,
+  writeWorkspaceLocalConfigUnlocked,
+} from "./workspace-local-config.js";
 
 export type UpsertOp = "init";
 
@@ -73,6 +79,8 @@ export interface ProjectMdUpsertOutput {
    * are not here because they are carried over, not lost.
    */
   dropped_lines?: string[];
+  migrated?: string[];
+  not_migrated?: string[];
 }
 
 export interface ProjectMdUpsertError {
@@ -87,12 +95,18 @@ export async function runProjectMdUpsertWrite(
 ): Promise<ProjectMdUpsertOutput | ProjectMdUpsertError> {
   const cwd = paths.workspaceDir();
   const markers = paths.blockMarkers();
-  const plan = await buildUpsertPlan(fs, cwd, markers, input);
-
-  return withCwdLock(fs, paths, async () => {
-    const writeResults = await writeAllFiles(fs, cwd, plan.block, markers);
-    return composePayload(input, writeResults, plan);
-  });
+  try {
+    return await withCwdLock(fs, paths, async () => {
+      const plan = await buildUpsertPlan(fs, cwd, markers, input);
+      if (Object.keys(plan.localChanges).length > 0) {
+        await writeWorkspaceLocalConfigUnlocked(fs, paths, plan.localChanges);
+      }
+      const writeResults = await writeAllFiles(fs, cwd, plan.block, markers);
+      return composePayload(input, writeResults, plan);
+    });
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /**
@@ -132,6 +146,9 @@ interface UpsertPlan {
   render: RenderProjectBlockInput;
   /** CLI records this rewrite drops; declared by the caller, never silent. */
   dropped: string[];
+  localChanges: Record<string, string | null>;
+  migrated: string[];
+  notMigrated: string[];
 }
 
 async function buildUpsertPlan(
@@ -143,12 +160,98 @@ async function buildUpsertPlan(
   const existing = await readWorkspaceBlock(fs, cwd, markers);
   const mirrored = await readMirroredExtras(fs, cwd, markers);
   const render = await buildRenderInput(fs, cwd, input, existing);
+  const local = await readWorkspaceLocalConfig(
+    fs,
+    join(
+      cwd,
+      `.${/^<!-- ([A-Z][A-Z0-9_-]*)-PROJECT-START -->$/.exec(markers.start)?.[1]?.toLowerCase() ?? "workflow"}`,
+      "local.json",
+    ),
+  );
+  const migration = await portableSources(
+    fs,
+    cwd,
+    render.fuentes,
+    local,
+    new Set(existing?.fuentes.map((source) => source.alias) ?? []),
+    new Set(input.fuentes?.map((source) => source.alias) ?? []),
+  );
+  render.fuentes = migration.fuentes;
   render.markers = markers;
   if (mirrored.preserved.length > 0) render.preservedLines = mirrored.preserved;
   if (input.lastActivity !== undefined) render.lastActivity = input.lastActivity;
 
   const dropped = [...mirrored.dropped, ...pruneUndeclaredBranches(input, render)];
-  return { block: renderProjectBlock(render), render, dropped };
+  return {
+    block: renderProjectBlock(render),
+    render,
+    dropped,
+    localChanges: migration.changes,
+    migrated: migration.migrated,
+    notMigrated: migration.notMigrated,
+  };
+}
+
+async function portableSources(
+  fs: FileSystemPort,
+  cwd: string,
+  sources: ProjectFuente[],
+  local: Awaited<ReturnType<typeof readWorkspaceLocalConfig>>,
+  existingAliases: ReadonlySet<string>,
+  explicitAliases: ReadonlySet<string>,
+): Promise<{
+  fuentes: ProjectFuente[];
+  changes: Record<string, string | null>;
+  migrated: string[];
+  notMigrated: string[];
+}> {
+  const changes: Record<string, string | null> = {};
+  const migrated: string[] = [];
+  const notMigrated: string[] = [];
+  const fuentes: ProjectFuente[] = [];
+  for (const source of sources) {
+    const declared = source.declared_path ?? source.path ?? "";
+    if (explicitAliases.has(source.alias) && local.config === null)
+      throw new Error(`local.json ilegible: ${local.error}`);
+    if (!absoluteOnAnyHost(declared)) {
+      if (
+        explicitAliases.has(source.alias) &&
+        localSourcePath(local.config, source.alias) !== undefined
+      )
+        changes[source.alias] = null;
+      fuentes.push({ ...source, declared_path: declared });
+      continue;
+    }
+    // A foreign-host absolute coordinate stays byte-for-byte until its own host migrates it.
+    if ((!isAbsolute(declared) && !/^\\\\/.test(declared)) || !(await fs.exists(declared))) {
+      if (!existingAliases.has(source.alias))
+        throw new Error(
+          `la ruta de la fuente ${source.alias} no existe en este host: ${declared}; declárala con aw add-source ${source.alias}:<ruta>`,
+        );
+      notMigrated.push(source.alias);
+      fuentes.push({ ...source, declared_path: declared });
+      continue;
+    }
+    const relativePath = relative(cwd, declared);
+    const inside =
+      relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
+    if (!inside && local.config === null) throw new Error(`local.json ilegible: ${local.error}`);
+    if (
+      inside &&
+      explicitAliases.has(source.alias) &&
+      localSourcePath(local.config, source.alias) !== undefined
+    )
+      changes[source.alias] = null;
+    if (
+      !inside &&
+      (explicitAliases.has(source.alias) ||
+        localSourcePath(local.config, source.alias) === undefined)
+    )
+      changes[source.alias] = declared;
+    migrated.push(source.alias);
+    fuentes.push({ ...source, declared_path: inside ? relativePath || "." : "(local)" });
+  }
+  return { fuentes, changes, migrated, notMigrated };
 }
 
 /**
@@ -260,9 +363,10 @@ function resolveProyectoText(next: string | undefined, existing: string | undefi
   const current = (existing ?? "").trim();
   const declared = (next ?? "").trim();
   if (declared.length === 0) return current;
+  if (declared === current) return current;
   if (declared.includes("\n") || current.length === 0) return declared;
   const currentLines = current.split("\n");
-  if (currentLines.length === 1) return declared;
+  if (currentLines.length === 1) return [declared, "", currentLines[0]].join("\n");
   return [declared, ...currentLines.slice(1)].join("\n");
 }
 
@@ -307,7 +411,8 @@ function mergeFuentes(existing: ProjectFuente[], input: ProjectMdUpsertInput): P
     byAlias.set(f.alias, {
       alias: f.alias,
       path: f.path,
-      main_branch: f.mainBranch ?? defaultRama,
+      declared_path: f.path,
+      main_branch: f.mainBranch ?? byAlias.get(f.alias)?.main_branch ?? defaultRama,
     });
   }
   return Array.from(byAlias.values());
@@ -358,6 +463,8 @@ function composePayload(
   }
   // Always reported: a loss the caller cannot see is a loss in silence.
   if (plan.dropped.length > 0) payload.dropped_lines = plan.dropped;
+  if (plan.migrated.length > 0) payload.migrated = plan.migrated;
+  if (plan.notMigrated.length > 0) payload.not_migrated = plan.notMigrated;
   return payload;
 }
 
