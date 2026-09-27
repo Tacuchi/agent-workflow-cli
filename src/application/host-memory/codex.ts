@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { parse as parseToml } from "smol-toml";
 import type { HostMemorySkip } from "../../domain/host-memory/model.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import { parseToml } from "../parsers/toml.js";
 import { type RawMemoryItem, type ReaderOutcome, sortedEntries } from "./reader.js";
 
 const GROUP_HEADING = /^# Task Group:\s*(.+)$/;
