@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NodeProcess } from "../../src/adapters/node-process.js";
 import {
   type FixGitPrepared,
   applyFixGit,
@@ -21,6 +22,7 @@ interface FakeOptions {
   conflicts?: string[];
   stages?: Record<string, ConflictStages>;
   stageThrowsOn?: string;
+  mergeBases?: string[];
 }
 
 /**
@@ -31,6 +33,8 @@ interface FakeOptions {
 class FakeGit implements Partial<GitPort> {
   readonly staged: string[] = [];
   readonly commits: string[] = [];
+  readonly deleted: string[] = [];
+  readonly blobs = new Map<string, string>();
   conflicts: string[];
 
   constructor(private readonly options: FakeOptions = {}) {
@@ -49,6 +53,9 @@ class FakeGit implements Partial<GitPort> {
   async mergeOrigin(): Promise<string | undefined> {
     return "feature/x";
   }
+  async mergeBases(): Promise<string[]> {
+    return this.options.mergeBases ?? ["1".repeat(40)];
+  }
   async currentBranch(): Promise<string | undefined> {
     return "main";
   }
@@ -56,6 +63,33 @@ class FakeGit implements Partial<GitPort> {
     const found = this.options.stages?.[path];
     if (found === undefined) throw new Error(`fixture sin stages para ${path}`);
     return found;
+  }
+  async changedFiles(): Promise<string[]> {
+    return [];
+  }
+  async localChanges() {
+    return [];
+  }
+  async indexEntry() {
+    return null;
+  }
+  async isWorktreeCleanPath(): Promise<boolean> {
+    return true;
+  }
+  async hashBlob(_repo: string, content: string): Promise<string> {
+    const hash = `blob-${this.blobs.size}`;
+    this.blobs.set(hash, content);
+    return hash;
+  }
+  async setIndexEntry(_repo: string, path: string): Promise<void> {
+    if (this.options.stageThrowsOn === path) throw new Error("index.lock");
+    this.staged.push(path);
+    this.conflicts = this.conflicts.filter((c) => c !== path);
+  }
+  async removeIndexEntry(_repo: string, path: string): Promise<void> {
+    this.deleted.push(path);
+    this.staged.push(path);
+    this.conflicts = this.conflicts.filter((c) => c !== path);
   }
   async stagePath(_repo: string, path: string): Promise<void> {
     if (this.options.stageThrowsOn === path) throw new Error("index.lock");
@@ -110,6 +144,24 @@ function answer(prepared: FixGitPrepared, over: Record<string, unknown> = {}): s
 // ── prepare ──────────────────────────────────────────────────────────────────
 
 describe("prepareFixGit — read-only, and it refuses when there is nothing to do", () => {
+  it("resume por defecto sin contenido; dos --show dan las versiones; avisa la base virtual", async () => {
+    const fake = git(["a.txt", "b.txt"], { mergeBases: ["1".repeat(40), "2".repeat(40)] });
+    const summary = await prepare(fake);
+    expect(JSON.stringify(summary.request.inventory)).not.toContain("ours\n");
+    expect(summary.context.conflicts[0]).toMatchObject({
+      kind: "UU",
+      eol: "lf",
+      resolutions_allowed: ["ours", "theirs", "delete", "content"],
+    });
+    expect(summary.context.virtual_base?.bases).toHaveLength(2);
+    const shown = await prepareFixGit(asPort(fake), REPO, "cli", undefined, {
+      show: ["a.txt", "b.txt"],
+    });
+    if (!shown.ok) throw new Error(shown.failure.message);
+    expect(JSON.stringify(shown.value.request.inventory)).toContain("ours\\n");
+    expect((shown.value.request.inventory as { stages: unknown[] }).stages).toHaveLength(2);
+    expect(shown.value.request.input_digest).toBe(summary.request.input_digest);
+  });
   it("expone las tres versiones y sus hashes por archivo", async () => {
     const prepared = await prepare(git(["src/a.ts", "src/b.ts"]));
     expect(prepared.context.conflicts.map((c) => c.path)).toEqual(["src/a.ts", "src/b.ts"]);
@@ -158,15 +210,14 @@ describe("validateFixGit — the conflict set is the whole write boundary", () =
     expect(result.value.map((r) => r.path)).toEqual(["src/a.ts", "src/b.ts"]);
   });
 
-  it("rechaza una resolución parcial", async () => {
+  it("acepta un subconjunto y deja el resto pendiente", async () => {
     const prepared = await prepare(git(["src/a.ts", "src/b.ts"]));
     const result = validateFixGit(
       answer(prepared, { artifacts: [{ path: "src/a.ts", content: "solo uno\n" }] }),
       prepared,
     );
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("FIX_GIT_INCOMPLETE");
-    expect(result.failure.message).toContain("src/b.ts");
+    if (!result.ok) throw new Error(result.failure.message);
+    expect(result.value.map((item) => item.path)).toEqual(["src/a.ts"]);
   });
 
   it("rechaza un path que no está en conflicto", async () => {
@@ -244,7 +295,8 @@ describe("applyFixGit — writes and stages only what is still in conflict", () 
     if (!result.ok) throw new Error(`expected it to apply: ${result.failure.message}`);
     expect(result.value.staged).toEqual(["src/a.ts", "src/b.ts"]);
     expect(result.value.remaining).toEqual([]);
-    expect(await fs.readText("/repo/src/a.ts")).toBe("resuelto src/a.ts\n");
+    expect([...fake.blobs.values()]).toContain("resuelto src/a.ts\n");
+    expect(fs.writes.size).toBe(0);
     expect(fake.commits).toEqual([]);
   });
 
@@ -265,7 +317,7 @@ describe("applyFixGit — writes and stages only what is still in conflict", () 
     expect([...fs.writes.keys()]).toEqual([]);
   });
 
-  it("un git add fallido deja el resto identificable en vez de mentir", async () => {
+  it("un fallo del índice deja el resto identificable sin git add", async () => {
     const fs = new MemFs();
     const fake = git(["src/a.ts", "src/b.ts"], { stageThrowsOn: "src/b.ts" });
     const prepared = await prepare(fake);
@@ -274,7 +326,7 @@ describe("applyFixGit — writes and stages only what is still in conflict", () 
 
     const result = await applyFixGit(fs, asPort(fake), prepared, validated.value);
     if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("FIX_GIT_STAGE_FAILED");
+    expect(result.failure.code).toBe("FIX_GIT_WRITE_FAILED");
     expect(result.failure.action).toContain("git status");
     expect(fake.staged).toEqual(["src/a.ts"]);
   });
@@ -285,7 +337,11 @@ describe("applyFixGit — writes and stages only what is still in conflict", () 
 describe("commitFixGit — a separate action that refuses to close a broken merge", () => {
   it("cierra el merge cuando no quedan conflictos", async () => {
     const fake = git([]);
-    const result = await commitFixGit(asPort(fake), REPO, "merge: resolver conflictos");
+    const result = await commitFixGit(asPort(fake), REPO, "merge: resolver conflictos", undefined, {
+      process: new NodeProcess(),
+      pipeline: { kind: "none", value: "ninguno" },
+      origin: "CLAUDE.md",
+    });
     if (!result.ok) throw new Error(`expected it to commit: ${result.failure.message}`);
     expect(fake.commits).toEqual(["merge: resolver conflictos"]);
   });
@@ -295,6 +351,19 @@ describe("commitFixGit — a separate action that refuses to close a broken merg
     const result = await commitFixGit(asPort(fake), REPO, "merge");
     if (result.ok) throw new Error("expected a rejection");
     expect(result.failure.code).toBe("FIX_GIT_UNMERGED");
+    expect(fake.commits).toEqual([]);
+  });
+
+  it("sin build declarado no confirma aunque el merge esté resuelto", async () => {
+    const fake = git([]);
+    const result = await commitFixGit(asPort(fake), REPO, "merge");
+    expect(result).toMatchObject({
+      ok: false,
+      failure: {
+        code: "FIX_GIT_BUILD_UNDECLARED",
+        action: expect.stringContaining("aw set-pipeline"),
+      },
+    });
     expect(fake.commits).toEqual([]);
   });
 });
