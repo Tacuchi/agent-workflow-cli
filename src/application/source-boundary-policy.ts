@@ -55,6 +55,44 @@ export interface ParsedPlanSourceBoundary {
   phases: PlanPhaseSources[];
 }
 
+export interface FinalValidationOverride {
+  alias: string;
+  build?: string;
+  test?: string;
+  line: number;
+}
+
+/** Only the dedicated validation clauses override the source pipeline. */
+export function finalValidationOverrides(text: string): FinalValidationOverride[] {
+  const markdown = scanMarkdown(text);
+  const overrides: FinalValidationOverride[] = [];
+  const headings = new Map(markdown.headings.map((item) => [item.line, item]));
+  let inValidations = false;
+  for (const [index, raw] of markdown.lines.entries()) {
+    if (markdown.fenced[index]) continue;
+    const heading = headings.get(index);
+    if (heading?.level === 2) inValidations = VALIDATIONS_HEADING.test(foldHeading(heading.title));
+    if (!inValidations) continue;
+    const clause = /^\s*[-*]\s+Validaci[oó]n final\s*·\s*(`[^`]+`)\s*·\s*(.*)$/i.exec(raw);
+    if (clause === null) continue;
+    const alias = clause[1]?.slice(1, -1) ?? "";
+    const rest = clause[2] ?? "";
+    if (!/^(?:build|tests) `[^`]+`(?:\s*·\s*(?:build|tests) `[^`]+`)?$/i.test(rest.trim()))
+      continue;
+    const build = /(?:^|\s*·\s*)build\s+`([^`]+)`/i.exec(rest)?.[1];
+    const test = /(?:^|\s*·\s*)tests\s+`([^`]+)`/i.exec(rest)?.[1];
+    if (rest.match(/\bbuild\s+`/gi)?.length === 2 || rest.match(/\btests\s+`/gi)?.length === 2)
+      continue;
+    overrides.push({
+      alias,
+      ...(build ? { build } : {}),
+      ...(test ? { test } : {}),
+      line: index + 1,
+    });
+  }
+  return overrides;
+}
+
 const TASKS_HEADING = "tasks";
 const PHASE_HEADING = /^F(\d+)\s*(?:[—–-]\s*)?(.*)$/;
 const SURFACE_LINE = /^>\s*(?:L[ií]mite de ejecuci[oó]n|Execution surface)\s*:\s*(.+)$/i;
@@ -337,6 +375,44 @@ export function validatePlanSourceBoundary(
           line: task.line,
         });
       }
+    }
+  }
+  const scoped = new Set(sourceAliasesOfPlan(text));
+  const overrides = finalValidationOverrides(text);
+  const seen = new Set<string>();
+  for (const override of overrides) {
+    if (
+      !scoped.has(override.alias) ||
+      override.alias === "workspace" ||
+      seen.has(override.alias) ||
+      (!override.build && !override.test)
+    ) {
+      failures.push({
+        code: "PLAN_SOURCE_UNKNOWN",
+        message: `la validación final de línea ${override.line} debe nombrar una fuente de código del plan una sola vez y declarar build o tests: '${override.alias}'`,
+        line: override.line,
+      });
+    }
+    seen.add(override.alias);
+  }
+  const recognized = new Set(overrides.map((item) => item.line));
+  const markdown = scanMarkdown(text);
+  const headings = new Map(markdown.headings.map((item) => [item.line, item]));
+  let inValidations = false;
+  for (const [index, line] of markdown.lines.entries()) {
+    if (markdown.fenced[index]) continue;
+    const heading = headings.get(index);
+    if (heading?.level === 2) inValidations = VALIDATIONS_HEADING.test(foldHeading(heading.title));
+    if (
+      inValidations &&
+      /^\s*[-*]\s+Validaci[oó]n final\s*·/i.test(line) &&
+      !recognized.has(index + 1)
+    ) {
+      failures.push({
+        code: "PLAN_SOURCE_UNKNOWN",
+        message: `la validación final de línea ${index + 1} requiere alias y comandos entre comillas invertidas`,
+        line: index + 1,
+      });
     }
   }
   failures.push(...validateSourceBoundedSemantics(text));

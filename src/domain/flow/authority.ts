@@ -28,6 +28,7 @@ import type { EffectClass } from "../capability/effects.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
 import type { RouteControlConfiguration } from "./route.js";
+import type { FinalValidationSource } from "./run-state.js";
 
 const SPEC_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.spec;
 const PLAN_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.plan;
@@ -610,6 +611,10 @@ export type ActionExecution =
  */
 export interface DelegatedAction {
   invocation: DelegatedInvocation;
+  /** Resolved final-validation commands, printed alongside the sealed evidence. */
+  requirements?: readonly string[];
+  /** The command behind each final-validation evidence id. */
+  final_validation?: readonly FinalValidationSource[];
   /**
    * Who runs it — required, so a new row cannot arrive without answering.
    *
@@ -3139,7 +3144,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
-    route_control: ROUTE_VALIDATION,
     // BEFORE Git, and the real walk is what proved it: the registry had inherited
     // an order where the plan was committed and only then validated and stamped.
     // The document says the opposite — "last Batch also runs final validation

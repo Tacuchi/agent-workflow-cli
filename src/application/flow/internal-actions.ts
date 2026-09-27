@@ -1127,6 +1127,14 @@ async function sealPlanDone(
     );
   }
   const missing = PLAN_DONE_REQUIRED_TRANSITIONS.filter((transition) => {
+    if (transition === "plan-exec.final-validation") {
+      return (
+        !live.state.applied.includes(transition) ||
+        live.state.skipped.includes(transition) ||
+        (live.state.degraded ?? []).some((item) => item.transition === transition) ||
+        dispositionOf(live.state.route_decisions, transition)?.disposition === "substitute"
+      );
+    }
     if (live.state.applied.includes(transition)) return false;
     const disposition = dispositionOf(live.state.route_decisions, transition)?.disposition;
     return disposition !== "omit" && disposition !== "substitute";

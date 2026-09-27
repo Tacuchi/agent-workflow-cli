@@ -923,6 +923,20 @@ export interface FlowRunScope {
   plan: string;
   /** `workspace` plus declared aliases this run may touch — non-empty, no repeats. */
   sources: string[];
+  /** Commands resolved from the scoped plan and versioned source declarations. */
+  final_validation?: FinalValidationSource[];
+}
+
+export interface FinalValidationCommand {
+  command: string | null;
+  origin: "plan" | "source" | null;
+  action?: string;
+}
+
+export interface FinalValidationSource {
+  alias: string;
+  build: FinalValidationCommand;
+  test: FinalValidationCommand;
 }
 
 /** The bounded lifecycle of one repeatable plan-execution batch. */
@@ -2758,6 +2772,23 @@ function isScope(value: unknown): value is FlowRunScope | null {
   if (!isRecord(value)) return false;
   if (typeof value.plan !== "string" || value.plan.trim().length === 0) return false;
   if (!isStringArray(value.sources) || value.sources.length === 0) return false;
+  if (
+    value.final_validation !== undefined &&
+    (!Array.isArray(value.final_validation) ||
+      !value.final_validation.every(
+        (entry: unknown) =>
+          isRecord(entry) &&
+          typeof entry.alias === "string" &&
+          [entry.build, entry.test].every(
+            (item) =>
+              isRecord(item) &&
+              (item.command === null || typeof item.command === "string") &&
+              (item.origin === null || item.origin === "plan" || item.origin === "source") &&
+              (item.action === undefined || typeof item.action === "string"),
+          ),
+      ))
+  )
+    return false;
   return value.sources.every((alias) => alias.trim().length > 0);
 }
 
