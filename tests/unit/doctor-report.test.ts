@@ -125,6 +125,10 @@ class RecordingFs implements FileSystemPort {
     this.record("publishTextExclusive", path);
     return this.inner.publishTextExclusive(path, content);
   }
+  async publishBytesExclusive(path: string, content: Uint8Array): Promise<{ created: boolean }> {
+    this.record("publishBytesExclusive", path);
+    return this.inner.publishBytesExclusive(path, content);
+  }
   async remove(path: string): Promise<void> {
     this.record("remove", path);
     await this.inner.remove(path);

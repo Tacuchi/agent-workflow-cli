@@ -32,6 +32,7 @@
 
 import { join } from "node:path";
 import { leadingCorrelative } from "../domain/correlative.js";
+import { FOLDER_RESERVATION_MARKER } from "../domain/reservation.js";
 import { reservationOwnerOf } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import {
@@ -193,11 +194,17 @@ async function walkSlots(
       // every file in every docs/ subdirectory to then discard most of them on the
       // first line of `slotOf` made a scan that runs on EVERY board projection pay
       // for the whole corpus.
-      if (entry.type !== "file" || leadingCorrelative(entry.name) === null) continue;
+      if (leadingCorrelative(entry.name) === null) continue;
+      let markerPath = entry.path;
+      if (entry.type === "dir") {
+        const contents = await fs.list(entry.path);
+        if (contents.length !== 1 || contents[0]?.name !== FOLDER_RESERVATION_MARKER) continue;
+        markerPath = join(entry.path, FOLDER_RESERVATION_MARKER);
+      } else if (entry.type !== "file") continue;
       const slot = slotOf(
         category.name,
         entry.name,
-        await fs.readText(entry.path),
+        await fs.readText(markerPath),
         events,
         activeOwners,
       );

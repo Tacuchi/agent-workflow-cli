@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readClaimEvents } from "../../src/application/claims-ledger.js";
 import {
   type ExportCategory,
   type ExportPrepared,
@@ -27,6 +28,10 @@ function workspace(): MemFs {
     "# SESSION\n\n## Objective\nalgo\n",
   );
   fs.file("/cwd/.workflow/sessions/040-algo-plan-exec/.closed", "");
+  fs.file(
+    "/cwd/.workflow/sessions/040-algo-plan-exec/SCRIPTS.sql",
+    "CREATE TABLE algo (id integer);\n",
+  );
   return fs;
 }
 
@@ -57,6 +62,7 @@ function answer(
     input_digest: prepared.request.input_digest,
     state: "proposed",
     scope: prepared.scope,
+    ...(prepared.category === "scripts" ? { decisions: { supersedes: [], requires: [] } } : {}),
     artifacts: files.map(([path, content]) => ({ path, content })),
     ...over,
   });
@@ -157,29 +163,93 @@ describe("validateExport — each category enforces its own shape", () => {
     expect(result.failure.message).toContain("UN documento");
   });
 
-  it("scripts exige 00-ROLLBACK.sql, README y forwards continuos desde 01", async () => {
+  it("reports exige el número preparado en la ruta del documento", async () => {
+    const prepared = await prepare(workspace(), "reports");
+    const bad = validateExport(
+      answer(prepared, [["docs/reports/002-informe.md", "# Informe\n"]]),
+      prepared,
+    );
+    if (bad.ok) throw new Error("expected wrong number to be refused");
+    expect(bad.failure.message).toContain("001-<slug>.md");
+  });
+
+  it("scripts exige rollback global, acoplados y forwards numerados dentro de cada categoría", async () => {
     const fs = workspace();
     const prepared = await prepare(fs, "scripts");
     const complete = dossier(prepared, [
-      [`${prepared.unit}/00-ROLLBACK.sql`, "-- rollback\n"],
-      [`${prepared.unit}/01-crear-tabla.sql`, "-- forward\n"],
-      [`${prepared.unit}/02-indices.sql`, "-- forward\n"],
+      [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "-- rollback\n"],
+      [`${prepared.unit}/01-ddl-tablas/01-crear-tabla.sql`, "-- forward\n"],
+      [`${prepared.unit}/rollback/01-ddl-tablas/01-crear-tabla.rollback.sql`, "-- reverse\n"],
+      [`${prepared.unit}/01-ddl-tablas/02-indices.sql`, "-- forward\n"],
+      [`${prepared.unit}/rollback/01-ddl-tablas/02-indices.rollback.sql`, "-- reverse\n"],
     ]);
     expect(validateExport(answer(prepared, complete), prepared).ok).toBe(true);
 
     const gap = dossier(prepared, [
-      [`${prepared.unit}/00-ROLLBACK.sql`, "-- rollback\n"],
-      [`${prepared.unit}/01-crear-tabla.sql`, "-- forward\n"],
-      [`${prepared.unit}/03-indices.sql`, "-- forward\n"],
+      [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "-- rollback\n"],
+      [`${prepared.unit}/01-ddl-tablas/01-crear-tabla.sql`, "-- forward\n"],
+      [`${prepared.unit}/rollback/01-ddl-tablas/01-crear-tabla.rollback.sql`, "-- reverse\n"],
+      [`${prepared.unit}/01-ddl-tablas/03-indices.sql`, "-- forward\n"],
+      [`${prepared.unit}/rollback/01-ddl-tablas/03-indices.rollback.sql`, "-- reverse\n"],
     ]);
     const broken = validateExport(answer(prepared, gap), prepared);
     if (broken.ok) throw new Error("expected a rejection");
     expect(broken.failure.message).toContain("continua");
 
-    const noRollback = dossier(prepared, [[`${prepared.unit}/01-crear-tabla.sql`, "-- forward\n"]]);
+    const noRollback = dossier(prepared, [
+      [`${prepared.unit}/01-ddl-tablas/01-crear-tabla.sql`, "-- forward\n"],
+    ]);
     const missing = validateExport(answer(prepared, noRollback), prepared);
     if (missing.ok) throw new Error("expected a rejection");
     expect(missing.failure.message).toContain("00-ROLLBACK.sql");
+  });
+
+  it("rechaza juntos rollback mal ubicado, forward sin reverse, huérfano y SQL de raíz", async () => {
+    const prepared = await prepare(workspace(), "scripts");
+    const result = validateExport(
+      answer(
+        prepared,
+        dossier(prepared, [
+          [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "DROP TABLE t;"],
+          [`${prepared.unit}/01-ddl-tablas/01-tabla.sql`, "CREATE TABLE t (id int);"],
+          [`${prepared.unit}/01-ddl-tablas/01-tabla.rollback.sql`, "DROP TABLE t;"],
+          [`${prepared.unit}/rollback/01-ddl-tablas/02-otra.rollback.sql`, "DROP TABLE otra;"],
+          [`${prepared.unit}/rollback/03-suelto.sql`, "-- reverse"],
+          [`${prepared.unit}/02-raiz.sql`, "-- forward"],
+        ]),
+      ),
+      prepared,
+    );
+    if (result.ok) throw new Error("expected invalid bundle layout");
+    for (const token of [
+      "01-tabla.rollback.sql",
+      "huérfano",
+      "rollback/03-suelto.sql",
+      "02-raiz.sql",
+    ]) {
+      expect(result.failure.message).toContain(token);
+    }
+  });
+
+  it("README y RUNBOOK rechazan juntos citas ausentes pero reconocen bundle.json", async () => {
+    const prepared = await prepare(workspace(), "scripts");
+    const result = validateExport(
+      answer(prepared, [
+        [
+          `${prepared.unit}/README.md`,
+          "# Aplicar\n\n`01-ddl-tablas/01-tabla.sql` y `falta.sql`; manifiesto `bundle.json`.",
+        ],
+        [`${prepared.unit}/RUNBOOK.md`, "[Ver guía](guia.md)"],
+        [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "DROP TABLE t;"],
+        [`${prepared.unit}/01-ddl-tablas/01-tabla.sql`, "CREATE TABLE t (id int);"],
+        [`${prepared.unit}/rollback/01-ddl-tablas/01-tabla.rollback.sql`, "DROP TABLE t;"],
+      ]),
+      prepared,
+    );
+    if (result.ok) throw new Error("expected missing cited files");
+    expect(result.failure.message).toContain("falta.sql");
+    expect(result.failure.message).toContain("guia.md");
+    expect(result.failure.message).not.toContain("bundle.json");
   });
 
   it("rechaza una extensión fuera de la categoría", async () => {
@@ -226,6 +296,59 @@ describe("validateExport — each category enforces its own shape", () => {
 // ── publication ──────────────────────────────────────────────────────────────
 
 describe("applyExport — publishes the dossier as a unit, or nothing", () => {
+  it("manuals complement publica sólo INDEX.md sin dossier", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "manuals");
+    const raw = answer(prepared, [["docs/manuals/INDEX.md", "# Manuales\n\nListado actual\n"]]);
+    const checked = validateExport(raw, prepared);
+    if (!checked.ok) throw new Error(checked.failure.message);
+    expect(checked.value.preview.mode).toBe("complement");
+    expect(checked.value.preview.destination).toBe("docs/manuals");
+    const published = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: checked.value.approval_digest,
+    });
+    if (!published.ok) throw new Error(published.failure.message);
+    expect(published.value.written).toEqual(["docs/manuals/INDEX.md"]);
+    expect(await fs.exists(`/cwd/${prepared.unit}/README.md`)).toBe(false);
+  });
+
+  it("manuals planos listan todos los reemplazos y exigen --overwrite sólo para ellos", async () => {
+    const fs = workspace();
+    fs.file("/cwd/docs/manuals/guia.md", "# Vieja\n");
+    fs.file("/cwd/docs/manuals/operacion.md", "# Vieja\n");
+    const prepared = await prepare(fs, "manuals");
+    const raw = answer(prepared, [
+      ["docs/manuals/guia.md", "# Guía nueva\n"],
+      ["docs/manuals/operacion.md", "# Operación nueva\n"],
+      ["docs/manuals/nuevo.md", "# Nuevo\n"],
+    ]);
+    const checked = validateExport(raw, prepared);
+    if (!checked.ok) throw new Error(checked.failure.message);
+    expect(checked.value.preview.mode).toBe("flat");
+    expect(checked.value.preview.replacements).toEqual([
+      "docs/manuals/guia.md",
+      "docs/manuals/operacion.md",
+    ]);
+    const denied = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: checked.value.approval_digest,
+    });
+    if (denied.ok) throw new Error("expected explicit overwrite");
+    expect(denied.failure.code).toBe("OVERWRITE_NOT_AUTHORIZED");
+    const published = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: checked.value.approval_digest,
+      allowOverwrite: true,
+    });
+    if (!published.ok) throw new Error(published.failure.message);
+    expect(await fs.readText("/cwd/docs/manuals/guia.md")).toBe("# Guía nueva\n");
+    expect(await fs.readText("/cwd/docs/manuals/nuevo.md")).toBe("# Nuevo\n");
+  });
+
   it("publica el dossier con el número asignado dentro del lock", async () => {
     const fs = workspace();
     fs.file("/cwd/docs/manuals/001-export-manuals-2026-01-01/README.md", "# Viejo\n");
@@ -247,10 +370,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
     );
   });
 
-  // The number in the proposal is consultative. If another export lands in the
-  // category between prepare and apply, the dossier must move to the minted
-  // number — not overwrite, and not keep the stale one.
-  it("reasigna el número cuando la categoría cambió después del prepare", async () => {
+  it("rechaza el correlativo ocupado por otra fecha sin renumerar ni escribir", async () => {
     const fs = workspace();
     const prepared = await prepare(fs, "diagrams");
     expect(prepared.unit).toBe(`docs/diagrams/001-export-diagrams-${DATE}`);
@@ -260,11 +380,58 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
     fs.file("/cwd/docs/diagrams/001-export-diagrams-2026-01-01/README.md", "# Ajeno\n");
 
     const result = await applyExport(fs, env, paths(), { raw, prepared, approval });
-    if (!result.ok) throw new Error(`expected it to apply: ${result.failure.message}`);
-    expect(result.value.written).toEqual([`docs/diagrams/002-export-diagrams-${DATE}/README.md`]);
+    if (result.ok) throw new Error("expected the approved number to be occupied");
+    expect(result.failure.code).toBe("EXPORT_NUMBER_TAKEN");
+    expect(result.failure.message).toContain("001-export-diagrams-2026-01-01");
+    expect(await fs.exists(`/cwd/docs/diagrams/002-export-diagrams-${DATE}`)).toBe(false);
     expect(await fs.readText("/cwd/docs/diagrams/001-export-diagrams-2026-01-01/README.md")).toBe(
       "# Ajeno\n",
     );
+  });
+
+  it("rechaza un número publicado aunque su carpeta haya sido borrada", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "scripts");
+    const raw = answer(
+      prepared,
+      dossier(prepared, [
+        [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "DROP TABLE algo;\n"],
+        [`${prepared.unit}/01-ddl-tablas/01-algo.sql`, "CREATE TABLE algo (id integer);\n"],
+        [`${prepared.unit}/rollback/01-ddl-tablas/01-algo.rollback.sql`, "DROP TABLE algo;\n"],
+      ]),
+    );
+    fs.file(
+      "/cwd/.workflow/HISTORY.md",
+      `## Publicaciones\n\n| Documento | Fecha | Comando |\n|-----------|-------|---------|\n| ${prepared.unit}/README.md | 2026-01-01 | export-scripts |\n`,
+    );
+    const result = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: approvalOf(prepared, raw),
+    });
+    if (result.ok) throw new Error("expected the published number to be unavailable");
+    expect(result.failure.code).toBe("EXPORT_NUMBER_TAKEN");
+  });
+
+  it("rechaza un correlativo enlazado en el libro de pases aunque no haya carpeta", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "diagrams");
+    const raw = answer(prepared, dossier(prepared));
+    const linked = {
+      version: 1,
+      at: "2026-01-01",
+      event: "linked",
+      pass_version: "v1",
+      artifact: `${prepared.unit}/README.md`,
+    };
+    fs.file("/cwd/.workflow/release-passes.jsonl", `${JSON.stringify(linked)}\n`);
+    const result = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: approvalOf(prepared, raw),
+    });
+    if (result.ok) throw new Error("expected linked number to be refused");
+    expect(result.failure.code).toBe("EXPORT_NUMBER_TAKEN");
   });
 
   it("un approval que no corresponde no escribe un solo byte", async () => {
@@ -472,16 +639,16 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
     expect(applied.value.written).toEqual([`docs/manuals/001-export-manuals-${DATE}/README.md`]);
   });
 
-  // Answers written before the scope existed carry none: the flags still decide,
-  // which is exactly the behavior that has to survive.
-  it("un sobre sin scope no se inventa uno", async () => {
+  it("un sobre sin scope sellado se rechaza por clave faltante", async () => {
     const fs = workspace();
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, dossier(prepared), { scope: undefined });
     const echoed = readExportScope(raw);
     if (!echoed.ok) throw new Error("expected it to read");
     expect(echoed.value).toBeNull();
-    expect(validateExport(raw, prepared).ok).toBe(true);
+    const validated = validateExport(raw, prepared);
+    if (validated.ok) throw new Error("expected missing scope to fail");
+    expect(validated.failure.code).toBe("EXPORT_SCOPE_MISMATCH");
   });
 
   it("un scope reescrito se rechaza nombrando el campo, no se usa a medias", async () => {
@@ -493,6 +660,34 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
     const echoed = readExportScope(raw);
     if (echoed.ok) throw new Error("expected a rejection");
     expect(echoed.failure.message).toContain("'date'");
+  });
+
+  it("detecta claves añadidas, eliminadas y alteradas antes de comparar el digest", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "manuals");
+    for (const scope of [
+      { ...prepared.scope, extra: "otro" },
+      { seal: prepared.scope.seal, next: prepared.scope.next },
+      { ...prepared.scope, date: "2026-07-30" },
+    ]) {
+      const result = validateExport(answer(prepared, dossier(prepared), { scope }), prepared);
+      if (result.ok) throw new Error("expected scope mismatch");
+      expect(result.failure.message).toMatch(/extra|date/);
+    }
+  });
+
+  it("el contenido SQL vence el sello, una sesión sin SQL no", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "scripts");
+    closedSession(fs, "041-otra-plan-exec");
+    const second = await prepare(fs, "scripts");
+    expect(second.request.input_digest).toBe(prepared.request.input_digest);
+    fs.file(
+      "/cwd/.workflow/sessions/040-algo-plan-exec/SCRIPTS.sql",
+      "CREATE TABLE algo (id bigint);\n",
+    );
+    const changed = await prepare(fs, "scripts");
+    expect(changed.request.input_digest).not.toBe(prepared.request.input_digest);
   });
 
   it("un flag de alcance que contradice el sobre se nombra en vez de ignorarse", async () => {
@@ -563,10 +758,10 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
     const prepared = await prepare(fs, "manuals");
     expect(prepared.dir).toBe("documentacion/manuales");
     expect(prepared.unit).toBe(`documentacion/manuales/001-export-manuals-${DATE}`);
-    // The overwritable file moves with the category: one tree, not two.
+    // The flat canon and optional INDEX move with the category: one tree, not two.
     expect(prepared.request.allowed_destinations).toEqual([
       prepared.unit,
-      "documentacion/manuales/INDEX.md",
+      "documentacion/manuales",
     ]);
 
     const raw = answer(prepared, dossier(prepared));
@@ -578,6 +773,17 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
     if (!applied.ok) throw new Error(`expected it to apply: ${applied.failure.message}`);
     expect(applied.value.written).toEqual([`${prepared.unit}/README.md`]);
     expect(await fs.exists(`/cwd/docs/manuals/001-export-manuals-${DATE}/README.md`)).toBe(false);
+  });
+
+  it("el canon configurable también aloja manuales planos sin dossier paralelo", async () => {
+    const fs = withCanon(workspace(), '[docs]\nmanuals = "documentacion/manuales"\n');
+    const prepared = await prepare(fs, "manuals");
+    const raw = answer(prepared, [["documentacion/manuales/guia.md", "# Guía\n"]]);
+    const approved = approvalOf(prepared, raw);
+    const result = await applyExport(fs, env, paths(), { raw, prepared, approval: approved });
+    if (!result.ok) throw new Error(result.failure.message);
+    expect(result.value.written).toEqual(["documentacion/manuales/guia.md"]);
+    expect(await fs.exists("/cwd/docs/manuals/guia.md")).toBe(false);
   });
 
   // El canon volvió configurable la carpeta de la categoría, y la renumeración
@@ -686,6 +892,10 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
   function withMaterial(): MemFs {
     const fs = workspace();
     closedSession(fs, "041-otra-plan-exec");
+    fs.file(
+      "/cwd/.workflow/sessions/041-otra-plan-exec/SCRIPTS.sql",
+      "ALTER TABLE algo ADD c integer;\n",
+    );
     fs.file(`${SCRIPTS}/${BUNDLE_A}/01-alter.sql`, "ALTER TABLE t ADD c int;");
     fs.file(`${SCRIPTS}/${BUNDLE_A}/00-ROLLBACK.sql`, "ALTER TABLE t DROP COLUMN c;");
     fs.file(`${SCRIPTS}/${BUNDLE_B}/01-drop.sql`, "DROP TABLE t;");
@@ -709,8 +919,9 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
   function scriptsDossier(prepared: ExportPrepared): Array<[string, string]> {
     return [
       [`${prepared.unit}/README.md`, "# Bundle\n\nqué consolida\n"],
-      [`${prepared.unit}/00-ROLLBACK.sql`, "DROP TABLE t;\n"],
-      [`${prepared.unit}/01-crea.sql`, "CREATE TABLE t ();\n"],
+      [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "DROP TABLE t;\n"],
+      [`${prepared.unit}/01-ddl-tablas/01-crea.sql`, "CREATE TABLE t ();\n"],
+      [`${prepared.unit}/rollback/01-ddl-tablas/01-crea.rollback.sql`, "DROP TABLE t;\n"],
     ];
   }
 
@@ -828,6 +1039,29 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
     if (result.ok) throw new Error("expected a rejection");
     expect(result.failure.code).toBe("SEMANTIC_STALE");
     expect(result.failure.message).toContain("material");
+  });
+
+  it("un byte cambiado en un SQL suelto o de un bundle vence el sello", async () => {
+    const fs = withMaterial();
+    const before = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    fs.file(`${SCRIPTS}/suelto-limpieza.sql`, "DELETE FROM tmp WHERE id = 1;");
+    const changedStandalone = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    expect(changedStandalone.request.input_digest).not.toBe(before.request.input_digest);
+    fs.file(`${SCRIPTS}/${BUNDLE_A}/01-alter.sql`, "ALTER TABLE t ADD d int;");
+    const changedBundle = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    expect(changedBundle.request.input_digest).not.toBe(changedStandalone.request.input_digest);
+    fs.file(`${SCRIPTS}/${BUNDLE_A}/README.md`, "# Revisado\n");
+    const changedDossier = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    expect(changedDossier.request.input_digest).not.toBe(changedBundle.request.input_digest);
+  });
+
+  it("sella bytes de cada archivo del bundle sin decodificar un adjunto binario", async () => {
+    const fs = withMaterial();
+    fs.binary(`${SCRIPTS}/${BUNDLE_A}/evidencia.bin`, new Uint8Array([0xff, 0]));
+    const before = await prepare(fs, "scripts", { from: "bundles", date: DATE });
+    fs.binary(`${SCRIPTS}/${BUNDLE_A}/evidencia.bin`, new Uint8Array([0xfe, 0]));
+    const after = await prepare(fs, "scripts", { from: "bundles", date: DATE });
+    expect(after.request.input_digest).not.toBe(before.request.input_digest);
   });
 
   it("un alcance contradictorio se rechaza nombrando el flag que lo contradice", async () => {
@@ -1014,5 +1248,238 @@ describe("el ambiente deja fuera lo que ya consta aplicado", () => {
     // run: a `scanned` of zero says the filter had nothing to look at.
     expect(inventory.environment).toEqual({ name: CERT, axis: "applied", scanned: 0, excluded: 0 });
     expect(inventory.excluded).toEqual([]);
+  });
+});
+
+describe("bundle.json · manifiesto derivado y aprobado por el CLI", () => {
+  const scripts = "/cwd/docs/scripts";
+  const named = "005-retiro-hinovill";
+
+  function withNamedBundle(): MemFs {
+    const fs = workspace();
+    fs.file(`${scripts}/${named}/01-ddl-tablas/01-legacy.sql`, "CREATE TABLE legacy (id int);");
+    fs.file(`${scripts}/suelto.sql`, "ALTER TABLE legacy ADD c int;");
+    return fs;
+  }
+
+  function proposed(prepared: ExportPrepared, decisions: Record<string, unknown>) {
+    return answer(
+      prepared,
+      dossier(prepared, [
+        [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "DROP TABLE legacy;"],
+        [`${prepared.unit}/01-ddl-tablas/01-legacy.sql`, "CREATE TABLE legacy (id int, c int);"],
+        [`${prepared.unit}/rollback/01-ddl-tablas/01-legacy.rollback.sql`, "DROP TABLE legacy;"],
+      ]),
+      { decisions },
+    );
+  }
+
+  it("genera el manifiesto con sha256: de bytes, lo muestra y sella antes de publicar", async () => {
+    const fs = withNamedBundle();
+    const prepared = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const raw = proposed(prepared, { supersedes: [named], requires: [] });
+    const validation = validateExport(raw, prepared);
+    if (!validation.ok) throw new Error(validation.failure.message);
+    expect(
+      validation.value.preview.files.some((file) => file.path === `${prepared.unit}/bundle.json`),
+    ).toBe(true);
+
+    const changed = validateExport(
+      proposed(prepared, { supersedes: [], requires: [named] }),
+      prepared,
+    );
+    if (!changed.ok) throw new Error(changed.failure.message);
+    expect(changed.value.approval_digest).not.toBe(validation.value.approval_digest);
+
+    const applied = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: validation.value.approval_digest,
+    });
+    if (!applied.ok) throw new Error(applied.failure.message);
+    const manifest = JSON.parse(await fs.readText(`/cwd/${prepared.unit}/bundle.json`));
+    expect(manifest.supersedes).toEqual([named]);
+    expect(manifest.requires).toEqual([]);
+    expect(manifest.origin.sessions[0]?.files[0]?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(manifest.origin.standalone_sql).toMatchObject([{ path: "docs/scripts/suelto.sql" }]);
+    expect(manifest.origin.bundles[0]?.files[0]?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
+  });
+
+  it("rechaza bundles inexistentes, autorreferencia, superado requerido y un bundle.json del agente", async () => {
+    const prepared = await prepare(withNamedBundle(), "scripts", { from: "bundles", date: DATE });
+    for (const [decisions, needle] of [
+      [{ supersedes: ["999-ausente"], requires: [] }, "999-ausente"],
+      [{ supersedes: [prepared.unit.split("/").pop()], requires: [] }, "se está publicando"],
+      [{ supersedes: [named], requires: [named] }, "superar y requerir"],
+    ] as const) {
+      const result = validateExport(proposed(prepared, decisions), prepared);
+      if (result.ok) throw new Error("expected invalid dependencies");
+      expect(result.failure.message).toContain(needle);
+    }
+    const raw = answer(prepared, [...dossier(prepared), [`${prepared.unit}/bundle.json`, "{}"]], {
+      decisions: { supersedes: [], requires: [] },
+    });
+    const rejected = validateExport(raw, prepared);
+    if (rejected.ok) throw new Error("agent-supplied manifest must fail");
+    expect(rejected.failure.message).toContain("lo genera el CLI");
+  });
+
+  it("prepare señala SQL suelto sin origen y avisos de bundles superados/requeridos", async () => {
+    const fs = withNamedBundle();
+    const newer = `${scripts}/006-export-scripts-2026-07-01`;
+    fs.file(`${scripts}/004-dependencia/01-ddl-tablas/01-dep.sql`, "CREATE TABLE dep (id int);");
+    fs.file(`${newer}/01-ddl-tablas/01-new.sql`, "CREATE TABLE new_t (id int);");
+    fs.file(
+      `${newer}/bundle.json`,
+      JSON.stringify({
+        supersedes: [named],
+        requires: ["004-dependencia"],
+        origin: { standalone_sql: [] },
+      }),
+    );
+    const prepared = await prepare(fs, "scripts", {
+      from: "bundles",
+      environment: "cert",
+      date: DATE,
+    });
+    const inventory = prepared.request.inventory as {
+      unbundled_sql: Array<{ name: string }>;
+      bundle_warnings: Array<{ code: string }>;
+    };
+    expect(inventory.unbundled_sql.map((file) => file.name)).toContain("suelto.sql");
+    expect(inventory.bundle_warnings.map((warning) => warning.code)).toEqual([
+      "BUNDLE_SUPERSEDED",
+      "BUNDLE_REQUIRES_UNRECORDED",
+    ]);
+    const rows = [
+      {
+        version: 1,
+        at: DATE,
+        event: "declared",
+        pass: { version: "v1", sources: ["cli"], plans: [] },
+      },
+      {
+        version: 1,
+        at: DATE,
+        event: "linked",
+        pass_version: "v1",
+        artifact: "docs/scripts/004-dependencia",
+      },
+      {
+        version: 1,
+        at: DATE,
+        event: "applied",
+        pass_version: "v1",
+        application: { environment: "cert", detail: "registrado", at: DATE },
+      },
+    ];
+    fs.file(
+      "/cwd/.workflow/release-passes.jsonl",
+      `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`,
+    );
+    const recorded = await prepare(fs, "scripts", {
+      from: "bundles",
+      environment: "cert",
+      date: DATE,
+    });
+    const after = recorded.request.inventory as { bundle_warnings: Array<{ code: string }> };
+    expect(after.bundle_warnings.map((warning) => warning.code)).toEqual(["BUNDLE_SUPERSEDED"]);
+  });
+});
+
+describe("export-scripts · reserva de carpeta desde prepare", () => {
+  const sql = "CREATE TABLE t (id int);\n";
+  const files = (prepared: ExportPrepared): Array<[string, string]> =>
+    dossier(prepared, [
+      [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "DROP TABLE t;"],
+      [`${prepared.unit}/01-ddl-tablas/01-t.sql`, sql],
+      [`${prepared.unit}/rollback/01-ddl-tablas/01-t.rollback.sql`, "DROP TABLE t;"],
+    ]);
+
+  it("un prepare repetido recupera su carpeta; validate y apply consumen la marca", async () => {
+    const fs = workspace();
+    const old = "/cwd/docs/scripts/002-export-scripts-2026-07-01";
+    fs.file(`${old}/01-ddl-tablas/01-vieja.sql`, "CREATE TABLE vieja (id int);");
+    const prepared = await prepare(fs, "scripts", { from: "bundles", date: DATE });
+    const marker = `/cwd/${prepared.unit}/.aw-reservation`;
+    expect(await fs.exists(marker)).toBe(true);
+    const repeated = await prepare(fs, "scripts", { from: "bundles", date: DATE });
+    expect(repeated.unit).toBe(prepared.unit);
+    const raw = answer(prepared, files(prepared));
+    const replay = await restage(fs, "scripts", raw);
+    expect(replay.request.input_digest).toBe(prepared.request.input_digest);
+    const applied = await applyExport(fs, env, paths(), {
+      raw,
+      prepared: replay,
+      approval: approvalOf(replay, raw),
+    });
+    if (!applied.ok) throw new Error(applied.failure.message);
+    expect(await fs.exists(marker)).toBe(false);
+    expect(applied.value.written).toContain(`${prepared.unit}/bundle.json`);
+  });
+
+  it("si apply falla a mitad, el marcador de la carpeta queda para reintentar", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "scripts", { date: DATE });
+    const raw = answer(prepared, files(prepared));
+    const original = fs.writeTextExclusive.bind(fs);
+    fs.writeTextExclusive = async (path, content) => {
+      if (path.endsWith("/01-t.sql")) throw new Error("disco lleno");
+      return original(path, content);
+    };
+    const applied = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: approvalOf(prepared, raw),
+    });
+    if (applied.ok) throw new Error("expected publish failure");
+    expect(applied.failure.code).toBe("PUBLISH_FAILED");
+    expect(await fs.exists(`/cwd/${prepared.unit}/.aw-reservation`)).toBe(true);
+    expect(await fs.exists(`/cwd/${prepared.unit}/README.md`)).toBe(false);
+  });
+
+  it("reintenta una publicación escrita cuyo registro de claim falló sin duplicar archivos", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "scripts", { date: DATE });
+    const raw = answer(prepared, files(prepared));
+    const approval = approvalOf(prepared, raw);
+    const append = fs.appendText.bind(fs);
+    fs.appendText = async (path, content) => {
+      if (path.endsWith("claims.jsonl") && content.includes('"event":"published"'))
+        throw new Error("ledger temporalmente inaccesible");
+      return append(path, content);
+    };
+    await expect(applyExport(fs, env, paths(), { raw, prepared, approval })).rejects.toThrow(
+      "ledger temporalmente inaccesible",
+    );
+    expect(await fs.exists(`/cwd/${prepared.unit}/.aw-reservation`)).toBe(true);
+    fs.appendText = append;
+    const retry = await applyExport(fs, env, paths(), {
+      raw,
+      prepared: await restage(fs, "scripts", raw),
+      approval,
+    });
+    if (!retry.ok) throw new Error(retry.failure.message);
+    expect(await fs.exists(`/cwd/${prepared.unit}/.aw-reservation`)).toBe(false);
+    expect(retry.value.written).toContain(`${prepared.unit}/bundle.json`);
+  });
+
+  it("un prepare nuevo de la misma sesión libera su reserva anterior sin publicar", async () => {
+    const fs = workspace();
+    const root = "/cwd/.workflow/sessions/050-nuevo-plan-exec";
+    fs.file(`${root}/SESSION.md`, "# SESSION\n\n## Objective\nMigrar\n");
+    fs.file(`${root}/SCRIPTS.sql`, sql);
+    const first = await prepare(fs, "scripts", { sessions: ["050"], code: "050", date: DATE });
+    fs.file(`${root}/SCRIPTS.sql`, "CREATE TABLE t (id bigint);\n");
+    const second = await prepare(fs, "scripts", { sessions: ["050"], code: "050", date: DATE });
+    expect(await fs.exists(`/cwd/${second.unit}/.aw-reservation`)).toBe(true);
+    expect(
+      (await fs.list(`/cwd/${first.unit}`)).every((entry) => entry.name === ".aw-reservation"),
+    ).toBe(true);
+    expect((await readClaimEvents(fs, paths())).events.map((event) => event.event)).toEqual([
+      "claimed",
+      "released",
+      "claimed",
+    ]);
   });
 });

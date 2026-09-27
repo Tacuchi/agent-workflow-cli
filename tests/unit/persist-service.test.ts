@@ -5,6 +5,7 @@ import {
   applyPersist,
   preparePersist,
   validatePersist,
+  validatePersistWithAttachments,
 } from "../../src/application/persist-service.js";
 import type { SemanticRequest } from "../../src/application/semantic-operation/protocol.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -200,6 +201,94 @@ describe("validatePersist — fails closed, and always says what to do next", ()
     if (result.ok) throw new Error("expected a rejection");
     expect(result.failure.code).toBe("SEMANTIC_AMBIGUOUS");
     expect(result.failure.message).toContain("casi igual");
+  });
+});
+
+describe("persist · adjuntos binarios en la aprobación", () => {
+  const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0xff, 0x00]);
+  const pptx = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0xfe, 0x00]);
+  const decisions = {
+    category: "research",
+    slug: "comparar-motores",
+    mode: "new",
+    attachments: [
+      { source: "assets/resumen.pdf", path: "docs/research/001-research-comparar-motores.pdf" },
+      {
+        source: "assets/diapositivas.pptx",
+        path: "docs/research/001-research-comparar-motores.pptx",
+      },
+    ],
+  };
+
+  it("aprueba sha256 de los bytes y publica PDF y PPTX sin decodificarlos", async () => {
+    const fs = workspace();
+    fs.binary("/cwd/assets/resumen.pdf", pdf);
+    fs.binary("/cwd/assets/diapositivas.pptx", pptx);
+    const request = await prepared(fs);
+    const raw = answer(request, { decisions });
+    const result = await validatePersistWithAttachments(fs, paths(), raw, request);
+    if (!result.ok) throw new Error(result.failure.message);
+    expect(result.value.preview.attachments?.map((item) => item.digest)).toEqual([
+      expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+    ]);
+    const applied = await applyPersist(fs, env, paths(), {
+      raw,
+      request,
+      approval: result.value.approval_digest,
+    });
+    if (!applied.ok) throw new Error(applied.failure.message);
+    expect(applied.value.written).toHaveLength(3);
+    expect(await fs.readBytes("/cwd/docs/research/001-research-comparar-motores.pdf")).toEqual(pdf);
+    expect(await fs.readBytes("/cwd/docs/research/001-research-comparar-motores.pptx")).toEqual(
+      pptx,
+    );
+  });
+
+  it("rechaza el contenido binario cambiado después de la aprobación", async () => {
+    const fs = workspace();
+    fs.binary("/cwd/assets/resumen.pdf", pdf);
+    fs.binary("/cwd/assets/diapositivas.pptx", pptx);
+    const request = await prepared(fs);
+    const raw = answer(request, { decisions });
+    const approved = await validatePersistWithAttachments(fs, paths(), raw, request);
+    if (!approved.ok) throw new Error(approved.failure.message);
+    fs.binary("/cwd/assets/resumen.pdf", new Uint8Array([0x25, 0x50, 0x44, 0x46, 0xfe, 0x00]));
+    const applied = await applyPersist(fs, env, paths(), {
+      raw,
+      request,
+      approval: approved.value.approval_digest,
+    });
+    if (applied.ok) throw new Error("expected approval to expire");
+    expect(applied.failure.code).toBe("APPROVAL_MISMATCH");
+    expect(await fs.exists("/cwd/docs/research/001-research-comparar-motores.pdf")).toBe(false);
+  });
+
+  it("un fallo del segundo adjunto revierte el documento y el primer binario", async () => {
+    const fs = workspace();
+    fs.binary("/cwd/assets/resumen.pdf", pdf);
+    fs.binary("/cwd/assets/diapositivas.pptx", pptx);
+    const request = await prepared(fs);
+    const raw = answer(request, { decisions });
+    const approved = await validatePersistWithAttachments(fs, paths(), raw, request);
+    if (!approved.ok) throw new Error(approved.failure.message);
+    const publish = fs.publishBytesExclusive.bind(fs);
+    fs.publishBytesExclusive = async (path, content) => {
+      if (path.endsWith(".pptx")) throw new Error("falló el segundo binario");
+      return publish(path, content);
+    };
+    const result = await applyPersist(fs, env, paths(), {
+      raw,
+      request,
+      approval: approved.value.approval_digest,
+    });
+    if (result.ok) throw new Error("expected a publication failure");
+    expect(result.failure.code).toBe("PUBLISH_FAILED");
+    for (const suffix of [".md", ".pdf", ".pptx"]) {
+      expect(await fs.exists(`/cwd/docs/research/001-research-comparar-motores${suffix}`)).toBe(
+        false,
+      );
+    }
   });
 });
 

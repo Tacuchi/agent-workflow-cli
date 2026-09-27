@@ -26,7 +26,7 @@ import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId, readRequiredStdin } from "../context-id.js";
-import { type ParsedArgs, sessionCodeFlag } from "../parser.js";
+import { type ParsedArgs, flagValue, sessionCodeFlag } from "../parser.js";
 import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { fail, failSemantic, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
@@ -242,7 +242,7 @@ ${CHECKOUT}`,
     // not a walk. It reads the boundary, captures its proof and stops — nothing is
     // applied, no attempt is spent, and the tree it measures is left untouched.
     if (verb === "prove") {
-      const source = args.values.get("source");
+      const source = flagValue(args, "source");
       const artifact = args.values.get("artifact");
       return projectProof(
         await proveFlowBoundary(ctx.fs, ctx.paths, {

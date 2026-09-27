@@ -1,3 +1,6 @@
+import { PostgresReadonlyTools } from "../../adapters/postgres-readonly-tools.js";
+import { DatabaseToolCatalog } from "../../application/database-tool-catalog.js";
+import type { CatalogLookup } from "../../application/export-catalog-check.js";
 import {
   type EnvironmentFilter,
   type ExportApplied,
@@ -11,7 +14,7 @@ import {
   conflictingScopeFlags,
   prepareExport,
   readExportScope,
-  validateExport,
+  validateExportWithCatalog,
 } from "../../application/export-service.js";
 import type { SemanticFailure } from "../../application/semantic-operation/protocol.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -29,10 +32,10 @@ type ExportData =
 const DESCRIBES: Record<ExportCategory, string> = {
   diagrams: "Publica un dossier de diagramas (README + Markdown, DSL opcional) en docs/diagrams.",
   manuals:
-    "Publica un dossier de manuales en docs/manuals; docs/manuals/INDEX.md es el único archivo sobrescribible y exige --overwrite.",
+    "Publica manuales en docs/manuals o [docs] manuals: sólo INDEX.md (complement), archivos planos <slug>.md o un dossier numerado; reemplazar un archivo exige --overwrite.",
   reports: "Publica un informe acotado en docs/reports.",
   scripts:
-    "Consolida el SQL pendiente en un bundle de docs/scripts (00-ROLLBACK.sql + forwards continuos + README). NUNCA ejecuta SQL. El origen se compone: --from sessions|bundles|workspace elige la base, --exclude <nombre> (repetible) le resta piezas y --environment <ambiente> deja fuera los bundles que el libro de pases registra como aplicados allí. Sin ninguno de los tres, la base es el corpus de sesiones, igual que siempre.",
+    "Consolida SQL en docs/scripts con cinco categorías de forwards y rollbacks en rollback/. NUNCA ejecuta SQL. --catalog <conexión> verifica opcionalmente tablas y columnas en solo lectura; --from sessions|bundles|workspace, --exclude <nombre> y --environment <ambiente> componen el origen. La base por defecto son las sesiones.",
 };
 
 /**
@@ -59,7 +62,8 @@ const ENVELOPE = [
   "                  state: proposed | ambiguous | unsupported.",
   "",
   "  proposed        artifacts: [{path, content}] — cada path dentro del destino que el request declara en 'allowed_destinations'.",
-  "                  scope: el 'scope' del request, copiado TAL CUAL. Es el alcance con el que se preparó —incluidos 'from', 'exclude' y 'environment'—: validate y apply lo leen en vez de re-derivarlo, así que NO hace falta repetir --sessions/--since/--source/--date/--from/--exclude/--environment. Repetirlos con otro valor se rechaza.",
+  "                  En scripts: decisions: {supersedes: [nombres], requires: [nombres]}. El CLI genera bundle.json con esos nombres y cada archivo del origen, lo incluye en la vista previa y en el approval. No lo envíes en artifacts.",
+  "                  scope: el 'scope' del request, copiado TAL CUAL, incluido scope.seal por clave. Es el alcance preparado —también catalog cuando se pidió—: validate y apply lo leen en vez de re-derivarlo; no hace falta repetir los flags de alcance. Una clave añadida, quitada o distinta se rechaza nombrándola.",
   "",
   "  ambiguous       reason: por qué no se puede decidir. No se escribe nada.",
   "  unsupported     reason: por qué la operación no aplica. No se escribe nada.",
@@ -80,8 +84,13 @@ const ENVELOPE = [
 function exportFlags(category: ExportCategory): CommandFlags {
   const scope = ["sessions", "since", "source", "date"];
   return {
-    known: category === "scripts" ? [...scope, "from", "exclude", "environment"] : scope,
-    actions: { apply: { known: ["approval", "overwrite"] } },
+    known:
+      category === "scripts"
+        ? [...scope, "from", "exclude", "environment", "code", "catalog"]
+        : scope,
+    actions: {
+      apply: { known: category === "manuals" ? ["approval", "overwrite"] : ["approval"] },
+    },
   };
 }
 
@@ -89,7 +98,7 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
   return {
     name: `export-${category}`,
     flags: exportFlags(category),
-    describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest> [--overwrite] [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>]${category === "scripts" ? " [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>]" : ""}.
+    describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest>${category === "manuals" ? " [--overwrite]" : ""} [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>]${category === "scripts" ? " [--code <sesión>] [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>] [--catalog <conexión>]" : ""}.
 
 ${ENVELOPE}`,
 
@@ -108,18 +117,34 @@ ${ENVELOPE}`,
       const raw = stage === "prepare" ? "" : await readRequiredStdin();
       const scope = resolveStageScope(stage, raw, args);
       if (!scope.ok) return failSemantic(scope.failure);
+      const catalog: CatalogLookup | undefined =
+        category === "scripts" && scope.selection.catalog !== undefined
+          ? new DatabaseToolCatalog({
+              paths: ctx.paths,
+              env: ctx.env,
+              postgres: new PostgresReadonlyTools(),
+            })
+          : undefined;
 
       // Each stage rebuilds the request from the workspace: stateless, and the
       // corpus digest is what detects a session that moved meanwhile.
-      const prepared = await prepareExport(ctx.fs, ctx.env, ctx.paths, category, scope.selection);
+      const prepared = await prepareExport(
+        ctx.fs,
+        ctx.env,
+        ctx.paths,
+        category,
+        scope.selection,
+        undefined,
+        catalog,
+      );
       if (!prepared.ok) return failSemantic(prepared.failure);
 
       if (stage === "prepare") {
         return { ok: true, data: { stage: "prepare", prepared: prepared.value }, exitCode: 0 };
       }
       return stage === "validate"
-        ? runValidate(raw, prepared.value)
-        : await runApply(args, ctx, raw, prepared.value);
+        ? await runValidate(raw, prepared.value, catalog)
+        : await runApply(args, ctx, raw, prepared.value, catalog);
     },
 
     renderHuman(result: CommandResult<ExportData>, context: HumanRenderContext): string {
@@ -132,9 +157,11 @@ ${ENVELOPE}`,
           `  Destino    ${data.preview.destination}`,
         ];
         for (const file of data.preview.files) lines.push(`    ${file.path} (${file.bytes} B)`);
-        if (data.preview.overwrites !== null) {
-          lines.push(`  REEMPLAZA  ${data.preview.overwrites} — exige --overwrite`);
+        for (const path of data.preview.replacements ??
+          (data.preview.overwrites === null ? [] : [data.preview.overwrites])) {
+          lines.push(`  REEMPLAZA  ${path} — exige --overwrite`);
         }
+        for (const item of data.preview.unverified ?? []) lines.push(`  Sin verificar ${item}`);
         lines.push(
           `  Aprobación aw export-${category} apply --approval ${data.approval_digest}`,
           "",
@@ -167,6 +194,9 @@ function renderPrepare(
     excluded?: Array<{ name: string; reason: string }>;
     exclude_unmatched?: string[];
     environment?: EnvironmentFilter | null;
+    unbundled_sql?: Array<{ name: string }>;
+    bundle_warnings?: Array<{ code: string; bundle: string; detail: string }>;
+    available_bundles?: string[];
   };
   const lines = [
     `export-${category} · prepare (${request.metrics.request_bytes} B)`,
@@ -180,6 +210,13 @@ function renderPrepare(
     ...(inventory.excluded ?? []).map((piece) => `  Fuera      ${piece.name} (${piece.reason})`),
     ...(inventory.exclude_unmatched ?? []).map(
       (name) => `  Sin efecto ${name} (--exclude no encontró ninguna pieza con ese nombre)`,
+    ),
+    ...(inventory.bundle_warnings ?? []).map(
+      (warning) => `  ${warning.code} ${warning.bundle}: ${warning.detail}`,
+    ),
+    ...(inventory.unbundled_sql ?? []).map(
+      (file) =>
+        `  SQL suelto ${file.name}: incluir con aw export-scripts prepare --from workspace${(inventory.available_bundles ?? []).map((name) => ` --exclude ${name}`).join("")}`,
     ),
   ];
   if (context.detail) lines.push("", request.contract);
@@ -239,6 +276,8 @@ function describeScope(scope: ExportScope): string {
     ...(scope.sessions === undefined ? [] : [`--sessions ${scope.sessions.join(",")}`]),
     ...(scope.since === undefined ? [] : [`--since ${scope.since}`]),
     ...(scope.source === undefined ? [] : [`--source ${scope.source}`]),
+    ...(scope.code === undefined ? [] : [`--code ${scope.code}`]),
+    ...(scope.catalog === undefined ? [] : [`--catalog ${scope.catalog}`]),
     ...(scope.from === undefined ? [] : [`--from ${scope.from}`]),
     ...(scope.exclude ?? []).map((name) => `--exclude ${name}`),
     ...(scope.environment === undefined ? [] : [`--environment ${scope.environment}`]),
@@ -247,8 +286,12 @@ function describeScope(scope: ExportScope): string {
   return parts.join(" ");
 }
 
-function runValidate(raw: string, prepared: ExportPrepared): CommandResult<ExportData> {
-  const result = validateExport(raw, prepared);
+async function runValidate(
+  raw: string,
+  prepared: ExportPrepared,
+  catalog?: CatalogLookup,
+): Promise<CommandResult<ExportData>> {
+  const result = await validateExportWithCatalog(raw, prepared, catalog);
   if (!result.ok) return failSemantic(result.failure);
   return { ok: true, data: { stage: "validate", ...result.value }, exitCode: 0 };
 }
@@ -258,18 +301,25 @@ async function runApply(
   ctx: CliContext,
   raw: string,
   prepared: ExportPrepared,
+  catalog?: CatalogLookup,
 ): Promise<CommandResult<ExportData>> {
   const approval = args.values.get("approval");
   if (approval === undefined) {
     return fail("ARGS_INVALID", "apply exige --approval <digest>: el que devolvió validate");
   }
-  const result = await applyExport(ctx.fs, ctx.env, ctx.paths, {
-    raw,
-    prepared,
-    approval,
-    // Replacing the category's overwritable file is never implicit.
-    allowOverwrite: args.flags.has("--overwrite"),
-  });
+  const result = await applyExport(
+    ctx.fs,
+    ctx.env,
+    ctx.paths,
+    {
+      raw,
+      prepared,
+      approval,
+      // Replacing the category's overwritable file is never implicit.
+      allowOverwrite: args.flags.has("--overwrite"),
+    },
+    catalog,
+  );
   if (!result.ok) return failSemantic(result.failure);
   return { ok: true, data: { stage: "apply", ...result.value }, exitCode: 0 };
 }
@@ -287,6 +337,8 @@ function selection(args: ParsedArgs): ExportSelection {
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
   const environment = args.values.get("environment");
+  const code = args.values.get("code");
+  const catalog = args.values.get("catalog");
   return {
     ...(sessions !== undefined
       ? {
@@ -302,6 +354,8 @@ function selection(args: ParsedArgs): ExportSelection {
     ...(from !== undefined ? { from: from as ExportBase } : {}),
     ...(exclude.length > 0 ? { exclude } : {}),
     ...(environment !== undefined ? { environment } : {}),
+    ...(code !== undefined ? { code } : {}),
+    ...(catalog !== undefined ? { catalog } : {}),
   };
 }
 

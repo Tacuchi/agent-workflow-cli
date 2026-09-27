@@ -116,7 +116,7 @@ describe("el dispatcher es la única puerta y las dos rutas la comparten", () =>
 });
 
 describe("la ruta directa conversa y no toca ningún flow", () => {
-  it("design.create devuelve envelope, receipt y needs_input sin escribir nada", async () => {
+  it("design.create devuelve envelope y reserva el número, sin publicar ni abrir flow", async () => {
     const fs = new MemFs();
     const result = await dispatchCapability(
       {
@@ -143,8 +143,15 @@ describe("la ruta directa conversa y no toca ningún flow", () => {
     expect(result.attempt.receipt.outcome).toBe("needs_input");
     expect(result.attempt.receipt.gaps.length).toBeGreaterThan(0);
     expect(result.attempt.request.attempt).toBe(1);
-    // Ni sesión, ni documento, ni `.workflow/`: la ruta directa no abre un flow.
-    expect([...fs.writes.keys()]).toEqual([]);
+    // Sólo el candado y la marca de reserva; ningún documento normativo ni sesión.
+    expect([...fs.writes.keys()].sort()).toEqual(
+      [
+        "/work/.workflow/.lock",
+        "/work/.workflow/claims.jsonl",
+        "/work/docs/designs/001-design-x/.aw-reservation",
+      ].sort(),
+    );
+    expect(await fs.exists("/work/docs/designs/001-design-x/DESIGN.md")).toBe(false);
   });
 
   it("needs_input → continue enlaza dos intentos del mismo invocation_id", async () => {

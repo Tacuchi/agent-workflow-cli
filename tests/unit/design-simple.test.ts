@@ -622,7 +622,11 @@ describe("T4.4 · el recorrido visible es comprender → redactar → vista prev
     if (!applied.ok) return;
     expect(applied.attempt.receipt.outcome).toBe("completed");
     // El lock de la publicación es del mecanismo; lo que se PUBLICA son dos.
-    expect([...fs.writes.keys()].filter((p) => p.includes("/docs/")).sort()).toEqual([
+    expect(
+      [...fs.writes.keys()]
+        .filter((p) => p.includes("/docs/") && !p.endsWith("/.aw-reservation"))
+        .sort(),
+    ).toEqual([
       `${WS}/docs/designs/001-design-alta-de-miembro/DESIGN.md`,
       `${WS}/docs/designs/001-design-alta-de-miembro/design-manifest.json`,
     ]);

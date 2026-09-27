@@ -105,6 +105,7 @@ export const DESIGN_DESCRIPTOR: CapabilityDescriptor & { readonly name: SkillRol
       interaction: "needs_input",
       inputs: [
         { name: "title", kind: "text", required: true, sensitivity: "public", schema: null },
+        { name: "code", kind: "text", required: false, sensitivity: "public", schema: null },
         { name: "sources", kind: "reference", required: true, sensitivity: "public", schema: null },
         // NOT required, and the `workspace: "optional"` note below is why: inside
         // a workspace the destination IS `docs/designs/`, and on the simple route

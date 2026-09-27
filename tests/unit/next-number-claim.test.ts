@@ -3,6 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import {
+  applyRecovery,
+  previewRecovery,
+  scanSlots,
+} from "../../src/application/claims-recovery.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -95,5 +100,30 @@ describe("runNextNumber --claim", () => {
     expect(consulted.created).toBe(false);
     expect(consulted.claimed_path).toBeNull();
     expect(() => readdirSync(join(workspace, "docs", "reports"))).toThrow();
+  });
+
+  it("reserva carpetas con marcador propio, reentra y permite recuperarlas", async () => {
+    const claim = {
+      name: "export-scripts-2026-09-27",
+      owner: "operation-abc",
+      folder: true,
+      material: "digest-1",
+    };
+    const first = await runNextNumber(fs, env, paths, { directory: "docs/scripts", claim });
+    const second = await runNextNumber(fs, env, paths, { directory: "docs/scripts", claim });
+    expect(second.next).toBe(first.next);
+    expect(second.claim_reused).toBe(true);
+    expect(readdirSync(join(first.claimed_path as string))).toEqual([".aw-reservation"]);
+
+    const slot = "docs/scripts/001-export-scripts-2026-09-27";
+    expect((await scanSlots(fs, paths)).slots.map((entry) => entry.path)).toContain(slot);
+    const preview = await previewRecovery(fs, paths, slot);
+    if (!("proposal" in preview)) throw new Error(preview.error);
+    const recovered = await applyRecovery(fs, paths, {
+      target: slot,
+      approval: preview.proposal.digest,
+    });
+    expect("applied" in recovered).toBe(true);
+    expect(existsSync(first.claimed_path as string)).toBe(false);
   });
 });

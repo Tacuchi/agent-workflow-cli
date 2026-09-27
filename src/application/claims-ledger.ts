@@ -201,7 +201,7 @@ export function openClaimsOf(events: readonly ClaimEvent[], owner: string): Clai
 export function claimOfDocsPath(path: string, owner: string): ClaimIdentity | null {
   const parts = path.split("/").filter((segment) => segment.length > 0);
   const docsAt = parts.indexOf("docs");
-  if (docsAt === -1 || parts.length - docsAt !== 3) return null;
+  if (docsAt === -1 || parts.length - docsAt < 3) return null;
   const category = parts[docsAt + 1];
   const file = parts[docsAt + 2];
   if (category === undefined || file === undefined) return null;
@@ -250,7 +250,8 @@ export function completedClaimsIn(
   for (const path of candidates) {
     const claim = claimOfDocsPath(path, owner);
     if (claim === null || !open.has(claimKey(claim))) continue;
-    completed.push(claim);
+    if (!completed.some((existing) => claimKey(existing) === claimKey(claim)))
+      completed.push(claim);
   }
   return completed;
 }

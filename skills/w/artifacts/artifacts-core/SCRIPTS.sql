@@ -3,9 +3,8 @@
 -- What it is: SQL and remote-read context produced by a session. TWO roles are distinguished:
 --   A) READ-ONLY remote queries: research context captured before plan approval, never
 --      execution validation or a closing proof.
---   B) DDL/DML migrations (schema/data changes): the AI DRAFTS them as a
---      deliverable but NEVER executes them; they are exported to docs/scripts/ (forward +
---      rollback) for a human/DBA to apply.
+--   B) DDL/DML migrations: the AI DRAFTS the forwards here, NEVER executes them;
+--      their reverses live in SCRIPTS.rollback.sql. A human/DBA applies the export.
 --
 -- Golden rule: the AI only EXECUTES type A (read-only). The sql-mutation-guard BLOCKS
 -- execution of DML/DDL — that is why type B is DELIVERED, not run.
@@ -34,11 +33,8 @@ SELECT ...;
 SELECT ...;
 
 -- ============================================================
--- [M1] <migration>   |   Type: B  —  DO NOT EXECUTE (deliverable; external application is handoff;
---                        exported to docs/scripts/ via export-*)
+-- [M1] <migration>   |   Type: B  —  DO NOT EXECUTE (external application is handoff)
 -- DB/MCP: <which>   |   Origin: <plan task>
 -- ------------------------------------------------------------
--- forward:
 ALTER TABLE ... ;
--- rollback:
--- ALTER TABLE ... ;
+-- Reverse: SCRIPTS.rollback.sql#M1 (separate artifact; never inline).

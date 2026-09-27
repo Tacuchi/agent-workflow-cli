@@ -130,6 +130,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "verify-connection",
   "verbose",
   "dry-run",
+  "folder",
   "deep",
   "force",
   "strict",

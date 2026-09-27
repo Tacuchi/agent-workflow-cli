@@ -11,6 +11,7 @@ import {
 import { isRecord } from "../../domain/design/validation.js";
 import type { ProposalBase } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
+import { FOLDER_RESERVATION_MARKER } from "../../domain/reservation.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 
 /**
@@ -101,6 +102,8 @@ async function collect(
     // identity — in from outside the workspace.
     if (entry.type !== "dir") continue;
     const folder = relative.length === 0 ? entry.name : `${relative}/${entry.name}`;
+    const contents = await fs.list(entry.path);
+    if (contents.length === 1 && contents[0]?.name === FOLDER_RESERVATION_MARKER) continue;
     if (await fs.exists(join(rootAbs, folder, DESIGN_MANIFEST_FILE))) {
       out.push(await readPackage(fs, rootAbs, folder));
       continue;

@@ -60,7 +60,9 @@ import {
   reportSources,
 } from "../../domain/design/sources.js";
 import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
-import type { ProposalBase } from "../../domain/proposal.js";
+import { type ProposalBase, baseDigest } from "../../domain/proposal.js";
+import { FOLDER_RESERVATION_MARKER } from "../../domain/reservation.js";
+import { reservationMarker } from "../../domain/reservation.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { localDateIso } from "../dates.js";
 import { type ConsumerDocument, readConsumerDocument } from "../design/consumer-document.js";
@@ -81,9 +83,11 @@ import {
   buildSimpleProposal,
   resolveSimpleTarget,
 } from "../design/design-simple-service.js";
+import { runNextNumber } from "../dev-only-services.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { buildSemanticRequest, parseSemanticResponse } from "../semantic-operation/protocol.js";
 import type { PublishableArtifact } from "../semantic-operation/publish.js";
+import { resolveSessionTarget } from "../session-resolver.js";
 import type { CapabilityHandler, HandlerContext, HandlerResult } from "./dispatcher.js";
 import { registerCapability } from "./dispatcher.js";
 
@@ -414,6 +418,15 @@ interface PackageTarget {
   manifest: DesignManifest;
   /** The exact manifest snapshot {@link manifest} was resolved from. */
   manifest_base: ProposalBase | null;
+  reservation?: DesignReservation;
+}
+
+interface DesignReservation {
+  packageId: string;
+  path: string;
+  marker: string;
+  owner: string;
+  material: string;
 }
 
 /**
@@ -479,6 +492,12 @@ async function decideRoute(
       publishedRevisions: targeted?.manifest?.baselines.length ?? 0,
     }),
   );
+  const reservation =
+    ctx.operation.name === "create" && textInput(ctx, "title") !== null
+      ? await reserveDesignNumber(ctx, index, root)
+      : null;
+  if (reservation !== null && "failure" in reservation)
+    return { ok: false, failure: reservation.failure };
 
   // The package route is also the only one available outside `docs/designs/`: a
   // simple design derives its identity from the index, and a root the index does
@@ -493,13 +512,14 @@ async function decideRoute(
     !AUTHORING_OPERATIONS.includes(ctx.operation.name) ||
     !isIndexable(root)
   ) {
-    return packageRoute(ctx, verdict, index, root);
+    return packageRoute(ctx, verdict, index, root, reservation);
   }
 
   const resolved = resolveSimpleTarget(index, ctx.operation.name, {
     title: textInput(ctx, "title"),
     packageId: packageInput(ctx),
     root: root.root,
+    ...(reservation === null ? {} : { reserved: reservation }),
   });
   if (!resolved.ok) {
     const { code, message, action } = resolved.failure;
@@ -527,6 +547,40 @@ async function decideRoute(
   };
 }
 
+async function reserveDesignNumber(
+  ctx: HandlerContext,
+  index: DesignIndex,
+  root: OutputRoot,
+): Promise<DesignReservation | { failure: CapabilityFailure }> {
+  const title = textInput(ctx, "title") ?? "";
+  const code = textInput(ctx, "code");
+  const session =
+    code === null ? null : await resolveSessionTarget(ctx.fs, ctx.paths, { code, intent: "write" });
+  if (session !== null && session.outcome !== "resolved")
+    return {
+      failure: {
+        code: "DESIGN_SESSION_NOT_FOUND",
+        message: `--code ${code} no resuelve una sesión activa`,
+        action: "elegí una sesión activa o quitá --code",
+      },
+    };
+  const owner =
+    session === null ? `operation-${ctx.request.semantic_inputs_digest}` : session.session.folder;
+  const material = ctx.request.semantic_inputs_digest;
+  const slug = designSlug(title);
+  const minimum = nextPackageId(index.packages.map((p) => p.id ?? p.declared_id)).slice(4);
+  const number = (
+    await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
+      directory: root.root,
+      minimum,
+      claim: { name: `design-${slug}`, owner, folder: true, material },
+    })
+  ).next;
+  const packageId = `DES-${number}`;
+  const path = designFolder(root.root, packageId, slug);
+  return { packageId, path, marker: `${path}/${FOLDER_RESERVATION_MARKER}`, owner, material };
+}
+
 /**
  * The package route. It seals, or it does not run.
  *
@@ -544,6 +598,7 @@ function packageRoute(
   verdict: ExpansionVerdict,
   index: DesignIndex,
   root: OutputRoot,
+  reservation: DesignReservation | null,
 ): RouteResolution {
   // `render` and `record` author no normative content: a projection is derived
   // from the manifest and a governance decision decides ON a baseline. Minting
@@ -553,7 +608,7 @@ function packageRoute(
     return projectionRoute(ctx, verdict, index, root);
   }
 
-  const resolved = resolvePackageTarget(ctx, index, root);
+  const resolved = resolvePackageTarget(ctx, index, root, reservation);
   if (!resolved.ok) return { ok: false, failure: resolved.failure };
   const target = resolved.value;
   return {
@@ -663,9 +718,10 @@ function resolvePackageTarget(
   ctx: HandlerContext,
   index: DesignIndex,
   root: OutputRoot,
+  reservation: DesignReservation | null,
 ): PackageTargetResolution {
   return ctx.operation.name === "create"
-    ? mintPackageTarget(ctx, index, root)
+    ? mintPackageTarget(ctx, index, root, reservation)
     : continuePackageTarget(ctx, index);
 }
 
@@ -674,6 +730,7 @@ function mintPackageTarget(
   ctx: HandlerContext,
   index: DesignIndex,
   root: OutputRoot,
+  reservation: DesignReservation | null,
 ): PackageTargetResolution {
   const title = textInput(ctx, "title");
   if (title === null) {
@@ -686,7 +743,8 @@ function mintPackageTarget(
       },
     };
   }
-  const packageId = nextPackageId(index.packages.map((p) => p.id ?? p.declared_id));
+  const packageId =
+    reservation?.packageId ?? nextPackageId(index.packages.map((p) => p.id ?? p.declared_id));
   return {
     ok: true,
     value: {
@@ -694,7 +752,8 @@ function mintPackageTarget(
       // The DECLARED root, not the index's: a `target` that narrows where the
       // package lands has to be where it lands, or the folder and the
       // destination allowlist the request publishes disagree.
-      path: designFolder(root.root, packageId, designSlug(title)),
+      path: reservation?.path ?? designFolder(root.root, packageId, designSlug(title)),
+      ...(reservation === null ? {} : { reservation }),
       revision: 1,
       manifest: initialPackageManifest(packageId, title, localDateIso(new Date())),
       manifest_base: null,
@@ -920,7 +979,20 @@ async function simpleProposal(
       reference: null,
       completeness: "partial",
     },
-    bases: proposalBases(built.value.base, consumer?.base ?? null),
+    bases: proposalBases(
+      built.value.base,
+      consumer?.base ?? null,
+      ...(target.reservation === undefined
+        ? []
+        : [
+            {
+              path: target.reservation.marker,
+              digest: baseDigest(
+                reservationMarker(target.reservation.owner, target.reservation.material),
+              ),
+            },
+          ]),
+    ),
   };
 }
 
@@ -1022,7 +1094,20 @@ async function packageProposal(
     // `target.manifest_base` was captured with the exact bytes parsed into
     // `target.manifest`. A concurrent change therefore fails at apply instead
     // of being accidentally adopted as this candidate's CAS base.
-    bases: proposalBases(target.manifest_base, consumer?.base ?? null),
+    bases: proposalBases(
+      target.manifest_base,
+      consumer?.base ?? null,
+      ...(target.reservation === undefined
+        ? []
+        : [
+            {
+              path: target.reservation.marker,
+              digest: baseDigest(
+                reservationMarker(target.reservation.owner, target.reservation.material),
+              ),
+            },
+          ]),
+    ),
   };
 }
 

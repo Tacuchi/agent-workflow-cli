@@ -214,6 +214,16 @@ describe("flag contracts · the invocations the CLI itself writes", () => {
 });
 
 describe("flag contracts · the dispatcher refuses what no command reads", () => {
+  it("sólo manuals acepta --overwrite", () => {
+    for (const category of ["diagrams", "reports", "scripts"]) {
+      expect(
+        gate(command(`export-${category}`), ["apply", "--approval", "digest", "--overwrite"]).kind,
+      ).toBe("refuse");
+    }
+    expect(
+      gate(command("export-manuals"), ["apply", "--approval", "digest", "--overwrite"]).kind,
+    ).toBe("run");
+  });
   it("`aw flow submit --file x.json` is refused with UNKNOWN_FLAG", () => {
     const outcome = gate(flowCommand, ["submit", "--session", "001", "--file", "x.json"]);
     expect(outcome.kind).toBe("refuse");

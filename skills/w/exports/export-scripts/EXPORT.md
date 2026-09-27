@@ -1,11 +1,11 @@
 ---
 name: export-scripts
-description: "Consolidates pending SQL into one `docs/scripts/NNN-export-scripts-YYYY-MM-DD/` bundle with continuous numbering after `00-ROLLBACK.sql`. It publishes the net final state, not a chronological transcript. Its origin is DECLARED: a base (the session corpus, the published bundles, or a sweep of the whole workspace), minus the pieces named in `--exclude`, minus whatever the release book says already ran in `--environment`. Read-only/report: it NEVER executes SQL nor commits; external application is a handoff. Composes the `sql` capability. User-invoked via `/w:export-scripts`."
+description: "Consolidates pending SQL into a numbered `docs/scripts/` bundle: five forward categories and paired rollbacks in `rollback/`. Publishes the net final state from the declared base minus exclusions and applied bundles; never executes SQL or commits. Composes the `sql` capability. User-invoked via `/w:export-scripts`."
 ---
 
 # export-scripts — consolidated SQL bundle, simple and direct
 
-Consolidates pending SQL migrations into a single bundle under `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with continuous numbering after `00-ROLLBACK.sql`. **Read-only / report** — the AI **never executes** the SQL; external application is an optional handoff.
+Consolidates pending SQL into `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with category folders and rollback files under `rollback/`. The AI **never executes** SQL; application is a handoff.
 
 **The material is declared, not assumed:** a base brings it, `--exclude` subtracts pieces and `--environment` what the book records as applied. With no flag: the session corpus, bundles out.
 
@@ -30,23 +30,23 @@ The **`sql`** capability (built-in default `sql`), resolved via `.workflow/skill
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved `NNN`, the declared origin with its exclusions, the categories with content and the files that would appear. No `Write`, no mutations; numbering uses `aw next-number --dry-run` (pure).
+In plan mode do **not** call `prepare` (it reserves a folder): describe the origin, categories and tentative `NNN` from `aw next-number --dry-run docs/scripts`. No mutations.
 
 ## Inputs
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
 - `aw release-data [--since sessionNNN] [--source <alias>]` — the session corpus (ALL sessions, closed + active, with `release_eligible`). `aw sessions` lists only ACTIVE ones: never use it as the corpus.
-- `aw session-artifacts --code <NNN> --dump scripts` — the session's `.sql` files with path and size (content is read by path). No scripts → empty list, silent skip.
+- `aw session-artifacts --code <NNN> --dump scripts` — session SQL including root `SCRIPTS.sql` and `SCRIPTS.rollback.sql`, with relative names, path and size. No SQL → not material.
 - `aw release-data --standalone-sql [--include-graduated]` — the loose `docs/scripts/*.sql` and the previous bundles. `prepare` already reads both through its base; these are for looking by hand.
-- `aw release-pass list` — the book `--environment` reads: `link --artifact <ruta>` says which bundle a pass carries, `applied --environment` that its SQL RAN there. Nothing inspects a database.
+- `aw release-pass list` — `--environment` reads linked/applied bundles. `--catalog <connection>` optionally inspects the target catalog through Workline's read-only PostgreSQL connection; unreachable or missing objects block publication. Without it, no database connection opens.
 - `aw next-number docs/scripts` — deterministic numbering; it also creates `docs/scripts` when missing, which is what makes destination resolution a CLI guarantee. In plan mode, `--dry-run`.
 
 **Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
 /w:export-scripts [--from sessions|bundles|workspace] [--exclude <nombre>]… [--environment <ambiente>]
-                  [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
+                  [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>] [--code <sesión>] [--catalog <conexión>]
 ```
 
 | Flag | Behavior |
@@ -57,6 +57,8 @@ In plan mode it **describes**, never writes: the resolved `NNN`, the declared or
 | `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
 | `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
 | `--source <alias>` | Limits to one source (multi-source workspace) |
+| `--catalog <connection>` | Optional read-only target catalog check, repeated on validate and apply |
+| `--code <sesión>` | Owns the folder reservation; without it, the sealed operation owns it |
 
 No args: every corpus session, bundles and loose SQL out — the behavior that always was. The three composition flags are this export's alone.
 
@@ -66,11 +68,11 @@ No args: every corpus session, bundles and loose SQL out — the behavior that a
 
 `prepare` already resolved WHICH pieces are in: its inventory lists them per origin with every exclusion and its reason. Read only that.
 
-**Sessions**: for every session the inventory names (`aw session-artifacts --code <NNN> --dump scripts`), read the `.sql` files the dump lists (per-script path). Take **only** type-B statements (deliverable DDL/DML migrations); ignore read-only type-A (diagnostic queries). Expected per-statement markers: `-- @category: <01-04>` + `-- @stmt: NNN-verb-target` (format defined by the `sql` capability).
+**Sessions**: read every `.sql` named by `aw session-artifacts --code <NNN> --dump scripts`, including root `SCRIPTS.sql` and `SCRIPTS.rollback.sql`. Take only type-B migrations; skip type-A research. Markers: `-- @category: <01-05>` and `-- @stmt: NNN-verb-target` (from the `sql` capability).
 
 **Loose SQL**: per file, honor `@category` markers when present; otherwise infer it from content (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). If the filename contains `rollback` → skip (it never enters a forward).
 
-**Published bundles**: their forwards in numeric order, same markers. `00-ROLLBACK.sql` is **never** read as a forward — it is the bundle's reverse, not its material.
+**Published bundles**: read forwards in category and filename order. Both `rollback/` and legacy flat rollbacks are **never** forwards.
 
 An empty origin → **abort**: `prepare` already refused, saying whether nothing matched or everything was already applied.
 
@@ -86,27 +88,26 @@ omit explicitly retired objects even when their deletion is absent from the inpu
 
 **A previous bundle in the origin is MATERIAL A RECONCILIAR, not untouchable history.** Two that
 contradict — one creating an object, a later one retiring it — publish the resulting net final state,
-never their chronological sum: the new bundle does not create it, and its `00-ROLLBACK.sql` does not
+never their chronological sum: the new bundle does not create it, and its global rollback does not
 reverse a creation it never published. The bundles on disk are never modified.
 
-Then group the remaining statements by canonical category: `01 DDL-TABLES` · `02 DDL-FUNCTIONS` · `03 DML` ·
-`04 INSERTS`. Origin is traceability, not an ordering authority over the final contract.
+Group the remaining statements: `01-ddl-tablas` · `02-ddl-funciones` · `03-migracion` · `04-inserts` · `05-grants`. Origin traces changes, never determines their order.
 
 ### Step 4 — Continuous numbering (no gaps)
 
-Assign sequential numbers **only to categories with content**, in canonical order. The first forward is always `01-…`. E.g.: DML only → `00-ROLLBACK.sql`, `01-DML.sql`; all 4 categories → `00-ROLLBACK.sql`, `01-DDL-TABLES.sql`, `02-DDL-FUNCTIONS.sql`, `03-DML.sql`, `04-INSERTS.sql`.
+Keep the five fixed category numbers. Omit empty folders; within each populated folder, number files `01-<nombre>.sql`, `02-<nombre>.sql`, … with no gaps.
 
 ### Step 5 — Write the forwards
 
-Per category with content, one file with a 1-2 line header (`-- 0N-<CATEGORY>.sql — bundle NNN-export-scripts-YYYY-MM-DD`) and traceable origin comments where useful. Write SQL for the reconciled final state, not necessarily the original statement verbatim; preserve explicit intent, idempotency and safe transaction boundaries. Do not replicate motivation/impact already present at the origin; no statement index, no invented verification SELECTs.
+Write each forward in its category folder with a concise header and useful origin. Reconcile to the net final state; keep idempotency, intent and transaction boundaries. Never invent verification SELECTs.
 
 ### Step 6 — Derive `00-ROLLBACK.sql` (at the end)
 
-Via the `sql` capability, **reading the already-written forwards** (not the original `SCRIPTS.sql`): inverse statements in reverse order (last→first), a single transactional block, and an "irreversible cleanup" block at the end outside the transaction only if there are operations without an automatic reverse.
+For every forward `<categoría>/NN-<nombre>.sql`, write `rollback/<categoría>/NN-<nombre>.rollback.sql`. Then derive `rollback/00-global/00-ROLLBACK.sql` from the final forwards in safe reverse order (05→01), not from the session's original chronology.
 
 ### Step 7 — Write the `README.md` (3 sections)
 
-`## Archivos` (table: 1 row per file present) · `## Aplicar` (one `psql -f` per file in ascending order; the export executes nothing) · `## Revertir` (`psql -f 00-ROLLBACK.sql` + a note if there is an irreversible block). The README is a user-facing deliverable → write it in the user's language. **Vetoed**: everything the section above forbids.
+`## Archivos` (every file present) · `## Aplicar` (`psql -f` for each forward, category then filename order; `*/*.sql` or `0*/*.sql` reaches only forwards; `**/*.sql`, `find` and PowerShell `-Recurse` also reach rollbacks and MUST NOT be used to apply) · `## Revertir` (`rollback/00-global/00-ROLLBACK.sql`). Write it in the user's language.
 
 ### Step 8 — Write or report
 
@@ -116,15 +117,17 @@ Publish through the three stages (`prepare` → `validate` → `apply --approval
 
 ```
 docs/scripts/NNN-export-scripts-YYYY-MM-DD/
-├── 00-ROLLBACK.sql       # reverse derived from the forwards
-├── 01-<CATEGORY>.sql     # first forward (continuous numbering)
-├── 02-<CATEGORY>.sql     # …per category with content
-└── README.md             # Archivos · Aplicar · Revertir
+├── README.md
+├── 01-ddl-tablas/01-<nombre>.sql
+├── 02-ddl-funciones/ · 03-migracion/ · 04-inserts/ · 05-grants/
+└── rollback/
+    ├── 00-global/00-ROLLBACK.sql
+    └── <categoría>/NN-<nombre>.rollback.sql  # one per forward
 ```
 
 ## Re-run
 
-Functionally idempotent: each invocation takes the next `NNN` and **never overwrites** a previous bundle. To regenerate, delete the directory by hand and re-invoke.
+Each invocation publishes a new `NNN`: never delete or overwrite a published bundle. Corrections supersede the earlier bundle.
 
 ## Resources
 

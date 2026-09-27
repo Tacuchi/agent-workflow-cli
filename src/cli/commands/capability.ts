@@ -93,6 +93,7 @@ export const capabilityCommand: CliCommand<CapabilityAttempt> = {
       "flow",
       "host",
       "input",
+      "code",
       "target",
       "base",
       "profile",
@@ -251,6 +252,16 @@ async function parseInputs(
     values.push({
       name: entry.slice(0, eq),
       value: entry.slice(eq + 1),
+      provenance: { kind: "text", origin: "caller", seal: null, sensitivity: "public" },
+    });
+  }
+  const code = args.values.get("code");
+  if (code !== undefined) {
+    if (values.some((value) => value.name === "code"))
+      return { ok: false, why: "--code y --input code= se excluyen" };
+    values.push({
+      name: "code",
+      value: code,
       provenance: { kind: "text", origin: "caller", seal: null, sensitivity: "public" },
     });
   }
