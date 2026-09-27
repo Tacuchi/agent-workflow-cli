@@ -48,15 +48,29 @@ export interface ProposalBase {
   digest: string;
 }
 
-/**
- * The one way to digest a base.
- *
- * Two conventions for "the digest of this file" is a comparison that fails for a
- * reason nobody can see: one side would seal one form and the other recompute the
- * other, and every publication would look stale.
- */
+/** Normalize only document line endings; proposal and state envelopes retain their own bytes. */
+export function canonicalEol(text: string): string {
+  return text.replace(/\r\n/g, "\n");
+}
+
+/** The one way to digest a document base, regardless of LF or CRLF. */
 export function baseDigest(text: string): string {
+  return semanticDigest(canonicalEol(text));
+}
+
+/** Digest stored by releases before document EOL normalization. */
+export function legacyBaseDigest(text: string): string {
   return semanticDigest(text);
+}
+
+export type TextSealMatch = "exact" | "eol-only" | "legacy" | null;
+
+export function matchTextSeal(sealed: string, text: string): TextSealMatch {
+  if (sealed === baseDigest(text)) {
+    return sealed === legacyBaseDigest(text) ? "exact" : "eol-only";
+  }
+  if (sealed === legacyBaseDigest(text)) return "legacy";
+  return null;
 }
 
 /**

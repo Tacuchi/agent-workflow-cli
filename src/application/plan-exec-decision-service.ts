@@ -20,7 +20,7 @@ import {
 import { type BaselineInput, composeEffectiveContract } from "../domain/effective-contract.js";
 import { noteDraftShape } from "../domain/flow/decision-schema.js";
 import type { FlowDecisionPreparation } from "../domain/flow/run-state.js";
-import { specBaselineDigest } from "../domain/lineage.js";
+import { legacySpecBaselineDigest, specBaselineDigest } from "../domain/lineage.js";
 import { baseDigest } from "../domain/proposal.js";
 import { type PlanReconciliation, reconciliationOf } from "../domain/reconciliation.js";
 import { type ObligationSettlement, deriveSettlementNote } from "../domain/settlement.js";
@@ -324,11 +324,14 @@ async function withLegacyDigest(
   root: string,
   baseline: BaselineInput,
 ): Promise<BaselineInput> {
-  if (baseline.legacy_digest !== undefined) return baseline;
+  if (baseline.legacy_digest !== undefined && baseline.legacy_eol_digest !== undefined)
+    return baseline;
   try {
+    const specText = await fs.readText(join(root, baseline.path));
     return {
       ...baseline,
-      legacy_digest: specBaselineDigest(await fs.readText(join(root, baseline.path))),
+      legacy_digest: specBaselineDigest(specText),
+      legacy_eol_digest: legacySpecBaselineDigest(specText),
     };
   } catch {
     return baseline;
@@ -413,6 +416,7 @@ export async function readLineage(
         // touched, and that refusal has no repair (the substitute note it asks
         // for cannot be prepared — this very composition runs first).
         legacy_digest: specBaselineDigest(specText),
+        legacy_eol_digest: legacySpecBaselineDigest(specText),
         criteria: parseSpecCriteria(specText, relation.number),
       },
       planNumber,

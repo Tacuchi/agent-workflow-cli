@@ -199,6 +199,20 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(rowsFor(proposal.digest)).toBe(1);
   });
 
+  it("reset restaura los bytes originales aunque un editor sólo cambie LF a CRLF después de preparar", async () => {
+    await session("algo-plan-exec", [planPath]);
+    const proposal = await proposalFor("reset", planPath);
+    writeFileSync(join(workspace, planPath), PLAN_OPEN.replace(/\n/g, "\r\n"));
+
+    const outcome = await applyRetirement(deps, {
+      mode: "reset",
+      target: planPath,
+      approval: proposal.digest,
+    });
+    expect(outcome.ok).toBe(true);
+    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(PLAN_OPEN);
+  });
+
   it("una aprobación que no es la del alcance vigente no toca nada", async () => {
     await session("algo-plan-exec", [planPath]);
     const before = readFileSync(join(workspace, planPath), "utf-8");

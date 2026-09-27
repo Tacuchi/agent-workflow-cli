@@ -1,6 +1,6 @@
 import { CORRELATIVE_SOURCE } from "./correlative.js";
 import { CRITERION_GLOBAL, isDigest } from "./design/identity.js";
-import { baseDigest } from "./proposal.js";
+import { baseDigest, legacyBaseDigest } from "./proposal.js";
 
 /**
  * The lineage between a SPEC and the PLANs derived from it, sealed rather than
@@ -92,6 +92,10 @@ const BASELINE_VALUE = /^(\S+?)@(sha256:[0-9a-fA-F]+)$/;
  */
 export function specBaselineDigest(specText: string): string {
   return `sha256:${baseDigest(specText)}`;
+}
+
+export function legacySpecBaselineDigest(specText: string): string {
+  return `sha256:${legacyBaseDigest(specText)}`;
 }
 
 /**
@@ -240,6 +244,8 @@ export interface SpecCurrentDigests {
   functional: string;
   /** {@link specBaselineDigest} — over the file's exact bytes. */
   exact: string;
+  /** Digest of the unnormalized bytes, for pre-upgrade baselines over CRLF. */
+  legacy_exact?: string;
   /**
    * `unclosedSpecFence` — the line where the spec left a fence open, 0-based, or
    * `null`. Optional so a caller that only compares digests stays unchanged; a
@@ -281,7 +287,11 @@ export function alignSpecBaseline(
     return { status: "unresolved", reason: "spec-not-found", path: seal.baseline.path };
   }
   const sealed = seal.baseline.digest;
-  if (sealed === current.functional || sealed === current.exact) {
+  if (
+    sealed === current.functional ||
+    sealed === current.exact ||
+    sealed === current.legacy_exact
+  ) {
     return { status: "aligned", digest: current.functional };
   }
   return {

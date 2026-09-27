@@ -429,7 +429,7 @@ async function publish(
     ok: true,
     summary: result.already_applied
       ? `la propuesta ya estaba aplicada: ${destinations.join(", ")} sin cambios`
-      : `publicado: ${result.written.join(", ")}`,
+      : `publicado: ${result.written.join(", ")}${result.notice === undefined ? "" : `; aviso: ${result.notice}`}`,
     output: canonicalJson({ ...result, digest: proposal.digest, destinations, claims }),
     // Only what really landed. A re-entry that found the bytes already there
     // credits the same classes — the effect IS applied — and the summary is what
@@ -1147,11 +1147,12 @@ async function closeBatch(
     ok: true,
     summary: published.already_applied
       ? `batch ${published.batch.id} ya estaba publicado en ${run.scope.plan}`
-      : `batch ${published.batch.id} publicado: ${published.written.join(", ")}`,
+      : `batch ${published.batch.id} publicado: ${published.written.join(", ")}${published.notice === undefined ? "" : `; aviso: ${published.notice}`}`,
     output: canonicalJson({
       batch: published.batch,
       written: published.written,
       already_applied: published.already_applied,
+      ...(published.notice === undefined ? {} : { notice: published.notice }),
     }),
     effects: ["mutate_overwrite"],
     state,

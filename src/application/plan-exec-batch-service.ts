@@ -22,7 +22,7 @@ import {
   withPlanExecBatchStage,
 } from "../domain/flow/run-state.js";
 import { approvedValidationOnly } from "../domain/flow/unchanged-phase.js";
-import { baseDigest, sealProposal } from "../domain/proposal.js";
+import { baseDigest, matchTextSeal, sealProposal } from "../domain/proposal.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type FlowRunLocation, applyUnderLock } from "./flow/run-state-service.js";
 import { applyLocalProposal } from "./local-proposal.js";
@@ -273,7 +273,7 @@ export function preparePlanExecBatchPublication(
   input: PreparePlanExecBatchPublicationInput,
 ): BatchPreparation {
   const before = baseDigest(text);
-  if (before !== input.batch.plan_digest) {
+  if (matchTextSeal(input.batch.plan_digest, text) === null) {
     return fail(
       "PLAN_EXEC_BATCH_STALE",
       "el plan cambió desde que se infirió el batch",
@@ -536,6 +536,7 @@ export type BatchPublish =
       batch: PlanExecBatch;
       written: string[];
       already_applied: boolean;
+      notice?: string;
       state: FlowRunState;
     }
   | { ok: false; failure: CapabilityFailure };
@@ -595,7 +596,7 @@ export async function publishPlanExecBatch(
           };
         }
         if (publication.status === "applied") {
-          if (digest !== publication.after_plan_digest) {
+          if (matchTextSeal(publication.after_plan_digest, text.content) === null) {
             return {
               ok: false as const,
               failure: recoveryStale(input.plan),
@@ -622,7 +623,7 @@ export async function publishPlanExecBatch(
         // The document landed before the process could seal the final state.
         // Finish from the pre-written digest; do not derive a new batch or mark
         // anything a second time.
-        if (digest === publication.after_plan_digest) {
+        if (matchTextSeal(publication.after_plan_digest, text.content) !== null) {
           let next = withPlanExecBatchPublication(current, existing.id, digest);
           next = withPlanExecBatchStage(
             next,
@@ -643,7 +644,7 @@ export async function publishPlanExecBatch(
             value: { batch: closed, prepared: null, already_applied: true },
           };
         }
-        if (digest !== publication.before_plan_digest) {
+        if (matchTextSeal(publication.before_plan_digest, text.content) === null) {
           return { ok: false as const, failure: recoveryStale(input.plan) };
         }
         const prepared = preparePlanExecBatchPublication(text.content, input);
@@ -733,11 +734,11 @@ export async function publishPlanExecBatch(
       if (!text.ok) return text;
       const digest = baseDigest(text.content);
       if (publication.status === "applied") {
-        if (digest !== publication.after_plan_digest)
+        if (matchTextSeal(publication.after_plan_digest, text.content) === null)
           return { ok: false as const, failure: recoveryStale(input.plan) };
         return { ok: true as const, state: current, value: existing, persist: false };
       }
-      if (digest !== publication.after_plan_digest) {
+      if (matchTextSeal(publication.after_plan_digest, text.content) === null) {
         return { ok: false as const, failure: recoveryStale(input.plan) };
       }
       let next = withPlanExecBatchPublication(current, existing.id, digest);
@@ -761,6 +762,7 @@ export async function publishPlanExecBatch(
     batch: finalized.value,
     written: applied.result.written,
     already_applied: applied.result.already_applied,
+    ...(applied.result.notice === undefined ? {} : { notice: applied.result.notice }),
     state: finalized.state,
   };
 }
