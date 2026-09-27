@@ -180,3 +180,41 @@ describe("el presupuesto de doctrina declara la activación directa sin reclasif
     }
   });
 });
+
+describe("readiness recorre sólo las raíces globales válidas", () => {
+  it.each([
+    ["codex", ".codex/skills"],
+    ["gemini", ".gemini/skills"],
+    ["gemini", ".gemini/antigravity-cli/skills"],
+    ["crush", ".config/agents/skills"],
+  ])("%s encuentra el wrapper propio en %s", async (host, dir) => {
+    const fs = new MemFs().file(join(HOME, dir, "design/SKILL.md"), CAPABILITY_SKILL_MARKER);
+    expect((await readiness(fs, host)).exposures.direct.state).toBe("ready");
+  });
+
+  it("crush no usa la raíz legada ni la copia local del proyecto como instalación HOME", async () => {
+    const fs = new MemFs()
+      .file(join(HOME, ".crush/skills/design/SKILL.md"), CAPABILITY_SKILL_MARKER)
+      .file(join(WORKSPACE, ".agents/skills/design/SKILL.md"), CAPABILITY_SKILL_MARKER);
+    expect((await readiness(fs, "crush")).exposures.direct.state).toBe("unavailable");
+  });
+
+  it("Antigravity no cuenta HOME/.agents ni la copia del proyecto como instalación global", async () => {
+    const fs = new MemFs()
+      .file(join(HOME, ".agents/skills/design/SKILL.md"), CAPABILITY_SKILL_MARKER)
+      .file(join(WORKSPACE, ".agents/skills/design/SKILL.md"), CAPABILITY_SKILL_MARKER);
+    expect((await readiness(fs, "gemini")).exposures.direct.state).toBe("unavailable");
+  });
+
+  it("un binding ajeno visible invalida incluso otra copia correcta", async () => {
+    const fs = new MemFs()
+      .file(join(HOME, ".agents/skills/design/SKILL.md"), CAPABILITY_SKILL_MARKER)
+      .file(
+        join(HOME, ".codex/skills/design/SKILL.md"),
+        `${CAPABILITY_SKILL_MARKER}\naw capability --host oz prepare --capability design`,
+      );
+    const report = await readiness(fs, "codex");
+    expect(report.exposures.direct.state).toBe("misconfigured");
+    expect(report.exposures.direct.reason).toContain("oz");
+  });
+});

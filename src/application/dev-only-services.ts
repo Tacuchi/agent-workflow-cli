@@ -91,18 +91,16 @@ export function runHarness(
     }
   }
 
-  // First-match over HARNESSES registry (oz before warp for overlap handling)
-  for (const spec of HARNESSES) {
+  // Agent markers precede Warp's terminal markers, regardless of catalog order.
+  for (const spec of HARNESSES.filter((host) => host.id !== "warp")) {
     for (const marker of spec.envMarkers) {
       if (envGet(marker)) {
         return outputFor(spec.id, `env:${marker}`, terminal, knownHarnesses);
       }
     }
-    // A terminal-only marker is a fallback agent signal, never precedence over
-    // an actual agent marker from an earlier catalog entry.
-    if (spec.id === "warp" && terminal.host === "warp") {
-      return outputFor("warp", terminal.via, terminal, knownHarnesses);
-    }
+  }
+  if (terminal.host === "warp") {
+    return outputFor("warp", terminal.via, terminal, knownHarnesses);
   }
 
   // There used to be a filesystem fallback here: `~/.codex/` present → answer

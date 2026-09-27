@@ -13,7 +13,7 @@ import {
 } from "../../domain/harnesses.js";
 import { stampForInstallTarget } from "../../domain/structured-choice-stamp.js";
 import type { CommandResult } from "../../domain/types.js";
-import { installCapabilitySkill } from "../capability/wrapper.js";
+import { installCapabilitySkill, uninstallCapabilitySkill } from "../capability/wrapper.js";
 import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
 import {
   COMMAND_SKILLS_HOSTS,
@@ -23,6 +23,8 @@ import {
   LEGACY_SKILL_ROOTS_BY_TARGET,
   SHARED_INSTALL_TARGETS,
   TARGET_ROOTS,
+  capabilityCoveredBy,
+  capabilityPlacement,
 } from "./install-targets.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 
@@ -376,6 +378,7 @@ export async function selfInstallSkill(
   const validation = await validateSourceContents(sourceArg, ctx);
   if (validation) return validation;
 
+  const capabilities = await installCapabilityLocations(ctx, targets);
   const results: SelfInstallTargetResult[] = [];
   for (const t of existingTargets) {
     const entry = await installOneTarget(t, destByTarget[t.target], sourceArg, ctx, {
@@ -385,6 +388,7 @@ export async function selfInstallSkill(
       skipHooks,
       keepLegacy,
     });
+    Object.assign(entry, capabilities.get(t.target));
     results.push(entry);
   }
 
@@ -394,6 +398,57 @@ export async function selfInstallSkill(
     sourceKind,
     dests: results,
   });
+}
+
+async function installCapabilityLocations(
+  ctx: CliContext,
+  targets: readonly InstallTarget[],
+): Promise<Map<InstallTarget, Partial<SelfInstallTargetResult>>> {
+  const placement = await capabilityPlacement(
+    ctx.fs,
+    ctx.env.homeDir(),
+    DESIGN_DESCRIPTOR.name,
+    targets,
+    "install",
+  );
+  const capabilityResults = new Map<string, Awaited<ReturnType<typeof installCapabilitySkill>>>();
+  for (const location of placement.keep) {
+    capabilityResults.set(
+      location.root,
+      await installCapabilitySkill(
+        location.root,
+        DESIGN_DESCRIPTOR,
+        stampForInstallTarget(location.target === "oz" ? "agents" : location.target),
+        location.boundHost,
+      ),
+    );
+  }
+  // A conflict elsewhere must not preserve an obsolete binding for these readers.
+  const published = placement.keep.filter((location) => capabilityResults.get(location.root)?.ok);
+  for (const location of placement.remove) {
+    if (capabilityCoveredBy(location, published)) {
+      await uninstallCapabilitySkill(location.root, DESIGN_DESCRIPTOR.name);
+    }
+  }
+  return new Map<InstallTarget, Partial<SelfInstallTargetResult>>(
+    targets.map((target) => {
+      const host = harnessByInstallTarget(target);
+      const nativeRoot = join(ctx.env.homeDir(), ...TARGET_ROOTS[target]);
+      const location =
+        placement.keep.find((item) => item.root === nativeRoot) ??
+        placement.keep.find((item) => host !== null && item.readers.includes(host.id));
+      const capability = location === undefined ? undefined : capabilityResults.get(location.root);
+      if (capability?.ok) return [target, { capability_skill: DESIGN_DESCRIPTOR.name }];
+      return [
+        target,
+        capability === undefined
+          ? {}
+          : {
+              capability_skill_conflict: `${capability.failure.message} — ${capability.failure.action}`,
+            },
+      ];
+    }),
+  );
 }
 
 interface InstallResultInput {
@@ -561,19 +616,6 @@ async function installOneTarget(
     cache_cleared: cacheOutcome.cleared,
   };
   if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
-  // The capability wrapper is NOT a command wrapper: it is the physical
-  // entrypoint of a capability, and every host can load it. So it installs on
-  // all of them, and `--skill-only` does not skip it — skipping it would leave
-  // the capability declared and unreachable.
-  const capability = await installCapabilitySkill(
-    dirname(dest),
-    DESIGN_DESCRIPTOR,
-    stampForInstallTarget(t.target),
-    harnessByInstallTarget(t.target)?.id,
-  );
-  if (capability.ok) entry.capability_skill = DESIGN_DESCRIPTOR.name;
-  else
-    entry.capability_skill_conflict = `${capability.failure.message} — ${capability.failure.action}`;
   if (!flags.skipCommands) {
     // Synthesized w-* wrappers ARE the command surface on COMMAND_SKILLS_HOSTS,
     // so --skill-only / --no-commands skips them exactly like native wrappers.
