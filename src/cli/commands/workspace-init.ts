@@ -95,6 +95,20 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     // carry is the one thing here a person has to know, and declaring it only in
     // a JSON field this projection replaces is not declaring it at all.
     const projectMd = data.project_md;
+    if ("results" in projectMd) {
+      for (const file of projectMd.results ?? []) {
+        lines.push(
+          `  ${file.file} ${file.action ?? "revertido"} · ${file.path}${file.error ? ` · error: ${file.error}` : ""}`,
+        );
+      }
+    }
+    for (const source of data.source_actions ?? [])
+      lines.push(`  fuente ${source.alias}: ${source.action}`);
+    if ("migrated" in projectMd) {
+      for (const alias of projectMd.migrated ?? []) lines.push(`  fuente ${alias}: ruta migrada`);
+      for (const alias of projectMd.not_migrated ?? [])
+        lines.push(`  fuente ${alias}: ruta no migrada (no existe en este host)`);
+    }
     const dropped =
       projectMd !== undefined && "dropped_lines" in projectMd
         ? (projectMd.dropped_lines ?? [])

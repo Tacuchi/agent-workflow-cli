@@ -13,7 +13,7 @@ import { resolveSourceBranches } from "./branch-resolver.js";
 import {
   type ParsedProjectBlock,
   readWorkspaceBlock,
-  resolveWorkspaceSourcePath,
+  requireSourcePath,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
@@ -32,7 +32,8 @@ export interface ProjectGitData {
 
 export interface ProjectSource {
   alias: string;
-  path: string;
+  path: string | null;
+  error?: string;
   branch: string | null;
   mainBranch: string;
   /**
@@ -101,11 +102,10 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
   const workspaceName = block?.proyecto || basename(cwd);
 
   // Primary repo: the first declared source (if any), else the cwd.
-  const primaryRepoPath =
-    block && block.fuentes.length > 0
-      ? resolveWorkspaceSourcePath(cwd, block.fuentes[0]?.path ?? cwd)
-      : cwd;
   const primarySource = block?.fuentes[0];
+  const primaryRepoPath = primarySource
+    ? await requireSourcePath(fs, primarySource).catch(() => null)
+    : cwd;
   const primaryMainBranch = primarySource
     ? resolveSourceBranches(primarySource, block).prod
     : "main";
@@ -113,27 +113,58 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
   // primary source, not whatever branch the repo has checked out (could be any).
   const definedWorkingBranch = resolveDefinedWorkingBranch(block);
 
-  const gitData = await safeRun(
-    "git",
-    () => buildGitData(git, proc, primaryRepoPath, primaryMainBranch, definedWorkingBranch),
-    warnings,
-    null,
-  );
+  const gitData =
+    primaryRepoPath === null
+      ? null
+      : await safeRun(
+          "git",
+          () => buildGitData(git, proc, primaryRepoPath, primaryMainBranch, definedWorkingBranch),
+          warnings,
+          null,
+        );
 
   const sources: ProjectSource[] = [];
   if (block) {
     for (const f of block.fuentes) {
-      // New configuration stores absolute paths, but normalize legacy relative
-      // entries here too so every TUI Git/launch probe stays rooted in the
-      // resolved Workline directory rather than the process cwd.
-      const repoPath = resolveWorkspaceSourcePath(cwd, f.path);
+      let repoPath: string;
+      try {
+        repoPath = await requireSourcePath(fs, f);
+      } catch (err) {
+        const error = (err as Error).message;
+        warnings.push(error);
+        sources.push({
+          alias: f.alias,
+          path: null,
+          error,
+          branch: null,
+          mainBranch: resolveSourceBranches(f, block).prod,
+          commitCount: null,
+          dirty: false,
+          changedFiles: 0,
+          launchable: false,
+        });
+        continue;
+      }
       const isRepo = await safeRun(
         `is-repo:${f.alias}`,
         () => git.isGitRepo(repoPath),
         warnings,
         false,
       );
-      if (!isRepo) continue;
+      if (!isRepo) {
+        warnings.push(`${f.alias}: no es un repositorio git (${repoPath})`);
+        sources.push({
+          alias: f.alias,
+          path: repoPath,
+          branch: null,
+          mainBranch: resolveSourceBranches(f, block).prod,
+          commitCount: null,
+          dirty: false,
+          changedFiles: 0,
+          launchable: false,
+        });
+        continue;
+      }
       const branch = await safeRun(
         `branch:${f.alias}`,
         () => git.currentBranch(repoPath),

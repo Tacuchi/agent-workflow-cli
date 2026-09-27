@@ -18,6 +18,7 @@ import { batchCreditVerdict } from "../../src/domain/flow/execution-result.js";
 import type { FlowRunState, PlanExecBatch } from "../../src/domain/flow/run-state.js";
 import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { batchReview } from "../helpers/batch-review.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { planExecWalk } from "../helpers/plan-exec-walk.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
@@ -55,6 +56,11 @@ const PLAN_TEXT = [
   "> Fuentes: workspace",
   "",
   "- [ ] T4.1 — cuatro _(fuentes: workspace)_",
+  "",
+  // These regressions require two independent credits, not the legacy default partition.
+  "## Execution batches",
+  "- B1 · isolated · F3",
+  "- B2 · isolated · F4",
   "",
 ].join("\n");
 
@@ -173,6 +179,28 @@ describe("un lote se acredita sólo con la prueba propia de su checkout", () => 
 
   const touch = (relative: string, body: string) =>
     writeFile(join(workspace, relative), body, "utf8");
+
+  it("submit lee los rojos de la fase del lote, nunca los de la fase siguiente", async () => {
+    const baseline =
+      '> Rojos previos: [{"file":"tests/a.test.ts","case":"one"},{"file":"tests/a.test.ts","case":"two"}]';
+    await touch(
+      PLAN,
+      PLAN_TEXT.replace("### F3 — tres", `### F3 — tres\n${baseline}`).replace(
+        "### F4 — cuatro",
+        '### F4 — cuatro\n> Rojos previos: [{"file":"tests/a.test.ts","case":"three"}]',
+      ),
+    );
+    await walk.walkTo(RUN, VALIDATION);
+    await touch("docs/nota.md", "# cambios F3\n");
+    const old = "FAIL tests/a.test.ts > one\nFAIL tests/a.test.ts > two\nTests 2 failed (2)";
+    expect((await validate(`${old}\nFAIL tests/a.test.ts > three`)).error?.code).toBe(
+      "PLAN_TEST_FAILURE_NEW",
+    );
+    expect((await validate(old)).error).toBeNull();
+    await nextBatch();
+    await touch("docs/nota.md", "# cambios F4\n");
+    expect((await validate(old)).error?.code).toBe("PLAN_TEST_FAILURE_NEW");
+  });
 
   it("sobre reciclado de otra fase: F4 con el detail de F3 y sin cambios se rechaza y queda abierta", async () => {
     await walk.walkTo(RUN, VALIDATION);
@@ -385,8 +413,8 @@ describe("batch-close se niega sin acreditación", () => {
       { session: RUN.folder, code: RUN.code, scope: state.scope, proposal: null },
     );
 
-  it("un lote en curso al actualizar, sin base, cierra sin crédito como antes", async () => {
-    const outcome = await close(await standAtClose({}));
+  it("un lote heredado sin base cierra sin crédito, con su revisión registrada", async () => {
+    const outcome = await close(await standAtClose({ review: batchReview() }));
     expect(outcome.ok).toBe(true);
     expect(await readFile(join(workdir, PLAN), "utf8")).toContain("- [x] T3.1");
   });

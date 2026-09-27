@@ -27,6 +27,12 @@ import { type CheckoutProof, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.
 import type { FlowExecutionResult } from "./answer.js";
 import type { DelegatedAction } from "./authority.js";
 import type { PlanExecBatch } from "./run-state.js";
+import {
+  type TestFailure,
+  readTestFailures,
+  testFailureKey,
+  testRunProblem,
+} from "./test-run-evidence.js";
 
 export interface ExecutionRefusal {
   message: string;
@@ -38,6 +44,7 @@ export function executionVerdict(
   action: DelegatedAction | null,
   declared: readonly EffectClass[],
   checkoutStates: readonly CheckoutState[] | null = null,
+  preexisting: readonly TestFailure[] | null = [],
 ): ExecutionRefusal | null {
   if (result === null || action === null) {
     return {
@@ -72,6 +79,8 @@ export function executionVerdict(
       },
     };
   }
+  const testEvidence = validationTestEvidence(result, preexisting);
+  if (testEvidence !== null) return testEvidence;
   if (action.evidence.includes(SOURCE_BOUNDED_EVIDENCE)) {
     // Every proof the result carries is judged, not only the first: a batch of
     // several sources brings one per source, and a stale one among them must not
@@ -109,8 +118,65 @@ export function executionVerdict(
   return null;
 }
 
+function validationTestEvidence(
+  result: FlowExecutionResult,
+  preexisting: readonly TestFailure[] | null,
+): ExecutionRefusal | null {
+  for (const validation of result.validations) {
+    if (
+      validation.id !== "plan.validaciones-de-fase-verdes" &&
+      validation.id !== "plan.validacion-final-verde"
+    )
+      continue;
+    const problem = testRunProblem(validation.detail ?? "");
+    if (problem !== null)
+      return {
+        message: `${problem.runner}: la suite ${problem.kind === "no-tests" ? "no ejecutó pruebas" : "no cargó"}: ${problem.line}`,
+        detail: {
+          code: "PLAN_TEST_RUN_NOT_EXECUTED",
+          action:
+            "corregí la selección o la carga de la suite y volvé a ejecutar; enviá su salida real completa",
+        },
+      };
+    const failures = failureEvidence(
+      validation.detail ?? "",
+      validation.id === "plan.validaciones-de-fase-verdes" ? preexisting : [],
+    );
+    if (failures !== null) return failures;
+  }
+  return null;
+}
+
+function failureEvidence(
+  detail: string,
+  preexisting: readonly TestFailure[] | null,
+): ExecutionRefusal | null {
+  const action =
+    'nombrá cada rojo preexistente dentro de su fase: > Rojos previos: [{"file":"archivo o clase JVM","case":"caso completo"}]; enviá la salida completa del runner con archivo y caso de cada falla';
+  if (preexisting === null)
+    return {
+      message: "no se pueden leer los rojos previos de las fases del lote",
+      detail: { code: "PLAN_PREEXISTING_FAILURES_INVALID", action },
+    };
+  const observed = readTestFailures(detail);
+  if (observed.unreadable.length > 0)
+    return {
+      message: `hay fallas sin identidad legible: ${observed.unreadable.join("; ")}`,
+      detail: { code: "PLAN_TEST_FAILURES_UNREADABLE", action },
+    };
+  const allowed = new Set(preexisting.map(testFailureKey));
+  const fresh = observed.failures.filter((failure) => !allowed.has(testFailureKey(failure)));
+  if (fresh.length > 0)
+    return {
+      message: `rojos fuera de la lista: ${fresh.map((failure) => `${failure.file} > ${failure.case}`).join("; ")}`,
+      detail: { code: "PLAN_TEST_FAILURE_NEW", action },
+    };
+  return null;
+}
+
 /** What a batch's phase validation is judged against, beyond the live checkouts. */
 export interface BatchCreditInput {
+  validation_only_approved?: boolean;
   /** The batch this iteration walks. */
   batch: PlanExecBatch;
   /** Every batch of the run, the current one included. */
@@ -160,6 +226,9 @@ export function batchCreditVerdict(
     }
     credit[source] = (own[0] as CheckoutProof).checkout_digest;
   }
+  if (input.batch.kind === "validation-only") {
+    return validationOnlyCredit(input, credit, recovery);
+  }
   const creditedBy = new Map(
     input.batches
       .filter((batch) => batch.id !== input.batch.id)
@@ -206,4 +275,25 @@ export function batchCreditVerdict(
     "PLAN_EXEC_BATCH_UNCHANGED",
     `el batch ${input.batch.id} no cambió su checkout desde ${since}: ${why}`,
   );
+}
+
+function validationOnlyCredit(
+  input: BatchCreditInput,
+  credit: Record<string, string>,
+  recovery: string,
+): ReturnType<typeof batchCreditVerdict> {
+  if (input.validation_only_approved === true && input.batch.tasks.length === 0)
+    return { ok: true, credit };
+  return {
+    ok: false,
+    refusal: {
+      message:
+        "el lote sin cambios exige aprobación previa y ninguna tarea abierta al entrar ni ahora",
+      detail: {
+        code: "PLAN_VALIDATION_ONLY_NOT_APPROVED",
+        action: recovery,
+        outcome: "needs_input",
+      },
+    },
+  };
 }

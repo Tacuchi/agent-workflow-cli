@@ -49,6 +49,13 @@ describe("C1 · every declared surface is a real, registered command", () => {
     expect(groups.find((g) => g.name === "Other")).toBeUndefined();
   });
 
+  it("set-pipeline se publica en la familia de fuentes", () => {
+    expect(
+      groupCommands(registry().list()).find((g) => g.name === "Sources / Branches")?.commands,
+    ).toContain("set-pipeline");
+    expect(commandDescribes().get("set-pipeline")).toContain("aw set-pipeline");
+  });
+
   it("every surface carries a describe that names its usage", () => {
     const describes = commandDescribes();
     for (const surface of SURFACES) {

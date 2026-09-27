@@ -79,10 +79,14 @@ export function WorkspaceInitForm({
           return;
         }
         const multiroot = fuentes.length > 1 ? " · visibilidad configurada" : "";
+        const migration =
+          "migrated" in result.project_md
+            ? ` · migradas ${(result.project_md.migrated ?? []).join(", ") || "ninguna"} · pendientes ${(result.project_md.not_migrated ?? []).join(", ") || "ninguna"}`
+            : "";
         onDone({
           ok: result.ok,
           summary: result.ok
-            ? `Fuentes configuradas · ${fuentes.length}${multiroot}`
+            ? `Fuentes configuradas · ${fuentes.length}${multiroot}${migration}`
             : "workspace-init no completó",
         });
       } catch (err) {

@@ -1,5 +1,6 @@
 import { runSources } from "../../application/sources-service.js";
 import type { CommandResult } from "../../domain/types.js";
+import { readContextId } from "../context-id.js";
 import { type ParsedArgs, sessionCodeFlag } from "../parser.js";
 import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
@@ -19,6 +20,8 @@ export const sourcesCommand: CliCommand = {
     const verbose = args.flags.has("--verbose");
     const input: Parameters<typeof runSources>[4] = {};
     if (session.code !== undefined) input.sessionCode = session.code;
+    const contextId = readContextId(ctx.env);
+    if (contextId !== undefined) input.contextId = contextId;
     if (scopeRaw !== undefined) {
       input.scope = scopeRaw
         .split(",")

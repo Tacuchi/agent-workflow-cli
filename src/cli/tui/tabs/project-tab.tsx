@@ -437,6 +437,11 @@ function Initialized({
   // profiles/params, otherwise launch directly.
   const beginLaunch = useCallback(
     async (alias: string) => {
+      const missing = data.sources.find((source) => source.alias === alias)?.error;
+      if (missing) {
+        setMode({ kind: "notice", tone: "err", lines: [missing] });
+        return;
+      }
       const read = await ensureDescriptor(
         ctx.fs,
         ctx.paths.cwdLaunchDir(),
@@ -466,7 +471,7 @@ function Initialized({
       }
       setMode({ kind: "launch-form", alias, descriptor });
     },
-    [ctx, doLaunch, launchDeps],
+    [ctx, doLaunch, launchDeps, data.sources],
   );
 
   const doStop = useCallback(
@@ -1142,7 +1147,7 @@ function SourceRow({
       icon={icons.diamond}
       iconActive={true}
       title={source.alias}
-      subtitle={`main ${source.mainBranch}`}
+      subtitle={source.error ?? `main ${source.mainBranch}`}
       meta={[commits, { label: status, tone: source.dirty ? "warn" : "ok" }, ...activity]}
       state={{ label: `${icons.branch} ${branch}`, tone: "dim" }}
       chevron

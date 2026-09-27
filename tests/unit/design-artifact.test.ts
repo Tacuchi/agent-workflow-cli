@@ -73,6 +73,7 @@ describe("validateDesignArtifact — los fixtures válidos", () => {
     expect(screen.default_state).toBe("default");
     expect(screen.states.map((s) => s.anchor)).toEqual(["default", "error"]);
     expect(screen.flow_refs).toEqual(["DES-001/FLW-001@r2"]);
+    expect(screen.screen_refs).toEqual([]);
     expect(screen.dependencies.tokens).toEqual(["DES-001/TOK-001@r1"]);
     expect(screen.dependencies.assets[0]).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
@@ -266,7 +267,7 @@ describe("validateDesignArtifact — el cuerpo se contrasta contra el frontmatte
       ),
       "screen",
     ).failures.find((f) => f.code === "DESIGN_BODY_REFERENCE_UNKNOWN");
-    expect(enScreen?.action).toContain("'flow_refs'");
+    expect(enScreen?.action).toContain("'screen_refs'");
     expect(enScreen?.action).not.toContain("'nodes'");
   });
 
@@ -276,6 +277,23 @@ describe("validateDesignArtifact — el cuerpo se contrasta contra el frontmatte
       (f) => f.code === "DESIGN_RELATION_BROKEN",
     );
     expect(failure?.message).toContain("#cargando");
+  });
+
+  it("screen_refs opcional declara otra pantalla, también al citar un estado", () => {
+    const absent = editFront(SCREEN, "screen_refs: []\n", "");
+    expect((validate(absent, "screen").value as ScreenArtifact).screen_refs).toEqual([]);
+
+    const withRef = editBody(
+      editFront(SCREEN, "screen_refs: []", "screen_refs: [DES-001/SCR-002@r1]"),
+      "Es la única superficie",
+      "Al terminar, visitar DES-001/SCR-002@r1#empty. Es la única superficie",
+    );
+    expect(validate(withRef, "screen").failures).toEqual([]);
+    expect((validate(withRef, "screen").value as ScreenArtifact).screen_refs).toEqual([
+      "DES-001/SCR-002@r1",
+    ]);
+    const wrongKind = editFront(SCREEN, "screen_refs: []", "screen_refs: [DES-001/FLW-001@r2]");
+    expect(codes(wrongKind, "screen")).toContain("DESIGN_FIELD_INVALID");
   });
 
   it("una mención informal no cuenta como referencia, en ninguna dirección", () => {

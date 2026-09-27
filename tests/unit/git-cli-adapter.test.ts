@@ -60,6 +60,22 @@ const argsOf = (p: ScriptedProcess, op: string) =>
   p.invocations.find((i) => i.args[0] === op)?.args ?? [];
 
 describe("GitCliAdapter — new git-flow ops", () => {
+  it("lee modo y hash SHA-256 de una etapa del índice sin perder el blob", async () => {
+    const hash = "a".repeat(64);
+    const p = new ScriptedProcess([
+      {
+        match: (_c, args) => args[0] === "ls-files" && args.includes("-u"),
+        result: { code: 0, stdout: `100755 ${hash} 2\tscript.sh\n`, stderr: "" },
+      },
+      {
+        match: (_c, args) => args[0] === "cat-file",
+        result: { code: 0, stdout: "#!/bin/sh\n", stderr: "" },
+      },
+    ]);
+    const stages = await new GitCliAdapter(p).conflictStages("/repo", "script.sh");
+    expect(stages.ours).toMatchObject({ hash, mode: "100755", content: "#!/bin/sh\n", bytes: 10 });
+    expect(stages.base.hash).toBeNull();
+  });
   it("checkout runs `git checkout <branch>` in repo cwd", async () => {
     const p = new ScriptedProcess([]);
     await new GitCliAdapter(p).checkout("/repo", "feature/x");

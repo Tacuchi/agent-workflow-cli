@@ -60,11 +60,12 @@ describe("removeSource", () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core", mainBranch: "main" },
-        { alias: "plugin", path: "/repo/plugin", mainBranch: "main" },
+        { alias: "core", path: "../repo/core", mainBranch: "main" },
+        { alias: "plugin", path: "../repo/plugin", mainBranch: "main" },
       ],
       workingBranches: { plugin: "feature/x" },
       qaBranches: { plugin: "desarrollo" },
+      pipeline: { core: { build: "npm run build" }, plugin: { test: "npm test" } },
       lastActivity: FIXED_TS,
     });
   }
@@ -94,10 +95,12 @@ describe("removeSource", () => {
 
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core | main |");
-    expect(claude).not.toContain("/repo/plugin");
+    expect(claude).toContain("| core | ../repo/core | main |");
+    expect(claude).not.toContain("../repo/plugin");
     expect(claude).not.toContain("feature/x");
     expect(claude).not.toContain("- plugin: desarrollo");
+    expect(claude).not.toContain("- plugin: test `npm test`");
+    expect(claude).toContain("- core: build `npm run build`");
     expect(await fs.exists(launchDir)).toBe(false);
     expect(proc.killed).toContain(4321);
     if (!("error" in result)) expect(result.processesStopped).toBe(1);
@@ -118,7 +121,23 @@ describe("removeSource", () => {
     const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "core");
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).not.toContain("/repo/core");
-    expect(claude).toContain("/repo/plugin");
+    expect(claude).not.toContain("../repo/core");
+    expect(claude).toContain("../repo/plugin");
+  });
+
+  it("elimina la entrada local aunque la ruta no exista en este host", async () => {
+    const env = new FakeEnv(cwd);
+    const paths = makePaths(cwd);
+    await seedBlock(env, paths);
+    await writeFile(
+      paths.cwdLocalConfigFile(),
+      JSON.stringify({ version: 1, sources: { core: "/ruta/ausente" }, otra_clave: true }),
+    );
+    const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "core");
+    expect("error" in result).toBe(false);
+    const local = JSON.parse(await readFile(paths.cwdLocalConfigFile(), "utf8"));
+    expect(local.sources.core).toBeUndefined();
+    expect(local.otra_clave).toBe(true);
+    expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).not.toContain("| core |");
   });
 });

@@ -1,3 +1,4 @@
+import { type TestFailure, isTestFailure } from "../../domain/flow/test-run-evidence.js";
 import { type MarkdownHeading, scanMarkdown } from "../markdown.js";
 import { parsePlanSourceBoundary } from "../source-boundary-policy.js";
 
@@ -14,6 +15,8 @@ export interface PhaseItem {
   sources: string[] | null;
   /** first `> Bloqueo:` line of the block, whatever the state; `null` when absent */
   blocker: string | null;
+  /** Omitted when undeclared; null is a malformed declaration, never an empty exemption. */
+  preexisting_failures?: TestFailure[] | null;
 }
 
 export interface ParsedPhases {
@@ -141,6 +144,15 @@ function readPhaseHeading(name: string): PhaseItem | null {
 function applyBlockLine(scan: Scan, line: string): void {
   const current = scan.current;
   if (!current) return;
+  const prior = /^>\s*(?:\*\*)?Rojos previos(?:\*\*)?\s*:\s*(?:\*\*)?\s*(.*)$/i.exec(line);
+  if (prior) {
+    const parsed = readPreexistingFailures(prior[1] ?? "");
+    current.preexisting_failures =
+      current.preexisting_failures === null || parsed === null
+        ? null
+        : [...(current.preexisting_failures ?? []), ...parsed];
+    return;
+  }
   // `**` tolerated: authors bold the label (`> **Estado:** validada`).
   const bare = line.replace(/\*/g, "");
   if (!scan.stated) {
@@ -155,6 +167,15 @@ function applyBlockLine(scan: Scan, line: string): void {
   if (current.blocker !== null) return;
   const blocker = BLOCKER_RE.exec(bare)?.[1]?.trim();
   if (blocker) current.blocker = blocker;
+}
+
+function readPreexistingFailures(raw: string): TestFailure[] | null {
+  try {
+    const value: unknown = JSON.parse(raw);
+    return Array.isArray(value) && value.length > 0 && value.every(isTestFailure) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Case- and accent-insensitive: `en ejecucion` is the same mark as `en ejecución`. */

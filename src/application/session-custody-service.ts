@@ -166,6 +166,7 @@ export function withSourceBaseline(custody: SessionCustody, source: CustodySourc
     if (known.unit_branch !== null || source.unit_branch === null) return custody;
     const merged: CustodySource = {
       ...known,
+      ...(source.base_branch === undefined ? {} : { base_branch: source.base_branch }),
       unit_branch: source.unit_branch,
       unit_path: source.unit_path,
     };

@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse as parseToml } from "smol-toml";
 import { harnessForMcpHost } from "../domain/harnesses.js";
 import type { McpHost } from "../domain/mcp-entry.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath } from "./multiroot/warp.js";
+import { parseToml } from "./parsers/toml.js";
 
 export type ReaderScopeKind = "workspace" | "global";
 

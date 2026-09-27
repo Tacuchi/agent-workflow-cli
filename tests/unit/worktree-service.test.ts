@@ -108,6 +108,18 @@ describe("runWorktree — the isolation unit of a flow", () => {
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+  it("una fuente con ruta de otro host queda ilegible por alias, nunca ejecuta git en cwd", async () => {
+    writeFileSync(join(workspace, "CLAUDE.md"), block("C:/Source/acme"));
+    const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
+    expect(listed.unreadable).toEqual([
+      expect.objectContaining({
+        alias: "acme",
+        code: "SOURCE_PATH_MISSING",
+        error: expect.stringContaining("la ruta de la fuente acme no existe en este host"),
+      }),
+    ]);
+  });
+
   it("creates the unit at its conventional path, on its own branch, leaving the checkout untouched", async () => {
     const unit = (await runWorktree(deps, {
       action: "ensure",

@@ -234,6 +234,37 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
 // ─── ante duda, no se adivina ────────────────────────────────────────────────
 
 describe("cuando el histórico y el disco se contradicen, la sesión no se toca", () => {
+  it("una fila (local) y la absoluta vieja de la misma fuente se comparan por la ruta resuelta", async () => {
+    const portable = APPENDED_STUB.replace(
+      "_Sin fuentes declaradas. Edita manualmente o usa `project-md-upsert --init`._",
+      "| Alias | Path | Rama principal |\n|---|---|---|\n| cli | (local) | main |",
+    );
+    const text = `${RICH_BLOCK}\n\n${portable}\n`;
+    const fs = hub({ claude: text });
+    fs.file(
+      paths.cwdLocalConfigFile(),
+      JSON.stringify({ version: 1, sources: { cli: "/repos/cli" } }),
+    );
+    const plan = await planWorkspaceMigration(fs, paths);
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.markers).toMatchObject([{ drops_duplicate: true }]);
+    expect(await fs.readText(HUB)).toBe(text);
+    const applied = await applyWorkspaceMigration(fs, paths);
+    if ("error" in applied) throw new Error(applied.error);
+    expect((await fs.readText(HUB)).match(/WORKFLOW-PROJECT-START/g)).toHaveLength(1);
+  });
+
+  it("sin la ruta local no adivina que (local) equivale a una absoluta vieja", async () => {
+    const portable = APPENDED_STUB.replace(
+      "_Sin fuentes declaradas. Edita manualmente o usa `project-md-upsert --init`._",
+      "| Alias | Path | Rama principal |\n|---|---|---|\n| cli | (local) | main |",
+    );
+    const fs = hub({ claude: `${RICH_BLOCK}\n\n${portable}\n` });
+    const plan = await planWorkspaceMigration(fs, paths);
+    expect(plan.markers).toEqual([]);
+    expect(plan.conflicts.map((conflict) => conflict.reason)).toEqual(["duplicado_con_contenido"]);
+  });
+
   it("el histórico la da por activa y la carpeta ya tiene su centinela", async () => {
     const fs = hub({
       history: history("| 007-triage | 2025-11-03 | active | — |"),

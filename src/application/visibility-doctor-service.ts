@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import type { McpHost } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export type VisibilityDriftStatus =
@@ -12,6 +12,7 @@ export type VisibilityDriftStatus =
   | "extra-paths"
   | "no-settings"
   | "no-project-block"
+  | "source-path-missing"
   | "global-pollution";
 
 export interface VisibilityHostReport {
@@ -62,6 +63,7 @@ export interface VisibilityDoctorInput {
 
 export interface VisibilityDoctorResult {
   workspace_dir: string;
+  unreadable_sources?: string[];
   reports: VisibilityHostReport[];
   global_reports: VisibilityHostReport[];
   summary: {
@@ -81,7 +83,8 @@ export async function runVisibilityDoctor(
   input: VisibilityDoctorInput,
 ): Promise<VisibilityDoctorResult> {
   const workspace = input.workspace ? resolve(input.workspace) : paths.workspaceDir();
-  const declared = await readDeclaredFuentes(fs, paths, workspace);
+  const sourceReading = await readDeclaredFuentes(fs, paths, workspace);
+  const declared = sourceReading.paths;
   const reports: VisibilityHostReport[] = [
     inspectClaude(workspace, declared, "workspace"),
     inspectCodex(workspace, declared, "workspace"),
@@ -97,8 +100,20 @@ export async function runVisibilityDoctor(
     globalReports.push(inspectClaudeGlobal(home, declared), inspectCodexGlobal(home, declared));
   }
 
+  // Without every declared source path the comparison is incomplete. In particular,
+  // an existing registration must not be proposed for deletion as an "extra".
+  if (sourceReading.errors.length > 0) {
+    for (const report of [...reports, ...globalReports]) {
+      report.status = "source-path-missing";
+      report.detail = sourceReading.errors.join("; ");
+      report.missing = [];
+      report.extra = [];
+    }
+  }
+
   return {
     workspace_dir: workspace,
+    ...(sourceReading.errors.length > 0 ? { unreadable_sources: sourceReading.errors } : {}),
     reports,
     global_reports: globalReports,
     summary: buildSummary([...reports, ...globalReports]),
@@ -109,14 +124,24 @@ async function readDeclaredFuentes(
   fs: FileSystemPort,
   paths: PathsService,
   workspace: string,
-): Promise<string[] | null> {
+): Promise<{ paths: string[] | null; errors: string[] }> {
   const block = await readWorkspaceBlock(
     fs,
     workspace,
     paths.blockMarkers(),
     (b) => b.fuentes.length > 0,
   );
-  return block ? block.fuentes.map((f) => f.path).filter((p) => p && p.length > 0) : null;
+  if (!block) return { paths: null, errors: [] };
+  const pathsFound: string[] = [];
+  const errors: string[] = [];
+  for (const source of block.fuentes) {
+    try {
+      pathsFound.push(await requireSourcePath(fs, source));
+    } catch (err) {
+      errors.push((err as Error).message);
+    }
+  }
+  return { paths: pathsFound, errors };
 }
 
 function inspectClaude(

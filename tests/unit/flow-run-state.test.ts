@@ -46,6 +46,8 @@ import {
   withEvent,
   withObservation,
   withPendingAction,
+  withPlanExecBatch,
+  withPlanExecEntry,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { decisionsOf, loadJourneyFixtures, v11StateAt } from "../helpers/journey-fixtures.js";
@@ -73,6 +75,62 @@ function journey(): FlowDecision[] {
 }
 
 describe("estado de corrida — ida y vuelta", () => {
+  it("el registro admite sólo validación explícita y conserva la partición y fases del crédito", () => {
+    const batch: PlanExecBatch = {
+      id: "batch-1",
+      kind: "validation-only",
+      iteration: 1,
+      mode: "continuous",
+      phases: [1, 2],
+      tasks: [],
+      plan_digest: "plan",
+      stage: "inferred",
+      validation_only: true,
+      partition: {
+        declared: [{ id: "B1", mode: "continuous", phases: [1, 2, 3] }],
+        effective: { mode: "continuous", phases: [1, 2] },
+        reason: "sólo validación",
+      },
+      credit: { source: "proof" },
+      credit_phases: [1, 2],
+    };
+    const read = (value: PlanExecBatch) =>
+      parseRunState(
+        serializeRunState(withPlanExecBatch(newRunState("plan-exec", "001-exec"), value)),
+      );
+    const result = read(batch);
+    expect(result.ok && result.state.batches?.[0]).toEqual(batch);
+    expect(read({ ...batch, validation_only: false }).ok).toBe(false);
+    expect(read({ ...batch, tasks: ["T1.1"] }).ok).toBe(false);
+    expect(read({ ...batch, credit_phases: [1] }).ok).toBe(false);
+    expect(
+      read({
+        ...batch,
+        partition: {
+          declared: null,
+          effective: { mode: "isolated", phases: [1] },
+          reason: "incoherente",
+        },
+      }).ok,
+    ).toBe(false);
+  });
+
+  it("preserva la observación de entrada sin inventarla para corridas anteriores", () => {
+    const legacy = newRunState("plan-exec", "001-plan-plan-exec");
+    const unknown = parseRunState(serializeRunState(legacy));
+    expect(unknown.ok && unknown.state.plan_exec_entry).toBeUndefined();
+    const entry = { plan: "docs/plans/001-plan-prueba.md", phases_without_open_tasks: [2, 4] };
+    const saved = parseRunState(serializeRunState(withPlanExecEntry(legacy, entry)));
+    expect(saved.ok && saved.state.plan_exec_entry).toEqual(entry);
+    for (const phases of [[0], [-1], [1.5], ["2"], [2, 2]]) {
+      const malformed = withPlanExecEntry(legacy, {
+        ...entry,
+        phases_without_open_tasks: phases as number[],
+      });
+      expect(parseRunState(serializeRunState(malformed)).ok).toBe(false);
+    }
+  });
+
   it("una ronda completa de sellado, serialización y parseo devuelve el mismo estado", () => {
     const state = newRunState("quick", SESSION);
     const back = parseRunState(serializeRunState(state));
@@ -927,7 +985,14 @@ describe("alineación del cursor con el recorrido instalado", () => {
         const read = await readRun(new NodeFileSystem(), location);
         if (!read.ok) throw new Error(`esperaba continuar la corrida v11: ${read.failure.code}`);
         expect(read.state.version).toBe(FLOW_RUN_STATE_VERSION);
-        expect(read.state.applied).toEqual(before.applied);
+        const expected = [...before.applied];
+        expected.splice(
+          expected.indexOf("plan-exec.source-scope"),
+          0,
+          "plan-exec.unchanged-phase-consent",
+        );
+        expect(read.state.applied).toEqual(expected);
+        expect(read.state.skipped).toContain("plan-exec.unchanged-phase-consent");
         expect(read.state.boundary).toBe("plan-exec.implementation");
         expect(read.state.observations).toEqual(before.observations);
         expect(read.state.batches).toEqual(before.batches);

@@ -8,6 +8,11 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { lintPlan } from "../../src/application/plan-lint-service.js";
+import {
+  baselineOf,
+  birthCustody,
+  writeCustody,
+} from "../../src/application/session-custody-service.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   FLOW_DECISIONS,
@@ -26,6 +31,7 @@ import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import { attemptAccountingAt } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
+import { batchReview } from "../helpers/batch-review.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 import { testExecutor } from "../helpers/test-executor.js";
 
@@ -51,7 +57,11 @@ import { testExecutor } from "../helpers/test-executor.js";
  *    `SPLIT-GATE` y `DESIGN-REFERENCES` siguen siendo de la doctrina.
  */
 
-const fs = new NodeFileSystem();
+const fs = new (class extends NodeFileSystem {
+  override async exists(path: string): Promise<boolean> {
+    return path === "/tmp/acme" || super.exists(path);
+  }
+})();
 const SESSION = "031-tramo-plan-plan-exec";
 const CODE = "031";
 
@@ -271,7 +281,7 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     // lectura ligada a la sesión, donde una fuente sin unidad simplemente no
     // aparece.
     const quick = FLOW_DECISIONS.find((d) => d.id === "quick.branch-precondition") as FlowDecision;
-    expect(actionOf(quick)?.invocation.args).toEqual(["sources", "--verbose"]);
+    expect(actionOf(quick)?.invocation.args).toEqual(["sources", "--verbose", "--code", "{code}"]);
 
     const exec = rowOf(EXEC, "plan-exec.branch-precondition");
     expect(actionOf(exec)?.invocation.args).toEqual(["worktree", "list", "--code", "{code}"]);
@@ -463,7 +473,9 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
         decisions:
           stopped.scopes_sources === true
             ? { plan: PLAN_DOC, sources: [ALIAS] }
-            : { paso: stopped.id },
+            : stopped.answer_contract === "batch-review"
+              ? { review: batchReview() }
+              : { paso: stopped.id },
       };
     }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
@@ -562,7 +574,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(state.skipped).toContain("plan-exec.normalization-consent");
   });
 
-  it("un hueco menor abre la consulta; uno estructural clasifica pero no la ofrece", async () => {
+  it("un hueco menor abre la consulta sin escalar automáticamente", async () => {
     await walkTo("plan-exec.normalization-consent", ["plan.entry-gap-minor"]);
     const minor = await current();
     expect(minor.resolved.kind).toBe("human");
@@ -572,16 +584,135 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       "Compactar",
       "Cerrar",
     ]);
-    expect(minor.state.skipped).not.toContain("plan-exec.entry-gap-severity");
+    expect(minor.state.handoff).toBeNull();
   });
 
-  it("declarar SOLO el hueco estructural no ofrece normalizar nada", async () => {
-    await walkTo("plan-exec.batch-eligibility-signal", ["plan.entry-gap-structural"]);
-    const { state } = await current();
-    // La severidad se clasificó —hubo un hueco— y la normalización quedó omitida.
-    expect(state.skipped).not.toContain("plan-exec.entry-gap-severity");
-    expect(state.skipped).toContain("plan-exec.normalization-consent");
+  async function sealPlanInput(plan = PLAN_DOC) {
+    await writeCustody(
+      fs,
+      join(paths.cwdSessionsDir(), SESSION),
+      birthCustody({
+        subject: { kind: "session", key: SESSION },
+        subjectPath: `.agent-workflow/sessions/${SESSION}`,
+        parents: [],
+        artifacts: [await baselineOf(fs, workdir, plan)],
+        created: "2026-09-27",
+      }),
+    );
+  }
+
+  it("Ir a plan-refine usa la custodia antes del scope y nunca continúa ejecutando", async () => {
+    await sealPlanInput();
+    await walkTo("plan-exec.normalization-consent", ["plan.entry-gap-minor"]);
+    const before = await current();
+    expect(before.state.scope).toBeNull();
+    const result = await answer({ input_digest: before.resolved.seal, choice: "Ir a plan-refine" });
+    expect(result.error?.code).toBe("FLOW_HANDOFF");
+    expect(result.next_action).toContain(`/w:plan-refine ${PLAN_DOC}`);
+    const after = await current();
+    expect(after.state.handoff?.command).toBe(`/w:plan-refine ${PLAN_DOC}`);
+    expect(after.state.events.filter((event) => event.kind === "rejected")).toEqual([]);
+    expect(after.state.applied).not.toContain("plan-exec.unit-acquisition");
+    const resumed = await advanceFlow(fs, paths, {
+      code: CODE,
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    expect(resumed.ok && resumed.directive.next_action).toContain(`/w:plan-refine ${PLAN_DOC}`);
+    expect((await current()).state.applied).toEqual(after.state.applied);
   });
+
+  it("sin custodia resuelve el mismo slug que session-create; no elige entre dos planes", async () => {
+    const matching = "docs/plans/041-plan-tramo-plan.md";
+    await writeFile(join(workdir, matching), await readFile(join(workdir, PLAN_DOC), "utf8"));
+    await walkTo("plan-exec.normalization-consent", ["plan.entry-gap-minor"]);
+    expect((await current()).state.plan_exec_entry?.plan).toBe(matching);
+    await writeFile(join(workdir, "docs/plans/042-plan-tramo-plan.md"), "# Otro plan\n");
+    const result = await answer({
+      input_digest: (await current()).resolved.seal,
+      choice: "Ir a plan-refine",
+    });
+    expect(result.error?.code).toBe("FLOW_HANDOFF");
+    const { state } = await current();
+    expect(state.handoff?.package.plan).toBeNull();
+    expect(state.handoff?.command).toBe("/w:plan-refine <plan>");
+    expect(state.handoff?.package.decisions.recovery).toContain("nombrá el plan");
+    expect(state.events.filter((event) => event.kind === "rejected")).toEqual([]);
+  });
+
+  it("sin plan resoluble el handoff pide nombrarlo, sin cobrar rechazos", async () => {
+    await walkTo("plan-exec.normalization-consent", ["plan.entry-gap-minor"]);
+    const result = await answer({
+      input_digest: (await current()).resolved.seal,
+      choice: "Ir a plan-refine",
+    });
+    expect(result.error?.code).toBe("FLOW_HANDOFF");
+    expect(result.next_action).toContain("/w:plan-refine <plan>");
+    const { state } = await current();
+    expect(state.plan_exec_entry).toEqual({ plan: null, phases_without_open_tasks: null });
+    expect(state.handoff?.package.decisions.recovery).toContain("nombrá el plan");
+    expect(state.events.filter((event) => event.kind === "rejected")).toEqual([]);
+    expect(state.applied).not.toContain("plan-exec.unit-acquisition");
+  });
+
+  it.each([["plan.entry-gap-structural"], ["plan.entry-gap-minor", "plan.entry-gap-structural"]])(
+    "una brecha estructural detiene antes de normalizar o adquirir unidades: %j",
+    async (...signals) => {
+      await sealPlanInput();
+      await walkTo("plan-exec.entry-gap-recognition", []);
+      const result = await answer({ input_digest: (await current()).resolved.seal, signals });
+      expect(result.error?.code).toBe("FLOW_HANDOFF");
+      expect(result.next_action).toContain(`/w:plan-refine ${PLAN_DOC}`);
+      const { state } = await current();
+      expect(state.applied).toContain("plan-exec.entry-gap-severity");
+      expect(state.applied).not.toContain("plan-exec.normalization-consent");
+      expect(state.applied).not.toContain("plan-exec.unit-acquisition");
+      expect(
+        state.attempts.filter((attempt) => attempt.transition === "plan-exec.entry-gap-severity"),
+      ).toEqual([]);
+    },
+  );
+
+  it("la entrada registra sólo fases no validadas sin tareas abiertas antes del scope", async () => {
+    const phase = (n: number, state: string, tasks: string) =>
+      `### F${n} — fase\n> Estado: ${state}\n> Fuentes: ${ALIAS}\n${tasks}\n`;
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      `# Plan\n## Tasks\n${[
+        phase(1, "pendiente", "- [ ] T1.1 — pendiente"),
+        phase(2, "pendiente", "- [x] T2.1 — implementada"),
+        phase(3, "validada", "- [x] T3.1 — validada"),
+        phase(4, "bloqueada", ""),
+      ].join("\n")}`,
+    );
+    await sealPlanInput();
+    await walkTo("plan-exec.entry-gap-recognition", []);
+    const { state } = await current();
+    expect(state.scope).toBeNull();
+    expect(state.plan_exec_entry).toEqual({ plan: PLAN_DOC, phases_without_open_tasks: [2, 4] });
+  });
+
+  it.each(["F0", "F1\n> Estado: pendiente\n\n### F1"])(
+    "una numeración malformada (%s) conserva la corrida legible para escalar",
+    async (heading) => {
+      await writeFile(
+        join(workdir, PLAN_DOC),
+        `# Plan\n## Tasks\n### ${heading}\n> Estado: pendiente\n`,
+      );
+      await sealPlanInput();
+      await walkTo("plan-exec.entry-gap-recognition", []);
+      expect((await current()).state.plan_exec_entry).toEqual({
+        plan: PLAN_DOC,
+        phases_without_open_tasks: null,
+      });
+      const result = await answer({
+        input_digest: (await current()).resolved.seal,
+        signals: ["plan.entry-gap-structural"],
+      });
+      expect(result.error?.code).toBe("FLOW_HANDOFF");
+      expect((await current()).state.handoff?.command).toBe(`/w:plan-refine ${PLAN_DOC}`);
+    },
+  );
 
   it("sin hecho que rompa la elegibilidad, el rango no se aísla", async () => {
     await walkTo("plan-exec.branch-precondition", []);
@@ -594,6 +725,130 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     const { state } = await current();
     expect(state.skipped).not.toContain("plan-exec.batch-isolation");
     expect(state.applied).toContain("plan-exec.batch-isolation");
+  });
+
+  const fourPhases = (batches = "") =>
+    `# Plan\n> Límite de ejecución: checkout\n## Tasks\n${[1, 2, 3, 4]
+      .map(
+        (n) =>
+          `### F${n} — fase\n> Estado: pendiente\n> Fuentes: ${ALIAS}\n- [ ] T${n}.1 — trabajo _(fuentes: ${ALIAS})_\n`,
+      )
+      .join("\n")}\n${batches}`;
+
+  it.each(["sin estados", "fuera de orden"])(
+    "una fase ilegible (%s) no sale del tramo de trabajo ni corrompe la corrida",
+    async (kind) => {
+      const text =
+        kind === "sin estados"
+          ? fourPhases().replaceAll("> Estado: pendiente\n", "")
+          : fourPhases()
+              .replace("### F2", "### TEMP")
+              .replace("### F3", "### F2")
+              .replace("### TEMP", "### F3");
+      await writeFile(join(workdir, PLAN_DOC), text);
+      await walkTo("plan-exec.batch-eligibility-signal", []);
+      const result = await answer(bodyFor((await current()).resolved, []));
+      expect(result.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
+      const { state } = await current();
+      expect(state.batches).toEqual([]);
+      expect(state.batch_loop?.pending).toBe(true);
+      expect(state.applied).not.toContain("plan-exec.unit-acquisition");
+      expect(state.applied).not.toContain("plan-exec.final-validation");
+    },
+  );
+
+  async function validateAndReviewRange(expected: number[]) {
+    const before = await current();
+    expect(before.state.batches?.at(-1)?.phases).toEqual(expected);
+    const directive = await advanceFlow(fs, paths, {
+      code: CODE,
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    for (const phase of expected)
+      expect(directive.ok && directive.directive.boundary.title).toContain(`F${phase}`);
+    await answer(resultFor(before.resolved));
+    expect((await current()).state.batches?.at(-1)?.credit_phases).toEqual(expected);
+    // Validation alone cannot publish a subset before the combined review.
+    const validatedOnly = await readFile(join(workdir, PLAN_DOC), "utf8");
+    for (const phase of expected) expect(validatedOnly).toContain(`- [ ] T${phase}.1`);
+    await answer(bodyFor((await current()).resolved, []));
+    const closed = await readFile(join(workdir, PLAN_DOC), "utf8");
+    for (const phase of expected) expect(closed).toContain(`- [x] T${phase}.1`);
+  }
+
+  it("ejecuta dos lotes declarados y cada evidencia acredita juntas sus dos fases", async () => {
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      fourPhases("## Execution batches\n- B1 · continuous · F1-F2\n- B2 · continuous · F3-F4\n"),
+    );
+    await walkTo("plan-exec.validation-execution", []);
+    await validateAndReviewRange([1, 2]);
+    for (let step = 0; step < 15; step += 1) {
+      const { resolved } = await current();
+      if (resolved.stopped?.id === "plan-exec.validation-execution") break;
+      await answer(bodyFor(resolved, []));
+    }
+    await validateAndReviewRange([3, 4]);
+    expect((await current()).state.batches).toHaveLength(2);
+    expect((await current()).state.batch_loop?.pending).toBe(false);
+  });
+
+  it.each(["", "## Execution batches\n- B1 · continuous · F1-F4\n"])(
+    "todas las fases elegibles se infieren juntas (%s)",
+    async (batches) => {
+      await writeFile(join(workdir, PLAN_DOC), fourPhases(batches));
+      await walkTo("plan-exec.implementation", []);
+      expect((await current()).state.batches?.[0]).toMatchObject({
+        mode: "continuous",
+        phases: [1, 2, 3, 4],
+      });
+    },
+  );
+
+  it("la señal parte la fila y deja la partición declarada y efectiva en la traza", async () => {
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      fourPhases("## Execution batches\n- B1 · continuous · F1-F4\n"),
+    );
+    await walkTo("plan-exec.implementation", ["plan.recovery-boundary"]);
+    const { state } = await current();
+    expect(state.batches?.[0]?.partition).toEqual({
+      declared: [{ id: "B1", mode: "continuous", phases: [1, 2, 3, 4] }],
+      effective: { mode: "isolated", phases: [1] },
+      reason: expect.stringContaining("plan.recovery-boundary"),
+    });
+    expect(
+      state.events.find(
+        (event) => event.kind === "executed" && event.transition === "plan-exec.batch-inference",
+      ),
+    ).toMatchObject({ summary: expect.stringContaining("partición") });
+  });
+
+  it("una sección ilegible limita el lote a la fase abierta y dice por qué", async () => {
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      fourPhases("## Execution batches\n- B1 · continuous · F1-F2\n"),
+    );
+    await walkTo("plan-exec.implementation", []);
+    expect((await current()).state.batches?.[0]).toMatchObject({
+      mode: "isolated",
+      phases: [1],
+      partition: { reason: expect.stringContaining("sección ilegible") },
+    });
+  });
+
+  it("la primera fase sin tareas abiertas llega a su validación sin saltearse", async () => {
+    await writeFile(join(workdir, PLAN_DOC), fourPhases().replace("- [ ] T1.1", "- [x] T1.1"));
+    await sealPlanInput();
+    await walkTo("plan-exec.validation-execution", []);
+    expect((await current()).state.batches?.[0]).toMatchObject({
+      phases: [1],
+      tasks: [],
+      validation_only: true,
+    });
+    // 051 owns the human authorization and unchanged credit, not this inference.
+    expect((await current()).state.batches?.[0]?.credit).toBeUndefined();
   });
 
   it("un batch se cierra después de validar y revisar, antes del resto del cierre", () => {
@@ -854,7 +1109,11 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
       input_digest: resolved.seal,
       signals: [],
       decisions:
-        stopped.scopes_sources === true ? { plan: DOC, sources: [ALIAS] } : { paso: stopped.id },
+        stopped.scopes_sources === true
+          ? { plan: DOC, sources: [ALIAS] }
+          : stopped.answer_contract === "batch-review"
+            ? { review: batchReview() }
+            : { paso: stopped.id },
     };
   }
 

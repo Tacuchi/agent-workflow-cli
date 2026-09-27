@@ -32,6 +32,7 @@ import {
   sessionNumericCode,
   sessionsSharingNumber,
 } from "../session-resolver.js";
+import { readWorkspaceLocalConfig } from "../workspace-local-config.js";
 import {
   type HubMarkerRefusal,
   type HubMarkerRewrite,
@@ -94,7 +95,15 @@ export async function planWorkspaceMigration(
   paths: PathsService,
 ): Promise<WorkspaceMigrationPlan> {
   const workspace = await resolveWorkspaceRootFrom(fs, paths);
-  const markers = planMarkers(await readHubFiles(fs, workspace), paths.blockMarkers());
+  const local = await readWorkspaceLocalConfig(
+    fs,
+    join(workspace, `.${paths.namespace}`, "local.json"),
+  );
+  const markers = planMarkers(
+    await readHubFiles(fs, workspace),
+    paths.blockMarkers(),
+    local.config?.sources ?? {},
+  );
   const recorded = await readRecord(fs, paths);
 
   const sentinels: SentinelSeed[] = [];
@@ -132,11 +141,12 @@ export async function planWorkspaceMigration(
 function planMarkers(
   hubs: readonly { path: string; text: string }[],
   current: ProjectBlockMarkers,
+  localSources: Readonly<Record<string, string>>,
 ): { rewrites: HubMarkerRewrite[]; conflicts: MigrationConflict[] } {
   const rewrites: HubMarkerRewrite[] = [];
   const conflicts: MigrationConflict[] = [];
   for (const hub of hubs) {
-    const outcome = planHubMarkers(hub.path, hub.text, current);
+    const outcome = planHubMarkers(hub.path, hub.text, current, localSources);
     if (outcome.kind === "rewrite") rewrites.push(outcome.rewrite);
     if (outcome.kind === "refused") {
       conflicts.push({

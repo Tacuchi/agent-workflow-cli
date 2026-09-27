@@ -48,6 +48,11 @@ import type { PathsService } from "./paths-service.js";
 import { resumePointOf } from "./plan-current-point.js";
 import { type HoldingRun, holdingRunOf, readHoldingRuns } from "./plan-open-run.js";
 import {
+  type DeclaredPlanPass,
+  planPassDeclarations,
+  standingOfPlanPasses,
+} from "./plan-passes.js";
+import {
   type DerivedPass,
   type ProductionStanding,
   derivePasses,
@@ -59,6 +64,7 @@ import { listPendingJournals } from "./retirement/journal.js";
 import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
 import { SessionsService } from "./sessions-service.js";
+import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
 import { type OrphanUnit, runWorktree } from "./worktree-service.js";
 
 /**
@@ -72,7 +78,7 @@ import { type OrphanUnit, runWorktree } from "./worktree-service.js";
  * Read-only by construction: nothing here opens a file for writing.
  */
 
-const SPEC_STATUSES = ["draft", "refining", "ready-for-plan"] as const;
+const SPEC_STATUSES = ["draft", "refining", "ready-for-plan", "superseded"] as const;
 
 /** Spec maturity: how ready the spec is for `plan-new` to design against it. */
 export type SpecStatus = (typeof SPEC_STATUSES)[number];
@@ -124,6 +130,8 @@ export interface IndexedSpec {
   slug: string;
   /** frontmatter `status:` when declared, else inferred from the legacy trace sections */
   status: SpecStatus;
+  /** Replacement spec path, when declared in frontmatter. */
+  superseded_by?: string;
   /** derived alias of `status === "ready-for-plan"`; kept for existing consumers */
   refined: boolean;
   open_questions: number;
@@ -219,6 +227,10 @@ export interface IndexedPlan {
    * finished thing the board could say.
    */
   production: ProductionStanding;
+  /** Operative passes, separate from tasks and from the plan's closure. */
+  passes?: DeclaredPlanPass[];
+  /** Exact source aliases used when suggesting a declaration in the ledger. */
+  pass_sources?: string[];
   date: string;
   relative: string;
 }
@@ -324,6 +336,7 @@ export type PipelineKind =
    * what made it invisible. It is listed last and it blocks nothing.
    */
   | "plan-handoff"
+  | "plan-pass"
   | "checkpoint-orphan";
 
 /**
@@ -577,6 +590,10 @@ export async function buildWorklineIndex(
   const livePlans = new Set(plans.map((plan) => formatNodeId({ kind: "plan", key: plan.number })));
   for (const plan of plans) {
     plan.production = productionStandingOf(passes, { kind: "plan", key: plan.number });
+    plan.passes = standingOfPlanPasses(plan.passes ?? [], passes, {
+      kind: "plan",
+      key: plan.number,
+    });
   }
   for (const spec of specs) {
     spec.production = foldProduction(
@@ -705,6 +722,7 @@ function derivePipeline(
 ): PipelineItem[] {
   const items: PipelineItem[] = [];
   for (const spec of specs) {
+    if (spec.status === "superseded") continue;
     const detail = specDetail(spec, plans);
     if (spec.status !== "ready-for-plan") {
       items.push(specItem(spec, 1, "spec-unrefined", "/w:spec-refine", detail));
@@ -718,7 +736,7 @@ function derivePipeline(
     // one `planIsPending` already applies: a plan can be open and live, or closed
     // and unshipped, and until the pass ledger existed the board could only see
     // the second half of that.
-    if (plan.production.axis === "in-production") continue;
+    if (plan.production.axis === "in-production" && !pendingPasses(plan).length) continue;
     items.push(planItem(plan, designs, cut));
   }
   return items.sort(comparePipeline);
@@ -843,7 +861,7 @@ function planItem(plan: IndexedPlan, designs: DesignGraph, cut: CutContext): Pip
   const place = placeOf(cut, plan);
   return {
     kind: presentation.kind,
-    priority: presentation.kind === "plan-handoff" ? 4 : 3,
+    priority: presentation.kind === "plan-handoff" || presentation.kind === "plan-pass" ? 4 : 3,
     file: plan.file,
     number: plan.number,
     slug: plan.slug,
@@ -888,6 +906,11 @@ function specItem(
 }
 
 function planSummary(plan: IndexedPlan): string {
+  const passes = pendingPasses(plan);
+  const first = passes[0];
+  if (plan.plan_state === "done" && first !== undefined) {
+    return `plan ${plan.number} — cerrado · pase a ${first.environment} ${first.version} ${first.state === "unregistered" ? "sin registrar" : "pendiente"}`;
+  }
   const handoffs = liveHandoffs(plan);
   // El único plan cerrado que llega acá: `planIsPending` deja fuera del pipeline
   // a todos los demás, y ésta es la línea de título de una fila del pipeline.
@@ -898,9 +921,23 @@ function planSummary(plan: IndexedPlan): string {
     return `plan ${plan.number} — cerrado · ${handoffs} traspaso(s) vigente(s)`;
   }
   const phases =
-    plan.phases_total > 0 ? `, fases ${plan.phases_validated}/${plan.phases_total}` : "";
+    plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
   const blocked = plan.phases_blocked > 0 ? `, ${plan.phases_blocked} bloqueada(s)` : "";
-  return `plan ${plan.number} — ${plan.progress_pct}%${phases}${blocked}`;
+  return `plan ${plan.number} — tareas ${plan.tasks_done}/${plan.tasks_total}${phases}${blocked}`;
+}
+
+function pendingPasses(plan: IndexedPlan): DeclaredPlanPass[] {
+  return (plan.passes ?? []).filter((pass) => pass.state !== "done");
+}
+
+function passCommand(plan: IndexedPlan, pass: DeclaredPlanPass): string {
+  if (pass.state === "unregistered") {
+    const aliases = plan.pass_sources?.length ? plan.pass_sources.join(",") : "<alias>";
+    return `aw release-pass declare --version ${pass.version} --sources ${aliases} --plans ${plan.number}`;
+  }
+  return pass.environment === "cert"
+    ? `aw release-pass applied --version ${pass.version} --environment cert --detail <hecho>`
+    : `aw release-pass arrived --version ${pass.version} --source <alias> --kind <published-version|deployment|production-branch> --detail <hecho>`;
 }
 
 // ── per-item detail: the single derivation both surfaces read ─────────────────
@@ -920,6 +957,15 @@ function specIsPlanned(spec: IndexedSpec, plans: readonly IndexedPlan[]): boolea
  * read-only view, which is exactly what this projection may not do.
  */
 export function specDetail(spec: IndexedSpec, plans: readonly IndexedPlan[]): PipelineItemDetail {
+  if (spec.status === "superseded") {
+    const number = /^docs\/specs\/(\d{3,})-spec-[^/]+\.md$/.exec(spec.superseded_by ?? "")?.[1];
+    return {
+      objective: `spec ${spec.number}${spec.slug ? ` — ${spec.slug}` : ""}`,
+      progress: `status superseded${number ? ` · reemplazada por ${number}` : ""}`,
+      next: number ? `reemplazada por ${number}` : "spec reemplazada",
+      obligation: false,
+    };
+  }
   const refine = spec.status !== "ready-for-plan";
   return {
     objective: `spec ${spec.number}${spec.slug ? ` — ${spec.slug}` : ""}`,
@@ -943,12 +989,31 @@ export function planPresentation(
     plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
   const base = {
     objective: `plan ${plan.number}${plan.slug ? ` — ${plan.slug}` : ""}`,
-    progress: `${plan.tasks_done}/${plan.tasks_total} tareas (${plan.progress_pct}%)${phases}`,
+    progress: `tareas ${plan.tasks_done}/${plan.tasks_total}${phases}`,
   };
   // A closed plan is documentary history.  In particular, a legacy plan with
   // no baseline seal is not retroactively made owing or executable merely
   // because a direct `resume <plan>` bypassed the pipeline's done filter.
   if (plan.plan_state === "done") {
+    const passes = pendingPasses(plan);
+    const first = passes[0];
+    if (first !== undefined) {
+      return {
+        kind: "plan-pass",
+        detail: {
+          ...base,
+          next: passes
+            .map(
+              (pass) =>
+                `cerrado · pase a ${pass.environment} ${pass.version} ${pass.state === "unregistered" ? "sin registrar" : "pendiente"}`,
+            )
+            .join(" · "),
+          obligation: false,
+          ...unverifiedClosure(plan),
+        },
+        action: { kind: "continue", command: passCommand(plan, first), mode: "settlement" },
+      };
+    }
     // The one live thing a closure does not settle. Its exit comes from the same
     // derivation the refusals use, so the row cannot name a different way out
     // from the one the seal and the board name.
@@ -1153,7 +1218,7 @@ function liveHandoffs(plan: IndexedPlan): number {
  * printing its live handoff.
  */
 export function planIsPending(plan: IndexedPlan): boolean {
-  return plan.plan_state !== "done" || liveHandoffs(plan) > 0;
+  return plan.plan_state !== "done" || liveHandoffs(plan) > 0 || pendingPasses(plan).length > 0;
 }
 
 /** The live facts the shared exit is named from, gathered where they are read. */
@@ -1379,6 +1444,7 @@ async function readSpecs(
         number: f.number,
         slug: f.slug,
         status,
+        ...(status === "superseded" ? replacementOf(text) : {}),
         refined: status === "ready-for-plan",
         open_questions: countOpenQuestions(text),
         production: { axis: "no-record" },
@@ -1437,7 +1503,7 @@ const FRONTMATTER_ENTRY = /^([A-Za-z0-9_-]+):\s*(.*)$/;
  */
 type SpecFrontmatter =
   | { kind: "absent" | "malformed" }
-  | { kind: "present"; status: string | undefined };
+  | { kind: "present"; status: string | undefined; superseded_by: string | undefined };
 
 /**
  * Classify the `---` block at the top of the file and read its `status` scalar.
@@ -1449,7 +1515,18 @@ function parseSpecFrontmatter(text: string): SpecFrontmatter {
   if ((lines[0] ?? "").trim() !== FRONTMATTER_FENCE) return { kind: "absent" };
   const end = lines.findIndex((l, i) => i > 0 && l.trim() === FRONTMATTER_FENCE);
   if (end === -1) return { kind: "malformed" };
-  return { kind: "present", status: readScalar(lines.slice(1, end), "status") };
+  return {
+    kind: "present",
+    status: readScalar(lines.slice(1, end), "status"),
+    superseded_by: readScalar(lines.slice(1, end), "superseded_by"),
+  };
+}
+
+function replacementOf(text: string): Pick<IndexedSpec, "superseded_by"> {
+  const frontmatter = parseSpecFrontmatter(text);
+  return frontmatter.kind === "present" && frontmatter.superseded_by !== undefined
+    ? { superseded_by: frontmatter.superseded_by }
+    : {};
 }
 
 function readScalar(lines: string[], key: string): string | undefined {
@@ -1582,6 +1659,8 @@ async function readPlans(
         // held by a SESSION, and the plans are read before the sessions are.
         holding_run: null,
         production: { axis: "no-record" },
+        passes: planPassDeclarations(text).map((pass) => ({ ...pass, state: "unregistered" })),
+        pass_sources: sourceAliasesOfPlan(text),
         date: ts.date,
         relative: ts.relative,
       });

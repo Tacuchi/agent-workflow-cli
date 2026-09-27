@@ -51,7 +51,7 @@ export type ReleasePassEvent =
       at: string;
       event: "applied";
       pass_version: string;
-      /** That the SQL this pass carries RAN against an environment. Its own axis. */
+      /** The pass ran in this environment (SQL or deployment). Its own axis. */
       application: SqlApplication;
     };
 
@@ -158,7 +158,7 @@ export async function recordArrival(
 }
 
 /**
- * Record that the SQL this pass carries ran against an environment.
+ * Record that this pass ran against an environment (its SQL or deployment).
  *
  * A fifth fact rather than a fifth arrival kind: it must not reach
  * `passStandingOf`, which crosses arrivals against the pass's CODE sources. An

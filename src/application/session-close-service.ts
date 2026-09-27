@@ -36,6 +36,8 @@ export interface SessionCloseInput {
    * being written over work no branch anybody reads contains.
    */
   requireIntegrated?: boolean;
+  /** Workspace-relative reservations still backing an unpublished proposal. */
+  preserveReservations?: readonly string[];
 }
 
 export interface SessionCloseOutput {
@@ -59,7 +61,13 @@ export interface SessionCloseOutput {
    * would be the one way this feature could lose work. So the close SAYS it,
    * and leaves the decision where it belongs.
    */
-  pending_integration?: Array<{ alias: string; branch: string; path: string; command: string }>;
+  pending_integration?: Array<{
+    alias: string;
+    branch: string;
+    path: string;
+    command: string;
+    dirty?: boolean | null;
+  }>;
   /**
    * How to get back to a session that closed still holding units.
    *
@@ -69,6 +77,8 @@ export interface SessionCloseOutput {
    * what keeps the remedy usable after the act that made it necessary.
    */
   reopen?: string;
+  /** Pending work preserved by the owning flow before closing at a boundary. */
+  pending_work?: string[];
   /**
    * Non-fatal, and never silent: the isolation state could not be read.
    *
@@ -201,7 +211,10 @@ export async function runSessionClose(
     ...(sqlPendingError === undefined ? {} : { sql_pending_export_error: sqlPendingError }),
   };
   reportHeld(sessionClose, session.folder, units);
-  reportReservations(sessionClose, await releaseReservations(fs, paths, session.folder));
+  reportReservations(
+    sessionClose,
+    await releaseReservations(fs, paths, session.folder, input.preserveReservations ?? []),
+  );
   // Last write of the session's life, and the one that matters most: whoever
   // opens a closed session months later reads the block, and a block left saying
   // "abierta" would be the closing act failing to record itself.
@@ -301,7 +314,7 @@ function refuseHeld(code: string, folder: string, units: HeldUnits): SessionClos
 
 /** Reads this workspace's live isolation units; absent when the caller has no git port. */
 export type IsolationReader = () => Promise<
-  Array<{ alias: string; session: string; path: string; branch: string }>
+  Array<{ alias: string; session: string; path: string; branch: string; dirty?: boolean | null }>
 >;
 
 /** What the session holds, and whether that reading could be made at all. */
@@ -340,6 +353,7 @@ async function heldUnits(
         alias: u.alias,
         branch: u.branch,
         path: u.path,
+        ...(u.dirty === undefined ? {} : { dirty: u.dirty }),
         command: `aw worktree integrate --source ${u.alias} --code ${folder}`,
       })),
   };
@@ -364,9 +378,11 @@ async function releaseReservations(
   fs: FileSystemPort,
   paths: PathsService,
   folder: string,
+  preserve: readonly string[],
 ): Promise<{ released: string[]; error?: string }> {
   const marker = reservationMarker(folder);
   const docs = join(paths.workspaceDir(), "docs");
+  const retained = new Set(preserve.map((path) => join(paths.workspaceDir(), path)));
   const released: string[] = [];
   try {
     if (!(await fs.exists(docs))) return { released };
@@ -374,7 +390,11 @@ async function releaseReservations(
       if (category.type !== "dir") continue;
       for (const entry of await fs.list(category.path)) {
         const correlative = leadingCorrelative(entry.name);
-        if ((entry.type !== "file" && entry.type !== "dir") || correlative === null) {
+        if (
+          (entry.type !== "file" && entry.type !== "dir") ||
+          correlative === null ||
+          retained.has(entry.path)
+        ) {
           continue;
         }
         if (entry.type === "dir") {

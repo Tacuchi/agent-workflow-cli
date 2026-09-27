@@ -126,7 +126,8 @@ const POLICIES: Record<ExportCategory, CategoryPolicy> = {
   },
 };
 
-const LIMITS = { max_artifacts: 64, max_artifact_bytes: 512 * 1024 };
+const FORWARD_MAX_BYTES = 512 * 1024;
+const LIMITS = { max_artifacts: 64, max_artifact_bytes: 4 * 1024 * 1024 };
 const SCRIPT_CATEGORIES = [
   "01-ddl-tablas",
   "02-ddl-funciones",
@@ -484,7 +485,7 @@ export async function prepareExport(
     },
     sealed: "el material del alcance o el destino declarado de la categoría",
     scope,
-    contract: `${policy.contract} Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN aprobado es el número publicado: nunca se reasigna en apply. Copiá 'scope' TAL CUAL, incluido scope.seal, en tu respuesta.${category === "scripts" ? " Declará decisions.supersedes y decisions.requires como listas de nombres de bundles existentes; NO incluyas bundle.json: lo genera el CLI con los digests del origen y lo sella en validate." : ""}`,
+    contract: `${policy.contract} Cada pieza divisible (incluidos forwards) admite ${FORWARD_MAX_BYTES} B y se divide en más archivos; un informe, README.md, RUNBOOK.md o rollback/00-global/00-ROLLBACK.sql admite hasta ${LIMITS.max_artifact_bytes} B. Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN aprobado es el número publicado: nunca se reasigna en apply. Copiá 'scope' TAL CUAL, incluido scope.seal, en tu respuesta.${category === "scripts" ? " Declará decisions.supersedes y decisions.requires como listas de nombres de bundles existentes; NO incluyas bundle.json: lo genera el CLI con los digests del origen y lo sella en validate." : ""}`,
     inventory,
     allowedDestinations: [
       unit,
@@ -1367,6 +1368,20 @@ function checkShape(
 
   const names = artifacts.map((a) => a.path.slice(unit.length + 1));
   for (const artifact of artifacts) {
+    const name = artifact.path.slice(unit.length + 1);
+    const indivisible =
+      policy.shape === "document" ||
+      ["README.md", "RUNBOOK.md", "00-ROLLBACK.sql", "rollback/00-global/00-ROLLBACK.sql"].includes(
+        name,
+      );
+    const bytes = Buffer.byteLength(artifact.content, "utf8");
+    if (!indivisible && bytes > FORWARD_MAX_BYTES) {
+      return {
+        code: "EXPORT_LIMIT_EXCEEDED",
+        message: `'${artifact.path}' pesa ${bytes} B y el máximo por pieza divisible es ${FORWARD_MAX_BYTES} B`,
+        action: "partí el forward en archivos NN-<nombre>.sql consecutivos y repetí validate",
+      };
+    }
     if (!policy.extensions.some((ext) => artifact.path.endsWith(ext))) {
       return reject(
         `'${artifact.path}' no usa una extensión permitida (${policy.extensions.join(", ")})`,

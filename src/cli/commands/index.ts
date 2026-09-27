@@ -5,6 +5,7 @@
 // directly (order here = order in the grouped `--help` listing).
 
 import type { CliCommand } from "../registry.js";
+import { addSourceCommand } from "./add-source.js";
 import { amendCommand } from "./amend.js";
 import { capabilityCommand } from "./capability.js";
 import { checkBranchCommand } from "./check-branch.js";
@@ -17,6 +18,7 @@ import { contextPlanCommand } from "./context-plan.js";
 import { cutIntentCommand } from "./cut-intent.js";
 import { designsCommand } from "./designs.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
+import { docBranchCommand } from "./doc-branch.js";
 import { doctorCommand } from "./doctor.js";
 import {
   exportDiagramsCommand,
@@ -54,6 +56,7 @@ import { sessionCreateCommand } from "./session-create.js";
 import { sessionResumeCommand } from "./session-resume.js";
 import { sessionsCommand } from "./sessions.js";
 import { setQaBranchCommand, setWorkingBranchCommand } from "./set-branch.js";
+import { setPipelineCommand } from "./set-pipeline.js";
 import { settleCommand } from "./settle.js";
 import { skillIndexCommand } from "./skill-index.js";
 import { skillsCommand } from "./skills.js";
@@ -83,6 +86,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   sessionCreateCommand,
   stackCommand,
   workspaceInitCommand,
+  addSourceCommand,
   skillIndexCommand,
   contextBudgetCommand,
   contextPlanCommand,
@@ -91,9 +95,11 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   flowCommand,
   designsCommand,
   sourcesCommand,
+  docBranchCommand,
   generateLaunchCommand,
   setWorkingBranchCommand,
   setQaBranchCommand,
+  setPipelineCommand,
   removeSourceCommand,
   gitFlowCommand,
   mergeStateCommand,

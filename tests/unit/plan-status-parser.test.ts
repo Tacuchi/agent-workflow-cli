@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parsePlanStatus } from "../../src/application/parsers/plan-status.js";
+import { parseTasks } from "../../src/application/parsers/tasks.js";
+import { planPassDeclarations } from "../../src/application/plan-passes.js";
 
 /** A plan-doc whose preamble (under the title) holds the given lines. */
 const planWithPreamble = (...preamble: string[]) =>
@@ -107,5 +109,30 @@ describe("parsePlanStatus — the plan's own state, told apart by position", () 
         ),
       ).assurance,
     ).toBe("unverified_accepted");
+  });
+});
+
+describe("el traspaso operativo queda fuera de las tareas", () => {
+  it("ignora casillas legadas y recoge sólo pases declarados fuera de fences", () => {
+    const text = [
+      "# Plan 007",
+      "## Tasks",
+      "- [x] T1",
+      "```markdown",
+      "## Handoff operativo",
+      "- [ ] ejemplo",
+      "```",
+      "- [x] T2",
+      "## Handoff operativo",
+      "- [ ] antiguo traspaso",
+      "- Pase a CERT: corte-1",
+      "```markdown",
+      "- Pase a prod: falso",
+      "```",
+      "## Validations",
+      "- [ ] T3",
+    ].join("\n");
+    expect(parseTasks(text)).toMatchObject({ total: 3, closed: 2, open: 1 });
+    expect(planPassDeclarations(text)).toEqual([{ environment: "cert", version: "corte-1" }]);
   });
 });

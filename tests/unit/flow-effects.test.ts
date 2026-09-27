@@ -41,9 +41,12 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
     // reason ownership is flipped: over the live rows the run's own bookkeeping
     // no longer stops, and this file's subject is the authorization net itself.
     journeyOfFlow: (flow: string) =>
-      real
-        .journeyOfFlow(flow as Parameters<typeof real.journeyOfFlow>[0])
-        .map((row) => ({ ...row, ownership: "cli-owned" as const, custody: undefined })),
+      real.journeyOfFlow(flow as Parameters<typeof real.journeyOfFlow>[0]).map((row) => ({
+        ...row,
+        ownership: "cli-owned" as const,
+        // Cerrar exercises the real run-owned close, not the denied effect.
+        custody: row.id === "chassis.finalize" ? row.custody : undefined,
+      })),
   };
 });
 
@@ -335,18 +338,17 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
     const directive = await walkToAuthorization();
     expect(directive.boundary.kind).toBe("authorization");
     const statePath = join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE);
-    const before = await readFile(statePath, "utf8");
-
     // The emitted alternative has to be answerable: demanding `--approval` to say
     // "no" would make `Cerrar` decorative.
     const declined = await answer(
       JSON.stringify({ input_digest: directive.state_digest, choice: "Cerrar" }),
     );
-    expect(declined.outcome).toBe("cancelled");
-    expect(declined.error?.code).toBe("FLOW_BOUNDARY_DECLINED");
+    expect(declined.error).toBeNull();
+    expect(declined.outcome).toBe("completed");
     expect(declined.effects.applied).not.toContain("execute");
     expect(declined.authorizations).not.toContain("execute");
-    expect(decidedState(await readFile(statePath, "utf8"))).toEqual(decidedState(before));
+    expect(JSON.parse(await readFile(statePath, "utf8")).applied.at(-1)).toBe("chassis.finalize");
+    expect(await fs.exists(join(paths.cwdSessionsDir(), SESSION, ".closed"))).toBe(true);
   });
 
   it("aprobar registra la autorización y el efecto, y recién entonces se aplica", async () => {

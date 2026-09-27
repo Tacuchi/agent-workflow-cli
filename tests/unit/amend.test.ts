@@ -8,6 +8,7 @@ import {
   amendmentsOf,
   revertAmendment,
 } from "../../src/application/amend-service.js";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { amendCommand } from "../../src/cli/commands/amend.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
@@ -182,6 +183,38 @@ describe("aw amend — la corrección directa de una redacción cerrada", () => 
     expect(await amendmentsOf(fs, paths, SPEC)).toEqual([]);
   });
 
+  it("reemplaza una spec draft, refining o ready-for-plan sin mover su contrato y lo registra", async () => {
+    for (const status of ["draft", "refining", "ready-for-plan"]) {
+      const original = specText.replace("ready-for-plan", status);
+      await writeFile(join(workdir, SPEC), original, "utf8");
+      const applied = await amendDocument(fs, env, paths, {
+        target: SPEC,
+        from: `status: ${status}\n---`,
+        to: "status: superseded\nsuperseded_by: docs/specs/042-spec-nueva.md\n---",
+        declaration: "esta spec fue reemplazada sin mover criterios ni reglas",
+      });
+      if (applied.status === "failed") throw new Error(applied.failure.message);
+      expect(await read(SPEC)).toContain("status: superseded\nsuperseded_by:");
+      expect(functionalSpecDigest(await read(SPEC))).toBe(functionalSpecDigest(original));
+    }
+    expect(
+      (await amendmentsOf(fs, paths, SPEC)).filter((event) => event.event === "amended"),
+    ).toHaveLength(3);
+  });
+
+  it("una draft no puede pasar por amend cambiando el contrato junto con el estado", async () => {
+    const draft = specText.replace("ready-for-plan", "draft");
+    await writeFile(join(workdir, SPEC), draft, "utf8");
+    const refused = await amendDocument(fs, env, paths, {
+      target: SPEC,
+      from: "status: draft\n---\n\n# Spec 041 — ceremonia",
+      to: "status: superseded\n---\n\n# Spec 041 — otro contrato",
+      declaration: "se reemplazó",
+    });
+    expect(refused).toMatchObject({ status: "failed", failure: { code: "AMEND_TARGET_OPEN" } });
+    expect(await read(SPEC)).toBe(draft);
+  });
+
   it("rechaza lo que altera una cláusula de cierre del plan, aunque parezca redacción", async () => {
     const refused = await amendDocument(fs, env, paths, {
       target: PLAN,
@@ -239,6 +272,23 @@ describe("aw amend — la corrección directa de una redacción cerrada", () => 
     expect(refused.failure.code).toBe("AMEND_TARGET_OPEN");
     expect(refused.failure.action).toContain("el recorrido que lo tiene");
   });
+
+  it.each(["- B1 · isolated · F1", "lote ilegible"])(
+    "protege las filas declaradas aunque no formen una partición legible: %s",
+    async (row) => {
+      const text = planText.replace("- B1 · isolated · F1", row);
+      await writeFile(join(workdir, PLAN), text, "utf8");
+      const refused = await amendDocument(fs, env, paths, {
+        target: PLAN,
+        from: row,
+        to: `${row} modificado`,
+        declaration: "corrección editorial",
+      });
+      expect(refused.status).toBe("failed");
+      if (refused.status === "failed") expect(refused.failure.code).toBe("AMEND_CONTRACT_TOUCHED");
+      expect(await read(PLAN)).toBe(text);
+    },
+  );
 
   it("la reversión devuelve los bytes exactos y queda como su propio evento", async () => {
     const original = await read(PLAN);
