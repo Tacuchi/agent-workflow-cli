@@ -21,7 +21,9 @@ const GROUPS: readonly CommandGroup[] = [
       "session-create",
       "session-resume",
       "session-close",
+      "session-pause",
       "session-artifacts",
+      "workspace-commit",
     ],
   },
   {
@@ -138,6 +140,7 @@ const GROUPS: readonly CommandGroup[] = [
       "plugin-doctor",
       "plugin-cache",
       "host-doctor",
+      "history",
       "history-update",
       "release-data",
       "code-scan",

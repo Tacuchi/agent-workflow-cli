@@ -62,7 +62,7 @@ interface Walker {
 }
 
 const SESSION_MD = (slug: string) =>
-  `# SESSION — ${slug}-plan-new\n\n## Objective\ngenerar el plan de ${slug}\n\n## Success criteria\n- [ ] el plan declara sus fases verificables\n`;
+  `# SESSION — ${slug}-plan-new\n\n## Objective\ngenerar el plan de ${slug}\n\n## Origin\nSpec de prueba ${slug}\n\n## Success criteria\n- [ ] el plan declara sus fases verificables — razón: el plan puede quedar sin publicar en esta prueba\n`;
 
 const PLAN_BYTES = (slug: string) =>
   `# Plan — ${slug}\n\n> Standalone: plan de prueba de ${slug}\n> Estado: open\n\n## Origin\nspec ${slug}\n\n## Tasks\n\n### F1 — arranque\n> Estado: pendiente\n`;

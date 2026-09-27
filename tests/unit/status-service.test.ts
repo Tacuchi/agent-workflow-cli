@@ -78,6 +78,33 @@ function fullWorkspace(): FakeFs {
 // ── tests ──────────────────────────────────────────────────────────────────
 
 describe("runStatusCommand — full dashboard", () => {
+  it("avisa fila de otra máquina y colisión local con salida de renumerado", async () => {
+    const fs = fullWorkspace();
+    fs.file(
+      "/cwd/.workflow/HISTORY.md",
+      "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 001-remota-quick | 2026-01-01 | active | — |\n| 099-retirada-quick | 2026-01-01 | retired | — |\n",
+    );
+    const status = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(status.history_remote_rows).toEqual(["001-remota-quick"]);
+    expect(status.history_collisions).toContainEqual({
+      local: "001-spec-refine",
+      registered: "001-remota-quick",
+      action: "aw workspace-migrate --renumber",
+    });
+  });
+
+  it("una carpeta legacy y su fila normalizada son la misma sesión", async () => {
+    const fs = new FakeFs({ lenient: true });
+    fs.file("/cwd/.workflow/sessions/session007-triage/SESSION.md", "# SESSION\n");
+    fs.file(
+      "/cwd/.workflow/HISTORY.md",
+      "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 007-triage | 2026-01-01 | active | — |\n",
+    );
+    const status = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(status.history_remote_rows).toEqual([]);
+    expect(status.history_collisions).toEqual([]);
+  });
+
   it("usa la fecha más reciente entre HISTORY y CHECKPOINT y sólo la primera línea del nombre", async () => {
     const fs = fullWorkspace();
     fs.file(
@@ -182,6 +209,8 @@ describe("runStatusCommand — full dashboard", () => {
       plans: 1,
       sessions_active: 1,
       sessions_closed: 1,
+      sessions_paused: 0,
+      sessions_abandoned: 0,
       discarded: 2,
       pending: 3,
     });
@@ -775,7 +804,7 @@ describe("runStatusCommand — edge cases", () => {
     });
     expect(out.specs).toEqual([]);
     expect(out.plans).toEqual([]);
-    expect(out.sessions).toEqual({ active: [], closed: [] });
+    expect(out.sessions).toEqual({ active: [], closed: [], paused: [], abandoned: [] });
     expect(out.discarded).toEqual([]);
     expect(out.counts.specs).toBe(0);
   });

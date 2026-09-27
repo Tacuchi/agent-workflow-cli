@@ -28,6 +28,7 @@ import {
   checkFlow,
   submitFlow,
 } from "../../application/flow/submit.js";
+import { runWorkspaceCommit } from "../../application/workspace-commit-service.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -294,20 +295,24 @@ ${CHECKOUT}`,
             approval: approval ?? null,
             executor,
             git: ctx.git,
+            process: ctx.process,
           }),
         );
-      return project(
+      return await projectWithCommit(
+        ctx,
         await submitFlow(ctx.fs, ctx.paths, {
           ...session,
           raw: await readRequiredStdin(),
           approval: approval ?? null,
           executor,
           git: ctx.git,
+          process: ctx.process,
         }),
       );
     }
 
-    return project(
+    return await projectWithCommit(
+      ctx,
       await advanceFlow(ctx.fs, ctx.paths, {
         ...session,
         ...(flow !== undefined ? { flow } : {}),
@@ -440,4 +445,40 @@ function project(result: AdvanceFlowResult | SubmitFlowResult): CommandResult<Fl
   if ("session" in result)
     return failSessionResolution(result.session) as CommandResult<FlowResult>;
   return failSemantic(result.failure);
+}
+
+async function projectWithCommit(
+  ctx: CliContext,
+  result: AdvanceFlowResult | SubmitFlowResult,
+): Promise<CommandResult<FlowResult>> {
+  if (!result.ok || result.directive.boundary.transition !== "chassis.commit-choice")
+    return project(result);
+  const offer = await runWorkspaceCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
+    code: result.directive.session,
+  });
+  const directive = result.directive;
+  if ("error" in offer) {
+    return project({
+      ...result,
+      directive: {
+        ...directive,
+        next_action: `${directive.next_action} · commit no disponible: ${offer.error}`,
+      },
+    });
+  }
+  const proposal = offer.proposal;
+  const detail = `${proposal.message}; rutas: ${proposal.paths.join(", ")}; excluidas: ${proposal.excluded.join(", ") || "ninguna"}; digest ${proposal.approval}`;
+  return project({
+    ...result,
+    directive: {
+      ...directive,
+      workspace_commit_preview: proposal,
+      choices: directive.choices.map((choice) =>
+        choice.label === "Aprobar commit del workspace"
+          ? { ...choice, consequence: `${choice.consequence}. ${detail}` }
+          : choice,
+      ),
+      next_action: `${directive.next_action} · para aprobar incluí decisions.commit_approval: ${proposal.approval}`,
+    },
+  });
 }

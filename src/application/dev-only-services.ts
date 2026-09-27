@@ -28,7 +28,10 @@ import {
   appendClaimEvent,
   eligibleCorrelatives,
   isRevoked,
+  openClaimsOf,
   readClaimEvents,
+  releaseAlreadyRecorded,
+  wasPublished,
 } from "./claims-ledger.js";
 import { publishedCorrelatives } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
@@ -464,23 +467,62 @@ async function mintUnderLock(
         if (!(await fs.exists(markerPath)) || (await fs.list(directory)).length !== 1) continue;
         const held = await fs.readText(markerPath);
         if (held === mint.bytes || reservationOwnerOf(held) !== mint.owner) continue;
-        await appendClaimEvent(fs, paths, {
-          at: new Date().toISOString(),
-          event: "released",
-          claim: {
-            category: basename(target),
-            correlative: number,
-            name: mint.name,
-            owner: mint.owner,
-          },
-          cause: "aw next-number: nuevo material de la misma sesión liberó la reserva anterior",
-        });
+        const claim = {
+          category: basename(target),
+          correlative: number,
+          name: mint.name,
+          owner: mint.owner,
+        };
+        const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
+        if (
+          ledger.unreadable > 0 ||
+          isRevoked(ledger.events, claim) ||
+          wasPublished(ledger.events, claim)
+        ) {
+          throw new Error(
+            `la reserva ${number}-${mint.name} no puede liberarse con el ledger actual`,
+          );
+        }
+        if (!releaseAlreadyRecorded(ledger.events, claim)) {
+          await appendClaimEvent(fs, paths, {
+            at: new Date().toISOString(),
+            event: "released",
+            claim,
+            cause: "aw next-number: nuevo material de la misma sesión liberó la reserva anterior",
+          });
+        }
         await fs.remove(directory);
         state = await scan(fs, target, false, paths);
       }
     }
     const held = await heldReservation(fs, target, state.files, mint.name, mint.bytes, mint.folder);
     if (held !== null) {
+      const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
+      if (ledger.unreadable > 0) throw new Error("claims.jsonl no permite confirmar esta reserva");
+      const claim = {
+        category: basename(target),
+        correlative: held.nnn,
+        name: mint.name,
+        owner: mint.owner,
+      };
+      if (isRevoked(ledger.events, claim) || wasPublished(ledger.events, claim)) {
+        throw new Error(`la reserva ${held.nnn}-${mint.name} ya fue revocada o publicada`);
+      }
+      if (
+        !openClaimsOf(ledger.events, mint.owner).some(
+          (item) =>
+            item.correlative === held.nnn &&
+            item.name === mint.name &&
+            item.category === claim.category,
+        )
+      ) {
+        await appendClaimEvent(fs, paths, {
+          at: new Date().toISOString(),
+          event: "claimed",
+          claim,
+          cause: "reintento recuperó un marcador intacto anterior al append de claimed",
+        });
+      }
       return {
         ...state,
         next: held.nnn,
@@ -497,7 +539,9 @@ async function mintUnderLock(
   // permanent hole from exactly that. The disk cannot tell a number that was given
   // back from one that never existed; only the record can, which is why the
   // eligible set is read here and not derived from the directory listing.
-  const ledger = await readClaimEvents(fs, paths);
+  const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
+  if (ledger.unreadable > 0)
+    throw new Error("claims.jsonl tiene una transferencia o línea sin resolver");
   const reusable = eligibleCorrelatives(ledger.events, basename(target));
   // Each reusable correlative gets ONE attempt — it is a specific number, not a
   // starting point — and then `max + 1` gets the forward probe it always had.

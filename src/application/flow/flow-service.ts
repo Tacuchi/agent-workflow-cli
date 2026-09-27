@@ -162,11 +162,17 @@ export async function advanceFlow(
   // Deciding stopped at the first delegated step; executing continues past every
   // one of them this process owns. Two calls and not one loop, because the walk is
   // pure and the execution is not.
-  const driven = await driveInternalActions(fs, location, input.executor, {
-    ok: true,
-    state: applied.state,
-    value: applied.value,
-  });
+  const driven = await driveInternalActions(
+    fs,
+    location,
+    input.executor,
+    {
+      ok: true,
+      state: applied.state,
+      value: applied.value,
+    },
+    paths,
+  );
   if (!driven.ok) return { ok: false, failure: driven.failure };
   // After the lock, so the walk stays pure and the seal is long computed. The roots
   // are VERIFIED before being published, exactly as `submit` verifies its own.

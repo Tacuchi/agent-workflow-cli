@@ -72,7 +72,13 @@ export async function runHistoryUpdate(
   // Asked here as well as inside the primitive, and on purpose: the primitive
   // can only throw (its other caller holds the lock and reports the failure as
   // its own), while a command has a result to return and a reader to inform.
-  const fields = historyFields(input, session, code);
+  let fields = historyFields(input, session, code);
+  // A state-only repair does not roll the date of an already closed row back
+  // to the session's birth; an explicit --date still wins.
+  if (input.date === undefined && (await namesAnExistingRow(fs, paths, session?.folder ?? code))) {
+    const { date: _birthDate, ...preserved } = fields;
+    fields = preserved;
+  }
   const sharing = await sessionsSharingNumber(fs, paths, fields.code);
   if (sharing.length > 1) return { sessionError: sharedNumberError(fields.code, sharing) };
 
@@ -116,7 +122,7 @@ export function sharedNumberError(
     code: "SESSION_AMBIGUOUS",
     message: `el número ${sessionNumericCode(code) ?? code} lo comparten ${sharing.length} carpetas y el registro se indexa por número: escribir la fila de una pisaría la de la otra`,
     candidates: sharing,
-    action: `renombrá la carpeta legacy al modelo actual (\`NNN-<slug>\`) antes de registrar su fila: ${folders.join(", ")}`,
+    action: `ejecutá \`aw workspace-migrate --renumber\` antes de registrar la fila: ${folders.join(", ")}`,
   };
 }
 
@@ -198,8 +204,24 @@ export function historyFields(
 
 function validate(input: HistoryUpdateInput): HistoryUpdateError | null {
   if (!input.code || !input.state) return { error: "--code y --state son obligatorios" };
-  if (input.state !== "active" && input.state !== "closed") {
-    return { error: "state debe ser 'active' o 'closed'" };
+  const normalized = HISTORY_STATES[input.state];
+  if (normalized === undefined) {
+    return {
+      error: "state debe ser active, closed, abierta, activa, cerrada, pausada o abandonada",
+    };
   }
+  input.state = normalized;
   return null;
 }
+
+const HISTORY_STATES: Record<string, string> = {
+  active: "active",
+  closed: "closed",
+  abierta: "active",
+  activa: "active",
+  cerrada: "closed",
+  pausada: "paused",
+  abandonada: "abandoned",
+  paused: "paused",
+  abandoned: "abandoned",
+};

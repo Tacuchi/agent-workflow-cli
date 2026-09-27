@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -17,11 +18,13 @@ import {
   type LifecycleOptions,
   resolveLifecycleTarget,
 } from "./lifecycle-target.js";
+import { withCwdLock } from "./lock-service.js";
 import { parseMdValue } from "./markdown.js";
 import { type PathsService, resolveWorkspaceRoot } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { hashContextId } from "./session-binding-service.js";
 import { writeSessionNarrative } from "./session-narrative.js";
+import { readSessionState } from "./session-resolver.js";
 import type { SessionCandidate, SessionEntry } from "./session-resolver.js";
 
 // This module deliberately owns NO placeholder marker of its own. `_[AI:` used
@@ -112,6 +115,54 @@ export async function runCheckpointWrite(
   const now = options.now ?? new Date();
   const cpPath = join(session.path, "CHECKPOINT.md");
 
+  const locked = await withCwdLock(fs, paths, () =>
+    writeResolvedCheckpoint(fs, env, git, paths, session, options, now, cpPath),
+  );
+  if (!("error" in locked)) return locked;
+  const reason = `no se pudo escribir CHECKPOINT.md: ${locked.error}`;
+  const candidate: SessionCandidate = {
+    folder: session.folder,
+    code: session.code,
+    state: "active",
+  };
+  const refugePath = await writeRefugeCheckpoint(fs, paths, {
+    reason,
+    action: `reintentá 'aw checkpoint-write --code ${session.folder}'`,
+    candidates: [candidate],
+    unique: true,
+    ...(options.contextId === undefined ? {} : { contextId: options.contextId }),
+    now,
+  });
+  return {
+    skipped: true,
+    reason,
+    continuity: "degraded",
+    primary_session: null,
+    active_sessions: [session.folder],
+    candidates: [candidate],
+    action: `aw checkpoint-write --code ${session.folder}`,
+    refuge_path: refugePath,
+  };
+}
+
+async function writeResolvedCheckpoint(
+  fs: FileSystemPort,
+  env: EnvPort,
+  git: GitPort,
+  paths: PathsService,
+  session: SessionEntry,
+  options: CheckpointWriteOptions,
+  now: Date,
+  cpPath: string,
+): Promise<CheckpointWriteResult> {
+  if ((await readSessionState(fs, session.path)) !== "active") {
+    return {
+      session: session.folder,
+      checkpoint_path: cpPath,
+      skipped: true,
+      reason: "sesión cerrada",
+    };
+  }
   if (await hasContentToPreserve(fs, cpPath, options.force === true)) {
     // Adoption runs even here: preservation protects written prose from being
     // REGENERATED, and folding a refuge in only appends to it.
@@ -225,21 +276,50 @@ export async function runAutoCompactOnClose(
       ...sweptField(await sweepRefuges(fs, paths, now)),
     };
   }
-  const workspaceRoot = await resolveWorkspaceRoot(fs, env, paths);
-  const entry = await writeCheckpointForTarget(fs, git, workspaceRoot, target.session);
-  // Only over a checkpoint that exists: `writeCheckpointForTarget` reports its
-  // own failure instead of throwing, and appending a refuge to a file that was
-  // never written would file the parked state under a session line nobody wrote.
-  if (entry.error === undefined) {
-    const adopted = await adoptRefuge(fs, paths, target.session, adoptionScope(options, now));
-    // After adopting, never before: the conversation's own refuge can be
-    // sweepable and adoptable at once, and sweeping first would discard it.
-    return {
-      checkpoints_written: [{ ...entry, ...adoptedField(adopted.adopted) }],
-      ...sweptField(await sweepRefuges(fs, paths, now)),
-    };
-  }
-  return { checkpoints_written: [entry], ...sweptField(await sweepRefuges(fs, paths, now)) };
+  const locked = await withCwdLock(fs, paths, async (): Promise<AutoCompactOnCloseOutput> => {
+    if ((await readSessionState(fs, target.session.path)) !== "active") {
+      return {
+        checkpoints_written: [
+          { session: target.session.folder, skipped: true, reason: "sesión cerrada" },
+        ],
+      };
+    }
+    const workspaceRoot = await resolveWorkspaceRoot(fs, env, paths);
+    const entry = await writeCheckpointForTarget(fs, git, workspaceRoot, target.session);
+    // Only over a checkpoint that exists: a failed write cannot adopt its refuge.
+    if (entry.error === undefined) {
+      const adopted = await adoptRefuge(fs, paths, target.session, adoptionScope(options, now));
+      return {
+        checkpoints_written: [{ ...entry, ...adoptedField(adopted.adopted) }],
+        ...sweptField(await sweepRefuges(fs, paths, now)),
+      };
+    }
+    return { checkpoints_written: [entry], ...sweptField(await sweepRefuges(fs, paths, now)) };
+  });
+  if (!("error" in locked)) return locked;
+  const reason = `no se pudo escribir CHECKPOINT.md: ${locked.error}`;
+  const candidate: SessionCandidate = {
+    folder: target.session.folder,
+    code: target.session.code,
+    state: "active",
+  };
+  const refugePath = await writeRefugeCheckpoint(fs, paths, {
+    reason,
+    action: `reintentá 'aw checkpoint-write --code ${target.session.folder}'`,
+    candidates: [candidate],
+    unique: true,
+    ...(options.contextId === undefined ? {} : { contextId: options.contextId }),
+    now,
+  });
+  return {
+    checkpoints_written: [{ session: target.session.folder, error: locked.error }],
+    continuity: "degraded",
+    primary_session: null,
+    reason,
+    candidates: [candidate],
+    action: `aw checkpoint-write --code ${target.session.folder}`,
+    refuge_path: refugePath,
+  };
 }
 
 async function writeCheckpointForTarget(
@@ -400,6 +480,8 @@ export interface RefugeCheckpointInput {
   contextId?: string;
   /** Injectable clock for the refuge's own `- Fecha:`. */
   now?: Date;
+  /** A lock loser must never overwrite a refuge another invocation is adopting. */
+  unique?: boolean;
 }
 
 /** One parked refuge, as read back from disk. */
@@ -427,7 +509,10 @@ export async function writeRefugeCheckpoint(
   const now = input.now ?? new Date();
   const digest = input.contextId !== undefined ? hashContextId(input.contextId) : null;
   const dir = paths.cwdSessionsRefugeDir();
-  const path = join(dir, `${digest ?? REFUGE_NO_CONVERSATION}.md`);
+  const path = join(
+    dir,
+    `${digest ?? REFUGE_NO_CONVERSATION}${input.unique ? `-${randomUUID()}` : ""}.md`,
+  );
   await fs.mkdirp(dir);
   await fs.writeText(path, refugeBody(input, now, digest));
   return relpath(path, paths.workspaceDir());
@@ -535,12 +620,17 @@ export async function sweepRefuges(
   fs: FileSystemPort,
   paths: PathsService,
   now: Date = new Date(),
+  apply = true,
 ): Promise<string[]> {
   const swept: string[] = [];
   try {
     const active = new Set((await findActiveSessions(fs, paths)).map((session) => session.folder));
     for (const refuge of await listRefugeCheckpoints(fs, paths)) {
       if (!refugeSweepable(refuge, active, now)) continue;
+      if (!apply) {
+        swept.push(refuge.relative);
+        continue;
+      }
       try {
         await fs.remove(refuge.path);
         swept.push(refuge.relative);

@@ -7,15 +7,21 @@ import {
   appendClaimEvent,
   claimKey,
   completedClaimsIn,
+  eligibleCorrelatives,
   ledgerPath,
   openClaimsOf,
+  openOwnerOfSlot,
   readClaimEvents,
+  readClaimEventsRaw,
 } from "../../src/application/claims-ledger.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
+import { revokedFence } from "../../src/application/flow/internal-actions.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
+import { reservationMarker } from "../../src/domain/reservation.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+import { RecordingGit } from "../helpers/fake-git.js";
 
 /** Fails every ledger append, and nothing else. */
 class FailingAppendFs extends NodeFileSystem {
@@ -38,6 +44,202 @@ describe("claims ledger", () => {
   let paths: PathsService;
   let fs: NodeFileSystem;
   const OWNER = "201-alpha-plan-new";
+
+  it("un published nunca se vuelve elegible por un released posterior", async () => {
+    const claim = { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER };
+    for (const event of ["claimed", "published", "released"] as const) {
+      await appendClaimEvent(fs, paths, { at: "2026-01-01", event, claim });
+    }
+    expect(eligibleCorrelatives((await readClaimEvents(fs, paths)).events, "plans")).toEqual([]);
+  });
+
+  it("cierre reintentado tras fallar remove no anexa released dos veces", async () => {
+    const markerPath = join(workspace, "docs", "plans", "036-plan-x.md");
+    class FailRemoveOnce extends NodeFileSystem {
+      failed = false;
+      override async remove(path: string) {
+        if (path === markerPath && !this.failed) {
+          this.failed = true;
+          throw new Error("remove interrumpido");
+        }
+        await super.remove(path);
+      }
+    }
+    const unstable = new FailRemoveOnce();
+    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    mkdirSync(join(paths.cwdSessionsDir(), OWNER), { recursive: true });
+    writeFileSync(join(paths.cwdSessionsDir(), OWNER, "SESSION.md"), "# SESSION\n");
+    writeFileSync(markerPath, reservationMarker(OWNER));
+    const claim = { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER };
+    await appendClaimEvent(unstable, paths, { at: "2026-01-01", event: "claimed", claim });
+    const first = await runSessionClose(unstable, paths, { code: OWNER });
+    expect(first).toHaveProperty("sessionClose.reservations_error");
+    expect(existsSync(markerPath)).toBe(true);
+    const second = await runSessionClose(unstable, paths, { code: OWNER });
+    expect(second).toHaveProperty("sessionClose.reservations_released", [
+      "docs/plans/036-plan-x.md",
+    ]);
+    expect(
+      (await readClaimEvents(unstable, paths)).events.filter((event) => event.event === "released"),
+    ).toHaveLength(1);
+  });
+
+  it("dos vidas del mismo claim reciben cada una su propio released", async () => {
+    const markerPath = join(workspace, "docs", "plans", "036-plan-x.md");
+    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    mkdirSync(join(paths.cwdSessionsDir(), OWNER), { recursive: true });
+    writeFileSync(join(paths.cwdSessionsDir(), OWNER, "SESSION.md"), "# SESSION\n");
+    const claim = { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER };
+    for (let life = 0; life < 2; life += 1) {
+      writeFileSync(markerPath, reservationMarker(OWNER));
+      await appendClaimEvent(fs, paths, { at: `2026-01-0${life + 1}`, event: "claimed", claim });
+      await runSessionClose(fs, paths, { code: OWNER });
+    }
+    const events = (await readClaimEvents(fs, paths)).events;
+    expect(events.filter((event) => event.event === "released")).toHaveLength(2);
+    expect(openClaimsOf(events, OWNER)).toEqual([]);
+    expect(eligibleCorrelatives(events, "plans")).toEqual(["036"]);
+  });
+
+  it("una revocación ilegible bloquea publicar aunque su released cierre el claim", async () => {
+    const claim = { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER };
+    const rows = [
+      { version: 1, at: "2026-01-01", event: "claimed", claim },
+      { version: 1, at: "2026-01-02", event: "revokd", claim },
+      { version: 1, at: "2026-01-03", event: "released", claim },
+    ];
+    writeFileSync(ledgerPath(paths), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`);
+    const deps = { fs, env, paths, git: new RecordingGit() };
+    const refused = await revokedFence(deps, OWNER, ["docs/plans/036-plan-x.md"]);
+    expect(refused?.code).toBe("CLAIM_LEDGER_UNREADABLE");
+    expect(await revokedFence(deps, OWNER, ["README.md"])).toBeNull();
+  });
+
+  it("un reintento de claim repara el marcador anterior al evento claimed", async () => {
+    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    writeFileSync(join(workspace, "docs", "plans", "036-plan-x.md"), reservationMarker(OWNER));
+    const claimed = await runNextNumber(fs, env, paths, {
+      directory: "docs/plans",
+      claim: { name: "plan-x.md", owner: OWNER },
+    });
+    expect(claimed.claim_reused).toBe(true);
+    const read = await readClaimEvents(fs, paths);
+    expect(openClaimsOf(read.events, OWNER)).toEqual([
+      { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER },
+    ]);
+    const before = readFileSync(ledgerPath(paths), "utf8");
+    await runNextNumber(fs, env, paths, {
+      directory: "docs/plans",
+      claim: { name: "plan-x.md", owner: OWNER },
+    });
+    expect(readFileSync(ledgerPath(paths), "utf8")).toBe(before);
+  });
+
+  it("un evento desconocido no vuelve a hacer elegible un correlativo revocado", async () => {
+    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    writeFileSync(
+      ledgerPath(paths),
+      `${JSON.stringify({
+        version: 1,
+        at: "2026-01-01",
+        event: "revokd",
+        claim: { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER },
+      })}\n`,
+    );
+    const read = await readClaimEvents(fs, paths);
+    expect(read.unreadable).toBe(1);
+    await expect(
+      runNextNumber(fs, env, paths, {
+        directory: "docs/plans",
+        claim: { name: "plan-x.md", owner: OWNER },
+      }),
+    ).rejects.toThrow("claims.jsonl");
+  });
+
+  it("un released viejo tardío no libera la reserva transferida al dueño nuevo", async () => {
+    const claim = { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER };
+    const transfer = {
+      id: "transfer-vigente",
+      marker: "docs/plans/036-plan-x.md",
+      number: "036",
+      from: OWNER,
+      to: "210-alpha-plan-new",
+    };
+    for (const event of ["claimed", "transfer-intent", "transfer-confirmed", "released"] as const) {
+      await appendClaimEvent(fs, paths, {
+        at: "2026-01-01",
+        event,
+        claim,
+        ...(event.startsWith("transfer-") ? { transfer } : {}),
+      });
+    }
+    const events = (await readClaimEventsRaw(fs, paths)).events;
+    expect(openOwnerOfSlot(events, claim)?.owner).toBe(transfer.to);
+    expect(openClaimsOf(events, transfer.to)).toEqual([{ ...claim, owner: transfer.to }]);
+    expect(eligibleCorrelatives(events, "plans")).toEqual([]);
+  });
+
+  it.each([
+    {
+      step: "tras intención",
+      markerOwner: OWNER,
+      confirmed: false,
+      result: "transfer-cancelled",
+      owner: OWNER,
+    },
+    {
+      step: "tras marcador",
+      markerOwner: "210-alpha-plan-new",
+      confirmed: false,
+      result: "transfer-confirmed",
+      owner: "210-alpha-plan-new",
+    },
+    {
+      step: "tras confirmación",
+      markerOwner: "210-alpha-plan-new",
+      confirmed: true,
+      result: "transfer-confirmed",
+      owner: "210-alpha-plan-new",
+    },
+  ])(
+    "recupera caída $step sin duplicar dueños ni reescribir eventos",
+    async ({ markerOwner, confirmed, result, owner }) => {
+      const claim = { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER };
+      const transfer = {
+        id: "transfer-036",
+        marker: "docs/plans/036-plan-x.md",
+        number: "036",
+        from: OWNER,
+        to: "210-alpha-plan-new",
+      };
+      mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+      writeFileSync(join(workspace, transfer.marker), reservationMarker(markerOwner));
+      await appendClaimEvent(fs, paths, { at: "2026-01-01", event: "claimed", claim });
+      await appendClaimEvent(fs, paths, {
+        at: "2026-01-01",
+        event: "transfer-intent",
+        claim,
+        transfer,
+      });
+      if (confirmed)
+        await appendClaimEvent(fs, paths, {
+          at: "2026-01-01",
+          event: "transfer-confirmed",
+          claim,
+          transfer,
+        });
+      const before = readFileSync(ledgerPath(paths), "utf8");
+      const recovered = await readClaimEvents(fs, paths);
+      expect(recovered.unreadable).toBe(0);
+      expect(recovered.events.at(-1)?.event).toBe(result);
+      expect(openClaimsOf(recovered.events, owner)).toEqual([{ ...claim, owner }]);
+      expect(openClaimsOf(recovered.events, owner === OWNER ? transfer.to : OWNER)).toEqual([]);
+      const after = readFileSync(ledgerPath(paths), "utf8");
+      expect(after.startsWith(before)).toBe(true);
+      await readClaimEvents(fs, paths);
+      expect(readFileSync(ledgerPath(paths), "utf8")).toBe(after);
+    },
+  );
 
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "claims-ledger-"));

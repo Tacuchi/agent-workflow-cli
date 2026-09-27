@@ -25,6 +25,7 @@ import { prepareRetirement } from "../../src/application/retirement/prepare.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { recordPublication } from "../../src/application/session-custody-recorder.js";
 import { recordCommit, recordUnitTaken } from "../../src/application/session-custody-recorder.js";
+import { nextSessionCorrelative } from "../../src/application/session-resolver.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { runWorktree } from "../../src/application/worktree-service.js";
 import type { RetirementProposal } from "../../src/domain/retirement/proposal.js";
@@ -169,6 +170,9 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
     // Y la única superficie durable propia de Workline es la fila de HISTORY.
     expect(rowsFor(proposal.digest)).toBe(1);
+    expect(history()).toContain(`| ${folder} |`);
+    expect(history()).toMatch(new RegExp(`\\| ${folder} \\|[^\\n]*\\| retired \\|`));
+    expect(await nextSessionCorrelative(fs, paths)).not.toBe(folder.slice(0, 3));
     expect(history()).toContain("## Retiros");
     expect(history()).toContain("plan:024");
     // Ni journal, ni cuarentena, ni ref privado.
@@ -877,7 +881,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     });
     const next = await runNextNumber(fs, deps.env, paths, {
       directory: "docs/specs",
-      claim: { name: "spec-otra.md", owner: await session("nuevo-spec-new") },
+      claim: { name: "spec-otra.md", owner: await session("nuevo-quick") },
     });
 
     // Liberado y nunca publicado: el hueco se vuelve a llenar en vez de perderse.
@@ -1011,7 +1015,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
   });
 
   it("un reset devuelve el correlativo que su propia restauración vuelve a materializar", async () => {
-    const folder = await session("algo-spec-new");
+    const folder = await session("algo-quick");
     const held = await claim(folder, "spec-mia.md");
     const marker = readFileSync(join(workspace, held), "utf-8");
     // La sesión completó su propia reserva: el destino se sella en custodia con

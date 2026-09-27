@@ -1,6 +1,6 @@
 ---
 name: export-scripts
-description: "Consolidates pending SQL into a numbered `docs/scripts/` bundle: five forward categories and paired rollbacks in `rollback/`. Publishes the net final state from the declared base minus exclusions and applied bundles; never executes SQL or commits. Composes the `sql` capability. User-invoked via `/w:export-scripts`."
+description: "Consolidates pending SQL into a numbered `docs/scripts/` bundle: five forward categories and paired rollbacks. Publishes the net final state; never executes SQL. After publication the CLI offers a commit of explicit paths, only with approval. Composes `sql`. User-invoked via `/w:export-scripts`."
 ---
 
 # export-scripts — consolidated SQL bundle, simple and direct
@@ -111,7 +111,7 @@ For every forward `<categoría>/NN-<nombre>.sql`, write `rollback/<categoría>/N
 
 ### Step 8 — Write or report
 
-Publish through the three stages (`prepare` → `validate` → `apply --approval`); in plan mode, describe instead. **NEVER commit**. Summary: one line per file + the bundle path, naming the origin and what stayed out.
+Publish through the three stages (`prepare` → `validate` → `apply --approval`); in plan mode, describe instead. Once published, the CLI proposes `aw workspace-commit prepare --export <ruta>` and executes `apply --approval <digest>` only with explicit approval, with exact paths and no push. Summary: one line per file + the bundle path, naming the origin and what stayed out.
 
 ## Output location
 

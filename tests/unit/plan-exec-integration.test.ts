@@ -124,7 +124,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
       mkdirSync(dir, { recursive: true });
       writeFileSync(
         join(dir, "SESSION.md"),
-        `# SESSION — ${run.folder}\n\n## Objective\nejecutar ${run.plan}\n\n## Success criteria\n- [ ] la unidad se integra y se libera\n`,
+        `# SESSION — ${run.folder}\n\n## Objective\nejecutar ${run.plan}\n\n## Origin\nPlan de integración ${run.plan}\n\n## Success criteria\n- [ ] la unidad se integra y se libera — razón: esta prueba verifica el gate de unidades\n`,
       );
       writeFileSync(join(dir, "CHECKPOINT.md"), `# CHECKPOINT — ${run.folder}\n\n## Completed\n`);
     }

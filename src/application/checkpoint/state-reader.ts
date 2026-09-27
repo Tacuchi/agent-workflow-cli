@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { DirEntry, FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { localMinuteIso } from "../dates.js";
+import { parseMdSectionBilingual } from "../markdown.js";
 import { findArtifact, listExistingArtifacts } from "../session-artifacts.js";
 import { type FilesTouched, collectFilesTouched } from "./files-touched.js";
 
@@ -52,6 +53,16 @@ async function countTasks(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<{ open: number; closed: number; total: number }> {
+  const session = await findArtifact(sessionPath, "session", fs);
+  if (session) {
+    const criteria = parseMdSectionBilingual(await fs.readText(session), "Success criteria");
+    if (criteria) {
+      const open = (criteria.match(/^\s*[-*]\s*\[\s\]/gm) ?? []).length;
+      const closed = (criteria.match(/^\s*[-*]\s*\[[xX]\]/gm) ?? []).length;
+      if (open + closed > 0) return { open, closed, total: open + closed };
+    }
+  }
+  // Historical sessions can still carry TASKS.md; the current model doesn't.
   const path = await findArtifact(sessionPath, "tasks", fs);
   if (!path) return { open: 0, closed: 0, total: 0 };
   const text = await fs.readText(path);

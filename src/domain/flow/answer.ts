@@ -196,6 +196,8 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   FLOW_CHOICE_UNKNOWN: "envelope",
   FLOW_APPROVAL_MISSING: "envelope",
   FLOW_APPROVAL_MISMATCH: "envelope",
+  WORKSPACE_COMMIT_UNAVAILABLE: "envelope",
+  WORKSPACE_COMMIT_APPROVAL_INVALID: "envelope",
   FLOW_ACTION_MISMATCH: "envelope",
   // The execution verdict's own vocabulary: it judges a result that WAS read.
   FLOW_EXECUTION_NOT_COMPLETED: "evaluated",

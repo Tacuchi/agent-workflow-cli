@@ -26,6 +26,7 @@ import { readCustody } from "./session-custody-service.js";
 import {
   type SessionResolutionError,
   listSessionFolders,
+  readSessionState,
   resolveSessionTarget,
   sessionFolderMatches,
 } from "./session-resolver.js";
@@ -1413,7 +1414,7 @@ async function sessionStates(deps: WorktreeDeps): Promise<SessionStates> {
   for (const folder of folders) {
     // `.closed` is the only source of a session's state (the session resolver's
     // own rule); re-deriving it from anything else would let the two disagree.
-    if (!(await deps.fs.exists(join(folder.path, ".closed")))) active.add(folder.name);
+    if ((await readSessionState(deps.fs, folder.path)) === "active") active.add(folder.name);
   }
   return { known: new Set(folders.map((f) => f.name)), active };
 }

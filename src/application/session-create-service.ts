@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { CORRELATIVE_SOURCE } from "../domain/correlative.js";
+import { CORRELATIVE_SOURCE, correlativeValue, sameCorrelative } from "../domain/correlative.js";
 import { type CoreDocsCanon, coreDocumentDirectory } from "../domain/docs-canon.js";
 import { newRunState } from "../domain/flow/run-state.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
@@ -7,17 +7,29 @@ import type { CustodyArtifact } from "../domain/session/custody.js";
 import type { SessionType } from "../domain/types.js";
 import { type WorklineNodeId, nodeFromDocPath } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { GitPort } from "../ports/git.js";
 import { WORKLINE_FLOWS, type WorklineFlow } from "./capability/compose.js";
 import { localDateIso } from "./dates.js";
 import { resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { applyUnderLock, locateRun } from "./flow/run-state-service.js";
+import {
+  maxHistoryCorrelative,
+  maxHistoryCorrelativeFromText,
+  readHistoryRows,
+} from "./history-table.js";
+import { upsertHistoryRow } from "./history-update-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
 import { bindContextToSession, readBindingRegistry } from "./session-binding-service.js";
 import { recordFlowAdoption } from "./session-custody-recorder.js";
 import { baselineOf, birthCustody, custodyPath, writeCustody } from "./session-custody-service.js";
-import { nextSessionCorrelative } from "./session-resolver.js";
+import {
+  listSessionFolders,
+  nextSessionCorrelative,
+  readSessionState,
+  sessionNumericCode,
+} from "./session-resolver.js";
 import { renderSessionMarkdown } from "./templates/session.js";
 import {
   type WorklineMaterialization,
@@ -43,6 +55,8 @@ export interface SessionCreateInput {
    * and `discard/reset prepare` says so instead of guessing.
    */
   inputs?: readonly string[];
+  /** Explicit second invocation after a closed quick of the same descriptor was reported. */
+  allowRepeat?: boolean;
 }
 
 export interface SessionCreateRecordOutput {
@@ -67,6 +81,7 @@ export interface SessionCreateRecordOutput {
   inputs_from: InputsOrigin;
   /** The flow whose run was seeded, when the descriptor names one. */
   flow?: WorklineFlow;
+  registry_warning?: string;
   /** Why nothing was sealed, whenever the flow DID have a document to look for. */
   inputs_note?: string;
   origin?: string;
@@ -90,10 +105,28 @@ export async function runSessionCreate(
   fs: FileSystemPort,
   paths: PathsService,
   input: SessionCreateInput,
+  git?: GitPort,
 ): Promise<SessionCreateFullOutput | SessionCreateError> {
   const validated = validateInput(input);
   if ("error" in validated) return validated;
   const { type, name, objetivo } = validated;
+  const descriptor = sessionDescriptor(name);
+  if (flowOfDescriptor(descriptor) === null) {
+    return {
+      error: `--name debe terminar en un flujo reconocido: ${WORKLINE_FLOWS.map((flow) => `-${flow}`).join(", ")}`,
+      code: "SESSION_FLOW_SUFFIX_REQUIRED",
+    };
+  }
+  if (type === "quick" && input.allowRepeat !== true) {
+    for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+      if (!folder.name.endsWith(`-${descriptor}`)) continue;
+      if ((await readSessionState(fs, folder.path)) !== "closed") continue;
+      return {
+        error: `la quick '${folder.name}' ya cerró con ese nombre; revisá su trabajo antes de abrir otra y reintentá con --allow-repeat si es intencional`,
+        code: "SESSION_QUICK_REPEAT_CONFIRM",
+      };
+    }
+  }
 
   // The session's custody is a lifecycle reader of the core document graph.
   // Resolve it before looking for a derived input; a malformed or relocated
@@ -115,6 +148,8 @@ export async function runSessionCreate(
   // pretends to know what it received.
   const baselines = await readBaselines(fs, paths, declared.length > 0 ? declared : derived.paths);
   if ("error" in baselines) return baselines;
+  const registryWarning =
+    git === undefined ? undefined : await localRegistryWarning(fs, paths, git);
 
   // A successful session creation is a mutation.  Materialize only after every
   // validation/read has succeeded, so invalid input remains byte-identical even
@@ -159,6 +194,7 @@ export async function runSessionCreate(
   };
   if (derived.note !== undefined) record.inputs_note = derived.note;
   if (origin && origin.length > 0) record.origin = origin;
+  if (registryWarning !== undefined) record.registry_warning = registryWarning;
 
   const flow = flowOfDescriptor(name);
   if (flow !== null) {
@@ -168,6 +204,63 @@ export async function runSessionCreate(
   }
 
   return { sessionCreate: record };
+}
+
+async function localRegistryWarning(
+  fs: FileSystemPort,
+  paths: PathsService,
+  git: GitPort,
+): Promise<string | undefined> {
+  const root = paths.workspaceDir();
+  const file = paths.cwdHistoryFile();
+  const localText = (await fs.exists(file)) ? await fs.readText(file) : "";
+  const localRows = readHistoryRows(localText);
+  const collision = localRows.find((row, index) => {
+    const number = sessionNumericCode(row.key);
+    return (
+      number !== null &&
+      localRows.slice(index + 1).some((other) => {
+        const otherNumber = sessionNumericCode(other.key);
+        return (
+          otherNumber !== null && sameCorrelative(number, otherNumber) && other.key !== row.key
+        );
+      })
+    );
+  });
+  if (collision)
+    return `HISTORY registra el número ${sessionNumericCode(collision.key)} dos veces; aw workspace-migrate --renumber`;
+  if (!(await git.isGitRepo(root))) return "registro local sin upstream";
+  const branch = await git.currentBranch(root);
+  const upstream = branch ? await git.upstreamBranch(root, branch) : null;
+  if (upstream === null) return "registro local sin upstream";
+  const prefix = await git.repoPrefix(root);
+  if (prefix === null || git.readAtRef === undefined)
+    return "no se pudo comparar HISTORY con el upstream local";
+  const remoteText = await git.readAtRef(root, upstream, `${prefix}.${paths.namespace}/HISTORY.md`);
+  if (remoteText === null) return undefined;
+  const mismatched = readHistoryRows(remoteText).find((remoteRow) => {
+    const number = sessionNumericCode(remoteRow.key);
+    return (
+      number !== null &&
+      localRows.some((localRow) => {
+        const localNumber = sessionNumericCode(localRow.key);
+        return (
+          localNumber !== null &&
+          sameCorrelative(number, localNumber) &&
+          localRow.key !== remoteRow.key
+        );
+      })
+    );
+  });
+  if (mismatched)
+    return `HISTORY local comparte el número ${sessionNumericCode(mismatched.key)} con ${upstream} (${mismatched.key}); aw workspace-migrate --renumber`;
+  const remote = maxHistoryCorrelativeFromText(remoteText);
+  const local = await maxHistoryCorrelative(fs, paths.cwdHistoryFile());
+  const remoteValue = remote === null ? null : correlativeValue(remote);
+  const localValue = local === null ? null : correlativeValue(local);
+  return remoteValue !== null && (localValue === null || remoteValue > localValue)
+    ? `HISTORY local está detrás de ${upstream}: máximo local ${local ?? "ninguno"}, upstream ${remote}`
+    : undefined;
 }
 
 /**
@@ -444,6 +537,7 @@ async function claimSessionFolder(
     if (await fs.exists(sessionPath)) {
       return { ok: false, failure: { error: `Ya existe ${sessionPath}` } };
     }
+    const created = localDateIso(new Date());
     await fs.mkdirp(sessionPath);
     await writeCustody(
       fs,
@@ -453,9 +547,28 @@ async function claimSessionFolder(
         subjectPath: sessionPath,
         parents: parentsOf(artifacts, canon),
         artifacts,
-        created: localDateIso(new Date()),
+        created,
       }),
     );
+    // The number travels in the durable register from birth, while the same
+    // workspace lock still owns its claim. A failed row leaves no usable session.
+    try {
+      await upsertHistoryRow(fs, paths, {
+        code: number,
+        sesionName: folder,
+        date: created,
+        state: "active",
+      });
+    } catch (error) {
+      await fs.remove(sessionPath);
+      return {
+        ok: false,
+        failure: {
+          error: `no se pudo registrar ${folder} en HISTORY: ${error instanceof Error ? error.message : String(error)}`,
+          code: "SESSION_HISTORY_FAILED",
+        },
+      };
+    }
     if (id.length > 0) await bindContextToSession(fs, paths, id, folder);
     return {
       ok: true,

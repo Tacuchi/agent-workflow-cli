@@ -174,13 +174,7 @@ describe("cada rechazo de estado propone un comando que funciona en su estado", 
   });
 
   it("una sesión sin registro es la única que propone --adopt, y la adopta", async () => {
-    const created = await runSessionCreate(fs, paths, {
-      type: "quick",
-      name: "suelta",
-      objetivo: "una sesión que no nombra flow",
-    });
-    if ("error" in created) throw new Error(created.error);
-    session = created.sessionCreate.folder;
+    await rm(location().statePath);
     const refused = await refusal();
     expect(refused.code).toBe("FLOW_RUN_ABSENT");
     expect(refused.message).not.toContain("legacy");

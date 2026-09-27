@@ -126,12 +126,12 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     expect(result.sessionError.action.length).toBeGreaterThan(0);
   });
 
-  it("session-create --type exec --name ... --objetivo ... --from ... writes SESSION.md (no HISTORY, no project-block)", async () => {
+  it("session-create --type exec --name ... --objetivo ... --from ... escribe SESSION y registra el número", async () => {
     const { cwd, paths } = setup();
     const historyBefore = readFile(join(cwd, ".workflow", "HISTORY.md"));
     const result = await runSessionCreate(fs, paths, {
       type: "exec",
-      name: "session004-dev-nueva-tarea",
+      name: "session004-dev-nueva-tarea-plan-exec",
       objetivo: "Probar session-create del CLI TS",
       originRaw: "loop exec, docs/plan-004.md",
     });
@@ -142,9 +142,9 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     // Reusing 001 would hand it an identity that already resolves to the legacy
     // `session001-dev-foo` folder.
     expect(result.sessionCreate.type).toBe("exec");
-    expect(result.sessionCreate.name).toBe("session004-dev-nueva-tarea");
+    expect(result.sessionCreate.name).toBe("session004-dev-nueva-tarea-plan-exec");
     expect(result.sessionCreate.number).toBe("004");
-    expect(result.sessionCreate.folder).toBe("004-session004-dev-nueva-tarea");
+    expect(result.sessionCreate.folder).toBe("004-session004-dev-nueva-tarea-plan-exec");
     expect(result.sessionCreate.origin).toBe("loop exec, docs/plan-004.md");
 
     // Descriptor is SESSION.md (replaces the old per-flow OBJECTIVE.md).
@@ -152,15 +152,18 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
       cwd,
       ".workflow",
       "sessions",
-      "004-session004-dev-nueva-tarea",
+      "004-session004-dev-nueva-tarea-plan-exec",
       "SESSION.md",
     );
     expect(existsSync(sessionPath)).toBe(true);
     expect(result.sessionCreate.session_path).toBe(sessionPath);
     expect(readFile(sessionPath)).toEqual(loadGoldenFile("session-create-exec", "SESSION.md"));
 
-    // session-create no longer writes a per-session HISTORY row.
-    expect(readFile(join(cwd, ".workflow", "HISTORY.md"))).toEqual(historyBefore);
+    // La fila nace activa dentro del mismo candado que reclamó el número.
+    const historyAfter = readFile(join(cwd, ".workflow", "HISTORY.md"));
+    expect(historyAfter).not.toBe(historyBefore);
+    expect(historyAfter).toContain("| 004-session004-dev-nueva-tarea-plan-exec |");
+    expect(historyAfter).toContain("| active | — |");
     // session-create no longer touches the project block (sessions are internal/light).
     const claudeAfter = readFile(join(cwd, "CLAUDE.md"));
     expect(claudeAfter).not.toContain("session004-dev-nueva-tarea");
@@ -171,17 +174,17 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
 
     const first = await runSessionCreate(fs, paths, {
       type: "refine",
-      name: "spec-refine",
+      name: "control-spec-refine",
       objetivo: "control del loop de refinamiento",
     });
     const second = await runSessionCreate(fs, paths, {
       type: "research",
-      name: "spec-refine-research-winfacts",
+      name: "research-winfacts-spec-refine",
       objetivo: "investigar hechos de Windows",
     });
     const third = await runSessionCreate(fs, paths, {
       type: "refine",
-      name: "plan-new",
+      name: "control-plan-new",
       objetivo: "control del loop de planificación",
     });
     if ("error" in first || "error" in second || "error" in third) {
@@ -195,37 +198,37 @@ describe("Wave 1B write commands — golden parity (new model)", () => {
     // 001-003. Restarting at 001 here used to mint an identity that `001` already
     // resolved to (`session001-dev-foo`), which is the collision the monotonic
     // reading removes.
-    expect(first.sessionCreate.folder).toBe("004-spec-refine");
-    expect(second.sessionCreate.folder).toBe("005-spec-refine-research-winfacts");
-    expect(third.sessionCreate.folder).toBe("006-plan-new");
+    expect(first.sessionCreate.folder).toBe("004-control-spec-refine");
+    expect(second.sessionCreate.folder).toBe("005-research-winfacts-spec-refine");
+    expect(third.sessionCreate.folder).toBe("006-control-plan-new");
 
     // A descriptor that accidentally carries a leading NNN- is normalized, never doubled.
     const fourth = await runSessionCreate(fs, paths, {
       type: "quick",
-      name: "001-quick",
+      name: "001-control-quick",
       objetivo: "no debe duplicar el prefijo",
     });
     if ("error" in fourth) throw new Error("unexpected error");
-    expect(fourth.sessionCreate.folder).toBe("007-quick");
+    expect(fourth.sessionCreate.folder).toBe("007-control-quick");
   });
 
   it("session-create without --from renders the Origin placeholder", async () => {
     const { cwd, paths } = setup();
     const result = await runSessionCreate(fs, paths, {
       type: "research",
-      name: "investiga-x",
+      name: "investiga-x-quick",
       objetivo: "Investigar el patrón X",
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
     expect(result.sessionCreate.type).toBe("research");
     expect(result.sessionCreate.origin).toBeUndefined();
 
-    expect(result.sessionCreate.folder).toBe("004-investiga-x");
-    const obj = readFile(join(cwd, ".workflow", "sessions", "004-investiga-x", "SESSION.md"));
-    expect(obj).toContain("# SESSION — investiga-x");
+    expect(result.sessionCreate.folder).toBe("004-investiga-x-quick");
+    const obj = readFile(join(cwd, ".workflow", "sessions", "004-investiga-x-quick", "SESSION.md"));
+    expect(obj).toContain("# SESSION — investiga-x-quick");
     expect(obj).toContain("## Objective\nInvestigar el patrón X");
-    // `investiga-x` has no <slug>-<flow> suffix to read the type back from, so
-    // the declared type is persisted (loop descriptors omit the heading).
+    // Research remains the declared session type even when its descriptor
+    // carries a recognized flow suffix.
     expect(obj).toContain("## Type\nresearch");
     expect(obj).toContain("Who created it and from where");
   });

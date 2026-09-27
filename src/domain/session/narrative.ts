@@ -54,7 +54,7 @@ export interface NarrativeFact {
 }
 
 /** How far along the session itself is — derived, never declared. */
-export const SESSION_PHASES = ["abierta", "reanudada", "cerrada"] as const;
+export const SESSION_PHASES = ["abierta", "reanudada", "cerrada", "pausada", "abandonada"] as const;
 
 export type SessionPhase = (typeof SESSION_PHASES)[number];
 
@@ -121,6 +121,8 @@ export function renderNarrativeBlock(
   }
   if (narrative.next !== null) {
     lines.push(`- **Siguiente paso:** ${line(narrative.next, detail)}`);
+  } else if (narrative.phase === "cerrada" || narrative.phase === "abandonada") {
+    lines.push("- **Siguiente paso:** ninguno");
   }
   section(lines, "Qué pasó", narrative.sequence, detail);
   section(lines, "Tareas", narrative.tasks, detail);

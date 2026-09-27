@@ -136,6 +136,50 @@ export async function invalidateBindingsTo(
   return { ok: true, removed };
 }
 
+/** Rename only associations owned by the moved session; no stale folder remains. */
+export async function renameBindingsTo(
+  fs: FileSystemPort,
+  paths: PathsService,
+  from: string,
+  to: string,
+): Promise<number> {
+  const read = await readBindingRegistry(fs, paths);
+  if (!read.ok) throw new Error(read.reason);
+  const bindings = { ...read.registry.bindings };
+  let changed = 0;
+  for (const [key, value] of Object.entries(bindings)) {
+    if (value !== from) continue;
+    bindings[key] = to;
+    changed += 1;
+  }
+  if (changed > 0) await writeBindingRegistry(fs, paths, bindings);
+  return changed;
+}
+
+/** Undo only this conversation's tentative reopen binding, if it still points there. */
+export async function restoreBindingTo(
+  fs: FileSystemPort,
+  paths: PathsService,
+  contextId: string,
+  expected: string,
+  previous: string | null,
+): Promise<void> {
+  const read = await readBindingRegistry(fs, paths);
+  if (!read.ok) throw new Error(read.reason);
+  const key = hashContextId(contextId);
+  if (read.registry.bindings[key] !== expected) return;
+  const bindings = { ...read.registry.bindings };
+  if (previous === null) {
+    const remaining = Object.fromEntries(
+      Object.entries(bindings).filter(([entry]) => entry !== key),
+    );
+    await writeBindingRegistry(fs, paths, remaining);
+  } else {
+    bindings[key] = previous;
+    await writeBindingRegistry(fs, paths, bindings);
+  }
+}
+
 function emptyRegistry(): BindingRegistry {
   return { version: BINDINGS_VERSION, bindings: {} };
 }

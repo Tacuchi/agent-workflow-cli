@@ -1,4 +1,12 @@
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { GitCliAdapter } from "../../src/adapters/git-cli.js";
+import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { NodeProcess } from "../../src/adapters/node-process.js";
+import { readHistoryRows } from "../../src/application/history-table.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   hashContextId,
@@ -7,8 +15,10 @@ import {
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { resolveSessionTarget } from "../../src/application/session-resolver.js";
+import { planRenumber } from "../../src/application/workspace-migrate/plan.js";
 import type { DirEntry } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { RecordingGit } from "../helpers/fake-git.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 const paths = new PathsService(normalizeNamespace("workflow"), "/home/u", "/cwd");
@@ -42,6 +52,152 @@ async function bindingsOf(fs: MemFs): Promise<Record<string, string>> {
 }
 
 describe("create/create race — a number is never claimed twice", () => {
+  it("rechaza descriptor sin flujo y avisa antes de repetir una quick cerrada", async () => {
+    const fs = new MemFs({ lenient: true });
+    expect(
+      await runSessionCreate(fs, paths, { type: "quick", name: "sin-flujo", objetivo: "x" }),
+    ).toMatchObject({ code: "SESSION_FLOW_SUFFIX_REQUIRED" });
+    const first = await runSessionCreate(fs, paths, {
+      type: "quick",
+      name: "repetida-quick",
+      objetivo: "x",
+    });
+    if ("error" in first) throw new Error(first.error);
+    fs.file(
+      first.sessionCreate.session_path,
+      "# SESSION\n\n## Objective\nx\n\n## Origin\n- persona\n\n## Success criteria\n- [x] lista\n",
+    );
+    await runSessionClose(fs, paths, { code: first.sessionCreate.folder });
+    const duplicate = await runSessionCreate(fs, paths, {
+      type: "quick",
+      name: "repetida-quick",
+      objetivo: "x",
+    });
+    expect(duplicate).toMatchObject({ code: "SESSION_QUICK_REPEAT_CONFIRM" });
+    const accepted = await runSessionCreate(fs, paths, {
+      type: "quick",
+      name: "repetida-quick",
+      objetivo: "x",
+      allowRepeat: true,
+    });
+    if ("error" in accepted) throw new Error(accepted.error);
+    expect(accepted.sessionCreate.number).toBe("002");
+  });
+  it("avisa con un upstream ya traído en un repositorio real", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aw-session-upstream-"));
+    const bare = join(root, "remote.git");
+    const local = join(root, "local");
+    const other = join(root, "other");
+    const git = (cwd: string, ...args: string[]) =>
+      execFileSync("git", args, {
+        cwd,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "T",
+          GIT_AUTHOR_EMAIL: "t@example.com",
+          GIT_COMMITTER_NAME: "T",
+          GIT_COMMITTER_EMAIL: "t@example.com",
+        },
+        stdio: "pipe",
+      });
+    try {
+      mkdirSync(bare);
+      mkdirSync(local);
+      git(local, "init", "--quiet", "--initial-branch=main");
+      git(root, "init", "--bare", "--quiet", "--initial-branch=main", bare);
+      mkdirSync(join(local, ".workflow", "sessions"), { recursive: true });
+      writeFileSync(
+        join(local, ".workflow", "HISTORY.md"),
+        "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 008-anterior-quick | 2026-01-01 | closed | — |\n",
+      );
+      git(local, "add", ".workflow/HISTORY.md");
+      git(local, "commit", "-q", "-m", "base");
+      git(local, "remote", "add", "origin", bare);
+      git(local, "push", "-q", "-u", "origin", "main");
+      git(root, "clone", "-q", bare, other);
+      writeFileSync(
+        join(other, ".workflow", "HISTORY.md"),
+        "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 008-anterior-quick | 2026-01-01 | closed | — |\n| 009-remota-quick | 2026-01-02 | active | — |\n",
+      );
+      git(other, "add", ".workflow/HISTORY.md");
+      git(other, "commit", "-q", "-m", "sesión remota");
+      git(other, "push", "-q", "origin", "main");
+      git(local, "fetch", "-q", "origin");
+      const workPaths = new PathsService(normalizeNamespace("workflow"), root, local);
+      const result = await runSessionCreate(
+        new NodeFileSystem(),
+        workPaths,
+        {
+          type: "quick",
+          name: "local-quick",
+          objetivo: "probar registro",
+        },
+        new GitCliAdapter(new NodeProcess()),
+      );
+      if ("error" in result) throw new Error(result.error);
+      expect(result.sessionCreate.number).toBe("009");
+      expect(result.sessionCreate.registry_warning).toContain("HISTORY local está detrás");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("la fila nace activa con el número antes de publicar el resultado", async () => {
+    const fs = new MemFs({ lenient: true });
+    const result = await runSessionCreate(fs, paths, {
+      type: "quick",
+      name: "inicio-quick",
+      objetivo: "x",
+    });
+    if ("error" in result) throw new Error(result.error);
+    const rows = readHistoryRows(await fs.readText(paths.cwdHistoryFile()));
+    expect(rows).toMatchObject([{ key: result.sessionCreate.folder, state: "active" }]);
+  });
+
+  it("avisa de la última fila ya traída, sin fetch ni consulta remota", async () => {
+    const fs = seed(["008-anterior-quick"]);
+    class UpstreamGit extends RecordingGit {
+      override async upstreamBranch() {
+        return "refs/remotes/origin/main";
+      }
+      async readAtRef(_repo: string, _ref: string, path: string) {
+        expect(path).toBe(".workflow/HISTORY.md");
+        return "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 009-remota-quick | 2026-01-01 | active | — |\n";
+      }
+    }
+    const git = new UpstreamGit();
+    const result = await runSessionCreate(
+      fs,
+      paths,
+      { type: "quick", name: "local-quick", objetivo: "x" },
+      git,
+    );
+    if ("error" in result) throw new Error(result.error);
+    expect(result.sessionCreate.number).toBe("009");
+    expect(result.sessionCreate.registry_warning).toContain("HISTORY local está detrás");
+    expect((await planRenumber(fs, paths, git)).moves).toContainEqual({
+      from: result.sessionCreate.folder,
+      to: "010-local-quick",
+      reason: "registro-remoto",
+    });
+    class FurtherUpstreamGit extends UpstreamGit {
+      override async readAtRef(repo: string, ref: string, path: string) {
+        return `${await super.readAtRef(repo, ref, path)}| 010-otra-remota-quick | 2026-01-02 | active | — |\n`;
+      }
+    }
+    expect((await planRenumber(fs, paths, new FurtherUpstreamGit())).moves[0]?.to).toBe(
+      "011-local-quick",
+    );
+    expect(git.calls.some((call) => call.op === "fetch")).toBe(false);
+    const next = await runSessionCreate(
+      fs,
+      paths,
+      { type: "quick", name: "otra-quick", objetivo: "x" },
+      git,
+    );
+    if ("error" in next) throw new Error(next.error);
+    expect(next.sessionCreate.registry_warning).toContain("comparte el número 009");
+  });
   it("two concurrent creations never produce the same folder", async () => {
     const fs = new InterleavingFs({ lenient: true });
     const [a, b] = await Promise.all([

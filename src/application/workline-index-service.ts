@@ -274,7 +274,7 @@ export interface IndexedSession {
   path: string;
   type: string | null;
   summary: string;
-  state: "active" | "closed";
+  state: "active" | "closed" | "paused" | "abandoned";
   /**
    * The session's own reading of itself — `abierta`, `reanudada` or `cerrada`.
    *
@@ -1948,8 +1948,8 @@ async function readSessions(
       path: s.path,
       type: s.type ?? null,
       summary: s.summary ?? s.folder,
-      state: s.state === "closed" ? "closed" : "active",
-      phase: await readSessionPhase(fs, s.path, s.state === "closed"),
+      state: s.state,
+      phase: await readSessionPhase(fs, s.path, s.state),
       has_checkpoint: checkpoint !== null && checkpoint !== undefined,
       linked_doc: docs === null ? null : await readLinkedDoc(fs, primary, docs),
       date: ts.date,

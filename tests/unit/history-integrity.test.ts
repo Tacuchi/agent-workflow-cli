@@ -3,14 +3,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { localDateIso } from "../../src/application/dates.js";
+import { reconcileHistory } from "../../src/application/history-reconcile-service.js";
 import { runHistoryUpdate } from "../../src/application/history-update-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
-import { birthCustody, writeCustody } from "../../src/application/session-custody-service.js";
+import {
+  birthCustody,
+  withEffect,
+  writeCustody,
+} from "../../src/application/session-custody-service.js";
 import { resolveSessionTarget } from "../../src/application/session-resolver.js";
 import { SessionsService } from "../../src/application/sessions-service.js";
 import { historyUpdateCommand } from "../../src/cli/commands/history-update.js";
+import { historyCommand } from "../../src/cli/commands/history.js";
 import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -33,6 +40,132 @@ const sessionsDir = "/cwd/.workflow/sessions";
 const HISTORY = "/cwd/.workflow/HISTORY.md";
 const SLIM_TABLE =
   "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|--------|-------|--------|------|\n";
+
+describe("aw history reconcile", () => {
+  it("un HISTORY fallido tras el marcador se repara con las refs originales", async () => {
+    class HistoryFailsOnce extends MemFs {
+      private failed = false;
+      override async writeText(path: string, content: string) {
+        if (path === HISTORY && !this.failed) {
+          this.failed = true;
+          throw new Error("falló HISTORY");
+        }
+        await super.writeText(path, content);
+      }
+    }
+    const fs = new HistoryFailsOnce({ lenient: true });
+    const folder = "007-siete-quick";
+    const sessionPath = `${sessionsDir}/${folder}`;
+    fs.file(`${sessionPath}/SESSION.md`, `# SESSION — ${folder}\n`);
+    fs.file(HISTORY, SLIM_TABLE);
+    await writeCustody(
+      fs,
+      sessionPath,
+      withEffect(
+        birthCustody({
+          subject: { kind: "session", key: folder },
+          subjectPath: sessionPath,
+          parents: [],
+          artifacts: [],
+          created: "2025-02-01",
+        }),
+        {
+          kind: "artifact_published",
+          alias: null,
+          before: null,
+          after: null,
+          parents: [],
+          ref: null,
+          paths: ["docs/specs/007-spec.md"],
+          at: "2026-01-01",
+        },
+      ),
+    );
+    const first = await runSessionClose(fs, paths, { code: "007" });
+    expect(first).toHaveProperty("sessionClose.history_error", "falló HISTORY");
+    expect(await fs.exists(`${sessionPath}/.closed`)).toBe(true);
+    const retry = await runSessionClose(fs, paths, { code: "007" });
+    expect(retry).toHaveProperty("sessionClose.history.state", "closed");
+    expect(await fs.readText(HISTORY)).toContain("docs/specs/007-spec.md");
+  });
+  it("el cierre registra rutas publicadas y fecha del último cierre", async () => {
+    const folder = "007-siete-quick";
+    const fs = hub([folder], SLIM_TABLE);
+    const sessionPath = `${sessionsDir}/${folder}`;
+    await writeCustody(
+      fs,
+      sessionPath,
+      withEffect(
+        birthCustody({
+          subject: { kind: "session", key: folder },
+          subjectPath: sessionPath,
+          parents: [],
+          artifacts: [],
+          created: "2025-02-01",
+        }),
+        {
+          kind: "artifact_published",
+          alias: null,
+          before: null,
+          after: null,
+          parents: [],
+          ref: null,
+          paths: ["docs/specs/007-spec.md"],
+          at: "2026-01-01",
+        },
+      ),
+    );
+    await runSessionClose(fs, paths, { code: "007", refs: "commit:abcdef1234567890" });
+    const first = await fs.readText(HISTORY);
+    expect(first).toContain(
+      `| ${folder} | ${localDateIso(new Date())} | closed | commit abcdef123456, docs/specs/007-spec.md |`,
+    );
+    await runSessionClose(fs, paths, { code: "007" });
+    expect(await fs.readText(HISTORY)).toBe(first);
+  });
+  it("history-update acepta los nombres que presenta el Recorrido", async () => {
+    const fs = hub(["001-uno-quick"], SLIM_TABLE);
+    for (const [name, state] of [
+      ["abierta", "active"],
+      ["activa", "active"],
+      ["cerrada", "closed"],
+      ["pausada", "paused"],
+      ["abandonada", "abandoned"],
+    ]) {
+      const result = await runHistoryUpdate(fs, paths, { code: "001", state: name });
+      expect(result).toHaveProperty("state", state);
+    }
+  });
+
+  it("una custodia ilegible impide cerrar sin refs de las publicaciones", async () => {
+    const fs = hub(["006-seis-quick"], SLIM_TABLE);
+    fs.file(`${sessionsDir}/006-seis-quick/.custody.json`, "{");
+    const result = await runSessionClose(fs, paths, { code: "006" });
+    expect(result).toMatchObject({ code: "SESSION_CUSTODY_UNREADABLE" });
+    expect(await fs.exists(`${sessionsDir}/006-seis-quick/.closed`)).toBe(false);
+  });
+  it("nombra las filas faltantes y contradicciones, sin confundir retiros", async () => {
+    const fs = hub(
+      ["001-uno-quick", "002-dos-quick", "003-tres-quick"],
+      `${SLIM_TABLE}| 001-uno-quick | 2026-01-01 | active | — |\n| 002-dos-quick | 2026-01-01 | closed | — |\n| 004-cuatro-quick | 2026-01-01 | closed | — |\n| 099-retirada-quick | 2026-01-01 | retired | — |\n`,
+    );
+    fs.file(`${sessionsDir}/001-uno-quick/.closed`, "");
+    expect(await reconcileHistory(fs, paths)).toEqual({
+      missing_rows: ["003-tres-quick"],
+      contradictory_rows: [
+        { session: "001-uno-quick", state: "active", reason: "activa con marcador de cierre" },
+        { session: "002-dos-quick", state: "closed", reason: "cerrada sin marcador de cierre" },
+        { session: "004-cuatro-quick", state: "closed", reason: "sin carpeta local" },
+      ],
+    });
+    const command = await historyCommand.execute(parseArgv(["history", "reconcile"]), {
+      fs,
+      paths,
+    } as CliContext);
+    expect(command.ok).toBe(true);
+    expect(command.data).toEqual(await reconcileHistory(fs, paths));
+  });
+});
 
 function hub(folders: readonly string[], history?: string): MemFs {
   const fs = new MemFs({ lenient: true });
@@ -135,7 +268,7 @@ describe("la fecha de una fila es un hecho de la sesión, no del sistema de arch
     touch("2030-06-06T00:00:00Z");
     const closed = await runSessionClose(fs, realPaths, { code: "050" });
     if (!("sessionClose" in closed)) throw new Error(`unexpected: ${JSON.stringify(closed)}`);
-    expect(historyRow()).toBe("| 050-nueva-quick | 2026-01-05 | closed | — |");
+    expect(historyRow()).toBe(`| 050-nueva-quick | ${localDateIso(new Date())} | closed | — |`);
   });
 
   it("y volver a tocarla después no mueve la fila que ya se escribió", async () => {
@@ -145,7 +278,7 @@ describe("la fecha de una fila es un hecho de la sesión, no del sistema de arch
     const again = await runHistoryUpdate(fs, realPaths, { code: "050", state: "active" });
     expect("error" in again).toBe(false);
     expect(historyRow()).toBe(before.replace("closed", "active"));
-    expect(historyRow()).toContain("2026-01-05");
+    expect(historyRow()).toContain(localDateIso(new Date()));
   });
 
   it("una sesión anterior al registro de custodia conserva la fecha que el histórico ya tenía", async () => {
@@ -156,7 +289,7 @@ describe("la fecha de una fila es un hecho de la sesión, no del sistema de arch
     );
     touch("2030-06-06T00:00:00Z");
     await runSessionClose(fs, realPaths, { code: "050" });
-    expect(historyRow()).toBe("| 050-nueva-quick | 2025-11-11 | closed | — |");
+    expect(historyRow()).toBe(`| 050-nueva-quick | ${localDateIso(new Date())} | closed | — |`);
   });
 });
 
@@ -287,7 +420,7 @@ describe("un cierre que no puede registrarse no se aplica a medias", () => {
     const result = await runSessionClose(fs, paths, { code: "047-algo-quick" });
     if (!("sessionError" in result))
       throw new Error(`esperaba una negativa: ${JSON.stringify(result)}`);
-    expect(result.sessionError.action).toContain("renombrá");
+    expect(result.sessionError.action).toContain("--renumber");
     // Nada se movió: ni el centinela de cierre ni el registro.
     expect(await fs.exists(`${sessionsDir}/047-algo-quick/.closed`)).toBe(false);
     expect(await fs.readText(HISTORY)).toBe(SLIM_TABLE);
@@ -313,7 +446,7 @@ describe("cerrar dos veces actualiza una fila, nunca agrega una segunda", () => 
     await runSessionClose(fs, paths, { code: "047" });
     const text = await fs.readText(HISTORY);
     expect(text.match(/^\|.*047/gm)).toHaveLength(1);
-    expect(text).toContain("| 047-legacy-x | 2026-02-02 | closed | docs/x.md |");
+    expect(text).toContain(`| 047-legacy-x | ${localDateIso(new Date())} | closed | docs/x.md |`);
   });
 
   it("la fila nace dentro de la tabla aunque haya prosa debajo", async () => {

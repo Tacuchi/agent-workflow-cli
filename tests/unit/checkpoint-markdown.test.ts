@@ -66,7 +66,7 @@ describe("formatCheckpointMd — EN headings", () => {
     const md = formatCheckpointMd(baseState());
     expect(md).toContain("_No decisions recorded._");
     expect(md).toContain("_No uncommitted changes inside the scope above._");
-    expect(md).toContain("_progress unknown (TASKS.md missing or empty)_");
+    expect(md).toContain("_progress unknown (SESSION.md has no checklist)_");
   });
 
   it("renders progress with EN counter when tasks have totals", () => {
@@ -185,7 +185,7 @@ describe("isPristineCheckpoint", () => {
   // sentinel made of that string can never tell these two files apart.
   it("rejects a template whose placeholders were partially filled in", () => {
     const filled = formatCheckpointMd(baseState()).replace(
-      "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and the latest entry in DECISIONS.md.]_",
+      "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and DECISION.md.]_",
       "Cerré el guard de sobrescritura y lo probé con relleno parcial.",
     );
     expect(filled).toContain("_[AI:");

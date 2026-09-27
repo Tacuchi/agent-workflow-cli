@@ -156,7 +156,7 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
     await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
     await seedSession(
-      "# SESSION — prueba\n\n## Objective\nprobar\n\n## Success criteria\n- [ ] uno\n",
+      "# SESSION — prueba\n\n## Objective\nprobar\n\n## Origin\nPrueba del recorrido interno\n\n## Success criteria\n- [ ] uno — razón: esta prueba verifica el cierre interno\n",
     );
     executor = internalActionExecutor({
       fs,

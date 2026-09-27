@@ -12,12 +12,15 @@ export function runtimeGitignoreEntries(namespace: string): string[] {
     `.${namespace}/processes.json`,
     `.${namespace}/launch/`,
     `.${namespace}/local.json`,
+    `.${namespace}/renumber-pending.json`,
     "docs/logs/",
   ];
 }
 
 export const RUNTIME_GITIGNORE_HEADER =
   "# agent-workflow runtime (machine-specific — do not commit)";
+
+export const VISIBILITY_GITIGNORE = [".claude/settings.local.json*", ".codex/config.toml*"];
 
 export interface MaterializationEffect {
   kind: "gitignore" | "sessions" | "marker";
@@ -93,6 +96,11 @@ export class MaterializingWorkspaceFileSystem implements FileSystemPort {
 
   async readBytes(path: string): Promise<Uint8Array> {
     return await this.delegate.readBytes(path);
+  }
+
+  async rename(from: string, to: string): Promise<void> {
+    await this.beforeWorkspaceMutation(to);
+    await this.delegate.rename(from, to);
   }
 
   async writeText(path: string, content: string): Promise<void> {
@@ -309,6 +317,24 @@ export async function previewWorklineMaterialization(
       { kind: "marker", path: paths.cwdMarkerFile(), status: marked ? "existing" : "created" },
       { kind: "sessions", path: paths.cwdSessionsDir(), status: sessions ? "existing" : "created" },
     ],
+  };
+}
+
+/** Reconcile the same ignore policy on an existing workspace during workspace-init. */
+export async function reconcileRuntimeGitignore(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<MaterializationEffect> {
+  const root = paths.workspaceDir();
+  const file = join(root, ".gitignore");
+  if (!(await belongsToGit(fs, root))) return { kind: "gitignore", path: file, status: "skipped" };
+  const entries = runtimeGitignoreEntries(paths.namespace);
+  const before = await gitignoreEffectStatus(fs, root, entries);
+  const changed = await appendGitignoreEntries(fs, root, RUNTIME_GITIGNORE_HEADER, entries);
+  return {
+    kind: "gitignore",
+    path: file,
+    status: changed ? before : "existing",
   };
 }
 

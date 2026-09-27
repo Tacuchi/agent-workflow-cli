@@ -31,8 +31,10 @@ import type { RetirementProposal, RetirementRestore } from "../../domain/retirem
 import { baselineDigest } from "../../domain/session/custody.js";
 import { appendClaimEvent, claimKey, openClaimsOf, readClaimEvents } from "../claims-ledger.js";
 import { localDateIso } from "../dates.js";
+import { upsertHistoryRow } from "../history-update-service.js";
 import { withCwdLock } from "../lock-service.js";
 import { invalidateBindingsTo } from "../session-binding-service.js";
+import { parseSessionFolder, sessionNumericCode } from "../session-resolver.js";
 import { appendEvent, eventOf, hasEvent } from "./history-events.js";
 import {
   type RetirementJournal,
@@ -387,6 +389,17 @@ async function finish(
   const invalidated = await dropBindings(deps, proposal);
 
   await appendEvent(deps.fs, deps.paths, eventOf(proposal, (deps.now ?? (() => new Date()))()));
+  if (proposal.mode === "discard") {
+    for (const entry of proposal.closure.filter((item) => item.node.kind === "session")) {
+      const code = sessionNumericCode(entry.node.key);
+      if (code === null) continue;
+      await upsertHistoryRow(deps.fs, deps.paths, {
+        code,
+        sesionName: parseSessionFolder(entry.node.key).name,
+        state: "retired",
+      });
+    }
+  }
 
   // AFTER the row, and the order is the whole point. For a retirement with no git
   // side the row IS the commit point, so releasing before it would give a
@@ -465,7 +478,9 @@ async function releaseReservations(
   if (proposal.reservations.length === 0) return { released, held };
   // Read ONCE, before the loop: it is what keeps a retry from writing a second
   // `released` line for a claim the previous attempt already recorded.
-  const ledger = await readClaimEvents(deps.fs, deps.paths);
+  const ledger = await readClaimEvents(deps.fs, deps.paths, { lockHeld: true });
+  if (ledger.unreadable > 0)
+    throw new Error("claims.jsonl no permite reconciliar reservas todavía");
   for (const reservation of proposal.reservations) {
     // The sealed verdict decides FIRST. A slot the preview said would not be
     // freed is never reported as freed by this retirement, even when somebody

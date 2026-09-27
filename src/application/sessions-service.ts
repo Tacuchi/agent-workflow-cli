@@ -22,6 +22,8 @@ export interface ListSessionsOutput {
   sessions: SessionEntry[];
   active_count: number;
   closed_count: number;
+  paused_count: number;
+  abandoned_count: number;
   total_count: number;
   next_correlative: string;
   legacy?: SessionEntry[];
@@ -54,6 +56,8 @@ export class SessionsService {
 
     const activeCount = sessions.filter((s) => s.state === "active").length;
     const closedCount = sessions.filter((s) => s.state === "closed").length;
+    const pausedCount = sessions.filter((s) => s.state === "paused").length;
+    const abandonedCount = sessions.filter((s) => s.state === "abandoned").length;
 
     const filtered = applyFilter(sessions, input);
 
@@ -61,6 +65,8 @@ export class SessionsService {
       sessions: filtered,
       active_count: activeCount,
       closed_count: closedCount,
+      paused_count: pausedCount,
+      abandoned_count: abandonedCount,
       total_count: sessions.length,
       next_correlative: nextCorr,
     };

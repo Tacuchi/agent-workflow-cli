@@ -1,19 +1,37 @@
 import { describe, expect, it } from "vitest";
+import {
+  appendClaimEvent,
+  openClaimsOf,
+  readClaimEvents,
+} from "../../src/application/claims-ledger.js";
+import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { readHistoryRows } from "../../src/application/history-table.js";
 import { parseProjectBlock } from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
+import { runSessionClose } from "../../src/application/session-close-service.js";
 import { birthCustody, writeCustody } from "../../src/application/session-custody-service.js";
 import { nextSessionCorrelative } from "../../src/application/session-resolver.js";
 import { SessionsService } from "../../src/application/sessions-service.js";
-import { applyWorkspaceMigration } from "../../src/application/workspace-migrate/apply.js";
-import { planWorkspaceMigration } from "../../src/application/workspace-migrate/plan.js";
+import {
+  applyRenumber,
+  applyWorkspaceMigration,
+} from "../../src/application/workspace-migrate/apply.js";
+import {
+  planRenumber,
+  planWorkspaceMigration,
+} from "../../src/application/workspace-migrate/plan.js";
 import { workspaceMigrateCommand } from "../../src/cli/commands/workspace-migrate.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { newRunState, serializeRunState, withProposal } from "../../src/domain/flow/run-state.js";
+import { sealProposal } from "../../src/domain/proposal.js";
+import { reservationMarker } from "../../src/domain/reservation.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { dispatch } from "../helpers/dispatch.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+import { RecordingGit } from "../helpers/fake-git.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 /**
@@ -32,6 +50,424 @@ const paths = new PathsService(normalizeNamespace("workflow"), "/home/u", "/cwd"
 const SESSIONS = "/cwd/.workflow/sessions";
 const HISTORY = "/cwd/.workflow/HISTORY.md";
 const HUB = "/cwd/CLAUDE.md";
+
+describe("renumerado asistido de sesiones", () => {
+  it("reconoce y transfiere un marcador intacto que nació sin evento claimed", async () => {
+    const from = "009-local-quick";
+    const to = "010-local-quick";
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: from }],
+    });
+    fs.file("/cwd/docs/plans/002-pendiente.md", reservationMarker(from));
+    const result = await applyRenumber(fs, paths);
+    if ("error" in result) throw new Error(result.error);
+    expect(await fs.readText("/cwd/docs/plans/002-pendiente.md")).toBe(reservationMarker(to));
+    const events = (await readClaimEvents(fs, paths)).events;
+    expect(events.map((event) => event.event)).toEqual([
+      "claimed",
+      "transfer-intent",
+      "transfer-confirmed",
+    ]);
+    expect(openClaimsOf(events, from)).toEqual([]);
+    expect(openClaimsOf(events, to)).toHaveLength(1);
+    const closed = await runSessionClose(fs, paths, { code: to });
+    expect(closed).toHaveProperty("sessionClose.reservations_released", [
+      "docs/plans/002-pendiente.md",
+    ]);
+  });
+
+  it("compensa append fallido sin reescribir claims previos ni perder ninguna reserva", async () => {
+    class FailSecondConfirmation extends MemFs {
+      confirmations = 0;
+      override async appendText(path: string, content: string) {
+        if (
+          path === "/cwd/.workflow/claims.jsonl" &&
+          content.includes('"event":"transfer-confirmed"')
+        ) {
+          this.confirmations += 1;
+          if (this.confirmations === 2) throw new Error("confirmación interrumpida");
+        }
+        await super.appendText(path, content);
+      }
+    }
+    const from = "009-local-quick";
+    const to = "010-local-quick";
+    const fs = hub(
+      {
+        history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+        folders: [{ name: from }],
+      },
+      new FailSecondConfirmation({ lenient: true }),
+    );
+    for (const [number, name] of [
+      ["002", "uno.md"],
+      ["003", "dos.md"],
+    ] as [string, string][]) {
+      const claim = { category: "plans", correlative: number, name, owner: from };
+      fs.file(`/cwd/docs/plans/${number}-${name}`, reservationMarker(from));
+      await appendClaimEvent(fs, paths, { at: "2026-01-01", event: "claimed", claim });
+    }
+    const before = await fs.readText("/cwd/.workflow/claims.jsonl");
+    await expect(applyRenumber(fs, paths)).rejects.toThrow("confirmación interrumpida");
+    expect(await fs.exists(`${SESSIONS}/${from}/SESSION.md`)).toBe(true);
+    expect(await fs.exists(`${SESSIONS}/${to}`)).toBe(false);
+    expect(await fs.exists("/cwd/.workflow/renumber-pending.json")).toBe(false);
+    const after = await fs.readText("/cwd/.workflow/claims.jsonl");
+    expect(after.startsWith(before)).toBe(true);
+    const events = (await readClaimEvents(fs, paths)).events;
+    expect(openClaimsOf(events, from)).toHaveLength(2);
+    expect(openClaimsOf(events, to)).toEqual([]);
+    expect(await fs.readText("/cwd/docs/plans/002-uno.md")).toBe(reservationMarker(from));
+    expect(await fs.readText("/cwd/docs/plans/003-dos.md")).toBe(reservationMarker(from));
+  });
+
+  it.each(["intención", "marcador", "confirmación"])(
+    "recupera renumerado interrumpido tras %s y conserva un dueño",
+    async (step) => {
+      const from = "009-local-quick";
+      const to = "010-local-quick";
+      const marker = "/cwd/docs/plans/002-pendiente.md";
+      const claim = { category: "plans", correlative: "002", name: "pendiente.md", owner: from };
+      const transfer = {
+        id: "recover-002",
+        marker: "docs/plans/002-pendiente.md",
+        number: "002",
+        from,
+        to,
+      };
+      const fs = hub({
+        history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+        folders: [{ name: from }],
+      });
+      fs.file(marker, reservationMarker(from));
+      await appendClaimEvent(fs, paths, { at: "2026-01-01", event: "claimed", claim });
+      const body = {
+        version: 1 as const,
+        moves: [{ from, to, reason: "registro-remoto" as const }],
+        files: [
+          [HISTORY, await fs.readText(HISTORY)],
+          ["/cwd/.workflow/HISTORY.legacy.md", null],
+          [paths.cwdSessionBindingsFile(), null],
+          ["/cwd/.workflow/doc-branches.jsonl", null],
+          [`${SESSIONS}/${from}/.custody.json`, null],
+          [`${SESSIONS}/${from}/.flow-run.json`, null],
+          [paths.cwdFlowAttemptsFile(from), null],
+          [marker, reservationMarker(from)],
+        ],
+        transfers: [{ path: marker, before: reservationMarker(from), from, to, claim, transfer }],
+      };
+      fs.file(
+        "/cwd/.workflow/renumber-pending.json",
+        JSON.stringify({ ...body, digest: semanticDigest(body) }),
+      );
+      await appendClaimEvent(fs, paths, {
+        at: "2026-01-01",
+        event: "transfer-intent",
+        claim,
+        transfer,
+      });
+      if (step !== "intención") fs.file(marker, reservationMarker(to));
+      if (step === "confirmación")
+        await appendClaimEvent(fs, paths, {
+          at: "2026-01-01",
+          event: "transfer-confirmed",
+          claim,
+          transfer,
+        });
+      if (step === "confirmación") {
+        // También cubre una muerte dentro del movimiento de carpeta posterior
+        // a la confirmación de la reserva.
+        await fs.rename(`${SESSIONS}/${from}`, `${SESSIONS}/${to}`);
+      }
+
+      if (step === "intención") await planRenumber(fs, paths);
+      const first = await readClaimEvents(fs, paths);
+      expect(first.unreadable).toBe(0);
+      expect(await fs.exists("/cwd/.workflow/renumber-pending.json")).toBe(false);
+      const owner = step === "intención" ? from : to;
+      expect(openClaimsOf(first.events, owner)).toEqual([{ ...claim, owner }]);
+      expect(openClaimsOf(first.events, owner === from ? to : from)).toEqual([]);
+      expect(await fs.exists(`${SESSIONS}/${owner}/SESSION.md`)).toBe(true);
+      const ledger = await fs.readText("/cwd/.workflow/claims.jsonl");
+      await readClaimEvents(fs, paths);
+      expect(await fs.readText("/cwd/.workflow/claims.jsonl")).toBe(ledger);
+    },
+  );
+
+  it("no mueve una corrida con una propuesta sellada cuya base usa el número anterior", async () => {
+    const from = "009-local-quick";
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: from }],
+    });
+    const proposal = sealProposal({
+      operation: "quick.save",
+      artifacts: [{ path: "docs/plans/009-pendiente.md", content: "x", overwrite: false }],
+      bases: [],
+      effects: ["local_additive"],
+      requiresApproval: [],
+    });
+    fs.file(
+      `${SESSIONS}/${from}/.flow-run.json`,
+      serializeRunState(withProposal(newRunState("quick", from), proposal)),
+    );
+    expect((await planRenumber(fs, paths)).blocked[0]).toContain("propuesta pendiente");
+  });
+
+  it("transfiere una reserva vigente al nuevo propietario y el cierre la libera", async () => {
+    const from = "009-local-quick";
+    const to = "010-local-quick";
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: from }],
+    });
+    const claim = { category: "plans", correlative: "002", name: "pendiente.md", owner: from };
+    fs.file("/cwd/docs/plans/002-pendiente.md", `<!--  aw:reserva   ${from}   -->\n`);
+    await appendClaimEvent(fs, paths, { at: "2026-01-01T00:00:00Z", event: "claimed", claim });
+    const moved = await applyRenumber(fs, paths);
+    if ("error" in moved) throw new Error(moved.error);
+    expect(await fs.readText("/cwd/docs/plans/002-pendiente.md")).toBe(reservationMarker(to));
+    const events = (await readClaimEvents(fs, paths)).events;
+    expect(openClaimsOf(events, from)).toEqual([]);
+    expect(openClaimsOf(events, to)).toEqual([{ ...claim, owner: to }]);
+    const closed = await runSessionClose(fs, paths, { code: to });
+    expect(closed).toHaveProperty("sessionClose.reservations_released", [
+      "docs/plans/002-pendiente.md",
+    ]);
+  });
+
+  it("mueve las dos carpetas legacy cuando una tercera identidad llegó del remoto", async () => {
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: "session009-a" }, { name: "session009-b" }],
+    });
+    expect((await planRenumber(fs, paths)).moves).toEqual([
+      { from: "session009-a", to: "010-a", reason: "legacy" },
+      { from: "session009-b", to: "011-b", reason: "legacy" },
+    ]);
+    const result = await applyRenumber(fs, paths);
+    if ("error" in result) throw new Error(result.error);
+    expect(readHistoryRows(await fs.readText(HISTORY)).map((row) => row.key)).toEqual([
+      "009-remota-quick",
+      "010-a",
+      "011-b",
+    ]);
+  });
+
+  it("una única carpeta legacy con fila remota distinta también tiene salida", async () => {
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: "session009-local" }],
+    });
+    expect((await planRenumber(fs, paths)).moves).toEqual([
+      { from: "session009-local", to: "010-local", reason: "legacy" },
+    ]);
+    const moved = await applyRenumber(fs, paths);
+    if ("error" in moved) throw new Error(moved.error);
+    expect(readHistoryRows(await fs.readText(HISTORY)).map((row) => row.key)).toEqual([
+      "009-remota-quick",
+      "010-local",
+    ]);
+  });
+
+  it("resuelve también dos carpetas de la serie legacy con el mismo número", async () => {
+    const fs = hub({
+      history: history("| 009-a | 2026-01-01 | active | — |"),
+      folders: [{ name: "session009-a" }, { name: "session009-b" }],
+    });
+    expect((await planRenumber(fs, paths)).moves).toEqual([
+      { from: "session009-b", to: "010-b", reason: "legacy" },
+    ]);
+    const result = await applyRenumber(fs, paths);
+    if ("error" in result) throw new Error(result.error);
+    expect(await fs.exists(`${SESSIONS}/010-b/SESSION.md`)).toBe(true);
+    expect(readHistoryRows(await fs.readText(HISTORY)).map((row) => row.key)).toEqual([
+      "009-a",
+      "010-b",
+    ]);
+  });
+
+  it("rechaza mover una corrida que conserva su candado", async () => {
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: "009-local-quick" }],
+    });
+    fs.file(
+      `${SESSIONS}/009-local-quick/.flow-run.json.lock`,
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
+    );
+    expect((await planRenumber(fs, paths)).blocked[0]).toContain("corrida tiene el candado");
+    const applied = await applyRenumber(fs, paths);
+    expect(applied).toMatchObject({ moved: [] });
+    expect(await fs.exists(`${SESSIONS}/009-local-quick/SESSION.md`)).toBe(true);
+  });
+
+  it("revierte el conjunto si la segunda sesión no permite leer su custodia", async () => {
+    const fs = hub({
+      history: history(
+        "| 009-remota-quick | 2026-01-01 | active | — |",
+        "| 010-remota-quick | 2026-01-01 | active | — |",
+      ),
+      folders: [{ name: "009-local-quick" }, { name: "010-local-quick" }],
+    });
+    fs.file(`${SESSIONS}/010-local-quick/.custody.json`, "{");
+    const before = await fs.readText(HISTORY);
+    expect((await planRenumber(fs, paths)).moves).toHaveLength(2);
+    await expect(applyRenumber(fs, paths)).rejects.toThrow();
+    expect(await fs.readText(HISTORY)).toBe(before);
+    expect(await fs.exists(`${SESSIONS}/009-local-quick/SESSION.md`)).toBe(true);
+    expect(await fs.exists(`${SESSIONS}/010-local-quick/SESSION.md`)).toBe(true);
+    expect(await fs.exists(`${SESSIONS}/011-local-quick`)).toBe(false);
+  });
+
+  it("el rollback retira también el respaldo legacy creado por el primer movimiento", async () => {
+    const fs = hub({
+      history:
+        "# Session History\n\n| # | Flujo | Sesión | Fecha | Estado | Resumen | Refs |\n|---|---|---|---|---|---|---|\n| 009 | quick | remota-quick | 2026-01-01 | active | remota | — |\n| 010 | quick | otra-remota-quick | 2026-01-01 | active | remota | — |\n",
+      folders: [{ name: "009-local-quick" }, { name: "010-local-quick" }],
+    });
+    fs.file(`${SESSIONS}/010-local-quick/.custody.json`, "{");
+    const before = await fs.readText(HISTORY);
+    await expect(applyRenumber(fs, paths)).rejects.toThrow();
+    expect(await fs.exists("/cwd/.workflow/HISTORY.legacy.md")).toBe(false);
+    expect(await fs.readText(HISTORY)).toBe(before);
+  });
+
+  it("se niega si la sesión aún tiene una unidad de aislamiento viva", async () => {
+    const local = "009-local-quick";
+    const fs = hub({
+      claude:
+        "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /repos/cli | main |\n<!-- WORKFLOW-PROJECT-END -->",
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: local }],
+    });
+    const git = new RecordingGit({
+      worktrees: {
+        "/repos/cli": [
+          {
+            path: `/unidades/${local}`,
+            branch: `aw/${local}`,
+            head: "a".repeat(40),
+            main: false,
+            prunable: false,
+          },
+        ],
+      },
+    });
+    const preview = await planRenumber(fs, paths, git);
+    expect(preview.moves).toEqual([]);
+    expect(preview.blocked[0]).toContain("integrá o liberá");
+  });
+
+  it("resuelve la fila que llegó de otra máquina sin borrar esa identidad", async () => {
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: "009-local-quick" }],
+    });
+    expect((await planRenumber(fs, paths)).moves).toEqual([
+      { from: "009-local-quick", to: "010-local-quick", reason: "registro-remoto" },
+    ]);
+    const result = await applyRenumber(fs, paths);
+    if ("error" in result) throw new Error(result.error);
+    expect(readHistoryRows(await fs.readText(HISTORY)).map((row) => row.key)).toEqual([
+      "009-remota-quick",
+      "010-local-quick",
+    ]);
+  });
+
+  it("también retira la fila local slim escrita sin espacios", async () => {
+    const fs = hub({
+      history: `${SLIM_HEADER}|009-remota-quick|2026-01-01|active|—|\n|009-local-quick|2026-01-02|active|—|\n`,
+      folders: [{ name: "009-local-quick" }],
+    });
+    const result = await applyRenumber(fs, paths);
+    if ("error" in result) throw new Error(result.error);
+    expect(readHistoryRows(await fs.readText(HISTORY)).map((row) => row.key)).toEqual([
+      "009-remota-quick",
+      "010-local-quick",
+    ]);
+  });
+
+  it("resuelve serie legacy y fila remota, reescribiendo custodia, binding, corrida, contador y quick", async () => {
+    const local = "009-local-quick";
+    const next = "010-local-quick";
+    const fs = hub({
+      history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
+      folders: [{ name: "session009-antigua" }, { name: local }],
+    });
+    const session = `${SESSIONS}/${local}`;
+    await writeCustody(
+      fs,
+      session,
+      birthCustody({
+        subject: { kind: "session", key: local },
+        subjectPath: session,
+        parents: [],
+        artifacts: [],
+        created: "2026-01-02",
+      }),
+    );
+    fs.file(`${session}/.flow-run.json`, serializeRunState(newRunState("quick", local)));
+    fs.file(
+      paths.cwdFlowAttemptsFile(local),
+      JSON.stringify({
+        version: 2,
+        session: local,
+        attempts: {},
+        granted: {},
+        digest: semanticDigest({ version: 2, session: local, attempts: {}, granted: {} }),
+      }),
+    );
+    fs.file(
+      paths.cwdSessionBindingsFile(),
+      JSON.stringify({ version: 1, bindings: { hash: local } }),
+    );
+    fs.file(
+      "/cwd/.workflow/doc-branches.jsonl",
+      `${JSON.stringify({ version: 1, at: "2026-01-02", doc: { kind: "quick", key: local }, source: "cli", branch: "main", by: local, outcome: "existing" })}\n`,
+    );
+    expect((await planRenumber(fs, paths)).moves).toEqual([
+      { from: local, to: next, reason: "legacy" },
+      { from: "session009-antigua", to: "011-antigua", reason: "legacy" },
+    ]);
+    const preview = await workspaceMigrateCommand.execute(
+      parseArgv(["workspace-migrate", "--renumber"]),
+      context(fs),
+    );
+    expect(preview.data).toMatchObject({
+      action: "renumber-preview",
+      moves: [
+        { from: local, to: next },
+        { from: "session009-antigua", to: "011-antigua" },
+      ],
+    });
+    const result = await applyRenumber(fs, paths);
+    if ("error" in result) throw new Error(result.error);
+    expect(result.moved).toHaveLength(2);
+    expect(await fs.exists(session)).toBe(false);
+    expect(await fs.exists(`${SESSIONS}/${next}/SESSION.md`)).toBe(true);
+    expect(await fs.exists(paths.cwdFlowAttemptsFile(next))).toBe(true);
+    expect(JSON.parse(await fs.readText(paths.cwdFlowAttemptsFile(next))).session).toBe(next);
+    expect(JSON.parse(await fs.readText(`${SESSIONS}/${next}/.custody.json`)).subject.key).toBe(
+      next,
+    );
+    expect(JSON.parse(await fs.readText(`${SESSIONS}/${next}/.flow-run.json`)).session).toBe(next);
+    const resumed = await readRun(fs, locateRun(paths, next));
+    if (!resumed.ok) throw new Error(JSON.stringify(resumed.failure));
+    expect(JSON.parse(await fs.readText(paths.cwdSessionBindingsFile())).bindings.hash).toBe(next);
+    expect(
+      JSON.parse((await fs.readText("/cwd/.workflow/doc-branches.jsonl")).trim()).doc.key,
+    ).toBe(next);
+    expect(readHistoryRows(await fs.readText(HISTORY)).map((row) => row.key)).toContain(next);
+    expect(readHistoryRows(await fs.readText(HISTORY)).map((row) => row.key)).toContain(
+      "009-remota-quick",
+    );
+    expect(await fs.exists(`${SESSIONS}/011-antigua/SESSION.md`)).toBe(true);
+    const closed = await runSessionClose(fs, paths, { code: next });
+    expect(closed).toHaveProperty("sessionClose.closed", true);
+  });
+});
 
 const RICH_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
 ## Proyecto
@@ -88,12 +524,14 @@ interface Folder {
   closed?: boolean;
 }
 
-function hub(options: {
-  claude?: string;
-  history?: string;
-  folders?: readonly Folder[];
-}): MemFs {
-  const fs = new MemFs({ lenient: true });
+function hub(
+  options: {
+    claude?: string;
+    history?: string;
+    folders?: readonly Folder[];
+  },
+  fs: MemFs = new MemFs({ lenient: true }),
+): MemFs {
   fs.file(HISTORY, options.history ?? history());
   if (options.claude !== undefined) fs.file(HUB, options.claude);
   for (const folder of options.folders ?? []) {

@@ -203,6 +203,16 @@ export interface FlowDirective {
   action: DelegatedAction | null;
   /** Non-empty exactly at a human or authorization boundary. */
   choices: FlowChoice[];
+  /** Host-local preview of the pathspec being approved at the closing gate. */
+  workspace_commit_preview?: {
+    repo: string;
+    branch: string;
+    head: string;
+    message: string;
+    paths: string[];
+    excluded: string[];
+    approval: string;
+  };
   /**
    * Present exactly at a boundary that decides a sealed local proposal: what
    * lands where, how much it weighs and what it replaces.

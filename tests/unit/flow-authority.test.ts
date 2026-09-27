@@ -81,6 +81,7 @@ describe("registro de autoridad — forma y unicidad", () => {
       "chassis.gap-detection",
       "chassis.minimality-lens",
       "chassis.flow-control",
+      "chassis.commit-choice",
       "quick.entry-gate-signal",
       "quick.gate-choice",
       "quick.success-criteria-authoring",

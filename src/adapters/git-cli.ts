@@ -987,6 +987,12 @@ export class GitCliAdapter implements GitPort {
     return result.stdout.trim() || null;
   }
 
+  async readAtRef(repoPath: string, ref: string, path: string): Promise<string | null> {
+    const result = await this.process.run("git", ["show", `${ref}:${path}`], this.opts(repoPath));
+    if (result.code !== 0) return null;
+    return result.stdout;
+  }
+
   async originFetchRefspecs(repoPath: string): Promise<string[]> {
     const result = await this.process.run(
       "git",

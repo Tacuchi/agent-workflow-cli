@@ -166,6 +166,9 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // con su línea, su regla y el gate que la juzga, del mismo informe que viaja
     // en el JSON; el veredicto viaja en el código de salida, como en `doctor`.
     "plan",
+    // F7: la propuesta del commit exhibe las rutas, exclusiones, mensaje y
+    // digest que la persona aprueba; JSON y vista humana proyectan el mismo sello.
+    "workspace-commit",
   ];
 
   it("no undeclared command acquired a human projection", () => {

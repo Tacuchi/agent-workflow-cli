@@ -1,8 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { NodeProcess } from "../../src/adapters/node-process.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   DOCS_FOLDERS,
@@ -127,6 +129,43 @@ describe("runWorkspaceInit", () => {
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     expect(gitignore).toContain(".workflow/processes.json");
     expect(gitignore).toContain("docs/logs/");
+  });
+
+  it("reinstala la política en un workspace existente y --untrack sólo desindexa lo propio", async () => {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: workspace, encoding: "utf8" });
+    git("init", "--quiet", "--initial-branch=main");
+    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    writeFileSync(join(workspace, ".workflow", "processes.json"), "[]\n");
+    writeFileSync(join(workspace, ".workflow", "sessions", "saved.txt"), "sesión\n");
+    writeFileSync(join(workspace, "keep.txt"), "quedate\n");
+    git("add", ".workflow/processes.json", ".workflow/sessions/saved.txt", "keep.txt");
+    git("-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", "base");
+    const process = new NodeProcess();
+    const preview = await runWorkspaceInit(fs, env, paths, { sources: [], dryRun: true }, process);
+    if ("error" in preview) throw new Error(preview.error);
+    expect(preview.untrack?.paths).toEqual([
+      ".workflow/processes.json",
+      ".workflow/sessions/saved.txt",
+    ]);
+    expect(existsSync(join(workspace, ".gitignore"))).toBe(false);
+    const installed = await runWorkspaceInit(fs, env, paths, { sources: [] }, process);
+    if ("error" in installed) throw new Error(installed.error);
+    expect(installed.materialization.effects).toContainEqual({
+      kind: "gitignore",
+      path: join(workspace, ".gitignore"),
+      status: "created",
+    });
+    expect(readFileSync(join(workspace, ".gitignore"), "utf8")).not.toContain(".workflow/archive/");
+    expect(git("ls-files")).toContain(".workflow/processes.json");
+    const applied = await runWorkspaceInit(fs, env, paths, { sources: [], untrack: true }, process);
+    if ("error" in applied) throw new Error(applied.error);
+    expect(applied.untrack?.paths).toEqual(preview.untrack?.paths);
+    expect(git("ls-files")).toBe("keep.txt\n");
+    expect(readFileSync(join(workspace, ".workflow", "processes.json"), "utf8")).toBe("[]\n");
+    expect(
+      await runWorkspaceInit(fs, env, paths, { sources: [], untrack: true }, process),
+    ).toHaveProperty("untrack.paths", []);
   });
 
   it("fuente única DENTRO del workspace: omite visibilidad (la fuente ES el workspace)", async () => {

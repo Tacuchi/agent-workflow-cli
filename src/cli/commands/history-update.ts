@@ -12,7 +12,8 @@ import { reviewFlags } from "./unknown-flags.js";
 const FLAGS: CommandFlags = {
   known: ["code", "state", "session", "sesion", "date", "refs"],
   retired: ["summary"],
-  usage: "aw history-update --code <sesión> --state <active|closed>",
+  usage:
+    "aw history-update --code <sesión> --state <active|closed|abierta|activa|cerrada|pausada|abandonada>",
 };
 
 export const historyUpdateCommand: CliCommand = {

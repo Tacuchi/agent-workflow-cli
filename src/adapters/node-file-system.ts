@@ -69,6 +69,10 @@ async function renameRidingOutHolds(from: string, to: string): Promise<void> {
 export class NodeFileSystem implements FileSystemPort {
   private static writeCounter = 0;
 
+  async rename(from: string, to: string): Promise<void> {
+    await renameRidingOutHolds(from, to);
+  }
+
   async readText(path: string): Promise<string> {
     return readFile(path, "utf8");
   }

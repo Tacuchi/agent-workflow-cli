@@ -4,16 +4,24 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { type CheckpointFields, readLatestCheckpoint } from "./checkpoint-service.js";
 import { type RunReopen, reopenRun } from "./flow/reopen-run.js";
 import { locateRun } from "./flow/run-state-service.js";
+import { upsertHistoryRow } from "./history-update-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
-import { bindContextToSession } from "./session-binding-service.js";
+import {
+  bindContextToSession,
+  lookupBinding,
+  restoreBindingTo,
+} from "./session-binding-service.js";
 import { writeSessionNarrative } from "./session-narrative.js";
 import {
+  ABANDONED_MARKER,
   CLOSED_MARKER,
+  PAUSED_MARKER,
   type SessionEntry,
   type SessionResolutionError,
+  readSessionState,
   resolveSessionTarget,
 } from "./session-resolver.js";
 
@@ -80,8 +88,59 @@ export async function runSessionResume(
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
 
+  if (session.state === "abandoned" && input.reopen !== true) {
+    return {
+      error: `la sesión ${session.folder} está abandonada; reabrila con --reopen`,
+      code: "SESSION_ABANDONED",
+    };
+  }
+
   let state = session.state;
   let resumesAt: string | null = null;
+  if (state === "paused" && input.reopen !== true) {
+    const resumed = await withCwdLock(fs, paths, async () => {
+      if ((await readSessionState(fs, session.path)) !== "paused") {
+        return {
+          error: `la sesión ${session.folder} ya no está pausada`,
+          code: "SESSION_STATE_CHANGED",
+        };
+      }
+      const bindingFile = paths.cwdSessionBindingsFile();
+      const historyFile = paths.cwdHistoryFile();
+      const bindingsBefore = (await fs.exists(bindingFile)) ? await fs.readText(bindingFile) : null;
+      const historyBefore = (await fs.exists(historyFile)) ? await fs.readText(historyFile) : null;
+      try {
+        if (input.contextId) {
+          const binding = await bindContextToSession(fs, paths, input.contextId, session.folder);
+          if (!binding.ok) return { error: binding.reason };
+        }
+        await fs.remove(join(session.path, PAUSED_MARKER));
+        await upsertHistoryRow(fs, paths, {
+          code: session.code ?? session.folder,
+          sesionName: session.name,
+          state: "active",
+        });
+        return { resumed: true };
+      } catch (error) {
+        await fs.writeText(join(session.path, PAUSED_MARKER), "");
+        if (bindingsBefore === null) await fs.remove(bindingFile);
+        else await fs.writeText(bindingFile, bindingsBefore);
+        if (historyBefore === null) await fs.remove(historyFile);
+        else await fs.writeText(historyFile, historyBefore);
+        return {
+          error: `no se pudo retomar ${session.folder}: ${error instanceof Error ? error.message : String(error)}`,
+          code: "SESSION_RESUME_FAILED",
+        };
+      }
+    });
+    if ("error" in resumed)
+      return {
+        error: resumed.error,
+        code: "code" in resumed ? resumed.code : "SESSION_RESUME_FAILED",
+      };
+    state = "active";
+    await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
+  }
   if (input.reopen === true) {
     const reopened = await reopenSessionAndRun(fs, paths, session, input.contextId);
     if ("error" in reopened) return reopened;
@@ -135,7 +194,10 @@ async function reopenSessionAndRun(
     };
   }
   if (!run.ok) {
-    const restored = reopened.wasClosed ? await restoreClosed(fs, paths, session) : null;
+    const restored =
+      reopened.wasClosed || reopened.wasPaused
+        ? await restoreClosed(fs, paths, session, reopened, contextId)
+        : null;
     return {
       code: run.failure.code,
       error: `${run.failure.code}: ${run.failure.message}${restored === null ? "" : `; no se pudo restaurar .closed: ${restored}`}`,
@@ -158,37 +220,112 @@ async function reopenUnderLock(
   paths: PathsService,
   session: SessionEntry,
   contextId: string | undefined,
-): Promise<SessionResumeError | { wasClosed: boolean }> {
+): Promise<
+  | SessionResumeError
+  | {
+      wasClosed: boolean;
+      wasPaused: boolean;
+      wasAbandoned: boolean;
+      previousBinding: string | null;
+    }
+> {
   const id = contextId?.trim() ?? "";
   // `failure` (not `error`) so the busy-lock envelope `withCwdLock` returns
   // stays distinguishable from a failure raised inside the critical section.
-  type Locked = { ok: true; wasClosed: boolean } | { ok: false; failure: SessionResumeError };
+  type Locked =
+    | {
+        ok: true;
+        wasClosed: boolean;
+        wasPaused: boolean;
+        wasAbandoned: boolean;
+        previousBinding: string | null;
+      }
+    | { ok: false; failure: SessionResumeError };
 
   const result = await withCwdLock(fs, paths, async (): Promise<Locked> => {
     const wasClosed = await fs.exists(join(session.path, CLOSED_MARKER));
-    if (id.length > 0) {
-      const bound = await bindContextToSession(fs, paths, id, session.folder);
-      if (!bound.ok) {
-        return { ok: false, failure: { error: bound.reason, code: "SESSION_BINDING_INVALID" } };
-      }
+    const wasPaused = await fs.exists(join(session.path, PAUSED_MARKER));
+    const wasAbandoned = await fs.exists(join(session.path, ABANDONED_MARKER));
+    const bindingFile = paths.cwdSessionBindingsFile();
+    const historyFile = paths.cwdHistoryFile();
+    const bindingsBefore = (await fs.exists(bindingFile)) ? await fs.readText(bindingFile) : null;
+    const historyBefore = (await fs.exists(historyFile)) ? await fs.readText(historyFile) : null;
+    const previous =
+      id.length > 0 ? await lookupBinding(fs, paths, id) : { status: "unbound" as const };
+    if (previous.status === "invalid") {
+      return { ok: false, failure: { error: previous.reason, code: "SESSION_BINDING_INVALID" } };
     }
-    // `remove` is idempotent — a no-op when the session is already active.
-    await fs.remove(join(session.path, CLOSED_MARKER));
-    return { ok: true, wasClosed };
+    const previousBinding = previous.status === "bound" ? previous.folder : null;
+    try {
+      if (id.length > 0) {
+        const bound = await bindContextToSession(fs, paths, id, session.folder);
+        if (!bound.ok) {
+          return { ok: false, failure: { error: bound.reason, code: "SESSION_BINDING_INVALID" } };
+        }
+      }
+      // `remove` is idempotent — a no-op when the session is already active.
+      await fs.remove(join(session.path, CLOSED_MARKER));
+      await fs.remove(join(session.path, PAUSED_MARKER));
+      await fs.remove(join(session.path, ABANDONED_MARKER));
+      await upsertHistoryRow(fs, paths, {
+        code: session.code ?? session.folder,
+        sesionName: session.name,
+        state: "active",
+      });
+      return { ok: true, wasClosed, wasPaused, wasAbandoned, previousBinding };
+    } catch (error) {
+      if (wasClosed) await fs.writeText(join(session.path, CLOSED_MARKER), "");
+      if (wasPaused) await fs.writeText(join(session.path, PAUSED_MARKER), "");
+      if (wasAbandoned) await fs.writeText(join(session.path, ABANDONED_MARKER), "");
+      if (bindingsBefore === null) await fs.remove(bindingFile);
+      else await fs.writeText(bindingFile, bindingsBefore);
+      if (historyBefore === null) await fs.remove(historyFile);
+      else await fs.writeText(historyFile, historyBefore);
+      return {
+        ok: false,
+        failure: {
+          error: `no se pudo reabrir ${session.folder}: ${error instanceof Error ? error.message : String(error)}`,
+          code: "SESSION_REOPEN_FAILED",
+        },
+      };
+    }
   });
 
   if ("error" in result) return { error: result.error, code: "LOCK_BUSY" };
-  return result.ok ? { wasClosed: result.wasClosed } : result.failure;
+  return result.ok
+    ? {
+        wasClosed: result.wasClosed,
+        wasPaused: result.wasPaused,
+        wasAbandoned: result.wasAbandoned,
+        previousBinding: result.previousBinding,
+      }
+    : result.failure;
 }
 
 async function restoreClosed(
   fs: FileSystemPort,
   paths: PathsService,
   session: SessionEntry,
+  old: {
+    wasClosed: boolean;
+    wasPaused: boolean;
+    wasAbandoned: boolean;
+    previousBinding: string | null;
+  },
+  contextId: string | undefined,
 ): Promise<string | null> {
   try {
     const restored = await withCwdLock(fs, paths, async () => {
-      await fs.writeText(join(session.path, CLOSED_MARKER), "");
+      if (old.wasClosed) await fs.writeText(join(session.path, CLOSED_MARKER), "");
+      if (old.wasPaused) await fs.writeText(join(session.path, PAUSED_MARKER), "");
+      if (old.wasAbandoned) await fs.writeText(join(session.path, ABANDONED_MARKER), "");
+      await upsertHistoryRow(fs, paths, {
+        code: session.code ?? session.folder,
+        sesionName: session.name,
+        state: old.wasAbandoned ? "abandoned" : old.wasPaused ? "paused" : "closed",
+      });
+      if (contextId)
+        await restoreBindingTo(fs, paths, contextId, session.folder, old.previousBinding);
       return { ok: true };
     });
     return "error" in restored ? restored.error : null;

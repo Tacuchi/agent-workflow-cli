@@ -27,6 +27,7 @@ import {
   stripNarrativeBlock,
   upsertNarrativeBlock,
 } from "../domain/session/narrative.js";
+import type { SessionState } from "../domain/types.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { PLACEHOLDER_MARKER, readCheckpointNarrative } from "./checkpoint-service.js";
 import { projectRun } from "./flow/run-projection.js";
@@ -35,7 +36,7 @@ import { firstNonEmptyLine, parseMdSectionBilingual } from "./markdown.js";
 import { parseDecisiones } from "./parsers/decisiones.js";
 import type { PathsService } from "./paths-service.js";
 import { type ArtifactKind, canonicalArtifactFilename, findArtifact } from "./session-artifacts.js";
-import { CLOSED_MARKER, sessionNumericCode } from "./session-resolver.js";
+import { readSessionState, sessionNumericCode } from "./session-resolver.js";
 
 /** One `- [ ]` / `- [x]` item, or `null` for a line that is not one. */
 const CHECKLIST = /^[ \t]*[-*][ \t]+\[([ xX]?)\][ \t]*(\S.*)$/;
@@ -60,7 +61,7 @@ export async function buildSessionNarrative(
 ): Promise<SessionNarrative> {
   const authored = await readAuthored(fs, input.path);
   const checkpoint = await readCheckpointNarrative(fs, input.path);
-  const closed = await fs.exists(join(input.path, CLOSED_MARKER));
+  const state = await readSessionState(fs, input.path);
   const run = await projectRun(fs, paths, input.folder);
   const { sequence, evidence } = await materialTrace(fs, paths, input.folder);
 
@@ -73,7 +74,7 @@ export async function buildSessionNarrative(
   return {
     session: input.folder,
     code: input.code ?? sessionNumericCode(input.folder),
-    phase: phaseOf(closed, results.length > 0),
+    phase: phaseOf(state, results.length > 0),
     objective: authored.objective,
     sequence,
     tasks: authored.tasks,
@@ -86,9 +87,11 @@ export async function buildSessionNarrative(
     // something has to run, the exact invocation. The CHECKPOINT's own next line
     // stays available as a pending fact, so nothing is lost by preferring it.
     next:
-      run !== null && run.boundary !== "final"
-        ? { state: "planificado", text: run.summary, detail: run.transition, source: RUN_SOURCE }
-        : (pending[0] ?? null),
+      state === "closed" || state === "abandoned"
+        ? null
+        : run !== null && run.boundary !== "final"
+          ? { state: "planificado", text: run.summary, detail: run.transition, source: RUN_SOURCE }
+          : (pending[0] ?? null),
     links: await linksOf(fs, input.path),
   };
 }
@@ -144,8 +147,10 @@ const RUN_SOURCE: NarrativeSource = { artifact: ".flow-run.json", locator: "boun
  * reader needs told apart from a session that has not started. Deriving it keeps
  * it from becoming a second truth somebody has to remember to update.
  */
-function phaseOf(closed: boolean, hasProgress: boolean): SessionPhase {
-  if (closed) return "cerrada";
+function phaseOf(state: SessionState, hasProgress: boolean): SessionPhase {
+  if (state === "closed") return "cerrada";
+  if (state === "paused") return "pausada";
+  if (state === "abandoned") return "abandonada";
   return hasProgress ? "reanudada" : "abierta";
 }
 
@@ -161,12 +166,13 @@ function phaseOf(closed: boolean, hasProgress: boolean): SessionPhase {
 export async function readSessionPhase(
   fs: FileSystemPort,
   sessionPath: string,
-  closed: boolean,
+  closed: boolean | SessionState,
 ): Promise<SessionPhase> {
-  if (closed) return "cerrada";
+  const state = typeof closed === "boolean" ? (closed ? "closed" : "active") : closed;
+  if (state !== "active") return phaseOf(state, false);
   const checkpoint = await readCheckpointNarrative(fs, sessionPath);
   const progress = fromCheckpoint(checkpoint?.completed, "aplicado", "Completed");
-  return phaseOf(false, progress.length > 0);
+  return phaseOf("active", progress.length > 0);
 }
 
 /**
@@ -338,6 +344,16 @@ function bulletFacts(
   if (section === null) return [];
   const facts: NarrativeFact[] = [];
   for (const raw of section.split("\n")) {
+    const checklist = CHECKLIST.exec(raw);
+    if (checklist !== null) {
+      facts.push({
+        state: checklist[1]?.toLowerCase() === "x" ? "aplicado" : "planificado",
+        text: (checklist[2] ?? "").trim(),
+        detail: null,
+        source,
+      });
+      continue;
+    }
     if (facts.length >= SECTION_LIMIT) break;
     const match = BULLET.exec(raw);
     const text = match?.[1]?.trim();
@@ -410,7 +426,14 @@ export async function writeSessionNarrative(
   // That is a rule about CREATING the block, never about refreshing one: a
   // document that already carries it has a reader trusting it, and a block left
   // declaring a state the session no longer has is worse than a thin one.
-  if (!document.includes(NARRATIVE_BEGIN) && !addsAnything(narrative)) return false;
+  if (
+    !document.includes(NARRATIVE_BEGIN) &&
+    !addsAnything(narrative) &&
+    narrative.phase !== "cerrada" &&
+    narrative.phase !== "pausada" &&
+    narrative.phase !== "abandonada"
+  )
+    return false;
   const next = upsertNarrativeBlock(document, renderNarrativeBlock(narrative));
   if (next === document) return false;
   await fs.writeText(file, next);

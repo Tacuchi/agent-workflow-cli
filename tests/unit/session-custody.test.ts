@@ -235,13 +235,16 @@ describe("session custody — what a run received, created and changed", () => {
       expect(record.inputs_note).toContain("docs/plans/NNN-plan-inexistente.md");
     });
 
-    it("never derives from a descriptor that is only a flow name", async () => {
+    it("rejects a descriptor that is only a flow name", async () => {
       // `--name plan-exec` leaves an empty slug: matching on it would adopt any
       // `docs/plans/NNN-plan.md` as this run's input.
       writeFileSync(join(workspace, "docs/plans/024-plan.md"), "# Plan 024\n");
-      const record = await bare("exec", "plan-exec");
-      expect(record.inputs).toEqual([]);
-      expect(record.inputs_note).toBeUndefined();
+      const result = await runSessionCreate(fs, paths, {
+        type: "exec",
+        name: "plan-exec",
+        objetivo: "o",
+      });
+      expect(result).toHaveProperty("error");
     });
 
     it("lets an explicit --input win: the caller is the authority", async () => {

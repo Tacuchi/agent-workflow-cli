@@ -100,7 +100,7 @@ describe("resolveSessionTarget — el nombre exacto de la carpeta termina la bú
     expect(result.code).toBe("SESSION_AMBIGUOUS");
     expect(result.candidates.map((candidate) => candidate.folder)).toEqual(COLLIDING);
     expect(result.action).toContain("workspace-migrate");
-    expect(result.action).toContain("renombrá");
+    expect(result.action).toContain("--renumber");
   });
 
   it("y el código desnudo sigue siendo ambiguo, con los dos candidatos en la acción", async () => {

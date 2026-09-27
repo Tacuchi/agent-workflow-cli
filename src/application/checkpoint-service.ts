@@ -7,11 +7,11 @@ import { parseMdSection, parseMdSectionBilingual, parseMdValue } from "./markdow
 import type { PathsService } from "./paths-service.js";
 import { type ArtifactKind, listExistingArtifacts } from "./session-artifacts.js";
 import {
-  CLOSED_MARKER,
   type SessionCandidate,
   type SessionEntry,
   type SessionResolutionError,
   listSessionFolders,
+  readSessionState,
   resolveSessionTarget,
   sessionNumericCode,
   sessionReadRequest,
@@ -297,7 +297,7 @@ export async function findActiveSessions(
   const folders = await listSessionFolders(fs, paths.cwdSessionsDir());
   const active: ActiveSession[] = [];
   for (const folder of folders) {
-    if (await fs.exists(join(folder.path, CLOSED_MARKER))) continue;
+    if ((await readSessionState(fs, folder.path)) !== "active") continue;
     active.push({ folder: folder.name });
   }
   return active;
@@ -498,7 +498,7 @@ export async function findRecentClosedWithArtifacts(
     if (activeSet.has(folder.name)) continue;
     const code = sessionNumericCode(folder.name);
     if (code === null) continue;
-    if (!(await fs.exists(join(folder.path, CLOSED_MARKER)))) continue;
+    if ((await readSessionState(fs, folder.path)) !== "closed") continue;
     let mtimeMs: number;
     try {
       const st = await fs.stat(folder.path);

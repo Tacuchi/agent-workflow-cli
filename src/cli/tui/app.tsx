@@ -455,7 +455,7 @@ async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> 
       const ahead = aheadBehind?.[1] ?? "0";
       const sync =
         ahead !== "0" || behind !== "0" ? `${ahead}↑ ${behind}↓` : isDirty ? "dirty" : "in sync";
-      branchLabel = `${branch} · ${sync}`;
+      branchLabel = `hub: ${branch} · ${sync}`;
     }
   } catch {
     // keep default

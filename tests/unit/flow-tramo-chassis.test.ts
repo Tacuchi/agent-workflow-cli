@@ -116,6 +116,7 @@ describe("forma (a) — atravesada por el recorrido", () => {
       "chassis.docs-boundary",
       "chassis.route-evaluation",
       "chassis.research-exhaustion",
+      "chassis.commit-choice",
       "chassis.finalize",
     ]);
     for (const flow of WORKLINE_FLOWS) {
@@ -137,6 +138,7 @@ describe("forma (a) — atravesada por el recorrido", () => {
       // La carpeta escribible se fija ANTES de que se emita ningún paso que
       // escriba: resuelta después sería una regla contra escrituras ya hechas.
       expect(at("chassis.finalize"), flow).toBeGreaterThan(last);
+      expect(at("chassis.commit-choice"), flow).toBe(at("chassis.finalize") - 1);
     }
   });
 
@@ -145,7 +147,7 @@ describe("forma (a) — atravesada por el recorrido", () => {
       const journey = journeyOfFlow(flow);
       const ids = journey.map((row) => row.id);
       expect(new Set(ids).size, flow).toBe(ids.length);
-      expect(journey).toHaveLength(decisionsOfScope(flow).length + 4);
+      expect(journey).toHaveLength(decisionsOfScope(flow).length + 5);
     }
   });
 
@@ -483,7 +485,7 @@ describe("forma (b) — atribuida al mecanismo que ya la realiza", () => {
     });
     expect(formless.map((row) => row.id)).toEqual([]);
     // Y que las tres formas existan de verdad, o la guarda pasaría vacía.
-    expect(transversal.filter((row) => placementOf(row) !== null)).toHaveLength(4);
+    expect(transversal.filter((row) => placementOf(row) !== null)).toHaveLength(5);
     // Once por esta fase, mas `chassis.session-numbering`, que ya era `cli-owned`
     // desde antes del plan y nombra la fila del comando que la instancia.
     expect(transversal.filter((row) => realizationOf(row) !== null)).toHaveLength(11);

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { renderRefs } from "../../src/application/render/history-row.js";
 
 describe("renderRefs — BUILTIN_RENDERERS (post R5)", () => {
+  it("una ref de commit es texto legible, no un vínculo roto", () => {
+    expect(renderRefs("commit:abcdef1234567890")).toBe("commit abcdef123456");
+  });
   it("renderiza decision con prefijo NNN", () => {
     expect(renderRefs("dec:001-stack-typescript")).toBe(
       "[DEC](../docs/decisiones/001-stack-typescript.md)",

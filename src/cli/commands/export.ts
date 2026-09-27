@@ -17,6 +17,10 @@ import {
   validateExportWithCatalog,
 } from "../../application/export-service.js";
 import type { SemanticFailure } from "../../application/semantic-operation/protocol.js";
+import {
+  type WorkspaceCommitProposal,
+  runWorkspaceCommit,
+} from "../../application/workspace-commit-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
@@ -27,7 +31,11 @@ import type { CliContext } from "../types.js";
 type ExportData =
   | { stage: "prepare"; prepared: ExportPrepared }
   | ({ stage: "validate" } & ExportValidation)
-  | ({ stage: "apply" } & ExportApplied);
+  | ({
+      stage: "apply";
+      commit_proposal?: WorkspaceCommitProposal;
+      commit_proposal_error?: string;
+    } & ExportApplied);
 
 const DESCRIBES: Record<ExportCategory, string> = {
   diagrams: "Publica un dossier de diagramas (README + Markdown, DSL opcional) en docs/diagrams.",
@@ -168,7 +176,19 @@ ${ENVELOPE}`,
         );
         return lines.join("\n");
       }
-      return `export-${category} · publicados ${data.written.length} archivo(s):\n${data.written.map((w) => `  ${w}`).join("\n")}\n`;
+      const lines = [
+        `export-${category} · publicados ${data.written.length} archivo(s):`,
+        ...data.written.map((w) => `  ${w}`),
+      ];
+      if (data.commit_proposal) {
+        lines.push(`  Commit propuesto: ${data.commit_proposal.message}`);
+        for (const path of data.commit_proposal.paths) lines.push(`    ${path}`);
+        lines.push(
+          `  aw workspace-commit apply --export ${data.written[0]?.split("/").slice(0, 3).join("/")} --approval ${data.commit_proposal.approval}`,
+        );
+      } else if (data.commit_proposal_error)
+        lines.push(`  Commit no disponible: ${data.commit_proposal_error}`);
+      return `${lines.join("\n")}\n`;
     },
   };
 }
@@ -321,7 +341,23 @@ async function runApply(
     catalog,
   );
   if (!result.ok) return failSemantic(result.failure);
-  return { ok: true, data: { stage: "apply", ...result.value }, exitCode: 0 };
+  const destination = result.value.written[0]?.split("/").slice(0, 3).join("/");
+  const offer = destination
+    ? await runWorkspaceCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
+        exportPath: destination,
+      })
+    : { error: "el export no informó sus rutas" };
+  return {
+    ok: true,
+    data: {
+      stage: "apply",
+      ...result.value,
+      ...("proposal" in offer
+        ? { commit_proposal: offer.proposal }
+        : { commit_proposal_error: offer.error }),
+    },
+    exitCode: 0,
+  };
 }
 
 function selection(args: ParsedArgs): ExportSelection {

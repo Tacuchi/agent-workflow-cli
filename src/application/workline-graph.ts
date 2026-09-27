@@ -59,7 +59,7 @@ export type SessionCompletion =
 
 export interface SessionNodeFacts {
   folder: string;
-  state: "active" | "closed";
+  state: "active" | "closed" | "paused" | "abandoned";
   type: string | null;
   completion: SessionCompletion;
   /** Present only when the session carries a v1 custody that reads back. */

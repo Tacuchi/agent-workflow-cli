@@ -54,10 +54,18 @@ export const resumeCommand: CliCommand<ResumeOutcome> = {
   renderHuman(result: CommandResult<ResumeOutcome>, context: HumanRenderContext): string {
     const outcome = result.data;
     if (outcome === undefined) return "";
-    const notice =
+    const readyNotice = (outcome.ready_to_close ?? [])
+      .map((item) => `  ${item.session}: criterios completos → ${item.command}\n`)
+      .join("");
+    const stateNotice =
+      outcome.paused_sessions?.length || outcome.abandoned_sessions?.length
+        ? `\nSesiones apartadas: ${outcome.paused_sessions?.length ?? 0} pausada(s), ${outcome.abandoned_sessions?.length ?? 0} abandonada(s)\n`
+        : "";
+    const notice = `${readyNotice ? `\nSesiones listas para cerrar:\n${readyNotice}` : ""}${stateNotice}${
       outcome.unreadable_sources?.length || outcome.isolation_error
         ? `\nFuentes sin ruta o unidades no verificables:\n${(outcome.unreadable_sources ?? []).map((item) => `  ${item.alias}: ${item.error}\n`).join("")}${outcome.isolation_error ? `  ${outcome.isolation_error}\n` : ""}`
-        : "";
+        : ""
+    }`;
     switch (outcome.status) {
       case "idle":
       case "invalid_target":

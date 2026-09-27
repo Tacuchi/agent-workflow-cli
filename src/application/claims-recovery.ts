@@ -43,12 +43,13 @@ import {
   isRevoked,
   openOwnerOfSlot,
   readClaimEvents,
+  releaseAlreadyRecorded,
   wasPublished,
 } from "./claims-ledger.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { semanticDigest } from "./semantic-operation/protocol.js";
-import { CLOSED_MARKER, listSessionFolders } from "./session-resolver.js";
+import { listSessionFolders, readSessionState } from "./session-resolver.js";
 
 /**
  * What a numbered file that is not a document actually is.
@@ -228,15 +229,9 @@ async function activeSessionFolders(
   paths: PathsService,
 ): Promise<ReadonlySet<string>> {
   const active = new Set<string>();
-  try {
-    for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
-      if (await fs.exists(join(folder.path, CLOSED_MARKER))) continue;
-      active.add(folder.name);
-    }
-  } catch {
-    // An unreadable sessions dir means nobody can be proven alive. The fallback is
-    // the conservative one: with no owner known to be active, no slot is offered
-    // for recovery on the strength of liveness it could not check.
+  for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    if ((await readSessionState(fs, folder.path)) !== "active") continue;
+    active.add(folder.name);
   }
   return active;
 }
@@ -253,11 +248,30 @@ async function activeSessionFolders(
  * unreadable `docs/` is not an empty one, and swallowing the difference would let
  * the board answer "no reservations" about a directory nobody could open.
  */
-export async function scanSlots(fs: FileSystemPort, paths: PathsService): Promise<SlotScan> {
+export async function scanSlots(
+  fs: FileSystemPort,
+  paths: PathsService,
+  lockHeld = false,
+): Promise<SlotScan> {
   const docs = join(paths.workspaceDir(), "docs");
   const slots: SlotState[] = [];
-  const ledger = await readClaimEvents(fs, paths);
-  const activeOwners = await activeSessionFolders(fs, paths);
+  const ledger = await readClaimEvents(fs, paths, { lockHeld });
+  if (ledger.unreadable > 0) {
+    return {
+      slots: [],
+      error:
+        "claims.jsonl tiene una transferencia sin resolver; reintentá cuando el candado quede libre",
+    };
+  }
+  let activeOwners: ReadonlySet<string>;
+  try {
+    activeOwners = await activeSessionFolders(fs, paths);
+  } catch (error) {
+    return {
+      slots: [],
+      error: `no se pudo comprobar qué sesiones están activas: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
   const sorted = (): SlotState[] => slots.sort((a, b) => a.path.localeCompare(b.path));
   if (!(await fs.exists(docs))) return { slots };
   try {
@@ -312,8 +326,9 @@ export async function previewRecovery(
   fs: FileSystemPort,
   paths: PathsService,
   target: string,
+  lockHeld = false,
 ): Promise<{ proposal: RecoveryProposal } | RecoveryFailure> {
-  const scan = await scanSlots(fs, paths);
+  const scan = await scanSlots(fs, paths, lockHeld);
   const slot = scan.slots.find((candidate) => candidate.path === target);
   if (slot === undefined) {
     return {
@@ -380,7 +395,7 @@ async function recoverUnderLock(
   paths: PathsService,
   input: { target: string; approval: string; noProducerConfirmed?: boolean },
 ): Promise<{ applied: RecoveryApplied } | RecoveryFailure> {
-  const preview = await previewRecovery(fs, paths, input.target);
+  const preview = await previewRecovery(fs, paths, input.target, true);
   if ("error" in preview) return preview;
   const proposal = preview.proposal;
   if (proposal.digest !== input.approval) {
@@ -401,6 +416,8 @@ async function recoverUnderLock(
   }
 
   const claim = proposal.claim;
+  const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
+  if (ledger.unreadable > 0) throw new Error("claims.jsonl ilegible al recuperar la reserva");
   if (claim !== null && !proposal.resuming) {
     // The fence FIRST. If this throws, nothing was released and the slot is
     // exactly as it was: the recovery failed, which is the correct outcome.
@@ -418,20 +435,23 @@ async function recoverUnderLock(
   // identity is the SLOT's, so it joins to its own history by claimKey — an
   // ownerless placeholder still records the category, correlative and name it
   // gave back, and only its owner field says nobody held it.
-  await appendClaimEvent(fs, paths, {
-    at: new Date().toISOString(),
-    event: "released",
-    claim: claim ?? {
-      category: slotIdentityOf(proposal.target).category,
-      correlative: slotIdentityOf(proposal.target).correlative,
-      name: slotIdentityOf(proposal.target).name,
-      owner: LEGACY_OWNERLESS,
-    },
-    cause:
-      claim === null
-        ? "aw claims recover: placeholder legacy liberado con confirmación explícita de que no queda productor"
-        : `aw claims recover: liberado tras revocar ${claimKey(claim)}`,
-  });
+  const releasing = claim ?? {
+    category: slotIdentityOf(proposal.target).category,
+    correlative: slotIdentityOf(proposal.target).correlative,
+    name: slotIdentityOf(proposal.target).name,
+    owner: LEGACY_OWNERLESS,
+  };
+  if (!releaseAlreadyRecorded(ledger.events, releasing)) {
+    await appendClaimEvent(fs, paths, {
+      at: new Date().toISOString(),
+      event: "released",
+      claim: releasing,
+      cause:
+        claim === null
+          ? "aw claims recover: placeholder legacy liberado con confirmación explícita de que no queda productor"
+          : `aw claims recover: liberado tras revocar ${claimKey(claim)}`,
+    });
+  }
   await fs.remove(join(paths.workspaceDir(), proposal.target));
   return {
     applied: {

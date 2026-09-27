@@ -3,6 +3,7 @@ import {
   type HistoryRowInput,
   buildRow,
   ensureHistoryFile,
+  maxHistoryCorrelative,
   upsertRow,
 } from "../../src/application/history-table.js";
 import { MemFs as FakeFs } from "../helpers/mem-fs.js";
@@ -24,6 +25,66 @@ function row(code: string, name: string, state = "active"): string {
 }
 
 describe("history-table — slim 4-column shape", () => {
+  it("ordena por código y devuelve una fila huérfana a la tabla en una escritura", async () => {
+    const fs = new FakeFs({ lenient: true });
+    fs.file(
+      HISTORY,
+      `# Session History\n\n${SLIM_HEADER}\n| 012-doce-quick | 2026-07-01 | active | — |\n| 003-tres-quick | 2026-07-01 | active | — |\n\nnota\n| 007-siete-quick | 2026-07-01 | closed | — |\n\n## Retiros\n| 999 | otra | cosa | fuera |\n`,
+    );
+    await upsertRow(fs, HISTORY, fields("005", "cinco-quick"));
+    const text = await fs.readText(HISTORY);
+    const keys = text
+      .split("\n")
+      .filter((line) => /^\| 0\d\d-/.test(line))
+      .map((line) => line.split("|")[1]?.trim());
+    expect(keys).toEqual([
+      "003-tres-quick",
+      "005-cinco-quick",
+      "007-siete-quick",
+      "012-doce-quick",
+    ]);
+    expect((text.match(/007-siete-quick/g) ?? []).length).toBe(1);
+    expect(await maxHistoryCorrelative(fs, HISTORY)).toBe("012");
+  });
+
+  it("un upsert de una fila fuera de tabla la recupera sin duplicarla", async () => {
+    const fs = new FakeFs({ lenient: true });
+    fs.file(
+      HISTORY,
+      `# Session History\n\n${SLIM_HEADER}\n\nnota\n| 007-siete-quick | 2026-01-01 | active | docs/007.md |\n`,
+    );
+    await upsertRow(fs, HISTORY, { code: "007", state: "closed" });
+    const text = await fs.readText(HISTORY);
+    expect(text.match(/007-siete-quick/g)).toHaveLength(1);
+    expect(text).toContain("| 007-siete-quick | 2026-01-01 | closed | docs/007.md |");
+  });
+
+  it("una tabla de Notas con celdas parecidas a sesiones queda en su sección", async () => {
+    const fs = new FakeFs({ lenient: true });
+    const notes = "### Notas\n| 008-ocho | 2026-01-01 | active | nota |\n";
+    fs.file(HISTORY, `# Session History\n\n${SLIM_HEADER}\n\n${notes}`);
+    await upsertRow(fs, HISTORY, fields("003", "tres-quick"));
+    expect(await fs.readText(HISTORY)).toContain(notes);
+    expect((await fs.readText(HISTORY)).match(/008-ocho/g)).toHaveLength(1);
+  });
+
+  it("el máximo ve una fila huérfana antes del primer encabezado siguiente, antes de normalizar", async () => {
+    const fs = new FakeFs({ lenient: true });
+    fs.file(
+      HISTORY,
+      `# Session History\n\n${SLIM_HEADER}\n\nnota\n| 011-once-quick | 2026-01-01 | closed | — |\n\n### Notas\n| 999-nota | 2026-01-01 | active | — |\n`,
+    );
+    expect(await maxHistoryCorrelative(fs, HISTORY)).toBe("011");
+  });
+
+  it("un correlativo desnudo huérfano tampoco se vuelve a asignar", async () => {
+    const fs = new FakeFs({ lenient: true });
+    fs.file(
+      HISTORY,
+      `# Session History\n\n${SLIM_HEADER}\n| 012-doce-quick | 2026-01-01 | closed | — |\n\nnota\n| 015 | 2026-01-01 | closed | — |\n`,
+    );
+    expect(await maxHistoryCorrelative(fs, HISTORY)).toBe("015");
+  });
   it("ensureHistoryFile writes the slim header", async () => {
     const fs = new FakeFs({ lenient: true });
     await ensureHistoryFile(fs, HISTORY);

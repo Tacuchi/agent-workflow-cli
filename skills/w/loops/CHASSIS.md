@@ -125,6 +125,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 ## Convergence / exit
 
 - **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop **flips the green criteria** in `SESSION.md` (`- [ ]` → `- [x]`) and offers its closing action. The checklist must reflect the real final state: a criterion left unchecked at `finalize` needs an explicit reason. Each heir names its own instance of this gate, and those instances are what realize it.
+- After sources: paths, exclusions, message, digest. `finalize` writes CHECKPOINT, archive and HISTORY; commit only on approval, no push.
 - `Cerrar` (the `flow` control, at any time) → `finalize`, the last step of every journey. **`finalize` always persists `CHECKPOINT.md`** (resumable) and, **only if** something was deferred, writes `BACKLOG.md` (close reason + the deferred items); closes the session and reports. Progress survives even without a prior `Compactar`.
 
 ## docs/ boundary — no auto-export (hard rule)

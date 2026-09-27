@@ -89,7 +89,7 @@ Every loop loads it on demand:
 
 ### Read-only git (git-safe, invariant #5)
 
-Only: `git log`, `git show`, `git diff`, `git blame`, `git branch --show-current`.
+Only: `git log`, `git show`, `git diff`, `git blame`, `git -C <ruta-de-la-fuente> branch --show-current`. Read each source at its own path, never infer its branch from the hub.
 Never during investigation: `commit`, `push`, `merge`, `rebase`, `reset`, `checkout`.
 
 ### Inconclusive closure

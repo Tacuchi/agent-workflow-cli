@@ -214,6 +214,35 @@ describe("narrativa de sesión — una entrada contesta las siete preguntas", ()
       path,
     });
     expect(narrative.phase).toBe("cerrada");
+    expect(narrative.next).toBeNull();
+    expect(renderNarrativeBlock(narrative)).toContain("**Siguiente paso:** ninguno");
+  });
+
+  it("el cierre escrito en CHECKPOINT no se proyecta como tarea pendiente", async () => {
+    const path = await session("018-arreglo-parser-quick", {
+      ...OPEN,
+      "CHECKPOINT.md":
+        "# CHECKPOINT\n\n## Completed\n- terminado\n\n## Pending / Next\n\n## Closure\n\n- Cierre: rama main, publicada: no\n",
+      ".closed": "",
+    });
+    const narrative = await buildSessionNarrative(fs, paths, {
+      folder: "018-arreglo-parser-quick",
+      path,
+    });
+    expect(narrative.next).toBeNull();
+    expect(narrative.pending).toEqual([]);
+  });
+
+  it("una sesión cerrada sin avances recibe igualmente el Recorrido terminal", async () => {
+    const folder = "019-vacia-quick";
+    const path = await session(folder, {
+      "SESSION.md": "# SESSION\n\n## Objective\nUna línea\n",
+      ".closed": "",
+    });
+    expect(await writeSessionNarrative(fs, paths, { folder, path })).toBe(true);
+    expect(await readFile(join(path, "SESSION.md"), "utf8")).toContain(
+      "**Siguiente paso:** ninguno",
+    );
   });
 
   it("la lectura normal esconde ids, digests y nombres de transición; --detail los muestra", async () => {

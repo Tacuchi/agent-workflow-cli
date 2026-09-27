@@ -1,6 +1,7 @@
 import { basename, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { ProcessPort } from "../ports/process.js";
 import { DEFAULT_LOCK_TTL_MS, isExpired, parseLock } from "./lock-service.js";
 import { type MultirootError, type MultirootResult, runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
@@ -14,11 +15,14 @@ import {
   runProjectMdUpsertWrite,
 } from "./project-md-upsert-service.js";
 import {
+  VISIBILITY_GITIGNORE,
   type WorklineMaterialization,
   appendGitignoreEntries,
   ensureWorklineMaterialized,
   previewWorklineMaterialization,
+  reconcileRuntimeGitignore,
 } from "./workspace-materialization-service.js";
+import { type WorkspaceUntrack, workspaceUntrack } from "./workspace-untrack-service.js";
 
 export { runtimeGitignoreEntries } from "./workspace-materialization-service.js";
 
@@ -42,7 +46,7 @@ export const DOCS_FOLDERS = [
  * sources exist. Trailing `*` also covers the timestamped `.bak.<epoch>` backups.
  * Exported for the code↔doctrine guard test (workspace-init.md documents the set).
  */
-export const VISIBILITY_GITIGNORE = [".claude/settings.local.json*", ".codex/config.toml*"];
+export { VISIBILITY_GITIGNORE } from "./workspace-materialization-service.js";
 
 export interface WorkspaceSource {
   alias: string;
@@ -64,6 +68,8 @@ export interface WorkspaceInitInput {
   /** Override the target directory (defaults to cwd). */
   workspace?: string;
   dryRun?: boolean;
+  /** Remove Workline-ignored paths from Git's index, retaining their on-disk bytes. */
+  untrack?: boolean;
   /** Fixed `Última actividad` value for deterministic tests. */
   lastActivity?: string;
 }
@@ -89,6 +95,7 @@ export interface WorkspaceInitResult {
   scaffold: ScaffoldSummary;
   /** The exact first-write effects, also present in dry-run. */
   materialization: WorklineMaterialization;
+  untrack?: WorkspaceUntrack;
   skills_toml: "created" | "exists" | "skipped";
   project_md:
     | ProjectMdUpsertOutput
@@ -114,6 +121,7 @@ export async function runWorkspaceInit(
   env: EnvPort,
   paths: PathsService,
   input: WorkspaceInitInput,
+  process?: ProcessPort,
 ): Promise<WorkspaceInitResult | WorkspaceInitInputError> {
   // `paths` already carries the unique WorklineDirectory root.  An explicit
   // target remains an intentional override; otherwise a subdirectory invocation
@@ -143,15 +151,17 @@ export async function runWorkspaceInit(
         hint: "las opciones de rama requieren al menos una fuente (--source alias:path[:rama]); sin fuentes workspace-init sólo materializa el runtime",
       };
     }
-    const materialization = input.dryRun
-      ? await previewWorklineMaterialization(fs, wsPaths)
-      : await ensureWorklineMaterialized(fs, wsPaths);
+    const materialization = await initMaterialization(fs, wsPaths, input.dryRun === true);
+    const untrack = process
+      ? await workspaceUntrack(process, wsPaths, input.untrack === true && input.dryRun !== true)
+      : undefined;
     return {
       ok: true,
       dry_run: input.dryRun === true,
       workspace,
       sources: 0,
       materialization,
+      ...(untrack === undefined ? {} : { untrack }),
       scaffold: scaffoldFromMaterialization(materialization, wsPaths),
       skills_toml: (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped",
       project_md: { skipped: true, reason: "materialization_only" },
@@ -187,10 +197,14 @@ export async function runWorkspaceInit(
 
   if (input.dryRun) {
     const preview = await buildDryRunResult(fs, env, workspace, wsPaths, sources, upsertInput);
-    return { ...preview, source_actions: sourceActions };
+    const untrack = process ? await workspaceUntrack(process, wsPaths, false) : undefined;
+    return { ...preview, source_actions: sourceActions, ...(untrack ? { untrack } : {}) };
   }
 
-  const materialization = await ensureWorklineMaterialized(fs, wsPaths);
+  const materialization = await initMaterialization(fs, wsPaths, false);
+  const untrack = process
+    ? await workspaceUntrack(process, wsPaths, input.untrack === true)
+    : undefined;
   const scaffold = scaffoldFromMaterialization(materialization, wsPaths);
   // An empty skills.toml has no semantic override.  Leave skill configuration
   // absent until a real override is requested through its dedicated surface.
@@ -217,6 +231,7 @@ export async function runWorkspaceInit(
       source_actions: sourceActions.map((source) => ({ ...source, error: cause })),
       scaffold,
       materialization,
+      ...(untrack === undefined ? {} : { untrack }),
       skills_toml: skillsToml,
       project_md: projectMd,
       attach_multiroot: { skipped: true, reason: "project_md_failed" },
@@ -233,10 +248,26 @@ export async function runWorkspaceInit(
     source_actions: sourceActions,
     scaffold,
     materialization,
+    ...(untrack === undefined ? {} : { untrack }),
     skills_toml: skillsToml,
     project_md: projectMd,
     attach_multiroot: visibility.attach,
     ...(visibility.detached !== undefined ? { detached_removed: visibility.detached } : {}),
+  };
+}
+
+async function initMaterialization(
+  fs: FileSystemPort,
+  paths: PathsService,
+  dryRun: boolean,
+): Promise<WorklineMaterialization> {
+  if (dryRun) return previewWorklineMaterialization(fs, paths);
+  const receipt = await ensureWorklineMaterialized(fs, paths);
+  if (receipt.materialized) return receipt;
+  const ignore = await reconcileRuntimeGitignore(fs, paths);
+  return {
+    ...receipt,
+    effects: [ignore, ...receipt.effects.filter((effect) => effect.kind !== "gitignore")],
   };
 }
 

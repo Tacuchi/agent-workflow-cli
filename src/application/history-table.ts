@@ -266,12 +266,13 @@ export async function maxHistoryCorrelative(
   } catch {
     return null;
   }
+  return maxHistoryCorrelativeFromText(text);
+}
+
+export function maxHistoryCorrelativeFromText(text: string): string | null {
   const correlatives: string[] = [];
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("|")) continue;
-    const first = trimmed.split("|")[1]?.trim() ?? "";
-    const correlative = historyCorrelative(first);
+  for (const row of readHistoryRows(normalizeSessionTable(text))) {
+    const correlative = historyCorrelative(row.key);
     if (correlative !== null) correlatives.push(correlative);
   }
   return maxCorrelative(correlatives);
@@ -377,14 +378,58 @@ interface ExistingRow {
 }
 
 function findRow(lines: readonly string[], code: string): ExistingRow | null {
-  for (let index = 0; index < lines.length; index += 1) {
+  const separator = lines.findIndex((line) => isSeparator(line));
+  for (let index = separator < 0 ? 0 : separator + 1; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (!line.trim().startsWith("|")) continue;
+    if (!line.trim().startsWith("|")) {
+      if (separator >= 0) break;
+      continue;
+    }
     const cells = dataCells(line);
     if (!rowMatches(cells[0] ?? "", code)) continue;
     return { index, line, cells };
   }
   return null;
+}
+
+/** Keep one ordered session table; stray rows are moved back without touching other sections. */
+function normalizeSessionTable(text: string): string {
+  const lines = text.split("\n");
+  const separator = lines.findIndex((line) => isSeparator(line));
+  if (separator < 0) return text;
+  let end = separator + 1;
+  while (end < lines.length && (lines[end] ?? "").trim().startsWith("|")) end += 1;
+  const rows = lines.slice(separator + 1, end);
+  const stray: number[] = [];
+  for (let index = end; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    // Only orphan rows between the first table and the next section belong
+    // here. A table under Notas/Retiros is independently authored material.
+    if (/^#{1,6}\s+/.test(line)) break;
+    if (!line.startsWith("|")) continue;
+    const cells = dataCells(line);
+    if (
+      cells.length === SLIM_COLUMNS &&
+      historyCorrelative(cells[0] ?? "") !== null &&
+      /^\s*(?:session)?\d+(?:-|$)/.test(cells[0] ?? "") &&
+      /^(?:active|closed|abierta|activa|cerrada|pausada|abandonada|retirada)$/i.test(cells[2] ?? "")
+    ) {
+      stray.push(index);
+      rows.push(line);
+    }
+  }
+  rows.sort((a, b) => {
+    const left = historyCorrelative(dataCells(a)[0] ?? "");
+    const right = historyCorrelative(dataCells(b)[0] ?? "");
+    if (left === null || right === null) return a.localeCompare(b);
+    const l = correlativeValue(left);
+    const r = correlativeValue(right);
+    if (l === null || r === null) return a.localeCompare(b);
+    return l < r ? -1 : l > r ? 1 : a.localeCompare(b);
+  });
+  for (const index of stray.reverse()) lines.splice(index, 1);
+  lines.splice(separator + 1, end - separator - 1, ...rows);
+  return lines.join("\n");
 }
 
 /**
@@ -486,17 +531,20 @@ export async function upsertRow(
     }
   }
 
+  text = normalizeSessionTable(text);
   const lines = text.split("\n");
   const existing = findRow(lines, row.code);
   const merged = mergeRow(row, existing, migrated ? null : originalLegacyColumns);
 
   if (existing === null) {
     if (lossy) await snapshotLegacy(fs, historyFile, previous);
-    await fs.writeText(historyFile, insertIntoTable(lines, merged));
+    await fs.writeText(historyFile, normalizeSessionTable(insertIntoTable(lines, merged)));
     return "added";
   }
   if (existing.line === merged) {
-    if (migrated) await persistMigration(fs, historyFile, previous, text, lossy);
+    const normalized = normalizeSessionTable(text);
+    if (migrated || normalized !== previous)
+      await persistMigration(fs, historyFile, previous, normalized, lossy);
     return "unchanged";
   }
   // A matched row of a foreign shape (a legacy table nobody could migrate) is
@@ -506,7 +554,7 @@ export async function upsertRow(
     await snapshotLegacy(fs, historyFile, previous);
   }
   lines[existing.index] = merged;
-  await fs.writeText(historyFile, lines.join("\n"));
+  await fs.writeText(historyFile, normalizeSessionTable(lines.join("\n")));
   return "updated";
 }
 

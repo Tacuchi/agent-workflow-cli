@@ -336,6 +336,32 @@ describe("Cerrar aplica finalize y conserva lo pendiente (073 F1)", () => {
 });
 
 describe("aw session-close sobre una corrida abierta", () => {
+  it("rechaza un placeholder antes de escribir los artefactos del cierre en frontera", async () => {
+    await runStandingOn(AMBIGUITY);
+    const checkpoint = join(paths.cwdSessionsDir(), SESSION, "CHECKPOINT.md");
+    const before = "# CHECKPOINT\n\n## Completed\n_[AI: pendiente]_\n";
+    await writeFile(checkpoint, before, "utf8");
+    const denied = await close();
+    expect(denied.ok).toBe(false);
+    expect(closed()).toBe(false);
+    expect(await readFile(checkpoint, "utf8")).toBe(before);
+    expect(existsSync(join(paths.cwdSessionsDir(), SESSION, "BACKLOG.md"))).toBe(false);
+  });
+
+  it("el flag de excepción del comando llega hasta la validación del CHECKPOINT", async () => {
+    const checkpoint = join(paths.cwdSessionsDir(), SESSION, "CHECKPOINT.md");
+    await writeFile(checkpoint, "# CHECKPOINT\n\n## Completed\n_[AI: pendiente]_\n", "utf8");
+    const denied = await close();
+    expect(denied.ok).toBe(false);
+    expect(closed()).toBe(false);
+    const approved = await sessionCloseCommand.execute(
+      parseArgv(["session-close", "--code", "051", "--force"]),
+      ctx,
+    );
+    expect(approved.ok).toBe(true);
+    expect(closed()).toBe(true);
+  });
+
   it("cierra la sesión y termina la corrida en la frontera en que estaba", async () => {
     await runStandingOn(AMBIGUITY);
     const result = await close();
@@ -349,6 +375,9 @@ describe("aw session-close sobre una corrida abierta", () => {
     ]);
     expect(state.applied.at(-1)).toBe("chassis.finalize");
     expect(state.applied).not.toContain(AMBIGUITY);
+    const narrative = await readFile(join(paths.cwdSessionsDir(), SESSION, "SESSION.md"), "utf8");
+    expect(narrative).toContain("**Siguiente paso:** ninguno");
+    expect(narrative).not.toContain("**Siguiente paso:** pendiente");
     expect(resolveBoundary(state, journeyForRun(state)).stopped).toBeNull();
     // El cierre queda en la traza material, con lo que el cierre realmente hizo.
     expect(state.events.at(-1)).toMatchObject({
@@ -640,7 +669,7 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     const state = stateWrittenAt(FLOW_RUN_STATE_VERSION, "spec-refine", SESSION, IDS, null);
     await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state), "utf8");
     await writeFile(join(paths.cwdSessionsDir(), SESSION, CLOSED_MARKER), "", "utf8");
-    expect((await reopen()).run).toEqual({ resumes_at: CONFIRMATION });
+    expect((await reopen()).run).toEqual({ resumes_at: "chassis.commit-choice" });
   });
 
   it("sin ninguna humana aplicada se niega y conserva la sesión cerrada", async () => {
@@ -739,7 +768,7 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     });
   });
 
-  it("plan-exec terminado retoma en su autorización de commit", async () => {
+  it("plan-exec terminado retoma en el gate de commit del workspace", async () => {
     const fresh = stateWrittenAt(FLOW_RUN_STATE_VERSION, "plan-exec", SESSION, [], null, {
       batch_loop: { pending: false, iteration: null },
     });
@@ -755,7 +784,7 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state), "utf8");
     await writeFile(join(paths.cwdSessionsDir(), SESSION, CLOSED_MARKER), "", "utf8");
     expect((await reopen()).run).toEqual({ resumes_at: lastHuman });
-    expect(lastHuman).toBe("plan-exec.commit-authorization");
+    expect(lastHuman).toBe("chassis.commit-choice");
   });
 
   it("una corrida que sigue caminando no se toca al reabrir", async () => {

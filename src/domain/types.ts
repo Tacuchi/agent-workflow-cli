@@ -5,7 +5,7 @@
  */
 export type SessionType = "research" | "refine" | "exec" | "quick";
 
-export type SessionState = "active" | "closed";
+export type SessionState = "active" | "closed" | "paused" | "abandoned";
 
 export type ExitCode = 0 | 1 | 2;
 

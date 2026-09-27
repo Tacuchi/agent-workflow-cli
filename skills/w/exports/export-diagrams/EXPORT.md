@@ -1,11 +1,11 @@
 ---
 name: export-diagrams
-description: "Generates the workspace's architecture and flow diagrams in `docs/diagrams/` consolidating the sources' code + the plan-doc (the AS-IS → TO-BE delta in `## Solution`, `Impacted`) of N sessions. Produces context, containers, components, integrations and data model (when read-only MCP is available). Default `mermaid` (renders on GitHub, `mermaid.ink` link for preview); `c4`/structurizr opt-in via `--engine`. Output in `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` (or `.md`). Read-only/report: emits only the diagram source (the reader renders it); never commits nor mutates anything; MCP reads only. Composes the `diagrams` capability. Use for 'system diagram', 'workspace C4', 'architecture/flow map'. User-invoked via `/w:export-diagrams`."
+description: "Generates architecture and flow diagram source in `docs/diagrams/`, consolidating code and plan context from N sessions. The CLI proposes an optional exact-path commit after publication and executes it only with approval; MCP reads only. Composes `diagrams`. User-invoked via `/w:export-diagrams`."
 ---
 
 # export-diagrams — architecture and flow diagrams from code + plan-doc
 
-Generates a diagram dossier (**architecture and flows**) of the workspace, aggregating the sources' structure and the sessions' delta. **Read-only / report** — it emits only the diagram **source** (Mermaid / DSL); the reader renders it. It never commits, never mutates anything; MCP reads only.
+Generates a diagram dossier (**architecture and flows**) of the workspace, aggregating the sources' structure and the sessions' delta. It emits only diagram **source** (Mermaid / DSL); the reader renders it. The CLI offers an optional approved commit after publication; MCP reads only.
 
 > `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-diagrams.md`.
 
@@ -102,7 +102,7 @@ Per `--engine`: `mermaid` → native Mermaid C4 blocks (`C4Context`/`C4Container
 
 ### Step 6 — Write or report
 
-With `--dry-run`: print the report; write nothing. Otherwise: `aw next-number docs/diagrams` + write the dossier. **NEVER commit**. Summary to the user: engine, present/omitted sections (e.g. Data omitted without MCP) and the path.
+With `--dry-run`: print the report; write nothing. Otherwise: `aw next-number docs/diagrams` + write the dossier. The CLI proposes `aw workspace-commit prepare --export <ruta>` after publication; `apply --approval <digest>` commits only approved paths, never pushes. Summary to the user: engine, present/omitted sections (e.g. Data omitted without MCP) and the path.
 
 ## Output location
 

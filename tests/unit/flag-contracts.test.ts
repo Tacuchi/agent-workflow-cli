@@ -292,11 +292,13 @@ describe("flag contracts · the dispatcher refuses what no command reads", () =>
     if (outcome.kind !== "refuse") return;
     expect(outcome.result.error).toEqual({
       code: "UNKNOWN_FLAG",
-      message: "--name no es un flag de este comando; acepta --code, --refs",
+      message:
+        "--name no es un flag de este comando; acepta --abandon, --code, --force, --refs, --with-evidence",
     });
     expect(outcome.result.data).toEqual({
       unknown_flags: ["--name"],
-      action: "corregí el flag y reintentá: `aw session-close --code <sesión> [--refs <csv>]`",
+      action:
+        "corregí el flag y reintentá: `aw session-close --code <sesión> [--refs <csv>] [--force] [--abandon] [--with-evidence]`",
     });
   });
 });

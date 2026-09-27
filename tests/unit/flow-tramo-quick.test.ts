@@ -1051,11 +1051,11 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
         });
         expect(reopened).toMatchObject({
           state: "active",
-          run: { resumes_at: FIX_PREVIEW_TRANSITION },
+          run: { resumes_at: "chassis.commit-choice" },
         });
         const advance = await advanceFlow(fs, paths, { code: CODE, adopt: false, executor, git });
         if (!advance.ok) throw new Error(JSON.stringify(advance));
-        expect(advance.directive.boundary.transition).toBe(FIX_PREVIEW_TRANSITION);
+        expect(advance.directive.boundary.transition).toBe("chassis.commit-choice");
       }
     }
   });

@@ -12,9 +12,10 @@
 
 import {
   type WorkspaceMigrationApplied,
+  applyRenumber,
   applyWorkspaceMigration,
 } from "../../application/workspace-migrate/apply.js";
-import { planWorkspaceMigration } from "../../application/workspace-migrate/plan.js";
+import { planRenumber, planWorkspaceMigration } from "../../application/workspace-migrate/plan.js";
 import {
   type WorkspaceMigrationPreview,
   migrationPreview,
@@ -27,7 +28,10 @@ import type { CliCommand, CommandFlags } from "../registry.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const FLAGS: CommandFlags = { known: ["apply"], usage: "aw workspace-migrate [--apply]" };
+const FLAGS: CommandFlags = {
+  known: ["apply", "renumber"],
+  usage: "aw workspace-migrate [--renumber] [--apply]",
+};
 
 export interface MigratePreviewOutput extends WorkspaceMigrationPreview {
   action: "preview";
@@ -39,7 +43,20 @@ export interface MigrateApplyOutput extends WorkspaceMigrationApplied {
   action: "apply";
 }
 
-export type WorkspaceMigrateOutput = MigratePreviewOutput | MigrateApplyOutput;
+export type WorkspaceMigrateOutput =
+  | MigratePreviewOutput
+  | MigrateApplyOutput
+  | {
+      action: "renumber-preview";
+      moves: Awaited<ReturnType<typeof planRenumber>>["moves"];
+      blocked: string[];
+      next: string;
+    }
+  | {
+      action: "renumber-apply";
+      moved: Awaited<ReturnType<typeof planRenumber>>["moves"];
+      blocked: string[];
+    };
 
 export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
   name: "workspace-migrate",
@@ -51,6 +68,27 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
     "queda intacta y se reporta. Usage: aw workspace-migrate [--apply].",
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceMigrateOutput>> {
+    if (args.flags.has("--renumber")) {
+      if (!args.flags.has("--apply")) {
+        return {
+          ok: true,
+          data: {
+            action: "renumber-preview",
+            ...(await planRenumber(ctx.fs, ctx.paths, ctx.git)),
+            next: "aw workspace-migrate --renumber --apply",
+          },
+          exitCode: 0,
+        };
+      }
+      const result = await applyRenumber(ctx.fs, ctx.paths, ctx.git);
+      if ("error" in result)
+        return failSemantic<WorkspaceMigrateOutput>({
+          code: "LOCK_BUSY",
+          message: result.error,
+          action: "reintentá cuando termine la operación en curso",
+        });
+      return { ok: true, data: { action: "renumber-apply", ...result }, exitCode: 0 };
+    }
     if (!args.flags.has("--apply")) {
       const plan = await planWorkspaceMigration(ctx.fs, ctx.paths);
       return {
@@ -78,6 +116,10 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
   renderHuman(result, context): string {
     if (!result.ok || result.data === undefined) return "";
     const data = result.data;
+    if (data.action === "renumber-preview" || data.action === "renumber-apply") {
+      const moves = data.action === "renumber-preview" ? data.moves : data.moved;
+      return `${moves.map((move) => `${move.from} → ${move.to} (${move.reason})`).join("\n") || "Sin colisiones para renumerar"}${data.blocked.length ? `\nBloqueadas: ${data.blocked.join("; ")}` : ""}${data.action === "renumber-preview" ? `\n${data.next}` : ""}\n`;
+    }
     const lines =
       data.action === "apply" ? [renderMigrationApplied(data)] : [renderMigrationPreview(data)];
     if (context.detail && data.action === "preview") {

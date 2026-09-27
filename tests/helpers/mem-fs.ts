@@ -86,6 +86,23 @@ export class MemFs implements FileSystemPort {
     this.children.delete(p);
     this.children.get(parentOf(p))?.delete(baseOf(p));
   }
+  async rename(from: string, to: string): Promise<void> {
+    if (await this.exists(to)) throw new Error(`EEXIST: ${to}`);
+    const files = [...this.files].filter(([path]) => path === from || path.startsWith(`${from}/`));
+    const dirs = [...this.dirMtime].filter(
+      ([path]) => path === from || path.startsWith(`${from}/`),
+    );
+    if (files.length === 0 && dirs.length === 0) throw new Error(`ENOENT: ${from}`);
+    for (const [path, mtime] of dirs) this.dir(`${to}${path.slice(from.length)}`, mtime);
+    for (const [path, value] of files)
+      this.file(`${to}${path.slice(from.length)}`, value.content, value.mtime);
+    for (const [path] of files) this.files.delete(path);
+    for (const [path] of dirs) this.dirMtime.delete(path);
+    for (const path of [...this.children.keys()]) {
+      if (path === from || path.startsWith(`${from}/`)) this.children.delete(path);
+    }
+    this.children.get(parentOf(from))?.delete(baseOf(from));
+  }
   async exists(p: string): Promise<boolean> {
     return this.files.has(p) || this.dirMtime.has(p) || this.children.has(p);
   }

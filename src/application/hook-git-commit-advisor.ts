@@ -1,10 +1,9 @@
-import { join } from "node:path";
 import { CORRELATIVE_SOURCE } from "../domain/correlative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { parseHookPayload } from "./hook-common.js";
 import type { PathsService } from "./paths-service.js";
-import { CLOSED_MARKER, listSessionFolders, sessionNumericCode } from "./session-resolver.js";
+import { listSessionFolders, readSessionState, sessionNumericCode } from "./session-resolver.js";
 
 const REFERENCE_DOC = "skills/w/roles/git/ROLE.md · Canonical message format";
 const GIT_COMMIT_RE = /\bgit\s+commit\b/;
@@ -74,7 +73,7 @@ async function findUniqueActiveSession(
   const folders = await listSessionFolders(fs, paths.cwdSessionsDir());
   const active: string[] = [];
   for (const folder of folders) {
-    if (await fs.exists(join(folder.path, CLOSED_MARKER))) continue;
+    if ((await readSessionState(fs, folder.path)) !== "active") continue;
     active.push(folder.name);
   }
   return active.length === 1 ? (active[0] ?? null) : null;

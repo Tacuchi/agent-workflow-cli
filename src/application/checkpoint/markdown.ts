@@ -141,7 +141,7 @@ function appendHeader(lines: string[], state: SessionState): void {
   const progressLine =
     progress !== null
       ? `${progress}% (${state.tasks.closed} of ${state.tasks.total} tasks complete)`
-      : "_progress unknown (TASKS.md missing or empty)_";
+      : "_progress unknown (SESSION.md has no checklist)_";
   lines.push(
     `# Checkpoint — ${state.folder}`,
     "",
@@ -150,11 +150,11 @@ function appendHeader(lines: string[], state: SessionState): void {
     "",
     "## Last action",
     "",
-    "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and the latest entry in DECISIONS.md.]_",
+    "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and DECISION.md.]_",
     "",
     "## Next step",
     "",
-    "_[AI: 1-2 sentences on what remains. Review the first open item in TASKS.md.]_",
+    "_[AI: 1-2 sentences on what remains. Review the first open criterion in SESSION.md.]_",
     "",
   );
 }

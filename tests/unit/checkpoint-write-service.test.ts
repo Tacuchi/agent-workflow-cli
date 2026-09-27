@@ -734,7 +734,7 @@ describe("la adopción del refugio", () => {
     await runCheckpointWrite(fs, env, new FakeGit(), paths, { contextId: conv });
     const prosa = "Cerré el guard y lo verifiqué con un relleno parcial.";
     const filled = (await fs.readText(cpPath)).replace(
-      "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and the latest entry in DECISIONS.md.]_",
+      "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and DECISION.md.]_",
       prosa,
     );
     await fs.writeText(cpPath, filled);

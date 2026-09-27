@@ -12,7 +12,7 @@ import {
 } from "../domain/correlative.js";
 import type { SessionState } from "../domain/types.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { maxHistoryCorrelative } from "./history-table.js";
+import { maxHistoryCorrelative, readHistoryRows } from "./history-table.js";
 import { withCwdLock } from "./lock-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual, parseMdValueBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
@@ -25,6 +25,8 @@ const SESSION_FOLDER_RE = /^session(\d{3,})-(.+)$/;
 
 /** Folder-local sentinel file marking a session as closed. */
 export const CLOSED_MARKER = ".closed";
+export const PAUSED_MARKER = ".paused";
+export const ABANDONED_MARKER = ".abandoned";
 
 export interface SessionEntry {
   code: string | null;
@@ -67,7 +69,7 @@ export async function buildSessionEntry(
 
   // Session state is derived solely from a folder-local `.closed` sentinel file
   // (locked decision): present = closed, absent = active. Type-agnostic.
-  const state: SessionState = await stateFromClosedMarker(fs, sessionPath);
+  const state: SessionState = await readSessionState(fs, sessionPath);
 
   const requirement = await readRequirement(fs, sessionPath);
   const date = requirement.date ?? (await declaredBirthDate(fs, sessionPath));
@@ -260,8 +262,29 @@ export async function sessionsSharingNumber(
     sharing.push({
       folder: folder.name,
       code: wanted,
-      state: await stateFromClosedMarker(fs, folder.path),
+      state: await readSessionState(fs, folder.path),
     });
+  }
+  const history = paths.cwdHistoryFile();
+  if (await fs.exists(history)) {
+    for (const row of readHistoryRows(await fs.readText(history))) {
+      const number = sessionNumericCode(row.key);
+      if (number === null || !sameCorrelative(number, wanted)) continue;
+      if (
+        !row.key.includes("-") ||
+        sharing.some(
+          (candidate) =>
+            candidate.folder === row.key ||
+            candidate.folder.replace(/^session(?=\d)/, "") === row.key,
+        )
+      )
+        continue;
+      sharing.push({
+        folder: row.key,
+        code: wanted,
+        state: row.state === "closed" ? "closed" : "active",
+      });
+    }
   }
   return sharing;
 }
@@ -384,7 +407,7 @@ async function establishBinding(
   if (id.length === 0 || resolution.via === "binding") return null;
   // Never associate a conversation with a closed session: the binding path
   // treats a closed target as stale, so writing one would poison the next read.
-  if (resolution.session.state === "closed") return null;
+  if (resolution.session.state !== "active") return null;
 
   // Optimistic, and deliberately so. The common case is an association that
   // already points here — a loop re-running `--code NNN` every turn. Reading is
@@ -430,7 +453,7 @@ async function scanFolders(
       name: folder.name,
       path: folder.path,
       code: sessionNumericCode(folder.name),
-      state: await stateFromClosedMarker(fs, folder.path),
+      state: await readSessionState(fs, folder.path),
     });
   }
   return out;
@@ -470,17 +493,19 @@ async function resolveExplicit(
       `reintentá con el nombre exacto de la carpeta: ${matches.map((m) => m.name).join(", ")}`,
     );
   }
-  if (only.state === "closed" && !allowClosed) {
+  if (only.state !== "active" && !allowClosed) {
     return resolutionError(
       "SESSION_CLOSED",
-      `la sesión '${only.name}' está cerrada`,
+      `la sesión '${only.name}' está ${only.state === "paused" ? "pausada" : only.state === "abandoned" ? "abandonada" : "cerrada"}`,
       [only],
       // The FOLDER, never a `<NNN>` placeholder: this action exists to be run
       // verbatim, and a bare number can match a legacy `sessionNNN-` folder that
       // shares it — leaving the reader to solve an ambiguity the resolver already
       // solved. Mid-journey this is the only way out: a run whose session was
       // closed from outside resolves with `allowClosed:false` and stops here.
-      `reabrila con \`aw session-resume --code ${only.name} --reopen\` y reintentá, o elegí una sesión activa`,
+      only.state === "paused"
+        ? `retomala con \`aw session-resume --code ${only.name}\` y reintentá`
+        : `reabrila con \`aw session-resume --code ${only.name} --reopen\` y reintentá, o elegí una sesión activa`,
     );
   }
   return {
@@ -517,7 +542,7 @@ function writeCollisionError(code: string, candidates: SessionCandidate[]): Sess
     code: "SESSION_AMBIGUOUS",
     message: `el correlativo ${code} corresponde a ${candidates.length} carpetas; una escritura no puede elegir qué registro durable actualizar`,
     candidates,
-    action: `ejecutá \`aw workspace-migrate\` para revisar la serie y después \`aw workspace-migrate --apply\`, o renombrá una de estas carpetas para que el correlativo sea único antes de escribir: ${folders.join(", ")}`,
+    action: `ejecutá \`aw workspace-migrate --renumber\` para resolver el número compartido: ${folders.join(", ")}`,
   };
 }
 
@@ -549,7 +574,7 @@ async function resolveFromBinding(
       "reasociá la conversación reanudando explícitamente con --code",
     );
   }
-  if (target.state === "closed") {
+  if (target.state !== "active") {
     return resolutionError(
       "SESSION_BINDING_INVALID",
       `la conversación está asociada a '${lookup.folder}', que está cerrada`,
@@ -704,10 +729,12 @@ export function typeFromNameSuffix(folder: string): string | undefined {
  * present = closed, absent = active. Single canonical source of truth across
  * resolver / sessions-service / checkpoint-service. Type-agnostic.
  */
-async function stateFromClosedMarker(
+export async function readSessionState(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<SessionState> {
+  if (await fs.exists(join(sessionPath, ABANDONED_MARKER))) return "abandoned";
+  if (await fs.exists(join(sessionPath, PAUSED_MARKER))) return "paused";
   return (await fs.exists(join(sessionPath, CLOSED_MARKER))) ? "closed" : "active";
 }
 

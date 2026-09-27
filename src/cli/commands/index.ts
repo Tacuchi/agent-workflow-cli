@@ -31,6 +31,7 @@ import { flowCommand } from "./flow.js";
 import { generateLaunchCommand } from "./generate-launch.js";
 import { gitFlowCommand } from "./git-flow.js";
 import { historyUpdateCommand } from "./history-update.js";
+import { historyCommand } from "./history.js";
 import { hookCommand } from "./hook.js";
 import { hostDoctorCommand } from "./host-doctor.js";
 import { hostMemoryCommand } from "./host-memory.js";
@@ -53,6 +54,7 @@ import { selfCommand } from "./self.js";
 import { sessionArtifactsCommand } from "./session-artifacts.js";
 import { sessionCloseCommand } from "./session-close.js";
 import { sessionCreateCommand } from "./session-create.js";
+import { sessionPauseCommand } from "./session-pause.js";
 import { sessionResumeCommand } from "./session-resume.js";
 import { sessionsCommand } from "./sessions.js";
 import { setQaBranchCommand, setWorkingBranchCommand } from "./set-branch.js";
@@ -65,6 +67,7 @@ import { stackCommand } from "./stack.js";
 import { statusCommand } from "./status.js";
 import { toolCommand } from "./tool.js";
 import { visibilityCommand } from "./visibility.js";
+import { workspaceCommitCommand } from "./workspace-commit.js";
 import { workspaceInitCommand } from "./workspace-init.js";
 import { workspaceMigrateCommand } from "./workspace-migrate.js";
 import { worktreeCommand } from "./worktree.js";
@@ -80,12 +83,15 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   exportManualsCommand,
   exportReportsCommand,
   exportScriptsCommand,
+  historyCommand,
   historyUpdateCommand,
   sessionArtifactsCommand,
   sessionCloseCommand,
   sessionCreateCommand,
+  sessionPauseCommand,
   stackCommand,
   workspaceInitCommand,
+  workspaceCommitCommand,
   addSourceCommand,
   skillIndexCommand,
   contextBudgetCommand,

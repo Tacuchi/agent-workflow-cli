@@ -1256,6 +1256,39 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
+    id: "chassis.commit-choice",
+    scope: CHASSIS,
+    title: "aprobar el commit del workspace por rutas explícitas o cerrar sin él",
+    authority: "human",
+    ownership: "cli-owned",
+    document: CHASSIS_MD,
+    attribution: CHASSIS_ATTRIBUTION,
+    placement: "suffix",
+    alternatives: [
+      {
+        label: "Cerrar sin commit",
+        consequence:
+          "se archiva el mínimo y se cierra la sesión; el trabajo del workspace queda sin commitear",
+        recommended: true,
+        outcome: { kind: "continue" },
+      },
+      {
+        label: "Aprobar commit del workspace",
+        consequence:
+          "se cierra y luego el CLI commitea solamente el pathspec y mensaje mostrados en la propuesta; nunca hace push",
+        recommended: false,
+        outcome: { kind: "continue" },
+      },
+      {
+        label: "Copiar evidencia y cerrar",
+        consequence:
+          "se copian a la sesión las referencias existentes del scratchpad y se archivan antes de cerrar, sin commit",
+        recommended: false,
+        outcome: { kind: "continue" },
+      },
+    ],
+  },
+  {
     id: "chassis.finalize",
     scope: CHASSIS,
     title: "persistir CHECKPOINT, escribir BACKLOG solo si algo quedó diferido y cerrar la sesión",
@@ -3732,6 +3765,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
  */
 export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
+    command: "workspace-commit",
+    reason:
+      "comando transversal sin corrida propia: prepare sella mensaje y pathspec del workspace y apply exige ese digest; el cierre del chasis también lo invoca sólo después del consentimiento humano",
+  },
+  {
     command: "spec-new",
     reason:
       "comando `/w:` de una sola pasada que no abre loop: sin corrida que dirigir, su gate de división lo aplica el propio comando con la regla de modules/SPLIT-GATE.md, que por eso conserva su enunciado",
@@ -3831,6 +3869,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
       "comparte la clasificación de export-reports: selección semántica del agente más corpus, numeración y escritura del CLI, con su propio destino documental",
   },
   { command: "history-update", reason: "reparación del registro durable" },
+  {
+    command: "session-pause",
+    reason: "marca explícita de pausa por decisión humana, fuera de recorridos",
+  },
+  { command: "history", reason: "reconciliación de sólo lectura del registro de sesiones" },
   { command: "project-md-upsert", reason: "escritura del bloque de proyecto en el host" },
   {
     command: "workspace-migrate",
@@ -3962,7 +4005,13 @@ export function expandJourney(
 ): ExpandedJourney {
   // The runtime normally supplies no base, so this reads the registry directly.
   // A controlled host may supply its own fixture journey.
-  const base = baseJourney ?? journeyOfFlow(state.flow);
+  const source = baseJourney ?? journeyOfFlow(state.flow);
+  // A run finalized by an older CLI must keep its completed cursor: inserting
+  // a human gate before an already applied finalize would reinterpret its close.
+  const base =
+    state.applied?.includes(FINALIZE_TRANSITION) && !state.applied.includes("chassis.commit-choice")
+      ? source.filter((row) => row.id !== "chassis.commit-choice")
+      : source;
   const batched = state.flow === "plan-exec" ? batchSegments(state, base) : base;
   return withReentries(batched, base, state.reentries ?? []);
 }

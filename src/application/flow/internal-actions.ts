@@ -56,7 +56,6 @@ import {
   claimShapedAmong,
   completedClaimsIn,
   ledgerPath,
-  openClaimsOf,
   readClaimEvents,
   revokedAmong,
 } from "../claims-ledger.js";
@@ -79,6 +78,7 @@ import { recordPublication } from "../session-custody-recorder.js";
 import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
+import { runWorkspaceCommit } from "../workspace-commit-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
 import { commitBatch, verifyBatchGitState } from "./batch-commit.js";
 import { observeScopedFingerprints, resolveCheckoutCandidates } from "./checkout-observation.js";
@@ -441,12 +441,12 @@ async function publish(
  * never held up by a ledger it does not depend on — an unreadable ledger must not
  * stop every loop in the system from saving.
  */
-async function revokedFence(
+export async function revokedFence(
   deps: InternalActionDeps,
   owner: string,
   destinations: readonly string[],
 ): Promise<CapabilityFailure | null> {
-  const read = await readClaimEvents(deps.fs, deps.paths);
+  const read = await readClaimEvents(deps.fs, deps.paths, { lockHeld: true });
   const blocked = revokedAmong(read.events, owner, destinations);
   if (blocked.length > 0) {
     return {
@@ -457,15 +457,10 @@ async function revokedFence(
     };
   }
   if (read.unreadable > 0) {
-    // Scoped to claims this owner ACTUALLY holds in the ledger, not to every
-    // numbered destination. Otherwise one unparseable line — and this file is a
-    // committed append-only JSONL, so a merge conflict produces exactly that —
-    // would refuse every SPEC, PLAN and QUICK save in the workspace, which is a
-    // workspace-wide outage rather than the narrow fail-closed this needs to be.
-    const mine = new Set(openClaimsOf(read.events, owner).map((claim) => claimKey(claim)));
-    const atRisk = claimShapedAmong(owner, destinations).filter((claim) =>
-      mine.has(claimKey(claim)),
-    );
+    // An illegible revoked row may have removed the very open claim a narrowed
+    // check would rely on. Every numbered destination is at risk; loose files
+    // outside the claim namespace remain unaffected.
+    const atRisk = claimShapedAmong(owner, destinations);
     if (atRisk.length > 0) {
       return {
         code: "CLAIM_LEDGER_UNREADABLE",
@@ -516,6 +511,7 @@ async function recordCompletedClaims(
   const recorded: string[] = [];
   try {
     const read = await readClaimEvents(deps.fs, deps.paths);
+    if (read.unreadable > 0) return { recorded, ledger_unreadable: read.unreadable };
     const completed = completedClaimsIn(read.events, owner, {
       written: result.written,
       already_applied: result.already_applied,
@@ -1558,13 +1554,66 @@ async function close(
     deps.paths,
     {
       code: run.code,
+      withEvidence:
+        read.ok &&
+        read.state.events.some(
+          (event) => event.kind === "executed" && event.operation === "workspace.evidence-approved",
+        ),
+      // `Cerrar` and a consented QUICK escalation are explicit human exits:
+      // incomplete criteria travel in BACKLOG, not as an invented completion.
+      force:
+        boundaryClose ||
+        (read.ok &&
+          read.state.flow === "quick" &&
+          read.state.applied.includes("quick.escalation-destination") &&
+          !read.state.skipped.includes("quick.escalation-destination")),
       requireIntegrated: !boundaryClose,
       preserveReservations: boundaryClose
         ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
         : [],
     },
     async () => ({ units: listed.units, unreadable: listed.unreadable ?? [] }),
+    deps.git,
   );
+  if ("sessionClose" in result) {
+    const approval = read.ok
+      ? [...read.state.events]
+          .reverse()
+          .find(
+            (event) => event.kind === "executed" && event.operation === "workspace.commit-approved",
+          )
+      : undefined;
+    if (approval?.kind === "executed") {
+      if (
+        result.sessionClose.archive_error !== undefined ||
+        result.sessionClose.history_error !== undefined
+      ) {
+        result.sessionClose.commit_error = `no se ejecutó el commit: ${result.sessionClose.archive_error ?? result.sessionClose.history_error}`;
+      } else {
+        try {
+          const accepted: unknown = JSON.parse(approval.summary);
+          if (
+            typeof accepted === "object" &&
+            accepted !== null &&
+            "approval" in accepted &&
+            typeof accepted.approval === "string"
+          ) {
+            const commit = await runWorkspaceCommit(deps.fs, deps.git, undefined, deps.paths, {
+              code: run.session,
+              approval: accepted.approval,
+            });
+            if ("committed" in commit && commit.committed)
+              result.sessionClose.commit_receipt = commit.committed;
+            else
+              result.sessionClose.commit_error =
+                "error" in commit ? commit.error : "el commit aprobado no se produjo";
+          }
+        } catch (error) {
+          result.sessionClose.commit_error = error instanceof Error ? error.message : String(error);
+        }
+      }
+    }
+  }
   if ("sessionHeld" in result) {
     const held = result.sessionHeld;
     return refusal(
@@ -1585,7 +1634,7 @@ async function close(
   }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}${closed.commit_receipt ? ` · commit ${closed.commit_receipt.after}` : closed.commit_error ? ` · commit pendiente: ${closed.commit_error}` : ""}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

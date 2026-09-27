@@ -38,6 +38,7 @@ export function renderRefs(refsRaw: string | undefined | null): string {
 }
 
 function renderItem(kind: string, val: string): string | null {
+  if (kind === "commit") return `commit ${val.slice(0, 12)}`;
   const builtin = BUILTIN_RENDERERS[kind];
   if (builtin) return builtin(val);
   return `[${kind.toUpperCase()}](${val})`;

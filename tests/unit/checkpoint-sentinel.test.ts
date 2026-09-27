@@ -5,6 +5,7 @@ import {
 } from "../../src/application/checkpoint-write-service.js";
 import { formatCheckpointMd } from "../../src/application/checkpoint/markdown.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { runSessionClose } from "../../src/application/session-close-service.js";
 import type { GitPort, LocalChange, NumstatCounts } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -95,7 +96,10 @@ const git = new FakeGit();
 
 /** One active session, named by every call, so identity is never the thing under test here. */
 function oneSession(): MemFs {
-  const fs = new MemFs({ lenient: true });
+  return oneSessionWith(new MemFs({ lenient: true }));
+}
+
+function oneSessionWith(fs: MemFs): MemFs {
   fs.file(`${sessionsDir}/${folder}/SESSION.md`, `# SESSION — ${folder}\n`);
   fs.file(`${sessionsDir}/${folder}/TASKS.md`, "- [x] T1\n- [ ] T2\n");
   return fs;
@@ -114,7 +118,7 @@ async function seedPartiallyFilled(fs: MemFs): Promise<string> {
   }
   const template = await fs.readText(cpPath);
   const filled = template.replace(
-    "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and the latest entry in DECISIONS.md.]_",
+    "_[AI: 1-3 sentences on the last concrete progress. Review recent diffs and DECISION.md.]_",
     PROSA,
   );
   // The premise of the whole defect: markers survive a partial fill.
@@ -261,5 +265,201 @@ describe("the sentinel is no longer a string the generator emits", () => {
     const result = await runCheckpointWrite(fs, env, git, paths, { code: folder });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
     expect(result.preserved).toBe(true);
+  });
+});
+
+describe("cierre con CHECKPOINT veraz", () => {
+  it("exige Origin y razón para un criterio abierto en una sesión vigente", async () => {
+    const fs = oneSession();
+    fs.file(
+      `${sessionsDir}/${folder}/SESSION.md`,
+      "# SESSION\n\n## Origin\n<!-- plantilla -->\n-\n\n## Success criteria\n- [ ] aprobar\n",
+    );
+    const emptyOrigin = await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    expect(emptyOrigin).toMatchObject({ code: "SESSION_INCOMPLETE" });
+    expect(await fs.exists(`${sessionsDir}/${folder}/.closed`)).toBe(false);
+    fs.file(
+      `${sessionsDir}/${folder}/SESSION.md`,
+      "# SESSION\n\n## Origin\n- petición\n\n## Success criteria\n- [ ] aprobar\n",
+    );
+    expect(await runSessionClose(fs, paths, { code: folder }, undefined, git)).toMatchObject({
+      code: "SESSION_INCOMPLETE",
+    });
+    fs.file(
+      `${sessionsDir}/${folder}/SESSION.md`,
+      "# SESSION\n\n## Origin\n- petición\n\n## Success criteria\n- [ ] aprobar — razón: falta revisión\n",
+    );
+    expect(await runSessionClose(fs, paths, { code: folder }, undefined, git)).toHaveProperty(
+      "sessionClose.closed",
+      true,
+    );
+  });
+  it("se niega si renumeran su carpeta entre resolverla y adquirir el candado", async () => {
+    class RenameAtLock extends MemFs {
+      nextRename = false;
+      override async writeTextExclusive(path: string, content: string) {
+        if (this.nextRename && path === paths.cwdLockFile()) {
+          this.nextRename = false;
+          await this.rename(`${sessionsDir}/${folder}`, `${sessionsDir}/045-nueva-plan-exec`);
+        }
+        return super.writeTextExclusive(path, content);
+      }
+    }
+    const fs = oneSessionWith(new RenameAtLock({ lenient: true })) as RenameAtLock;
+    fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n- listo\n");
+    fs.nextRename = true;
+    const result = await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    expect(result).toMatchObject({ code: "SESSION_RENUMBER_STALE" });
+    expect(await fs.exists(`${sessionsDir}/045-nueva-plan-exec/.closed`)).toBe(false);
+  });
+
+  it("SessionEnd conserva un refugio y declara degradación si el candado está ocupado", async () => {
+    const fs = oneSession();
+    fs.file(
+      "/cwd/.workflow/.lock",
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
+    );
+    const result = await runAutoCompactOnClose(fs, env, git, paths, { code: folder });
+    expect(result.continuity).toBe("degraded");
+    expect(result.refuge_path).toContain(".refuge/");
+    expect(await fs.exists(`/cwd/${result.refuge_path}`)).toBe(true);
+    const second = await runAutoCompactOnClose(fs, env, git, paths, { code: folder });
+    expect(second.refuge_path).not.toBe(result.refuge_path);
+    expect(await fs.exists(`/cwd/${result.refuge_path}`)).toBe(true);
+    expect(await fs.exists(cpPath)).toBe(false);
+  });
+
+  it("rechaza placeholders antes del marcador y los permite con --force", async () => {
+    const fs = oneSession();
+    fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n_[AI: pendiente]_\n");
+    const held = await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    expect(held).toMatchObject({ code: "CHECKPOINT_INCOMPLETE" });
+    expect(await fs.exists(`${sessionsDir}/${folder}/.closed`)).toBe(false);
+
+    const closed = await runSessionClose(fs, paths, { code: folder, force: true }, undefined, git);
+    expect(closed).toHaveProperty("sessionClose.closed", true);
+    expect(await fs.readText(cpPath)).toContain("- Cierre: sin fuentes declaradas");
+    // Recover finalize without losing the exception already exercised at close.
+    const retry = await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    expect(retry).toHaveProperty("sessionClose.closed", true);
+  });
+
+  it("un candado ocupado no escribe una línea de cierre falsa", async () => {
+    const fs = oneSession();
+    fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n- listo\n");
+    const before = await fs.readText(cpPath);
+    fs.file(
+      "/cwd/.workflow/.lock",
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
+    );
+    const refused = await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    expect(refused).toMatchObject({ code: "LOCK_BUSY" });
+    expect(await fs.readText(cpPath)).toBe(before);
+  });
+
+  it("un fallo al escribir el marcador no deja un CHECKPOINT que afirme cierre", async () => {
+    class MarkerFails extends MemFs {
+      override async writeText(path: string, content: string) {
+        if (path.endsWith("/.closed")) throw new Error("falló el marcador");
+        await super.writeText(path, content);
+      }
+    }
+    const fs = oneSessionWith(new MarkerFails({ lenient: true }));
+    fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n- listo\n");
+    const before = await fs.readText(cpPath);
+    await expect(runSessionClose(fs, paths, { code: folder }, undefined, git)).rejects.toThrow(
+      "falló el marcador",
+    );
+    expect(await fs.readText(cpPath)).toBe(before);
+  });
+
+  it("completa los encabezados al cerrar sobre un checkpoint de frontera parcial", async () => {
+    const fs = oneSession();
+    fs.file(cpPath, "# CHECKPOINT\n\n## Pending / Next\n- guardado al cerrar\n");
+    await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    const text = await fs.readText(cpPath);
+    expect(text).toContain("## Completed");
+    expect(text).toContain("## Pending / Next\n- guardado al cerrar");
+    expect(text).toContain("## Closure");
+  });
+
+  it("no oculta avances de un checkpoint legacy detrás de secciones canónicas vacías", async () => {
+    const fs = oneSession();
+    fs.file(
+      cpPath,
+      "# CHECKPOINT\n\n## Last action\n\n- avance anterior\n\n## Next step\n\n- pendiente anterior\n",
+    );
+    await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    const text = await fs.readText(cpPath);
+    expect(text).not.toContain("## Completed");
+    expect(text).not.toContain("## Pending / Next");
+    expect(text).toContain("- avance anterior");
+    expect(text).toContain("- pendiente anterior");
+  });
+
+  it("también conserva los encabezados históricos sin tildes", async () => {
+    const fs = oneSession();
+    fs.file(
+      cpPath,
+      "# CHECKPOINT\n\n## Lo ultimo que hice\n- avance\n\n## Proximo paso\n- pendiente\n",
+    );
+    await runSessionClose(fs, paths, { code: folder }, undefined, git);
+    const text = await fs.readText(cpPath);
+    expect(text).not.toContain("## Completed");
+    expect(text).not.toContain("## Pending / Next");
+  });
+
+  it("la plantilla nueva cita sólo los artefactos vigentes", async () => {
+    const fs = oneSession();
+    await runCheckpointWrite(fs, env, git, paths, { code: folder });
+    const text = await fs.readText(cpPath);
+    expect(text).toContain("SESSION.md");
+    expect(text).toContain("DECISION.md");
+    expect(text).not.toContain("TASKS.md");
+    expect(text).not.toContain("DECISIONS.md");
+  });
+
+  it("lee la rama y las distancias al upstream de la fuente, sin fetch", async () => {
+    const fs = oneSession();
+    fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n- terminado\n");
+    fs.file(
+      "/cwd/AGENTS.md",
+      "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /fuente | main |\n<!-- WORKFLOW-PROJECT-END -->\n",
+    );
+    class AheadGit extends FakeGit {
+      override async upstreamBranch() {
+        return "refs/remotes/origin/main";
+      }
+      async aheadBehind() {
+        return { ahead: 2, behind: 3 };
+      }
+    }
+    const closed = await runSessionClose(fs, paths, { code: folder }, undefined, new AheadGit());
+    expect(closed).toHaveProperty("sessionClose.closed", true);
+    expect(await fs.readText(cpPath)).toContain(
+      "cli: main, upstream refs/remotes/origin/main, adelante 2, atrás 3, publicada: no",
+    );
+  });
+
+  it("no declara publicada una rama que sólo sigue la rama remota de otra", async () => {
+    const fs = oneSession();
+    fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n- listo\n");
+    fs.file(
+      "/cwd/AGENTS.md",
+      "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /fuente | main |\n<!-- WORKFLOW-PROJECT-END -->\n",
+    );
+    class FollowingGit extends FakeGit {
+      override async currentBranch() {
+        return "feature/x";
+      }
+      override async upstreamBranch() {
+        return "refs/remotes/origin/main";
+      }
+      async aheadBehind() {
+        return { ahead: 0, behind: 2 };
+      }
+    }
+    await runSessionClose(fs, paths, { code: folder }, undefined, new FollowingGit());
+    expect(await fs.readText(cpPath)).toContain("atrás 2, publicada: no");
   });
 });

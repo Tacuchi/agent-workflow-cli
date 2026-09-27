@@ -14,6 +14,8 @@ Loaded when the run has to locate or name a session beyond creating its own (sig
 
 **Reopen to continue**: `aw session-resume --code <NNN> --reopen` reactivates a **closed** session (removes `.closed` → active) to keep working in it; without `--reopen`, resume is read-only. To detect the most recent closed one: `aw resume-summary --include-recent-closed` (or `aw sessions --state all`).
 
+**User-owned states:** only the person marks a session `paused` (`aw session-pause --code <NNN>`) or `abandoned` (`aw session-close --code <NNN> --abandon`). A loop never assigns either state by itself. `aw session-resume --code <NNN>` activates a paused session again; an abandoned one requires the person's explicit `--reopen`.
+
 ## When the durable record fails to update
 
 `aw session-close` also upserts the session's row in `.workflow/HISTORY.md` — the durable record, since `sessions/` is gitignored. That upsert is **non-fatal**: on `history_error` in its output, re-run `aw history-update --code <NNN> --state closed`. `aw session-artifacts` inspects what a session holds.

@@ -40,6 +40,22 @@ export const statusCommand: CliCommand<StatusOutput> = {
     // orphaned packages are inventory and wait for `--detail`.
     lines.push(...renderDesignAlerts(data, lines.at(-1)));
     lines.push(...renderLooseSessions(data, lines.at(-1)));
+    if (data.counts.sessions_paused || data.counts.sessions_abandoned) {
+      lines.push(
+        `Sesiones apartadas: ${data.counts.sessions_paused} pausada(s), ${data.counts.sessions_abandoned} abandonada(s)`,
+        "",
+      );
+    }
+    if (data.history_remote_rows.length > 0 || data.history_collisions.length > 0) {
+      lines.push("HISTORY: sesiones de otra máquina o números compartidos");
+      for (const row of data.history_remote_rows) lines.push(`  sin carpeta local: ${row}`);
+      for (const collision of data.history_collisions) {
+        lines.push(
+          `  ${collision.local} comparte número con ${collision.registered} → ${collision.action}`,
+        );
+      }
+      lines.push("");
+    }
     if (data.unreadable_sources?.length || data.isolation_error) {
       lines.push("Fuentes sin ruta o unidades no verificables");
       for (const source of data.unreadable_sources ?? []) {
@@ -259,7 +275,7 @@ function renderDetail(data: StatusOutput): string[] {
   const done = data.plans.filter((p) => p.plan_state === "done");
   const lines = [
     `Terminado: ${done.length} plan(es) done de ${data.plans.length}`,
-    `Sesiones: ${data.counts.sessions_active} activa(s), ${data.counts.sessions_closed} cerrada(s)`,
+    `Sesiones: ${data.counts.sessions_active} activa(s), ${data.counts.sessions_paused} pausada(s), ${data.counts.sessions_abandoned} abandonada(s), ${data.counts.sessions_closed} cerrada(s)`,
   ];
   for (const spec of data.specs.filter((item) => item.status === "superseded")) {
     lines.push(`  · spec ${spec.number} — ${specDetail(spec, data.plans).next}`);
@@ -274,6 +290,8 @@ function renderDetail(data: StatusOutput): string[] {
     // resumes must never have to reconstruct the command from prose.
     if (session.flow !== null) lines.push(`      ${session.flow.summary}`);
   }
+  for (const session of data.sessions.paused) lines.push(`  · ${session.folder} — pausada`);
+  for (const session of data.sessions.abandoned) lines.push(`  · ${session.folder} — abandonada`);
   if (data.discarded.length > 0) {
     lines.push(`Descartados: ${data.discarded.length}`);
     for (const item of data.discarded) {

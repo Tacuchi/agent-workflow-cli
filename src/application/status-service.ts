@@ -1,11 +1,14 @@
+import { sameCorrelative } from "../domain/correlative.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { DesignGraph } from "./design/design-graph-service.js";
 import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
+import { readHistoryRows } from "./history-table.js";
 import type { PathsService } from "./paths-service.js";
 import { type TerminalEvent, readEvents } from "./retirement/history-events.js";
+import { sessionNumericCode } from "./session-resolver.js";
 import {
   type IndexedDiscarded,
   type IndexedPlan,
@@ -66,7 +69,12 @@ export interface StatusOutput {
   sessions: {
     active: StatusSession[];
     closed: StatusSession[];
+    paused: StatusSession[];
+    abandoned: StatusSession[];
   };
+  /** Rows from another machine; retired rows are historical, not missing folders. */
+  history_remote_rows: string[];
+  history_collisions: Array<{ local: string; registered: string; action: string }>;
   discarded: IndexedDiscarded[];
   /**
    * Terminal retirement events, read from `HISTORY.md`'s own append-only ledger.
@@ -116,6 +124,8 @@ export interface StatusOutput {
     plans: number;
     sessions_active: number;
     sessions_closed: number;
+    sessions_paused: number;
+    sessions_abandoned: number;
     discarded: number;
     /** How many retirements the ledger records. */
     terminal_events: number;
@@ -145,9 +155,18 @@ export async function runStatusCommand(
 
   const active: StatusSession[] = [];
   const closed: StatusSession[] = [];
+  const paused: StatusSession[] = [];
+  const abandoned: StatusSession[] = [];
   for (const session of index.sessions) {
-    const isClosed = session.state === "closed";
-    (isClosed ? closed : active).push({
+    const destination =
+      session.state === "closed"
+        ? closed
+        : session.state === "paused"
+          ? paused
+          : session.state === "abandoned"
+            ? abandoned
+            : active;
+    destination.push({
       code: session.code,
       folder: session.folder,
       type: session.type,
@@ -155,9 +174,42 @@ export async function runStatusCommand(
       phase: session.phase,
       date: session.date,
       relative: session.relative,
-      flow: isClosed ? null : await projectRun(fs, paths, session.folder),
+      flow: session.state === "active" ? await projectRun(fs, paths, session.folder) : null,
       units: session.units,
     });
+  }
+
+  const historyPath = paths.cwdHistoryFile();
+  const rows = (await fs.exists(historyPath))
+    ? readHistoryRows(await fs.readText(historyPath))
+    : [];
+  const localFolders = new Set(index.sessions.map((session) => session.folder));
+  const sameFolder = (rowKey: string) =>
+    localFolders.has(rowKey) ||
+    [...localFolders].some((folder) => folder.replace(/^session(?=\d)/, "") === rowKey);
+  const historyRemoteRows = rows
+    .filter((row) => row.state !== "retired" && !sameFolder(row.key))
+    .map((row) => row.key);
+  const historyCollisions: StatusOutput["history_collisions"] = [];
+  for (const session of index.sessions) {
+    const number = sessionNumericCode(session.folder);
+    if (number === null) continue;
+    for (const row of rows) {
+      const recorded = sessionNumericCode(row.key);
+      if (
+        recorded === null ||
+        !sameCorrelative(number, recorded) ||
+        row.key === session.folder ||
+        session.folder.replace(/^session(?=\d)/, "") === row.key ||
+        !row.key.includes("-")
+      )
+        continue;
+      historyCollisions.push({
+        local: session.folder,
+        registered: row.key,
+        action: "aw workspace-migrate --renumber",
+      });
+    }
   }
 
   return {
@@ -165,7 +217,9 @@ export async function runStatusCommand(
     last_activity: index.last_activity,
     specs: index.specs,
     plans: index.plans,
-    sessions: { active, closed },
+    sessions: { active, closed, paused, abandoned },
+    history_remote_rows: historyRemoteRows,
+    history_collisions: historyCollisions,
     discarded: index.discarded,
     terminal_events: events,
     pending_retirements: index.pending_retirements,
@@ -188,6 +242,8 @@ export async function runStatusCommand(
       plans: index.plans.length,
       sessions_active: active.length,
       sessions_closed: closed.length,
+      sessions_paused: paused.length,
+      sessions_abandoned: abandoned.length,
       discarded: index.discarded.length,
       terminal_events: events.length,
       pending: index.pipeline.length,

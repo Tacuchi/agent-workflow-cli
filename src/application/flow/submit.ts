@@ -131,6 +131,7 @@ import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { CheckoutIdentity } from "../../domain/source-boundary.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
+import type { ProcessPort } from "../../ports/process.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { parseMdSectionBilingual } from "../markdown.js";
 import { parsePhases } from "../parsers/phases.js";
@@ -156,6 +157,7 @@ import {
   type validatePlanSourceBoundary,
 } from "../source-boundary-policy.js";
 import { readSourcePipelines, resolveFinalValidation } from "../source-pipeline.js";
+import { runWorkspaceCommit } from "../workspace-commit-service.js";
 import {
   type ResolvedBoundary,
   actionDigest,
@@ -195,6 +197,7 @@ export interface SubmitFlowInput {
   executor: InternalActionExecutor;
   /** Live checkout reader used to verify source-bounded evidence. */
   git?: GitPort;
+  process?: ProcessPort;
 }
 
 export type SubmitFlowResult =
@@ -322,11 +325,17 @@ export async function submitFlow(
   if (!applied.value.advanced) {
     return { ok: true, directive: withObservedCheckouts(applied.value.directive, observed) };
   }
-  const driven = await driveInternalActions(fs, location, input.executor, {
-    ok: true,
-    state: applied.state,
-    value: applied.value.directive,
-  });
+  const driven = await driveInternalActions(
+    fs,
+    location,
+    input.executor,
+    {
+      ok: true,
+      state: applied.state,
+      value: applied.value.directive,
+    },
+    paths,
+  );
   if (!driven.ok) return { ok: false, failure: driven.failure };
   return { ok: true, directive: withObservedCheckouts(driven.value, observed) };
 }
@@ -942,6 +951,49 @@ async function decide(
   // mark work, validate or commit; a decision selection is durably recorded
   // even while its registration is handled by the decision bridge below.
   const selected = choiceOutcomeOf(resolved.stopped, parsed.answer.choice);
+  let approvedWorkspaceCommit: { approval: string; message: string; paths: string[] } | null = null;
+  if (
+    resolved.stopped.id === "chassis.commit-choice" &&
+    parsed.answer.choice === "Aprobar commit del workspace"
+  ) {
+    if (!input.git || !input.process)
+      return reject(
+        state,
+        resolved,
+        "no se puede observar Git para aprobar el commit",
+        {
+          code: "WORKSPACE_COMMIT_UNAVAILABLE",
+          action: "cerrá sin commit o reintentá con un repositorio Git legible",
+        },
+        cost,
+      );
+    const prepared = await runWorkspaceCommit(fs, input.git, input.process, paths, {
+      code: state.session,
+    });
+    if ("error" in prepared)
+      return reject(
+        state,
+        resolved,
+        prepared.error,
+        {
+          code: "WORKSPACE_COMMIT_UNAVAILABLE",
+          action: "cerrá sin commit o repará la propuesta y volvé a prepararla",
+        },
+        cost,
+      );
+    if (parsed.answer.decisions.commit_approval !== prepared.proposal.approval)
+      return reject(
+        state,
+        resolved,
+        "la aprobación no coincide con la lista de rutas y el mensaje",
+        {
+          code: "WORKSPACE_COMMIT_APPROVAL_INVALID",
+          action: `revisá aw workspace-commit prepare --code ${state.session} y contestá con decisions.commit_approval: ${prepared.proposal.approval}`,
+        },
+        cost,
+      );
+    approvedWorkspaceCommit = prepared.proposal;
+  }
   if (selected?.kind === "handoff") {
     // Only `spec-refine` needs a document the run never declared: the plan's
     // scope names the plan, and the spec is one hop away through its lineage.
@@ -1089,6 +1141,31 @@ async function decide(
           outcome: selected,
         })
       : approved;
+  if (approvedWorkspaceCommit !== null) {
+    selectedState = withEvent(selectedState, {
+      kind: "executed",
+      transition: "chassis.commit-choice",
+      operation: "workspace.commit-approved",
+      summary: JSON.stringify(approvedWorkspaceCommit),
+      output_digest: semanticDigest(approvedWorkspaceCommit),
+      effects: [],
+      evidence: ["workspace.commit-paths-approved"],
+    });
+  }
+  if (
+    resolved.stopped.id === "chassis.commit-choice" &&
+    parsed.answer.choice === "Copiar evidencia y cerrar"
+  ) {
+    selectedState = withEvent(selectedState, {
+      kind: "executed",
+      transition: "chassis.commit-choice",
+      operation: "workspace.evidence-approved",
+      summary: "copia explícita de evidencia efímera",
+      output_digest: semanticDigest("workspace.evidence-approved"),
+      effects: [],
+      evidence: ["workspace.evidence-copy-approved"],
+    });
+  }
   if (registered?.ok && registered.reconciliation !== null) {
     selectedState = withContinuation(selectedState, registered.reconciliation);
   }

@@ -101,8 +101,9 @@ function includeReleaseEntry(entry: ReleaseSession, filter: ReleaseFilter): bool
       return false;
     }
   }
-  if (entry.state === "active" && !filter.includeOpen) return false;
-  if (entry.state === "closed" && !filter.includeClosed) return false;
+  if ((entry.state === "active" || entry.state === "paused") && !filter.includeOpen) return false;
+  if ((entry.state === "closed" || entry.state === "abandoned") && !filter.includeClosed)
+    return false;
   return true;
 }
 

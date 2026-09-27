@@ -16,11 +16,23 @@
  */
 
 import { join } from "node:path";
-import { normalizeCorrelative } from "../../domain/correlative.js";
+import {
+  correlativeValue,
+  nextCorrelative,
+  normalizeCorrelative,
+  sameCorrelative,
+} from "../../domain/correlative.js";
 import type { SessionState } from "../../domain/types.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { type HistoryRow, readHistoryRows } from "../history-table.js";
+import type { GitPort } from "../../ports/git.js";
+import { locateRun, readRun } from "../flow/run-state-service.js";
+import {
+  type HistoryRow,
+  maxHistoryCorrelativeFromText,
+  readHistoryRows,
+} from "../history-table.js";
 import type { ProjectBlockMarkers } from "../parsers/project-block.js";
+import { readWorkspaceBlock } from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
 import { resolveWorkspaceRootFrom } from "../paths-service.js";
 import {
@@ -83,6 +95,125 @@ export interface WorkspaceMigrationPlan {
   legacy: string[];
   /** The number the next session will take, from the ONE derivation F3 left. */
   next_correlative: string;
+}
+
+export interface RenumberMove {
+  from: string;
+  to: string;
+  reason: "legacy" | "registro-remoto" | "carpetas";
+}
+
+/** Preview only: current-model local folders give way to legacy or remote identities. */
+export async function planRenumber(
+  fs: FileSystemPort,
+  paths: PathsService,
+  git?: GitPort,
+): Promise<{ moves: RenumberMove[]; blocked: string[] }> {
+  if (await fs.exists(join(paths.cwdRoot(), "renumber-pending.json"))) {
+    const { recoverRenumberJournal } = await import("./apply.js");
+    await recoverRenumberJournal(fs, paths);
+  }
+  const folders = await listSessionFolders(fs, paths.cwdSessionsDir());
+  let next = await nextSessionCorrelative(fs, paths);
+  const moves: RenumberMove[] = [];
+  const blocked: string[] = [];
+  const block = git
+    ? await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers())
+    : null;
+  const workspace = paths.workspaceDir();
+  const branch =
+    git && (await git.isGitRepo(workspace)) ? await git.currentBranch(workspace) : undefined;
+  const upstream = branch ? await git?.upstreamBranch(workspace, branch) : null;
+  const prefix = upstream ? await git?.repoPrefix(workspace) : null;
+  const remoteText =
+    upstream && prefix !== null && prefix !== undefined
+      ? await git?.readAtRef?.(workspace, upstream, `${prefix}.${paths.namespace}/HISTORY.md`)
+      : null;
+  const remoteRows = remoteText ? readHistoryRows(remoteText) : [];
+  const remoteMax = remoteText ? maxHistoryCorrelativeFromText(remoteText) : null;
+  const remoteValue = remoteMax === null ? null : correlativeValue(remoteMax);
+  const nextValue = correlativeValue(next);
+  if (remoteMax !== null && remoteValue !== null && nextValue !== null && remoteValue >= nextValue)
+    next = nextCorrelative(remoteMax);
+  for (const folder of folders) {
+    const sharing = await sessionsSharingNumber(fs, paths, folder.name);
+    const legacyFolder = folder.name.startsWith("session");
+    const folderNumber = sessionNumericCode(folder.name);
+    const remoteConflict =
+      folderNumber !== null &&
+      remoteRows.some((row) => {
+        const rowNumber = sessionNumericCode(row.key);
+        return (
+          rowNumber !== null && sameCorrelative(folderNumber, rowNumber) && row.key !== folder.name
+        );
+      });
+    if (legacyFolder) {
+      const legacyPeers = sharing.filter((item) => item.folder.startsWith("session"));
+      const orphanRow = sharing.some(
+        (item) =>
+          item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
+      );
+      if (legacyPeers.length < 2 && !orphanRow && !remoteConflict) continue;
+      if (
+        legacyPeers.length >= 2 &&
+        !orphanRow &&
+        !remoteConflict &&
+        folder.name !== legacyPeers.at(-1)?.folder
+      )
+        continue;
+    }
+    if (sharing.length < 2 && !remoteConflict) continue;
+    const legacy = sharing.some((item) => item.folder.startsWith("session"));
+    const remote =
+      remoteConflict ||
+      sharing.some(
+        (item) =>
+          item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
+      );
+    const localPeers = sharing.filter((item) =>
+      folders.some((local) => local.name === item.folder),
+    );
+    if (!legacyFolder && !legacy && !remote && folder.name !== localPeers.at(-1)?.folder) continue;
+    let occupied = false;
+    for (const source of block?.fuentes ?? []) {
+      if (source.path === null) continue;
+      const trees = await git?.worktreeList(source.path);
+      if (
+        trees?.some(
+          (tree) => tree.branch === `aw/${folder.name}` || tree.path.endsWith(`/${folder.name}`),
+        )
+      )
+        occupied = true;
+    }
+    if (occupied) {
+      blocked.push(
+        `${folder.name}: integrá o liberá sus unidades de aislamiento antes de renumerar`,
+      );
+      continue;
+    }
+    if (await fs.exists(join(folder.path, ".flow-run.json.lock"))) {
+      blocked.push(`${folder.name}: la corrida tiene el candado ocupado; reintentá al terminar`);
+      continue;
+    }
+    const run = await readRun(fs, locateRun(paths, folder.name));
+    if (!run.ok && run.failure.code !== "FLOW_RUN_ABSENT") {
+      blocked.push(
+        `${folder.name}: corrida ilegible (${run.failure.code}); reparala antes de renumerar`,
+      );
+      continue;
+    }
+    if (run.ok && (run.state.proposal !== null || run.state.pending_action?.attempted === true)) {
+      blocked.push(`${folder.name}: publicá o cancelá su propuesta pendiente antes de renumerar`);
+      continue;
+    }
+    moves.push({
+      from: folder.name,
+      to: `${next}-${folder.name.replace(/^(?:session)?\d+-/, "")}`,
+      reason: legacy ? "legacy" : remote ? "registro-remoto" : "carpetas",
+    });
+    next = nextCorrelative(next);
+  }
+  return { moves, blocked };
 }
 
 /** How many writes the plan holds. Zero means the workspace is already current. */

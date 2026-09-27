@@ -12,7 +12,7 @@ import type { CliContext } from "../types.js";
 
 export const sessionCreateCommand: CliCommand = {
   name: "session-create",
-  flags: { known: ["type", "name", "objetivo", "from", "input"] },
+  flags: { known: ["type", "name", "objetivo", "from", "input", "allow-repeat"] },
   describe: `Create an internal session folder + SESSION.md and seal its custody (typed parents + byte-exact baseline of every declared input). Without --input the run's own document is DERIVED from the descriptor (\`<slug>-spec-refine\`/\`-plan-new\` seal ${DEFAULT_CORE_DOCS_CANON.spec}/NNN-spec-<slug>.md; \`-plan-refine\`/\`-plan-exec\` seal ${DEFAULT_CORE_DOCS_CANON.plan}/NNN-plan-<slug>.md); \`inputs_from\` reports which road was taken and \`inputs_note\` why none was. Flags: --type {research|refine|exec|quick} --name <folder> --objetivo <text> [--from <origin>] [--input <ruta-relativa> (repeatable)].`,
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCreateInput = {};
@@ -28,8 +28,9 @@ export const sessionCreateCommand: CliCommand = {
     if (from !== undefined) input.originRaw = from;
     const contextId = readContextId(ctx.env);
     if (contextId !== undefined) input.contextId = contextId;
+    if (args.flags.has("--allow-repeat")) input.allowRepeat = true;
 
-    const data = await runSessionCreate(ctx.rawFs ?? ctx.fs, ctx.paths, input);
+    const data = await runSessionCreate(ctx.rawFs ?? ctx.fs, ctx.paths, input, ctx.git);
     if ("error" in data) {
       return fail(data.code ?? "INVALID_INPUT", data.error, data);
     }

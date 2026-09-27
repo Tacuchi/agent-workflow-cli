@@ -30,6 +30,8 @@
   ],
   "active_count": 2,
   "closed_count": 1,
+  "paused_count": 0,
+  "abandoned_count": 0,
   "total_count": 3,
   "next_correlative": "004"
 }

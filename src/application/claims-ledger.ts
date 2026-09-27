@@ -29,12 +29,24 @@
 
 import { join } from "node:path";
 import { compareCorrelatives, isCorrelative } from "../domain/correlative.js";
+import { reservationOwnerOf } from "../domain/reservation.js";
+import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 
 /** Lives next to HISTORY.md: workspace state, never workspace corpus. */
 const LEDGER_FILE = "claims.jsonl";
 const LEDGER_VERSION = 1;
+const CLAIM_EVENTS = new Set<ClaimEventKind>([
+  "claimed",
+  "published",
+  "released",
+  "revoked",
+  "transfer-intent",
+  "transfer-confirmed",
+  "transfer-cancelled",
+]);
 
 /**
  * What happened to a claim.
@@ -44,7 +56,22 @@ const LEDGER_VERSION = 1;
  * Collapsing them would either lose numbers or hand out a number that is holding
  * a document.
  */
-type ClaimEventKind = "claimed" | "published" | "released" | "revoked";
+type ClaimEventKind =
+  | "claimed"
+  | "published"
+  | "released"
+  | "revoked"
+  | "transfer-intent"
+  | "transfer-confirmed"
+  | "transfer-cancelled";
+
+export interface ClaimTransfer {
+  id: string;
+  marker: string;
+  number: string;
+  from: string;
+  to: string;
+}
 
 /**
  * What makes two records the same slot.
@@ -70,6 +97,8 @@ export interface ClaimEvent {
   at: string;
   event: ClaimEventKind;
   claim: ClaimIdentity;
+  /** Present on the three write-ahead transfer events; immutable once appended. */
+  transfer?: ClaimTransfer;
   /** Why — recorded for every event a reader would otherwise have to guess about. */
   cause?: string;
 }
@@ -77,6 +106,28 @@ export interface ClaimEvent {
 /** The identity as one comparable string. Order is fixed so it is stable. */
 export function claimKey(claim: ClaimIdentity): string {
   return `${claim.category}/${claim.correlative}-${claim.name}@${claim.owner}`;
+}
+
+/** Whether this claim's CURRENT life has a release (earlier lives do not count). */
+export function releaseAlreadyRecorded(
+  events: readonly ClaimEvent[],
+  claim: ClaimIdentity,
+): boolean {
+  let released = false;
+  const key = claimKey(claim);
+  for (const event of events) {
+    if (event.event === "claimed" && claimKey(event.claim) === key) released = false;
+    if (
+      event.event === "transfer-confirmed" &&
+      event.transfer?.to === claim.owner &&
+      event.claim.category === claim.category &&
+      event.claim.correlative === claim.correlative &&
+      event.claim.name === claim.name
+    )
+      released = false;
+    if (event.event === "released" && claimKey(event.claim) === key) released = true;
+  }
+  return released;
 }
 
 export function ledgerPath(paths: PathsService): string {
@@ -126,6 +177,58 @@ interface LedgerRead {
 export async function readClaimEvents(
   fs: FileSystemPort,
   paths: PathsService,
+  options: { lockHeld?: boolean; skipRenumberRecovery?: boolean } = {},
+): Promise<LedgerRead> {
+  if (!options.skipRenumberRecovery) {
+    try {
+      const { recoverRenumberJournal } = await import("./workspace-migrate/apply.js");
+      await recoverRenumberJournal(fs, paths, options.lockHeld === true);
+    } catch {
+      const raw = await readClaimEventsRaw(fs, paths);
+      return { ...raw, unreadable: raw.unreadable + 1 };
+    }
+  }
+  const read = await readClaimEventsRaw(fs, paths);
+  if (pendingClaimTransfers(read.events).length === 0) return read;
+  const settled = async () => {
+    const current = await readClaimEventsRaw(fs, paths);
+    for (const intent of pendingClaimTransfers(current.events)) {
+      const transfer = intent.transfer;
+      if (!transfer) continue;
+      const safe = checkSafeRelativePath(transfer.marker);
+      if (!safe.ok || !safe.path.startsWith("docs/")) {
+        return { ...current, unreadable: current.unreadable + 1 };
+      }
+      const path = join(paths.workspaceDir(), safe.path);
+      if (!(await fs.exists(path))) return { ...current, unreadable: current.unreadable + 1 };
+      const owner = reservationOwnerOf(await fs.readText(path));
+      if (owner !== transfer.from && owner !== transfer.to) {
+        return { ...current, unreadable: current.unreadable + 1 };
+      }
+      await appendClaimEvent(fs, paths, {
+        at: new Date().toISOString(),
+        event: owner === transfer.to ? "transfer-confirmed" : "transfer-cancelled",
+        claim: intent.claim,
+        transfer,
+        cause:
+          owner === transfer.to ? "marcador ya transferido" : "marcador aún del dueño anterior",
+      });
+    }
+    return readClaimEventsRaw(fs, paths);
+  };
+  if (options.lockHeld) return settled();
+  const result = await withCwdLock(fs, paths, settled, { waitMs: 2000 });
+  if ("error" in result) {
+    // No claim is reported as settled until its terminal row is durable.
+    return { ...read, unreadable: read.unreadable + 1 };
+  }
+  return result;
+}
+
+/** Raw reader for a caller already holding the workspace lock. */
+export async function readClaimEventsRaw(
+  fs: FileSystemPort,
+  paths: PathsService,
 ): Promise<LedgerRead> {
   const path = ledgerPath(paths);
   if (!(await fs.exists(path))) return { events: [], unreadable: 0 };
@@ -142,6 +245,18 @@ export async function readClaimEvents(
   return { events, unreadable };
 }
 
+export function pendingClaimTransfers(events: readonly ClaimEvent[]): ClaimEvent[] {
+  const pending = new Map<string, ClaimEvent>();
+  for (const event of events) {
+    const id = event.transfer?.id;
+    if (!id) continue;
+    if (event.event === "transfer-intent") pending.set(id, event);
+    if (event.event === "transfer-confirmed" || event.event === "transfer-cancelled")
+      pending.delete(id);
+  }
+  return [...pending.values()];
+}
+
 function parseEvent(line: string): ClaimEvent | null {
   let value: unknown;
   try {
@@ -153,8 +268,10 @@ function parseEvent(line: string): ClaimEvent | null {
   const candidate = value as Partial<ClaimEvent>;
   const claim = candidate.claim;
   if (
+    candidate.version !== LEDGER_VERSION ||
     typeof candidate.at !== "string" ||
     typeof candidate.event !== "string" ||
+    !CLAIM_EVENTS.has(candidate.event as ClaimEventKind) ||
     typeof claim !== "object" ||
     claim === null ||
     typeof claim.category !== "string" ||
@@ -164,6 +281,19 @@ function parseEvent(line: string): ClaimEvent | null {
   ) {
     return null;
   }
+  if (
+    (candidate.event === "transfer-intent" ||
+      candidate.event === "transfer-confirmed" ||
+      candidate.event === "transfer-cancelled") &&
+    (typeof candidate.transfer?.id !== "string" ||
+      typeof candidate.transfer.marker !== "string" ||
+      typeof candidate.transfer.number !== "string" ||
+      typeof candidate.transfer.from !== "string" ||
+      typeof candidate.transfer.to !== "string" ||
+      candidate.transfer.number !== claim.correlative ||
+      candidate.transfer.from !== claim.owner)
+  )
+    return null;
   return value as ClaimEvent;
 }
 
@@ -179,12 +309,21 @@ function parseEvent(line: string): ClaimEvent | null {
 export function openClaimsOf(events: readonly ClaimEvent[], owner: string): ClaimIdentity[] {
   const open = new Map<string, ClaimIdentity>();
   for (const event of events) {
-    if (event.claim.owner !== owner) continue;
     const key = claimKey(event.claim);
     if (event.event === "claimed") open.set(key, event.claim);
-    else open.delete(key);
+    else if (event.event === "transfer-confirmed" && event.transfer) {
+      open.delete(key);
+      const next = { ...event.claim, owner: event.transfer.to };
+      open.set(claimKey(next), next);
+    } else if (
+      event.event === "published" ||
+      event.event === "released" ||
+      event.event === "revoked"
+    ) {
+      open.delete(key);
+    }
   }
-  return [...open.values()];
+  return [...open.values()].filter((claim) => claim.owner === owner);
 }
 
 /**
@@ -364,7 +503,14 @@ export function openOwnerOfSlot(
   let open: ClaimIdentity | null = null;
   for (const event of events) {
     if (!sameSlot(event.claim, slot)) continue;
-    open = event.event === "claimed" ? event.claim : null;
+    if (event.event === "claimed") open = event.claim;
+    else if (event.event === "transfer-confirmed" && event.transfer)
+      open = { ...event.claim, owner: event.transfer.to };
+    else if (
+      (event.event === "published" || event.event === "released" || event.event === "revoked") &&
+      open?.owner === event.claim.owner
+    )
+      open = null;
   }
   return open;
 }
@@ -391,9 +537,12 @@ export function openOwnerOfSlot(
  */
 export function eligibleCorrelatives(events: readonly ClaimEvent[], category: string): string[] {
   const state = new Map<string, ClaimEventKind>();
+  const published = new Set<string>();
   for (const event of events) {
     if (event.claim.category !== category) continue;
-    if (event.event === "claimed") continue;
+    if (event.event === "published") published.add(event.claim.correlative);
+    if (event.event !== "published" && event.event !== "released" && event.event !== "revoked")
+      continue;
     state.set(event.claim.correlative, event.event);
   }
   const eligible: string[] = [];
@@ -401,7 +550,14 @@ export function eligibleCorrelatives(events: readonly ClaimEvent[], category: st
     // Validated before it can be handed out. A single semi-valid ledger line
     // would otherwise put a non-correlative into the mint, where it becomes an
     // unrecognizable filename or a throw on the comparator.
-    if (last === "released" && isCorrelative(correlative)) eligible.push(correlative);
+    const held = events.some(
+      (event) =>
+        event.claim.category === category &&
+        event.claim.correlative === correlative &&
+        openOwnerOfSlot(events, event.claim) !== null,
+    );
+    if (last === "released" && !published.has(correlative) && !held && isCorrelative(correlative))
+      eligible.push(correlative);
   }
   // `compareCorrelatives` and not a hand-rolled numeric sort: it is bigint-based,
   // so it stays correct past the width where `parseInt` loses precision — and a

@@ -59,7 +59,9 @@ import {
   withProposal,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
+import { writeSessionNarrative } from "../session-narrative.js";
 import { sessionNumericCode } from "../session-resolver.js";
 import {
   advanceFlowRun,
@@ -99,6 +101,7 @@ export async function driveInternalActions(
   location: FlowRunLocation,
   executor: InternalActionExecutor,
   from: DrivenRun,
+  paths: PathsService,
 ): Promise<DrivenRun | { ok: false; failure: CapabilityFailure }> {
   let current = from;
   const steps = [...from.value.applied];
@@ -115,6 +118,11 @@ export async function driveInternalActions(
 
     const settled = await settle(fs, location, current, pending, outcome);
     if (!settled.ok) return settled;
+    // The close initially projects while finalize still stands at the boundary.
+    // Refresh only after the transition is durably recorded in the run state.
+    if (settled.advanced && pending.plan.operation === "session.close") {
+      await writeSessionNarrative(fs, paths, { folder: location.session, path: location.dir });
+    }
     current = settled.run;
     steps.push(...current.value.applied);
     if (!settled.advanced) return reported();

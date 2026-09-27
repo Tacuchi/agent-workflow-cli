@@ -1,11 +1,11 @@
 ---
 name: export-reports
-description: "Executive/functional report (management/committee audience) consolidating N workspace sessions under `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. Reads the corpus: the spec (`docs/specs`), `CONCLUSIONS` (research), `DECISION`, the plan-doc state + the rest of `docs/` for context. Synthesizes: what was done, key decisions, results/conclusions, pending/roadmap — with cross-session recommendation dedup. Audience adjustable via `--audience` (gerencia ≈ short; tecnica ≈ detailed). Read-only/report: it never commits nor mutates sessions. The prose follows the ambient writing conventions (the host auto-applies an installed writing skill when present). Use for 'executive report', 'what got done this quarter for management', 'brief with consolidated recommendations'. User-invoked via `/w:export-reports`."
+description: "Executive/functional report consolidating N workspace sessions under `docs/reports/`. Publishes only the report and proposes an exact-path workspace commit, executed by the CLI only with approval. The prose follows ambient writing conventions. User-invoked via `/w:export-reports`."
 ---
 
 # export-reports — executive/functional report from the session corpus + `docs/`
 
-Generates a single `.md` consolidating N workspace sessions into an **executive/functional** report: what was done, key decisions, results/conclusions and pending/roadmap. **Read-only / report** — it never commits, never mutates sessions or the corpus.
+Generates a single `.md` consolidating N workspace sessions into an **executive/functional** report: what was done, key decisions, results/conclusions and pending/roadmap. It does not mutate sessions or the source corpus; after publication the CLI proposes an optional approved commit.
 
 > `export-*` family (the only artifact→`docs/` path). It **merges** two legacy exports into one `docs/reports` output: the executive report and the cross-session recommendation dedup. Design: `docs/referencias/workflow-exports/export-reports.md`.
 
@@ -95,7 +95,7 @@ Render applying the ambient writing conventions (host): Executive summary · Wha
 
 ### Step 5 — Write or report
 
-`aw next-number docs/reports` → `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. With `--dry-run`: print; write nothing. **NEVER commit**. Summary to the user: path, audience/length, covered sessions (count + range), consolidated R-items, and a note if a conditional section was omitted.
+`aw next-number docs/reports` → `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. With `--dry-run`: print; write nothing. After publication the CLI proposes `aw workspace-commit prepare --export <ruta>`; only an explicit approval runs `apply --approval <digest>` with exact paths and no push. Summary to the user: path, audience/length, covered sessions (count + range), consolidated R-items, and a note if a conditional section was omitted.
 
 ## Output location
 

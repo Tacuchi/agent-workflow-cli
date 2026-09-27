@@ -23,6 +23,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
       "working-branch",
       "qa-branch",
       "dry-run",
+      "untrack",
     ],
   },
   describe:
@@ -45,15 +46,22 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);
     const qaBranches = parseWorkingBranches(args.valuesMulti.get("qa-branch") ?? []);
 
-    const data = await runWorkspaceInit(ctx.rawFs ?? ctx.fs, ctx.env, ctx.paths, {
-      sources,
-      ...(proyecto !== undefined ? { proyecto } : {}),
-      ...(mainBranch !== undefined ? { mainBranch } : {}),
-      ...(workspace !== undefined ? { workspace } : {}),
-      ...(workingBranches !== undefined ? { workingBranches } : {}),
-      ...(qaBranches !== undefined ? { qaBranches } : {}),
-      dryRun: args.flags.has("--dry-run"),
-    });
+    const data = await runWorkspaceInit(
+      ctx.rawFs ?? ctx.fs,
+      ctx.env,
+      ctx.paths,
+      {
+        sources,
+        ...(proyecto !== undefined ? { proyecto } : {}),
+        ...(mainBranch !== undefined ? { mainBranch } : {}),
+        ...(workspace !== undefined ? { workspace } : {}),
+        ...(workingBranches !== undefined ? { workingBranches } : {}),
+        ...(qaBranches !== undefined ? { qaBranches } : {}),
+        dryRun: args.flags.has("--dry-run"),
+        untrack: args.flags.has("--untrack"),
+      },
+      ctx.process,
+    );
 
     if ("error" in data) {
       return fail<WorkspaceInitResult>("INVALID_INPUT", data.hint ?? data.error);
@@ -85,6 +93,10 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
       `  Fuentes    ${data.sources}`,
       `  skills.toml ${data.skills_toml}`,
     ];
+    if (data.untrack?.paths.length) {
+      lines.push(`  Índice Git ${data.untrack.applied ? "desindexado" : "por desindexar"}:`);
+      for (const path of data.untrack.paths) lines.push(`    ${path}`);
+    }
     if (context.detail) {
       lines.push(`  Runtime    ${JSON.stringify(data.materialization.effects)}`);
       lines.push(`  Scaffold   ${JSON.stringify(data.scaffold)}`);

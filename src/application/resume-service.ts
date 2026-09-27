@@ -5,6 +5,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { DesignRefState } from "./design/design-graph-service.js";
 import { projectRun } from "./flow/run-projection.js";
+import { parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
 import { buildSessionNarrative } from "./session-narrative.js";
 import { resolveSessionTarget, sessionReadRequest } from "./session-resolver.js";
@@ -112,7 +113,13 @@ export type ResumeOutcome = (
   | { status: "candidates"; candidates: ResumeProposal[]; action: string }
   | { status: "idle"; action: string }
   | { status: "invalid_target"; target: string; action: string }
-) & { unreadable_sources?: WorktreeListOutput["unreadable"]; isolation_error?: string };
+) & {
+  unreadable_sources?: WorktreeListOutput["unreadable"];
+  isolation_error?: string;
+  ready_to_close?: Array<{ session: string; command: string }>;
+  paused_sessions?: string[];
+  abandoned_sessions?: string[];
+};
 
 export async function runResume(
   fs: FileSystemPort,
@@ -139,8 +146,36 @@ export async function runResume(
       : input.target !== undefined
         ? resumeTarget(index, input.target)
         : resumePipeline(index);
+  const readyToClose: Array<{ session: string; command: string }> = [];
+  for (const session of index.sessions.filter((item) => item.state === "active")) {
+    const document = await fs.readText(`${session.path}/SESSION.md`).catch(() => "");
+    const criteria = parseMdSectionBilingual(document, "Success criteria") ?? "";
+    const checked = (criteria.match(/^\s*[-*]\s*\[[xX]\]/gm) ?? []).length;
+    const open = (criteria.match(/^\s*[-*]\s*\[\s\]/gm) ?? []).length;
+    if (checked > 0 && open === 0) {
+      readyToClose.push({
+        session: session.folder,
+        command: `aw session-close --code ${session.folder}`,
+      });
+    }
+  }
   return {
     ...outcome,
+    ...(readyToClose.length > 0 ? { ready_to_close: readyToClose } : {}),
+    ...(index.sessions.some((session) => session.state === "paused")
+      ? {
+          paused_sessions: index.sessions
+            .filter((session) => session.state === "paused")
+            .map((session) => session.folder),
+        }
+      : {}),
+    ...(index.sessions.some((session) => session.state === "abandoned")
+      ? {
+          abandoned_sessions: index.sessions
+            .filter((session) => session.state === "abandoned")
+            .map((session) => session.folder),
+        }
+      : {}),
     ...(index.unreadable_sources !== undefined
       ? { unreadable_sources: index.unreadable_sources }
       : {}),
@@ -374,6 +409,14 @@ async function sessionProposal(
   });
   const run = await projectRun(fs, paths, folder);
   const directed = run !== null && run.boundary !== "final";
+  const command =
+    narrative.phase === "pausada"
+      ? `aw session-resume --code ${folder}`
+      : narrative.phase === "abandonada" || narrative.phase === "cerrada"
+        ? `aw session-resume --code ${folder} --reopen`
+        : directed
+          ? run.command
+          : `aw session-resume --code ${folder} --reopen`;
   const [result] = narrative.results;
   return {
     kind: "session",
@@ -387,10 +430,10 @@ async function sessionProposal(
     next: narrative.next?.text ?? "el checkpoint no declara trabajo pendiente",
     action: {
       kind: "continue",
-      command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
+      command,
       mode: "normal",
     },
-    command: directed ? run.command : `aw session-resume --code ${folder} --reopen`,
+    command,
     ...(session !== undefined && session.units.length > 0 ? { units: session.units } : {}),
     ...(run !== null && run.scope !== null ? { scope: run.scope } : {}),
   };

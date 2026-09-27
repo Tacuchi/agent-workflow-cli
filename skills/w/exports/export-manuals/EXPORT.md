@@ -1,11 +1,11 @@
 ---
 name: export-manuals
-description: "Operations/onboarding manuals from N sessions and docs into `docs/manuals` or `[docs] manuals`. The response chooses index-only complement, flat `<slug>.md` manuals or a numbered dossier. The CLI previews every replacement, publishes on approval, never commits or mutates sessions. Uses ambient writing conventions when installed; works without them. User-invoked via `/w:export-manuals`."
+description: "Operations/onboarding manuals from N sessions into `docs/manuals/` or `[docs] manuals`. The CLI previews replacement, publishes on approval and offers a separate exact-path commit, executed only with approval; sessions remain untouched. User-invoked via `/w:export-manuals`."
 ---
 
 # export-manuals — technical manuals from sessions + `docs/`
 
-Generates or refreshes **operations / how-it-works / onboarding** manuals in `docs/manuals/`, consolidating what N sessions delivered + the `docs/` corpus. **Read-only / report** — it never commits, never mutates sessions or code.
+Generates or refreshes **operations / how-it-works / onboarding** manuals in `docs/manuals/`, consolidating what N sessions delivered + the `docs/` corpus. It never mutates sessions or code; the CLI separately proposes a commit after publication.
 
 > `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-manuals.md`.
 
@@ -104,7 +104,7 @@ For every filtered corpus session (`aw session-artifacts --code <NNN> --dump obj
 
 ### Step 5 — Write or report
 
-Publish via `aw export-manuals` prepare → validate → apply: index-only response → `complement`; dossier → `regenerate`. **NEVER commit**. Summarize mode and written paths.
+Publish via `aw export-manuals` prepare → validate → apply: index-only response → `complement`; dossier → `regenerate`. The CLI then proposes `aw workspace-commit prepare --export <ruta>`; only approval of the pathspec and message allows `apply --approval <digest>`, never push. Summarize mode and written paths.
 
 ## Output location
 

@@ -60,6 +60,22 @@ describe("aw claims recover", () => {
   const claimSlot = async (name: string, owner: string, dir = "docs/plans") =>
     await runNextNumber(fs, env, paths, { directory: dir, claim: { name, owner } });
 
+  it("no ofrece recuperar reservas si el directorio de sesiones no se pudo leer", async () => {
+    await claimSlot("plan-alpha.md", OWNER);
+    class UnreadableSessions extends NodeFileSystem {
+      override async list(path: string) {
+        if (path === paths.cwdSessionsDir()) throw new Error("EIO sesiones");
+        return super.list(path);
+      }
+    }
+    const unreadable = new UnreadableSessions();
+    const scan = await scanSlots(unreadable, paths);
+    expect(scan.slots).toEqual([]);
+    expect(scan.error).toContain("EIO sesiones");
+    const preview = await previewRecovery(unreadable, paths, "docs/plans/001-plan-alpha.md");
+    expect(preview).toHaveProperty("error");
+  });
+
   it("lista reservas y placeholders legacy, y NUNCA un documento publicado", async () => {
     await claimSlot("plan-alpha.md", OWNER);
     // Un documento real, con contenido.

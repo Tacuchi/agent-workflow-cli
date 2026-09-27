@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { preserveBoundaryClose } from "../../application/flow/close-artifacts.js";
 import {
   type CloseIntent,
@@ -16,6 +17,7 @@ import {
   type SessionCloseResult,
   runSessionClose,
 } from "../../application/session-close-service.js";
+import { writeSessionNarrative } from "../../application/session-narrative.js";
 import { resolveSessionTarget } from "../../application/session-resolver.js";
 import { runWorktree } from "../../application/worktree-service.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -28,8 +30,8 @@ import type { CliContext } from "../types.js";
 // nothing, and being ignored is how an invocation that meant something else
 // came back as a clean close.
 const FLAGS: CommandFlags = {
-  known: ["code", "refs"],
-  usage: "aw session-close --code <sesión> [--refs <csv>]",
+  known: ["code", "refs", "force", "abandon", "with-evidence"],
+  usage: "aw session-close --code <sesión> [--refs <csv>] [--force] [--abandon] [--with-evidence]",
 };
 
 export const sessionCloseCommand: CliCommand = {
@@ -45,6 +47,9 @@ export const sessionCloseCommand: CliCommand = {
     if (code !== undefined) input.code = code;
     const refs = args.values.get("refs");
     if (refs !== undefined) input.refs = refs;
+    if (args.flags.has("--force")) input.force = true;
+    if (args.flags.has("--abandon")) input.abandon = true;
+    if (args.flags.has("--with-evidence")) input.withEvidence = true;
 
     const location = await runLocation(ctx, code);
     const intent = location === null ? null : await markCloseAtBoundary(ctx.fs, location);
@@ -70,7 +75,9 @@ export const sessionCloseCommand: CliCommand = {
           ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
           : [];
       }
-      return rendered(await runSessionClose(ctx.fs, ctx.paths, input, unitsOf(ctx)));
+      return rendered(
+        await runSessionClose(ctx.fs, ctx.paths, input, unitsOf(ctx), ctx.git, ctx.process),
+      );
     }
     return closeAtBoundary(ctx, input, location, intent);
   },
@@ -92,6 +99,18 @@ async function closeAtBoundary(
 ): Promise<CommandResult> {
   const { boundary } = intent;
   const withdraw = (refusal: CommandResult) => withdrawn(ctx, location, intent, refusal);
+  const checkpointPath = join(location.dir, "CHECKPOINT.md");
+  if (
+    !input.force &&
+    !input.abandon &&
+    !(await ctx.fs.exists(join(location.dir, ".closed"))) &&
+    (await ctx.fs.exists(checkpointPath))
+  ) {
+    const checkpoint = await ctx.fs.readText(checkpointPath);
+    if (/_\[AI:[^\n]*\]_/.test(checkpoint)) {
+      return withdraw(fail("CHECKPOINT_INCOMPLETE", "CHECKPOINT contiene placeholders sin llenar"));
+    }
+  }
   let inventory: Awaited<ReturnType<IsolationReader>>;
   try {
     inventory = await unitsOf(ctx)();
@@ -130,6 +149,8 @@ async function closeAtBoundary(
           read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [],
       },
       async () => inventory,
+      ctx.git,
+      ctx.process,
     );
   } catch (error) {
     // The close's own error is the one worth reporting; a failed withdraw here
@@ -148,6 +169,7 @@ async function closeAtBoundary(
       { ...data.sessionClose, action: retry(location) },
     );
   }
+  await writeSessionNarrative(ctx.fs, ctx.paths, { folder: location.session, path: location.dir });
   return {
     ok: true,
     data: { ...data.sessionClose, run: { closed_at: boundary, finalize: "applied" } },

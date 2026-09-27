@@ -144,6 +144,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
 
   it("2 · rechazar la reversión deja plan, sesiones, árbol e HISTORY sin cambios", async () => {
     const folder = await session("algo-plan-exec", [planPath]);
+    const historyBefore = readFileSync(paths.cwdHistoryFile(), "utf8");
     const unit = join(root, "unit");
     git(source, "worktree", "add", "--quiet", "-b", `aw/${folder}`, unit);
     await recordUnitTaken({ fs, git: ctx.git, paths }, folder, {
@@ -172,7 +173,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(existsSync(join(workspace, planPath))).toBe(true);
     expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
     expect(git(source, "rev-parse", `refs/heads/aw/${folder}`)).toBe(receipt.after);
-    expect(existsSync(paths.cwdHistoryFile())).toBe(false);
+    expect(readFileSync(paths.cwdHistoryFile(), "utf8")).toBe(historyBefore);
   });
 
   it("3 · resetea una ejecución parcial de plan y lo deja disponible para refinarse", async () => {
@@ -201,6 +202,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     // Una sesión que declara dos padres: uno dentro del alcance y otro fuera.
     await session("compartida-plan-exec", [planPath, "docs/specs/026-spec-otro.md"]);
     const before = readFileSync(join(workspace, planPath), "utf-8");
+    const historyBefore = readFileSync(paths.cwdHistoryFile(), "utf8");
 
     const prepared = await run("discard", "prepare", "spec:025");
     expect(prepared.result.ok).toBe(false);
@@ -208,7 +210,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(prepared.result.error?.message).toContain("fuera del alcance");
     // Cero efectos: ni el documento, ni las sesiones, ni HISTORY.
     expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(before);
-    expect(existsSync(paths.cwdHistoryFile())).toBe(false);
+    expect(readFileSync(paths.cwdHistoryFile(), "utf8")).toBe(historyBefore);
   });
 
   it("5 · resetea un quick sin artefacto base retirándolo entero", async () => {
@@ -281,7 +283,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
   }
 
   it("6 · el retiro sobre la ruta de una reserva nombra la recuperación, no niega el nodo", async () => {
-    const owner = await session("algo-spec-new");
+    const owner = await session("algo-quick");
     const held = await claim(owner, "spec-nueva.md");
 
     const rejected = await run("discard", "prepare", held);
@@ -301,7 +303,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
   });
 
   it("6c · un correlativo reservado en OTRA categoría no contesta por el número pedido", async () => {
-    const owner = await session("algo-spec-new");
+    const owner = await session("algo-quick");
     const held = await claim(owner, "spec-nueva.md");
     const correlative = held.slice("docs/specs/".length, "docs/specs/".length + 3);
 
@@ -316,7 +318,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
   });
 
   it("6b · también reconoce el correlativo reservado cuando se lo nombra por número", async () => {
-    const owner = await session("algo-spec-new");
+    const owner = await session("algo-quick");
     const held = await claim(owner, "spec-nueva.md");
     const correlative = held.slice("docs/specs/".length, "docs/specs/".length + 3);
 
