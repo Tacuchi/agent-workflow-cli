@@ -25,6 +25,25 @@ import type { ProcessPort, RunBinaryResult, RunOptions, RunResult } from "../por
  */
 /** Stands in for the blob id of an untracked path git cannot hash; never a real one. */
 const UNHASHABLE_BLOB = "unhashable";
+const DELETED_BLOB = "deleted";
+
+/** `ls-files -s` entries of mode 160000, by path: the commit each submodule is pinned at. */
+function gitlinksOf(staged: Buffer): Map<string, string> {
+  const gitlinks = new Map<string, string>();
+  for (const entry of nulSeparated(staged)) {
+    const tab = entry.indexOf("\t");
+    const [mode, object] = entry.slice(0, tab).split(" ");
+    if (mode === "160000" && object !== undefined) gitlinks.set(entry.slice(tab + 1), object);
+  }
+  return gitlinks;
+}
+
+function nulSeparated(bytes: Buffer): string[] {
+  return bytes
+    .toString("utf8")
+    .split("\0")
+    .filter((entry) => entry.length > 0);
+}
 
 function nonInteractiveGitEnv(): Record<string, string> {
   const env: Record<string, string> = {};
@@ -145,17 +164,102 @@ export class GitCliAdapter implements GitPort {
     hash.update(patch.stdout);
     hash.update("status\0", "utf8");
     hash.update(status.stdout);
+    await this.hashUntracked(hash, repoPath, untracked.stdout);
+    return `sha256:${hash.digest("hex")}`;
+  }
 
-    const paths = untracked.stdout
-      .toString("utf8")
-      .split("\0")
-      .filter((path) => path.length > 0)
-      .sort();
+  /**
+   * The content of the tree under `root` alone, without the excluded subpaths.
+   *
+   * `checkoutFingerprint` measures the whole repository relative to HEAD, so in a
+   * hub a neighbouring project moves it, and so does a commit or a `git add` that
+   * changes no byte under `root`. This one is what a batch is compared against:
+   * every path under `root` git tracks or would track, each with the blob id of
+   * its bytes on disk — so only what the files hold decides whether they changed.
+   */
+  async scopedFingerprint(root: string, excluded: readonly string[]): Promise<string> {
+    const pathspec = ["--", ".", ...excluded.map((path) => `:(exclude)${path}`)];
+    const [listed, removed, staged] = await Promise.all([
+      this.mustRunBinary(
+        "paths for scoped fingerprint",
+        ["ls-files", "-z", "--cached", "--others", "--exclude-standard", ...pathspec],
+        root,
+      ),
+      this.mustRunBinary(
+        "deleted paths for scoped fingerprint",
+        ["ls-files", "-z", "--deleted", ...pathspec],
+        root,
+      ),
+      this.mustRunBinary(
+        "index for scoped fingerprint",
+        ["ls-files", "-z", "-s", ...pathspec],
+        root,
+      ),
+    ]);
+    const deleted = new Set(nulSeparated(removed.stdout));
+    const paths = [...new Set(nulSeparated(listed.stdout))].sort();
+    // A submodule is a directory git records by commit: its entry stands for its
+    // content, and handing it to `hash-object` would fail the whole batch. It is
+    // the commit STAGED in this repository, so work inside the submodule counts
+    // once the parent records it.
+    const gitlinks = gitlinksOf(staged.stdout);
+    const present = paths.filter((path) => !deleted.has(path) && !gitlinks.has(path));
+    const blobs = await this.blobsOf(root, present);
+    for (const [path, commit] of gitlinks) blobs.set(path, `gitlink:${commit}`);
+    const hash = createHash("sha256");
+    for (const path of paths) {
+      hash.update(path, "utf8");
+      hash.update("\0", "utf8");
+      hash.update(deleted.has(path) ? DELETED_BLOB : (blobs.get(path) ?? UNHASHABLE_BLOB), "utf8");
+      hash.update("\0", "utf8");
+    }
+    return `sha256:${hash.digest("hex")}`;
+  }
+
+  /**
+   * The blob id of each path's bytes, in one `hash-object` when it can.
+   *
+   * A path git cannot hash, or one whose name breaks the line protocol, sends the
+   * batch to the per-path fallback, where an unhashable entry is recorded as such
+   * instead of taking the whole tree down.
+   */
+  private async blobsOf(cwd: string, paths: readonly string[]): Promise<Map<string, string>> {
+    const blobs = new Map<string, string>();
+    if (paths.length === 0) return blobs;
+    const batch = paths.some((path) => path.includes("\n"))
+      ? null
+      : await this.process.run(
+          "git",
+          ["hash-object", "--no-filters", "--stdin-paths"],
+          this.opts(cwd, { stdin: `${paths.join("\n")}\n` }),
+        );
+    const ids = batch?.code === 0 ? batch.stdout.trim().split("\n") : [];
+    if (ids.length === paths.length) {
+      paths.forEach((path, index) => blobs.set(path, ids[index] as string));
+      return blobs;
+    }
     for (const path of paths) {
       const blob = await this.process.run(
         "git",
         ["hash-object", "--no-filters", "--", path],
-        this.opts(repoPath),
+        this.opts(cwd),
+      );
+      if (blob.code === 0) blobs.set(path, blob.stdout.trim());
+    }
+    return blobs;
+  }
+
+  /** Each untracked path with its blob id, in a stable order. */
+  private async hashUntracked(
+    hash: ReturnType<typeof createHash>,
+    cwd: string,
+    listing: Buffer,
+  ): Promise<void> {
+    for (const path of nulSeparated(listing).sort()) {
+      const blob = await this.process.run(
+        "git",
+        ["hash-object", "--no-filters", "--", path],
+        this.opts(cwd),
       );
       hash.update("untracked\0", "utf8");
       hash.update(path, "utf8");
@@ -167,7 +271,6 @@ export class GitCliAdapter implements GitPort {
       hash.update(blob.code === 0 ? blob.stdout.trim() : UNHASHABLE_BLOB, "utf8");
       hash.update("\0", "utf8");
     }
-    return `sha256:${hash.digest("hex")}`;
   }
 
   async repoPrefix(repoPath: string): Promise<string | null> {

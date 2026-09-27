@@ -10,6 +10,7 @@
  * un ejecutor externo, que es la mitad que ninguna prueba puede correr.
  */
 
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -64,25 +65,31 @@ const SPEC_TEXT = [
   "",
 ].join("\n");
 
-const WORKSPACE_BLOCK = [
-  "<!-- AGENT-WORKFLOW-PROJECT-START -->",
-  "## Proyecto",
-  "",
-  "El incidente del andamiaje autorreparable.",
-  "",
-  "## Fuentes",
-  "",
-  "| Alias | Path | Rama principal |",
-  "|---|---|---|",
-  "| acme | /tmp/acme | main |",
-  "",
-  "## Status",
-  "",
-  "- Ramas de trabajo actuales:",
-  "  - acme: main",
-  "<!-- AGENT-WORKFLOW-PROJECT-END -->",
-  "",
-].join("\n");
+/**
+ * El bloque del workspace, con su fuente en un repo REAL: el cierre de sesión lee
+ * las unidades de cada fuente declarada con `git worktree list`, y una fuente que
+ * no existe en disco es un estado de aislamiento ilegible, que el cierre rechaza.
+ */
+const workspaceBlock = (acme: string) =>
+  [
+    "<!-- AGENT-WORKFLOW-PROJECT-START -->",
+    "## Proyecto",
+    "",
+    "El incidente del andamiaje autorreparable.",
+    "",
+    "## Fuentes",
+    "",
+    "| Alias | Path | Rama principal |",
+    "|---|---|---|",
+    `| acme | ${acme} | main |`,
+    "",
+    "## Status",
+    "",
+    "- Ramas de trabajo actuales:",
+    "  - acme: main",
+    "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+    "",
+  ].join("\n");
 
 /** El plan del incidente: sellado, con su sección de traspaso operativo. */
 const PLAN_TEXT = [
@@ -118,6 +125,7 @@ const PLAN_VALIDADO = PLAN_TEXT.replace("> Estado: pendiente", "> Estado: valida
 
 describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sale por `aw settle`", () => {
   let workdir: string;
+  let acme: string;
   let paths: PathsService;
   let deps: {
     fs: NodeFileSystem;
@@ -129,6 +137,8 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
 
   beforeEach(async () => {
     workdir = await mkdtemp(join(tmpdir(), "aw-f6-saldo-"));
+    acme = await mkdtemp(join(tmpdir(), "aw-f6-acme-"));
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: acme, stdio: "ignore" });
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
     deps = {
       fs,
@@ -145,13 +155,14 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     await mkdir(join(workdir, "docs", "specs"), { recursive: true });
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await mkdir(join(workdir, "docs", "decisions"), { recursive: true });
-    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), workspaceBlock(acme), "utf8");
     await writeFile(join(workdir, SPEC), SPEC_TEXT, "utf8");
     await writeFile(join(workdir, PLAN), PLAN_TEXT, "utf8");
   });
 
   afterEach(async () => {
     await rm(workdir, { recursive: true, force: true });
+    await rm(acme, { recursive: true, force: true });
   });
 
   // ── T6.1 · el incidente, fijado ────────────────────────────────────────────
@@ -218,6 +229,21 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     return result.directive;
   }
 
+  /**
+   * Recorrer hasta el final. `plan-done` y el cierre de sesión los corre el CLI
+   * —nadie los contesta—, así que lo que se afirma es que la corrida TERMINÓ y que
+   * las dos operaciones quedaron ejecutadas de verdad en su traza.
+   */
+  async function closeRun(walk: ReturnType<typeof walker>): Promise<void> {
+    await walk.walkTo(RUN, "plan-exec.plan-done");
+    const { state, resolved } = await current();
+    expect(resolved.stopped).toBeNull();
+    const executed = state.events.flatMap((event) =>
+      event.kind === "executed" ? [event.operation] : [],
+    );
+    expect(executed).toEqual(expect.arrayContaining(["plan-exec.plan-done", "session.close"]));
+  }
+
   const board = () => buildWorklineIndex(fs, deps.env, paths, { git: deps.git });
 
   /** Las notas del linaje como quedaron EN DISCO, para leer lo que se publicó. */
@@ -255,8 +281,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     // y el tramo de saldo se saltea entero. El cierre es el de siempre.
     await publishIncident([TRASPASO]);
     const walk = walker();
-    await walk.walkTo(RUN, "plan-exec.plan-done");
-    await walk.step(RUN);
+    await closeRun(walk);
 
     const sealed = await readFile(join(workdir, PLAN), "utf8");
     expect(sealed).toContain("> Estado: done");
@@ -293,11 +318,10 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     // Ninguna pregunta humana nueva: la clase estaba declarada, así que no hay
     // nada que ratificar y el recorrido sigue derecho. Es AC-12 literal — el
     // cierre no agrega interacción humana sobre el estado interno del CLI.
-    await walk.walkTo(RUN, "plan-exec.plan-done");
+    await closeRun(walk);
     // `applied` registra toda fila por la que pasó el cursor, salteada incluida;
     // `skipped` es la que dice que nadie la contestó. Ésa es la afirmación.
     expect((await current()).state.skipped).toContain("plan-exec.settlement-question");
-    await walk.step(RUN);
 
     expect(await readFile(join(workdir, PLAN), "utf8")).toContain("> Estado: done");
     // El saldo lo publicó el CLI: hay un sucesor en la cadena y el plan cerró.
@@ -378,8 +402,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     });
     // La legada es ambigua, así que la pregunta se abre: se ratifica el saldo.
     await answer({ choice: "Cumplida con la evidencia declarada" });
-    await walk.walkTo(RUN, "plan-exec.plan-done");
-    await walk.step(RUN);
+    await closeRun(walk);
 
     expect(await readFile(join(workdir, PLAN), "utf8")).toContain("> Estado: done");
     const sucesor = (await chainOf()).at(-1);
@@ -427,8 +450,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     // La elegida publica la nota que CORRESPONDE: leída traspaso, la obligación
     // se conserva reclasificada —no se descarta— y con eso el plan cierra.
     await answer({ choice: "Es un traspaso" });
-    await walk.walkTo(RUN, "plan-exec.plan-done");
-    await walk.step(RUN);
+    await closeRun(walk);
 
     expect(await readFile(join(workdir, PLAN), "utf8")).toContain("> Estado: done");
     const plan = await planOf();
@@ -463,8 +485,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     expect((await current()).state.settlement?.declared).toEqual([
       { note: owed[0]?.note, index: owed[0]?.index, outcome: "handoff" },
     ]);
-    await walk.walkTo(RUN, "plan-exec.plan-done");
-    await walk.step(RUN);
+    await closeRun(walk);
 
     // Y el saldo se publicó: el plan cierra y la obligación quedó reclasificada,
     // no descartada — sigue en la cadena, ahora como traspaso declarado.
@@ -504,8 +525,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
       },
     });
     await answer({ choice: "Es un traspaso" });
-    await walk.walkTo(RUN, "plan-exec.plan-done");
-    await walk.step(RUN);
+    await closeRun(walk);
 
     // La declarada se SOLTÓ —estaba cumplida con su evidencia— y la legada quedó
     // conservada como traspaso. Si la respuesta hubiera alcanzado a las dos, la
@@ -579,8 +599,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     // lectura elegida se aplica a todas las ambiguas de una vez.
     await answer({ choice: "Es un traspaso" });
     expect((await current()).resolved.stopped?.id).not.toBe("plan-exec.settlement-question");
-    await walk.walkTo(RUN, "plan-exec.plan-done");
-    await walk.step(RUN);
+    await closeRun(walk);
 
     expect((await chainOf()).at(-1)?.obligations).toEqual([
       { text: COMPENSACION, kind: "handoff" },

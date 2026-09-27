@@ -22,6 +22,7 @@
 //      corrida SIGUE, el evento queda en la traza, `docs/decisions/` no nace, y
 //      el plan CIERRA con su sello `done`.
 
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -325,7 +326,12 @@ const SESSION = "041-conversacion-plan-exec";
 const CODE = "041";
 const RECOGNITION = "plan-exec.deviation-recognition";
 const GATE = "plan-exec.deviation-gate";
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
+/**
+ * El bloque del workspace, con su fuente en un repo REAL: el cierre de sesión lee
+ * las unidades de cada fuente declarada con `git worktree list`, y una fuente que
+ * no existe en disco es un estado de aislamiento ilegible, que el cierre rechaza.
+ */
+const workspaceBlock = (acme: string) => `<!-- AGENT-WORKFLOW-PROJECT-START -->
 ## Proyecto
 
 Un plan nacido de la conversación.
@@ -334,7 +340,7 @@ Un plan nacido de la conversación.
 
 | Alias | Path | Rama principal |
 |---|---|---|
-| acme | /tmp/acme | main |
+| acme | ${acme} | main |
 
 ## Status
 
@@ -365,11 +371,14 @@ Adoptado de la conversación del host, sin spec previa.
 describe("la ida completa — un desvío componible se registra y la corrida SIGUE", () => {
   const fs = new NodeFileSystem();
   let workdir: string;
+  let acme: string;
   let paths: PathsService;
   let walk: ReturnType<typeof planExecWalk>;
 
   beforeEach(async () => {
     workdir = await mkdtemp(join(tmpdir(), "aw-standalone-"));
+    acme = await mkdtemp(join(tmpdir(), "aw-standalone-acme-"));
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: acme, stdio: "ignore" });
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
     await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
     await writeFile(
@@ -377,7 +386,7 @@ describe("la ida completa — un desvío componible se registra y la corrida SIG
       "# SESSION — plan standalone\n\n## Objective\nejecutar un plan sin spec\n",
       "utf8",
     );
-    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), workspaceBlock(acme), "utf8");
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await writeFile(join(workdir, PLAN_PATH), REAL_PLAN, "utf8");
     walk = planExecWalk(
@@ -388,6 +397,7 @@ describe("la ida completa — un desvío componible se registra y la corrida SIG
 
   afterEach(async () => {
     await rm(workdir, { recursive: true, force: true });
+    await rm(acme, { recursive: true, force: true });
   });
 
   const run = { code: CODE, folder: SESSION, plan: PLAN_PATH };
@@ -619,8 +629,9 @@ Spec 070.
       { sources: ["workspace"], signals: [] },
     );
     await derecho.walkTo(run, "plan-exec.plan-done");
+    // El sello lo corre el CLI: la corrida queda parada en él porque su
+    // operación se NEGÓ, y esa negativa es la que queda en la traza.
     expect((await current()).resolved.stopped?.id).toBe("plan-exec.plan-done");
-    await derecho.step(run);
 
     const refused = (await current()).state.events.find(
       (event) => event.operation === "plan-exec.plan-done" && event.kind === "failed",

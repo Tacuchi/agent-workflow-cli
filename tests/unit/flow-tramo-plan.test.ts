@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -23,9 +23,11 @@ import {
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
+import { attemptAccountingAt } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * PLAN, dirigido por el CLI — el tercer tramo, y el que más efecto tiene.
@@ -88,6 +90,22 @@ function at(journey: readonly FlowDecision[], id: string): number {
   const index = journey.findIndex((decision) => decision.id === id);
   if (index < 0) throw new Error(`el recorrido ya no tiene '${id}'`);
   return index;
+}
+
+/**
+ * La prueba de checkout de una frontera: la del documento en los gates, la de la
+ * fuente del lote en su validación de fase. Sin lector git no se mide frescura,
+ * pero una prueba que ya acreditó otro lote se rechaza, así que va una por sello.
+ */
+function proofAt(stopped: FlowDecision, seal: string): Record<string, unknown> {
+  const batch = stopped.id === "plan-exec.validation-execution";
+  return {
+    kind: "inspection" as const,
+    source: batch ? ALIAS : "workspace",
+    relative_cwd: ".",
+    checkout_digest: batch ? `test-checkout-${seal.slice(0, 16)}` : "test-checkout",
+    invocation: { artifact: "tests/unit/flow-tramo-plan.test.ts" },
+  };
 }
 
 describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina", () => {
@@ -376,7 +394,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await writeFile(
       join(workdir, PLAN_DOC),
-      `# Plan 031 — tramo\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — tramo\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — recorrer el tramo _(fuentes: ${ALIAS})_\n`,
+      `# Plan 031 — tramo\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — tramo\n> Estado: pendiente\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — recorrer el tramo _(fuentes: ${ALIAS})_\n`,
       "utf8",
     );
   });
@@ -399,6 +417,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       code: CODE,
       raw: JSON.stringify(body),
       approval,
+      executor: testExecutor(fs, paths),
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return result.directive;
@@ -420,15 +439,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
         passed: true,
         detail: `salida real de ${id}`,
         ...(id === "workline.source-bounded"
-          ? {
-              proof: {
-                kind: "inspection" as const,
-                source: "workspace",
-                relative_cwd: ".",
-                checkout_digest: "test-checkout",
-                invocation: { artifact: "tests/unit/flow-tramo-plan.test.ts" },
-              },
-            }
+          ? { proof: proofAt(resolved.stopped as FlowDecision, resolved.seal) }
           : {}),
       })),
       effects: { planned: [...declared], approved: [], applied: [...declared] },
@@ -460,9 +471,14 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
 
   /** Adopt the run and answer up to the boundary of `id`, declaring `signals` where admissible. */
   async function walkTo(id: string, signals: string[]): Promise<void> {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "plan-exec", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "plan-exec",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor: testExecutor(fs, paths) });
     for (let step = 0; step < 40; step += 1) {
       const { resolved } = await current();
       if (resolved.stopped === null || resolved.stopped.id === id) return;
@@ -481,13 +497,27 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   }
 
   it("la sesión de ejecución no se da por abierta sin leerla", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "plan-exec", adopt: true });
+    // Sin su SESSION.md, la lectura real se niega: la frontera queda en pie con
+    // la causa que encontró, en vez de darse por abierta.
+    const session = join(paths.cwdSessionsDir(), SESSION, "SESSION.md");
+    await rm(session);
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "plan-exec",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    const started = (await acceptAdaptiveRoute(fs, paths, SESSION)) ?? adopted.directive;
+    const started =
+      (await acceptAdaptiveRoute(fs, paths, SESSION, { executor: testExecutor(fs, paths) })) ??
+      adopted.directive;
     expect(started.boundary.kind).toBe("execution");
     expect(started.boundary.transition).toBe("plan-exec.session");
+    expect(started.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
+    const spent = attemptAccountingAt((await current()).state, "plan-exec.session").spent;
 
-    // Una narración no es un resultado.
+    // Una narración no es un resultado — y sobre una fila que corre el CLI, ni
+    // siquiera un resultado bien formado la acredita, ni gasta un intento.
     const claimed = await answer({
       input_digest: started.state_digest,
       outcome: "completed",
@@ -496,11 +526,33 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
       effects: { planned: ["local_additive"], approved: [], applied: ["local_additive"] },
       output: null,
     });
-    expect(claimed.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+    expect(claimed.error?.code).toBe("FLOW_INTERNAL_ACTION_EXTERNAL_RESULT");
     // Los dos pasos transversales del prefijo ya se aplicaron —fijan la carpeta
     // escribible y el tope de intentos antes de que nada corra—, así que lo que
     // se afirma es lo que el resultado NO acreditó: la sesión sigue sin abrirse.
-    expect((await current()).state.applied).not.toContain("plan-exec.session");
+    const untouched = await current();
+    expect(untouched.state.applied).not.toContain("plan-exec.session");
+    expect(attemptAccountingAt(untouched.state, "plan-exec.session").spent).toBe(spent);
+
+    // Con el artefacto de vuelta, la sesión se abre LEYÉNDOLA: el crédito es el
+    // evento de la operación que corrió, con la evidencia que la fila exige.
+    await writeFile(
+      session,
+      "# SESSION — tramo plan\n\n## Objective\nejecutar el plan de prueba\n",
+    );
+    const read = await advanceFlow(fs, paths, {
+      code: CODE,
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    if (!read.ok) throw new Error("esperaba reanudar la corrida");
+    const { state } = await current();
+    expect(state.applied).toContain("plan-exec.session");
+    expect(
+      state.events.find(
+        (event) => event.kind === "executed" && event.transition === "plan-exec.session",
+      ),
+    ).toMatchObject({ operation: "session.artifacts", evidence: ["plan.session-present"] });
   });
 
   it("sin hueco declarado, ni la severidad ni la normalización se preguntan", async () => {
@@ -644,12 +696,21 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
 
     // Recién después del merge se sella el plan: el `done` es la marca de avance
     // del propio plan-doc (custodia de la corrida) y ahora es verdad de una rama
-    // que alguien puede leer.
+    // que alguien puede leer. El sello lo corre el CLI en cuanto el merge se
+    // acredita: nadie lo contesta, y lo que lo prueba es la operación que corrió.
     const integrated = await answer(resultFor((await current()).resolved));
-    expect(integrated.boundary.transition).toBe("plan-exec.plan-done");
-    expect(integrated.boundary.kind).toBe("execution");
-    expect(integrated.action?.invocation.args).toEqual(["flow", "advance", "--code", SESSION]);
-    expect((await current()).state.applied).toContain("plan-exec.unit-integration");
+    expect(integrated.error).toBeNull();
+    const closed = await current();
+    expect(closed.state.applied).toContain("plan-exec.unit-integration");
+    expect(closed.state.applied.indexOf("plan-exec.plan-done")).toBeGreaterThan(
+      closed.state.applied.indexOf("plan-exec.unit-integration"),
+    );
+    expect(
+      closed.state.events.find(
+        (event) => event.kind === "executed" && event.transition === "plan-exec.plan-done",
+      ),
+    ).toMatchObject({ operation: "plan-exec.plan-done" });
+    expect(await readFile(join(workdir, PLAN_DOC), "utf8")).toContain("> Estado: done");
   });
 });
 
@@ -680,6 +741,7 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
       "## Tasks",
       "",
       "### F1 — columnas nuevas",
+      "> Estado: pendiente",
       `> Fuentes: ${ALIAS}`,
       "",
       `- [ ] T1.1 — agregar las columnas _(fuentes: ${ALIAS})_`,
@@ -734,26 +796,27 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
   }
 
   async function answer(code: string, body: unknown): Promise<FlowDirective> {
-    const result = await submitFlow(fs, paths, { code, raw: JSON.stringify(body) });
+    const result = await submitFlow(fs, paths, {
+      code,
+      raw: JSON.stringify(body),
+      executor: testExecutor(fs, paths),
+    });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return result.directive;
   }
 
   /** Una evidencia acreditada, con la prueba de checkout donde la frontera la exige. */
-  function evidenceFor(id: string): Record<string, unknown> {
+  function evidenceFor(
+    id: string,
+    resolved: Awaited<ReturnType<typeof state>>["resolved"],
+  ): Record<string, unknown> {
     if (id !== "workline.source-bounded")
       return { id, passed: true, detail: `salida real de ${id}` };
     return {
       id,
       passed: true,
       detail: `salida real de ${id}`,
-      proof: {
-        kind: "inspection" as const,
-        source: "workspace",
-        relative_cwd: ".",
-        checkout_digest: "test-checkout",
-        invocation: { artifact: "tests/unit/flow-tramo-plan.test.ts" },
-      },
+      proof: proofAt(resolved.stopped as FlowDecision, resolved.seal),
     };
   }
 
@@ -768,7 +831,7 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
       input_digest: resolved.seal,
       outcome: "completed",
       invocation: action.invocation,
-      validations: action.evidence.map(evidenceFor),
+      validations: action.evidence.map((id) => evidenceFor(id, resolved)),
       effects: { planned: [...declared], approved: [], applied: [...declared] },
       output: null,
     };
@@ -810,6 +873,7 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
       code,
       raw: JSON.stringify({ input_digest: resolved.seal, choice: "Autorizar el efecto" }),
       approval: effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? []),
+      executor: testExecutor(fs, paths),
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
   }
@@ -822,9 +886,14 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
     id: string,
     content: string,
   ): Promise<void> {
-    const adopted = await advanceFlow(fs, paths, { code, flow, adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code,
+      flow,
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error(`esperaba adoptar la corrida de ${flow}`);
-    await acceptAdaptiveRoute(fs, paths, session);
+    await acceptAdaptiveRoute(fs, paths, session, { executor: testExecutor(fs, paths) });
     for (let step = 0; step < 40; step += 1) {
       const { resolved } = await state(session);
       if (resolved.stopped === null || resolved.stopped.id === id) return;

@@ -36,6 +36,7 @@ import {
   type FlowSettlementObligation,
   type PlanExecBatch,
   withPlanExecBatch,
+  withPlanExecBatchBase,
   withPlanExecBatchLoop,
   withSettlement,
 } from "../../domain/flow/run-state.js";
@@ -75,6 +76,7 @@ import { recordPublication } from "../session-custody-recorder.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
+import { observeScopedFingerprints } from "./checkout-observation.js";
 import { projectRun } from "./run-projection.js";
 import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
@@ -221,6 +223,14 @@ async function ensureUnits(
     }
     acquired.push(result);
   }
+  const based = await recordBatchBase(deps, run, scope.sources);
+  if (!based.ok) {
+    return refusal(
+      "worktree.ensure",
+      `${based.failure.message} — ${based.failure.action}`,
+      canonicalJson({ failure: based.failure, acquired }),
+    );
+  }
   return {
     ok: true,
     summary: `unidades de ${run.session}: ${acquired.map((unit) => `${unit.alias} → ${unit.branch}`).join(", ")}`,
@@ -229,7 +239,75 @@ async function ensureUnits(
     // makes of a re-entry that finds the bytes already written. Crediting nothing
     // when `created` is false would refuse the resumption this row is idempotent for.
     effects: ["local_additive"],
+    ...(based.state === null ? {} : { state: based.state }),
   };
+}
+
+/** The batch this iteration walks, while it still has no base. */
+function batchAwaitingBase(state: FlowRunState): PlanExecBatch | undefined {
+  const iteration = state.batch_loop?.iteration ?? null;
+  const batch = (state.batches ?? []).find((entry) => entry.iteration === iteration);
+  return batch?.base === undefined ? batch : undefined;
+}
+
+/**
+ * Seal, on the batch this iteration walks, what each of its sources looked like
+ * before its work — the base it will have to have changed to be credited.
+ *
+ * Taken here because this row runs once per iteration, after the previous
+ * batch's close and commit: comparing against the previous CREDIT instead would
+ * let the plan that close published, or the review's fixes, pass as the next
+ * batch's work. The first batch's base is the run's start.
+ */
+async function recordBatchBase(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  sources: readonly string[],
+): Promise<{ ok: true; state: FlowRunState | null } | { ok: false; failure: CapabilityFailure }> {
+  // Measuring hashes whole trees, so it happens only when a batch is waiting for
+  // its base; the lock below re-checks, and a run that moved fails its CAS.
+  const live = await readRun(deps.fs, locateRun(deps.paths, run.session));
+  if (live.ok && batchAwaitingBase(live.state) === undefined) return { ok: true, state: null };
+  const observed = await observeScopedFingerprints(
+    deps.fs,
+    deps.git,
+    deps.paths,
+    run.session,
+    sources,
+  );
+  if (!observed.ok) return observed;
+  const recorded = await applyUnderLock<null>(
+    deps.fs,
+    locateRun(deps.paths, run.session),
+    (current) => {
+      if (current === null) {
+        return {
+          ok: false,
+          failure: {
+            code: "FLOW_RUN_ABSENT",
+            message: "la corrida desapareció antes de sellar la base del batch",
+            action: "reanudá la corrida con 'aw flow advance'",
+          },
+        };
+      }
+      const batch = batchAwaitingBase(current);
+      // Outside plan-exec, before any batch was inferred, or with its base already
+      // sealed, there is nothing to seal.
+      if (batch === undefined) return { ok: true, state: current, value: null, persist: false };
+      // A reseated run already holds the work of the batches it re-infers: their
+      // base is the one the archived run sealed before that work, not today's tree.
+      const inherited = current.inherited_bases?.find(
+        (entry) =>
+          entry.phases.length === batch.phases.length &&
+          entry.phases.every((phase, index) => phase === batch.phases[index]),
+      );
+      const next = withPlanExecBatchBase(current, batch.id, inherited?.base ?? observed.base);
+      return { ok: true, state: next, value: null, persist: next !== current };
+    },
+    run.state_digest === undefined ? {} : { expectDigest: run.state_digest },
+  );
+  if (!recorded.ok) return recorded;
+  return { ok: true, state: recorded.state };
 }
 
 /**
@@ -834,6 +912,16 @@ async function closeBatch(
       "plan-exec.batch-close",
       "no hay un batch inferido para cerrar: la corrida no puede acreditar tareas que no selló antes de implementarlas",
       canonicalJson({ code: "PLAN_EXEC_BATCH_NOT_INFERRED", plan: run.scope.plan }),
+    );
+  }
+  // A batch born with a base was meant to be credited at its phase validation.
+  // Reaching the close without that credit — an exhausted validation degraded
+  // past, a route that skipped it — would publish its tasks as done on no proof.
+  if (batch.base !== undefined && batch.credit === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      `el batch ${batch.id} no tiene acreditación: su validación de fase nunca aceptó una prueba propia del checkout de sus fuentes`,
+      canonicalJson({ code: "PLAN_EXEC_BATCH_UNCREDITED", batch: batch.id, plan: run.scope.plan }),
     );
   }
   const phaseUpdates = phaseUpdatesForClosedBatch(text, batch);

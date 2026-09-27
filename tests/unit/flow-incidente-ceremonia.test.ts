@@ -19,6 +19,7 @@ import {
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * El incidente, reproducido de punta a punta.
@@ -129,7 +130,11 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
   }
 
   async function answer(body: unknown): Promise<FlowDirective> {
-    const result = await submitFlow(fs, paths, { code: CODE, raw: JSON.stringify(body) });
+    const result = await submitFlow(fs, paths, {
+      code: CODE,
+      raw: JSON.stringify(body),
+      executor: testExecutor(fs, paths),
+    });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return result.directive;
   }
@@ -246,9 +251,15 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
   });
 
   it("llega a su primera tarea con los intentos intactos, sin degradación y sin frontera humana", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "plan-exec", adopt: true });
+    const executor = testExecutor(fs, paths);
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "plan-exec",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
 
     // Hasta la primera frontera semántica, que es donde una respuesta se EVALÚA
     // y por lo tanto cuesta un intento.
@@ -284,7 +295,7 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
     expect(broken.resolved.error?.code).toBe("FLOW_BOUNDARY_EXHAUSTED");
 
     // Y el avance siguiente —lo único que el agente hace— la repara sin decir nada.
-    const resumed = await advanceFlow(fs, paths, { code: CODE, adopt: false });
+    const resumed = await advanceFlow(fs, paths, { code: CODE, adopt: false, executor });
     if (!resumed.ok) throw new Error("esperaba avanzar sobre la contabilidad reparada");
     expect(resumed.directive.boundary.transition).toBe(stopped.id);
     expect(resumed.directive.error).toBeNull();

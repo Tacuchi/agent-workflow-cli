@@ -12,6 +12,7 @@
  * match its journey says so instead of projecting a boundary nobody can trust.
  */
 
+import { internalActionOf } from "../../domain/flow/authority.js";
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
 import type { AssuranceStatus } from "../../domain/flow/route.js";
 import {
@@ -158,6 +159,7 @@ export async function projectRun(
     resolved.action === null
       ? null
       : [resolved.action.invocation.program, ...resolved.action.invocation.args].join(" ");
+  const internal = internalActionOf(stopped) !== null;
   return {
     flow: read.state.flow,
     boundary: resolved.kind,
@@ -166,14 +168,27 @@ export async function projectRun(
     invocation,
     // At an execution boundary what continues the run is the invocation itself —
     // anything else would send whoever resumes to re-derive the command from
-    // prose, which is exactly what the sealed action exists to prevent.
-    command: invocation ?? `aw flow advance --code ${folder}`,
-    summary:
-      invocation === null
-        ? `pendiente: ${stopped.title}`
-        : `pendiente: ${stopped.title} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --code ${folder}'`,
+    // prose, which is exactly what the sealed action exists to prevent. Except on
+    // an internal row: the CLI re-runs it, and a result sent with `submit` would be
+    // refused, so its invocation stays only as diagnosis.
+    command: invocation === null || internal ? `aw flow advance --code ${folder}` : invocation,
+    summary: pendingSummary(stopped.title, invocation, internal, folder),
     scope: read.state.scope,
     assurance: read.state.assurance,
     repairs: attemptReconciliationsOf(read.state),
   };
+}
+
+/** What is pending, and who runs it: the caller, or the CLI on its next advance. */
+function pendingSummary(
+  title: string,
+  invocation: string | null,
+  internal: boolean,
+  folder: string,
+): string {
+  if (invocation === null) return `pendiente: ${title}`;
+  if (internal) {
+    return `pendiente: ${title} — la corre el CLI: 'aw flow advance --code ${folder}' la reintenta y la acredita; si no sale de ahí, '${restartInvocation(folder)}'`;
+  }
+  return `pendiente: ${title} — ejecutá '${invocation}' y devolvé su salida real con 'aw flow submit --code ${folder}'`;
 }

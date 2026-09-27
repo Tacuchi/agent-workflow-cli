@@ -62,7 +62,11 @@ import {
   STOP_LABEL,
   stepOf,
 } from "../../domain/flow/directive.js";
-import { type ExecutionRefusal, executionVerdict } from "../../domain/flow/execution-result.js";
+import {
+  type ExecutionRefusal,
+  batchCreditVerdict,
+  executionVerdict,
+} from "../../domain/flow/execution-result.js";
 import {
   ROUTE_ACCEPT_LABEL,
   ROUTE_ADJUST_LABEL,
@@ -80,6 +84,7 @@ import {
   applyTransition,
   checkAgainstJourney,
   iterationOf,
+  restartInvocation,
   restatesLastEvent,
   sameIteration,
   settlementAmbiguous,
@@ -92,6 +97,7 @@ import {
   withFixPreview,
   withHandoff,
   withObservation,
+  withPlanExecBatchCredit,
   withPlanExecBatchStageForTransition,
   withProposal,
   withReentry,
@@ -140,12 +146,16 @@ import {
   effectsOfTransition,
   resolveBoundary,
 } from "./advance.js";
-import { observeCheckout, withObservedCheckouts } from "./checkout-observation.js";
+import {
+  observeCheckout,
+  observeScopedFingerprints,
+  withObservedCheckouts,
+} from "./checkout-observation.js";
 import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
 import { journeyForRun } from "./run-journey.js";
-import { type FlowRunMutation, applyUnderLock, locateRun } from "./run-state-service.js";
+import { type FlowRunMutation, applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
 export interface SubmitFlowInput {
   code?: string;
@@ -154,8 +164,13 @@ export interface SubmitFlowInput {
   raw: string;
   /** `--approval <digest>`, apart from the payload on purpose. */
   approval: string | null;
-  /** How this process materializes internal actions. See {@link driveInternalActions}. */
-  executor?: InternalActionExecutor;
+  /**
+   * How this process materializes internal actions. See {@link driveInternalActions}.
+   *
+   * Required: without it an internal row could only be answered from outside, and
+   * that answer is exactly what `submit` refuses.
+   */
+  executor: InternalActionExecutor;
   /** Live checkout reader used to verify source-bounded evidence. */
   git?: GitPort;
 }
@@ -302,6 +317,12 @@ interface Observation {
   plans: readonly PlanArtifactBoundary[];
   /** `null` when this caller has no live Git reader (pure/test callers). */
   checkouts: CheckoutState[] | null;
+  /**
+   * Each scoped source's fingerprint, observed only while the run stands on the
+   * phase validation — the one boundary that compares a batch with its base.
+   * `null` anywhere else, and for a caller with no live Git reader.
+   */
+  scoped: Record<string, string | null> | null;
   /** Per plan artifact, the baseline its publication must seal. */
   baselines: BaselineSnapshot;
 }
@@ -321,9 +342,42 @@ async function observe(
     scope: await observeScope(fs, paths, raw),
     plans: plans.evidence,
     checkouts: await observeCheckouts(fs, paths, session, git),
+    scoped: await observeBatchSources(fs, paths, session, git),
     baselines: plans.baselines,
   };
 }
+
+/**
+ * The scoped fingerprints a phase validation is judged against, read before the
+ * lock like every other observation. The run read here only decides WHETHER to
+ * measure: the decision under the lock re-reads it, and a run that moved in
+ * between answers a different seal and is refused as stale anyway.
+ */
+async function observeBatchSources(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: string,
+  git: GitPort | undefined,
+): Promise<Record<string, string | null> | null> {
+  if (git === undefined) return null;
+  // With a reader present, "not measured" is an empty map and never `null`: the
+  // judgment then finds every source unobservable and refuses, instead of
+  // skipping the one comparison the phase validation exists for.
+  const read = await readRun(fs, locateRun(paths, session));
+  if (!read.ok || read.state.boundary !== PHASE_VALIDATION || read.state.scope === null) {
+    return {};
+  }
+  const observed = await observeScopedFingerprints(
+    fs,
+    git,
+    paths,
+    session,
+    read.state.scope.sources,
+  );
+  return observed.ok ? observed.base : {};
+}
+
+const PHASE_VALIDATION = "plan-exec.validation-execution";
 
 type BaselineSnapshot = ReadonlyMap<string, SpecBaseline>;
 
@@ -618,6 +672,23 @@ async function decide(
     );
   }
 
+  // An internal action is credited only by the driver that ran it: that is what
+  // leaves its `executed` event in the trace. A result from outside, however well
+  // formed, is a claim nobody verified — and applying it used to publish nothing
+  // while marking the step done.
+  if (resolved.kind === "execution" && internalActionOf(resolved.stopped) !== null) {
+    return reject(
+      state,
+      resolved,
+      `'${resolved.stopped.id}' la ejecuta el CLI: un resultado externo no la acredita`,
+      {
+        code: "FLOW_INTERNAL_ACTION_EXTERNAL_RESULT",
+        action: `corré 'aw flow advance --session ${state.session}': el CLI corre la operación y la acredita; si la corrida no sale de esta frontera, '${restartInvocation(state.session)}' la destraba`,
+      },
+      cost,
+    );
+  }
+
   // The action the run is waiting on is the one that was EMITTED, and the seal
   // would already refuse a result about any other. What the persisted digest adds
   // is the diagnosis: when the two differ, the invocation changed underneath a run
@@ -627,7 +698,15 @@ async function decide(
   if (drifted !== null) return drifted;
 
   // 2 · The boundary in force decides what is admissible.
-  const admissible = admit(state, resolved, resolved.stopped, input, cost, snapshot.checkouts);
+  const admissible = admit(
+    state,
+    resolved,
+    resolved.stopped,
+    input,
+    cost,
+    snapshot.checkouts,
+    snapshot.scoped,
+  );
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
 
@@ -641,7 +720,13 @@ async function decide(
   if (route.kind === "adjust") {
     return adjustRouteProposal(state, journey);
   }
-  const routed = route.kind === "accept" ? withRouteDecisions(state, route.decisions) : state;
+  const accepted = route.kind === "accept" ? withRouteDecisions(state, route.decisions) : state;
+  // Sealed with the transition it earned, in the same state publication: a batch
+  // is never seen validated without the proofs that validated it.
+  const routed =
+    parsed.credit === undefined
+      ? accepted
+      : withPlanExecBatchCredit(accepted, parsed.credit.batch, parsed.credit.proofs);
 
   // The registry, not the Spanish consequence text, owns what a selected
   // alternative does. A handoff must stop before any later plan-exec row can
@@ -981,16 +1066,28 @@ function routeAnswer(
         },
       };
     }
+    const { decision, control } = configuredControl;
+    const consequence = control.consequences[raw.disposition];
+    if (consequence === undefined) {
+      return {
+        kind: "failure",
+        failure: {
+          code: "FLOW_ROUTE_HARD_GATE",
+          message: `'${raw.transition}' no admite '${raw.disposition}': el registro no deja que una ruta la saltee`,
+          action:
+            "declará apply o substitute para ese control; la evidencia que acredita el paso no se omite",
+        },
+      };
+    }
     const substitution = routeSubstitution(raw.disposition, raw.substitution);
     if ("failure" in substitution) return { kind: "failure", failure: substitution.failure };
-    const { decision, control } = configuredControl;
     controls.push({
       transition: decision.id,
       title: decision.title,
       disposition: raw.disposition,
       recommendation: control.recommendation,
       alternatives: control.consequences,
-      consequence: control.consequences[raw.disposition],
+      consequence,
       risk: control.risk,
       reason: raw.reason.trim(),
       substitution: substitution.value,
@@ -2003,7 +2100,8 @@ function admit(
   input: SubmitFlowInput,
   cost: RejectionCost,
   checkouts: readonly CheckoutState[] | null,
-): { ok: true; answer: FlowAnswer } | { decision: SubmitDecision } {
+  scoped: Record<string, string | null> | null,
+): Admitted | { decision: SubmitDecision } {
   const expectedApproval =
     resolved.kind === "authorization"
       ? effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? [])
@@ -2084,27 +2182,83 @@ function admit(
   // An execution result has to EARN the transition. Anything short of a completed
   // run with its evidence and its whole effect keeps the boundary standing: the
   // work stays pending, with the recovery the action declared.
-  if (resolved.kind === "execution") {
-    // The row's `effects` are the ceiling and the sealed proposal is what really
-    // happens: demanding an overwrite from a publication that only creates files
-    // would leave the transition pending for an effect nobody could produce.
-    const verdict = executionVerdict(
-      parsed.answer.result,
-      resolved.action,
-      effectsOfTransition(state, stopped),
-      checkouts,
-    );
-    if (verdict !== null) {
-      const trace = declaredTrace(state, stopped, resolved, parsed.answer, verdict);
-      return {
-        decision: reject(state, resolved, verdict.message, verdict.detail, {
-          ...cost,
-          ...(trace === null ? {} : { trace }),
-        }),
-      };
-    }
+  if (resolved.kind !== "execution") return parsed;
+  return earned(state, resolved, stopped, parsed, cost, checkouts, scoped);
+}
+
+type Admitted = {
+  ok: true;
+  answer: FlowAnswer;
+  credit?: { batch: string; proofs: Record<string, string> };
+};
+
+/** The execution verdict, then — at the phase validation — the batch's own credit. */
+function earned(
+  state: FlowRunState,
+  resolved: ResolvedBoundary,
+  stopped: FlowDecision,
+  parsed: { ok: true; answer: FlowAnswer },
+  cost: RejectionCost,
+  checkouts: readonly CheckoutState[] | null,
+  scoped: Record<string, string | null> | null,
+): Admitted | { decision: SubmitDecision } {
+  // The row's `effects` are the ceiling and the sealed proposal is what really
+  // happens: demanding an overwrite from a publication that only creates files
+  // would leave the transition pending for an effect nobody could produce.
+  const verdict = executionVerdict(
+    parsed.answer.result,
+    resolved.action,
+    effectsOfTransition(state, stopped),
+    checkouts,
+  );
+  if (verdict !== null) {
+    const trace = declaredTrace(state, stopped, resolved, parsed.answer, verdict);
+    return {
+      decision: reject(state, resolved, verdict.message, verdict.detail, {
+        ...cost,
+        ...(trace === null ? {} : { trace }),
+      }),
+    };
   }
-  return parsed;
+  const credited = batchCredit(state, stopped, parsed.answer, resolved, scoped);
+  if (credited === null) return parsed;
+  if (!credited.ok) {
+    return {
+      decision: reject(state, resolved, credited.refusal.message, credited.refusal.detail, cost),
+    };
+  }
+  return { ...parsed, credit: credited.credit };
+}
+
+/**
+ * The phase validation's own judgment: the batch it closes must bring a proof of
+ * each of its sources, of its own checkout. `null` on every other boundary, and
+ * on a run with no batch standing, where there is nothing to credit.
+ */
+function batchCredit(
+  state: FlowRunState,
+  stopped: FlowDecision,
+  answer: FlowAnswer,
+  resolved: ResolvedBoundary,
+  scoped: Record<string, string | null> | null,
+):
+  | { ok: true; credit: { batch: string; proofs: Record<string, string> } }
+  | { ok: false; refusal: ExecutionRefusal }
+  | null {
+  if (stopped.id !== PHASE_VALIDATION || answer.result === null || state.scope === null) {
+    return null;
+  }
+  const iteration = state.batch_loop?.iteration ?? null;
+  const batches = state.batches ?? [];
+  const batch = batches.find((entry) => entry.iteration === iteration);
+  if (batch === undefined) return null;
+  const verdict = batchCreditVerdict(
+    answer.result,
+    { batch, batches, sources: state.scope.sources, scoped },
+    resolved.action?.recovery ?? "",
+  );
+  if (!verdict.ok) return verdict;
+  return { ok: true, credit: { batch: batch.id, proofs: verdict.credit } };
 }
 
 /**
@@ -2219,13 +2373,6 @@ function applyAndAdvance(
     applyTransition(next, stopped.id, effectsOfTransition(next, stopped)),
     stopped.id,
   );
-  // A published proposal is spent, whoever published it. This is the degraded
-  // path — no internal executor, so the caller ran the write and returned its
-  // result — and leaving the proposal seated would keep a preview of bytes that
-  // are already on disk standing in front of the next boundary.
-  if (internalActionOf(stopped)?.operation === "proposal.publish") {
-    next = withProposal(next, null);
-  }
   next = withAttempt(next, identity);
   // The boundary follows the position, always: handing the engine a state whose
   // boundary still names the transition just applied is exactly the incoherence

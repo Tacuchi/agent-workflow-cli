@@ -12,8 +12,13 @@ export async function acceptAdaptiveRoute(
   fs: FileSystemPort,
   paths: PathsService,
   folder: string,
-  input: Pick<SubmitFlowInput, "executor" | "git"> = {},
+  input: Pick<SubmitFlowInput, "executor" | "git">,
 ): Promise<FlowDirective | null> {
+  // Tests are not typechecked: without this, a missing executor would surface as
+  // a refused internal step instead of as the caller's mistake.
+  if (typeof input?.executor !== "function") {
+    throw new Error("acceptAdaptiveRoute necesita el executor de la corrida");
+  }
   const firstRead = await readRun(fs, locateRun(paths, folder));
   if (!firstRead.ok) throw new Error(firstRead.failure.code);
   const first = resolveBoundary(firstRead.state, journeyForState(firstRead.state));

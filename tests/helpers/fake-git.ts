@@ -59,6 +59,8 @@ export interface RecordingGitOptions {
   aheadBehind?: Record<string, AheadBehind>;
   /** What `revList` answers: the commits of the left side none of the excluded refs reach. */
   revList?: string[];
+  /** What `scopedFingerprint` answers per root; absent ⇒ one stable value per root. */
+  scoped?: Record<string, string>;
 }
 
 /**
@@ -101,6 +103,10 @@ export class RecordingGit implements GitPort {
   async currentBranch(repo: string): Promise<string | undefined> {
     this.calls.push({ op: "currentBranch", repo });
     return this.branchOf(repo);
+  }
+
+  async scopedFingerprint(root: string, _excluded: readonly string[]): Promise<string> {
+    return this.opts.scoped?.[root] ?? `scoped:${root}`;
   }
 
   async isDirty(repo: string): Promise<boolean> {

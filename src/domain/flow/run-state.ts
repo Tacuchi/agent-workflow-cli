@@ -44,6 +44,7 @@ import { V11_JOURNEY_BASE } from "./journey-baseline.js";
 import {
   type AssuranceStatus,
   type RouteDecision,
+  type RouteDisposition,
   type RouteProposal,
   type RouteSubstitution,
   assuranceForRoute,
@@ -77,6 +78,9 @@ export const FLOW_RUN_STATE_VERSION = 13;
  * v13 added `reentries` and the `reentry_iteration` of attempts, observations and
  * events. All three are absent on a run that never re-entered, which is every
  * v12 run, so its upgrade step only re-stamps the version.
+ * It also added each batch's `base` and `credit`, a reseated run's `inherited_bases`
+ * and the `route-refused` trace kind. A v12 run has none of them either, and a
+ * batch without `base` is read as the one that was in flight when the CLI updated.
  */
 export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 12, 11];
 
@@ -657,6 +661,7 @@ function declaresMaterialEffect(event: FlowRunEvent): boolean {
   if (
     event.kind === "reconciled" ||
     event.kind === "aligned" ||
+    event.kind === "route-refused" ||
     event.kind === "restarted" ||
     event.kind === "annulled"
   ) {
@@ -817,6 +822,21 @@ export type FlowRunEvent =
     }
   | {
       /**
+       * A route decision the registry no longer admits, ignored instead of
+       * applied: an omission accepted before its row stopped allowing one. The
+       * boundary is asked as if the route had said `apply`, and this line is what
+       * says why a run that approved skipping it was asked anyway.
+       */
+      kind: "route-refused";
+      transition: string;
+      /** See {@link FlowRunAttempt.batch_iteration}. */
+      batch_iteration?: number;
+      operation: string;
+      disposition: RouteDisposition;
+      reason: string;
+    }
+  | {
+      /**
        * The run this one replaced, and why: `aw flow restart` archived it inside
        * the session and seeded this run. The first event of the new run, so the
        * trace never starts from a blank page nobody can explain.
@@ -954,6 +974,24 @@ export interface PlanExecBatch {
   /** The durable pre-write intent and, after success, its applied proof. */
   publication?: PlanExecBatchPublication;
   stage: PlanExecBatchStage;
+  /**
+   * Per source, the scoped fingerprint of its tree when this batch acquired its
+   * units — what the batch has to have changed to be credited. `null` when that
+   * source could not be observed then, which can never demonstrate a change.
+   *
+   * Absent only on a batch that began before this field existed: it is compared
+   * against the prior credits and the live checkout alone, never against a base
+   * reconstructed after the fact.
+   */
+  base?: Record<string, string | null>;
+  /** Per source, the checkout digest of the proof that credited this batch. */
+  credit?: Record<string, string>;
+}
+
+/** The base a batch had in the run a restart or an annulment archived. */
+export interface PlanExecInheritedBase {
+  phases: number[];
+  base: Record<string, string | null>;
 }
 
 /** One immutable trace row for a batch iteration. */
@@ -1216,6 +1254,14 @@ export interface FlowRunState {
    * never re-entered serializes the bytes it did before this field existed.
    */
   reentries?: FlowRunReentry[];
+  /**
+   * The bases of the batches a restart or an annulment archived, by phases.
+   *
+   * Reseating a run keeps the work already in the tree, so a batch re-inferred
+   * over the same phases would otherwise take a base that already contains its
+   * own work and could never show a change. Absent on every run not reseated.
+   */
+  inherited_bases?: PlanExecInheritedBase[];
   /** A selected non-local route. An active handoff makes plan-exec terminal. */
   handoff?: FlowHandoff | null;
   /** Durable record of the chosen decision/handoff route, never inferred from prose. */
@@ -1557,6 +1603,37 @@ export function withoutLastReentry(state: FlowRunState): FlowRunState {
   const { reentries: _all, ...rest } = withoutSeal(state);
   const kept = (state.reentries ?? []).slice(0, -1);
   return sealRunState(kept.length === 0 ? rest : { ...rest, reentries: kept });
+}
+
+/** Seal the base of one batch; a batch that already has one keeps it. */
+export function withPlanExecBatchBase(
+  state: FlowRunState,
+  batchId: string,
+  base: Record<string, string | null>,
+): FlowRunState {
+  const batches = state.batches ?? [];
+  const target = batches.find((batch) => batch.id === batchId);
+  // A re-run of the acquisition on the same batch must not move its base: the
+  // batch would then be compared against its own half-done work.
+  if (target === undefined || target.base !== undefined) return state;
+  return sealRunState({
+    ...withoutSeal(state),
+    batches: batches.map((batch) => (batch.id === batchId ? { ...batch, base } : batch)),
+  });
+}
+
+/** Record the proofs that credited one batch. */
+export function withPlanExecBatchCredit(
+  state: FlowRunState,
+  batchId: string,
+  credit: Record<string, string>,
+): FlowRunState {
+  const batches = state.batches ?? [];
+  if (!batches.some((batch) => batch.id === batchId)) return state;
+  return sealRunState({
+    ...withoutSeal(state),
+    batches: batches.map((batch) => (batch.id === batchId ? { ...batch, credit } : batch)),
+  });
 }
 
 /** Record one inferred or declared batch, refusing duplicate ids at the caller's boundary. */
@@ -2360,7 +2437,59 @@ function checkCommonRecordShape(
   if (!isCounterMap(parsed.attempt_floor) || !isCounterMap(parsed.attempt_grants)) {
     return invalid("trae una contabilidad de intentos que no es un contador por transición");
   }
+  if (!isInheritedBaseArray(parsed.inherited_bases)) {
+    return invalid("hereda una base de batch sin sus fases o sin sus fuentes");
+  }
   return null;
+}
+
+function isInheritedBaseArray(value: unknown): value is PlanExecInheritedBase[] | undefined {
+  if (value === undefined) return true;
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (entry) =>
+        isRecord(entry) &&
+        Array.isArray(entry.phases) &&
+        entry.phases.length > 0 &&
+        entry.phases.every((phase) => Number.isInteger(phase) && (phase as number) > 0) &&
+        isSourceMap(entry.base, true) &&
+        entry.base !== undefined,
+    )
+  );
+}
+
+/**
+ * The bases a reseated run inherits from the archived registry, read tolerantly:
+ * the archive may be the very state that could not be continued, so anything
+ * that is not a well-formed batch base is left behind rather than trusted.
+ */
+export function inheritedBasesFrom(archived: string | null): PlanExecInheritedBase[] {
+  if (archived === null) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(archived);
+  } catch {
+    return [];
+  }
+  if (!isRecord(parsed) || !Array.isArray(parsed.batches)) return [];
+  const inherited = parsed.batches.flatMap((batch): PlanExecInheritedBase[] => {
+    if (!isRecord(batch) || batch.base === undefined) return [];
+    const candidate = { phases: batch.phases, base: batch.base };
+    return isInheritedBaseArray([candidate]) ? [candidate as PlanExecInheritedBase] : [];
+  });
+  const earlier = isInheritedBaseArray(parsed.inherited_bases)
+    ? (parsed.inherited_bases ?? [])
+    : [];
+  return [...earlier, ...inherited];
+}
+
+export function withInheritedBases(
+  state: FlowRunState,
+  inherited: readonly PlanExecInheritedBase[],
+): FlowRunState {
+  if (inherited.length === 0) return state;
+  return sealRunState({ ...withoutSeal(state), inherited_bases: [...inherited] });
 }
 
 /** Fields added by v10 that have no truthful default on a persisted run. */
@@ -2472,7 +2601,7 @@ function isRouteProposal(value: unknown): value is RouteProposal | null {
       !isRouteDisposition(control.recommendation) ||
       !isRecord(control.alternatives) ||
       !isNonEmptyString(control.alternatives.apply) ||
-      !isNonEmptyString(control.alternatives.omit) ||
+      (control.alternatives.omit !== undefined && !isNonEmptyString(control.alternatives.omit)) ||
       !isNonEmptyString(control.alternatives.substitute) ||
       !isNonEmptyString(control.consequence) ||
       !isNonEmptyString(control.risk) ||
@@ -2578,7 +2707,9 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
       (entry.publication !== undefined &&
         entry.publication.status === "applied" &&
         entry.published_plan_digest !== entry.publication.after_plan_digest) ||
-      !(PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string)
+      !(PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string) ||
+      !isSourceMap(entry.base, true) ||
+      !isSourceMap(entry.credit, false)
     ) {
       return false;
     }
@@ -2586,6 +2717,15 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
     iterations.add(entry.iteration);
     return true;
   });
+}
+
+/** Absent, or a non-empty alias → digest map; `nullable` admits an unobserved source. */
+function isSourceMap(value: unknown, nullable: boolean): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value) || Object.keys(value).length === 0) return false;
+  return Object.values(value).every(
+    (digest) => (nullable && digest === null) || (typeof digest === "string" && digest.length > 0),
+  );
 }
 
 function isPlanExecBatchPublication(value: unknown): value is PlanExecBatchPublication | undefined {
@@ -2981,6 +3121,7 @@ const EVENT_BODIES: ReadonlyMap<string, (entry: Record<string, unknown>) => bool
       nonEmpty(entry.digest),
     aligned: (entry) =>
       Number.isInteger(entry.position) && (entry.position as number) >= 0 && nonEmpty(entry.reason),
+    "route-refused": (entry) => isRouteDisposition(entry.disposition) && nonEmpty(entry.reason),
     failed: (entry) =>
       typeof entry.code === "string" &&
       typeof entry.message === "string" &&

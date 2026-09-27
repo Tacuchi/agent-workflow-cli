@@ -37,7 +37,6 @@ import {
   reconcileAttemptsAt,
   recoveryBlockedAt,
   sealRunState,
-  withActionAttempted,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -110,7 +109,46 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
       document: "loops/quick-loop/LOOP.md",
     },
   ];
-  return { ...real, journeyOfFlow: () => journey };
+  // Un tramo con una fila delegada EXTERNA: la única sobre la que un resultado de
+  // afuera todavía se evalúa. `fixture.board` es interna, así que la mitad de la
+  // guarda que mira lo que declaró un ejecutor externo necesita su propia fila.
+  const external: FlowDecision[] = [
+    journey[0] as FlowDecision,
+    {
+      id: "fixture.external",
+      scope: "spec-refine",
+      title: "escribir con una herramienta del host",
+      authority: "cli",
+      ownership: "cli-owned",
+      document: "loops/spec-refine-loop/LOOP.md",
+      effects: ["local_additive"],
+      action: {
+        invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+        evidence: ["tablero"],
+        idempotent: true,
+        recovery: "revisá lo que la herramienta dejó escrito y volvé a correrla",
+        execution: { kind: "external", reason: "la corre el host, no el CLI" },
+      },
+    },
+    journey[3] as FlowDecision,
+  ];
+  // La misma lectura, pero declarada NO idempotente: iniciada una vez, el CLI no
+  // la vuelve a correr. Es el único avance que legítimamente no ejecuta nada.
+  const board = journey[2] as FlowDecision;
+  const once: FlowDecision[] = [
+    journey[0] as FlowDecision,
+    journey[1] as FlowDecision,
+    {
+      ...board,
+      action: { ...(board.action as NonNullable<FlowDecision["action"]>), idempotent: false },
+    },
+    journey[3] as FlowDecision,
+  ];
+  return {
+    ...real,
+    journeyOfFlow: (flow: string) =>
+      flow === "spec-refine" ? external : flow === "plan-new" ? once : journey,
+  };
 });
 
 const SESSION = "001-prueba-quick";
@@ -140,6 +178,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       SEMANTIC_RESPONSE_INVALID: "envelope",
       DOCS_CANON_INVALID: "envelope",
       FLOW_ACTION_CHANGED: "envelope",
+      FLOW_INTERNAL_ACTION_EXTERNAL_RESULT: "envelope",
       // La decisión llegó y no resolvió el gap: eso es lo que el techo cuenta.
       FLOW_ANSWER_AMBIGUOUS: "evaluated",
       FLOW_SIGNAL_UNKNOWN: "evaluated",
@@ -153,6 +192,8 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       WORKLINE_CHECKOUT_PROOF_INVALID: "evaluated",
       WORKLINE_CHECKOUT_PROOF_STALE: "evaluated",
       FLOW_EFFECT_PARTIAL: "evaluated",
+      PLAN_EXEC_BATCH_UNCHANGED: "evaluated",
+      PLAN_EXEC_PROOF_REUSED: "evaluated",
       FLOW_SCOPE_INVALID: "evaluated",
       FLOW_SCOPE_UNKNOWN_SOURCE: "evaluated",
       FLOW_SCOPE_NOT_IN_PLAN: "evaluated",
@@ -264,7 +305,12 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       output: "",
       effects: [],
     });
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
   });
 
@@ -403,13 +449,39 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
      * vez de su tercer intento real.
      */
     it("un avance que no ejecuta nada no gasta intento", async () => {
-      await reachBoard();
+      // Una acción NO idempotente ya iniciada no se vuelve a correr: el avance
+      // sobre ella no materializa nada, y es exactamente el avance que cobrar en
+      // la entrada le habría cobrado a quien no ejecutó nada.
+      await rm(statePath());
+      await rm(counterPath(), { force: true });
+      const adopted = await advanceFlow(fs, paths, {
+        code: CODE,
+        flow: "plan-new",
+        adopt: true,
+        executor,
+      });
+      if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+      let runs = 0;
+      const counting: InternalActionExecutor = async (plan, run) => {
+        runs += 1;
+        return executor(plan, run);
+      };
+      const failed = await submitFlow(fs, paths, {
+        code: CODE,
+        raw: JSON.stringify({ input_digest: await seal(), signals: ["fixture.senal-a"] }),
+        approval: null,
+        executor: counting,
+      });
+      if (!failed.ok) throw new Error("un rechazo de negocio viaja ok:true");
+      expect(failed.directive.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
+      expect(runs).toBe(1);
       expect(attemptsAt(await state(), "fixture.board")).toBe(1);
-      // Sin ejecutor no se materializa nada: la fila delegada se emite como
-      // cualquier frontera externa y la acción no vuelve a correr.
-      const looked = await advanceFlow(fs, paths, { code: CODE, adopt: false });
+
+      const looked = await advanceFlow(fs, paths, { code: CODE, adopt: false, executor: counting });
       if (!looked.ok) throw new Error("esperaba una directiva");
       expect(looked.directive.boundary.kind).toBe("execution");
+      expect(looked.directive.boundary.transition).toBe("fixture.board");
+      expect(runs).toBe(1);
       expect(attemptsAt(await state(), "fixture.board")).toBe(1);
     });
 
@@ -451,26 +523,37 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     });
 
     it("una frontera que nadie ejecutó todavía no se degrada sola", async () => {
-      await answerObserve();
-      // La acción NUNCA corrió: el ejecutor no está, así que la fila se emite
-      // como cualquier frontera externa. Tres avances no la degradan, porque
-      // saltearla daría por hecho algo que nada corrió.
-      await rm(statePath());
-      await rm(counterPath(), { force: true });
-      await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+      // Lo que el recorrido hace con una fila interna que nunca corrió es
+      // CORRERLA, no saltearla: saltearla daría por hecho algo que nada corrió.
+      // Se la mira en el instante en que la operación arranca por primera vez.
+      let untouched: FlowRunState | null = null;
+      const observing: InternalActionExecutor = async (plan, run) => {
+        if (untouched === null) untouched = await state();
+        return executor(plan, run);
+      };
       await submitFlow(fs, paths, {
         code: CODE,
         raw: JSON.stringify({ input_digest: await seal(), signals: ["fixture.senal-a"] }),
         approval: null,
+        executor: observing,
       });
-      const standing = await state();
+      if (untouched === null) throw new Error("la operación nunca corrió");
+      const standing: FlowRunState = untouched;
       expect(standing.boundary).toBe("fixture.board");
       expect(standing.events).toEqual([]);
-      const directive = await advanceFlow(fs, paths, { code: CODE, adopt: false });
-      if (!directive.ok) throw new Error("esperaba una directiva");
-      expect(directive.directive.boundary.kind).toBe("execution");
-      expect(attemptsAt(await state(), "fixture.board")).toBe(0);
-      expect((await state()).skipped).not.toContain("fixture.board");
+      expect(attemptsAt(standing, "fixture.board")).toBe(0);
+      expect(standing.skipped).not.toContain("fixture.board");
+
+      // Y lo que la gasta es esa ejecución, no el haber llegado: un intento, su
+      // evento, y la frontera sigue en pie en vez de pasarse por alto.
+      const after = await state();
+      expect(after.events.map((event) => [event.kind, event.transition])).toEqual([
+        ["failed", "fixture.board"],
+      ]);
+      expect(attemptsAt(after, "fixture.board")).toBe(1);
+      expect(after.skipped).not.toContain("fixture.board");
+      expect(after.degraded ?? []).toEqual([]);
+      expect(after.boundary).toBe("fixture.board");
     });
   });
 
@@ -768,20 +851,16 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       expect(failed.error?.code).toBe("FLOW_EFFECT_PARTIAL");
       expect(attemptsAt(await state(), "fixture.board")).toBe(1);
 
-      // Los dos intentos que faltan los gastan resultados externos evaluados,
-      // sin avanzar: así la frontera llega agotada SIN que el avance la degrade.
+      // Los dos intentos que faltan los gasta la MISMA operación al volver a
+      // correr: un resultado externo sobre una fila interna ya no cuenta. Dos
+      // avances la agotan, y la vuelta gratis del CLI —la que degradaría— es la
+      // del avance siguiente, que acá no se da.
       for (const turn of [2, 3]) {
-        await submit(
-          JSON.stringify({
-            input_digest: await seal(),
-            outcome: "failed",
-            invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-            validations: [{ id: "tablero", passed: false, detail: `intento ${turn}` }],
-            effects: { planned: ["read_only"], approved: [], applied: [] },
-          }),
-        );
+        const again = await advance();
+        expect(again.error?.code, `intento ${turn}`).toBe("FLOW_EFFECT_PARTIAL");
       }
       expect(attemptsAt(await state(), "fixture.board")).toBe(MAX_BOUNDARY_ATTEMPTS);
+      expect((await state()).skipped).not.toContain("fixture.board");
 
       const before = await readFile(statePath(), "utf8");
       const denied = await recover();
@@ -803,18 +882,24 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
      * frontera que ya había tocado el mundo.
      */
     it("se niega cuando un resultado EXTERNO declaró efectos aplicados", async () => {
-      // Sin ejecutor: la fila delegada se emite como frontera externa.
-      await submitFlow(fs, paths, {
+      // Una fila que de verdad ejecuta el host: sobre una interna, el resultado
+      // de afuera se rechaza antes de evaluarse y no puede declarar nada.
+      await rm(statePath());
+      await rm(counterPath(), { force: true });
+      const adopted = await advanceFlow(fs, paths, {
         code: CODE,
-        raw: JSON.stringify({ input_digest: await seal(), signals: ["fixture.senal-a"] }),
-        approval: null,
+        flow: "spec-refine",
+        adopt: true,
+        executor,
       });
-      expect((await state()).boundary).toBe("fixture.board");
+      if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+      expect((await state()).boundary).toBe("fixture.external");
 
       for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) {
         const answered = await submitFlow(fs, paths, {
           code: CODE,
           approval: null,
+          executor,
           raw: JSON.stringify({
             input_digest: await seal(),
             outcome: "completed",
@@ -831,9 +916,9 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
         if (!answered.ok) throw new Error("un rechazo de negocio viaja ok:true");
       }
       const after = await state();
-      expect(attemptsAt(after, "fixture.board")).toBe(MAX_BOUNDARY_ATTEMPTS);
+      expect(attemptsAt(after, "fixture.external")).toBe(MAX_BOUNDARY_ATTEMPTS);
       // Lo que declaró quedó en la traza, aunque su resultado fuera rechazado.
-      expect(after.events.map((event) => event.transition)).toContain("fixture.board");
+      expect(after.events.map((event) => event.transition)).toContain("fixture.external");
 
       const denied = await recover();
       if (denied.ok) throw new Error("no se recupera una frontera que declaró efectos");
@@ -849,31 +934,31 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
      * real, que es volver a avanzar para que la acción produzca su veredicto.
      */
     it("se niega cuando la acción se inició y nunca reportó, y enseña la salida", async () => {
+      // El estado que el driver deja en disco ANTES de correr la operación —la
+      // marca de intento— es exactamente lo que queda de un proceso que muere
+      // entre la marca y el veredicto. Se lo captura en la primera corrida.
+      let marked: string | null = null;
+      const capturing: InternalActionExecutor = async (plan, run) => {
+        if (marked === null) marked = await readFile(statePath(), "utf8");
+        return executor(plan, run);
+      };
       await submitFlow(fs, paths, {
         code: CODE,
         raw: JSON.stringify({ input_digest: await seal(), signals: ["fixture.senal-a"] }),
         approval: null,
+        executor: capturing,
       });
-      // La misma escritura que hace el driver antes de correr la operación.
-      const marked = await applyUnderLock(fs, locateRun(paths, SESSION), (current) => {
-        if (current === null) throw new Error("esperaba la corrida");
-        return { ok: true, state: withActionAttempted(current), value: null };
-      });
-      expect(marked.ok).toBe(true);
-
-      for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) {
-        await submitFlow(fs, paths, {
-          code: CODE,
-          approval: null,
-          raw: JSON.stringify({
-            input_digest: await seal(),
-            outcome: "failed",
-            invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
-            validations: [{ id: "tablero", passed: false, detail: `intento ${turn}` }],
-            effects: { planned: [], approved: [], applied: [] },
-          }),
-        });
+      // Las ejecuciones que agotan son reales: la operación vuelve a negarse.
+      for (let turn = 1; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) {
+        await advanceFlow(fs, paths, { code: CODE, adopt: false, executor: capturing });
       }
+      expect(attemptsAt(await state(), "fixture.board")).toBe(MAX_BOUNDARY_ATTEMPTS);
+      if (marked === null) throw new Error("la operación nunca corrió");
+
+      // El proceso murió después de marcar: lo que quedó es la marca, sin ningún
+      // veredicto. El contador vive fuera de la carpeta, así que la copia no le
+      // devuelve los intentos.
+      await writeFile(statePath(), marked, "utf8");
       const standing = await state();
       expect(standing.events).toEqual([]);
       expect(standing.pending_action?.attempted).toBe(true);
@@ -1187,8 +1272,8 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     });
 
     it("el contrato persistido no se movió: una prueba lo fija", () => {
-      // La v12 agregó tipos de traza y la v13 las reentradas; la v11 y la v12 se
-      // siguen continuando con su paso de subida, y de la v10 hacia atrás sólo se lee.
+      // La v12 agregó tipos de traza y la v13 las reentradas, la base y la acreditación
+      // de cada lote; la v11 y la v12 se siguen continuando con su paso de subida, y de la v10 hacia atrás sólo se lee.
       expect(FLOW_RUN_STATE_VERSION).toBe(13);
     });
 

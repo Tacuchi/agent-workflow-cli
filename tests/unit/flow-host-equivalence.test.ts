@@ -26,6 +26,7 @@ import { FLOW_RUN_STATE_FILE } from "../../src/domain/flow/run-state.js";
 import { HARNESSES } from "../../src/domain/harnesses.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 // La equivalencia se afirma cruzando TODAS las clases de frontera, y sobre las
 // filas vivas la custodia de la corrida dejó al QUICK sin ninguna
@@ -95,18 +96,31 @@ interface Conversation {
   paths: PathsService;
   workdir: string;
   contextId: string;
+  /** Las operaciones internas reales, sobre el workspace de ESTA conversación. */
+  executor: ReturnType<typeof testExecutor>;
 }
 
-async function openWorkspace(label: string, contextId: string): Promise<Conversation> {
-  const workdir = await mkdtemp(join(tmpdir(), `aw-host-${label}-`));
+async function openWorkspace(label: string, contextId: string, at?: string): Promise<Conversation> {
+  const workdir = at ?? (await mkdtemp(join(tmpdir(), `aw-host-${label}-`)));
   const paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
   await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
+  // Los artefactos que la siembra y la regla de scripts-only LEEN de verdad: el
+  // CLI corre esas operaciones sobre este workspace, así que la sesión trae lo
+  // que una sesión sembrada trae — criterio escrito, CHECKPOINT y SCRIPTS.sql.
+  const dir = join(paths.cwdSessionsDir(), SESSION);
   await writeFile(
-    join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
-    "# SESSION — equivalencia entre hosts\n\n## Objective\ndirigir un QUICK desde dos hosts\n",
+    join(dir, "SESSION.md"),
+    "# SESSION — equivalencia entre hosts\n\n## Objective\ndirigir un QUICK desde dos hosts\n\n## Success criteria\n- [ ] los dos hosts reciben la misma directiva\n",
     "utf8",
   );
-  return { paths, workdir, contextId };
+  await writeFile(
+    join(dir, "CHECKPOINT.md"),
+    "# CHECKPOINT\n\n## Pending\n- cruzar el recorrido\n",
+    "utf8",
+  );
+  await mkdir(join(dir, "scripts"), { recursive: true });
+  await writeFile(join(dir, "scripts", "SCRIPTS.sql"), "-- DDL de la equivalencia\n", "utf8");
+  return { paths, workdir, contextId, executor: testExecutor(fs, paths) };
 }
 
 /** Otra conversación sobre el MISMO workspace: dos hosts, una sola corrida. */
@@ -240,6 +254,7 @@ async function adopt(host: Conversation): Promise<FlowDirective> {
   const adopted = await advanceFlow(fs, host.paths, {
     code: CODE,
     contextId: host.contextId,
+    executor: host.executor,
     flow: "quick",
     adopt: true,
   });
@@ -257,6 +272,7 @@ async function answerCurrent(host: Conversation): Promise<Step | null> {
   const sent = await submitFlow(fs, host.paths, {
     code: CODE,
     contextId: host.contextId,
+    executor: host.executor,
     raw: JSON.stringify(body),
     approval,
   });
@@ -295,11 +311,47 @@ describe("dos hosts con el mismo estado reciben la misma directiva", () => {
     await rm(codex.workdir, { recursive: true, force: true });
   });
 
-  it("el recorrido entero devuelve directivas idénticas byte a byte", async () => {
-    expect(canonicalJson(await adopt(claude))).toBe(canonicalJson(await adopt(codex)));
+  /**
+   * Los dos recorridos enteros, cada host en su turno sobre el MISMO directorio.
+   *
+   * Las operaciones internas las corre el CLI sobre el workspace real, y su
+   * salida —que el evento `executed` sella— nombra dónde vive ese workspace. Dos
+   * directorios distintos NO son el mismo estado, así que el mismo estado se
+   * construye como lo que es: el mismo workspace, recorrido desde cero por cada
+   * host.
+   */
+  async function walkBoth(): Promise<{
+    adopted: [FlowDirective, FlowDirective];
+    here: Step[];
+    there: Step[];
+    executed: [unknown[], unknown[]];
+  }> {
+    const at = codex.workdir;
+    await rm(at, { recursive: true, force: true });
+    const first = await openWorkspace("claude", claude.contextId, at);
+    const adoptedHere = await adopt(first);
+    const here = await walk(first);
+    const executedHere = (await boundaryOf(first)).state.events;
+    await rm(at, { recursive: true, force: true });
+    const second = await openWorkspace("codex", codex.contextId, at);
+    const adoptedThere = await adopt(second);
+    const there = await walk(second);
+    const executedThere = (await boundaryOf(second)).state.events;
+    return {
+      adopted: [adoptedHere, adoptedThere],
+      here,
+      there,
+      executed: [executedHere, executedThere],
+    };
+  }
 
-    const here = await walk(claude);
-    const there = await walk(codex);
+  it("el recorrido entero devuelve directivas idénticas byte a byte", async () => {
+    const {
+      adopted: [mine, theirs],
+      here,
+      there,
+    } = await walkBoth();
+    expect(canonicalJson(mine)).toBe(canonicalJson(theirs));
 
     expect(there.map((step) => step.transition)).toEqual(here.map((step) => step.transition));
     for (const [index, step] of here.entries()) {
@@ -317,10 +369,16 @@ describe("dos hosts con el mismo estado reciben la misma directiva", () => {
   });
 
   it("el descriptor de ejecución y su sello son los mismos en los dos", async () => {
-    await adopt(claude);
-    await adopt(codex);
-    const here = await walk(claude);
-    const there = await walk(codex);
+    const {
+      here,
+      there,
+      executed: [ranHere, ranThere],
+    } = await walkBoth();
+    // Las filas internas no se contestan: las corre el CLI. Lo que se compara de
+    // ellas es lo que corrió —operación, evidencia, efectos y el digest de su
+    // salida real—, y no puede faltar: sin eventos la igualdad sería vacía.
+    expect(ranHere.length).toBeGreaterThan(0);
+    expect(canonicalJson(ranThere)).toBe(canonicalJson(ranHere));
 
     const actions = [...here.entries()].filter(([, step]) => step.kind === "execution");
     expect(actions.length).toBeGreaterThan(0);
@@ -360,12 +418,14 @@ describe("dos hosts con el mismo estado reciben la misma directiva", () => {
     const mine = await submitFlow(fs, claude.paths, {
       code: CODE,
       contextId: claude.contextId,
+      executor: claude.executor,
       raw,
       approval,
     });
     const theirs = await submitFlow(fs, codex.paths, {
       code: CODE,
       contextId: codex.contextId,
+      executor: codex.executor,
       raw,
       approval,
     });
@@ -414,6 +474,7 @@ describe("una frontera detenida se reanuda desde otro host", () => {
     const picked = await advanceFlow(fs, resumed.paths, {
       code: CODE,
       contextId: resumed.contextId,
+      executor: resumed.executor,
       adopt: false,
     });
     if (!picked.ok) throw new Error("esperaba reanudar la corrida desde el otro host");
@@ -442,6 +503,7 @@ describe("una frontera detenida se reanuda desde otro host", () => {
     const before = await advanceFlow(fs, started.paths, {
       code: CODE,
       contextId: started.contextId,
+      executor: started.executor,
       flow: "quick",
       adopt: true,
     });
@@ -449,6 +511,7 @@ describe("una frontera detenida se reanuda desde otro host", () => {
     const after = await advanceFlow(fs, resumed.paths, {
       code: CODE,
       contextId: resumed.contextId,
+      executor: resumed.executor,
       adopt: false,
     });
     if (!after.ok) throw new Error("esperaba reanudar la corrida");
@@ -473,6 +536,7 @@ describe("una frontera detenida se reanuda desde otro host", () => {
     const sent = await submitFlow(fs, resumed.paths, {
       code: CODE,
       contextId: resumed.contextId,
+      executor: resumed.executor,
       raw: JSON.stringify(body),
       approval,
     });
@@ -521,12 +585,21 @@ describe("la conversación original ya no está disponible", () => {
     ["sin ninguna identidad de conversación", {}],
   ])("%s y sin --session, se niega y pide --code sin mover la corrida", async (_l, id) => {
     const left = await adopt(started);
-    const refused = await advanceFlow(fs, started.paths, { ...id, adopt: false });
+    const refused = await advanceFlow(fs, started.paths, {
+      ...id,
+      adopt: false,
+      executor: started.executor,
+    });
     if (refused.ok || !("session" in refused)) throw new Error("esperaba la negativa de sesión");
     expect(refused.session.code).toBe("SESSION_UNBOUND");
     expect(refused.session.action).toContain("--code");
 
-    const named = await advanceFlow(fs, started.paths, { ...id, code: CODE, adopt: false });
+    const named = await advanceFlow(fs, started.paths, {
+      ...id,
+      code: CODE,
+      adopt: false,
+      executor: started.executor,
+    });
     // El caso real de abrir otro host y escribir `aw flow advance --session`.
     if (!named.ok) throw new Error("esperaba avanzar al nombrar la sesión");
     expect(named.directive.boundary.transition).toBe(left.boundary.transition);

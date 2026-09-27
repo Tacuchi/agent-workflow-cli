@@ -24,6 +24,7 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 // The engine walks only what the CLI owns, and no tranche is migrated yet: over the
 // live rows this run would stop at its first `legacy` boundary and this file would
@@ -209,9 +210,17 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
     workdir = await mkdtemp(join(tmpdir(), "aw-flow-effects-"));
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
     await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
+    // Sembrada entera: la lectura de la sesión y la siembra las corre el CLI
+    // contra estos archivos, y una sesión a medias dejaría la corrida parada ahí,
+    // antes de la autorización que este archivo prueba.
     await writeFile(
       join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
-      "# SESSION — prueba\n",
+      "# SESSION — prueba\n\n## Objective\nprobar los efectos\n\n## Success criteria\n- [ ] el gate corre las pruebas\n",
+      "utf8",
+    );
+    await writeFile(
+      join(paths.cwdSessionsDir(), SESSION, "CHECKPOINT.md"),
+      "# CHECKPOINT\n\nsembrado\n",
       "utf8",
     );
   });
@@ -237,16 +246,27 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
   }
 
   async function answer(raw: string, approval: string | null = null): Promise<FlowDirective> {
-    const result = await submitFlow(fs, paths, { code: "001", raw, approval });
+    const result = await submitFlow(fs, paths, {
+      code: "001",
+      raw,
+      approval,
+      executor: testExecutor(fs, paths),
+    });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return result.directive;
   }
 
   /** Answer whatever the run asks until it stands on an authorization boundary. */
   async function walkToAuthorization(): Promise<FlowDirective> {
-    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
+    const executor = testExecutor(fs, paths);
+    const adopted = await advanceFlow(fs, paths, {
+      code: "001",
+      flow: "quick",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    const routed = await acceptAdaptiveRoute(fs, paths, SESSION);
+    const routed = await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
     let directive = routed ?? adopted.directive;
     for (let step = 0; step < 20 && directive.boundary.kind !== "authorization"; step += 1) {
       const resolved = await current();
@@ -259,9 +279,10 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
    * Whatever the boundary in force admits — including the real output an
    * `execution` boundary demands.
    *
-   * QUICK's migrated tranche delegates its search, its seeding and its gate, so a
-   * walk that only knew how to answer judgments and preferences would stall
-   * before reaching the authorization this file is about.
+   * QUICK's migrated tranche delegates its branch check and its gate —the search
+   * and the seeding the CLI runs itself—, so a walk that only knew how to answer
+   * judgments and preferences would stall before reaching the authorization this
+   * file is about.
    */
   function bodyFor(resolved: Awaited<ReturnType<typeof current>>): Record<string, unknown> {
     if (resolved.kind === "semantic") {
@@ -344,6 +365,7 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
       // `state_digest` IS the seal the answer has to quote: same value the
       // semantic request would carry in its own `input_digest`.
       approval: "0".repeat(64),
+      executor: testExecutor(fs, paths),
     });
     if (!wrong.ok) throw new Error("un rechazo de negocio viaja ok:true");
     expect(wrong.directive.error?.code).toBe("FLOW_APPROVAL_MISMATCH");
@@ -361,6 +383,7 @@ describe("el registro planned/approved/applied vive en el estado persistido", ()
       code: "001",
       raw: JSON.stringify({ input_digest: resolved.seal, choice: "Autorizar el efecto" }),
       approval: digest,
+      executor: testExecutor(fs, paths),
     });
     if (!granted.ok) throw new Error("esperaba que la aprobación se registrara");
     expect(granted.directive.error).toBeNull();

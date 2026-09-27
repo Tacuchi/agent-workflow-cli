@@ -2,12 +2,22 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WORKLINE_FLOWS, type WorklineFlow } from "../../src/application/capability/compose.js";
 import { actionDigest, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
+import { journeyForRun } from "../../src/application/flow/run-journey.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import type { DelegatedAction, FlowDecision } from "../../src/domain/flow/authority.js";
+import { inferPlanExecBatch } from "../../src/application/plan-exec-batch-service.js";
+import {
+  type DelegatedAction,
+  FLOW_DECISIONS,
+  type FlowDecision,
+  effectsOf,
+  internalActionOf,
+  journeyForState,
+} from "../../src/domain/flow/authority.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import {
   FLOW_RUN_STATE_FILE,
@@ -20,6 +30,7 @@ import {
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * A delegated effect advances the run ONLY with a verifiable result.
@@ -31,6 +42,13 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
  * names an invocation and stops, and nothing is credited until real output comes
  * back for exactly that invocation.
  */
+
+/**
+ * Which registry the mock serves. The fixture journey is this file's default; the
+ * suite about internal rows switches to the REAL one, because what it pins is that
+ * every internal row of the production registry refuses an external result.
+ */
+const registry = vi.hoisted(() => ({ fixture: true }));
 
 vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
   const real = await importOriginal<typeof import("../../src/domain/flow/authority.js")>();
@@ -96,7 +114,11 @@ vi.mock("../../src/domain/flow/authority.js", async (importOriginal) => {
   ];
   // The fixture IS the whole journey here, transversal steps included: this
   // file is about what an execution boundary does, not about composition.
-  return { ...real, journeyOfFlow: () => journey };
+  return {
+    ...real,
+    journeyOfFlow: (flow: Parameters<typeof real.journeyOfFlow>[0]) =>
+      registry.fixture ? journey : real.journeyOfFlow(flow),
+  };
 });
 
 const SESSION = "001-prueba-quick";
@@ -757,5 +779,219 @@ describe("autorización y ejecución son dos actos distintos", () => {
     expect(run.applied).toContain("fixture.validate");
     expect(run.effects.applied).toContain("execute");
     expect(run.pending_action).toBeNull();
+  });
+});
+
+/**
+ * Una acción interna sólo la acredita el CLI (plan 049, F1 · spec 052 AC-02).
+ *
+ * Sobre el registro REAL: cada fila cuya ejecución el registro declara interna
+ * rechaza un resultado externo bien formado, sin aplicar la transición ni cobrar
+ * un intento, y nombra el comando que sí la corre. El camino degradado que la
+ * aplicaba sin correr la operación ya no existe.
+ */
+describe("una acción interna sólo la acredita el CLI", () => {
+  let workdir: string;
+  let paths: PathsService;
+  const PLAN = "docs/plans/001-plan-prueba.md";
+  const PLAN_TEXT = [
+    "# Plan 001 — prueba",
+    "",
+    "> Estado: open",
+    "> Límite de ejecución: checkout",
+    "",
+    "## Tasks",
+    "",
+    "### F1 — única",
+    "",
+    "> Estado: pendiente",
+    "> Fuentes: workspace",
+    "",
+    "- [ ] T1.1 — hacer lo único _(fuentes: workspace)_",
+    "",
+  ].join("\n");
+
+  beforeEach(async () => {
+    registry.fixture = false;
+    workdir = await mkdtemp(join(tmpdir(), "aw-flow-internal-external-"));
+    paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+    await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
+    await writeFile(
+      join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
+      "# SESSION — prueba\n\n## Objective\nprobar\n\n## Success criteria\n- [ ] uno\n",
+      "utf8",
+    );
+    await mkdir(join(workdir, "docs", "plans"), { recursive: true });
+    await writeFile(join(workdir, PLAN), PLAN_TEXT, "utf8");
+  });
+
+  afterEach(async () => {
+    registry.fixture = true;
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  const statePath = (): string => join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE);
+
+  async function current(): Promise<FlowRunState> {
+    const read = await readRun(fs, locateRun(paths, SESSION));
+    if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
+    return read.state;
+  }
+
+  /**
+   * Every internal row of the real registry, once, with the first flow that walks it.
+   *
+   * Read through `journeyForState`, which resolves the registry inside its own
+   * module and not through this file's mock: `it.each` evaluates it while the
+   * suite is collected, before any `beforeEach` switched the mock to the real one.
+   */
+  function internalRows(): Array<[string, WorklineFlow]> {
+    const seen = new Map<string, WorklineFlow>();
+    for (const flow of WORKLINE_FLOWS) {
+      for (const row of journeyForState({ flow })) {
+        if (internalActionOf(row) !== null && !seen.has(row.id)) seen.set(row.id, flow);
+      }
+    }
+    return [...seen.entries()];
+  }
+
+  /**
+   * A run standing on `id` as an EXECUTION boundary: everything before it applied
+   * and, when its effect needs a preflight, the grant already given — so what is
+   * left is exactly the result the row asks for.
+   */
+  async function standOn(
+    flow: WorklineFlow,
+    id: string,
+    extra: Partial<FlowRunState> = {},
+  ): Promise<FlowRunState> {
+    const { digest: _fresh, ...base } = {
+      ...newRunState(flow, SESSION),
+      ...extra,
+    };
+    const journey = journeyForRun({ ...base, digest: "" });
+    const index = journey.findIndex((row) => row.id === id);
+    if (index < 0) throw new Error(`${flow} no recorre ${id}`);
+    const positioned = {
+      ...base,
+      applied: journey.slice(0, index).map((row) => row.id),
+      boundary: id,
+    };
+    let state = sealRunState(positioned);
+    const asked = resolveBoundary(state, journeyForRun(state));
+    if (asked.kind === "authorization" && asked.authorization !== null) {
+      state = sealRunState({
+        ...positioned,
+        authorizations: [
+          {
+            digest: asked.authorization.seal,
+            destinations: [],
+            classes: asked.authorization.missing,
+          },
+        ],
+      });
+    }
+    await writeFile(statePath(), serializeRunState(state), "utf8");
+    return state;
+  }
+
+  /** The well-formed result an external executor would hand back for the row in force. */
+  function externalResult(state: FlowRunState): string {
+    const resolved = resolveBoundary(state, journeyForRun(state));
+    const stopped = resolved.stopped as FlowDecision;
+    if (resolved.kind !== "execution" || resolved.action === null) {
+      throw new Error(`${stopped.id} no quedó como frontera de ejecución: ${resolved.kind}`);
+    }
+    return JSON.stringify({
+      input_digest: resolved.seal,
+      outcome: "completed",
+      invocation: resolved.action.invocation,
+      validations: resolved.action.evidence.map((evidence) => ({
+        id: evidence,
+        passed: true,
+        detail: `salida de ${evidence}`,
+      })),
+      effects: {
+        planned: [...effectsOf(stopped)],
+        approved: [...effectsOf(stopped)],
+        applied: [...effectsOf(stopped)],
+      },
+    });
+  }
+
+  async function submitExternal(state: FlowRunState): Promise<FlowDirective> {
+    const result = await submitFlow(fs, paths, {
+      code: "001",
+      raw: externalResult(state),
+      approval: null,
+      executor: testExecutor(fs, paths),
+    });
+    if (!result.ok)
+      throw new Error(`un rechazo de negocio viaja ok:true: ${JSON.stringify(result)}`);
+    return result.directive;
+  }
+
+  it("la lista recorre cada fila interna del registro, en los cinco flows", () => {
+    const rows = internalRows();
+    const registered = FLOW_DECISIONS.filter((row) => internalActionOf(row) !== null);
+    expect(rows.map(([id]) => id).sort()).toEqual(registered.map((row) => row.id).sort());
+    expect(new Set(rows.map(([, flow]) => flow))).toEqual(new Set(WORKLINE_FLOWS));
+  });
+
+  it.each(internalRows())(
+    "%s: un resultado externo bien formado no aplica la transición ni gasta intento",
+    async (id, flow) => {
+      const before = await standOn(flow, id);
+      const directive = await submitExternal(before);
+
+      expect(directive.error?.code).toBe("FLOW_INTERNAL_ACTION_EXTERNAL_RESULT");
+      expect(directive.error?.action).toContain(`aw flow advance --session ${SESSION}`);
+      expect(directive.error?.action).toContain("aw flow restart");
+      const after = await current();
+      expect(after.applied).toEqual(before.applied);
+      expect(after.applied).not.toContain(id);
+      expect(attemptsAt(after, id)).toBe(0);
+      expect(after.attempts).toEqual(before.attempts);
+      expect(after.events.filter((event) => event.kind === "executed")).toEqual([]);
+    },
+  );
+
+  it("en batch-close el plan queda sin publicar, y 'aw flow advance' después sí lo acredita", async () => {
+    const batch = inferPlanExecBatch(PLAN_TEXT, {
+      id: "batch-1",
+      iteration: 1,
+      mode: "continuous",
+      phases: [1],
+    });
+    if (!batch.ok) throw new Error(batch.failure.message);
+    const before = await standOn("plan-exec", "plan-exec.batch-close", {
+      scope: { plan: PLAN, sources: ["workspace"] },
+      batches: [{ ...batch.batch, stage: "reviewing" }],
+    });
+
+    const refused = await submitExternal(before);
+    expect(refused.error?.code).toBe("FLOW_INTERNAL_ACTION_EXTERNAL_RESULT");
+    expect(await readFile(join(workdir, PLAN), "utf8")).toBe(PLAN_TEXT);
+    const held = await current();
+    expect(held.applied).not.toContain("plan-exec.batch-close");
+    expect(held.batches?.[0]?.published_plan_digest).toBeUndefined();
+
+    const advanced = await advanceFlow(fs, paths, {
+      code: "001",
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    if (!advanced.ok) throw new Error(`esperaba avanzar: ${JSON.stringify(advanced)}`);
+    const credited = await current();
+    expect(credited.applied).toContain("plan-exec.batch-close");
+    expect(credited.batches?.[0]?.published_plan_digest).toBeDefined();
+    expect(
+      credited.events.filter(
+        (event) => event.kind === "executed" && event.transition === "plan-exec.batch-close",
+      ),
+    ).toHaveLength(1);
+    const published = await readFile(join(workdir, PLAN), "utf8");
+    expect(published).toContain("- [x] T1.1");
+    expect(published).toContain("> Estado: validada");
   });
 });

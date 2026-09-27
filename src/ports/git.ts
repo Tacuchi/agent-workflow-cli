@@ -107,6 +107,14 @@ export interface GitPort {
    */
   checkoutFingerprint(repoPath: string): Promise<string>;
   /**
+   * Digest of the working-tree content under `root` only, with `excluded`
+   * (paths relative to `root`) left out whether or not git ignores them.
+   *
+   * Independent of HEAD and of anything outside `root`: two calls agree exactly
+   * when the files under `root` hold the same bytes.
+   */
+  scopedFingerprint(root: string, excluded: readonly string[]): Promise<string>;
+  /**
    * The commit HEAD points at; `null` on an unborn HEAD.
    *
    * A branch NAME is not a baseline — it keeps meaning something different as
