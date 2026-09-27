@@ -1,3 +1,5 @@
+import { isPlanHandoffHeading } from "../../domain/plan-handoff.js";
+import { scanMarkdown } from "../markdown.js";
 import { parsePlanSourceBoundary } from "../source-boundary-policy.js";
 
 export type TaskStatus = "open" | "closed";
@@ -36,7 +38,14 @@ export function parseTasks(text: string, compact = true): ParsedTasks {
     }
   }
 
-  for (const [index, line] of text.split("\n").entries()) {
+  const markdown = scanMarkdown(text);
+  const headings = new Map(markdown.headings.map((heading) => [heading.line, heading]));
+  let inHandoff = false;
+  for (const [index, line] of markdown.lines.entries()) {
+    if (markdown.fenced[index]) continue;
+    const heading = headings.get(index);
+    if (heading?.level === 2) inHandoff = isPlanHandoffHeading(heading.title);
+    if (inHandoff) continue;
     const match = line.match(TASK_RE);
     if (!match || !match[1] || !match[2]) continue;
     n += 1;

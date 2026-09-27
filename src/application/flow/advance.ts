@@ -43,12 +43,14 @@ import {
   publishApprovalOf,
   routeControlOf,
 } from "../../domain/flow/authority.js";
+import { journeyForState } from "../../domain/flow/authority.js";
 import {
   type SealedSubject,
   type TransitionAuthorization,
   authorizeTransition,
   effectApprovalDigest,
 } from "../../domain/flow/authorization.js";
+import { BATCH_REVIEW_CONTRACT } from "../../domain/flow/batch-review.js";
 import {
   type DirectiveProposal,
   type FlowBoundary,
@@ -82,6 +84,7 @@ import {
   degradeTransition,
   exhaustedRerunSpent,
   iterationOf,
+  planRefineHandoff,
   positionDigest,
   reconcileAttemptsAt,
   sameIteration,
@@ -90,7 +93,9 @@ import {
   skipTransition,
   withBoundary,
   withEvent,
+  withHandoff,
   withPendingAction,
+  withPendingBatchReview,
   withPlanExecBatchStageForTransition,
   withRouteDecisions,
 } from "../../domain/flow/run-state.js";
@@ -122,6 +127,10 @@ export type AdvanceResult =
 export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   const incoherent = checkAgainstJourney(input.state, input.journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
+  const reviewed = withPendingBatchReview(input.state);
+  if (reviewed !== input.state) {
+    return advanceFlowRun({ ...input, state: reviewed, journey: journeyForState(reviewed) });
+  }
 
   // The run repairs its OWN bookkeeping first, and only when the mismatch has
   // exactly one reading. No boundary is opened, no attempt is charged, no
@@ -232,6 +241,19 @@ function walk(
       decision.id,
     );
     applied.push(stepOf(decision));
+    if (decision.handoff?.destination === "plan-refine") {
+      state = withHandoff(
+        state,
+        planRefineHandoff(
+          state,
+          {
+            reason: "brecha estructural detectada en la entrada; refinar antes de abrir unidades",
+          },
+          "plan.entry-gap-structural",
+        ),
+      );
+      break;
+    }
   }
   return { state, applied };
 }
@@ -294,7 +316,7 @@ const ROUTE_REFUSAL_OPERATION = "flow.route-refusal";
  */
 function withRefusedRoute(state: FlowRunState, decision: FlowDecision): FlowRunState {
   const control = routeControlOf(decision);
-  if (control === null || control.consequences.omit !== undefined) return state;
+  if (control?.consequences.omit !== undefined) return state;
   if (dispositionOf(state.route_decisions, decision.id)?.disposition !== "omit") return state;
   const applied = withRouteDecisions(
     state,
@@ -666,6 +688,7 @@ function nothingToSettle(state: FlowRunState, decision: FlowDecision): string | 
  * degradation but `aw flow recover`, and the block says so.
  */
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
+  if (decision.answer_contract !== undefined) return null;
   if (!exhausted(state, decision) || awaitingCliRerun(state, decision)) return null;
   if (!owned(decision)) return null;
   // Degradation is what a GAP that cannot close deserves. When the exhaustion
@@ -1071,7 +1094,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${settlementDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${decision.answer_contract === "batch-review" ? BATCH_REVIEW_CONTRACT : ""} ${taxonomy}${authoring}${decisionDraft}${settlementDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:
@@ -1114,7 +1137,7 @@ export function flowControlChoices(stopping?: string): FlowDirective["choices"] 
     {
       label: STOP_LABEL,
       consequence:
-        stopping ?? "el recorrido queda detenido acá, con su estado y su frontera persistidos",
+        stopping ?? "se cierra la sesión y se conserva lo pendiente para retomarlo al reabrir",
       recommended: false,
       outcome: { kind: "control", control: "stop" },
     },
@@ -1281,7 +1304,7 @@ function authorizationChoices(
       outcome: { kind: "continue" },
     },
     ...flowControlChoices(
-      `no se ejerce ${missing} y el recorrido queda detenido acá, sin nada aplicado`,
+      `se cierra la sesión conservando lo pendiente, sin autorizar ${missing} para esta acción`,
     ),
   ];
 }
@@ -1308,6 +1331,12 @@ function choicesFor(
  * are in the state either way; this is what makes them impossible to miss.
  */
 function finalAction(state: FlowRunState): string {
+  if (state.reentries?.at(-1)?.kind === "close") {
+    const closed = [...(state.events ?? [])]
+      .reverse()
+      .find((event) => event.kind === "executed" && event.operation === "session.close");
+    if (closed?.kind === "executed") return closed.summary;
+  }
   const degraded = state.degraded ?? [];
   if (degraded.length === 0) {
     return state.assurance === "verified"

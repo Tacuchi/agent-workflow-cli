@@ -1186,7 +1186,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(transversal).toContain("/w:resume");
   });
 
-  it("`resume` routes by plan_state — a closed plan is resumed only for its handoff", async () => {
+  it("`resume` routes by plan_state — a closed plan returns for a handoff or pending pass", async () => {
     // The routing table moved into the shared projection: `derivePipeline` skips
     // `done` and `planNext` gives every other state its own re-entry point, in one
     // chain. `resume` consumes that chain instead of running a second one — a
@@ -1201,7 +1201,9 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     // closed plan is still skipped, and the skip is still one line.
     const index = await readSrc("workline-index-service.ts");
     expect(index).toContain("export function planIsPending");
-    expect(index).toContain('return plan.plan_state !== "done" || liveHandoffs(plan) > 0;');
+    expect(index).toContain(
+      'return plan.plan_state !== "done" || liveHandoffs(plan) > 0 || pendingPasses(plan).length > 0;',
+    );
     expect(index).toContain("if (!planIsPending(plan)) continue;");
     expect(index).toContain('plan.plan_state === "inconsistent"');
     expect(index).toContain("plan.final_validation_pending");

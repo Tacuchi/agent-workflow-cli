@@ -73,10 +73,12 @@ import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
+import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
 import { observeScopedFingerprints } from "./checkout-observation.js";
+import { preserveBoundaryClose } from "./close-artifacts.js";
 import { projectRun } from "./run-projection.js";
 import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
@@ -147,9 +149,9 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
   return async (plan, run) => {
     switch (plan.operation) {
       case "workspace.board":
-        return board(deps);
+        return board(deps, run);
       case "session.artifacts":
-        return artifacts(deps, run, plan.dump ?? null);
+        return artifacts(deps, run, plan.dump ?? null, run.session.endsWith("-plan-refine"));
       case "session.close":
         return close(deps, run);
       case "worktree.ensure":
@@ -486,13 +488,33 @@ async function recordCompletedClaims(
   }
 }
 
-async function board(deps: InternalActionDeps): Promise<InternalActionOutcome> {
+async function board(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
   const data = await runStatusCommand(deps.fs, deps.env, deps.paths, { git: deps.git });
   const counts = data.counts;
+  const custody = run.session.endsWith("-plan-new")
+    ? await readCustody(deps.fs, locateRun(deps.paths, run.session).dir)
+    : null;
+  const superseded =
+    custody?.status === "present"
+      ? data.specs.find(
+          (spec) =>
+            spec.status === "superseded" &&
+            custody.custody.artifacts.some(
+              (artifact) => artifact.role === "input" && artifact.path === spec.file,
+            ),
+        )
+      : undefined;
+  const warning =
+    superseded === undefined
+      ? null
+      : `la spec ${superseded.number} fue reemplazada${superseded.superseded_by ? ` por ${superseded.superseded_by}` : ""}: plan-new debe usar el reemplazo`;
   return {
     ok: true,
-    summary: `tablero: ${counts.specs} specs, ${counts.plans} planes, ${counts.sessions_active} sesiones activas, ${counts.pending} pendientes`,
-    output: canonicalJson(data),
+    summary: `tablero: ${counts.specs} specs, ${counts.plans} planes, ${counts.sessions_active} sesiones activas, ${counts.pending} pendientes${warning ? `; aviso: ${warning}` : ""}`,
+    output: canonicalJson(warning ? { ...data, spec_readiness_warning: warning } : data),
     effects: ["read_only"],
   };
 }
@@ -511,6 +533,7 @@ async function artifacts(
   deps: InternalActionDeps,
   run: InternalActionRun,
   dump: readonly string[] | null,
+  planRefine = false,
 ): Promise<InternalActionOutcome> {
   // The presence report, without the narrative: this operation checks that the
   // artifacts are THERE, and projecting the session's whole reading to answer
@@ -534,10 +557,14 @@ async function artifacts(
     );
   }
 
+  const destination = planRefine ? await refineDestination(deps, run, canonicalJson(report)) : "";
+  if (typeof destination !== "string") return destination;
+  const legacyWarning = destination;
+
   if (dump === null) {
     return {
       ok: true,
-      summary: `sesión ${report.session}: SESSION.md presente, ${report.artifacts.session.criterios_count} criterios, ${report.artifacts.decisiones_count} decisiones`,
+      summary: `sesión ${report.session}: SESSION.md presente, ${report.artifacts.session.criterios_count} criterios, ${report.artifacts.decisiones_count} decisiones${legacyWarning}`,
       output: canonicalJson(report),
       effects: SEEDED_EFFECTS,
     };
@@ -566,10 +593,35 @@ async function artifacts(
   }
   return {
     ok: true,
-    summary: `sesión ${report.session}: ${dump.join(", ")} con contenido, ${report.artifacts.session.criterios_count} criterios`,
+    summary: `sesión ${report.session}: ${dump.join(", ")} con contenido, ${report.artifacts.session.criterios_count} criterios${legacyWarning}`,
     output,
     effects: SEEDED_EFFECTS,
   };
+}
+
+/** A new refine must be bound to an existing plan; only pre-custody sessions degrade. */
+async function refineDestination(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  report: string,
+): Promise<string | InternalActionOutcome> {
+  const custody = await readCustody(deps.fs, locateRun(deps.paths, run.session).dir);
+  if (custody.status === "unreadable") {
+    return refusal("session.artifacts", `custodia ilegible: ${custody.reason}`, report);
+  }
+  if (custody.status === "absent") {
+    return "; sesión legada sin custodia: no se puede verificar su plan destino";
+  }
+  for (const artifact of custody.custody.artifacts) {
+    if (artifact.role !== "input" || !/^docs\/plans\/\d{3,}-plan-[^/]+\.md$/.test(artifact.path))
+      continue;
+    if (await deps.fs.exists(join(deps.paths.workspaceDir(), artifact.path))) return "";
+  }
+  return refusal(
+    "session.artifacts",
+    "plan-refine exige un plan destino existente: creá la sesión con --input docs/plans/PPP-plan-<slug>.md o el descriptor <slug>-plan-refine, del que session-create deriva el plan",
+    canonicalJson({ report, custody: custody.custody.artifacts.map((artifact) => artifact.path) }),
+  );
 }
 
 /**
@@ -925,6 +977,13 @@ async function closeBatch(
     );
   }
   const phaseUpdates = phaseUpdatesForClosedBatch(text, batch);
+  if (batch.review === undefined && batch.published_plan_digest === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      `el batch ${batch.id} no tiene revisión registrada; completá review-findings con un revisor distinto y las correcciones revisadas`,
+      canonicalJson({ code: "PLAN_EXEC_BATCH_REVIEW_MISSING", batch: batch.id }),
+    );
+  }
   if (!phaseUpdates.ok) {
     return refusal(
       "plan-exec.batch-close",
@@ -1364,20 +1423,36 @@ async function close(
   deps: InternalActionDeps,
   run: InternalActionRun,
 ): Promise<InternalActionOutcome> {
+  const read = await readRun(deps.fs, locateRun(deps.paths, run.session));
+  if (!read.ok && read.failure.code !== "FLOW_RUN_ABSENT") {
+    return refusal("session.close", read.failure.message, canonicalJson(read.failure));
+  }
+  const boundaryClose = read.ok && read.state.reentries?.at(-1)?.kind === "close";
+  const listed = await runWorktree(
+    { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+    { action: "list" },
+  );
+  if (!("units" in listed)) {
+    return refusal(
+      "session.close",
+      "no se pudieron leer las unidades; revisá 'aw worktree list' y reintentá con 'aw flow advance'",
+      canonicalJson(listed),
+    );
+  }
+  const pending = boundaryClose
+    ? await preserveBoundaryClose(deps.fs, deps.paths, deps.git, read.state, listed.units)
+    : [];
   const result = await runSessionClose(
     deps.fs,
     deps.paths,
-    { code: run.code, requireIntegrated: true },
-    async () => {
-      const listed = await runWorktree(
-        { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
-        { action: "list" },
-      );
-      // A list that did not come back is NOT "no units": the close refuses on it,
-      // which is the whole point of asking before writing the marker.
-      if (!("units" in listed)) throw new Error(JSON.stringify(listed));
-      return listed.units;
+    {
+      code: run.code,
+      requireIntegrated: !boundaryClose,
+      preserveReservations: boundaryClose
+        ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
+        : [],
     },
+    async () => listed.units,
   );
   if ("sessionHeld" in result) {
     const held = result.sessionHeld;
@@ -1392,9 +1467,13 @@ async function close(
     return refusal("session.close", `la sesión no cerró: ${why}`, canonicalJson(result));
   }
   const closed = result.sessionClose;
+  if (boundaryClose) {
+    closed.pending_work = pending;
+    closed.reopen = `aw session-resume --code ${run.session} --reopen`;
+  }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

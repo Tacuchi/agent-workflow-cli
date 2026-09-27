@@ -1,0 +1,10 @@
+{
+  "failures": "Chrome Headless 131.0.0.0 (Mac OS 10.15.7) suite one FAILED\nExpected true to be false.\n    at UserContext.<anonymous> (src/example.spec.ts:12:3)\nChrome Headless 131.0.0.0 (Mac OS 10.15.7) suite two FAILED\n    at UserContext.<anonymous> (src/example.spec.ts:18:3)\nTOTAL: 2 FAILED, 1 SUCCESS",
+  "identities": [
+    { "file": "src/example.spec.ts", "case": "suite one" },
+    { "file": "src/example.spec.ts", "case": "suite two" }
+  ],
+  "green": "Chrome Headless 131.0.0.0 (Mac OS 10.15.7): Executed 0 of 12 SUCCESS (0 secs / 0 secs)\nChrome Headless 131.0.0.0 (Mac OS 10.15.7): Executed 12 of 12 SUCCESS (0.045 secs / 0.024 secs)\nTOTAL: 12 SUCCESS",
+  "empty": "Chrome Headless 131.0.0.0 (Mac OS 10.15.7): Executed 0 of 12 SUCCESS (0 secs / 0 secs)",
+  "load": "27 09 2026 00:00:00.000:ERROR [karma-server]: Error: Found 1 load error"
+}

@@ -40,6 +40,7 @@ import {
   journeyOfFlow,
 } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
+import { type BatchReview, isBatchReview } from "./batch-review.js";
 import { V11_JOURNEY_BASE } from "./journey-baseline.js";
 import {
   type AssuranceStatus,
@@ -63,7 +64,7 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 13;
+export const FLOW_RUN_STATE_VERSION = 14;
 
 /**
  * The versions this CLI CONTINUES without adoption, newest first.
@@ -82,7 +83,7 @@ export const FLOW_RUN_STATE_VERSION = 13;
  * and the `route-refused` trace kind. A v12 run has none of them either, and a
  * batch without `base` is read as the one that was in flight when the CLI updated.
  */
-export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 12, 11];
+export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 13, 12, 11];
 
 /**
  * The versions this CLI READS, newest first.
@@ -109,6 +110,8 @@ export const FLOW_RUN_STATE_READABLE: readonly number[] = [
 const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => FlowRunState>> = {
   11: (state) => ({ ...state, version: 12, journey_base: [...V11_JOURNEY_BASE[state.flow]] }),
   12: (state) => ({ ...state, version: 13 }),
+  // Historical reviews are never fabricated. A still-open batch must supply one.
+  13: (state) => ({ ...state, version: 14 }),
 };
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
@@ -986,6 +989,7 @@ export interface PlanExecBatch {
   base?: Record<string, string | null>;
   /** Per source, the checkout digest of the proof that credited this batch. */
   credit?: Record<string, string>;
+  review?: BatchReview;
 }
 
 /** The base a batch had in the run a restart or an annulment archived. */
@@ -1139,6 +1143,12 @@ export interface FlowChoiceSelection {
   outcome: Extract<FlowChoiceOutcome, { kind: "register-decision" | "handoff" }>;
 }
 
+/** CLI observation at entry, before source-scope. Null phases means not observed. */
+export interface PlanExecEntry {
+  plan: string | null;
+  phases_without_open_tasks: number[] | null;
+}
+
 export interface FlowRunState {
   version: number;
   flow: WorklineFlow;
@@ -1146,6 +1156,8 @@ export interface FlowRunState {
   session: string;
   /** The plan and the sources this run isolates, or `null` before it fixed them. */
   scope: FlowRunScope | null;
+  /** Absent on older runs; never infer a successful entry reading from absence. */
+  plan_exec_entry?: PlanExecEntry;
   /**
    * Transition ids the run has already passed, in order — the journey's CURSOR.
    *
@@ -1636,6 +1648,33 @@ export function withPlanExecBatchCredit(
   });
 }
 
+/** Record only the current iteration's review, never borrowing one from a prior batch. */
+export function withPlanExecBatchReview(state: FlowRunState, review: BatchReview): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    batches: (state.batches ?? []).map((batch) =>
+      batch.iteration === state.batch_loop?.iteration ? { ...batch, review } : batch,
+    ),
+  });
+}
+
+/** A legacy close may have passed the old untyped review. Insert a fresh, answerable copy. */
+export function withPendingBatchReview(state: FlowRunState): FlowRunState {
+  const review = "plan-exec.review-findings";
+  if (state.flow !== "plan-exec" || state.boundary !== "plan-exec.batch-close") return state;
+  const batch = (state.batches ?? []).find((entry) => entry.published_plan_digest === undefined);
+  if (batch === undefined || batch.review !== undefined) return state;
+  return withBoundary(
+    withReentry(state, {
+      kind: "review",
+      transition: "plan-exec.batch-close",
+      from: review,
+      occurrence: state.applied.filter((id) => id === "plan-exec.batch-close").length + 1,
+    }),
+    review,
+  );
+}
+
 /** Record one inferred or declared batch, refusing duplicate ids at the caller's boundary. */
 export function withPlanExecBatch(state: FlowRunState, batch: PlanExecBatch): FlowRunState {
   const batches = state.batches ?? [];
@@ -1837,6 +1876,38 @@ export function withPlanExecBatchPublicationPrepared(
 /** Persist a selected handoff; the advancement engine then refuses to continue this run. */
 export function withHandoff(state: FlowRunState, handoff: FlowHandoff | null): FlowRunState {
   return sealRunState({ ...withoutSeal(state), handoff });
+}
+
+export function withPlanExecEntry(state: FlowRunState, entry: PlanExecEntry): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), plan_exec_entry: entry });
+}
+
+/** Both the human exit and the structural rule deliver the same recoverable destination. */
+export function planRefineHandoff(
+  state: FlowRunState,
+  decisions: Record<string, unknown>,
+  selection: string,
+): FlowHandoff {
+  const plan = state.scope?.plan ?? state.plan_exec_entry?.plan ?? null;
+  const packageBody: FlowEscalationPackage = {
+    plan,
+    observations: state.observations.filter(
+      (observation) =>
+        observation.transition.startsWith("plan-exec.entry-") ||
+        observation.transition.startsWith("plan-exec.deviation-"),
+    ),
+    decisions:
+      plan === null
+        ? { ...decisions, recovery: "nombrá el plan que debe refinar /w:plan-refine <plan>" }
+        : decisions,
+    selection,
+  };
+  return {
+    destination: "plan-refine",
+    command: plan === null ? "/w:plan-refine <plan>" : `/w:plan-refine ${plan}`,
+    package: packageBody,
+    package_digest: semanticDigest(packageBody),
+  };
 }
 
 /** Persist the gate's executable consequence before the run leaves that boundary. */
@@ -2440,7 +2511,22 @@ function checkCommonRecordShape(
   if (!isInheritedBaseArray(parsed.inherited_bases)) {
     return invalid("hereda una base de batch sin sus fases o sin sus fuentes");
   }
+  if (!isPlanExecEntry(parsed.plan_exec_entry)) {
+    return invalid("declara una entrada de plan-exec sin plan o con fases inválidas");
+  }
   return null;
+}
+
+function isPlanExecEntry(value: unknown): value is PlanExecEntry | undefined {
+  if (value === undefined) return true;
+  if (!isRecord(value) || !(value.plan === null || isNonEmptyString(value.plan))) return false;
+  const phases = value.phases_without_open_tasks;
+  return (
+    phases === null ||
+    (Array.isArray(phases) &&
+      phases.every((phase) => Number.isInteger(phase) && phase > 0) &&
+      new Set(phases).size === phases.length)
+  );
 }
 
 function isInheritedBaseArray(value: unknown): value is PlanExecInheritedBase[] | undefined {
@@ -2709,7 +2795,8 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
         entry.published_plan_digest !== entry.publication.after_plan_digest) ||
       !(PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string) ||
       !isSourceMap(entry.base, true) ||
-      !isSourceMap(entry.credit, false)
+      !isSourceMap(entry.credit, false) ||
+      (entry.review !== undefined && !isBatchReview(entry.review))
     ) {
       return false;
     }
@@ -3158,7 +3245,7 @@ function isObservationArray(value: unknown): value is FlowObservation[] {
   );
 }
 
-const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen"];
+const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen", "review"];
 
 /** Absent, or reentries each with its kind, its boundary, its occurrence and its origin. */
 function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
@@ -3168,6 +3255,9 @@ function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
     (entry) =>
       isRecord(entry) &&
       REENTRY_KINDS.includes(entry.kind as string) &&
+      (entry.kind !== "review" ||
+        (entry.transition === "plan-exec.batch-close" &&
+          entry.from === "plan-exec.review-findings")) &&
       nonEmpty(entry.transition) &&
       Number.isInteger(entry.occurrence) &&
       (entry.occurrence as number) >= 1 &&

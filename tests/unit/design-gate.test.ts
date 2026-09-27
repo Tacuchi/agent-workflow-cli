@@ -12,6 +12,11 @@ import { renderHumanError } from "../../src/cli/render.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
+import {
+  SIMPLE_FOLDER,
+  SIMPLE_WS,
+  publishedSimpleDesign,
+} from "../helpers/published-simple-design.js";
 
 /**
  * The `plan-exec` precondition gate: what blocks, what only warns.
@@ -128,6 +133,31 @@ const notices = (report: DesignGateReport): string =>
   report.verdicts.flatMap((v) => v.notices).join(" | ");
 
 describe("gate de precondición — la referencia que sí resuelve", () => {
+  it("el gate acepta el hint DESIGN.md de r1 tras publicar r3 simple", async () => {
+    const { fs, r1Digest } = await publishedSimpleDesign();
+    const plan = "docs/plans/099-plan-simple.md";
+    fs.file(
+      `${SIMPLE_WS}/${plan}`,
+      [
+        "# Plan 099",
+        "",
+        "## Design references",
+        "",
+        "package: DES-001@r1",
+        `baseline_hint: ${SIMPLE_FOLDER}/DESIGN.md`,
+        `digest: ${r1Digest}`,
+        "",
+        "## Tasks",
+        "",
+        "- [ ] T1.1 — consumir DES-001@r1",
+      ].join("\n"),
+    );
+    const report = await gatePlanDesign(fs, SIMPLE_WS, plan);
+    expect(report.blocked).toBe(false);
+    expect(report.verdicts[0]?.ready).toBe(true);
+    expect(report.verdicts[0]?.notices.join(" ")).not.toContain("baseline_hint");
+  });
+
   it("una raíz en handoff cuya clausura está completa no bloquea", async () => {
     const report = await gate();
     expect(failures(report)).toEqual([]);
@@ -223,14 +253,22 @@ describe("gate de precondición — las cuatro causas de bloqueo", () => {
     expect(failure?.action).toContain("no rediseña");
   });
 
-  it("un package nombrado sin fijar revisión se reporta, no se adivina", async () => {
+  it("un plan sin referencias no bloquea por un id nombrado en prosa", async () => {
     // Sin ninguna raíz que lo fije: nombrarlo en prosa Y fijarlo en otra tarea
     // del mismo documento es legítimo, y el contrato lo exime a propósito.
     const report = await gate({
       plan: "# Plan\n\n## Tasks\n\n### F1 — el alta\n\n- [ ] T1.1 — mirar DES-001 y seguir\n",
     });
+    expect(report.blocked).toBe(false);
+    expect(report.verdicts).toEqual([]);
+  });
+
+  it("un id con alias móvil sí bloquea aun sin referencias consumidas", async () => {
+    const report = await gate({
+      plan: "# Plan\n\n## Tasks\n\n- [ ] T1.1 — mirar DES-001@latest\n",
+    });
     expect(report.blocked).toBe(true);
-    expect(failures(report).some((f) => f.code === "DESIGN_REFERENCE_APPROXIMATE")).toBe(true);
+    expect(failures(report)[0]?.code).toBe("DESIGN_REFERENCE_APPROXIMATE");
   });
 
   it("el bloqueo alcanza a TODO el plan, no solo a la tarea culpable", async () => {

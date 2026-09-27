@@ -213,6 +213,7 @@ export function parseTaskDesignReferences(text: string, artifact: string): TaskR
   const failures: DesignFailure[] = [];
   const seen = new Set<string>();
   const pinned = new Set<string>();
+  let attempted = false;
   // The declared block is where a document says WHICH baselines it closed on.
   // Scanning it for task references too would turn every declaration into a
   // consumption — so a package-mode plan that declares `DES-001@r4` and pins
@@ -220,6 +221,7 @@ export function parseTaskDesignReferences(text: string, artifact: string): TaskR
   const body = withoutDeclaredBlock(text);
 
   for (const match of text.matchAll(TASK_REFERENCE_SHAPE)) {
+    attempted = true;
     const raw = match[0];
     if (seen.has(raw)) continue;
     seen.add(raw);
@@ -237,6 +239,7 @@ export function parseTaskDesignReferences(text: string, artifact: string): TaskR
   // for a design that has no catalog, and the gate is what answers whether the
   // package it names really is one — the grammar cannot know.
   for (const match of body.matchAll(ROOT_REFERENCE_SHAPE)) {
+    attempted = true;
     const raw = match[0];
     if (seen.has(raw)) continue;
     seen.add(raw);
@@ -259,6 +262,7 @@ export function parseTaskDesignReferences(text: string, artifact: string): TaskR
   // removes — unless the same text pins it, where the bare mention is just prose.
   for (const match of text.matchAll(/DES-[0-9]+(?:@[A-Za-z]+)?(?![@/\w-])/g)) {
     const value = match[0];
+    if (!attempted && pinned.size === 0 && !value.includes("@")) continue;
     const id = value.split("@")[0] as string;
     if (pinned.has(id)) continue;
     const near = approximate(value, artifact, "referencia de tarea");
