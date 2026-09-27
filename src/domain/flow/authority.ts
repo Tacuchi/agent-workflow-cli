@@ -153,6 +153,8 @@ export interface FlowDecision {
    * claiming a decision nobody made. See {@link TransitionCondition}.
    */
   condition?: TransitionCondition;
+  /** Terminal outcome of a deterministic conditional row. */
+  handoff?: Extract<FlowChoiceOutcome, { kind: "handoff" }>;
   /**
    * An explicitly adaptable methodological control.  Its absence is meaningful:
    * the transition remains a hard gate and follows the legacy path.
@@ -2651,9 +2653,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     condition: {
-      threshold: { observed: "plan-exec.entry-gap-recognition", min: 1 },
-      otherwise: "el gate de entrada no encontró ningún hueco: no hay severidad que clasificar",
+      threshold: {
+        observed: "plan-exec.entry-gap-recognition",
+        of: ["plan.entry-gap-structural"],
+        min: 1,
+      },
+      otherwise: "el gate de entrada no encontró un hueco estructural: no hay que escalar",
     },
+    handoff: { kind: "handoff", destination: "plan-refine" },
   },
   {
     id: "plan-exec.normalization-consent",

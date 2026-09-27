@@ -46,6 +46,7 @@ import {
   withEvent,
   withObservation,
   withPendingAction,
+  withPlanExecEntry,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { decisionsOf, loadJourneyFixtures, v11StateAt } from "../helpers/journey-fixtures.js";
@@ -73,6 +74,22 @@ function journey(): FlowDecision[] {
 }
 
 describe("estado de corrida — ida y vuelta", () => {
+  it("preserva la observación de entrada sin inventarla para corridas anteriores", () => {
+    const legacy = newRunState("plan-exec", "001-plan-plan-exec");
+    const unknown = parseRunState(serializeRunState(legacy));
+    expect(unknown.ok && unknown.state.plan_exec_entry).toBeUndefined();
+    const entry = { plan: "docs/plans/001-plan-prueba.md", phases_without_open_tasks: [2, 4] };
+    const saved = parseRunState(serializeRunState(withPlanExecEntry(legacy, entry)));
+    expect(saved.ok && saved.state.plan_exec_entry).toEqual(entry);
+    for (const phases of [[0], [-1], [1.5], ["2"], [2, 2]]) {
+      const malformed = withPlanExecEntry(legacy, {
+        ...entry,
+        phases_without_open_tasks: phases as number[],
+      });
+      expect(parseRunState(serializeRunState(malformed)).ok).toBe(false);
+    }
+  });
+
   it("una ronda completa de sellado, serialización y parseo devuelve el mismo estado", () => {
     const state = newRunState("quick", SESSION);
     const back = parseRunState(serializeRunState(state));

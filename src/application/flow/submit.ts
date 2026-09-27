@@ -84,6 +84,7 @@ import {
   applyTransition,
   checkAgainstJourney,
   iterationOf,
+  planRefineHandoff,
   restartInvocation,
   restatesLastEvent,
   sameIteration,
@@ -99,6 +100,7 @@ import {
   withObservation,
   withPlanExecBatchCredit,
   withPlanExecBatchStageForTransition,
+  withPlanExecEntry,
   withProposal,
   withReentry,
   withRouteDecisions,
@@ -155,6 +157,7 @@ import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import { closeAtBoundaryState } from "./close-at-boundary.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
+import { observePlanEntry } from "./plan-entry.js";
 import { journeyForRun } from "./run-journey.js";
 import { type FlowRunMutation, applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
@@ -724,10 +727,20 @@ async function decide(
   const accepted = route.kind === "accept" ? withRouteDecisions(state, route.decisions) : state;
   // Sealed with the transition it earned, in the same state publication: a batch
   // is never seen validated without the proofs that validated it.
-  const routed =
+  let routed =
     parsed.credit === undefined
       ? accepted
       : withPlanExecBatchCredit(accepted, parsed.credit.batch, parsed.credit.proofs);
+  if (
+    state.flow === "plan-exec" &&
+    [
+      "plan-exec.entry-gate",
+      "plan-exec.entry-gap-recognition",
+      "plan-exec.normalization-consent",
+    ].includes(resolved.stopped.id)
+  ) {
+    routed = withPlanExecEntry(routed, await observePlanEntry(fs, paths, state));
+  }
 
   // The registry, not the Spanish consequence text, owns what a selected
   // alternative does. A handoff must stop before any later plan-exec row can
@@ -742,7 +755,7 @@ async function decide(
         ? await specPathOfScopedPlan(fs, paths, snapshot.root, state.scope?.plan ?? null)
         : null;
     return applyAndHandoff(
-      state,
+      routed,
       journey,
       resolved.stopped,
       identity,
@@ -2439,20 +2452,7 @@ function applyAndHandoff(
   outcome: Extract<FlowChoiceOutcome, { kind: "handoff" }>,
   specPath: string | null,
 ): SubmitDecision {
-  const plan = state.scope?.plan ?? null;
-  if (outcome.destination === "plan-refine" && plan === null) {
-    const resolved = resolveBoundary(state, journey);
-    return reject(
-      state,
-      resolved,
-      "la entrega a plan-refine no tiene el plan que debe reabrir",
-      {
-        code: "FLOW_HANDOFF_PLAN_MISSING",
-        action: "fijá el scope de plan-exec antes de elegir una escalación a plan-refine",
-      },
-      { journey, identity },
-    );
-  }
+  const plan = state.scope?.plan ?? state.plan_exec_entry?.plan ?? null;
   const fixPreview = state.fix_preview ?? null;
   const packageBody = {
     plan,
@@ -2491,12 +2491,17 @@ function applyAndHandoff(
     stopped.id,
   );
   next = withAttempt(next, identity);
-  next = withHandoff(next, {
-    destination: outcome.destination,
-    command,
-    package: packageBody,
-    package_digest: semanticDigest(packageBody),
-  });
+  next = withHandoff(
+    next,
+    outcome.destination === "plan-refine"
+      ? planRefineHandoff(state, answer.decisions, answer.choice ?? "")
+      : {
+          destination: outcome.destination,
+          command,
+          package: packageBody,
+          package_digest: semanticDigest(packageBody),
+        },
+  );
   next = withBoundary(next, journey[next.applied.length]?.id ?? null);
   const advanced = advanceFlowRun({ state: next, journey, applied: [stepOf(stopped)] });
   if (!advanced.ok) return { ok: false, failure: advanced.failure };
