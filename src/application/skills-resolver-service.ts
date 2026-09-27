@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import { parse as parseToml } from "smol-toml";
 import { HARNESSES } from "../domain/harnesses.js";
 import { parseSkillFrontmatter } from "../domain/skill-frontmatter.js";
 import {
@@ -13,6 +12,7 @@ import {
 } from "../domain/skills.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { parseToml } from "./parsers/toml.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface SkillsResolution {
