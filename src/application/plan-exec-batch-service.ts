@@ -22,7 +22,7 @@ import {
   withPlanExecBatchStage,
 } from "../domain/flow/run-state.js";
 import { approvedValidationOnly } from "../domain/flow/unchanged-phase.js";
-import { baseDigest, matchTextSeal, sealProposal } from "../domain/proposal.js";
+import { baseDigest, canonicalEol, matchTextSeal, sealProposal } from "../domain/proposal.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type FlowRunLocation, applyUnderLock } from "./flow/run-state-service.js";
 import { applyLocalProposal } from "./local-proposal.js";
@@ -32,6 +32,7 @@ import { type PhaseItem, type PhaseState, parsePhases } from "./parsers/phases.j
 import { parsePlanStatus } from "./parsers/plan-status.js";
 import { type TaskItem, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
+import { batchMarksOnly, planLineDiff, sealedPlanPath } from "./plan-exec-plan-diff.js";
 
 const TASK_ID = /\b(T\d+\.\d+)\b/;
 const PHASE_HEADING = /^\s*###\s+F(\d+)\b/i;
@@ -247,6 +248,8 @@ function consecutiveValidationPhases(
 export interface PreparePlanExecBatchPublicationInput {
   plan: string;
   batch: PlanExecBatch;
+  /** Exact inference-time copy, absent for pre-upgrade batches. */
+  sealed_text?: string | null;
   /** These are exact task ids, not a claim that arbitrary work happened. */
   completed_tasks: string[];
   phase_updates: BatchPhaseUpdate[];
@@ -273,11 +276,28 @@ export function preparePlanExecBatchPublication(
   input: PreparePlanExecBatchPublicationInput,
 ): BatchPreparation {
   const before = baseDigest(text);
-  if (matchTextSeal(input.batch.plan_digest, text) === null) {
+  if (
+    input.sealed_text != null &&
+    matchTextSeal(input.batch.plan_digest, input.sealed_text) === null
+  ) {
+    return fail(
+      "PLAN_EXEC_BATCH_SNAPSHOT_INVALID",
+      "la copia sellada no corresponde al digest del lote",
+      "restaurá la copia original de la sesión; no se compara el plan contra texto no autenticado",
+    );
+  }
+  if (
+    matchTextSeal(input.batch.plan_digest, text) === null &&
+    (input.sealed_text === undefined ||
+      input.sealed_text === null ||
+      !batchMarksOnly(input.sealed_text, text, input.batch, input.phase_updates))
+  ) {
     return fail(
       "PLAN_EXEC_BATCH_STALE",
       "el plan cambió desde que se infirió el batch",
-      "re-inferí el batch sobre los bytes vigentes; no se acreditan tareas contra un plan movido",
+      input.sealed_text == null
+        ? `no hay copia del texto sellado para este lote anterior (sello ${input.batch.plan_digest}, vigente ${before}); no se acreditan tareas contra un plan movido`
+        : `diferencias del plan sellado y vigente:\n${planLineDiff(input.sealed_text, text)}`,
     );
   }
   const completed = uniqueStrings(input.completed_tasks);
@@ -554,6 +574,17 @@ export async function publishPlanExecBatch(
   paths: PathsService,
   input: PublishPlanExecBatchInput,
 ): Promise<BatchPublish> {
+  let sealedText: string | null = null;
+  const snapshot = sealedPlanPath(input.location.dir, input.batch.plan_digest);
+  try {
+    if (await fs.exists(snapshot)) sealedText = await fs.readText(snapshot);
+  } catch {
+    return fail(
+      "PLAN_EXEC_BATCH_SNAPSHOT_UNAVAILABLE",
+      `no se pudo leer la copia sellada de ${input.batch.id}`,
+      "restaurá la copia en la sesión antes de cerrar este lote",
+    );
+  }
   // Persist the sealed before/after pair first. The plan write deliberately
   // happens OUTSIDE this lock: `applyLocalProposal` has its own workspace lock,
   // and a long nested lock would turn recovery into a deadlock. More importantly,
@@ -647,7 +678,10 @@ export async function publishPlanExecBatch(
         if (matchTextSeal(publication.before_plan_digest, text.content) === null) {
           return { ok: false as const, failure: recoveryStale(input.plan) };
         }
-        const prepared = preparePlanExecBatchPublication(text.content, input);
+        const prepared = preparePlanExecBatchPublication(text.content, {
+          ...input,
+          sealed_text: sealedText,
+        });
         if (!prepared.ok) return { ok: false as const, failure: prepared.failure };
         if (prepared.prepared.after_digest !== publication.after_plan_digest) {
           return {
@@ -670,7 +704,10 @@ export async function publishPlanExecBatch(
       if (existing === undefined) {
         return { ok: false as const, failure: batchNotInferred(input.batch.id) };
       }
-      const prepared = preparePlanExecBatchPublication(text.content, input);
+      const prepared = preparePlanExecBatchPublication(text.content, {
+        ...input,
+        sealed_text: sealedText,
+      });
       if (!prepared.ok) return { ok: false as const, failure: prepared.failure };
       let next = current;
       next = withPlanExecBatchPublicationPrepared(next, input.batch.id, {
@@ -782,14 +819,16 @@ function markTasks(
   mark: "x" | " " = "x",
 ): BatchTextRewrite {
   const seen = new Set<string>();
-  const lines = text.split("\n").map((line) => {
-    const match = /^(\s*[-*]\s*)\[([ xX])\](\s+.*)$/.exec(line);
-    if (match === null) return line;
-    const id = taskIdOf(match[3] ?? "");
-    if (id === null || !wanted.has(id)) return line;
-    seen.add(id);
-    return `${match[1]}[${mark}]${match[3]}`;
-  });
+  const lines = canonicalEol(text)
+    .split("\n")
+    .map((line) => {
+      const match = /^(\s*[-*]\s*)\[([ xX])\](\s+.*)$/.exec(line);
+      if (match === null) return line;
+      const id = taskIdOf(match[3] ?? "");
+      if (id === null || !wanted.has(id)) return line;
+      seen.add(id);
+      return `${match[1]}[${mark}]${match[3]}`;
+    });
   const missing = [...wanted].filter((id) => !seen.has(id));
   if (missing.length > 0) {
     return fail(
@@ -798,14 +837,14 @@ function markTasks(
       "el plan cambió de forma: re-inferí el batch antes de publicar",
     );
   }
-  return { ok: true, content: lines.join("\n") };
+  return { ok: true, content: withEol(lines.join("\n"), text) };
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: this is one bounded Markdown block rewrite whose alternatives preserve exact bytes.
 function rewritePhases(text: string, updates: readonly BatchPhaseUpdate[]): BatchTextRewrite {
   if (updates.length === 0) return { ok: true, content: text };
   const byPhase = new Map(updates.map((update) => [update.phase, update]));
-  const lines = text.split("\n");
+  const lines = canonicalEol(text).split("\n");
   const seen = new Set<number>();
   for (let start = 0; start < lines.length; start += 1) {
     const heading = PHASE_HEADING.exec(lines[start] ?? "");
@@ -850,7 +889,7 @@ function rewritePhases(text: string, updates: readonly BatchPhaseUpdate[]): Batc
       "re-inferí el batch sobre el plan vigente",
     );
   }
-  return { ok: true, content: lines.join("\n") };
+  return { ok: true, content: withEol(lines.join("\n"), text) };
 }
 
 /** Rewrite only the plan preamble — never a `> Estado:` owned by a phase. */
@@ -860,7 +899,7 @@ function rewritePlanDonePreamble(
   closure: string,
   assurance: AssuranceStatus,
 ): string {
-  const scanned = scanMarkdown(text);
+  const scanned = scanMarkdown(canonicalEol(text));
   const [title, ...rest] = scanned.headings;
   const firstSection = title?.level === 1 ? rest[0] : title;
   const end = firstSection?.line ?? scanned.lines.length;
@@ -899,7 +938,7 @@ function rewritePlanDonePreamble(
   } else {
     lines[assuranceAt] = `> Assurance: ${assurance}`;
   }
-  return lines.join("\n");
+  return withEol(lines.join("\n"), text);
 }
 
 /**
@@ -907,7 +946,7 @@ function rewritePlanDonePreamble(
  * that only a `done` plan carries removed. Never a `> Estado:` owned by a phase.
  */
 function rewritePlanReopenPreamble(text: string): string {
-  const scanned = scanMarkdown(text);
+  const scanned = scanMarkdown(canonicalEol(text));
   const [title, ...rest] = scanned.headings;
   const firstSection = title?.level === 1 ? rest[0] : title;
   const end = firstSection?.line ?? scanned.lines.length;
@@ -918,7 +957,13 @@ function rewritePlanReopenPreamble(text: string): string {
     if (preamble && (PLAN_CLOSURE.test(bare) || PLAN_ASSURANCE.test(bare))) continue;
     kept.push(preamble && PLAN_STATUS.test(bare) ? "> Estado: open" : line);
   }
-  return kept.join("\n");
+  return withEol(kept.join("\n"), text);
+}
+
+function withEol(canonical: string, original: string): string {
+  const crlf = original.match(/\r\n/g)?.length ?? 0;
+  const all = original.match(/\n/g)?.length ?? 0;
+  return crlf > all / 2 ? canonical.replace(/\n/g, "\r\n") : canonical;
 }
 
 function taskIdOf(text: string): string | null {

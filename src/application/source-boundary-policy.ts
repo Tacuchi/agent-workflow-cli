@@ -100,7 +100,7 @@ const TASKS_HEADING = "tasks";
 const PHASE_HEADING = /^F(\d+)\s*(?:[—–-]\s*)?(.*)$/;
 const SURFACE_LINE = /^>\s*(?:L[ií]mite de ejecuci[oó]n|Execution surface)\s*:\s*(.+)$/i;
 const SOURCES_LINE = /^>\s*Fuentes\s*:\s*(.*)$/i;
-const TASK_LINE = /^\s*[-*]\s*\[[ xX]\]\s+(.+)$/;
+const TASK_LINE = /^\s*[-*]\s*\[[ xX]\]\s+(.+?)\r?$/;
 const TASK_SOURCES = /_\(\s*fuentes\s*:\s*([^)]*)\)_/i;
 // A clarification in parentheses never widens what the CLI enforces.
 const CHECKOUT_SURFACE = /^checkout(?:\s*\([^()]*[^()\s][^()]*\))?$/i;

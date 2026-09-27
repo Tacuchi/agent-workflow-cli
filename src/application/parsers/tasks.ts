@@ -1,4 +1,5 @@
 import { isPlanHandoffHeading } from "../../domain/plan-handoff.js";
+import { canonicalEol } from "../../domain/proposal.js";
 import { scanMarkdown } from "../markdown.js";
 import { parsePlanSourceBoundary } from "../source-boundary-policy.js";
 
@@ -29,16 +30,17 @@ const DEP_RE = /\(deps?:\s*([^)]+)\)/i;
 const SOURCES_RE = /_\(\s*fuentes\s*:\s*([^)]*)\)_/i;
 
 export function parseTasks(text: string, compact = true): ParsedTasks {
+  const canonical = canonicalEol(text);
   const items: TaskItem[] = [];
   let n = 0;
   const declarations = new Map<number, { phase: number; sources: string[] | null }>();
-  for (const phase of parsePlanSourceBoundary(text).phases) {
+  for (const phase of parsePlanSourceBoundary(canonical).phases) {
     for (const task of phase.tasks) {
       declarations.set(task.line, { phase: phase.n, sources: task.sources });
     }
   }
 
-  const markdown = scanMarkdown(text);
+  const markdown = scanMarkdown(canonical);
   const headings = new Map(markdown.headings.map((heading) => [heading.line, heading]));
   let inHandoff = false;
   for (const [index, line] of markdown.lines.entries()) {

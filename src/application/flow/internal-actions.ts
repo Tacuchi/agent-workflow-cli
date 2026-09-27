@@ -43,7 +43,7 @@ import {
   withSettlement,
 } from "../../domain/flow/run-state.js";
 import { approvedValidationOnly } from "../../domain/flow/unchanged-phase.js";
-import { type LocalProposal, sealProposal } from "../../domain/proposal.js";
+import { type LocalProposal, canonicalEol, sealProposal } from "../../domain/proposal.js";
 import { type PendingObligation, obligationExit } from "../../domain/reconciliation.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -71,6 +71,7 @@ import {
   publishPlanExecBatch,
 } from "../plan-exec-batch-service.js";
 import { settlePlanExecObligations } from "../plan-exec-decision-service.js";
+import { sealedPlanPath } from "../plan-exec-plan-diff.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { canonicalArtifactPath } from "../session-artifacts.js";
@@ -854,6 +855,28 @@ async function inferBatch(
             await settlementSnapshot(deps, scope.plan),
           ),
           value: { batch: null, created: false, no_work: true },
+        };
+      }
+      // Store the exact plan text BEFORE publishing the inferred state. A retry
+      // either sees the same addressed copy or refuses rather than losing its base.
+      try {
+        const snapshot = sealedPlanPath(location.dir, next.batch.plan_digest);
+        await deps.fs.mkdirp(join(location.dir, ".plan-seals"));
+        const saved = await deps.fs.publishTextExclusive(snapshot, text);
+        if (
+          !saved.created &&
+          canonicalEol(await deps.fs.readText(snapshot)) !== canonicalEol(text)
+        ) {
+          throw new Error("la copia direccionada no coincide con el plan inferido");
+        }
+      } catch (error) {
+        return {
+          ok: false,
+          failure: {
+            code: "PLAN_EXEC_BATCH_SNAPSHOT_UNAVAILABLE",
+            message: `no se pudo guardar la copia sellada: ${String(error)}`,
+            action: "revisá el almacenamiento de la sesión y reintentá la inferencia",
+          },
         };
       }
       return {
