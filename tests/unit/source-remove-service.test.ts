@@ -140,4 +140,31 @@ describe("removeSource", () => {
     expect(local.otra_clave).toBe(true);
     expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).not.toContain("| core |");
   });
+
+  it("al quitar la única fuente Java recalcula el Stack sin conservar Java", async () => {
+    const env = new FakeEnv(cwd);
+    const paths = makePaths(cwd);
+    const java = join(cwd, "java");
+    const angular = join(cwd, "angular");
+    await mkdir(java);
+    await mkdir(angular);
+    await writeFile(join(java, "pom.xml"), "<project/>");
+    await writeFile(join(angular, "angular.json"), "{}");
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [
+        { alias: "java", path: java, mainBranch: "main" },
+        { alias: "angular", path: angular, mainBranch: "main" },
+      ],
+    });
+    expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).toContain(
+      "- Lenguaje: Java, TypeScript",
+    );
+    const removed = await removeSource({ fs, env, proc: new FakeProc(), paths }, "java");
+    expect("error" in removed).toBe(false);
+    const block = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(block).toContain("- Lenguaje: TypeScript");
+    expect(block).not.toContain("Java");
+    expect(block).toContain("- Framework: Angular");
+  });
 });

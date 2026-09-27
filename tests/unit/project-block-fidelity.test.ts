@@ -83,23 +83,26 @@ describe("project-block · el bloque no borra lo ajeno (AC-02)", () => {
     expect(rewritten).toContain(`${NOTA}\n- Ramas de trabajo actuales:`);
   });
 
-  it("conserva una nota escrita ENTRE «Última actividad» e «Histórico», en su lugar", () => {
-    const clean = renderProjectBlock(BASE);
-    const dirty = clean.replace("- Histórico:", `${NOTA}\n- Histórico:`);
-
-    const rewritten = rewrite(dirty);
-    expect(rewritten).toContain(
-      `- Última actividad: 2026-01-01 00:00\n${NOTA}\n- Histórico: \`.workflow/HISTORY.md\``,
+  it("traslada las notas de los slots legacy de actividad e historial al final de Status", () => {
+    const clean = renderProjectBlock({ ...BASE, historicoPath: ".workflow/HISTORY.md" }).replace(
+      "- Histórico:",
+      `- Última actividad: 2026-01-01 00:00\n${NOTA}\n- Histórico:`,
     );
+    const rewritten = rewrite(clean);
+    expect(rewritten).not.toContain("Última actividad:");
+    expect(rewritten).not.toContain("- Histórico:");
+    expect(rewritten).toContain(NOTA);
+    expect(rewrite(rewritten)).toBe(rewritten);
   });
 
   it("conserva una nota escrita DESPUÉS de «Histórico»", () => {
-    const clean = renderProjectBlock(BASE);
+    const clean = renderProjectBlock({ ...BASE, historicoPath: ".workflow/HISTORY.md" });
     const dirty = clean.replace(
       "- Histórico: `.workflow/HISTORY.md`",
       `- Histórico: \`.workflow/HISTORY.md\`\n${NOTA}`,
     );
-    expect(rewrite(dirty)).toContain(`HISTORY.md\`\n${NOTA}`);
+    expect(rewrite(dirty)).toContain(NOTA);
+    expect(rewrite(dirty)).not.toContain("- Histórico:");
   });
 
   it("conserva notas en las secciones Fuentes y Stack", () => {
@@ -128,6 +131,22 @@ describe("project-block · el bloque no borra lo ajeno (AC-02)", () => {
 });
 
 describe("project-block · idempotencia y compatibilidad (AC-09, AC-10)", () => {
+  it("la cuarta columna proyecta Status: una edición manual se declara y se descarta", () => {
+    const clean = renderProjectBlock({
+      ...BASE,
+      workingBranches: { core: "feature/real" },
+    });
+    expect(clean).toContain("| Alias | Path | Rama principal | Rama de trabajo |");
+    expect(clean).toContain("| core | /p | main | feature/real |");
+    const edited = clean.replace(
+      "| core | /p | main | feature/real |",
+      "| core | /p | main | main |",
+    );
+    expect(parseProjectBlock(edited)?.working_branches).toEqual({ core: "feature/real" });
+    expect(parseProjectBlock(edited)?.dropped_lines).toEqual(["| core | /p | main | main |"]);
+    expect(rewrite(edited)).toContain("| core | /p | main | feature/real |");
+  });
+
   it("un bloque limpio no gana campos nuevos ni cambia al reescribirse", () => {
     const clean = renderProjectBlock({
       ...BASE,
@@ -146,6 +165,7 @@ describe("project-block · idempotencia y compatibilidad (AC-09, AC-10)", () => 
       ...BASE,
       workingBranches: { core: "feature/x" },
       qaBranches: { core: "desarrollo" },
+      historicoPath: ".workflow/HISTORY.md",
     });
     const dirty = clean
       .replace("- Ramas de trabajo actuales:", `${NOTA}\n- Ramas de trabajo actuales:`)

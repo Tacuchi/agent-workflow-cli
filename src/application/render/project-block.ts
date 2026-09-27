@@ -1,4 +1,3 @@
-import { localMinuteIso } from "../dates.js";
 import type {
   DefaultBranches,
   ParsedProjectBlock,
@@ -22,13 +21,14 @@ export interface RenderProjectBlockInput {
   fuentes: ProjectFuente[];
   stack: ProjectStack;
   pipeline?: ProjectPipeline;
+  /** Legacy input retained for callers; activity is now derived by `aw status`. */
   lastActivity?: string;
   defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
   /** Foreign lines carried over from the block being rewritten, put back in place. */
   preservedLines?: PreservedLine[];
-  /** Path used in the "Histórico:" line. Default `.workflow/HISTORY.md`. */
+  /** Path used in "Histórico:"; absent when the record has not been created. */
   historicoPath?: string;
   /** Markers used to wrap the block. Defaults to the Workline project block. */
   markers?: ProjectBlockMarkers;
@@ -36,8 +36,6 @@ export interface RenderProjectBlockInput {
 
 export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const markers = input.markers ?? DEFAULT_PROJECT_BLOCK_MARKERS;
-  const historicoPath = input.historicoPath ?? ".workflow/HISTORY.md";
-  const last = input.lastActivity ?? localMinuteIso();
   const kept = input.preservedLines;
   const proyectoSection =
     input.proyecto.trim().length > 0 ? input.proyecto.trim() : BLOCK_PLACEHOLDER_PROYECTO;
@@ -58,9 +56,9 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   const qa = formatQaBranches(input.qaBranches);
   if (qa !== null) statusLines.push(qa);
   statusLines.push(...slotLines(kept, "status:qa"));
-  statusLines.push(`- Última actividad: ${last}`);
   statusLines.push(...slotLines(kept, "status:activity"));
-  statusLines.push(`- Histórico: \`${historicoPath}\``);
+  if (input.historicoPath !== undefined)
+    statusLines.push(`- Histórico: \`${input.historicoPath}\``);
   statusLines.push(...slotLines(kept, "status:historico"));
 
   const pipelineLines = Object.entries(input.pipeline ?? {})
@@ -76,7 +74,9 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
     "",
     "## Fuentes",
     "",
-    [formatFuentesTable(input.fuentes), ...slotLines(kept, "fuentes")].join("\n"),
+    [formatFuentesTable(input.fuentes, input.workingBranches), ...slotLines(kept, "fuentes")].join(
+      "\n",
+    ),
     "",
     "## Stack",
     "",
@@ -132,18 +132,21 @@ export function blockFromParsed(
   return renderProjectBlock(input);
 }
 
-function formatFuentesTable(fuentes: ProjectFuente[]): string {
+function formatFuentesTable(
+  fuentes: ProjectFuente[],
+  workingBranches: Record<string, string> | undefined,
+): string {
   if (fuentes.length === 0) {
     return BLOCK_PLACEHOLDER_FUENTES;
   }
-  const lines = ["| Alias | Path | Rama principal |", "|---|---|---|"];
+  const lines = ["| Alias | Path | Rama principal | Rama de trabajo |", "|---|---|---|---|"];
   for (const f of fuentes) {
     const alias = f.alias;
     const path = f.declared_path ?? f.path ?? "(local)";
     // Undeclared base branch → empty cell (round-trips back to null; the
     // workspace default `principal` is what resolves it, not a literal here).
     const main = f.main_branch ?? "";
-    lines.push(`| ${alias} | ${path} | ${main} |`);
+    lines.push(`| ${alias} | ${path} | ${main} | ${workingBranches?.[alias] ?? ""} |`);
   }
   return lines.join("\n");
 }

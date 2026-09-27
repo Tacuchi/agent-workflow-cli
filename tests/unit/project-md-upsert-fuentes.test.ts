@@ -35,6 +35,42 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     await rm(cwd, { recursive: true, force: true });
   });
 
+  it("recalcula Stack sobre todas las fuentes, conserva faltantes y quita Java tras la baja", async () => {
+    const java = join(cwd, "java");
+    const angular = join(cwd, "angular");
+    await fs.mkdirp(java);
+    await fs.mkdirp(angular);
+    await fs.writeText(join(java, "pom.xml"), "<project/>");
+    await fs.writeText(join(angular, "angular.json"), "{}");
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [
+        { alias: "java", path: java, mainBranch: "main" },
+        { alias: "angular", path: angular, mainBranch: "main" },
+      ],
+    });
+    const claude = join(cwd, "CLAUDE.md");
+    expect(await readFile(claude, "utf8")).toContain("- Lenguaje: Java, TypeScript");
+    expect(await readFile(claude, "utf8")).toContain("- Framework: Spring Boot, Angular");
+
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [{ alias: "ausente", path: "../fuente-de-otro-host", mainBranch: "main" }],
+    });
+    await fs.remove(java);
+    await runProjectMdUpsertWrite(fs, env, paths, { op: "init" });
+    expect(await readFile(claude, "utf8")).toContain("- Lenguaje: TypeScript, Java");
+
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      removeAliases: ["java", "ausente"],
+    });
+    const remaining = await readFile(claude, "utf8");
+    expect(remaining).toContain("- Lenguaje: TypeScript");
+    expect(remaining).not.toContain("Java");
+    expect(remaining).toContain("- Framework: Angular");
+  });
+
   it("renders 1 fuente from --fuente alias:path:rama", async () => {
     const result = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
@@ -275,7 +311,7 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     const agents = join(cwd, "AGENTS.md");
     await fs.writeText(
       agents,
-      (await readFile(agents, "utf8")).replace("- Histórico:", `${nota}\n- Histórico:`),
+      (await readFile(agents, "utf8")).replace("## Status\n\n", `## Status\n\n${nota}\n`),
     );
 
     await runProjectMdUpsertWrite(fs, env, paths, { op: "init", lastActivity: FIXED_TS });

@@ -150,6 +150,8 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-exec.deviation-gate",
       "plan-exec.escalation-package",
       "plan-exec.review-findings",
+      "plan-exec.batch-commit-proposal",
+      "plan-exec.batch-commit-authorization",
       // El saldo del cierre. La autoría es del AGENTE porque la evidencia es
       // suya: corrió los comandos. La pregunta es de una PERSONA y existe para
       // un solo caso —una obligación cuya clase nadie declaró y cuyo texto el
@@ -486,7 +488,7 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // flow. Las tres se saltan solas cuando el plan no debe compensación, así que
     // un cierre sin obligaciones sigue teniendo exactamente las fronteras que
     // tenía. Edición consciente: el orden de estas filas ES la doctrina.
-    expect(plan).toHaveLength(60);
+    expect(plan).toHaveLength(63);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos

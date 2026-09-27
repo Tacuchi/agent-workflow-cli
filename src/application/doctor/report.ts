@@ -31,6 +31,7 @@ import { pluginsHooksProvider } from "./provider-plugins-hooks.js";
 import { skillsProvider } from "./provider-skills.js";
 import { toolsAuthProvider } from "./provider-tools-auth.js";
 import { visibilityProvider } from "./provider-visibility.js";
+import { workspaceBlockProvider } from "./provider-workspace-block.js";
 import { type DoctorProvider, type DoctorProviderInput, coverage } from "./types.js";
 
 export interface DoctorRunOptions {
@@ -67,6 +68,7 @@ export function defaultDoctorProviders(
     toolsAuthProvider,
     pluginsHooksProvider,
     visibilityProvider,
+    workspaceBlockProvider,
   ];
 }
 

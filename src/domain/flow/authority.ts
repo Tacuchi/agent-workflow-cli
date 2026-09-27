@@ -469,6 +469,7 @@ export const INTERNAL_ACTION_OPERATIONS = [
   "proposal.publish",
   /** Seal the next plan-execution batch before any of its work is credited. */
   "plan-exec.batch-infer",
+  "plan-exec.batch-commit",
   /** Close one sealed plan-execution batch through the document/state CAS. */
   "plan-exec.batch-close",
   /** Seal a fully evidenced PLAN-exec document as done. */
@@ -506,6 +507,7 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   // Inference writes only the run's sealed ledger. It changes no project
   // artifact and therefore has no capability-world effect to authorize.
   "plan-exec.batch-infer": [],
+  "plan-exec.batch-commit": ["execute", "local_additive"],
   // Batch progress always rewrites the current plan document, but only from the
   // exact before/after pair persisted in its v10 batch state.
   "plan-exec.batch-close": ["mutate_overwrite"],
@@ -565,6 +567,7 @@ export type InternalActionPlan =
    * are the only authority on what the iteration owns.
    */
   | { operation: "plan-exec.batch-infer" }
+  | { operation: "plan-exec.batch-commit" }
   /**
    * Close the already inferred batch through the CLI-owned plan/document CAS.
    * It deliberately takes no task ids or status strings from an invocation: the
@@ -3047,6 +3050,57 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     answer_contract: "batch-review",
   },
   {
+    id: "plan-exec.batch-commit-proposal",
+    scope: "plan-exec",
+    title: "proponer el mensaje de commit por fuente sobre las rutas del lote",
+    authority: "agent",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+  },
+  {
+    id: "plan-exec.batch-commit-authorization",
+    scope: "plan-exec",
+    title: "aprobar los commits propuestos del lote con sus rutas y mensajes",
+    authority: "human",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    authorizes: { approve: "Aprobar los commits del lote", transition: "plan-exec.batch-commit" },
+    alternatives: [
+      {
+        label: "Aprobar los commits del lote",
+        consequence: "el CLI crea sólo los commits del lote aprobado, por fuente y por rutas",
+        recommended: true,
+        outcome: { kind: "continue" },
+      },
+    ],
+  },
+  {
+    id: "plan-exec.batch-commit",
+    scope: "plan-exec",
+    title: "crear y comprobar los commits aprobados del lote",
+    authority: "cli",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    effects: ["execute", "local_additive"],
+    custody: "run",
+    action: {
+      invocation: {
+        program: "aw",
+        args: ["flow", "advance", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
+      execution: { kind: "internal", operation: "plan-exec.batch-commit" },
+      evidence: ["plan.batch-commits-verificados"],
+      idempotent: true,
+      recovery:
+        "reanudá con aw flow advance: se reconocen los recibos y commits propios ya aplicados antes de avanzar",
+    },
+  },
+  {
     id: "plan-exec.batch-close",
     scope: "plan-exec",
     title: "publicar el cierre acreditado del batch en el plan y su traza v10",
@@ -3200,7 +3254,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "plan-exec.commit-authorization",
     scope: "plan-exec",
-    title: "aprobar los commits del batch o preautorizarlos condicionalmente",
+    title: "aprobar los commits de una corrida heredada",
     authority: "human",
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
@@ -3218,13 +3272,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         consequence:
           "se crea exactamente un commit por fuente afectada; sin push, sin --amend y sin --no-verify",
         recommended: true,
-        outcome: { kind: "continue" },
-      },
-      {
-        label: "Dejar el batch sin commitear",
-        consequence:
-          "los cambios quedan en el árbol de trabajo y el batch se registra sin commitear en CHECKPOINT y BACKLOG",
-        recommended: false,
         outcome: { kind: "continue" },
       },
     ],

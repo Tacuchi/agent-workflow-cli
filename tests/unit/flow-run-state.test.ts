@@ -184,6 +184,39 @@ describe("estado de corrida — ida y vuelta", () => {
 });
 
 describe("contabilidad de intentos — el ledger, el piso y lo perdonado", () => {
+  it("una aprobación conserva la fila y el ordinal sin gastar intento", () => {
+    const state = newRunState("plan-exec", "001-exec");
+    const first = withAttempt(state, {
+      invocation_id: "approval",
+      attempt: 1,
+      request_digest: "a",
+      parent_request_digest: null,
+      transition: "plan-exec.unit-integration",
+      approval: true,
+    });
+    expect(attemptAccountingAt(first, "plan-exec.unit-integration")).toMatchObject({
+      rows: 1,
+      spent: 0,
+      available: 3,
+      ordinals: [1],
+      conflicts: [],
+    });
+    const second = withAttempt(first, {
+      invocation_id: "effect",
+      attempt: 2,
+      request_digest: "b",
+      parent_request_digest: "a",
+      transition: "plan-exec.unit-integration",
+    });
+    expect(attemptAccountingAt(second, "plan-exec.unit-integration")).toMatchObject({
+      rows: 2,
+      spent: 1,
+      available: 2,
+      ordinals: [1, 2],
+      conflicts: [],
+    });
+    expect(parseRunState(serializeRunState(second)).ok).toBe(true);
+  });
   const spent = (transition: string, count: number): FlowRunAttempt[] =>
     Array.from({ length: count }, (_unused, index) => ({
       invocation_id: `sello-${transition}`,
@@ -1020,8 +1053,16 @@ describe("alineación del cursor con el recorrido instalado", () => {
           0,
           "plan-exec.unchanged-phase-consent",
         );
+        expected.splice(
+          expected.indexOf("plan-exec.batch-close"),
+          0,
+          "plan-exec.batch-commit-proposal",
+          "plan-exec.batch-commit-authorization",
+          "plan-exec.batch-commit",
+        );
         expect(read.state.applied).toEqual(expected);
         expect(read.state.skipped).toContain("plan-exec.unchanged-phase-consent");
+        expect(read.state.skipped).toContain("plan-exec.batch-commit-proposal");
         expect(read.state.boundary).toBe("plan-exec.implementation");
         expect(read.state.observations).toEqual(before.observations);
         expect(read.state.batches).toEqual(before.batches);

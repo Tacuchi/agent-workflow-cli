@@ -35,9 +35,11 @@ import {
   type FlowSettlement,
   type FlowSettlementObligation,
   type PlanExecBatch,
+  legacyPlanExecCommits,
   withPlanExecBatch,
   withPlanExecBatchBase,
   withPlanExecBatchLoop,
+  withPlanExecBatchUpdate,
   withSettlement,
 } from "../../domain/flow/run-state.js";
 import { approvedValidationOnly } from "../../domain/flow/unchanged-phase.js";
@@ -78,7 +80,8 @@ import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
-import { observeScopedFingerprints } from "./checkout-observation.js";
+import { commitBatch, verifyBatchGitState } from "./batch-commit.js";
+import { observeScopedFingerprints, resolveCheckoutCandidates } from "./checkout-observation.js";
 import { preserveBoundaryClose } from "./close-artifacts.js";
 import { closeDocumentGuidance } from "./close-document-guidance.js";
 import { projectRun } from "./run-projection.js";
@@ -164,6 +167,8 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
         return inferBatch(deps, run);
       case "plan-exec.batch-close":
         return closeBatch(deps, run);
+      case "plan-exec.batch-commit":
+        return commitBatch(deps, run);
       case "plan-exec.plan-done":
         return sealPlanDone(deps, run);
       case "plan-exec.settlement-publish":
@@ -280,6 +285,51 @@ async function recordBatchBase(
     sources,
   );
   if (!observed.ok) return observed;
+  const legacy = live.ok && legacyPlanExecCommits(live.state);
+  const candidates = legacy
+    ? []
+    : await resolveCheckoutCandidates(deps.fs, deps.paths, run.session);
+  const snapshot: NonNullable<PlanExecBatch["snapshot"]> = {};
+  for (const alias of legacy ? [] : sources) {
+    if (alias === "workspace") continue;
+    const root = candidates.find((candidate) => candidate.source === alias)?.root;
+    if (root === undefined)
+      return {
+        ok: false,
+        failure: {
+          code: "PLAN_EXEC_BATCH_UNIT_MISSING",
+          message: `falta la unidad de ${alias}`,
+          action: "adquirí la unidad antes de iniciar el lote",
+        },
+      };
+    try {
+      const [head, branch, dirty] = await Promise.all([
+        deps.git.head(root),
+        deps.git.currentBranch(root),
+        deps.git.dirtyPaths(root),
+      ]);
+      if (head === null || branch === undefined || dirty.length > 0) {
+        return {
+          ok: false,
+          failure: {
+            code: "PLAN_EXEC_BATCH_UNIT_DIRTY",
+            message: `${alias}: no puede iniciar el lote con HEAD/rama ausente o rutas sucias: ${dirty.map((entry) => entry.path).join(", ")}`,
+            action: "cerrá los cambios del lote anterior antes de iniciar éste",
+          },
+        };
+      }
+      snapshot[alias] = { head, branch, dirty };
+    } catch (error) {
+      return {
+        ok: false,
+        failure: {
+          code: "PLAN_EXEC_BATCH_GIT_UNOBSERVABLE",
+          message: `${alias}: ${String(error)}`,
+          action: "restaurá la lectura de git y reintentá la adquisición",
+        },
+      };
+    }
+  }
   const recorded = await applyUnderLock<null>(
     deps.fs,
     locateRun(deps.paths, run.session),
@@ -305,7 +355,9 @@ async function recordBatchBase(
           entry.phases.length === batch.phases.length &&
           entry.phases.every((phase, index) => phase === batch.phases[index]),
       );
-      const next = withPlanExecBatchBase(current, batch.id, inherited?.base ?? observed.base);
+      let next = withPlanExecBatchBase(current, batch.id, inherited?.base ?? observed.base);
+      if (batch.snapshot === undefined && !legacyPlanExecCommits(current))
+        next = withPlanExecBatchUpdate(next, batch.id, (item) => ({ ...item, snapshot }));
       return { ok: true, state: next, value: null, persist: next !== current };
     },
     run.state_digest === undefined ? {} : { expectDigest: run.state_digest },
@@ -754,6 +806,16 @@ async function inferBatch(
         (batch) => batch.published_plan_digest === undefined,
       );
       if (active !== undefined) {
+        if (active.commit_result !== undefined && Object.keys(active.commit_result).length > 0) {
+          return {
+            ok: false,
+            failure: {
+              code: "PLAN_EXEC_BATCH_REINFER_COMMITTED",
+              message: `${active.id} ya tiene recibos de commit y no puede re-inferirse`,
+              action: `revisá los recibos; para reabrir su trabajo usá aw flow annul --session ${run.session} --from ${active.id}`,
+            },
+          };
+        }
         return {
           ok: true,
           state: current,
@@ -1026,6 +1088,18 @@ async function closeBatch(
       canonicalJson({ code: "PLAN_EXEC_BATCH_REVIEW_MISSING", batch: batch.id }),
     );
   }
+  if (!legacyPlanExecCommits(live.state) && batch.commit_result === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      `el batch ${batch.id} no tiene resultado de commits verificado`,
+      canonicalJson({ code: "PLAN_EXEC_BATCH_COMMIT_MISSING", batch: batch.id }),
+    );
+  }
+  if (!legacyPlanExecCommits(live.state)) {
+    const gitFailure = await verifyBatchGitState(deps, run, batch);
+    if (gitFailure !== null)
+      return refusal("plan-exec.batch-close", gitFailure.message, canonicalJson(gitFailure));
+  }
   if (!phaseUpdates.ok) {
     return refusal(
       "plan-exec.batch-close",
@@ -1188,6 +1262,16 @@ async function sealPlanDone(
     const disposition = dispositionOf(live.state.route_decisions, transition)?.disposition;
     return disposition !== "omit" && disposition !== "substitute";
   });
+  if (
+    !legacyPlanExecCommits(live.state) &&
+    (live.state.batches ?? []).some((batch) => batch.commit_result === undefined)
+  ) {
+    return refusal(
+      "plan-exec.plan-done",
+      "hay lotes sin recibo o resultado de commit",
+      canonicalJson({ code: "PLAN_EXEC_DONE_BATCH_COMMIT_MISSING" }),
+    );
+  }
   if (missing.length > 0) {
     return refusal(
       "plan-exec.plan-done",
@@ -1459,7 +1543,14 @@ async function close(
     );
   }
   const pending = boundaryClose
-    ? await preserveBoundaryClose(deps.fs, deps.paths, deps.git, read.state, listed.units)
+    ? await preserveBoundaryClose(
+        deps.fs,
+        deps.paths,
+        deps.git,
+        read.state,
+        listed.units,
+        listed.unreadable ?? [],
+      )
     : [];
   const documents = read.ok ? await closeDocumentGuidance(deps.fs, deps.paths, read.state) : [];
   const result = await runSessionClose(
@@ -1472,7 +1563,7 @@ async function close(
         ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
         : [],
     },
-    async () => listed.units,
+    async () => ({ units: listed.units, unreadable: listed.unreadable ?? [] }),
   );
   if ("sessionHeld" in result) {
     const held = result.sessionHeld;
@@ -1494,7 +1585,7 @@ async function close(
   }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

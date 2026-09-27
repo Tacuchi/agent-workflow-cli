@@ -417,6 +417,9 @@ describe("la ida completa — un desvío componible se registra y la corrida SIG
       raw: JSON.stringify(body),
       approval,
       executor: walk.executor(),
+      ...((await current()).resolved.stopped?.id === "plan-exec.batch-commit-proposal"
+        ? { git: new GitCliAdapter(new NodeProcess()) }
+        : {}),
     });
     if (!result.ok) throw new Error(`un rechazo de negocio viaja ok:true: ${result.failure?.code}`);
     return result.directive;

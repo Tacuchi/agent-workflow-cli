@@ -78,6 +78,12 @@ vi.mock("../../src/application/mcp-migration-service.js", () => ({
 vi.mock("../../src/application/multiroot-service.js", () => ({
   runMultiroot: spy("runMultiroot", {}),
 }));
+vi.mock("../../src/application/doctor/provider-workspace-block.js", () => ({
+  applyRetiredSectionRemoval: spy("applyRetiredSectionRemoval", true),
+}));
+vi.mock("../../src/application/doctor/skills-toml-migrate.js", () => ({
+  applySkillsTomlMigration: spy("applySkillsTomlMigration", true),
+}));
 vi.mock("../../src/application/mcp-connections-service.js", () => ({
   readMcpConnections: () => [{ name: "cert", dsnVar: "DB_CERT_DSN", provider: "postgres" }],
 }));
@@ -87,7 +93,15 @@ const { runDoctorRepair } = await import("../../src/application/doctor/repair-ru
 const ctx = {
   fs: {},
   env: { homeDir: () => "/home/tester" },
-  paths: { workspaceDir: () => "/ws" },
+  paths: {
+    workspaceDir: () => "/ws",
+    cwdSkillsToml: () => "/ws/.workflow/skills.toml",
+    userSkillsToml: () => "/home/tester/.workflow/skills.toml",
+    blockMarkers: () => ({
+      start: "<!-- WORKFLOW-PROJECT-START -->",
+      end: "<!-- WORKFLOW-PROJECT-END -->",
+    }),
+  },
   // El delegado de `auth.flow` no es un módulo que se pueda doblar con
   // `vi.mock`: es el método del puerto de procesos que hereda la terminal. Se
   // dobla acá y se registra con el mismo espía, así que la fila de la tabla se
@@ -110,6 +124,7 @@ function actionFor(op: string, args: Record<string, string> = {}, argv?: readonl
     expected: "healthy",
     verb: "—",
     summary: "—",
+    locator: args.file ? `/ws/${args.file}` : (args.path ?? null),
     ...(argv === undefined ? {} : { argv }),
   };
 }
@@ -165,6 +180,16 @@ const WIRING: ReadonlyArray<{
   },
   { op: "multiroot.attach", delegate: "runMultiroot", args: { scope: "workspace" } },
   { op: "multiroot.detach", delegate: "runMultiroot", args: { scope: "workspace" } },
+  {
+    op: "workspace.remove-retired-section",
+    delegate: "applyRetiredSectionRemoval",
+    args: { file: "CLAUDE.md" },
+  },
+  {
+    op: "skills.migrate-template",
+    delegate: "applySkillsTomlMigration",
+    args: { path: "/ws/.workflow/skills.toml" },
+  },
 ];
 
 describe("el cableado entre una operación y la función que escribe", () => {

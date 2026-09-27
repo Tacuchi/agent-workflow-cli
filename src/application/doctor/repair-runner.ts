@@ -33,6 +33,8 @@ import { selfUninstall } from "../self/uninstall.js";
 import type { DoctorActionOutcome } from "./apply.js";
 import { runDoctorAuthFlow } from "./auth-flow.js";
 import type { DoctorBatchAction } from "./prepare.js";
+import { applyRetiredSectionRemoval } from "./provider-workspace-block.js";
+import { applySkillsTomlMigration } from "./skills-toml-migrate.js";
 
 /** Un `ParsedArgs` explícito: sin comando, sin positional y con los flags que la operación pide. */
 function argsOf(values: Record<string, string>, flags: string[] = []): ParsedArgs {
@@ -140,6 +142,29 @@ export async function runDoctorRepair(
           },
         ),
       );
+    case "workspace.remove-retired-section": {
+      const path = action.locator;
+      if (
+        path === null ||
+        !["CLAUDE.md", "AGENTS.md"].some((file) => path === `${ctx.paths.workspaceDir()}/${file}`)
+      )
+        return { status: "failed", detail: "archivo de proyecto fuera del workspace" };
+      const removed = await applyRetiredSectionRemoval(ctx.fs, path, ctx.paths.blockMarkers());
+      return {
+        status: removed ? "applied" : "failed",
+        detail: removed ? "secciones retiradas quitadas" : "sin secciones retiradas",
+      };
+    }
+    case "skills.migrate-template": {
+      const path = action.locator;
+      if (path === null || ![ctx.paths.cwdSkillsToml(), ctx.paths.userSkillsToml()].includes(path))
+        return { status: "failed", detail: "skills.toml fuera de la cascada" };
+      const migrated = await applySkillsTomlMigration(ctx.fs, path);
+      return {
+        status: migrated ? "applied" : "failed",
+        detail: migrated ? "plantilla migrada" : "sin cambios de plantilla",
+      };
+    }
     default:
       // Una operación que el catálogo declara y este adaptador no sabe correr es
       // un fallo declarado, no un `applied` optimista: el recurso queda como

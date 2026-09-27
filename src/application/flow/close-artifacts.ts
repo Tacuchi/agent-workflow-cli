@@ -16,7 +16,8 @@ export async function preserveBoundaryClose(
   paths: PathsService,
   git: GitPort,
   state: FlowRunState,
-  units: Awaited<ReturnType<IsolationReader>>,
+  units: Extract<Awaited<ReturnType<IsolationReader>>, unknown[]>,
+  unreadable: Array<{ alias: string; error: string; code?: string }> = [],
 ): Promise<string[]> {
   const boundary = state.reentries?.at(-1)?.transition ?? "chassis.finalize";
   const pending = [`Frontera pendiente: ${boundary}.`];
@@ -37,15 +38,15 @@ export async function preserveBoundaryClose(
           : "sin integrar; no se pudo determinar si hay cambios sin commitear";
     pending.push(`${prefix}${unit.alias}: ${status} en ${unit.path} (${unit.branch}).`);
   }
+  for (const source of unreadable.filter((item) => item.code === "SOURCE_PATH_MISSING")) {
+    pending.push(`${prefix}${source.alias}: unidad no verificable; ${source.error}.`);
+  }
+  const unavailable = unreadable
+    .filter((item) => item.code === "SOURCE_PATH_MISSING")
+    .map((item) => item.alias);
   pending.push(
     ...(
-      await uncommittedSources(
-        fs,
-        paths,
-        git,
-        state,
-        own.map((u) => u.alias),
-      )
+      await uncommittedSources(fs, paths, git, state, [...own.map((u) => u.alias), ...unavailable])
     ).map((item) => `${prefix}${item}`),
   );
   if (state.proposal !== null) {

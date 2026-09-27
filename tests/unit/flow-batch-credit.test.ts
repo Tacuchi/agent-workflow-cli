@@ -378,6 +378,7 @@ describe("batch-close se niega sin acreditación", () => {
 
   async function standAtClose(batch: Partial<PlanExecBatch>): Promise<FlowRunState> {
     const { inferPlanExecBatch } = await import("../../src/application/plan-exec-batch-service.js");
+    const { journeyOfFlow } = await import("../../src/domain/flow/authority.js");
     const { newRunState, sealRunState, serializeRunState, FLOW_RUN_STATE_FILE } = await import(
       "../../src/domain/flow/run-state.js"
     );
@@ -389,8 +390,24 @@ describe("batch-close se niega sin acreditación", () => {
     });
     if (!inferred.ok) throw new Error(inferred.failure.message);
     const { digest: _seal, ...fresh } = newRunState("plan-exec", RUN.folder);
+    const ids = journeyOfFlow("plan-exec").map((row) => row.id);
+    const older =
+      batch.base === undefined
+        ? {
+            version: 13,
+            journey_base: ids.filter((id) => !id.startsWith("plan-exec.batch-commit")),
+            applied: ids.slice(0, ids.indexOf("plan-exec.batch-close")),
+            skipped: [
+              "plan-exec.batch-commit-proposal",
+              "plan-exec.batch-commit-authorization",
+              "plan-exec.batch-commit",
+            ],
+            boundary: "plan-exec.batch-close",
+          }
+        : {};
     const state = sealRunState({
       ...fresh,
+      ...older,
       scope: { plan: PLAN, sources: ["workspace"] },
       batches: [{ ...inferred.batch, stage: "reviewing", ...batch }],
     });

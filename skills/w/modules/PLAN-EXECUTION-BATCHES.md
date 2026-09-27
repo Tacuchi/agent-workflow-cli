@@ -57,9 +57,9 @@ action go to `CHECKPOINT`.
 
 ## Git authorization
 
-A green batch produces exactly one proposed commit per affected source. Approving is not committing,
-and a check that never ran is not a green batch. For the last pending batch the same approval also
-covers marking the fully validated plan `done`, so that final write rides in the source's single
-commit instead of asking a second time.
+A green batch proposes one message and exact paths per changed source. After its approval the CLI
+commits only those paths and verifies git before the next batch; approval alone is not a commit.
+No paths means no commit. `done` is sealed after git/integration in the workspace plan, not in a
+source commit; a later workspace-close commit may carry it. An unrun check is never green.
 
 > **What proves the batch was green is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — positionally, behind the delegated validation and the review, neither of which a narration can pass.

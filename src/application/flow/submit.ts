@@ -105,6 +105,7 @@ import {
   withPlanExecBatchCredit,
   withPlanExecBatchReview,
   withPlanExecBatchStageForTransition,
+  withPlanExecBatchUpdate,
   withPlanExecEntry,
   withProposal,
   withQuickCheckouts,
@@ -1004,6 +1005,17 @@ async function decide(
     }
     return reject(state, resolved, scoped.failure.message, scoped.failure, cost);
   }
+  const batchProposal = await commitProposalFrom(
+    scoped.state,
+    resolved.stopped,
+    parsed.answer,
+    input.git,
+    fs,
+    paths,
+  );
+  if ("failure" in batchProposal) {
+    return reject(state, resolved, batchProposal.failure.message, batchProposal.failure, cost);
+  }
   // The closure-evidence gate runs over the proposed bytes BEFORE the seal: a
   // plan whose validation names no observable check of the checkout is refused
   // while it is being written, not when somebody tries to execute it.
@@ -1012,7 +1024,7 @@ async function decide(
     return reject(state, resolved, evidence.failure.message, evidence.failure, cost);
   }
   const sealed = sealFrom(
-    scoped.state,
+    batchProposal.state,
     resolved.stopped,
     parsed.answer,
     snapshot.destinations,
@@ -1034,7 +1046,25 @@ async function decide(
   const settlement = recordSettlement(preparedForGate.state, parsed.answer, resolved, cost);
   if (!settlement.ok) return settlement.decision;
   const granted = resolved.kind === "authorization" ? (resolved.authorization?.planned ?? []) : [];
-  const approved = grantOf(settlement.state, resolved, parsed.answer, granted, journey);
+  let approved = grantOf(settlement.state, resolved, parsed.answer, granted, journey);
+  if (
+    resolved.stopped.id === "plan-exec.batch-commit-authorization" &&
+    parsed.answer.choice === "Aprobar los commits del lote"
+  ) {
+    const batch = (approved.batches ?? []).find(
+      (entry) => entry.iteration === approved.batch_loop?.iteration,
+    );
+    if (batch?.commit_proposal !== undefined) {
+      const proposal = batch.commit_proposal;
+      approved = withPlanExecBatchUpdate(approved, batch.id, (entry) => ({
+        ...entry,
+        commit_proposal: {
+          ...proposal,
+          approved_digest: proposal.digest,
+        },
+      }));
+    }
+  }
   // All pure scope/proposal checks have now passed. A durable decision is a
   // material write, so it must never land when a later validation of the same
   // answer would refuse the boundary and leave its cursor standing.
@@ -1120,6 +1150,93 @@ function checked(state: FlowRunState, resolved: ResolvedBoundary): SubmitDecisio
   const built = directiveFor(state, resolved, []);
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state, value: { directive: built.directive, advanced: false } };
+}
+
+async function commitProposalFrom(
+  state: FlowRunState,
+  stopped: FlowDecision,
+  answer: FlowAnswer,
+  git: GitPort | undefined,
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<{ state: FlowRunState } | { failure: CapabilityFailure }> {
+  if (stopped.id !== "plan-exec.batch-commit-proposal") return { state };
+  const batch = (state.batches ?? []).find(
+    (entry) => entry.iteration === state.batch_loop?.iteration,
+  );
+  if (batch === undefined || batch.snapshot === undefined || git === undefined) {
+    return {
+      failure: {
+        code: "PLAN_EXEC_BATCH_COMMIT_UNOBSERVABLE",
+        message: "falta la instantánea git o el lector de las fuentes",
+        action: "volvé a adquirir la unidad del lote",
+      },
+    };
+  }
+  const messages = answer.decisions.messages;
+  const given =
+    typeof messages === "object" && messages !== null && !Array.isArray(messages)
+      ? (messages as Record<string, unknown>)
+      : {};
+  const candidates = await resolveCheckoutCandidates(fs, paths, state.session);
+  const sources: {
+    alias: string;
+    paths: string[];
+    dirty: { path: string; digest: string }[];
+    message: string;
+  }[] = [];
+  for (const [alias, base] of Object.entries(batch.snapshot).sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    const root = candidates.find((candidate) => candidate.source === alias)?.root;
+    if (root === undefined)
+      return {
+        failure: {
+          code: "PLAN_EXEC_BATCH_COMMIT_UNOBSERVABLE",
+          message: `no se puede ubicar la unidad ${alias}`,
+          action: "restaurá la unidad de esta sesión",
+        },
+      };
+    const dirty = await git.dirtyPaths(root);
+    const paths = dirty
+      .filter(
+        (entry) =>
+          !base.dirty.some(
+            (previous) => previous.path === entry.path && previous.digest === entry.digest,
+          ),
+      )
+      .map((entry) => entry.path);
+    if (paths.length === 0) continue;
+    const message = given[alias];
+    if (
+      typeof message !== "string" ||
+      message.trim() !== message ||
+      message.length === 0 ||
+      /[\r\n]/.test(message) ||
+      /\b(?:Co-authored-by|Signed-off-by|Reviewed-by):/i.test(message)
+    ) {
+      return {
+        failure: {
+          code: "PLAN_EXEC_BATCH_COMMIT_MESSAGE_INVALID",
+          message: `${alias}: el mensaje debe ser una sola línea sin trailers`,
+          action: "devolvé decisions.messages por alias con un mensaje de una línea",
+        },
+      };
+    }
+    sources.push({
+      alias,
+      paths: paths.sort(),
+      dirty: dirty.filter((entry) => paths.includes(entry.path)),
+      message,
+    });
+  }
+  const digest = semanticDigest({ batch: batch.id, snapshot: batch.snapshot, sources });
+  return {
+    state: withPlanExecBatchUpdate(state, batch.id, (item) => ({
+      ...item,
+      commit_proposal: { sources, digest },
+    })),
+  };
 }
 
 /**
@@ -2681,7 +2798,11 @@ function holdAfterApproval(
   journey: readonly FlowDecision[],
   identity: FlowRunAttempt,
 ): SubmitDecision {
-  const held = advanceFlowRun({ state: withAttempt(approved, identity), journey, applied: [] });
+  const held = advanceFlowRun({
+    state: withAttempt(approved, { ...identity, approval: true }),
+    journey,
+    applied: [],
+  });
   if (!held.ok) return { ok: false, failure: held.failure };
   return { ok: true, state: held.state, value: { directive: held.directive, advanced: true } };
 }

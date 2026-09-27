@@ -7,6 +7,8 @@ import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { prepareFixGit } from "../../src/application/fix-git-service.js";
+import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
+import { readWorkspaceBlock } from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import {
@@ -18,6 +20,7 @@ import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { FLOW_DECISIONS, internalActionOf } from "../../src/domain/flow/authority.js";
+import { serializeRunState, withPlanExecBatchUpdate } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { planExecWalk } from "../helpers/plan-exec-walk.js";
@@ -276,6 +279,17 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     commitIn(uno, COMPARTIDO, "export const version = 1;\n", "alpha");
     commitIn(dos, COMPARTIDO, "export const version = 2;\n", "beta");
 
+    // This integration regression represents an in-flight pre-per-batch-commit
+    // run: Git was already committed by its old tail, before the new snapshot
+    // contract existed. The new path has its own real-git commit tests.
+    const old = await readRun(deps.fs, locateRun(deps.paths, DOS.folder));
+    if (!old.ok) throw new Error(old.failure.message);
+    const historical = withPlanExecBatchUpdate(old.state, "batch-1", (batch) => ({
+      ...batch,
+      snapshot: undefined,
+    }));
+    writeFileSync(locateRun(deps.paths, DOS.folder).statePath, serializeRunState(historical));
+
     await walk.walkTo(DOS, "plan-exec.unit-integration");
     // La frontera existe y es de autorización: integrar escribe en la rama que
     // todos leen, así que no la cubre el grant de los commits.
@@ -342,6 +356,122 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     );
     expect(cerrado.ok).toBe(true);
     expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(true);
+  });
+
+  it("finalize conserva el gate de la fuente presente y cierra avisando la no verificable", async () => {
+    const portable = block(source).replace(
+      `| ${ALIAS} | ${source} | main |`,
+      `| ${ALIAS} | ../${ALIAS} | main |\n| remoto | (local) | main |`,
+    );
+    writeFileSync(join(workspace, "CLAUDE.md"), portable);
+    writeFileSync(
+      deps.paths.cwdLocalConfigFile(),
+      JSON.stringify({ version: 1, sources: { acme: source } }),
+    );
+    const own = await unitOf(DOS);
+    commitIn(own, PROPIO_DOS, "export const dos = 2;\n", "beta");
+
+    const held = await walk.executor()(
+      { kind: "internal", operation: "session.close" },
+      { session: DOS.folder, code: DOS.code, scope: null, proposal: null },
+    );
+    expect(held.ok).toBe(false);
+    expect(held.summary).toContain("sin integrar");
+    expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(false);
+
+    const integrated = await integrate(DOS);
+    expect(integrated.integrated).toEqual([ALIAS]);
+    expect(integrated.unreadable).toEqual([
+      expect.objectContaining({ alias: "remoto", code: "SOURCE_PATH_MISSING" }),
+    ]);
+    const closed = await walk.executor()(
+      { kind: "internal", operation: "session.close" },
+      { session: DOS.folder, code: DOS.code, scope: null, proposal: null },
+    );
+    expect(closed.ok).toBe(true);
+    expect(closed.summary).toContain("remoto");
+    expect(closed.summary).toContain("no verificable");
+    expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(true);
+    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf8")).toBe(portable);
+  });
+
+  it("finalize un hub portable con fuentes relativa y (local) resueltas en este host sin reescribir la tabla", async () => {
+    const second = join(root, "remoto");
+    mkdirSync(second);
+    git(second, "init", "--initial-branch=main");
+    git(second, "config", "user.email", "t@example.com");
+    git(second, "config", "user.name", "T");
+    writeFileSync(join(second, "README.md"), "fuente local en este host\n");
+    git(second, "add", "-A");
+    git(second, "commit", "-m", "inicial");
+
+    const portable = block(source)
+      .replace(
+        `| ${ALIAS} | ${source} | main |`,
+        `| ${ALIAS} | ../ruta-del-otro-host | main |\n| remoto | (local) | main |`,
+      )
+      .replace(`  - ${ALIAS}: main`, `  - ${ALIAS}: main\n  - remoto: main`);
+    writeFileSync(join(workspace, "CLAUDE.md"), portable);
+    writeFileSync(
+      deps.paths.cwdLocalConfigFile(),
+      JSON.stringify({ version: 1, sources: { acme: source, remoto: second } }),
+    );
+    const parsed = await readWorkspaceBlock(deps.fs, workspace, deps.paths.blockMarkers());
+    expect(parsed?.fuentes.map((item) => [item.alias, item.declared_path, item.path])).toEqual([
+      [ALIAS, "../ruta-del-otro-host", source],
+      ["remoto", "(local)", second],
+    ]);
+
+    const own = await unitOf(DOS);
+    const other = await runWorktree(deps, {
+      action: "ensure",
+      alias: "remoto",
+      sessionCode: DOS.code,
+    });
+    if ("error" in other) throw new Error(other.message);
+    commitIn(own, PROPIO_DOS, "export const dos = 2;\n", "beta acme");
+    writeFileSync(join(other.path, "remoto.txt"), "beta remoto\n");
+    git(other.path, "config", "user.email", "t@example.com");
+    git(other.path, "config", "user.name", "T");
+    git(other.path, "add", "-A");
+    git(other.path, "commit", "-m", "beta remoto");
+
+    const held = await walk.executor()(
+      { kind: "internal", operation: "session.close" },
+      { session: DOS.folder, code: DOS.code, scope: null, proposal: null },
+    );
+    expect(held.ok).toBe(false);
+    expect(held.summary).toContain("sin integrar");
+    const integrated = await integrate(DOS);
+    expect(integrated.integrated).toEqual([ALIAS, "remoto"]);
+    expect(integrated.unreadable).toBeUndefined();
+    const closed = await walk.executor()(
+      { kind: "internal", operation: "session.close" },
+      { session: DOS.folder, code: DOS.code, scope: null, proposal: null },
+    );
+    expect(closed.ok).toBe(true);
+    expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(true);
+    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf8")).toBe(portable);
+    expect(
+      (await readWorkspaceBlock(deps.fs, workspace, deps.paths.blockMarkers()))?.fuentes,
+    ).toEqual(parsed?.fuentes);
+  });
+
+  it("finalize diferencia un inventario git ilegible de una fuente sin ruta", async () => {
+    const result = await runSessionClose(
+      deps.fs,
+      deps.paths,
+      { code: DOS.code, requireIntegrated: true },
+      async () => ({
+        units: [],
+        unreadable: [
+          { alias: "acme", code: "UNIT_LIST_FAILED", error: "git worktree list no respondió" },
+        ],
+      }),
+    );
+    if (!("sessionHeld" in result)) throw new Error("un inventario ilegible no debe cerrar");
+    expect(result.sessionHeld.reason).toContain("inventario ilegible");
+    expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(false);
   });
 
   it("un inventario de unidades ilegible NO cuenta como sesión sin unidades", async () => {

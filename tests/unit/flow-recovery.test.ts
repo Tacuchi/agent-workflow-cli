@@ -199,6 +199,8 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       PLAN_VALIDATION_ONLY_NOT_APPROVED: "evaluated",
       PLAN_EXEC_PROOF_REUSED: "evaluated",
       PLAN_EXEC_BATCH_REVIEW_INVALID: "evaluated",
+      PLAN_EXEC_BATCH_COMMIT_UNOBSERVABLE: "envelope",
+      PLAN_EXEC_BATCH_COMMIT_MESSAGE_INVALID: "evaluated",
       PLAN_TEST_RUN_NOT_EXECUTED: "evaluated",
       PLAN_FINAL_PIPELINE_MISSING: "evaluated",
       PLAN_PREEXISTING_FAILURES_INVALID: "evaluated",

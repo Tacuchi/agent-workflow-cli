@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { lstat, readFile, readlink } from "node:fs/promises";
 import { resolve } from "node:path";
+import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type {
   AheadBehind,
   CommitReceipt,
   ConflictStage,
   ConflictStages,
+  DirtyPath,
   GitAttempt,
   GitOperationState,
   GitPort,
@@ -667,6 +669,88 @@ export class GitCliAdapter implements GitPort {
       before,
       after,
       parents: await this.parentsOf(repoPath, after),
+    };
+  }
+
+  async commitPaths(repoPath: string, message: string, paths: string[]): Promise<CommitReceipt> {
+    if (
+      paths.length === 0 ||
+      paths.some(
+        (path) =>
+          path.length === 0 ||
+          path.startsWith("-") ||
+          path.includes("\0") ||
+          !checkSafeRelativePath(path).ok,
+      )
+    ) {
+      throw new Error("git commitPaths exige rutas relativas explícitas no vacías");
+    }
+    const before = await this.headSha(repoPath);
+    await this.mustRun("add -- paths", ["add", "--", ...paths], repoPath);
+    await this.mustRun(
+      "commit --only -- paths",
+      ["commit", "--only", "-m", message, "--", ...paths],
+      repoPath,
+    );
+    const after = await this.headSha(repoPath);
+    if (after === null || after === before)
+      throw new Error(`git commitPaths no movió HEAD en ${repoPath}`);
+    return {
+      branch: (await this.currentBranch(repoPath)) ?? null,
+      before,
+      after,
+      parents: await this.parentsOf(repoPath, after),
+    };
+  }
+
+  async dirtyPaths(repoPath: string): Promise<DirtyPath[]> {
+    const changes = await this.localChanges(repoPath);
+    const byPath = new Map<string, string>();
+    for (const change of changes) {
+      const files = [change.path, ...(change.from === null ? [] : [change.from])];
+      for (const path of files) {
+        const absolute = resolve(repoPath, path);
+        let bytes: Buffer | string = "deleted";
+        try {
+          const stats = await lstat(absolute);
+          bytes = stats.isSymbolicLink() ? await readlink(absolute) : await readFile(absolute);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
+        const digest = createHash("sha256")
+          .update(change.code)
+          .update("\0")
+          .update(change.head_mode ?? "")
+          .update("\0")
+          .update(change.worktree_mode ?? "")
+          .update("\0")
+          .update(bytes)
+          .digest("hex");
+        byPath.set(path, digest);
+      }
+    }
+    return [...byPath]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([path, digest]) => ({ path, digest }));
+  }
+
+  async commitInfo(
+    repoPath: string,
+    sha: string,
+  ): Promise<{ message: string; paths: string[]; parents: string[] }> {
+    const [message, changed, parents] = await Promise.all([
+      this.mustRun("show --format=%B", ["show", "-s", "--format=%B", sha], repoPath),
+      this.mustRun(
+        "diff-tree --name-only",
+        ["diff-tree", "--root", "--no-commit-id", "-r", "-z", "--name-only", sha],
+        repoPath,
+      ),
+      this.parentsOf(repoPath, sha),
+    ]);
+    return {
+      message: message.stdout.trimEnd(),
+      paths: changed.stdout.split("\0").filter(Boolean).sort(),
+      parents,
     };
   }
 

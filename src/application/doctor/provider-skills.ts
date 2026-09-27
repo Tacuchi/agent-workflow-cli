@@ -35,6 +35,7 @@ import {
  *   IS emitted per host, one coverage row each.
  */
 import { listSkills } from "../self/skills-manager.js";
+import { migrateSkillsToml } from "./skills-toml-migrate.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
 import { coverage } from "./types.js";
 
@@ -51,6 +52,28 @@ export const skillsProvider: DoctorProvider = {
     for (const skill of await listSkills(input.ctx, [])) {
       if (skill.status === "recommended") continue;
       findings.push(skillFinding(skill));
+    }
+    for (const path of [input.ctx.paths.userSkillsToml(), input.ctx.paths.cwdSkillsToml()]) {
+      if (!(await input.ctx.fs.exists(path))) continue;
+      const migration = migrateSkillsToml(await input.ctx.fs.readText(path));
+      if (!migration.changed) continue;
+      findings.push({
+        id: doctorFindingId(SCOPE_HOST, CATEGORY, `skills.toml:${path}`),
+        host: SCOPE_HOST,
+        category: CATEGORY,
+        resource: { kind: "skills.toml", name: path, locator: path },
+        state: "warning",
+        summary: `${path} conserva líneas de una plantilla de skills retirada`,
+        impact: "roles antiguos y [compaction] ya no tienen el significado del bundle vigente",
+        evidence: ["la migración por línea puede preservar bindings y comentarios propios"],
+        ownership: "ours",
+        remediation: {
+          kind: "manual",
+          action: null,
+          guidance: ["aw doctor prepare --select <id> y aw doctor apply --approval <digest>"],
+        },
+        proposal: { op: "skills.migrate-template", args: { path } },
+      });
     }
 
     // One readiness read per participating host. The capability-level verdict is

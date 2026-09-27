@@ -128,7 +128,7 @@ describe("efectos que pueden no ocurrir — la fila los condiciona", () => {
     // declara es un TECHO, y la operación informa los efectos que realmente
     // aplicó, que son ninguno cuando la cadena no ganó ningún sucesor. Esa es
     // exactamente la propiedad que este test protege.
-    expect(resto.length).toBe(18);
+    expect(resto.length).toBe(19);
     expect(resto.filter((row) => conditionOf(row) !== null).map((row) => row.id)).toEqual([]);
   });
 

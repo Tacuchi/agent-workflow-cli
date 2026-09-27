@@ -166,7 +166,9 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
             ? { plan: run.plan, sources: [...sources] }
             : stopped.answer_contract === "batch-review"
               ? { review: batchReview() }
-              : { paso: stopped.id },
+              : stopped.id === "plan-exec.batch-commit-proposal"
+                ? { messages: {} }
+                : { paso: stopped.id },
       };
     }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
@@ -188,6 +190,7 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
       ),
       approval,
       executor: executor(),
+      ...(resolved.stopped?.id === "plan-exec.batch-commit-proposal" ? { git: deps.git } : {}),
     });
     if (!result.ok)
       throw new Error(`un rechazo de negocio viaja ok:true: ${JSON.stringify(result)}`);
@@ -208,7 +211,7 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
       git: deps.git,
     });
     let last: Awaited<ReturnType<typeof step>> | null = null;
-    for (let attempt = 0; attempt < 40; attempt += 1) {
+    for (let attempt = 0; attempt < 160; attempt += 1) {
       const { state, resolved } = await current(run.folder);
       if (resolved.stopped === null || resolved.stopped.id === id) return;
       // The driver runs an internal row after every answer, so standing on one

@@ -1,4 +1,4 @@
-import { basename, isAbsolute, join, relative, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { withCwdLock } from "./lock-service.js";
@@ -16,8 +16,8 @@ import {
   readWorkspaceBlock,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
-import { relpath } from "./paths.js";
 import { type RenderProjectBlockInput, renderProjectBlock } from "./render/project-block.js";
+import { publishArtifacts } from "./semantic-operation/publish.js";
 import { detectStackDict } from "./stack-detect.js";
 import {
   absoluteOnAnyHost,
@@ -130,7 +130,7 @@ export async function previewProjectMdUpsert(
   const results: UpsertFileResult[] = [];
   for (const file of blockFiles(cwd)) {
     const write = await planBlockWrite(fs, file, plan.block, markers);
-    results.push({ ...fileInfo(file, cwd), action: write.action });
+    results.push({ ...fileInfo(file), action: write.action });
   }
   // A preview whose per-file verdict is hidden behind --detail is not a preview.
   return composePayload({ ...input, verbose: true }, { results, hasError: false }, plan);
@@ -140,8 +140,8 @@ function blockFiles(cwd: string): string[] {
   return BLOCK_MIRROR_FILES.map((name) => join(cwd, name));
 }
 
-function fileInfo(file: string, cwd: string): { file: string; path: string } {
-  return { file: basename(file), path: relpath(file, cwd) };
+function fileInfo(file: string): { file: string; path: string } {
+  return { file: basename(file), path: file };
 }
 
 interface UpsertPlan {
@@ -187,7 +187,11 @@ async function buildUpsertPlan(
     render.pipeline ??= {};
     render.pipeline[alias] = { ...declaration, ...render.pipeline[alias] };
   }
-  if (input.lastActivity !== undefined) render.lastActivity = input.lastActivity;
+  const namespace =
+    /^<!-- ([A-Z][A-Z0-9_-]*)-PROJECT-START -->$/.exec(markers.start)?.[1]?.toLowerCase() ??
+    "workflow";
+  const history = `.${namespace}/HISTORY.md`;
+  if (await fs.exists(join(cwd, history))) render.historicoPath = history;
 
   const dropped = [
     ...mirrored.dropped,
@@ -355,10 +359,7 @@ async function buildRenderInput(
   const proyecto = resolveProyectoText(input.proyecto, existing?.proyecto);
   const remove = new Set(input.removeAliases ?? []);
   const fuentes = mergeFuentes(existing?.fuentes ?? [], input).filter((f) => !remove.has(f.alias));
-  const stack =
-    existing?.stack && Object.keys(existing.stack).length > 0
-      ? existing.stack
-      : await detectStackFromSources(fs, input.fuentes ?? [], cwd);
+  const stack = await detectStackFromSources(fs, fuentes, cwd, existing?.stack ?? {});
   const defaultBranches: DefaultBranches = {
     ...(existing?.default_branches ?? {}),
     ...(input.defaultBranches ?? {}),
@@ -405,20 +406,43 @@ function resolveProyectoText(next: string | undefined, existing: string | undefi
  * Detect the stack from the SOURCE paths, not the workspace folder. In the hub
  * model the workspace dir is just scaffolding (empty), while the real code lives
  * in the (often external) source repos — scanning `cwd` would always miss it.
- * Scans each declared source and returns the first non-empty detection; falls
- * back to the workspace folder when there are no sources / none are detectable.
+ * Scans every declared source in table order; missing sources retain previous
+ * values so rendering this hub on another machine cannot erase its stack.
  */
 async function detectStackFromSources(
   fs: FileSystemPort,
-  fuentes: ProjectMdUpsertFuente[],
-  cwdFallback: string,
+  fuentes: ProjectFuente[],
+  workspace: string,
+  previous: ProjectStack,
 ): Promise<ProjectStack> {
+  const stack: ProjectStack = { ...(previous.db !== undefined ? { db: previous.db } : {}) };
+  let missing = false;
   for (const f of fuentes) {
-    if (!f.path) continue;
-    const detected = await detectStackDict(fs, f.path);
-    if (Object.keys(detected).length > 0) return detected;
+    const path =
+      f.path === null || (absoluteOnAnyHost(f.path) && !isAbsolute(f.path))
+        ? null
+        : resolve(workspace, f.path);
+    if (path === null || !(await fs.exists(path))) {
+      missing = true;
+      continue;
+    }
+    const detected = await detectStackDict(fs, path);
+    for (const key of ["language", "framework", "build"] as const) {
+      const value = detected[key];
+      if (value === undefined) continue;
+      const values = stack[key]?.split(", ") ?? [];
+      if (!values.includes(value)) stack[key] = [...values, value].join(", ");
+    }
   }
-  return detectStackDict(fs, cwdFallback);
+  if (missing) {
+    for (const key of ["language", "framework", "build"] as const) {
+      for (const value of previous[key]?.split(", ") ?? []) {
+        const values = stack[key]?.split(", ") ?? [];
+        if (!values.includes(value)) stack[key] = [...values, value].join(", ");
+      }
+    }
+  }
+  return stack;
 }
 
 /**
@@ -460,22 +484,42 @@ async function writeAllFiles(
   block: string,
   markers: ProjectBlockMarkers,
 ): Promise<WriteSummary> {
-  const results: UpsertFileResult[] = [];
-  let hasError = false;
-  for (const f of blockFiles(cwd)) {
-    const baseInfo = fileInfo(f, cwd);
-    try {
-      const action = await upsertProjectBlockInFile(fs, f, block, markers);
-      results.push({ ...baseInfo, action });
-    } catch (err) {
-      hasError = true;
-      results.push({
-        ...baseInfo,
-        error: err instanceof Error ? err.message : String(err),
-      });
+  const plans = await Promise.all(
+    blockFiles(cwd).map(async (file) => ({
+      absolute: file,
+      ...fileInfo(file),
+      ...(await planBlockWrite(fs, file, block, markers)),
+    })),
+  );
+  const changes = plans.filter((plan) => plan.text !== undefined);
+  if (changes.length > 0) {
+    const published = await publishArtifacts(
+      fs,
+      cwd,
+      changes.map((plan) => ({
+        path: relative(cwd, plan.absolute),
+        content: plan.text ?? "",
+        overwrite: true,
+      })),
+    );
+    if (!published.ok) {
+      return {
+        hasError: true,
+        results: plans.map((plan) =>
+          plan.text === undefined
+            ? { ...fileInfo(plan.absolute), action: plan.action }
+            : {
+                ...fileInfo(plan.absolute),
+                error: `${published.failure.message}; publicación revertida`,
+              },
+        ),
+      };
     }
   }
-  return { results, hasError };
+  return {
+    hasError: false,
+    results: plans.map((plan) => ({ ...fileInfo(plan.absolute), action: plan.action })),
+  };
 }
 
 function composePayload(
@@ -519,17 +563,6 @@ async function planBlockWrite(
   }
   const replaced = replacedText(current, block, markers);
   return replaced === current ? { action: "unchanged" } : { action: "updated", text: replaced };
-}
-
-async function upsertProjectBlockInFile(
-  fs: FileSystemPort,
-  filePath: string,
-  block: string,
-  markers: ProjectBlockMarkers,
-): Promise<UpsertAction> {
-  const plan = await planBlockWrite(fs, filePath, block, markers);
-  if (plan.text !== undefined) await fs.writeText(filePath, plan.text);
-  return plan.action;
 }
 
 function replacedText(text: string, block: string, markers: ProjectBlockMarkers): string {
