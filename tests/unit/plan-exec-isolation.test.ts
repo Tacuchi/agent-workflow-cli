@@ -224,8 +224,13 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     // que hace distinguibles a dos corridas que por lo demás son idénticas.
     const uno = await walk.current(UNO.folder);
     const dos = await walk.current(DOS.folder);
-    expect(uno.state.scope).toEqual({ plan: UNO.plan, sources: [ALIAS] });
-    expect(dos.state.scope).toEqual({ plan: DOS.plan, sources: [ALIAS] });
+    expect(uno.state.scope).toMatchObject({ plan: UNO.plan, sources: [ALIAS] });
+    expect(dos.state.scope).toMatchObject({ plan: DOS.plan, sources: [ALIAS] });
+    expect(uno.state.scope?.final_validation?.[0]).toMatchObject({
+      alias: ALIAS,
+      build: { command: null, origin: null },
+      test: { command: null, origin: null },
+    });
     expect(uno.state.applied).toContain("plan-exec.unit-acquisition");
     // La adquisición va ANTES de la primera escritura: la corrida está parada en
     // `implementation` y la unidad ya existe.
