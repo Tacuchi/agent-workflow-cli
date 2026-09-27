@@ -9,7 +9,7 @@
   },
   "files": ["dist", "skills", "LICENSE", "README.md", "CHANGELOG.md"],
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc",
+    "build": "node scripts/clean-dist.mjs && tsc && node scripts/write-dist-manifest.mjs",
     "build:watch": "node scripts/clean-dist.mjs && tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",

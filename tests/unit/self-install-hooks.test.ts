@@ -290,11 +290,11 @@ describe("selfInstallHooks", () => {
       hooks: Record<string, unknown>;
     };
     // Byte a byte lo que la plantilla declara, incluidos los 3 grupos de
-    // PreToolUse y el hook `type: "prompt"` de PostCompact que kimi NO expresa.
+    // PreToolUse y sólo el command de PostCompact.
     expect(written.hooks).toEqual(template.hooks);
     expect((written.hooks.PreToolUse as unknown[]).length).toBe(3);
     const postCompact = written.hooks.PostCompact as { hooks: { type: string }[] }[];
-    expect(postCompact[0]?.hooks.map((h) => h.type)).toContain("prompt");
+    expect(postCompact[0]?.hooks.map((h) => h.type)).toEqual(["command"]);
   });
 
   it("template missing 'hooks' key → TEMPLATE_INVALID_SCHEMA", async () => {

@@ -22,6 +22,9 @@ const sessionsDir = "/cwd/.workflow/sessions";
 const env = new FakeEnv("/home/u", "/cwd");
 
 class FakeGit implements GitPort {
+  async upstreamBranch(): Promise<string | null> {
+    return null;
+  }
   async isGitRepo() {
     return true;
   }
@@ -162,6 +165,8 @@ describe("PreCompact → PostCompact keep one folder (same session_id)", () => {
     expect(post.primary_session).toBe("044-nueva-plan-exec");
     expect(post.primary_session_code).toBe("044");
     expect(post.continuity).toBe("ok");
+    expect(post.instruction).toContain("044-nueva-plan-exec");
+    expect(post.instruction).toContain("CHECKPOINT.md");
     // The other active session is listed, never mixed in as the target.
     expect(post.active_sessions).toEqual(["020-vieja-quick", "044-nueva-plan-exec"]);
   });
@@ -258,6 +263,8 @@ describe("an unresolved session degrades with a refuge, never a held compaction"
       "044-nueva-plan-exec",
     ]);
     expect(summary.action).toContain("--code");
+    expect(summary.instruction).toContain("NO reanudes ninguna sesión");
+    expect(summary.instruction).toContain("--code <NNN>");
     expect(fs.writes.size).toBe(0);
   });
 
@@ -271,11 +278,14 @@ describe("an unresolved session degrades with a refuge, never a held compaction"
     const mine = await runResumeSummary(fs, paths, { contextId: "conv-a" });
     expect(mine.continuity).toBe("degraded");
     expect(mine.refuge?.path).toBe(pre.refuge_path);
+    expect(mine.instruction).toContain(pre.refuge_path as string);
+    expect(mine.instruction).toContain("aw checkpoint-write --code <NNN>");
     expect(mine.refuge?.date).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
 
     const other = await runResumeSummary(fs, paths, { contextId: "conv-b" });
     expect(other.continuity).toBe("degraded");
     expect(other.refuge).toBeNull();
+    expect(other.instruction).not.toContain("CHECKPOINT de refugio");
   });
 
   // La asimetría que dejaba mudo al único canal que el modelo lee: la MISMA
@@ -755,10 +765,22 @@ describe("la plantilla de hooks ya no puede pedir una pausa", () => {
     expect(JSON.stringify(hooks)).not.toContain("--can-pause");
   });
 
-  it("el prompt de PostCompact enseña a mostrar y adoptar el refugio", async () => {
+  it("PostCompact instala sólo un command y su salida contiene la instrucción, incluso sin sesiones", async () => {
     const hooks = await template();
-    const prompt = hooks.PostCompact?.[0]?.hooks.find((h) => h.type === "prompt")?.prompt ?? "";
-    expect(prompt).toContain("`refuge`");
-    expect(prompt).toContain("aw checkpoint-write --code");
+    expect(hooks.PostCompact?.[0]?.hooks).toEqual([
+      {
+        type: "command",
+        command: "agent-workflow resume-summary",
+        statusMessage: "Recuperando estado tras compact...",
+        timeout: 10,
+      },
+    ]);
+    expect(
+      Object.values(hooks)
+        .flatMap((groups) => groups.flatMap((group) => group.hooks))
+        .every((hook) => hook.type !== "prompt"),
+    ).toBe(true);
+    const noSessions = await runResumeSummary(new MemFs({ lenient: true }), paths);
+    expect(noSessions.instruction).toContain("No hay sesiones activas; terminá");
   });
 });

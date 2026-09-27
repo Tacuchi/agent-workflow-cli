@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mcpHostReceiptFile } from "../../src/application/mcp-host-receipt-store.js";
+import { probePersistedMcpSetupEntries } from "../../src/application/mcp-launch-probe-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { type SelfMcpPrompts, selfMcpConfig } from "../../src/application/self/mcp-config.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
@@ -19,19 +20,21 @@ vi.mock("../../src/application/mcp-launch-probe-service.js", () => ({
   // The protocol probe itself is covered by its own unit tests. These tests
   // exercise user-scope descriptor persistence without spawning a child while
   // still asserting that the wizard projects its launch evidence.
-  probePersistedMcpSetupEntries: async (
-    _paths: unknown,
-    _setup: unknown,
-    targets: readonly Array<{ host: string; instance: string }>,
-  ) => ({
-    probes: targets.map((target) => ({
-      host: target.host,
-      instance: target.instance,
-      outcome: "passed" as const,
-      phase: "tools/list" as const,
-    })),
-    errors: [],
-  }),
+  probePersistedMcpSetupEntries: vi.fn(
+    async (
+      _paths: unknown,
+      _setup: unknown,
+      targets: readonly Array<{ host: string; instance: string }>,
+    ) => ({
+      probes: targets.map((target) => ({
+        host: target.host,
+        instance: target.instance,
+        outcome: "passed" as const,
+        phase: "tools/list" as const,
+      })),
+      errors: [],
+    }),
+  ),
 }));
 
 vi.mock("../../src/application/mcp-native-host-check-service.js", () => ({
@@ -252,6 +255,52 @@ describe("selfMcpConfig", () => {
     ]);
     expect(existsSync(mcpHostReceiptFile(ctx.paths))).toBe(true);
     expect(readFileSync(mcpHostReceiptFile(ctx.paths), "utf-8")).not.toContain("postgres://secret");
+    expect(result.data.installed).toBe(true);
+  });
+
+  it("un descriptor instalado con fallo de verificación conserva Installed y lo explica como nota", async () => {
+    const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await registerReporting(ctx);
+    vi.mocked(probePersistedMcpSetupEntries).mockResolvedValueOnce({
+      probes: [{ host: "claude", instance: "reporting", outcome: "failed", phase: "spawn" }],
+      errors: [
+        {
+          host: "claude",
+          instance: "reporting",
+          target: join(home, ".claude.json"),
+          message: "arranque no verificado",
+        },
+      ],
+    } as never);
+    const result = await selfMcpConfig(
+      buildArgs(["mcp", "install-claude"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.data?.installed).toBe(true);
+    expect(result.data?.summary).toContain("Verificación posterior pendiente");
+    expect(result.data?.summary).not.toContain("de escritura");
+    expect(readFileSync(join(home, ".claude.json"), "utf8")).toContain('"reporting"');
+  });
+
+  it("un conflicto ajeno rechaza la instalación y conserva su descriptor", async () => {
+    const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
+    await registerReporting(ctx);
+    const foreign = JSON.stringify({
+      mcpServers: { reporting: { command: "npx", args: ["their-mcp"], env: {} } },
+    });
+    writeFileSync(join(home, ".claude.json"), foreign);
+    const result = await selfMcpConfig(
+      buildArgs(["mcp", "install-claude"], { name: "reporting" }),
+      ctx,
+      prompts(),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.data?.installed).toBe(false);
+    expect(result.data?.summary).toContain("No se instaló");
+    expect(readFileSync(join(home, ".claude.json"), "utf8")).toBe(foreign);
   });
 
   it("evalúa la instalación contra el descriptor global del host y namespace actual", async () => {

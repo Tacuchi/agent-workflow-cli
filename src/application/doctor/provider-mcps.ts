@@ -16,6 +16,7 @@ import {
 } from "../../domain/doctor/model.js";
 import { type McpDriftReport, type McpHost, mcpEntryNameFor } from "../../domain/mcp-entry.js";
 import { WORKLINE_MCP_ENTRY_NAME, worklineMcpEntry } from "../../domain/workline-mcp-entry.js";
+import { isWorklineRoot } from "../../runtime/workline-marker.js";
 import { readMcpConnections } from "../mcp-connections-service.js";
 import { hasEmbeddedCredential, runMcpDoctor } from "../mcp-doctor-service.js";
 import { classifyMcpEntry } from "../mcp-entry-classification.js";
@@ -100,6 +101,9 @@ async function configuredEntries(
   const connections = readMcpConnections(input.ctx.paths, input.ctx.env);
   const ourNames = new Set(connections.map((connection) => mcpEntryNameFor(connection.name)));
   const mcpHosts = hosts.map((host) => host.mcp_host as McpHost);
+  const materialized =
+    input.ctx.directory?.materialized ??
+    (await isWorklineRoot(input.ctx.fs, input.workspaceDir, input.ctx.namespace.namespace));
   // Primero gana: los dos scopes emiten un hallazgo por el mismo nombre y
   // `workspace` se recorre antes, que es el orden que el cruce tenía.
   const remember = (finding: DoctorFinding, entryName: string): void => {
@@ -109,7 +113,9 @@ async function configuredEntries(
   };
 
   for (const scope of SCOPES) {
-    for (const report of driftReports(input, mcpHosts, connections, scope)) {
+    for (const report of scope === "workspace" && !materialized
+      ? []
+      : driftReports(input, mcpHosts, connections, scope)) {
       // `runMcpDoctor` reports by MCP host id (`claude`) and the report is
       // keyed by catalog id (`claude-code`). Emitting the engine's id here
       // split one host into two rows AND — worse — made `nativeFindings`
@@ -785,6 +791,14 @@ function coverageFor(
   // huérfano de un host desinstalado meses atrás volviera roja —exit 1, y con
   // ella el build de CI— una máquina impecable. Se distingue «no pude mirar
   // porque el host no está» de «no pude mirar y eso es un problema».
+  if (failed.failure === "absent" && host.workline_installed) {
+    return coverage(
+      CATEGORY,
+      host.host,
+      "skipped",
+      `${failed.reason}: Workline figura instalado pero falta el binario del host`,
+    );
+  }
   if (failed.failure === "absent" && host.status === "residual-config") {
     return coverage(
       CATEGORY,

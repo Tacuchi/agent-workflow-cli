@@ -105,6 +105,10 @@ export class RecordingGit implements GitPort {
     return this.branchOf(repo);
   }
 
+  async upstreamBranch(): Promise<string | null> {
+    return null;
+  }
+
   async scopedFingerprint(root: string, _excluded: readonly string[]): Promise<string> {
     return this.opts.scoped?.[root] ?? `scoped:${root}`;
   }

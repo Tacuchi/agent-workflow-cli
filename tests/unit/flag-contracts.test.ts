@@ -224,9 +224,9 @@ describe("flag contracts · the dispatcher refuses what no command reads", () =>
   });
 
   it("the refusal runs before the command, so nothing reads stdin for an ignored flag", () => {
-    // main.ts runs the CLI on import, so the order is read from its source: the
+    // full-cli.ts runs the CLI on import, so the order is read from its source: the
     // gate returns before `command.execute` is ever reached.
-    const main = readFileSync(join(SRC, "cli/main.ts"), "utf8");
+    const main = readFileSync(join(SRC, "cli/full-cli.ts"), "utf8");
     const body = main.slice(main.indexOf("async function executeCommand("));
     const gateAt = body.indexOf("gateFlags(command, parsed)");
     const refuseAt = body.indexOf('if (gate.kind === "refuse")');

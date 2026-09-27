@@ -277,8 +277,8 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
             id: "hooks",
             status: "native",
             // The coverage rides along even here: claude carries all five, kimi
-            // carries PostCompact with a handler missing, and "installed" alone
-            // would read as parity between the two.
+            // carries PostCompact and still loses the SessionStart matcher;
+            // "installed" alone would hide that difference.
             detail: `installed into ${hookMechanism(spec.hooks)} — ${hookCoverage(spec.hooks)}`,
           }
         : {

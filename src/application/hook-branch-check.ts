@@ -6,7 +6,7 @@ import { parseHookPayload } from "./hook-common.js";
 import type { PathsService } from "./paths-service.js";
 
 const TOOLS_OF_INTEREST = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const REFERENCE_DOC = "skills/session/references/branch-verification.md";
+const REFERENCE_DOC = "skills/w/roles/git/ROLE.md · Branch verification";
 
 export interface BranchCheckResult {
   exitCode: 0 | 2;
