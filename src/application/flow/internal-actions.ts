@@ -977,6 +977,13 @@ async function closeBatch(
     );
   }
   const phaseUpdates = phaseUpdatesForClosedBatch(text, batch);
+  if (batch.review === undefined && batch.published_plan_digest === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      `el batch ${batch.id} no tiene revisión registrada; completá review-findings con un revisor distinto y las correcciones revisadas`,
+      canonicalJson({ code: "PLAN_EXEC_BATCH_REVIEW_MISSING", batch: batch.id }),
+    );
+  }
   if (!phaseUpdates.ok) {
     return refusal(
       "plan-exec.batch-close",

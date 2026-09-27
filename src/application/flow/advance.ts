@@ -43,12 +43,14 @@ import {
   publishApprovalOf,
   routeControlOf,
 } from "../../domain/flow/authority.js";
+import { journeyForState } from "../../domain/flow/authority.js";
 import {
   type SealedSubject,
   type TransitionAuthorization,
   authorizeTransition,
   effectApprovalDigest,
 } from "../../domain/flow/authorization.js";
+import { BATCH_REVIEW_CONTRACT } from "../../domain/flow/batch-review.js";
 import {
   type DirectiveProposal,
   type FlowBoundary,
@@ -93,6 +95,7 @@ import {
   withEvent,
   withHandoff,
   withPendingAction,
+  withPendingBatchReview,
   withPlanExecBatchStageForTransition,
   withRouteDecisions,
 } from "../../domain/flow/run-state.js";
@@ -124,6 +127,10 @@ export type AdvanceResult =
 export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   const incoherent = checkAgainstJourney(input.state, input.journey);
   if (incoherent !== null) return { ok: false, failure: incoherent };
+  const reviewed = withPendingBatchReview(input.state);
+  if (reviewed !== input.state) {
+    return advanceFlowRun({ ...input, state: reviewed, journey: journeyForState(reviewed) });
+  }
 
   // The run repairs its OWN bookkeeping first, and only when the mismatch has
   // exactly one reading. No boundary is opened, no attempt is charged, no
@@ -309,7 +316,7 @@ const ROUTE_REFUSAL_OPERATION = "flow.route-refusal";
  */
 function withRefusedRoute(state: FlowRunState, decision: FlowDecision): FlowRunState {
   const control = routeControlOf(decision);
-  if (control === null || control.consequences.omit !== undefined) return state;
+  if (control?.consequences.omit !== undefined) return state;
   if (dispositionOf(state.route_decisions, decision.id)?.disposition !== "omit") return state;
   const applied = withRouteDecisions(
     state,
@@ -681,6 +688,7 @@ function nothingToSettle(state: FlowRunState, decision: FlowDecision): string | 
  * degradation but `aw flow recover`, and the block says so.
  */
 function exhaustionSkip(state: FlowRunState, decision: FlowDecision): string | null {
+  if (decision.answer_contract !== undefined) return null;
   if (!exhausted(state, decision) || awaitingCliRerun(state, decision)) return null;
   if (!owned(decision)) return null;
   // Degradation is what a GAP that cannot close deserves. When the exhaustion
@@ -1086,7 +1094,7 @@ export function boundaryRequest(decision: FlowDecision, state: FlowRunState): Se
   return buildSemanticRequest({
     operation: `flow.${decision.id}`,
     inputs: boundaryInputs(state, decision),
-    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${taxonomy}${authoring}${decisionDraft}${settlementDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
+    contract: `${decision.title}. Devolvé un único objeto JSON con el 'input_digest' de esta frontera.${isRouteEvaluation(decision) ? " En 'decisions.route' incluí summary { finding, diagnosis, solution } con una explicación breve para una persona que no conoce Workline; basis (intention, checkout, conventions, adopted_decisions); y controls: solo ids configurados como route_control, con disposition apply|omit|substitute, reason y, para substitute, substitution { validation, risk }. No incluyas gates duros: el CLI los rechaza." : ""} ${decision.answer_contract === "batch-review" ? BATCH_REVIEW_CONTRACT : ""} ${taxonomy}${authoring}${decisionDraft}${settlementDraft}${fixPreview} El CLI valida la respuesta antes de aplicar ninguna transición: una respuesta ausente, inválida, ambigua, fuera de alcance o vencida no cambia el estado ni produce efectos.`,
     inventory: { flow: state.flow, applied: state.applied, signals: vocabulary },
     allowedDestinations: proposes === null ? [] : [...proposes.destinations],
     limits:

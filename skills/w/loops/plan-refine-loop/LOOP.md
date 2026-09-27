@@ -29,7 +29,10 @@ This loop turns a plan into a sequence of **verifiable states of the system**. E
 
 > `plan-exec` can implement every phase **without inventing** contracts, observable states, structural order, simulation boundary or exit evidence.
 
-The phase contract is defined **once** in [`plan-new-loop`](../plan-new-loop/LOOP.md) § *Phase contract (canonical)* — this loop **applies** it and never redefines it: a `### Fn` block is a state the system reaches, with its `> Estado:` line, its work, its evidence and its exit condition.
+This loop **applies** it and never redefines it: [`plan-new-loop`](../plan-new-loop/LOOP.md)
+§ *Phase contract (canonical)*, including conditional
+`> Rojos previos:` JSON file/case lists when failures are observed. Preserve exact identities;
+never add an empty list or waive unidentified failures. A `### Fn` demonstrates a system state.
 
 The plan's execution-unit interface is likewise defined once in
 [`PLAN-EXECUTION-BATCHES`](../../modules/PLAN-EXECUTION-BATCHES.md). This loop re-infers and
@@ -37,7 +40,8 @@ writes its complete phase partition; it never asks the human to choose an optimi
 can establish.
 
 ## Auxiliary / NOT mandatory
-`plan-exec` runs **any** plan that is already executable, refined or not — there is **no** gate requiring plan-refine. This loop exists to incorporate changes (new requirements, scope adjustments, deps/risks spotted on re-read) **before** executing, and to give an unexecutable plan the shape its execution needs, without regenerating it from scratch.
+`plan-exec` runs **any executable plan**, refined or not. This optional loop incorporates changes
+before execution and repairs unexecutable structure in place.
 
 ## Started by
 `/w:plan-refine` — **resumable** (same chassis mechanism, keyed off CHECKPOINT) and **re-runnable on demand** (see *Compact / resume*). Second path: **the return from execution** — `plan-exec` derives here when its entry check finds a structural gap it cannot normalize, or when it stops mid-run on a structural deviation (§ *Replanning executed work*).
