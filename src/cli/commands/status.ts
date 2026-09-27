@@ -10,6 +10,7 @@ import type { CliContext } from "../types.js";
 
 export const statusCommand: CliCommand<StatusOutput> = {
   name: "status",
+  flags: { known: [] },
   describe:
     "Read-only workspace dashboard: specs, plans, sessions y descartados con fechas relativas en español. " +
     "Usage: aw status [--format human|json] [--detail].",

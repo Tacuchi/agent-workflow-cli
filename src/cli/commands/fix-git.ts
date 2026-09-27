@@ -29,6 +29,7 @@ type FixGitData =
 
 export const fixGitCommand: CliCommand<FixGitData> = {
   name: "fix-git",
+  flags: { known: ["path", "source", "message", "confirm"] },
   describe:
     "Resuelve conflictos de merge inequívocos: prepara las tres versiones, valida la resolución semántica y stagea solo archivos aún en conflicto. " +
     "El commit es una acción aparte y confirmada; nunca --no-verify, --amend ni push. " +

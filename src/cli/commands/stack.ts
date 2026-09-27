@@ -6,6 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const stackCommand: CliCommand = {
   name: "stack",
+  flags: { known: ["project-dir"] },
   describe:
     "Detect stack of the project (language/framework/db/build). " +
     "Usage: aw stack [--project-dir <dir>].",

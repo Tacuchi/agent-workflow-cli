@@ -6,6 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const mergeStateCommand: CliCommand = {
   name: "merge-state",
+  flags: { known: ["source", "all"] },
   describe:
     "Inspect in-progress merge state per repo, read-only (origin/destination + conflicted files). " +
     "Usage: aw merge-state [<repo-path>] [--source <alias>] [--all]. Works on any repo (no workspace needed). " +

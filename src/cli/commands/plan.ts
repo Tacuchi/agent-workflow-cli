@@ -18,6 +18,7 @@ const USAGE = "uso: plan lint <ruta del plan|correlativo>";
 
 export const planCommand: CliCommand<PlanLintReport> = {
   name: "plan",
+  flags: { known: [] },
   describe:
     "Actions over a plan document that need no run. `lint` returns every violation of the plan grammar " +
     "(sources, closing clauses, execution limit and lineage), each with its code, line, message, rule and the gate " +

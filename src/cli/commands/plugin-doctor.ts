@@ -9,6 +9,9 @@ import type { CliContext } from "../types.js";
 
 export const pluginDoctorCommand: CliCommand = {
   name: "plugin-doctor",
+  flags: {
+    known: ["plugin-root", "plugin-version", "plugin-name", "compat-range", "exports-file"],
+  },
   describe:
     "Health check del plugin (frontmatter, manifests, hooks, MCP, exports). " +
     "Usage: aw plugin-doctor [--plugin-root <path>] [--plugin-name <name>] " +

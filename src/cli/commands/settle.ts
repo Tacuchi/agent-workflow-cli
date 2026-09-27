@@ -76,6 +76,7 @@ function declarationsOf(args: ParsedArgs) {
 
 export const settleCommand: CliCommand<SettleOutput> = {
   name: "settle",
+  flags: { known: ["settle", "handoff", "pending", "approval"] },
   describe:
     "Settle or acknowledge the live obligations of a plan whose decision notes still block its closure, when no execution run is open on it. " +
     "Cross-cutting: it opens no flow and creates no session. `list` shows each obligation with its note, position, class, whether the class was declared and the plan's CURRENT resume point; " +

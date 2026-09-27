@@ -23,15 +23,11 @@ import {
 } from "../../application/workspace-migrate/preview.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { CliCommand } from "../registry.js";
+import type { CliCommand, CommandFlags } from "../registry.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
-import { type FlagContract, reviewFlags, unknownFlagMessage } from "./unknown-flags.js";
 
-// A command born today has no caller that ever passed it a flag of more, so
-// there is nothing to break by refusing one — which is why the rejection can be
-// total here and had to be scoped elsewhere.
-const FLAGS: FlagContract = { known: ["apply"] };
+const FLAGS: CommandFlags = { known: ["apply"], usage: "aw workspace-migrate [--apply]" };
 
 export interface MigratePreviewOutput extends WorkspaceMigrationPreview {
   action: "preview";
@@ -47,6 +43,7 @@ export type WorkspaceMigrateOutput = MigratePreviewOutput | MigrateApplyOutput;
 
 export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
   name: "workspace-migrate",
+  flags: FLAGS,
   describe:
     "Pone al día un workspace con serie legacy: renombra los marcadores del bloque de proyecto al namespace vigente, " +
     "siembra los centinelas de cierre que el histórico ya declara y reserva los números legacy en el registro durable. " +
@@ -54,15 +51,6 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
     "queda intacta y se reporta. Usage: aw workspace-migrate [--apply].",
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceMigrateOutput>> {
-    const review = reviewFlags(args, FLAGS);
-    if (review.unknown.length > 0) {
-      return failSemantic<WorkspaceMigrateOutput>({
-        code: "UNKNOWN_FLAG",
-        message: unknownFlagMessage(review, FLAGS),
-        action: "corregí el flag y reintentá: `aw workspace-migrate [--apply]`",
-      });
-    }
-
     if (!args.flags.has("--apply")) {
       const plan = await planWorkspaceMigration(ctx.fs, ctx.paths);
       return {

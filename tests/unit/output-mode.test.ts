@@ -25,11 +25,11 @@ describe("resolveOutputMode — default without any override", () => {
   // The compatibility guarantee: every installed wrapper, hook and script runs
   // through a pipe. If this flipped to human, all of them would break at once.
   it("keeps JSON in a pipe", () => {
-    expect(mode(["status"], PIPE)).toEqual({ format: "json", detail: false });
+    expect(mode(["status"], PIPE)).toEqual({ format: "json", detail: false, ascii: false });
   });
 
   it("reads human in a terminal", () => {
-    expect(mode(["status"], TTY)).toEqual({ format: "human", detail: false });
+    expect(mode(["status"], TTY)).toEqual({ format: "human", detail: false, ascii: false });
   });
 });
 
@@ -81,7 +81,11 @@ describe("resolveOutputMode — --detail belongs to the human projection", () =>
   // Asking for the wide view IS asking for the human projection; erroring here
   // would make `aw status --detail | less` unusable for no gain.
   it("selects human when --detail arrives with no declared format, even in a pipe", () => {
-    expect(mode(["status", "--detail"], PIPE)).toEqual({ format: "human", detail: true });
+    expect(mode(["status", "--detail"], PIPE)).toEqual({
+      format: "human",
+      detail: true,
+      ascii: false,
+    });
   });
 
   it("carries detail through an explicit --format human", () => {
@@ -115,5 +119,37 @@ describe("output flags never swallow the following positional", () => {
     const parsed = parseArgv(["status", "--format", "human"]);
     expect(parsed.values.get("format")).toBe("human");
     expect(parsed.rest).not.toContain("human");
+  });
+});
+
+describe("resolveOutputMode — the ASCII mark", () => {
+  it("--ascii marks the human projection and never picks the format", () => {
+    expect(mode(["status", "--ascii"], TTY)).toEqual({
+      format: "human",
+      detail: false,
+      ascii: true,
+    });
+    expect(mode(["status", "--ascii"], PIPE).format).toBe("json");
+  });
+
+  it("refuses --ascii with an explicit JSON declaration, like --detail", () => {
+    expect(failure(["status", "--ascii", "--json"], TTY)).toContain("--ascii");
+    expect(failure(["status", "--ascii", "--format", "json"], PIPE)).toContain("--ascii");
+  });
+
+  it("AW_ASCII=1 is never refused, not even with an explicit --json", () => {
+    expect(resolveOutputMode(parseArgv(["status", "--json"]), TTY, "1")).toMatchObject({
+      ok: true,
+      mode: { format: "json" },
+    });
+  });
+
+  it("AW_ASCII=1 sets the mark; any other value does not", () => {
+    expect(resolveOutputMode(parseArgv(["status"]), TTY, "1")).toMatchObject({
+      mode: { ascii: true },
+    });
+    expect(resolveOutputMode(parseArgv(["status"]), TTY, "0")).toMatchObject({
+      mode: { ascii: false },
+    });
   });
 });

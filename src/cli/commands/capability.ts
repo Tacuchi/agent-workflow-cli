@@ -85,6 +85,21 @@ const PROTOCOL = [
 
 export const capabilityCommand: CliCommand<CapabilityAttempt> = {
   name: "capability",
+  flags: {
+    known: [
+      "capability",
+      "operation",
+      "approval",
+      "flow",
+      "host",
+      "input",
+      "target",
+      "base",
+      "profile",
+      "sensitive-sources",
+      "consumer-document",
+    ],
+  },
   describe: `Invoca una capacidad conformante por su contrato: prepare | continue | validate | apply. La operación viaja en --operation y cada intento devuelve envelope, output y receipt. Usage: aw capability prepare --capability design --operation validate --input package=DES-001 [--consumer-document ${DEFAULT_CORE_DOCS_CANON.plan}/NNN-plan-x.md=.workflow/final-plan.md].
 
 ${PROTOCOL}`,

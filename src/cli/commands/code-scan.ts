@@ -6,6 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const codeScanCommand: CliCommand = {
   name: "code-scan",
+  flags: { known: ["root", "pattern", "patterns-file", "ext", "exclude", "max-per-pattern"] },
   describe:
     "Scan files for release patterns (localhost, secrets, TODOs, ...). " +
     "Usage: aw code-scan [--root <dir>] [--patterns-file <file>] " +

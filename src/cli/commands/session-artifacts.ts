@@ -24,6 +24,7 @@ const DUMP_KINDS = new Set([
 
 export const sessionArtifactsCommand: CliCommand = {
   name: "session-artifacts",
+  flags: { known: ["code", "dump", "no-narrative", "verbose"] },
   describe:
     "Consolidated view of a session's artifacts. Default: counts + presence flags. " +
     "Usage: aw session-artifacts --code <NNN> [--verbose] [--detail] [--no-narrative] " +

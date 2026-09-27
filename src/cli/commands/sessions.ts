@@ -6,6 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const sessionsCommand: CliCommand<ListSessionsOutput> = {
   name: "sessions",
+  flags: { known: ["all", "state", "include-legacy", "verbose"] },
   describe:
     "List sessions with counts and next correlative. " +
     "Usage: aw sessions [--state <estado>] [--all] [--include-legacy] [--verbose].",

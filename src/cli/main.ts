@@ -27,20 +27,24 @@ import {
 import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
 import { ALL_COMMANDS, commandDescribes } from "./commands/index.js";
+import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
-import { commandHelpText, renderGroupedCommandLines } from "./help-groups.js";
+import { commandHelpText, globalHelpText } from "./help-groups.js";
 import type { MenuAction } from "./interactive-menu.js";
-import { type OutputMode, resolveOutputMode } from "./output-mode.js";
+import { ASCII_ENV, type OutputMode, resolveOutputMode } from "./output-mode.js";
 import { type ParsedArgs, parseArgv } from "./parser.js";
 import { type CliCommand, CommandRegistry } from "./registry.js";
 import {
   emitError,
   fail,
+  forPerson,
   formatArgvError,
   formatUnknownCommand,
   redactErrorEnvelope,
-  renderHumanError,
+  renderHumanProjection,
   renderRaw,
+  useAsciiStderr,
+  writeStderr,
   writeStdout,
 } from "./render.js";
 import { runTui } from "./tui/run.js";
@@ -87,8 +91,11 @@ function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
     return 0;
   }
   const isTTY = process.stdout.isTTY === true;
-  const output = resolveOutputMode(parsed, isTTY);
-  if (output.ok) return { parsed, isTTY, hasHelp, output: output.mode };
+  const output = resolveOutputMode(parsed, isTTY, process.env[ASCII_ENV]);
+  if (output.ok) {
+    useAsciiStderr(output.mode.ascii);
+    return { parsed, isTTY, hasHelp, output: output.mode };
+  }
   return outputModeFailure(parsed, output.message);
 }
 
@@ -288,9 +295,9 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
   // `planDispatch`, which is importable and therefore testable. What is left
   // here is carrying it out: no ordering and no command name of its own.
   const plan = planDispatch({ command: parsed.command, flags: parsed.flags, isTTY, hasHelp });
-  if (plan.kind === "menu") return await runInteractiveMenu(ctx, registry);
+  if (plan.kind === "menu") return await runInteractiveMenu(ctx, registry, output);
   if (plan.kind === "global-help") {
-    printHelp(registry.list());
+    printHelp(registry.list(), output);
     return 0;
   }
 
@@ -302,18 +309,22 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
 
   // `<command> --help` shows the subcommand's help (its describe), not the global help.
   if (plan.help) {
-    printCommandHelp(command);
+    printCommandHelp(command, output);
     return 0;
   }
 
   return await executeCommand(parsed, ctx, command, output, workspaceFs);
 }
 
-async function runInteractiveMenu(ctx: CliContext, registry: CommandRegistry): Promise<ExitCode> {
+async function runInteractiveMenu(
+  ctx: CliContext,
+  registry: CommandRegistry,
+  output: OutputMode,
+): Promise<ExitCode> {
   await ctx.logger?.info(formatTuiEvent("open"));
   const tuiResult = await runTui(readPackageVersion(), ctx);
   return tuiResult.kind === "menu-action"
-    ? await dispatchMenuAction(tuiResult.action, registry)
+    ? await dispatchMenuAction(tuiResult.action, registry, output)
     : tuiResult.exitCode;
 }
 
@@ -325,6 +336,15 @@ async function executeCommand(
   workspaceFs: MaterializingWorkspaceFileSystem,
 ): Promise<ExitCode> {
   await ctx.logger?.info(formatCommandInvocation(parsed));
+  // Before `execute`, so a flag the command would ignore can never leave it
+  // waiting on a stdin its caller meant to replace.
+  const gate = gateFlags(command, parsed);
+  if (gate.kind === "refuse") {
+    await ctx.logger?.error(formatCommandOutcome(command.name, gate.result.exitCode));
+    emit(gate.result, command, output);
+    return gate.result.exitCode;
+  }
+  if (gate.notice !== undefined) writeStderr(gate.notice);
   try {
     const commandCtx = commandOwnsMaterializationReceipt(command.name)
       ? { ...ctx, fs: ctx.rawFs ?? ctx.fs }
@@ -452,7 +472,7 @@ function emit(
   // Before anything the command prints: the adoption is the frame its output
   // happened in, and it reads as an afterthought underneath a JSON blob.
   if (adopted !== undefined && mode.format === "human" && command.renderRawJson === undefined) {
-    writeStdout(`${adopted}\n`);
+    writeStdout(forPerson(`${adopted}\n`, mode));
   }
   if (command.renderRawJson !== undefined) {
     writeStdout(command.renderRawJson(result));
@@ -463,29 +483,13 @@ function emit(
     return;
   }
   if (mode.format === "human") {
-    const rendered = renderHuman(result, command, mode);
+    const rendered = renderHumanProjection(result, command, mode);
     if (rendered !== undefined) {
       writeStdout(rendered);
       return;
     }
   }
   emitJson(result);
-}
-
-/**
- * Human projection, or `undefined` when the command declares none — in which
- * case the runtime keeps JSON. Success and failure are kept together on
- * purpose: a command that renders prose on error but JSON on success would be
- * incoherent to read and to script against.
- */
-function renderHuman(
-  result: CommandResult,
-  command: CliCommand,
-  mode: OutputMode,
-): string | undefined {
-  if (command.renderHuman === undefined) return undefined;
-  if (!result.ok) return renderHumanError(result.error, result.data);
-  return command.renderHuman(result, { detail: mode.detail });
 }
 
 function emitJson(result: CommandResult): void {
@@ -506,59 +510,42 @@ function emitJson(result: CommandResult): void {
 async function dispatchMenuAction(
   action: MenuAction,
   registry: CommandRegistry,
+  output: OutputMode,
 ): Promise<ExitCode> {
+  // Each action re-enters `run` with a fresh argv, which resolves the output
+  // mode again: the mark the menu was opened with has to travel with it.
+  const mark = output.ascii ? ["--ascii"] : [];
   switch (action) {
     case "doctor":
-      return await run(["self", "doctor"]);
+      return await run(["self", "doctor", ...mark]);
     case "install-skill":
-      return await run(["self", "install-skill", "--force"]);
+      return await run(["self", "install-skill", "--force", ...mark]);
     case "mcp":
-      return await run(["self", "mcp"]);
+      return await run(["self", "mcp", ...mark]);
     case "update":
       // The TUI menu selection is already the confirmation; --yes
       // suppresses the redundant inquirer prompt (which also races with
       // ink's stdin teardown and can phantom-cancel).
-      return await run(["self", "update", "--yes"]);
+      return await run(["self", "update", "--yes", ...mark]);
     case "workspace-init": {
       // The fallback pre-materializes the current implicit root.  Source
       // configuration remains the Project tab's explicit secondary action.
-      return await run(["workspace-init"]);
+      return await run(["workspace-init", ...mark]);
     }
     case "help":
-      printHelp(registry.list());
+      printHelp(registry.list(), output);
       return 0;
     case "exit":
       return 0;
   }
 }
 
-function printHelp(commands: string[]): void {
-  const lines = [
-    "agent-workflow — Workline runtime CLI (session lifecycle)",
-    "",
-    "Usage:",
-    "  agent-workflow [--namespace <name>]",
-    "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
-    "                 <command> [args...]",
-    "",
-    "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
-    "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
-    `default '${DEFAULT_NAMESPACE}'. Without a marker, the invoked directory is the`,
-    "implicit root; new workspaces materialize .<namespace>/sessions/ on first write.",
-    "",
-    "Commands:",
-    "",
-    ...renderGroupedCommandLines(commands, commandDescribes()),
-    "",
-    "Aliases:",
-    "  aw                  short alias of `agent-workflow`",
-    "",
-  ];
-  writeStdout(`${lines.join("\n")}\n`);
+function printHelp(commands: string[], mode: Pick<OutputMode, "ascii">): void {
+  writeStdout(forPerson(globalHelpText(commands, commandDescribes(), DEFAULT_NAMESPACE), mode));
 }
 
-function printCommandHelp(command: CliCommand): void {
-  writeStdout(`${commandHelpText(command)}\n`);
+function printCommandHelp(command: CliCommand, mode: Pick<OutputMode, "ascii">): void {
+  writeStdout(forPerson(`${commandHelpText(command)}\n`, mode));
 }
 
 // Do not force-exit after writing JSON: a piped 4 MiB tool response may still

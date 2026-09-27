@@ -19,6 +19,7 @@ const HARNESS_IDS = HARNESSES.map((h) => h.id).join(" | ");
 
 export const harnessCommand: CliCommand = {
   name: "harness",
+  flags: { known: ["host"] },
   describe: `Identify the host harness from its env markers (${HARNESS_IDS} | unknown). 'unknown' is a legitimate answer — some hosts export no marker to their subprocesses; use 'self detect-hosts' for what is actually installed on the machine.`,
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const requested = args.values.get("host");
@@ -35,6 +36,7 @@ export const harnessCommand: CliCommand = {
 
 export const profilesCommand: CliCommand = {
   name: "profiles",
+  flags: { known: [] },
   describe: "Resolve user preferences from the namespace's user-config.md.",
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const data = await runProfiles(ctx.fs, ctx.paths);
@@ -44,6 +46,7 @@ export const profilesCommand: CliCommand = {
 
 export const logsCommand: CliCommand = {
   name: "logs",
+  flags: { known: ["tail", "clear"] },
   describe: "View or clear the CLI log. Usage: aw logs [--tail <n>] [--clear].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const tailStr = args.values.get("tail");
@@ -103,6 +106,7 @@ function nextNumberRefusal(input: {
 
 export const nextNumberCommand: CliCommand = {
   name: "next-number",
+  flags: { known: ["claim", "publish", "code", "dry-run"] },
   describe:
     "Compute next NNN correlative for a directory, creating it when missing. With --claim <resto-del-nombre> --code <NNN> the number is CLAIMED for that session: the file is materialized under the workspace lock so two concurrent flows never receive the same NNN, only that session's own sealed proposal can complete it, asking again returns the same slot, and closing the session releases it if it never did. A claim WITHOUT --code is refused: a durable reservation belongs to a session. With --publish <resto-del-nombre> the number is assigned and the final document — read from stdin — is written in ONE atomic operation, which is how a single-pass creation with no session gets a document instead of a reservation. Usage: aw next-number <directorio> [--claim <resto-del-nombre> --code <NNN>] [--publish <resto-del-nombre>] [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

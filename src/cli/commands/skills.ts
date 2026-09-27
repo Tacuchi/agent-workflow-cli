@@ -33,6 +33,7 @@ interface SkillsData {
 
 export const skillsCommand: CliCommand<SkillsData> = {
   name: "skills",
+  flags: { known: ["host"] },
   describe:
     "Show resolved capability→skill bindings (skills.toml cascade). Usage: aw skills [--detail] — " +
     "con --detail agrega readiness por capacidad, exposición y operación, la instancia exacta o el " +

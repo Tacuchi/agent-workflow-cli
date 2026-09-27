@@ -8,6 +8,7 @@ import type { CliContext } from "../types.js";
 
 export const checkpointReadCommand: CliCommand = {
   name: "checkpoint-read",
+  flags: { known: ["code"] },
   describe:
     "Read CHECKPOINT.md of the conversation's session (or --code). " +
     "Usage: aw checkpoint-read [--code <session>].",

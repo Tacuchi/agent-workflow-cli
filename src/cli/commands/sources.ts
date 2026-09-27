@@ -7,6 +7,7 @@ import type { CliContext } from "../types.js";
 
 export const sourcesCommand: CliCommand = {
   name: "sources",
+  flags: { known: ["code", "session", "scope", "no-git", "verbose"] },
   describe:
     "List sources from <NS>-PROJECT block with git status enrichment. " +
     "Usage: aw sources [--scope <scope>] [--code <NNN>] [--no-git] [--verbose].",

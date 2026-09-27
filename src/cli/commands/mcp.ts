@@ -73,7 +73,7 @@ import type { CommandResult } from "../../domain/types.js";
 import type { PostgresRoleInspection } from "../../ports/postgres-tools.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
-import { fail } from "../render.js";
+import { fail, writeStderr } from "../render.js";
 import type { CliContext } from "../types.js";
 
 // File-writing hosts — single source in the domain (excludes oz, which has no
@@ -81,8 +81,35 @@ import type { CliContext } from "../types.js";
 const FILE_HOSTS: readonly McpHost[] = MCP_FILE_HOSTS;
 const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "all"]);
 
+// `--dsn-var` and a valued `--all-connections` are known on purpose: each is
+// refused with the reason it is wrong, which says more than "unknown flag".
+const MCP_CONNECTION_FLAGS = ["instance", "all-connections", "dsn-var"];
+const MCP_SCOPE_FLAGS = ["host", ...MCP_CONNECTION_FLAGS, "workspace", "global"];
+// The stdio servers are launched by the host from a descriptor another version
+// may have written, like a hook: an unknown flag there warns on stderr (stdout
+// is JSON-RPC) instead of leaving the host with a dead server.
+// `--descriptor-generation` is a seal the descriptor readback reads
+// (domain/mcp-entry.ts), never the server itself.
+const MCP_SERVE_DB = {
+  known: ["host", "scope", "descriptor-generation", ...MCP_CONNECTION_FLAGS],
+  mode: "warn",
+} as const;
+
 export const mcpCommand: CliCommand = {
   name: "mcp",
+  flags: {
+    known: [],
+    actions: {
+      serve: { known: ["host"], mode: "warn" },
+      "serve-db": MCP_SERVE_DB,
+      dbhub: MCP_SERVE_DB,
+      setup: { known: [...MCP_SCOPE_FLAGS, "dry-run", "force"] },
+      remove: { known: [...MCP_SCOPE_FLAGS, "dry-run", "force"] },
+      doctor: { known: [...MCP_SCOPE_FLAGS, "probe"] },
+      migrate: { known: [...MCP_SCOPE_FLAGS, "dry-run", "apply", "force"] },
+      "warp-status": { known: ["workspace"] },
+    },
+  },
   describe:
     "MCP server tooling. `serve` corre el servidor de elicitation de Workline y `serve-db` sirve las tools PostgreSQL; ambas reservan stdout para JSON-RPC. `dbhub` queda como alias deprecado de serve-db. Subcomandos: serve | serve-db [--instance i] | dbhub [--instance i] | setup/remove/doctor [--host h] [--instance i|--all-connections] [--workspace dir] [--global] [--dry-run] [--force] | migrate [--host h] [--instance i|--all-connections] [--workspace dir] [--global] [--apply --force] | warp-status.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
@@ -141,7 +168,7 @@ async function runServeSub(args: ParsedArgs): Promise<CommandResult> {
 }
 
 async function runDbhubSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-  process.stderr.write("aw mcp dbhub está deprecado; usá 'aw mcp serve-db'.\n");
+  writeStderr("aw mcp dbhub está deprecado; usá 'aw mcp serve-db'.\n");
   return await runServeDbSub(args, ctx);
 }
 
@@ -178,7 +205,7 @@ async function runServeDbSub(args: ParsedArgs, ctx: CliContext): Promise<Command
 
 /** A stdio server may never put a CLI envelope on its JSON-RPC stdout. */
 function serveBootstrapFailure(message: string): CommandResult {
-  process.stderr.write(`aw mcp serve-db: ${message}\n`);
+  writeStderr(`aw mcp serve-db: ${message}\n`);
   return {
     ok: false,
     error: { code: "MCP_SERVER_BOOTSTRAP_FAILED", message },
@@ -244,7 +271,7 @@ function resolveHostLoadObservation(
       // A stale/missing receipt must not contaminate MCP stdout. The host has
       // already received a valid initialized lifecycle response; doctor will
       // surface the missing operational evidence separately.
-      process.stderr.write("aw mcp serve-db: no se pudo registrar la carga observada del host\n");
+      writeStderr("aw mcp serve-db: no se pudo registrar la carga observada del host\n");
     }
   };
 }

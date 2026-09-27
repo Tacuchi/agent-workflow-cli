@@ -21,7 +21,8 @@ import type { CliContext } from "../types.js";
  * `--can-pause` is deliberately NOT read. It used to declare that the host could
  * hold its compaction, and the hooks already installed on people's machines
  * still pass it; it stays in the parser's boolean flags — a flag the parser does
- * not know swallows the token after it — and means nothing here.
+ * not know swallows the token after it — and the contract lists it as retired,
+ * so it is accepted and means nothing here.
  */
 async function lifecycleOptions(
   args: ParsedArgs,
@@ -38,6 +39,7 @@ async function lifecycleOptions(
 
 export const checkpointWriteCommand: CliCommand = {
   name: "checkpoint-write",
+  flags: { known: ["code", "force"], retired: ["can-pause"], mode: "warn" },
   describe:
     "Write CHECKPOINT.md for the session named by --code, or the conversation's associated " +
     "one; never the sole active session on its own. PreCompact hook target: it NEVER " +
@@ -73,6 +75,7 @@ function degradedNotice(
 
 export const autoCompactOnCloseCommand: CliCommand = {
   name: "auto-compact-on-close",
+  flags: { known: ["code"], retired: ["can-pause"], mode: "warn" },
   describe:
     "SessionEnd hook target — checkpoint the session named by --code or associated with the " +
     "conversation, and only that one; unresolved, it parks a refuge and says so on stderr.",

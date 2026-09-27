@@ -20,6 +20,7 @@ type PersistData =
 
 export const persistCommand: CliCommand<PersistData> = {
   name: "persist",
+  flags: { known: ["approval"] },
   describe:
     "Adopta trabajo terminado de la conversación en docs/ (research | spec | plan) en una sola operación. " +
     "El CLI resuelve inventario, duplicados, numeración, destino y escritura; la IA solo clasifica y redacta. " +

@@ -6,6 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const skillIndexCommand: CliCommand = {
   name: "skill-index",
+  flags: { known: ["plugin-root", "exported-only"] },
   describe:
     "Lazy-load skill index (frontmatter only). " +
     "Usage: aw skill-index [--plugin-root <path>] [--exported-only].",

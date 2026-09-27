@@ -8,6 +8,18 @@ import type { CliContext } from "../types.js";
 
 export const releaseDataCommand: CliCommand = {
   name: "release-data",
+  flags: {
+    known: [
+      "sessions",
+      "since",
+      "source",
+      "include-graduated",
+      "no-closed",
+      "no-open",
+      "standalone-sql",
+      "verbose",
+    ],
+  },
   describe:
     "Dump consolidado del corpus de sesiones para la familia export-* " +
     "(scripts/manuals/diagrams/reports). Usage: aw release-data [--sessions <csv>] " +

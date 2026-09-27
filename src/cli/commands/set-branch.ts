@@ -34,6 +34,7 @@ function makeSetBranchCommand(
 ): CliCommand {
   return {
     name,
+    flags: { known: ["verbose"] },
     describe:
       `Set the ${label} branch for a source in the WORKSPACE block. ` +
       `Usage: aw ${name} <alias> <rama>.`,

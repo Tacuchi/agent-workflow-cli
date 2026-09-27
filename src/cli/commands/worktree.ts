@@ -16,6 +16,7 @@ const ACTIONS = new Set<WorktreeInput["action"]>([
 
 export const worktreeCommand: CliCommand = {
   name: "worktree",
+  flags: { known: ["code", "session", "source"] },
   describe:
     "Isolation unit of a flow: one git worktree of a source on its own branch, so concurrent flows never share a working tree. " +
     "The unit lives at ~/<ns>/worktrees/<workspace>/<alias>/<session> on branch aw/<session>; the path IS the registry and " +

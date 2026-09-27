@@ -30,6 +30,7 @@ const defaultConfirm: ConfirmFn = async (message) => {
 export function createGitFlowCommand(confirm: ConfirmFn = defaultConfirm): CliCommand {
   return {
     name: "git-flow",
+    flags: { known: ["source", "all", "target", "dry-run"] },
     describe:
       "Run a per-source git flow. Usage: aw git-flow <sync|to-dev|to-qa|to-prod> " +
       "[--source <alias>]... [--all] [--target <branch>] [--dry-run]. " +

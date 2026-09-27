@@ -7,6 +7,7 @@ import type { CliContext } from "../types.js";
 
 export const removeSourceCommand: CliCommand = {
   name: "remove-source",
+  flags: { known: [] },
   describe:
     "Remove a source from the workspace: detach multi-root visibility, prune the WORKSPACE block (Fuentes + working/qa branches), stop its processes, and delete .workflow/launch/<alias>. Does NOT delete the repo. Usage: aw remove-source <alias>.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

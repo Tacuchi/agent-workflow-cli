@@ -15,6 +15,7 @@ import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { HARNESSES } from "../../src/domain/harnesses.js";
 import type { HostMemoryReport, HostMemoryRow } from "../../src/domain/host-memory/model.js";
+import { dispatch } from "../helpers/dispatch.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 import { FakeProcess } from "../helpers/fake-process.js";
@@ -144,7 +145,7 @@ function ctx(vars: Record<string, string> = {}): CliContext {
 }
 
 async function run(argv: string[], context = ctx()) {
-  return hostMemoryCommand.execute(parseArgv(["host-memory", ...argv]), context);
+  return dispatch(hostMemoryCommand, parseArgv(["host-memory", ...argv]), context);
 }
 
 async function report(argv: string[], context = ctx()): Promise<HostMemoryReport> {

@@ -11,6 +11,7 @@ import type { CliContext } from "../types.js";
 
 export const generateLaunchCommand: CliCommand<GenerateLaunchResult> = {
   name: "generate-launch",
+  flags: { known: ["source", "workspace", "mode", "command", "dry-run", "force"] },
   describe:
     "(Re)generate the per-source launch scripts (.workflow/launch/<alias>/: launch.json + run.sh + run.ps1) by detecting each source's stack. Idempotent: pristine files are regenerated, hand-edited ones preserved (--force overwrites them). Reads sources from the WORKSPACE block; the launch flow also generates these on demand at the first launch. Each source gets a launch MODE — interactive (owns the TTY, for TUIs) or server (background + log) — overridable with --mode; --command overrides the detected run command for a single source. " +
     "Usage: aw generate-launch [--source <alias> (repeatable)] [--mode interactive|server] [--command <cmd>] [--force] [--dry-run] [--workspace <dir>].",

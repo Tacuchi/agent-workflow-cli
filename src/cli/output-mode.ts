@@ -17,6 +17,12 @@ import type { ParsedArgs } from "./parser.js";
  * 4. TTY autodetect — a terminal reads human, a pipe keeps the JSON that
  *    current automation already parses.
  *
+ * `--ascii` (or `AW_ASCII=1`) marks the human projection as ASCII-only. It never
+ * picks the format and never touches JSON: an explicit `--json` with `--ascii`
+ * is a contradiction and fails like `--detail`, while under the automatic JSON of
+ * a pipe the mark simply does not apply. The variable is never refused — it is
+ * set once per machine, not per invocation.
+ *
  * Step 4 is why the default is not simply "human": every installed wrapper and
  * hook invokes the CLI through a pipe, and flipping those to prose would break
  * every consumer at once.
@@ -27,13 +33,22 @@ export interface OutputMode {
   format: OutputFormat;
   /** Widens the human projection only. Never reaches the JSON model. */
   detail: boolean;
+  /** Human text (and help, and hook notices) in ASCII only. Never reaches the JSON model. */
+  ascii: boolean;
 }
 
 export type OutputModeResolution = { ok: true; mode: OutputMode } | { ok: false; message: string };
 
 const OUTPUT_FORMATS: readonly string[] = ["human", "json"];
 
-export function resolveOutputMode(args: ParsedArgs, isTTY: boolean): OutputModeResolution {
+/** The environment variable that turns the ASCII mark on for every invocation. */
+export const ASCII_ENV = "AW_ASCII";
+
+export function resolveOutputMode(
+  args: ParsedArgs,
+  isTTY: boolean,
+  asciiEnv?: string,
+): OutputModeResolution {
   const declared = readDeclaredFormat(args);
   if (!declared.ok) return declared;
 
@@ -45,8 +60,16 @@ export function resolveOutputMode(args: ParsedArgs, isTTY: boolean): OutputModeR
     };
   }
 
+  const asciiFlag = args.flags.has("--ascii");
+  if (asciiFlag && declared.format === "json") {
+    return {
+      ok: false,
+      message: "--ascii solo aplica a la salida humana: el modelo JSON no se translitera",
+    };
+  }
+
   const format = declared.format ?? (detail || isTTY ? "human" : "json");
-  return { ok: true, mode: { format, detail } };
+  return { ok: true, mode: { format, detail, ascii: asciiFlag || asciiEnv === "1" } };
 }
 
 type DeclaredFormat = { ok: true; format?: OutputFormat } | { ok: false; message: string };

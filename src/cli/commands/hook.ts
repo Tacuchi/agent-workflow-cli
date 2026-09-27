@@ -1,8 +1,8 @@
-import { text } from "node:stream/consumers";
 import { runBranchCheckHook } from "../../application/hook-branch-check.js";
 import { runGitCommitAdvisor } from "../../application/hook-git-commit-advisor.js";
 import { runSqlMutationGuard } from "../../application/hook-sql-mutation-guard.js";
 import type { CommandResult } from "../../domain/types.js";
+import { readHookStdin } from "../context-id.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
 import { fail, writeStderr } from "../render.js";
@@ -10,6 +10,7 @@ import type { CliContext } from "../types.js";
 
 export const hookCommand: CliCommand = {
   name: "hook",
+  flags: { known: [], mode: "warn" },
   describe:
     "PreToolUse hook target. Subcommands: branch-check, sql-mutation-guard, git-commit-advisor.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
@@ -20,7 +21,9 @@ export const hookCommand: CliCommand = {
         "hook requires a subcommand: branch-check | sql-mutation-guard | git-commit-advisor",
       );
     }
-    const stdin = await text(process.stdin);
+    // Bounded like the lifecycle hooks: run by hand from an agent's shell, fd 0
+    // is an idle socket and an unbounded read would hang until the tool timeout.
+    const stdin = (await readHookStdin()) ?? "";
     if (subcommand === "branch-check") {
       const result = await runBranchCheckHook({
         stdin,

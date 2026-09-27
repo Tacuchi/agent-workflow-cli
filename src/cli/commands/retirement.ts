@@ -76,6 +76,7 @@ function usage(mode: RetirementMode): string {
 function retirementCommand(mode: RetirementMode): CliCommand<RetirementOutput> {
   return {
     name: mode,
+    flags: { known: ["approval"] },
     describe: describeOf(mode),
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<RetirementOutput>> {
       const action = args.rest[0] as Action | undefined;

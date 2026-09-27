@@ -81,7 +81,7 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
   it.each(matrix)("argv %j on TTY=%s → %s (detail=%s)", (argv, isTTY, format, detail) => {
     const resolution = resolveOutputMode(parseArgv(["status", ...argv]), isTTY);
     if (!resolution.ok) throw new Error(`expected a mode: ${resolution.message}`);
-    expect(resolution.mode).toEqual({ format, detail });
+    expect(resolution.mode).toEqual({ format, detail, ascii: false });
   });
 
   it("rejects the contradictions instead of picking a winner", () => {

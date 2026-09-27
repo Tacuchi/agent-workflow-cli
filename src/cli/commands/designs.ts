@@ -23,6 +23,7 @@ type DesignsOutput =
 
 export const designsCommand: CliCommand<DesignsOutput> = {
   name: "designs",
+  flags: { known: ["plan", "id", "deep", "require-approval"] },
   describe: `List the UI Design Packages under docs/designs/, resolve one by identity, or run the plan-exec precondition gate over a plan. Resolution goes through the manifest id, never the folder: a renamed or moved package still resolves. \`--id\` always runs the content gate over the package's current revisions; the listing stays structural unless \`--deep\` runs it on every package. Usage: aw designs [--id DES-NNN] [--deep] [--plan ${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md] [--require-approval].`,
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DesignsOutput>> {
     const plan = args.values.get("plan");

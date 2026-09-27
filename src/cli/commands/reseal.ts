@@ -65,6 +65,7 @@ function refuse(code: string, message: string, action: string): CommandResult<Re
 
 export const resealCommand: CliCommand<ResealOutput> = {
   name: "reseal",
+  flags: { known: ["approval"] },
   describe:
     "Re-seal a plan's `> Baseline:` against the current functional content of its spec, when a review concluded the plan still holds. " +
     "Cross-cutting: it opens no flow and creates no session. `prepare` is read-only and returns the line it would write plus its digest; " +
