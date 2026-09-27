@@ -14,6 +14,7 @@ import { semanticDigest } from "../../src/application/semantic-operation/protoco
 import { CLOSED_MARKER } from "../../src/application/session-resolver.js";
 import { runSessionResume } from "../../src/application/session-resume-service.js";
 import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
+import { sessionResumeCommand } from "../../src/cli/commands/session-resume.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { journeyOfFlow } from "../../src/domain/flow/authority.js";
@@ -408,7 +409,7 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     expect((await reopen()).run).toEqual({ resumes_at: CONFIRMATION });
   });
 
-  it("sin ninguna humana aplicada lo dice, en vez de quedar terminada en silencio", async () => {
+  it("sin ninguna humana aplicada se niega y conserva la sesión cerrada", async () => {
     const humans = journeyOfFlow("spec-refine")
       .filter((decision) => decision.authority === "human")
       .map((decision) => decision.id);
@@ -417,18 +418,91 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     });
     await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state), "utf8");
     await writeFile(join(paths.cwdSessionsDir(), SESSION, CLOSED_MARKER), "", "utf8");
-    const reopened = await reopen();
-    expect(reopened.state).toBe("active");
-    expect(reopened.run_error?.code).toBe("FLOW_REOPEN_NO_HUMAN");
+    const reopened = await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    expect(reopened).toMatchObject({ code: "FLOW_REOPEN_NO_HUMAN" });
+    expect(closed()).toBe(true);
   });
 
   it("una corrida legacy terminada no se puede reabrir: lo dice con su remedio", async () => {
     const legacy = stateWrittenAt(10, "spec-refine", SESSION, IDS, null);
     await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(legacy), "utf8");
     await writeFile(join(paths.cwdSessionsDir(), SESSION, CLOSED_MARKER), "", "utf8");
-    const reopened = await reopen();
-    expect(reopened.state).toBe("active");
-    expect(reopened.run_error?.code).toBe("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
+    const reopened = await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    expect(reopened).toMatchObject({ code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED" });
+    expect(closed()).toBe(true);
+  });
+
+  it("con el candado de corrida ocupado falla, conserva sesión y corrida, y permite reintentar", async () => {
+    await runStandingOn(AMBIGUITY, { observations });
+    expect((await close()).ok).toBe(true);
+    const statePath = locateRun(paths, SESSION).statePath;
+    const before = await readFile(statePath, "utf8");
+    const lockPath = locateRun(paths, SESSION).lockPath;
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
+
+    const failed = await sessionResumeCommand.execute(
+      parseArgv(["session-resume", "--code", "051", "--reopen"]),
+      ctx,
+    );
+    expect(failed.ok).toBe(false);
+    expect(failed.exitCode).not.toBe(0);
+    expect(failed.error?.code).toBe("FLOW_RUN_LOCKED");
+    expect(closed()).toBe(true);
+    expect(await readFile(statePath, "utf8")).toBe(before);
+
+    await rm(lockPath);
+    expect((await reopen()).run).toEqual({ resumes_at: AMBIGUITY });
+    expect((await advance()).boundary.transition).toBe(AMBIGUITY);
+  });
+
+  it("si la escritura de la corrida lanza una excepción, restaura .closed y falla", async () => {
+    await runStandingOn(AMBIGUITY, { observations });
+    expect((await close()).ok).toBe(true);
+    const statePath = locateRun(paths, SESSION).statePath;
+    const before = await readFile(statePath, "utf8");
+    class RunWriteFailureFs extends NodeFileSystem {
+      override async writeText(path: string, content: string): Promise<void> {
+        if (path === statePath) throw new Error("falló la escritura de corrida");
+        return super.writeText(path, content);
+      }
+    }
+    const failed = await sessionResumeCommand.execute(
+      parseArgv(["session-resume", "--code", "051", "--reopen"]),
+      { ...ctx, fs: new RunWriteFailureFs() },
+    );
+    expect(failed.ok).toBe(false);
+    expect(failed.exitCode).not.toBe(0);
+    expect(failed.error?.message).toContain("falló la escritura de corrida");
+    expect(closed()).toBe(true);
+    expect(await readFile(statePath, "utf8")).toBe(before);
+  });
+
+  it("si falla también restaurar .closed, devuelve ambos errores y exit no cero", async () => {
+    await runStandingOn(AMBIGUITY, { observations });
+    expect((await close()).ok).toBe(true);
+    await writeFile(
+      locateRun(paths, SESSION).lockPath,
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
+    );
+    const marker = join(paths.cwdSessionsDir(), SESSION, CLOSED_MARKER);
+    class RestoreFailureFs extends NodeFileSystem {
+      override async writeText(path: string, content: string): Promise<void> {
+        if (path === marker) throw new Error("disco sin espacio al restaurar");
+        return super.writeText(path, content);
+      }
+    }
+    const failed = await sessionResumeCommand.execute(
+      parseArgv(["session-resume", "--code", "051", "--reopen"]),
+      { ...ctx, fs: new RestoreFailureFs() },
+    );
+    expect(failed.ok).toBe(false);
+    expect(failed.exitCode).not.toBe(0);
+    expect(failed.error?.message).toContain("FLOW_RUN_LOCKED");
+    expect(failed.error?.message).toContain("disco sin espacio al restaurar");
+    expect(failed.data).toMatchObject({
+      run_error: { code: "FLOW_RUN_LOCKED" },
+      restore_error: expect.stringContaining("disco sin espacio al restaurar"),
+    });
   });
 
   it("plan-exec terminado retoma en su autorización de commit", async () => {

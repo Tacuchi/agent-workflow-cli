@@ -41,16 +41,14 @@ export interface SessionResumeOutput {
   checkpoint: CheckpointFields | null;
   /** Where the reopened session's run resumes; absent when it had none to reopen. */
   run?: { resumes_at: string };
-  /**
-   * Non-fatal, and never silent: the session reopened but its run did not. Re-running
-   * the reopen retries it — the reopen of an active session is a no-op.
-   */
-  run_error?: { code: string; message: string; action: string };
 }
 
 export interface SessionResumeError {
   error: string;
   code?: string;
+  action?: string;
+  run_error?: Extract<RunReopen, { ok: false }>["failure"];
+  restore_error?: string;
 }
 
 export type SessionResumeResult =
@@ -83,20 +81,12 @@ export async function runSessionResume(
   const session = resolution.session;
 
   let state = session.state;
-  let run: RunReopen = { ok: true, resumes_at: null };
+  let resumesAt: string | null = null;
   if (input.reopen === true) {
-    const reopened = await reopenUnderLock(fs, paths, session, input.contextId);
-    if (reopened !== null) return reopened;
+    const reopened = await reopenSessionAndRun(fs, paths, session, input.contextId);
+    if ("error" in reopened) return reopened;
+    resumesAt = reopened.resumes_at;
     state = "active";
-    // Reopening is a mutation of what the narrative projects, so it rewrites the
-    // block the same way closing does. Skipping it left the CLI declaring the
-    // session "cerrada" inside `SESSION.md` while `aw sessions` called it active
-    // — and that block is the FIRST thing an agent reads when it comes back,
-    // including in the payload below, which carries the document verbatim.
-    await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
-    // A separate step, after the workspace lock is released: the run lock is
-    // taken on its own, so the two locks are never nested.
-    run = await reopenRun(fs, locateRun(paths, session.folder));
   }
 
   const cwd = paths.workspaceDir();
@@ -117,33 +107,92 @@ export async function runSessionResume(
     objetivo: objetivoText,
     objetivo_text: objetivoText,
     checkpoint,
-    ...(run.ok && run.resumes_at !== null ? { run: { resumes_at: run.resumes_at } } : {}),
-    ...(run.ok ? {} : { run_error: run.failure }),
+    ...(resumesAt !== null ? { run: { resumes_at: resumesAt } } : {}),
   };
 }
 
-/** `null` = reopened and associated; otherwise the error to return verbatim. */
+async function reopenSessionAndRun(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  contextId: string | undefined,
+): Promise<SessionResumeError | { resumes_at: string | null }> {
+  const reopened = await reopenUnderLock(fs, paths, session, contextId);
+  if ("error" in reopened) return reopened;
+  // F3 keeps the workspace and run locks separate. If the second step fails,
+  // restore the marker under the workspace lock before reporting failure.
+  let run: RunReopen;
+  try {
+    run = await reopenRun(fs, locateRun(paths, session.folder));
+  } catch (error) {
+    run = {
+      ok: false,
+      failure: {
+        code: "FLOW_REOPEN_FAILED",
+        message: error instanceof Error ? error.message : String(error),
+        action: `volvé a correr 'aw session-resume --code ${session.folder} --reopen'`,
+      },
+    };
+  }
+  if (!run.ok) {
+    const restored = reopened.wasClosed ? await restoreClosed(fs, paths, session) : null;
+    return {
+      code: run.failure.code,
+      error: `${run.failure.code}: ${run.failure.message}${restored === null ? "" : `; no se pudo restaurar .closed: ${restored}`}`,
+      action:
+        run.failure.code === "FLOW_RUN_LOCKED"
+          ? `esperá a que termine y volvé a correr 'aw session-resume --code ${session.folder} --reopen'`
+          : run.failure.action,
+      run_error: run.failure,
+      ...(restored === null ? {} : { restore_error: restored }),
+    };
+  }
+  // The narrative must reflect the committed reopen, not a failed run reopen.
+  await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
+  return { resumes_at: run.resumes_at };
+}
+
+/** Reopened and associated, recording whether this call removed `.closed`. */
 async function reopenUnderLock(
   fs: FileSystemPort,
   paths: PathsService,
   session: SessionEntry,
   contextId: string | undefined,
-): Promise<SessionResumeError | null> {
+): Promise<SessionResumeError | { wasClosed: boolean }> {
   const id = contextId?.trim() ?? "";
   // `failure` (not `error`) so the busy-lock envelope `withCwdLock` returns
   // stays distinguishable from a failure raised inside the critical section.
-  type Locked = { ok: true } | { ok: false; failure: SessionResumeError };
+  type Locked = { ok: true; wasClosed: boolean } | { ok: false; failure: SessionResumeError };
 
   const result = await withCwdLock(fs, paths, async (): Promise<Locked> => {
+    const wasClosed = await fs.exists(join(session.path, CLOSED_MARKER));
+    if (id.length > 0) {
+      const bound = await bindContextToSession(fs, paths, id, session.folder);
+      if (!bound.ok) {
+        return { ok: false, failure: { error: bound.reason, code: "SESSION_BINDING_INVALID" } };
+      }
+    }
     // `remove` is idempotent — a no-op when the session is already active.
     await fs.remove(join(session.path, CLOSED_MARKER));
-    if (id.length === 0) return { ok: true };
-    const bound = await bindContextToSession(fs, paths, id, session.folder);
-    return bound.ok
-      ? { ok: true }
-      : { ok: false, failure: { error: bound.reason, code: "SESSION_BINDING_INVALID" } };
+    return { ok: true, wasClosed };
   });
 
   if ("error" in result) return { error: result.error, code: "LOCK_BUSY" };
-  return result.ok ? null : result.failure;
+  return result.ok ? { wasClosed: result.wasClosed } : result.failure;
+}
+
+async function restoreClosed(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+): Promise<string | null> {
+  try {
+    const restored = await withCwdLock(fs, paths, async () => {
+      await fs.writeText(join(session.path, CLOSED_MARKER), "");
+      return { ok: true };
+    });
+    return "error" in restored ? restored.error : null;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
 }
