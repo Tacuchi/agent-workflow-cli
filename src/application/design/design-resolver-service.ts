@@ -6,6 +6,7 @@ import type { SpecDesignReference, TaskDesignReference } from "../../domain/desi
 import { SIMPLE_DESIGN_FILE, archivedDesignPath } from "../../domain/design/simple.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { DesignIndex, DesignPackageEntry } from "./design-index-service.js";
+import { compareDesignDigest, designDigestMismatch, designEolWarning } from "./digest.js";
 
 /**
  * Resolving a published reference.
@@ -34,6 +35,8 @@ export interface ResolvedBaseline {
   path: string;
   /** What the reference declared, when it no longer points at the baseline. */
   declared_hint?: string;
+  /** Non-blocking disk notice for a simple design whose line endings moved. */
+  disk_warning?: string;
 }
 
 export interface ResolvedArtifact extends ResolvedBaseline {
@@ -267,7 +270,26 @@ export async function resolveBaselineOnDisk(
   resolved: ResolvedBaseline,
   artifact: string,
 ): Promise<Resolution<ResolvedBaseline>> {
-  if (await fs.exists(join(workspace, resolved.path))) return { ok: true, value: resolved };
+  if (await fs.exists(join(workspace, resolved.path))) {
+    const simple =
+      resolved.path === `${resolved.package_path}/${SIMPLE_DESIGN_FILE}` ||
+      resolved.path.startsWith(`${resolved.package_path}/revisions/DESIGN-r`);
+    if (!simple) return { ok: true, value: resolved };
+    const comparison = compareDesignDigest(
+      await fs.readBytes(join(workspace, resolved.path)),
+      resolved.digest,
+    );
+    if (comparison.kind === "different") {
+      return { ok: false, failure: designDigestMismatch(resolved.path) };
+    }
+    return {
+      ok: true,
+      value:
+        comparison.kind === "eol-only"
+          ? { ...resolved, disk_warning: designEolWarning(resolved.path).message }
+          : resolved,
+    };
+  }
   return fail(
     "DESIGN_REFERENCE_FILE_MISSING",
     artifact,

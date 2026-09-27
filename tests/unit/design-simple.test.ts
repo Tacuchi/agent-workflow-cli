@@ -3,12 +3,14 @@ import "../../src/application/capability/design-handler.js";
 import type { DispatchContext } from "../../src/application/capability/dispatcher.js";
 import { dispatchCapability } from "../../src/application/capability/dispatcher.js";
 import type { ConsumerDocument } from "../../src/application/design/consumer-document.js";
+import { gatePackageContent } from "../../src/application/design/design-content-gate-service.js";
 import { gatePlanDesign } from "../../src/application/design/design-gate-service.js";
 import { readDesignIndex } from "../../src/application/design/design-index-service.js";
 import {
   buildSimpleProposal,
   resolveSimpleTarget,
 } from "../../src/application/design/design-simple-service.js";
+import { digestOf } from "../../src/application/design/digest.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import type { CapabilityInputValue } from "../../src/domain/capability/protocol.js";
@@ -363,6 +365,16 @@ describe("T4.3 · el índice, los resolvers y el gate consumen el diseño simple
     // texto literal también aparece.
     expect(report.verdicts[0]?.owner.kind).toBe("task");
     expect(report.verdicts[0]?.owner.label).toBe("T1.1");
+
+    const path = `${WS}/docs/designs/001-design-alta-de-miembro/DESIGN.md`;
+    fs.file(path, DOCUMENT.replace(/\n/g, "\r\n"));
+    const eol = await gatePlanDesign(fs, WS, "docs/plans/001-plan-x.md");
+    expect(eol.blocked).toBe(false);
+    expect(eol.verdicts[0]?.notices.join(" ")).toContain("fin de línea");
+    fs.file(path, DOCUMENT.replace("sin recargar", "contenido alterado"));
+    const changed = await gatePlanDesign(fs, WS, "docs/plans/001-plan-x.md");
+    expect(changed.blocked).toBe(true);
+    expect(changed.verdicts[0]?.failures[0]?.code).toBe("DESIGN_DIGEST_MISMATCH");
   });
 
   it("pedirle un artefacto a un diseño simple bloquea y manda a su raíz", async () => {
@@ -427,6 +439,79 @@ describe("T4.3 · el índice, los resolvers y el gate consumen el diseño simple
     const r1 = manifest?.baselines.find((b) => b.revision === 1);
     expect(r1?.digest).toBe(before);
     expect(r1?.path).toBe("revisions/DESIGN-r001.md");
+  });
+
+  it("rechaza contenido alterado y acepta ambos sentidos de conversión de fin de línea", async () => {
+    const folder = "docs/designs/001-design-alta-de-miembro";
+    const path = `${WS}/${folder}/DESIGN.md`;
+    const fs = await published(new MemFs({ lenient: true }));
+    const target = resolveSimpleTarget(await readDesignIndex(fs, WS), "update", {
+      title: null,
+      packageId: "DES-001",
+    });
+    if (!target.ok) throw new Error(target.failure.message);
+    fs.file(path, DOCUMENT.replace("sin recargar", "con datos falsos"));
+    const invalid = await buildSimpleProposal(fs, WS, {
+      target: target.value,
+      document: DOCUMENT.replace("sin recargar", "con aviso"),
+      published: "2026-08-10",
+    });
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) expect(invalid.failures[0]?.code).toBe("DESIGN_DIGEST_MISMATCH");
+    expect(await fs.exists(`${WS}/${folder}/revisions/DESIGN-r001.md`)).toBe(false);
+
+    fs.file(path, DOCUMENT.replace(/\n/g, "\r\n"));
+    const lfSeal = await buildSimpleProposal(fs, WS, {
+      target: target.value,
+      document: DOCUMENT.replace("sin recargar", "con aviso"),
+      published: "2026-08-10",
+    });
+    if (!lfSeal.ok) throw new Error(lfSeal.failures[0]?.message);
+    expect(lfSeal.value.warnings[0]?.code).toBe("DESIGN_EOL_CHANGED");
+    expect(lfSeal.value.artifacts[0]?.content).toBe(DOCUMENT);
+
+    const manifest = target.value.manifest;
+    if (manifest === null) throw new Error("falta manifest");
+    const first = manifest.baselines[0];
+    if (first === undefined) throw new Error("falta baseline");
+    const crlf = DOCUMENT.replace(/\n/g, "\r\n");
+    first.digest = digestOf(new TextEncoder().encode(crlf));
+    fs.file(path, DOCUMENT);
+    const crlfSeal = await buildSimpleProposal(fs, WS, {
+      target: target.value,
+      document: DOCUMENT.replace("sin recargar", "con aviso"),
+      published: "2026-08-10",
+    });
+    if (!crlfSeal.ok) throw new Error(crlfSeal.failures[0]?.message);
+    expect(crlfSeal.value.artifacts[0]?.content).toBe(crlf);
+    expect(crlfSeal.value.warnings).toHaveLength(1);
+  });
+
+  it("la validación de capability separa avisos de fallos, también en revisiones archivadas", async () => {
+    const fs = await published(new MemFs({ lenient: true }));
+    const pkg = (await readDesignIndex(fs, WS)).packages[0];
+    if (pkg === undefined) throw new Error("falta package");
+    const path = `${WS}/${pkg.path}/DESIGN.md`;
+    fs.file(path, DOCUMENT.replace(/\n/g, "\r\n"));
+    const warning = await gatePackageContent(fs, WS, pkg);
+    expect(warning.failures).toEqual([]);
+    expect(warning.warnings[0]?.code).toBe("DESIGN_EOL_CHANGED");
+    const receipt = await dispatchCapability(
+      {
+        verb: "validate",
+        capability: "design",
+        operation: "validate",
+        route: "direct",
+        inputs: [text("package", "DES-001")],
+      },
+      context(fs),
+    );
+    expect(receipt.ok).toBe(true);
+    if (receipt.ok)
+      expect(JSON.stringify(receipt.attempt.receipt.output?.value)).toContain("DESIGN_EOL_CHANGED");
+    fs.file(path, DOCUMENT.replace("sin recargar", "en otro lugar"));
+    const broken = await gatePackageContent(fs, WS, pkg);
+    expect(broken.failures[0]?.code).toBe("DESIGN_DIGEST_MISMATCH");
   });
 
   it("mantiene como CAS la misma lectura de manifest desde la que derivó la revisión", async () => {

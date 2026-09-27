@@ -69,10 +69,11 @@ export const designsCommand: CliCommand<DesignsOutput> = {
       // artifact — so it belongs on the listing line and not behind `--detail`.
       const mode = pkg.mode === null ? "?" : pkg.mode;
       const head = `${identity}  ${mode}  ${baseline}  ${pkg.path}`;
-      if (pkg.ok || !context.detail) return head;
+      if (!context.detail) return head;
       return [
         head,
         ...pkg.failures.map((f) => `    ✗ ${f.artifact}: ${f.message} → ${f.action}`),
+        ...(pkg.warnings ?? []).map((w) => `    ⚠ ${w.artifact}: ${w.message}`),
       ].join("\n");
     });
 
@@ -84,6 +85,10 @@ export const designsCommand: CliCommand<DesignsOutput> = {
       footer.push(`${broken} package(s) sin validar — corré con --detail para el diagnóstico.`);
     for (const failure of data.failures)
       footer.push(`✗ ${failure.message} (${failure.artifact}) → ${failure.action}`);
+    if (!context.detail)
+      for (const pkg of data.packages)
+        for (const warning of pkg.warnings ?? [])
+          footer.push(`⚠ ${warning.message} (${warning.artifact})`);
 
     const body = [...lines, ...(footer.length > 0 ? ["", ...footer] : [])].join("\n");
     return `${body.trimEnd()}\n`;
@@ -100,8 +105,12 @@ async function withContentGate(
   entry: DesignPackageEntry,
 ): Promise<DesignPackageEntry> {
   const findings = await gatePackageContent(ctx.fs, ctx.paths.workspaceDir(), entry);
-  if (findings.length === 0) return entry;
-  return { ...entry, ok: false, failures: [...entry.failures, ...findings] };
+  return {
+    ...entry,
+    ok: entry.ok && findings.failures.length === 0,
+    failures: [...entry.failures, ...findings.failures],
+    warnings: findings.warnings,
+  };
 }
 
 /**
