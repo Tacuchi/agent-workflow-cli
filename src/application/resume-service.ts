@@ -146,7 +146,9 @@ export async function runResume(
  * gives for any other tie.
  */
 function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
-  const specs = index.specs.filter((s) => s.file === target || s.number === target);
+  const specs = index.specs.filter(
+    (s) => s.status !== "superseded" && (s.file === target || s.number === target),
+  );
   const allPlans = index.plans.filter((p) => p.file === target || p.number === target);
   // La misma regla de pertenencia que usa el pipeline, y por eso importada: un
   // plan cerrado con traspaso vigente es trabajo pendiente en las dos
@@ -160,6 +162,12 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
 
   const [first] = matches;
   if (first === undefined) {
+    const replaced = index.specs.find(
+      (s) => s.status === "superseded" && (s.file === target || s.number === target),
+    );
+    if (replaced !== undefined) {
+      return { status: "invalid_target", target, action: specDetail(replaced, index.plans).next };
+    }
     const [historical] = allPlans;
     if (historical !== undefined) {
       return {

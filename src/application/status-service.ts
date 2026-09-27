@@ -176,7 +176,7 @@ export async function runStatusCommand(
     ...(index.docs_canon_error !== undefined ? { docs_canon_error: index.docs_canon_error } : {}),
     counts: {
       specs: index.specs.length,
-      specs_refined: index.specs.filter((s) => s.refined).length,
+      specs_refined: index.specs.filter((s) => s.status === "ready-for-plan").length,
       plans: index.plans.length,
       sessions_active: active.length,
       sessions_closed: closed.length,

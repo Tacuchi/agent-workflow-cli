@@ -231,6 +231,23 @@ describe("runStatusCommand — full dashboard", () => {
 });
 
 describe("runStatusCommand — spec maturity", () => {
+  it("una spec superseded no cuenta refinada ni pendiente y conserva la ruta de reemplazo", async () => {
+    const fs = new FakeFs();
+    fs.file("/cwd/.workflow/sessions/.keep", "");
+    fs.file(
+      "/cwd/docs/specs/030-spec-vieja.md",
+      "---\nstatus: superseded\nsuperseded_by: docs/specs/031-spec-nueva.md\n---\n# Spec\n",
+    );
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(out.counts.specs_refined).toBe(0);
+    expect(out.pipeline).toEqual([]);
+    expect(out.specs[0]).toMatchObject({
+      status: "superseded",
+      refined: false,
+      superseded_by: "docs/specs/031-spec-nueva.md",
+    });
+    expect(render(out, true)).toContain("spec 030 — reemplazada por 031");
+  });
   /** Workspace holding only the given `NNN-spec-*.md` bodies, keyed by number. */
   async function specStatuses(bodies: Record<string, string>) {
     const fs = new FakeFs();
@@ -796,6 +813,31 @@ function pending(): FakeFs {
 }
 
 describe("status human — cada pendiente dice cuál es su paso siguiente", () => {
+  it("un done con pase a cert no registrado muestra dimensiones y comando de declaración", async () => {
+    const fs = pending();
+    fs.file(
+      "/cwd/docs/plans/074-plan-pase.md",
+      [
+        "# Plan 074",
+        "> Estado: done",
+        "## Tasks",
+        "### F1 — listo",
+        "> Estado: validada",
+        "> Fuentes: cli",
+        "- [x] T1 _(fuentes: cli)_",
+        "## Handoff operativo",
+        "- [ ] legado",
+        "- Pase a cert: corte-1",
+      ].join("\n"),
+    );
+    const data = await board(fs);
+    expect(data.plans[0]).toMatchObject({ tasks_total: 1, tasks_done: 1, plan_state: "done" });
+    const text = render(data);
+    expect(text).toContain("Planes cerrados con pase pendiente");
+    expect(text).toContain("cerrado · pase a cert corte-1 sin registrar");
+    expect(text).toContain("aw release-pass declare --version corte-1 --sources cli --plans 074");
+  });
+
   it("un plan ejecutado que nadie cerró dice que falta la validación final y el cierre", async () => {
     const fs = pending();
     fs.file(`/cwd/${SEALED_SPEC}`, SEALED_SPEC_TEXT, NOW);
@@ -804,7 +846,7 @@ describe("status human — cada pendiente dice cuál es su paso siguiente", () =
     const data = await board(fs);
     const text = render(data);
     // El síntoma que la spec nombra sigue en su línea de título…
-    expect(text).toContain("plan 031 — 100%, fases 6/6");
+    expect(text).toContain("plan 031 — tareas 6/6 · fases 6/6");
     // …y ya no es lo único que se dice de él.
     expect(text).toContain("todo ejecutado: falta la validación final y el cierre");
   });

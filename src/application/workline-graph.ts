@@ -319,7 +319,8 @@ async function artifactConverged(
       continue;
     }
     if (parent.kind === "plan" && /^>\s*Estado:\s*done\s*$/m.test(text)) return true;
-    if (parent.kind === "spec" && /^status:\s*ready-for-plan\s*$/m.test(text)) return true;
+    if (parent.kind === "spec" && /^status:\s*(?:ready-for-plan|superseded)\s*$/m.test(text))
+      return true;
   }
   return false;
 }
