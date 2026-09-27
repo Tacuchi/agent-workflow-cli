@@ -962,6 +962,12 @@ export interface PlanExecBatchPublication {
  * before publication. The plan digest makes a moved document stale rather than
  * letting a previously inferred batch mark a different task.
  */
+export interface PlanExecBatchRange {
+  id: string;
+  mode: "continuous" | "isolated";
+  phases: number[];
+}
+
 export interface PlanExecBatch {
   id: string;
   iteration: number;
@@ -986,6 +992,16 @@ export interface PlanExecBatch {
   base?: Record<string, string | null>;
   /** Per source, the checkout digest of the proof that credited this batch. */
   credit?: Record<string, string>;
+  /** Phases demonstrated by that credit; absent on legacy credits. */
+  credit_phases?: number[];
+  /** True only for a range with no open tasks, whose proof is supplied by validation. */
+  validation_only?: boolean;
+  /** Declared partition and the effective range sealed for this iteration. */
+  partition?: {
+    declared: PlanExecBatchRange[] | null;
+    effective: Omit<PlanExecBatchRange, "id">;
+    reason: string;
+  };
 }
 
 /** The base a batch had in the run a restart or an annulment archived. */
@@ -1640,7 +1656,9 @@ export function withPlanExecBatchCredit(
   if (!batches.some((batch) => batch.id === batchId)) return state;
   return sealRunState({
     ...withoutSeal(state),
-    batches: batches.map((batch) => (batch.id === batchId ? { ...batch, credit } : batch)),
+    batches: batches.map((batch) =>
+      batch.id === batchId ? { ...batch, credit, credit_phases: [...batch.phases] } : batch,
+    ),
   });
 }
 
@@ -2751,7 +2769,9 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
         (phase) => typeof phase === "number" && Number.isInteger(phase) && phase > 0,
       ) ||
       !isStringArray(entry.tasks) ||
-      entry.tasks.length === 0 ||
+      (entry.tasks.length === 0 && entry.validation_only !== true) ||
+      (entry.validation_only !== undefined && typeof entry.validation_only !== "boolean") ||
+      (entry.validation_only === true && entry.tasks.length !== 0) ||
       new Set(entry.tasks).size !== entry.tasks.length ||
       typeof entry.plan_digest !== "string" ||
       entry.plan_digest.length === 0 ||
@@ -2764,7 +2784,10 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
         entry.published_plan_digest !== entry.publication.after_plan_digest) ||
       !(PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string) ||
       !isSourceMap(entry.base, true) ||
-      !isSourceMap(entry.credit, false)
+      !isSourceMap(entry.credit, false) ||
+      !isBatchPartition(entry.partition, entry.phases, entry.mode) ||
+      (entry.credit_phases !== undefined &&
+        (entry.credit === undefined || !samePhaseRange(entry.credit_phases, entry.phases)))
     ) {
       return false;
     }
@@ -2772,6 +2795,40 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
     iterations.add(entry.iteration);
     return true;
   });
+}
+
+function samePhaseRange(value: unknown, phases: unknown[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === phases.length &&
+    value.every((phase, index) => phase === phases[index])
+  );
+}
+
+function isBatchPartition(value: unknown, phases: unknown[], mode: unknown): boolean {
+  if (value === undefined) return true;
+  if (
+    !isRecord(value) ||
+    !isNonEmptyString(value.reason) ||
+    !isRecord(value.effective) ||
+    value.effective.mode !== mode ||
+    !samePhaseRange(value.effective.phases, phases)
+  )
+    return false;
+  return (
+    value.declared === null ||
+    (Array.isArray(value.declared) &&
+      value.declared.length > 0 &&
+      value.declared.every(
+        (row) =>
+          isRecord(row) &&
+          isNonEmptyString(row.id) &&
+          (row.mode === "continuous" || row.mode === "isolated") &&
+          Array.isArray(row.phases) &&
+          row.phases.length > 0 &&
+          row.phases.every((phase) => Number.isSafeInteger(phase) && phase > 0),
+      ))
+  );
 }
 
 /** Absent, or a non-empty alias → digest map; `nullable` admits an unobserved source. */

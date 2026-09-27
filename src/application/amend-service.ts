@@ -40,6 +40,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { applyLocalProposal } from "./local-proposal.js";
 import { scanMarkdown } from "./markdown.js";
+import { parseExecutionBatches } from "./parsers/execution-batches.js";
 import { parsePhases } from "./parsers/phases.js";
 import { parsePlanStatus } from "./parsers/plan-status.js";
 import { functionalSpecDigest } from "./parsers/spec-functional.js";
@@ -493,17 +494,7 @@ function clausesOf(text: string): string {
 
 /** The declared `## Execution batches` rows, as written. */
 function batchesOf(text: string): string {
-  const { lines, headings } = scanMarkdown(text);
-  const heading = headings.find(
-    (entry) => entry.level === 2 && /execution batches|lotes de ejecuci[oó]n/i.test(entry.title),
-  );
-  if (heading === undefined) return "";
-  const next = headings.find((entry) => entry.level <= 2 && entry.line > heading.line);
-  return lines
-    .slice(heading.line + 1, next?.line ?? lines.length)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .join("\n");
+  return parseExecutionBatches(text).raw;
 }
 
 /** One document, one write: the lock, the compare-and-swap and the all-or-nothing. */

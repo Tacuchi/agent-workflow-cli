@@ -60,11 +60,10 @@ import {
 import { applyLocalProposal } from "../local-proposal.js";
 import { parseMdSectionBilingual } from "../markdown.js";
 import { parsePhases } from "../parsers/phases.js";
-import { parseTasks } from "../parsers/tasks.js";
 import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
 import {
   type BatchPhaseUpdate,
-  inferPlanExecBatch,
+  inferNextPlanExecBatch,
   preparePlanExecDoneSeal,
   publishPlanExecBatch,
 } from "../plan-exec-batch-service.js";
@@ -688,7 +687,7 @@ async function inferBatch(
           },
         };
       }
-      const next = inferNextBatch(text, current);
+      const next = inferNextPlanExecBatch(text, current);
       if (!next.ok) {
         if (next.failure.code !== "PLAN_EXEC_BATCH_NONE_OPEN") {
           return { ok: false, failure: next.failure };
@@ -728,7 +727,7 @@ async function inferBatch(
     summary: inferred.value.no_work
       ? "el plan ya no tiene tareas abiertas: se omite el batch vacío y se expone la validación final"
       : inferred.value.created
-        ? `batch ${inferred.value.batch?.id ?? "nuevo"} inferido y sellado antes de implementar`
+        ? `batch ${inferred.value.batch?.id ?? "nuevo"} inferido y sellado antes de implementar; partición ${canonicalJson(inferred.value.batch?.partition ?? null)}`
         : `batch ${inferred.value.batch?.id ?? "actual"} ya estaba inferido; se conserva su snapshot sellado`,
     output: canonicalJson({ batch: inferred.value.batch, created: inferred.value.created }),
     effects: [],
@@ -1311,44 +1310,6 @@ function phaseUpdatesForClosedBatch(
     // document evidence instead of deleting it by convention.
     updates: batch.phases.map((phase) => ({ phase, state: "validada" })),
   };
-}
-
-function inferNextBatch(text: string, state: FlowRunState): ReturnType<typeof inferPlanExecBatch> {
-  // `inferPlanExecBatch` itself validates that the phase has real, uniquely
-  // labelled Tn.m tasks. We only choose the first still-open phase from the
-  // document, which is a deterministic batch boundary rather than a claimed one.
-  const openPhase = parseTasks(text).items.find(
-    (task) => task.status === "open" && task.phase !== undefined,
-  )?.phase;
-  if (openPhase === undefined) {
-    const unresolved = parsePhases(text).items.find((phase) => phase.state !== "validada");
-    if (unresolved !== undefined) {
-      return {
-        ok: false,
-        failure: {
-          code: "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
-          message: `F${unresolved.n} sigue '${unresolved.state}' pero no tiene tareas abiertas acreditables`,
-          action:
-            "normalizá la fase con plan-refine; no se salta a la validación final sobre una fase no validada",
-        },
-      };
-    }
-    return {
-      ok: false,
-      failure: {
-        code: "PLAN_EXEC_BATCH_NONE_OPEN",
-        message: "el plan no tiene una fase con tareas abiertas que este batch pueda acreditar",
-        action: "el batch ya está cerrado: reanudá la corrida para que exponga la validación final",
-      },
-    };
-  }
-  const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
-  return inferPlanExecBatch(text, {
-    id: `batch-${iteration}`,
-    iteration,
-    mode: "continuous",
-    phases: [openPhase],
-  });
 }
 
 /**

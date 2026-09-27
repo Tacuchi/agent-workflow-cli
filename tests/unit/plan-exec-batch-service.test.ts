@@ -8,6 +8,7 @@ import { locateRun } from "../../src/application/flow/run-state-service.js";
 import { parseTasks } from "../../src/application/parsers/tasks.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
+  inferNextPlanExecBatch,
   inferPlanExecBatch,
   preparePlanExecBatchPublication,
   preparePlanExecDoneSeal,
@@ -18,9 +19,12 @@ import {
   applyTransition,
   checkAgainstJourney,
   newRunState,
+  parseRunState,
   serializeRunState,
   withBoundary,
+  withObservation,
   withPlanExecBatch,
+  withPlanExecBatchCredit,
   withPlanExecBatchLoop,
   withPlanExecBatchPublication,
   withPlanExecBatchPublicationPrepared,
@@ -68,6 +72,114 @@ const PLAN_WITH_NEXT_BATCH = [
 ].join("\n");
 
 describe("plan-exec batch publication", () => {
+  it.each(["", "## Execution batches\n- B1 · continuous · F1-F4"])(
+    "no sella un rango ilegible cuando las fases están desordenadas (%s)",
+    (batches) => {
+      const text = `# Plan\n## Tasks\n${[1, 3, 2, 4].map((n) => `### F${n}\n> Estado: pendiente\n- [ ] T${n}.1 — trabajo\n`).join("\n")}\n${batches}`;
+      expect(inferNextPlanExecBatch(text, newRunState("plan-exec", "001-exec"))).toMatchObject({
+        ok: false,
+        failure: { code: "PLAN_EXEC_BATCH_PHASES_INVALID" },
+      });
+    },
+  );
+
+  it("las tareas abiertas sin líneas Estado no se confunden con trabajo terminado", () => {
+    const text =
+      "# Plan\n## Tasks\n### F1\n> Fuentes: workspace\n- [ ] T1.1 — trabajo _(fuentes: workspace)_\n";
+    expect(inferNextPlanExecBatch(text, newRunState("plan-exec", "001-exec"))).toMatchObject({
+      ok: false,
+      failure: {
+        code: "PLAN_EXEC_BATCH_PHASES_INVALID",
+        action: expect.stringContaining("plan-refine"),
+      },
+    });
+  });
+
+  it("valida un rango entero o rechaza su acreditación parcial", () => {
+    const text = PLAN_WITH_NEXT_BATCH;
+    const inferred = inferPlanExecBatch(text, {
+      id: "batch-1",
+      iteration: 1,
+      mode: "continuous",
+      phases: [4, 5],
+    });
+    if (!inferred.ok) throw new Error(inferred.failure.message);
+    const input = {
+      plan: "docs/plans/032-plan-batch.md",
+      batch: inferred.batch,
+      completed_tasks: inferred.batch.tasks,
+      transition: "plan-exec.batch-close",
+    };
+    expect(
+      preparePlanExecBatchPublication(text, {
+        ...input,
+        phase_updates: [{ phase: 4, state: "validada" }],
+      }),
+    ).toMatchObject({ ok: false, failure: { code: "PLAN_EXEC_BATCH_PHASE_SET_INVALID" } });
+    const complete = preparePlanExecBatchPublication(text, {
+      ...input,
+      phase_updates: [
+        { phase: 4, state: "validada" },
+        { phase: 5, state: "validada" },
+      ],
+    });
+    expect(complete.ok && parseTasks(complete.prepared.content).open).toBe(0);
+    const credited = withPlanExecBatchCredit(
+      withPlanExecBatch(newRunState("plan-exec", "001-exec"), inferred.batch),
+      "batch-1",
+      { source: "proof" },
+    );
+    expect(credited.batches?.[0]?.credit_phases).toEqual([4, 5]);
+  });
+
+  it("forma un lote de sólo validación con las fases consecutivas ya implementadas", () => {
+    const text = `${PLAN.replaceAll("[ ]", "[x]")}\n### F5 — sin tareas\n> Estado: pendiente\n\n### F6 — trabajo\n> Estado: pendiente\n- [ ] T6.1 — pendiente\n`;
+    const inferred = inferNextPlanExecBatch(text, newRunState("plan-exec", "001-exec"));
+    if (!inferred.ok) throw new Error(inferred.failure.message);
+    expect(inferred.batch).toMatchObject({ phases: [4, 5], tasks: [], validation_only: true });
+    expect(
+      parseRunState(
+        serializeRunState(withPlanExecBatch(newRunState("plan-exec", "001-exec"), inferred.batch)),
+      ).ok,
+    ).toBe(true);
+    const published = preparePlanExecBatchPublication(text, {
+      plan: "docs/plans/032-plan-batch.md",
+      batch: inferred.batch,
+      completed_tasks: [],
+      phase_updates: [
+        { phase: 4, state: "validada" },
+        { phase: 5, state: "validada" },
+      ],
+      transition: "plan-exec.batch-close",
+    });
+    expect(published.ok && parseTasks(published.prepared.content).open).toBe(1);
+  });
+
+  it("sólo la señal de la iteración vigente parte el rango", () => {
+    let state = withPlanExecBatchLoop(newRunState("plan-exec", "001-exec"), {
+      iteration: 2,
+      pending: true,
+    });
+    state = withObservation(state, {
+      transition: "plan-exec.batch-eligibility-signal",
+      signals: ["plan.recovery-boundary"],
+      batch_iteration: 1,
+    });
+    const prior = inferNextPlanExecBatch(PLAN_WITH_NEXT_BATCH, state);
+    expect(prior.ok && prior.batch.phases).toEqual([4, 5]);
+    state = withObservation(state, {
+      transition: "plan-exec.batch-eligibility-signal",
+      signals: ["plan.recovery-boundary"],
+      batch_iteration: 2,
+    });
+    const isolated = inferNextPlanExecBatch(PLAN_WITH_NEXT_BATCH, state);
+    expect(isolated.ok && isolated.batch).toMatchObject({
+      phases: [4],
+      mode: "isolated",
+      partition: { reason: expect.stringContaining("plan.recovery-boundary") },
+    });
+  });
+
   it("acredita exactamente T4.1/T4.2: 7/9 pasa a 9/9 sin reejecutar ni inventar baseline", () => {
     const inferred = inferPlanExecBatch(PLAN, {
       id: "batch-4",

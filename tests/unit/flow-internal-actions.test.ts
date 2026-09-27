@@ -526,6 +526,10 @@ describe("la escritura del registro falla después del efecto", () => {
     "",
     "- [ ] T2.1 — dos _(fuentes: workspace)_",
     "",
+    "## Execution batches",
+    "- B1 · isolated · F1",
+    "- B2 · isolated · F2",
+    "",
   ].join("\n");
   const WORKSPACE_BLOCK = [
     "<!-- AGENT-WORKFLOW-PROJECT-START -->",
