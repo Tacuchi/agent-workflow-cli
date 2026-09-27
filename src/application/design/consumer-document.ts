@@ -22,7 +22,7 @@ import {
   coreDocumentLocations,
 } from "../../domain/docs-canon.js";
 import type { ProposalBase } from "../../domain/proposal.js";
-import { baseDigest } from "../../domain/proposal.js";
+import { matchTextSeal } from "../../domain/proposal.js";
 import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 
@@ -140,7 +140,7 @@ export async function checkConsumerBase(
       action: "revisá el acceso al documento antes de preparar la publicación atómica",
     };
   }
-  if (baseDigest(current) !== consumer.base.digest) {
+  if (matchTextSeal(consumer.base.digest, current) === null) {
     return {
       code: "DESIGN_CONSUMER_BASE_STALE",
       artifact: consumer.path,

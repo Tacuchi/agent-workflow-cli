@@ -66,6 +66,8 @@ export interface RetirementRestore {
   digest: string | null;
   /** Digest of what the path holds right now — the compare-and-swap base. */
   current_digest: string | null;
+  /** Visible notice only; reset still restores the preserved bytes. */
+  eol_only?: boolean;
 }
 
 /** An uncommitted change the retirement drops, always inside one source. */

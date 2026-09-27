@@ -278,6 +278,26 @@ describe("nada durable se aplica sin request, output, autorización y base valid
     expect(fs.writes.has("/work/docs/designs/DES-001/manifest.json")).toBe(false);
   });
 
+  it("publicar una propuesta con base LF sobre CRLF avisa del fin de línea", async () => {
+    const basePath = "docs/designs/DES-001/baseline.json";
+    const prepared = prepareDurableEffect({
+      request: requestFor("create", CREATE_INPUTS),
+      authorization: authorizeEffects(create.effects, NO_CONTEXT),
+      artifacts: ARTIFACTS,
+      bases: [{ path: basePath, digest: baseDigest("primera\nsegunda\n") }],
+    });
+    if (!prepared.ok) throw new Error("prepare falló");
+    const fs = new MemFs().file(`/work/${basePath}`, "primera\r\nsegunda\r\n");
+    const applied = await applyLocalProposal(fs, paths, {
+      root: "/work",
+      proposal: prepared.plan.proposal,
+      approval: { digest: prepared.plan.proposal.digest, granted: [] },
+      selfAuthorized: ["local_additive"],
+    });
+    expect(applied.ok).toBe(true);
+    if (applied.ok) expect(applied.result.notice).toContain("fin de línea");
+  });
+
   it("relee la base dentro del lock si otro escritor se intercala al adquirirlo", async () => {
     const request = requestFor("create", CREATE_INPUTS);
     const basePath = "docs/designs/DES-001/baseline.json";

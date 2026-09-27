@@ -26,9 +26,9 @@
  */
 
 import { join } from "node:path";
+import { matchTextSeal } from "../../domain/proposal.js";
 import { reservationMarker } from "../../domain/reservation.js";
 import type { RetirementProposal, RetirementRestore } from "../../domain/retirement/proposal.js";
-import { baselineDigest } from "../../domain/session/custody.js";
 import { appendClaimEvent, claimKey, openClaimsOf, readClaimEvents } from "../claims-ledger.js";
 import { localDateIso } from "../dates.js";
 import { withCwdLock } from "../lock-service.js";
@@ -224,10 +224,14 @@ async function staleReadSet(
 ): Promise<RetirementRejection | null> {
   for (const restore of proposal.restores) {
     const absolute = join(deps.paths.workspaceDir(), restore.path);
-    const current = (await deps.fs.exists(absolute))
-      ? baselineDigest(await deps.fs.readText(absolute))
-      : null;
-    if (current === restore.current_digest) continue;
+    const current = (await deps.fs.exists(absolute)) ? await deps.fs.readText(absolute) : null;
+    if (
+      (current === null && restore.current_digest === null) ||
+      (current !== null &&
+        restore.current_digest !== null &&
+        matchTextSeal(restore.current_digest, current) !== null)
+    )
+      continue;
     return {
       code: "EVIDENCE_MISSING",
       message: `'${restore.path}' cambió después de preparar el retiro`,

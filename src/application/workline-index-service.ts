@@ -8,6 +8,7 @@ import {
   type PlanBaselineSeal,
   type SpecCurrentDigests,
   alignSpecBaseline,
+  legacySpecBaselineDigest,
   specBaselineDigest,
 } from "../domain/lineage.js";
 import {
@@ -1633,6 +1634,7 @@ async function readPlans(
         : {
             functional: functionalSpecDigest(text),
             exact: specBaselineDigest(text),
+            legacy_exact: legacySpecBaselineDigest(text),
             unclosed_fence: unclosedSpecFence(text),
           };
     specDigests.set(number, digests);
@@ -1871,6 +1873,7 @@ async function reconciliationFor(
       // the functional payload existed pinned the exact bytes, and the seal's
       // migration is only half a migration if the note's side refuses it.
       legacy_digest: digests?.exact,
+      legacy_eol_digest: digests?.legacy_exact,
       criteria: parseSpecCriteria(specText, spec.number),
     },
     chain,
