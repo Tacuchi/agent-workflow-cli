@@ -2773,7 +2773,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["plan.batch-inferido"],
       idempotent: true,
       recovery:
-        "reanudá con 'aw flow advance': el batch inferido conserva su digest y sólo se vuelve a inferir si todavía no quedó sellado",
+        "reanudá con 'aw flow advance'; si el plan cambió, usá 'aw flow recover --session <código> --reinfer-batch' para ver el diff antes de re-sellar el lote no publicado",
     },
   },
   {
@@ -3125,7 +3125,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["plan.batch-publicado"],
       idempotent: true,
       recovery:
-        "reanudá con 'aw flow advance': el batch conserva su before/after sellado y o termina exactamente esa publicación o rechaza el plan movido",
+        "reanudá con 'aw flow advance'; si el plan cambió antes de publicar, mirá el diff con 'aw flow recover --session <código> --reinfer-batch' y volvé a validar el lote",
     },
   },
   // ── The settlement, between the last batch and the final validation ──────
@@ -3908,7 +3908,7 @@ export function journeyOfFlow(flow: WorklineFlow): readonly FlowDecision[] {
  *   `transition` (its last human row) to the end is walked again.
  */
 export interface JourneyReentry {
-  kind: "refine" | "close" | "reopen" | "review";
+  kind: "refine" | "close" | "reopen" | "review" | "reinfer";
   transition: string;
   occurrence: number;
   from: string | null;
@@ -4045,6 +4045,8 @@ function withReentries(
       journey = insertRedraft(journey, base, reentry, ordinal);
     } else if (reentry.kind === "review") {
       journey = insertReview(journey, base, reentry, ordinal);
+    } else if (reentry.kind === "reinfer") {
+      journey = insertBatchRevalidation(journey, base, reentry, ordinal);
     } else if (reentry.kind === "close") {
       const closed = closeAt(journey, base, reentry, ordinal);
       journey = closed?.journey ?? journey;
@@ -4113,6 +4115,28 @@ function insertReview(
   return {
     rows: [...journey.rows.slice(0, at), row, ...journey.rows.slice(at)],
     copies: [...journey.copies.slice(0, at), ordinal, ...journey.copies.slice(at)],
+  };
+}
+
+/** Re-run validation and review before the uncommitted batch is published. */
+function insertBatchRevalidation(
+  journey: ExpandedJourney,
+  base: readonly FlowDecision[],
+  reentry: JourneyReentry,
+  ordinal: number,
+): ExpandedJourney {
+  const start = base.findIndex((decision) => decision.id === "plan-exec.validation-execution");
+  const end = base.findIndex((decision) => decision.id === reentry.transition);
+  const at = occurrenceIndex(journey.rows, reentry.transition, reentry.occurrence);
+  if (start < 0 || end <= start || at < 0) return journey;
+  const segment = base.slice(start, end);
+  return {
+    rows: [...journey.rows.slice(0, at), ...segment, ...journey.rows.slice(at)],
+    copies: [
+      ...journey.copies.slice(0, at),
+      ...segment.map(() => ordinal),
+      ...journey.copies.slice(at),
+    ],
   };
 }
 

@@ -1753,6 +1753,40 @@ export function withPlanExecBatchUpdate(
   });
 }
 
+/** Re-seal the SAME unpublished batch; old validation/review cannot credit a new base. */
+export function withReinferredPlanExecBatch(
+  state: FlowRunState,
+  batchId: string,
+  planDigest: string,
+  anchor: string | null,
+): FlowRunState {
+  const replaced = withPlanExecBatchUpdate(state, batchId, (batch) => {
+    const {
+      credit: _credit,
+      credit_phases: _phases,
+      review: _review,
+      commit_proposal: _proposal,
+      ...rest
+    } = batch;
+    return { ...rest, plan_digest: planDigest, stage: "inferred" };
+  });
+  const traced = withPlanExecBatchStage(
+    replaced,
+    batchId,
+    "inferred",
+    "plan-exec.batch-inference",
+    "entered",
+  );
+  if (anchor === null) return traced;
+  const reentered = withReentry(traced, {
+    kind: "reinfer",
+    transition: anchor,
+    occurrence: state.applied.filter((id) => id === anchor).length + 1,
+    from: "plan-exec.validation-execution",
+  });
+  return withPendingAction(withBoundary(reentered, "plan-exec.validation-execution"), null);
+}
+
 /** Old runs that closed even one batch without a commit result stay on the old tail. */
 export function legacyPlanExecCommits(state: FlowRunState): boolean {
   if (state.skipped.includes("plan-exec.batch-commit-proposal")) return true;
@@ -3621,7 +3655,7 @@ function isObservationArray(value: unknown): value is FlowObservation[] {
   );
 }
 
-const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen", "review"];
+const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen", "review", "reinfer"];
 
 /** Absent, or reentries each with its kind, its boundary, its occurrence and its origin. */
 function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
@@ -3634,6 +3668,14 @@ function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
       (entry.kind !== "review" ||
         (entry.transition === "plan-exec.batch-close" &&
           entry.from === "plan-exec.review-findings")) &&
+      (entry.kind !== "reinfer" ||
+        (entry.from === "plan-exec.validation-execution" &&
+          [
+            "plan-exec.deferred-check",
+            "plan-exec.review-findings",
+            "plan-exec.batch-commit-proposal",
+            "plan-exec.batch-close",
+          ].includes(entry.transition as string))) &&
       nonEmpty(entry.transition) &&
       Number.isInteger(entry.occurrence) &&
       (entry.occurrence as number) >= 1 &&

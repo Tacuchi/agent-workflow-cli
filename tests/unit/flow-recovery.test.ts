@@ -283,6 +283,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       // Y la compensación que sigue pendiente: decir la verdad sobre trabajo que
       // no se hizo no puede costarle a la corrida uno de sus intentos.
       PLAN_EXEC_SETTLEMENT_PENDING: "control",
+      PLAN_EXEC_BATCH_STALE: "control",
       FLOW_BOUNDARY_PAUSED: "control",
       FLOW_BOUNDARY_DECLINED: "control",
       FLOW_ANSWER_RESENT: "control",

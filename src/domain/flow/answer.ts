@@ -210,6 +210,7 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // The phase validation's own: the proofs were read and they are not this
   // batch's — nothing changed since its base, or they already credited another.
   PLAN_EXEC_BATCH_UNCHANGED: "evaluated",
+  PLAN_EXEC_BATCH_STALE: "control",
   PLAN_VALIDATION_ONLY_NOT_APPROVED: "evaluated",
   PLAN_EXEC_PROOF_REUSED: "evaluated",
   PLAN_EXEC_BATCH_REVIEW_INVALID: "evaluated",

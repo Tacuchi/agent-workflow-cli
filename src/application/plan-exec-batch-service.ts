@@ -575,8 +575,8 @@ export async function publishPlanExecBatch(
   input: PublishPlanExecBatchInput,
 ): Promise<BatchPublish> {
   let sealedText: string | null = null;
-  const snapshot = sealedPlanPath(input.location.dir, input.batch.plan_digest);
   try {
+    const snapshot = sealedPlanPath(input.location.dir, input.batch.plan_digest);
     if (await fs.exists(snapshot)) sealedText = await fs.readText(snapshot);
   } catch {
     return fail(
