@@ -248,6 +248,15 @@ async function materialTrace(
       });
       continue;
     }
+    if (event.kind === "route-refused") {
+      sequence.push({
+        state: "aplicado",
+        text: `${event.transition} se pidió igual: la ruta la había aceptado como '${event.disposition}' y el registro ya no lo admite`,
+        detail: `${event.operation} · ${event.reason}`,
+        source,
+      });
+      continue;
+    }
     sequence.push({
       state: "fallido",
       text: `${event.message} — ${event.recovery}`,

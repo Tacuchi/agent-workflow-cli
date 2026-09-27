@@ -14,6 +14,7 @@ import {
   type WorktreeListOutput,
   runWorktree,
 } from "../../src/application/worktree-service.js";
+import { FLOW_DECISIONS, internalActionOf } from "../../src/domain/flow/authority.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { planExecWalk } from "../helpers/plan-exec-walk.js";
@@ -295,6 +296,20 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     const final = await walk.current(DOS.folder);
     expect(final.state.applied).toContain("plan-exec.unit-integration");
     expect(final.state.applied).toContain("plan-exec.plan-done");
+    // Ninguna transición interna llega aplicada sin que el driver la haya corrido:
+    // su único crédito es el evento `executed` que deja al correrla. Una omitida
+    // por su condición también avanza el cursor, pero se registra en `skipped`.
+    const internas = new Set(
+      FLOW_DECISIONS.filter((row) => internalActionOf(row) !== null).map((row) => row.id),
+    );
+    const corridas = new Set(
+      final.state.events.flatMap((event) => (event.kind === "executed" ? [event.transition] : [])),
+    );
+    const aplicadas = final.state.applied.filter(
+      (id) => internas.has(id) && !final.state.skipped.includes(id),
+    );
+    expect(aplicadas).toContain("plan-exec.batch-close");
+    for (const id of aplicadas) expect(corridas, id).toContain(id);
   });
 
   it("el cierre dirigido se niega mientras viva una unidad, y cierra cuando ya no", async () => {

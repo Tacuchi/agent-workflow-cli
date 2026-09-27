@@ -17,6 +17,7 @@ import {
   attemptAccountingAt,
   checkAgainstJourney,
   grantAttempts,
+  inheritedBasesFrom,
   legacyRunNeedsAdoption,
   newRunState,
   normalizeAttemptChain,
@@ -24,6 +25,7 @@ import {
   recoveryBlockedAt,
   restartInvocation,
   withEvent,
+  withInheritedBases,
   withoutExhaustedRerun,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -65,12 +67,11 @@ export interface AdvanceFlowInput {
   /**
    * How this process materializes the actions the registry classifies internal.
    *
-   * Optional because not every caller can supply one, and the absence is a real
-   * answer rather than a hole: without it an internal action is emitted as the
-   * boundary it always was, with its invocation, and nothing is credited. See
-   * {@link driveInternalActions}.
+   * Required: an internal action is credited only by the process that ran it, so
+   * a caller without one would leave the run standing on a boundary nobody may
+   * answer. See {@link driveInternalActions}.
    */
-  executor?: InternalActionExecutor;
+  executor: InternalActionExecutor;
 }
 
 export type AdvanceFlowResult =
@@ -205,7 +206,7 @@ export interface RestartFlowInput {
   git?: GitPort;
   /** The flow to re-adopt, needed only when neither the registry nor custody says it. */
   flow?: string;
-  executor?: InternalActionExecutor;
+  executor: InternalActionExecutor;
   /** The archive's timestamp; injectable so a test can name the file it expects. */
   now?: Date;
 }
@@ -305,7 +306,8 @@ export async function reseat(
         archive: archived.path,
         cause,
       });
-      return { ok: true, state: verb.events().reduce(withEvent, seeded) };
+      const traced = verb.events().reduce(withEvent, seeded);
+      return { ok: true, state: withInheritedBases(traced, inheritedBasesFrom(archived.state)) };
     },
     input.now === undefined ? {} : { at: input.now },
   );
@@ -316,7 +318,7 @@ export async function reseat(
     code: session.folder,
     adopt: false,
     ...(input.git === undefined ? {} : { git: input.git }),
-    ...(input.executor === undefined ? {} : { executor: input.executor }),
+    executor: input.executor,
   });
 }
 

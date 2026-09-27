@@ -18,6 +18,7 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 // The engine walks only what the CLI owns, and no tranche is migrated yet: over the
 // live rows this run would stop at its first `legacy` boundary and this file would
@@ -69,9 +70,14 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
       "# SESSION — prueba\n\n## Objective\nprobar\n",
       "utf8",
     );
-    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: "001",
+      flow: "quick",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor: testExecutor(fs, paths) });
   });
 
   afterEach(async () => {
@@ -88,12 +94,21 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
     await writeFile(paths.cwdSkillsToml(), '[docs]\nplan = "knowledge/plans"\n');
     const before = await bytes();
 
-    const advanced = await advanceFlow(fs, paths, { code: "001", adopt: false });
+    const advanced = await advanceFlow(fs, paths, {
+      code: "001",
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
     expect(advanced.ok).toBe(false);
     if (advanced.ok || !("failure" in advanced)) return;
     expect(advanced.failure.code).toBe("DOCS_CANON_INVALID");
 
-    const submitted = await submitFlow(fs, paths, { code: "001", raw: "{}", approval: null });
+    const submitted = await submitFlow(fs, paths, {
+      code: "001",
+      raw: "{}",
+      approval: null,
+      executor: testExecutor(fs, paths),
+    });
     expect(submitted.ok).toBe(false);
     if (submitted.ok || !("failure" in submitted)) return;
     expect(submitted.failure.code).toBe("DOCS_CANON_INVALID");
@@ -103,9 +118,14 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
   /** Put the run back where `beforeEach` left it, attempts included. */
   const reseed = async (): Promise<void> => {
     await rm(statePath());
-    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "quick", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: "001",
+      flow: "quick",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error("esperaba re-adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor: testExecutor(fs, paths) });
   };
 
   async function seal(): Promise<string> {
@@ -115,7 +135,12 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
   }
 
   async function submit(raw: string, approval: string | null = null): Promise<FlowDirective> {
-    const result = await submitFlow(fs, paths, { code: "001", raw, approval });
+    const result = await submitFlow(fs, paths, {
+      code: "001",
+      raw,
+      approval,
+      executor: testExecutor(fs, paths),
+    });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true, no ok:false");
     return result.directive;
   }
@@ -246,7 +271,12 @@ describe("fail-closed — los cinco modos dejan el estado intacto", () => {
 
   it("una sesión sin corrida no acepta respuestas", async () => {
     await rm(statePath());
-    const result = await submitFlow(fs, paths, { code: "001", raw: "{}", approval: null });
+    const result = await submitFlow(fs, paths, {
+      code: "001",
+      raw: "{}",
+      approval: null,
+      executor: testExecutor(fs, paths),
+    });
     if (result.ok) throw new Error("sin corrida no hay nada que responder");
     if ("session" in result) throw new Error("esperaba un fallo de corrida, no de sesión");
     expect(result.failure.code).toBe("FLOW_RUN_ABSENT");

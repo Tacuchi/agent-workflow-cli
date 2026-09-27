@@ -138,12 +138,13 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
 
   describe("una ESCRITURA delegada que falla", () => {
     beforeEach(async () => {
-      // Adoptada SIN ejecutor: la corrida llega a la fila delegada sin haberla
-      // ejecutado todavía, así cada avance de abajo es una ejecución contada.
+      // La adopción ya corre la fila interna: es la PRIMERA ejecución contada, y
+      // cada avance de abajo es una más.
       const adopted = await advanceFlow(fs, paths, {
         code: WRITE_SESSION,
         flow: "quick",
         adopt: true,
+        executor,
       });
       if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
     });
@@ -159,7 +160,7 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
     }
 
     it("queda AGOTADA en vez de degradarse, y el recorrido no se declara terminado", async () => {
-      for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await advance();
+      for (let turn = 1; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await advance();
       expect(runs).toBe(MAX_BOUNDARY_ATTEMPTS);
       // Agotada por intentos, el CLI la corre UNA vez más sin cobrar: la
       // agotaría igual el desfase de una escritura que falló después del efecto.
@@ -184,7 +185,8 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
     });
 
     it("y su salida declarada funciona: recover la devuelve a ejecutable", async () => {
-      for (let turn = 0; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await advance();
+      for (let turn = 1; turn < MAX_BOUNDARY_ATTEMPTS; turn += 1) await advance();
+      expect(runs).toBe(MAX_BOUNDARY_ATTEMPTS);
       const recovered = await recoverFlowBoundary(fs, paths, { code: WRITE_SESSION });
       if (!recovered.ok) throw new Error("esperaba recuperar la frontera agotada");
       expect(recovered.directive.boundary.transition).toBe("fixture.write");
@@ -199,6 +201,7 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
         code: SCOPE_SESSION,
         flow: "plan-exec",
         adopt: true,
+        executor,
       });
       if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
       expect((await state(SCOPE_SESSION)).boundary).toBe("fixture.scope");
@@ -209,6 +212,7 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
       const result = await submitFlow(fs, paths, {
         code: SCOPE_SESSION,
         approval: null,
+        executor,
         raw: JSON.stringify({
           input_digest: await seal(SCOPE_SESSION),
           decisions: { sources: [`inventada-${turn}`], plan: "docs/plans/025-plan.md" },
@@ -235,7 +239,11 @@ describe("una frontera agotada degrada sólo cuando saltearla no acredita nada",
 
     it("y agotada sale del bloqueo: degrada con causa o se recupera", async () => {
       for (const turn of [1, 2, 3]) await refuseScope(turn);
-      const degraded = await advanceFlow(fs, paths, { code: SCOPE_SESSION, adopt: false });
+      const degraded = await advanceFlow(fs, paths, {
+        code: SCOPE_SESSION,
+        adopt: false,
+        executor,
+      });
       if (!degraded.ok) throw new Error("esperaba una directiva del avance");
       const after = await state(SCOPE_SESSION);
       // Un juicio agotado sí se pasa por alto: saltearlo no acredita ninguna

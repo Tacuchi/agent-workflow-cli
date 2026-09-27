@@ -29,6 +29,7 @@ import { docsBoundaryBreach } from "../../src/domain/flow/rules.js";
 import { MAX_BOUNDARY_ATTEMPTS, newRunState } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * El tramo transversal — y por qué no se migró como se migró un flow.
@@ -87,6 +88,7 @@ async function acceptDefaultRoute(paths: PathsService, choice = ROUTE_ACCEPT_LAB
       },
     }),
     approval: null,
+    executor: testExecutor(fs, paths),
   });
   if (!proposed.ok) throw new Error("esperaba propuesta de ruta");
   const reviewed = await readRun(fs, locateRun(paths, SESSION));
@@ -96,6 +98,7 @@ async function acceptDefaultRoute(paths: PathsService, choice = ROUTE_ACCEPT_LAB
     code: CODE,
     raw: JSON.stringify({ input_digest: review.seal, choice }),
     approval: null,
+    executor: testExecutor(fs, paths),
   });
   if (!accepted.ok) throw new Error("esperaba aceptación de ruta");
 }
@@ -245,7 +248,12 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
       "# SESSION — prueba\n\n## Objective\nprobar\n",
       "utf8",
     );
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
     await acceptDefaultRoute(paths);
   });
@@ -276,6 +284,7 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
       code: CODE,
       raw: JSON.stringify({ input_digest: await seal(), signals: [`quick.inventada-${tried}`] }),
       approval: null,
+      executor: testExecutor(fs, paths),
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return {
@@ -311,7 +320,11 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
     // real: bloquear para siempre no es degradar, es el callejón que la regla
     // existe para evitar — una frontera que ya nadie puede contestar, en una
     // corrida que ya nadie puede terminar.
-    const advanced = await advanceFlow(fs, paths, { code: CODE, adopt: false });
+    const advanced = await advanceFlow(fs, paths, {
+      code: CODE,
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
     if (!advanced.ok) throw new Error("esperaba que la corrida siguiera");
     const given = advanced.directive.applied.find(
       (step) => step.transition === "quick.entry-gate-signal",
@@ -377,6 +390,7 @@ describe("el tope de intentos: la frontera degrada en vez de repetirse", () => {
         decisions: { tamaño: "cabe en un quick" },
       }),
       approval: null,
+      executor: testExecutor(fs, paths),
     });
     if (!applied.ok) throw new Error("esperaba que la respuesta se aplicara");
     expect(applied.directive.error).toBeNull();
@@ -576,7 +590,12 @@ describe("Compactar sobre una corrida real: pausa, no resuelve", () => {
       "# SESSION — prueba\n\n## Objective\nprobar\n",
       "utf8",
     );
-    await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     await acceptDefaultRoute(paths);
   });
 
@@ -597,33 +616,22 @@ describe("Compactar sobre una corrida real: pausa, no resuelve", () => {
         signals: ["quick.needs-architecture", "quick.multiple-deliverables"],
       }),
       approval: null,
+      executor: testExecutor(fs, paths),
     });
     if (!declared.ok) throw new Error("esperaba declarar las señales");
 
     // Con el umbral disparado, lo siguiente NO es el gate: es la búsqueda
-    // anti-duplicado, que decide cuál alternativa se recomienda. Se le devuelve
-    // su resultado real para llegar a la frontera humana.
-    const searching = await readRun(fs, locateRun(paths, SESSION));
-    if (!searching.ok) throw new Error("esperaba leer la corrida");
-    const search = resolveBoundary(searching.state, journeyOfFlow("quick"));
-    expect(search.kind).toBe("execution");
-    const searched = await submitFlow(fs, paths, {
-      code: CODE,
-      raw: JSON.stringify({
-        input_digest: search.seal,
-        outcome: "completed",
-        invocation: search.action?.invocation,
-        validations: (search.action?.evidence ?? []).map((id) => ({
-          id,
-          passed: true,
-          detail: `salida real de ${id}`,
-        })),
-        effects: { planned: ["read_only"], approved: [], applied: ["read_only"] },
-        output: null,
-      }),
-      approval: null,
-    });
-    if (!searched.ok) throw new Error("esperaba devolver el resultado de la búsqueda");
+    // anti-duplicado, que decide cuál alternativa se recomienda. La corre el CLI
+    // —es suya—, así que la corrida llega a la frontera humana con la lectura
+    // real del tablero ya acreditada, y sin que nadie la conteste a mano.
+    const searched = await readRun(fs, locateRun(paths, SESSION));
+    if (!searched.ok) throw new Error("esperaba leer la corrida");
+    expect(searched.state.applied).toContain("quick.anti-duplicate");
+    expect(
+      searched.state.events.find(
+        (event) => event.kind === "executed" && event.transition === "quick.anti-duplicate",
+      )?.operation,
+    ).toBe("workspace.board");
 
     const current = await readRun(fs, locateRun(paths, SESSION));
     if (!current.ok) throw new Error("esperaba leer la corrida");
@@ -635,6 +643,7 @@ describe("Compactar sobre una corrida real: pausa, no resuelve", () => {
       code: CODE,
       raw: JSON.stringify({ input_digest: boundary.seal, choice: PAUSE_LABEL }),
       approval: null,
+      executor: testExecutor(fs, paths),
     });
     if (!paused.ok) throw new Error("pausar viaja ok:true");
     expect(paused.directive.error?.code).toBe("FLOW_BOUNDARY_PAUSED");
@@ -672,7 +681,12 @@ describe("la corrida real cruza las filas transversales", () => {
   });
 
   it("adoptar aplica los hard gates del prefijo y se detiene en la propuesta de ruta", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
     // Aplicadas de verdad, no declaradas: son el primer tramo del recorrido y el
     // motor las cruza sin preguntar nada, que es lo que hace observable la forma.
@@ -686,7 +700,12 @@ describe("la corrida real cruza las filas transversales", () => {
   });
 
   it("acepta la etiqueta anterior sólo para una pregunta que quedó abierta durante el upgrade", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: true,
+      executor: testExecutor(fs, paths),
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
     await acceptDefaultRoute(paths, "Aceptar ruta");
     const current = await readRun(fs, locateRun(paths, SESSION));

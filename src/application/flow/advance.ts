@@ -87,8 +87,10 @@ import {
   settlementOwed,
   skipTransition,
   withBoundary,
+  withEvent,
   withPendingAction,
   withPlanExecBatchStageForTransition,
+  withRouteDecisions,
 } from "../../domain/flow/run-state.js";
 import {
   type SemanticRequest,
@@ -207,6 +209,7 @@ function walk(
   for (let index = state.applied.length; index < journey.length; index += 1) {
     const decision = journey[index];
     if (decision === undefined) break;
+    state = withRefusedRoute(state, decision);
     const passed = passOver(state, decision, journey);
     if (passed !== null) {
       state = passed.state;
@@ -265,12 +268,43 @@ function passOver(
 
 /** A route can alter only a transition that opted in through the registry. */
 function routeSkipReason(state: FlowRunState, decision: FlowDecision): string | null {
-  if (routeControlOf(decision) === null) return null;
+  const control = routeControlOf(decision);
+  if (control === null || control.consequences.omit === undefined) return null;
   const accepted = dispositionOf(state.route_decisions, decision.id);
   if (accepted?.disposition === "omit") {
     return "omitida por la ruta aprobada: la evidencia no se ejecutó ni se presenta como aprobada";
   }
   return null;
+}
+
+const ROUTE_REFUSAL_OPERATION = "flow.route-refusal";
+
+/**
+ * Trace an omission the route accepted and the registry no longer admits.
+ *
+ * A run in flight may carry one accepted before its row stopped offering `omit`.
+ * It is rewritten to `apply` — so the boundary is asked and the assurance no
+ * longer reports as omitted a validation that will run — and the trace says so,
+ * once, so the question is never a surprise for whoever approved skipping it.
+ */
+function withRefusedRoute(state: FlowRunState, decision: FlowDecision): FlowRunState {
+  const control = routeControlOf(decision);
+  if (control === null || control.consequences.omit !== undefined) return state;
+  if (dispositionOf(state.route_decisions, decision.id)?.disposition !== "omit") return state;
+  const applied = withRouteDecisions(
+    state,
+    (state.route_decisions ?? []).map((accepted) =>
+      accepted.transition === decision.id ? { ...accepted, disposition: "apply" } : accepted,
+    ),
+  );
+  return withEvent(applied, {
+    kind: "route-refused",
+    transition: decision.id,
+    operation: ROUTE_REFUSAL_OPERATION,
+    disposition: "omit",
+    reason:
+      "la ruta aceptó omitirla, pero su evidencia acredita el lote y el registro ya no admite saltearla",
+  });
 }
 
 /**

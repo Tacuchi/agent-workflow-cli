@@ -7,6 +7,7 @@ import type { PathsService } from "../../src/application/paths-service.js";
 import {
   type FlowDecision,
   effectsOf,
+  internalActionOf,
   journeyForState,
   journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
@@ -64,11 +65,32 @@ export interface WalkOptions {
   signals?: readonly string[];
 }
 
+/**
+ * The proofs a source-bounded boundary gets: one per source of the batch at the
+ * phase validation, the documentary one anywhere else.
+ *
+ * The walk passes no git reader, so freshness is not measured; what the digest
+ * still has to be is distinct per boundary, because a batch whose proof already
+ * credited another batch is refused whatever the checkout says.
+ */
+function proofsFor(
+  resolved: WalkResolved,
+  stopped: FlowDecision,
+  sources: readonly string[],
+): { source: string; digest: string }[] {
+  const perBatch = stopped.id === "plan-exec.validation-execution";
+  return (perBatch ? sources : ["workspace"]).map((source) => ({
+    source,
+    digest: perBatch ? `test-checkout-${source}-${resolved.seal.slice(0, 16)}` : "test-checkout",
+  }));
+}
+
 /** What an external executor would hand back for the boundary in force. */
 function resultFor(
   resolved: WalkResolved,
   stopped: FlowDecision,
   override: WalkResultOverride,
+  sources: readonly string[],
 ): Record<string, unknown> {
   const action = resolved.action;
   if (action === null) throw new Error("esta frontera no nombra ninguna acción");
@@ -76,22 +98,22 @@ function resultFor(
     input_digest: resolved.seal,
     outcome: override.outcome ?? "completed",
     invocation: action.invocation,
-    validations: action.evidence.map((id) => ({
-      id,
-      passed: true,
-      detail: `salida real de ${id}`,
-      ...(id === "workline.source-bounded"
-        ? {
+    validations: action.evidence.flatMap((id) =>
+      id === "workline.source-bounded"
+        ? proofsFor(resolved, stopped, sources).map((proof) => ({
+            id,
+            passed: true,
+            detail: `salida real de ${id} en ${proof.source}`,
             proof: {
               kind: "inspection" as const,
-              source: "workspace",
+              source: proof.source,
               relative_cwd: ".",
-              checkout_digest: "test-checkout",
+              checkout_digest: proof.digest,
               invocation: { artifact: "tests/helpers/plan-exec-walk.ts" },
             },
-          }
-        : {}),
-    })),
+          }))
+        : [{ id, passed: true, detail: `salida real de ${id}` }],
+    ),
     effects: {
       planned: [...effectsOf(stopped)],
       approved: [],
@@ -130,7 +152,7 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
     override: WalkResultOverride = {},
   ): Record<string, unknown> {
     const stopped = resolved.stopped as FlowDecision;
-    if (resolved.kind === "execution") return resultFor(resolved, stopped, override);
+    if (resolved.kind === "execution") return resultFor(resolved, stopped, override, sources);
     if (resolved.kind === "semantic") {
       // Only what THIS boundary declares: a signal offered where the row does not
       // admit it is a malformed answer, and it would burn one of the run's tries.
@@ -182,12 +204,24 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
       executor: executor(),
       git: deps.git,
     });
+    let last: Awaited<ReturnType<typeof step>> | null = null;
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const { resolved } = await current(run.folder);
+      const { state, resolved } = await current(run.folder);
       if (resolved.stopped === null || resolved.stopped.id === id) return;
-      await step(run);
+      // The driver runs an internal row after every answer, so standing on one
+      // means its operation refused: answering it would only be rejected, and the
+      // cause worth reporting is the refusal the run traced.
+      if (internalActionOf(resolved.stopped) !== null) {
+        const refused = [...state.events].reverse().find((event) => event.kind === "failed");
+        throw new Error(
+          `${run.folder} nunca llegó a '${id}': la acción interna '${resolved.stopped.id}' no se completó: ${JSON.stringify(refused ?? null)}`,
+        );
+      }
+      last = await step(run);
     }
-    throw new Error(`${run.folder} nunca llegó a '${id}'`);
+    throw new Error(
+      `${run.folder} nunca llegó a '${id}': quedó en '${last?.boundary.transition}' con ${JSON.stringify(last?.error)}`,
+    );
   }
 
   return { EXEC, executor, current, bodyFor, step, walkTo };

@@ -222,23 +222,6 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     expect(event.summary).toContain(SESSION);
   });
 
-  it("sin ejecutor la acción interna vuelve a ser la frontera que siempre fue", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: true });
-    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
-    const directive = await advanceFlow(fs, paths, {
-      code: "001",
-      flow: "plan-exec",
-      adopt: false,
-    });
-    if (!directive.ok) throw new Error("esperaba una directiva");
-    // Degrada el MECANISMO, nunca el contrato: nada se acredita y la invocación
-    // viaja para que la corra quien pueda.
-    expect(directive.directive.boundary.transition).toBe("plan-exec.session");
-    expect(directive.directive.boundary.kind).toBe("execution");
-    expect((await state()).applied).not.toContain("plan-exec.session");
-  });
-
   it("una lectura que no encuentra lo que la transición exige no acredita nada", async () => {
     await rm(join(paths.cwdSessionsDir(), SESSION, "SESSION.md"));
     const directive = await advance();
@@ -282,38 +265,40 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
       code: "001",
       flow: "plan-exec",
       adopt: true,
-    });
-    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
-    const result = await advanceFlow(fs, paths, {
-      code: "001",
-      flow: "plan-exec",
-      adopt: false,
       executor: racing,
     });
-    if (result.ok) throw new Error("una carrera perdida no puede devolver una directiva aplicada");
-    expect("failure" in result && result.failure.code).toBe("FLOW_RUN_STALE");
+    if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+    // La primera acción interna la corre el submit que acepta la ruta: la carrera
+    // pasa ahí, y el helper convierte el rechazo en un error con su código.
+    await expect(acceptAdaptiveRoute(fs, paths, SESSION, { executor: racing })).rejects.toThrow(
+      "FLOW_RUN_STALE",
+    );
     const current = await state();
     expect(current.applied).not.toContain("plan-exec.session");
   });
 
   it("una caída después de anotar la intención reingresa y confirma sin duplicar", async () => {
-    // Primera pasada: emite la frontera interna sin ejecutarla (sin ejecutor) y
-    // deja anotado que ya se empezó — exactamente el estado que sobrevive a una
-    // caída entre la intención y el efecto.
-    const adopted = await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: true });
+    // Primera pasada: el driver anota la intención y el proceso muere antes del
+    // veredicto. Lo que queda en disco es el estado que el driver persistió justo
+    // antes de correr la operación — exactamente lo que sobrevive a esa caída.
+    let marked: string | null = null;
+    const dying: InternalActionExecutor = async () => {
+      marked = await readFile(statePath(), "utf8");
+      throw new Error("el proceso murió");
+    };
+    const adopted = await advanceFlow(fs, paths, {
+      code: "001",
+      flow: "plan-exec",
+      adopt: true,
+      executor: dying,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
-    await advanceFlow(fs, paths, { code: "001", flow: "plan-exec", adopt: false });
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor: dying });
+    if (marked === null) throw new Error("la operación nunca corrió");
+    await writeFile(statePath(), marked, "utf8");
     const before = await state();
-    const { digest: _seal, ...rest } = before;
-    const pending = before.pending_action;
-    if (pending === null) throw new Error("esperaba una acción pendiente");
-    await writeFile(
-      statePath(),
-      serializeRunState(sealRunState({ ...rest, pending_action: { ...pending, attempted: true } })),
-      "utf8",
-    );
+    expect(before.pending_action?.attempted).toBe(true);
+    expect(before.events).toEqual([]);
 
     const directive = await advance();
     // Reentrada interna: la operación es repetible, así que se vuelve a correr y
@@ -416,7 +401,15 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
 
     const adopted = await flowCommand.execute(args, ctx);
     expect(adopted.ok).toBe(true);
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    // Aceptar la ruta ya corre la primera acción interna. Acá se la difiere sin
+    // efectos para que la corra el comando real, que es lo que esta prueba fija.
+    const deferring: InternalActionExecutor = async (plan) => ({
+      ok: false,
+      summary: `${plan.operation}: diferida al comando`,
+      output: "",
+      effects: [],
+    });
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor: deferring });
     const result = await flowCommand.execute(args, ctx);
     expect(result.ok).toBe(true);
     expect(result.data?.applied.map((step) => step.transition)).toContain("plan-exec.session");

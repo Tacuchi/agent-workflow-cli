@@ -22,6 +22,7 @@ import { FLOW_BOUNDARY_KINDS } from "../../src/domain/flow/directive.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * El cierre de la migración: no queda autoridad legacy y el fallback se retiró.
@@ -275,18 +276,31 @@ describe("la corrida real de SPEC llega al final, que antes era imposible", () =
   }
 
   it("cruza el gate de división y termina, sin remitir a ningún documento", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
+    const executor = testExecutor(fs, paths);
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "spec-refine",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
 
     const crossed: string[] = [];
     for (let step = 0; step < 40; step += 1) {
-      const { resolved } = await current();
+      const { state, resolved } = await current();
       if (resolved.kind === "final") {
         // Lo que esta fase desbloqueó: el recorrido entero, de punta a punta.
         expect(crossed).toContain("spec-refine.split-signal");
         expect(crossed).toContain("spec-refine.design-reuse");
-        expect(crossed).toContain("chassis.finalize");
+        // El cierre lo cruza el CLI corriendo la operación, no una respuesta: lo
+        // que lo acredita es el evento de lo que de verdad ejecutó.
+        expect(state.applied).toContain("chassis.finalize");
+        expect(
+          state.events.find(
+            (event) => event.kind === "executed" && event.transition === "chassis.finalize",
+          ),
+        ).toMatchObject({ operation: "session.close" });
         expect(resolved.error).toBeNull();
         return;
       }
@@ -299,6 +313,7 @@ describe("la corrida real de SPEC llega al final, que antes era imposible", () =
         code: CODE,
         raw: JSON.stringify(body),
         approval,
+        executor,
       });
       if (!sent.ok) throw new Error("un rechazo de negocio viaja ok:true");
       expect(sent.directive.error, stopped.id).toBeNull();

@@ -23,9 +23,10 @@ import {
 } from "../../application/source-boundary-policy.js";
 import type { EffectClass } from "../capability/effects.js";
 import type { CapabilityOutcome } from "../capability/protocol.js";
-import { SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
+import { type CheckoutProof, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
 import type { FlowExecutionResult } from "./answer.js";
 import type { DelegatedAction } from "./authority.js";
+import type { PlanExecBatch } from "./run-state.js";
 
 export interface ExecutionRefusal {
   message: string;
@@ -72,13 +73,19 @@ export function executionVerdict(
     };
   }
   if (action.evidence.includes(SOURCE_BOUNDED_EVIDENCE)) {
-    const validation = result.validations.find((item) => item.id === SOURCE_BOUNDED_EVIDENCE);
-    const proof = validateCheckoutProof(validation?.proof, checkoutStates);
-    if (proof !== null) {
-      return {
-        message: proof.message,
-        detail: { code: proof.code, action: action.recovery, outcome: "needs_input" },
-      };
+    // Every proof the result carries is judged, not only the first: a batch of
+    // several sources brings one per source, and a stale one among them must not
+    // ride on a fresh sibling.
+    for (const validation of result.validations.filter(
+      (item) => item.id === SOURCE_BOUNDED_EVIDENCE,
+    )) {
+      const proof = validateCheckoutProof(validation.proof, checkoutStates);
+      if (proof !== null) {
+        return {
+          message: proof.message,
+          detail: { code: proof.code, action: action.recovery, outcome: "needs_input" },
+        };
+      }
     }
   }
   const applied = new Set(result.effects.applied);
@@ -100,4 +107,103 @@ export function executionVerdict(
     };
   }
   return null;
+}
+
+/** What a batch's phase validation is judged against, beyond the live checkouts. */
+export interface BatchCreditInput {
+  /** The batch this iteration walks. */
+  batch: PlanExecBatch;
+  /** Every batch of the run, the current one included. */
+  batches: readonly PlanExecBatch[];
+  /** The sources the batch has to prove, one proof each. */
+  sources: readonly string[];
+  /**
+   * Each source's scoped fingerprint right now; `null` for a caller that has no
+   * live reader, which judges the proofs' presence and reuse but not the change.
+   */
+  scoped: Readonly<Record<string, string | null>> | null;
+}
+
+/**
+ * Whether a batch earned its credit with proofs of its OWN checkout — and which.
+ *
+ * The same `detail` in two batches decides nothing: what does is that at least
+ * one source of this batch changed since its base, and that the proof of that
+ * source did not already credit another batch. A source that did not change may
+ * carry the same proof it carried before — a two-source batch that legitimately
+ * touches one of them is still one batch of work.
+ */
+export function batchCreditVerdict(
+  result: FlowExecutionResult,
+  input: BatchCreditInput,
+  recovery: string,
+): { ok: true; credit: Record<string, string> } | { ok: false; refusal: ExecutionRefusal } {
+  const proofs = result.validations.flatMap((validation) =>
+    validation.id === SOURCE_BOUNDED_EVIDENCE && validation.proof !== undefined
+      ? [validation.proof]
+      : [],
+  );
+  const refused = (code: string, message: string) => ({
+    ok: false as const,
+    refusal: { message, detail: { code, action: recovery, outcome: "needs_input" as const } },
+  });
+  const credit: Record<string, string> = {};
+  for (const source of input.sources) {
+    const own = proofs.filter((proof) => proof.source === source);
+    if (own.length !== 1) {
+      return refused(
+        own.length === 0 ? "WORKLINE_CHECKOUT_PROOF_MISSING" : "WORKLINE_CHECKOUT_PROOF_INVALID",
+        own.length === 0
+          ? `el batch ${input.batch.id} exige una prueba de checkout por fuente y falta la de '${source}'`
+          : `el batch ${input.batch.id} trae ${own.length} pruebas de '${source}': va una por fuente`,
+      );
+    }
+    credit[source] = (own[0] as CheckoutProof).checkout_digest;
+  }
+  const creditedBy = new Map(
+    input.batches
+      .filter((batch) => batch.id !== input.batch.id)
+      .flatMap((batch) => Object.values(batch.credit ?? {}).map((digest) => [digest, batch.id])),
+  );
+  const fresh = input.sources.filter((source) => !creditedBy.has(credit[source] as string));
+  if (fresh.length === 0) {
+    const reused = input.sources
+      .map((source) => `'${source}' ya acreditó ${creditedBy.get(credit[source] as string)}`)
+      .join("; ");
+    return refused(
+      "PLAN_EXEC_PROOF_REUSED",
+      `el batch ${input.batch.id} no trae ninguna prueba propia: ${reused}`,
+    );
+  }
+  // A batch that began before its base could be recorded is judged against the
+  // credits and the live checkout alone: a base rebuilt now would be invented.
+  const base = input.batch.base;
+  if (base === undefined || input.scoped === null) return { ok: true, credit };
+  const scoped = input.scoped;
+  const changed = fresh.filter((source) => {
+    const before = base[source];
+    const now = scoped[source];
+    return typeof before === "string" && typeof now === "string" && before !== now;
+  });
+  if (changed.length > 0) return { ok: true, credit };
+  const since =
+    input.batch.iteration === 1 ? "el inicio de la corrida" : "el cierre del batch anterior";
+  const why = input.sources
+    .map((source) => {
+      if (base[source] === null || base[source] === undefined) {
+        return `'${source}' no se pudo observar al empezar el batch`;
+      }
+      if (scoped[source] === null || scoped[source] === undefined) {
+        return `'${source}' no se puede observar ahora`;
+      }
+      if (creditedBy.has(credit[source] as string)) {
+        return `la prueba de '${source}' ya acreditó ${creditedBy.get(credit[source] as string)}`;
+      }
+      return `'${source}' no cambió`;
+    })
+    .join("; ");
+  return refused(
+    "PLAN_EXEC_BATCH_UNCHANGED",
+    `el batch ${input.batch.id} no cambió su checkout desde ${since}: ${why}`,
+  );
 }

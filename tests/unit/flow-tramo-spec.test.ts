@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -23,6 +23,7 @@ import { thresholdFired } from "../../src/domain/flow/rules.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * SPEC, dirigido por el CLI — el segundo tramo, y el que puso a prueba el
@@ -169,10 +170,12 @@ describe("el tramo SPEC migró lo suyo y nada de un documento compartido", () =>
 describe("SPEC dirigido — sobre una corrida real en disco", () => {
   let workdir: string;
   let paths: PathsService;
+  let executor: ReturnType<typeof testExecutor>;
 
   beforeEach(async () => {
     workdir = await mkdtemp(join(tmpdir(), "aw-tramo-spec-"));
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+    executor = testExecutor(fs, paths);
     await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
     await writeFile(
       join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
@@ -196,6 +199,7 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
       code: CODE,
       raw: JSON.stringify(body),
       approval,
+      executor,
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return result.directive;
@@ -262,9 +266,14 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
 
   /** Adopt the run and answer up to the boundary of `id`, declaring `signals` where admissible. */
   async function walkTo(id: string, signals: string[]): Promise<void> {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "spec-refine",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
     for (let step = 0; step < 30; step += 1) {
       const { resolved } = await current();
       if (resolved.stopped === null || resolved.stopped.id === id) return;
@@ -283,14 +292,26 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
   }
 
   it("la sesión de refinamiento no se da por abierta sin leerla", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
+    // Sin su SESSION.md, la lectura real se niega: la frontera queda en pie con
+    // la causa que encontró, en vez de darse por abierta.
+    const session = join(paths.cwdSessionsDir(), SESSION, "SESSION.md");
+    await rm(session);
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "spec-refine",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    const started = (await acceptAdaptiveRoute(fs, paths, SESSION)) ?? adopted.directive;
+    const started =
+      (await acceptAdaptiveRoute(fs, paths, SESSION, { executor })) ?? adopted.directive;
     expect(started.boundary.kind).toBe("execution");
     expect(started.boundary.transition).toBe("spec-refine.session");
     expect(started.action?.invocation.args).toEqual(["session-artifacts", "--code", SESSION]);
+    expect(started.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
 
-    // Una narración no es un resultado.
+    // Una narración no es un resultado — y sobre una fila que corre el CLI, ni
+    // siquiera un resultado bien formado la acredita.
     const claimed = await answer({
       input_digest: started.state_digest,
       outcome: "completed",
@@ -299,11 +320,31 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
       effects: { planned: ["local_additive"], approved: [], applied: ["local_additive"] },
       output: null,
     });
-    expect(claimed.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+    expect(claimed.error?.code).toBe("FLOW_INTERNAL_ACTION_EXTERNAL_RESULT");
     // Los dos pasos transversales del prefijo ya se aplicaron —fijan la carpeta
     // escribible y el tope de intentos antes de que nada corra—, así que lo que
     // se afirma es lo que el resultado NO acreditó: la sesión sigue sin abrirse.
     expect((await current()).state.applied).not.toContain("spec-refine.session");
+
+    // Con el artefacto de vuelta, la sesión se abre LEYÉNDOLA: el crédito es el
+    // evento de la operación que corrió, con la evidencia que la fila exige.
+    await writeFile(session, "# SESSION — tramo spec\n\n## Objective\nrefinar la spec de prueba\n");
+    const read = await advanceFlow(fs, paths, {
+      code: CODE,
+      adopt: false,
+      executor,
+    });
+    if (!read.ok) throw new Error("esperaba reanudar la corrida");
+    const { state } = await current();
+    expect(state.applied).toContain("spec-refine.session");
+    expect(
+      state.events.find(
+        (event) => event.kind === "executed" && event.transition === "spec-refine.session",
+      ),
+    ).toMatchObject({
+      operation: "session.artifacts",
+      evidence: ["spec.session-present"],
+    });
   });
 
   it("sin disparador declarado, la ronda de ideación no se ofrece", async () => {
@@ -361,19 +402,32 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
       input_digest: gate.resolved.seal,
       choice: "Aprobar y guardar",
     });
-    // La aprobación NO escribe: la publicación es el paso siguiente, y sin
-    // ejecutor interno vuelve como la acción que alguien tiene que correr.
-    expect(approved.boundary.transition).toBe("spec-refine.publication");
-    expect(existsSync(join(workdir, "docs/specs/001-spec-tramo.md"))).toBe(false);
-
+    // La aprobación no escribe por sí misma: la publicación sigue siendo su propio
+    // paso, y lo cruza el CLI corriendo la operación real — no una respuesta que
+    // alguien arme. El rastro lo dice: la confirmación aplicada, y DESPUÉS el
+    // evento de la publicación con lo que de verdad escribió.
+    expect(approved.error).toBeNull();
     const held = await current();
+    expect(held.state.applied).toContain("spec-refine.save-confirmation");
+    expect(held.state.applied.indexOf("spec-refine.save-confirmation")).toBeLessThan(
+      held.state.applied.indexOf("spec-refine.publication"),
+    );
+    const published = held.state.events.find(
+      (event) => event.kind === "executed" && event.transition === "spec-refine.publication",
+    );
+    expect(published).toMatchObject({
+      operation: "proposal.publish",
+      effects: ["local_additive"],
+    });
+    // Documento y sello juntos, en una sola escritura: los bytes que se aprobaron.
+    expect(await readFile(join(workdir, "docs/specs/001-spec-tramo.md"), "utf8")).toBe(
+      SPEC_ARTIFACT({ destinations: ["docs/specs"] }).content,
+    );
+
     // El grant quedó atado al sello de ESTA propuesta, y a ningún otro.
     expect(held.state.authorizations.map((grant) => grant.digest)).toEqual([sealed]);
     expect(held.state.authorizations[0]?.destinations).toEqual(["docs/specs/001-spec-tramo.md"]);
 
-    const published = await answer(resultFor(held.resolved));
-    expect(published.error).toBeNull();
-    expect(published.effects.applied).toContain("local_additive");
     // Y la propuesta queda gastada: nada sigue ofreciendo previsualizar bytes que
     // ya están en disco.
     expect((await current()).state.proposal).toBeNull();
@@ -398,9 +452,14 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
   });
 
   it("el recorrido llega al gate de división y lo pregunta él mismo, sin remitir a nada", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "spec-refine", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "spec-refine",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
     for (let step = 0; step < 12; step += 1) {
       const { resolved } = await current();
       if (resolved.stopped?.id === "spec-refine.split-signal") {

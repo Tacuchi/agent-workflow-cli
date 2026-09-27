@@ -117,7 +117,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     for (const run of [UNO, DOS]) {
       writeFileSync(
         join(workspace, run.plan),
-        `# Plan ${run.code}\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — aislamiento\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — aislar la unidad _(fuentes: ${ALIAS})_\n`,
+        `# Plan ${run.code}\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — aislamiento\n> Estado: pendiente\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — aislar la unidad _(fuentes: ${ALIAS})_\n`,
       );
       const dir = join(deps.paths.cwdSessionsDir(), run.folder);
       mkdirSync(dir, { recursive: true });

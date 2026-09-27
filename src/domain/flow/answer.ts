@@ -155,6 +155,10 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // about is no longer the one this build emits. Nothing about the ANSWER was
   // weighed, and the next `advance` re-binds the action by itself.
   FLOW_ACTION_CHANGED: "envelope",
+  // A result sent for a step the CLI runs itself. Nothing about it can be weighed
+  // — the only credit is the driver's own run — and the way out is to run the
+  // action, so charging the envelope would punish choosing the wrong verb.
+  FLOW_INTERNAL_ACTION_EXTERNAL_RESULT: "envelope",
   FLOW_ANSWER_AMBIGUOUS: "evaluated",
   FLOW_SIGNAL_UNKNOWN: "evaluated",
   FLOW_CHOICE_UNKNOWN: "evaluated",
@@ -168,6 +172,10 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   WORKLINE_CHECKOUT_PROOF_INVALID: "evaluated",
   WORKLINE_CHECKOUT_PROOF_STALE: "evaluated",
   FLOW_EFFECT_PARTIAL: "evaluated",
+  // The phase validation's own: the proofs were read and they are not this
+  // batch's — nothing changed since its base, or they already credited another.
+  PLAN_EXEC_BATCH_UNCHANGED: "evaluated",
+  PLAN_EXEC_PROOF_REUSED: "evaluated",
   // The scope boundary's own vocabulary. Its answer is `decisions.sources` plus
   // `decisions.plan`, and every one of these means the CLI read them and found
   // them wanting — a decision that did not resolve the gap.

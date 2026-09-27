@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
+import type { InternalActionExecutor } from "../../src/application/flow/internal-actions.js";
 import { projectRun } from "../../src/application/flow/run-projection.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
@@ -23,6 +24,8 @@ import { bindAction, skipReason, thresholdFired } from "../../src/domain/flow/ru
 import {
   FLOW_RUN_STATE_FILE,
   type FlowFixPreview,
+  type FlowRunEvent,
+  type FlowRunState,
   attemptAccountingAt,
   newRunState,
   parseRunState,
@@ -33,6 +36,7 @@ import {
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * QUICK, dirigido por el CLI — el primer consumidor de producción del motor.
@@ -46,9 +50,10 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
  *    Cero o una señal omiten el gate — y la omisión queda escrita con su motivo,
  *    porque `applied.length` es el cursor y un paso que desaparece del cursor es
  *    un paso que nadie puede auditar.
- * 2. **Buscar, sembrar y validar no se acreditan por decreto.** Las tres filas con
- *    acción delegada nombran su invocación exacta —ya ligada a ESTA sesión— y no
- *    aplican nada hasta que vuelve la salida real.
+ * 2. **Buscar, sembrar y validar no se acreditan por decreto.** Las filas con
+ *    acción delegada nombran su invocación exacta —ya ligada a ESTA sesión—; las
+ *    que son del CLI las corre él y dejan su corrida en la traza. Ninguna aplica
+ *    nada hasta que vuelve la salida real.
  * 3. **El tramo es el documento, no el scope.** Las cinco filas transversales
  *    siguen siendo de la doctrina: migrarlas acá movería un tramo que nadie
  *    planeó.
@@ -272,19 +277,44 @@ describe("las reglas del tramo, sobre observaciones que nadie filtró", () => {
   });
 });
 
+/**
+ * La sesión sembrada como la deja un quick de verdad: objetivo con un criterio
+ * escrito, CHECKPOINT y el script de la sesión.
+ *
+ * Las filas internas las corre el CLI contra ESTOS archivos —ya no hay respuesta
+ * a mano que las acredite—, así que una sesión a medio sembrar se quedaría en la
+ * primera lectura que la mira, y el recorrido nunca llegaría a lo que se prueba.
+ */
+async function seedSession(paths: PathsService): Promise<void> {
+  const dir = join(paths.cwdSessionsDir(), SESSION);
+  await mkdir(join(dir, "scripts"), { recursive: true });
+  await writeFile(
+    join(dir, "SESSION.md"),
+    "# SESSION — tramo quick\n\n## Objective\nprobar el tramo\n\n## Success criteria\n- [ ] el test rojo del borde pasa a verde\n",
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "CHECKPOINT.md"),
+    "# CHECKPOINT\n\nsembrado antes de trabajar\n",
+    "utf8",
+  );
+  await writeFile(
+    join(dir, "scripts", "001-cosa.sql"),
+    "-- derivado, sin ejecutar\nSELECT 1;\n",
+    "utf8",
+  );
+}
+
 describe("QUICK dirigido — sobre una corrida real en disco", () => {
   let workdir: string;
   let paths: PathsService;
+  let executor: InternalActionExecutor;
 
   beforeEach(async () => {
     workdir = await mkdtemp(join(tmpdir(), "aw-tramo-quick-"));
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
-    await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
-    await writeFile(
-      join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
-      "# SESSION — tramo quick\n\n## Objective\nprobar el tramo\n",
-      "utf8",
-    );
+    executor = testExecutor(fs, paths);
+    await seedSession(paths);
   });
 
   afterEach(async () => {
@@ -298,10 +328,23 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     return { state: read.state, resolved: resolveBoundary(read.state, JOURNEY) };
   }
 
+  /** Lo que el CLI corrió de verdad para esa fila: su evento `executed`, o nada. */
+  function executedAt(state: FlowRunState, transition: string) {
+    return state.events.find(
+      (event): event is Extract<FlowRunEvent, { kind: "executed" }> =>
+        event.kind === "executed" && event.transition === transition,
+    );
+  }
+
   async function adopt(): Promise<FlowDirective> {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    return (await acceptAdaptiveRoute(fs, paths, SESSION)) ?? adopted.directive;
+    return (await acceptAdaptiveRoute(fs, paths, SESSION, { executor })) ?? adopted.directive;
   }
 
   async function answer(body: unknown, approval: string | null = null): Promise<FlowDirective> {
@@ -309,6 +352,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       code: CODE,
       raw: JSON.stringify(body),
       approval,
+      executor,
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
     return result.directive;
@@ -386,12 +430,13 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
   });
 
   it("dos señales presentan las tres alternativas propias más el control de flujo", async () => {
-    await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
+    const directive = await declare(["quick.needs-architecture", "quick.multiple-deliverables"]);
     // Con el umbral disparado, la búsqueda anti-duplicado sí ocurre: es lo que
-    // decide cuál alternativa se recomienda.
+    // decide cuál alternativa se recomienda. La corre el CLI, y lo que queda es
+    // su lectura real del tablero, no una frontera que otro contesta.
     const search = await current();
-    expect(search.resolved.stopped?.id).toBe("quick.anti-duplicate");
-    const directive = await answer(resultFor(search.resolved));
+    expect(search.state.applied).toContain("quick.anti-duplicate");
+    expect(executedAt(search.state, "quick.anti-duplicate")?.operation).toBe("workspace.board");
 
     expect(directive.boundary.kind).toBe("human");
     expect(directive.boundary.transition).toBe("quick.gate-choice");
@@ -427,8 +472,21 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(state.skipped).toEqual([]);
   });
 
+  /**
+   * La búsqueda la corre el CLI, y nada la acredita hasta que su salida real vuelve.
+   *
+   * Para verla parada hace falta un tablero que no se deja leer: con uno legible
+   * el CLI la cruza solo y la frontera nunca queda en pie para que alguien la
+   * conteste desde afuera.
+   */
   it("el anti-duplicado nombra su búsqueda y no aplica nada hasta que vuelve", async () => {
+    const real = executor;
+    executor = async (plan, run) => {
+      if (plan.operation === "workspace.board") throw new Error("tablero ilegible");
+      return real(plan, run);
+    };
     await declare(["quick.needs-architecture", "quick.two-or-more-sources"]);
+    executor = real;
     const { state, resolved } = await current();
     expect(resolved.kind).toBe("execution");
     expect(resolved.stopped?.id).toBe("quick.anti-duplicate");
@@ -436,66 +494,117 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(resolved.action?.invocation.args).toEqual(["status", "--json"]);
     expect(state.applied).not.toContain("quick.anti-duplicate");
     expect(state.pending_action?.transition).toBe("quick.anti-duplicate");
+    expect(executedAt(state, "quick.anti-duplicate")).toBeUndefined();
+    const spent = attemptAccountingAt(state, "quick.anti-duplicate").spent;
 
-    // Una confirmación no es un resultado.
+    // Y lo que `resume` y `status` proyectan dice lo mismo: la invocación queda a
+    // la vista para diagnosticar, pero lo que continúa la corrida es el avance,
+    // que la vuelve a correr el CLI. Mandar a devolverla con `submit` sería
+    // mandar a hacer justo lo que se rechaza abajo.
+    const projected = await projectRun(fs, paths, SESSION);
+    expect(projected?.transition).toBe("quick.anti-duplicate");
+    expect(projected?.invocation).toBe("aw status --json");
+    expect(projected?.command).toBe(`aw flow advance --code ${SESSION}`);
+    expect(projected?.summary).toContain(`aw flow restart --session ${SESSION}`);
+    expect(projected?.summary).not.toContain("aw flow submit");
+
+    // Una confirmación no es un resultado — y un resultado armado a mano tampoco:
+    // la fila es del CLI, y lo único que la acredita es su propia corrida. Ninguno
+    // de los dos aplica nada ni gasta un intento.
     const claimed = await answer({ input_digest: resolved.seal, confirmed: true });
-    expect(claimed.error?.code).toBe("FLOW_RESULT_INVALID");
+    expect(claimed.error?.code).toBe("FLOW_INTERNAL_ACTION_EXTERNAL_RESULT");
+    const forged = await answer(resultFor(resolved));
+    expect(forged.error?.code).toBe("FLOW_INTERNAL_ACTION_EXTERNAL_RESULT");
+    expect(forged.error?.action).toContain(`aw flow advance --session ${SESSION}`);
     const untouched = await current();
     expect(untouched.state.applied).not.toContain("quick.anti-duplicate");
+    expect(attemptAccountingAt(untouched.state, "quick.anti-duplicate").spent).toBe(spent);
 
     // La salida real sí — y lo que sigue es el gate, porque el umbral disparó.
-    const applied = await answer(resultFor(resolved));
-    expect(applied.error).toBeNull();
-    expect(applied.boundary.transition).toBe("quick.gate-choice");
+    const resumed = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: false,
+      executor,
+    });
+    if (!resumed.ok) throw new Error("esperaba reanudar la corrida");
+    expect(resumed.directive.error).toBeNull();
+    expect(resumed.directive.boundary.transition).toBe("quick.gate-choice");
     const after = await current();
     expect(after.state.applied).toContain("quick.anti-duplicate");
+    const ran = executedAt(after.state, "quick.anti-duplicate");
+    expect(ran?.operation).toBe("workspace.board");
+    expect(ran?.evidence).toEqual(["quick.board-listed"]);
+    expect(ran?.summary).toContain("tablero:");
   });
 
   it("la siembra pide el dump de ESTA sesión, con el código ya ligado", async () => {
+    // Una siembra a medias: objetivo y criterios, sin CHECKPOINT.
+    const checkpoint = join(paths.cwdSessionsDir(), SESSION, "CHECKPOINT.md");
+    await rm(checkpoint);
     await declare([]);
 
+    // La lectura de la sesión la corrió el CLI sobre ESTA sesión: su resumen sale
+    // de la salida real, que nombra la carpeta que el código ligado resolvió.
     const create = await current();
-    expect(create.resolved.stopped?.id).toBe("quick.session-create");
-    expect(create.resolved.action?.invocation.args).toEqual([
+    const read = executedAt(create.state, "quick.session-create");
+    expect(read?.operation).toBe("session.artifacts");
+    expect(read?.evidence).toEqual(["quick.session-present"]);
+    expect(read?.summary).toContain(`sesión ${SESSION}`);
+
+    const authoring = create;
+    expect(authoring.resolved.kind).toBe("semantic");
+    expect(authoring.resolved.stopped?.id).toBe("quick.success-criteria-authoring");
+    const partial = await answer({
+      input_digest: authoring.resolved.seal,
+      decisions: { criterio: "una prueba" },
+    });
+
+    // Evidencia a medias no siembra nada: el dump volvió sin el CHECKPOINT, y la
+    // frontera queda en pie con la invocación ya ligada y la causa real.
+    const seed = await current();
+    expect(seed.resolved.stopped?.id).toBe("quick.artifact-seed-order");
+    expect(seed.resolved.action?.invocation.args).toEqual([
       "session-artifacts",
       "--code",
       SESSION,
+      "--dump",
+      "objetivo,checkpoint",
     ]);
-    expect(create.resolved.action?.invocation.target).toBe(SESSION);
+    expect(seed.resolved.action?.invocation.target).toBe(SESSION);
     // El placeholder nunca llega a quien ejecuta.
-    expect(JSON.stringify(create.resolved.action)).not.toContain("{code}");
-    expect(JSON.stringify(create.resolved.action)).not.toContain("{session}");
-    await answer(resultFor(create.resolved));
-
-    const authoring = await current();
-    expect(authoring.resolved.kind).toBe("semantic");
-    expect(authoring.resolved.stopped?.id).toBe("quick.success-criteria-authoring");
-    await answer({ input_digest: authoring.resolved.seal, decisions: { criterio: "una prueba" } });
-
-    const seed = await current();
-    expect(seed.resolved.stopped?.id).toBe("quick.artifact-seed-order");
-    expect(seed.resolved.action?.invocation.args).toContain("objetivo,checkpoint");
+    expect(JSON.stringify(seed.resolved.action)).not.toContain("{code}");
+    expect(JSON.stringify(seed.resolved.action)).not.toContain("{session}");
     expect(seed.resolved.action?.evidence).toEqual([
       "quick.objetivo-sembrado",
       "quick.criterios-sembrados",
       "quick.checkpoint-sembrado",
     ]);
+    expect(partial.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
+    expect(partial.error?.message).toContain("checkpoint");
+    expect(seed.state.applied).not.toContain("quick.artifact-seed-order");
+    expect(executedAt(seed.state, "quick.artifact-seed-order")).toBeUndefined();
 
-    // Evidencia a medias no siembra nada: falta una de las tres.
-    const partial = await answer(
-      resultFor(seed.resolved, {
-        validations: [{ id: "quick.objetivo-sembrado", passed: true, detail: "objetivo" }],
-      }),
-    );
-    expect(partial.error?.code).toBe("FLOW_EVIDENCE_MISSING");
+    // Sembrado lo que faltaba, la misma lectura acredita las tres piezas.
+    await writeFile(checkpoint, "# CHECKPOINT\n\nsembrado antes de trabajar\n", "utf8");
+    const resumed = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: false,
+      executor,
+    });
+    if (!resumed.ok) throw new Error("esperaba reanudar la corrida");
     const held = await current();
-    expect(held.state.applied).not.toContain("quick.artifact-seed-order");
+    expect(held.state.applied).toContain("quick.artifact-seed-order");
+    expect(executedAt(held.state, "quick.artifact-seed-order")?.evidence).toEqual([
+      "quick.objetivo-sembrado",
+      "quick.criterios-sembrados",
+      "quick.checkpoint-sembrado",
+    ]);
   });
 
   it("la ratificación solo aparece cuando el entregable es análisis", async () => {
     await declare([]);
-    const create = await current();
-    await answer(resultFor(create.resolved));
 
     const authoring = await current();
     expect(authoring.resolved.stopped?.id).toBe("quick.success-criteria-authoring");
@@ -630,7 +739,12 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     // Durable, no de ida: releer el estado —lo que hace un `resume`, y lo que
     // hace `Compactar` en esta misma frontera— vuelve con lo mismo a la vista.
     expect((await current()).state.fix_preview).toEqual(PREVIEW);
-    const reanudada = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: false });
+    const reanudada = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: false,
+      executor,
+    });
     if (!reanudada.ok) throw new Error("esperaba reanudar la corrida");
     expect(reanudada.directive.boundary.transition).toBe("quick.fix-preview-approval");
     expect(reanudada.directive.fix_preview).toEqual(PREVIEW);
@@ -921,7 +1035,12 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       const { resolved } = await current();
       if (resolved.stopped === null) {
         expect(seen).toContain("quick.branch-precondition");
-        expect(seen).toContain("quick.db-scripts-only");
+        // El script de la sesión lo lee el CLI mismo: no queda en pie como
+        // frontera, y su crédito es el dump real que corrió.
+        const { state } = await current();
+        const scripts = executedAt(state, "quick.db-scripts-only");
+        expect(scripts?.operation).toBe("session.artifacts");
+        expect(scripts?.evidence).toEqual(["quick.scripts-derivados"]);
         return;
       }
       expect(resolved.kind, resolved.stopped.id).not.toBe("legacy");
@@ -950,12 +1069,7 @@ describe("resume y status proyectan la frontera vigente", () => {
   beforeEach(async () => {
     workdir = await mkdtemp(join(tmpdir(), "aw-tramo-quick-proj-"));
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
-    await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
-    await writeFile(
-      join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
-      "# SESSION — tramo quick\n",
-      "utf8",
-    );
+    await seedSession(paths);
   });
 
   afterEach(async () => {
@@ -967,10 +1081,16 @@ describe("resume y status proyectan la frontera vigente", () => {
   });
 
   it("la proyección nombra la frontera y, si hay que ejecutar, la invocación exacta", async () => {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "quick", adopt: true });
+    const executor = testExecutor(fs, paths);
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "quick",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
 
-    const routed = await acceptAdaptiveRoute(fs, paths, SESSION);
+    const routed = await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
     if (routed === null) throw new Error("esperaba aceptar la ruta adaptativa");
 
     const semantic = await projectRun(fs, paths, SESSION);
@@ -994,18 +1114,34 @@ describe("resume y status proyectan la frontera vigente", () => {
         decisions: { observadas: 0 },
       }),
       approval: null,
+      executor,
     });
     if (!submitted.ok) throw new Error("esperaba avanzar");
+    // La lectura de la sesión es del CLI: la cruzó solo, y lo que queda en pie es
+    // la redacción de los criterios, no una ejecución que otro tenga que correr.
+    expect(submitted.directive.boundary.transition).toBe("quick.success-criteria-authoring");
 
+    const criteria = await submitFlow(fs, paths, {
+      code: CODE,
+      raw: JSON.stringify({
+        input_digest: submitted.directive.state_digest,
+        decisions: { criterio: "una prueba" },
+      }),
+      approval: null,
+      executor,
+    });
+    if (!criteria.ok) throw new Error("esperaba avanzar");
+
+    // La primera ejecución que SÍ es de afuera: la rama de cada fuente.
     const execution = await projectRun(fs, paths, SESSION);
     expect(execution?.boundary).toBe("execution");
-    expect(execution?.transition).toBe("quick.session-create");
-    expect(execution?.invocation).toBe(`aw session-artifacts --code ${SESSION}`);
+    expect(execution?.transition).toBe("quick.branch-precondition");
+    expect(execution?.invocation).toBe("aw sources --verbose");
     // El comando que continúa la corrida ES la invocación: nadie tiene que
     // reconstruirla leyendo prosa.
-    expect(execution?.command).toBe(`aw session-artifacts --code ${SESSION}`);
+    expect(execution?.command).toBe("aw sources --verbose");
     expect(execution?.summary).toContain("aw flow submit");
-    expect(execution?.summary).not.toContain("quick.session-create");
+    expect(execution?.summary).not.toContain("quick.branch-precondition");
   });
 
   it("una corrida anterior al cutover no se proyecta: sale por aw flow restart", async () => {

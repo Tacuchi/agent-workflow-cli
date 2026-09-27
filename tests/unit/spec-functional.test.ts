@@ -52,6 +52,7 @@ import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 const SPEC_PATH = "docs/specs/040-spec-valvula.md";
 const PLAN_PATH = "docs/plans/041-plan-valvula.md";
@@ -920,11 +921,13 @@ describe("la ida completa de la válvula, sobre una corrida real", () => {
   let workdir: string;
   let paths: PathsService;
   let env: FakeEnv;
+  let executor: ReturnType<typeof testExecutor>;
 
   beforeEach(async () => {
     workdir = await mkdtemp(join(tmpdir(), "aw-valvula-"));
     paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
     env = new FakeEnv(workdir, workdir);
+    executor = testExecutor(fs, paths, { env });
     await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
     await writeFile(
       join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
@@ -956,6 +959,7 @@ describe("la ida completa de la válvula, sobre una corrida real", () => {
       code: CODE,
       raw: JSON.stringify(body),
       approval,
+      executor,
     });
     if (!result.ok) throw new Error(`un rechazo de negocio viaja ok:true: ${result.failure.code}`);
     return result.directive;
@@ -1035,9 +1039,14 @@ describe("la ida completa de la válvula, sobre una corrida real", () => {
 
   /** Adopta y contesta hasta que la corrida se pare en `id`. */
   async function walkTo(id: string, decision: unknown = null): Promise<void> {
-    const adopted = await advanceFlow(fs, paths, { code: CODE, flow: "plan-exec", adopt: true });
+    const adopted = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "plan-exec",
+      adopt: true,
+      executor,
+    });
     if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
-    await acceptAdaptiveRoute(fs, paths, SESSION);
+    await acceptAdaptiveRoute(fs, paths, SESSION, { executor });
     for (let taken = 0; taken < 40; taken += 1) {
       const { resolved } = await current();
       if (resolved.stopped === null || resolved.stopped.id === id) return;

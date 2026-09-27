@@ -21,9 +21,19 @@ export const ASSURANCE_STATUSES = [
 
 export type AssuranceStatus = (typeof ASSURANCE_STATUSES)[number];
 
+/**
+ * What each disposition does for one control. `omit` is absent on a control the
+ * registry never lets a route skip: the disposition then does not exist for it.
+ */
+export interface RouteConsequences {
+  apply: string;
+  omit?: string;
+  substitute: string;
+}
+
 export interface RouteControlConfiguration {
   recommendation: RouteDisposition;
-  consequences: Readonly<Record<RouteDisposition, string>>;
+  consequences: Readonly<RouteConsequences>;
   risk: string;
 }
 
@@ -56,7 +66,7 @@ export interface RouteProposalControl {
   title: string;
   disposition: RouteDisposition;
   recommendation: RouteDisposition;
-  alternatives: Readonly<Record<RouteDisposition, string>>;
+  alternatives: Readonly<RouteConsequences>;
   consequence: string;
   risk: string;
   reason: string;

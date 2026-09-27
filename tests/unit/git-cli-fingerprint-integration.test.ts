@@ -104,3 +104,55 @@ describe("checkoutFingerprint — un untracked que git no puede hashear", () => 
     expect(await adapter.checkoutFingerprint(repo)).not.toBe(broken);
   });
 });
+
+describe("scopedFingerprint — el contenido bajo una raíz, sin HEAD ni vecinos", () => {
+  function hub(): { repo: string; root: string } {
+    const repo = mkdtempSync(join(tmpdir(), "aw-scoped-"));
+    repos.push(repo);
+    git(repo, "init", "--quiet", "--initial-branch=main");
+    execFileSync("mkdir", ["-p", join(repo, "ws", ".sesiones"), join(repo, "vecino")]);
+    writeFileSync(join(repo, "ws", "doc.md"), "base\n");
+    writeFileSync(join(repo, "vecino", "doc.md"), "vecino\n");
+    git(repo, "add", "-A");
+    git(repo, "commit", "--quiet", "-m", "base");
+    return { repo, root: join(repo, "ws") };
+  }
+  const adapter = new GitCliAdapter(new NodeProcess());
+  const scoped = (root: string) => adapter.scopedFingerprint(root, [".sesiones"]);
+
+  it("ni un vecino, ni un commit que no cambia bytes bajo la raíz, ni la carpeta excluida la mueven", async () => {
+    const { repo, root } = hub();
+    const base = await scoped(root);
+    writeFileSync(join(repo, "vecino", "doc.md"), "otro trabajo\n");
+    git(repo, "commit", "--quiet", "-am", "vecino");
+    writeFileSync(join(root, ".sesiones", "CHECKPOINT.md"), "no ignorada por .gitignore\n");
+    expect(await scoped(root)).toBe(base);
+  });
+
+  it("un cambio bajo la raíz la mueve, y commitearlo no la vuelve a mover", async () => {
+    const { repo, root } = hub();
+    const base = await scoped(root);
+    writeFileSync(join(root, "doc.md"), "cambio propio\n");
+    const changed = await scoped(root);
+    expect(changed).not.toBe(base);
+    git(repo, "add", "-A");
+    git(repo, "commit", "--quiet", "-m", "propio");
+    expect(await scoped(root)).toBe(changed);
+    writeFileSync(join(root, "nuevo.md"), "sin rastrear\n");
+    expect(await scoped(root)).not.toBe(changed);
+  });
+
+  it("borrar un archivo rastreado la mueve, y una entrada que git no puede hashear no la tumba", async () => {
+    const { root } = hub();
+    const base = await scoped(root);
+    rmSync(join(root, "doc.md"));
+    const deleted = await scoped(root);
+    expect(deleted).not.toBe(base);
+    // Un symlink colgante hace fallar `--stdin-paths`: el respaldo por archivo
+    // la registra como no hasheable y la huella sigue siendo reproducible.
+    symlinkSync(join(root, "no-existe"), join(root, "colgante"));
+    const dangling = await scoped(root);
+    expect(dangling).not.toBe(deleted);
+    expect(await scoped(root)).toBe(dangling);
+  });
+});

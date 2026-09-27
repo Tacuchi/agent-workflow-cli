@@ -535,6 +535,8 @@ describe("registro de autoridad — source-bounded se pide donde se juzga", () =
     ).map((decision) => decision.id);
     expect(asking.sort()).toEqual([
       "plan-exec.entry-gate",
+      // La validación de fase ata cada lote a la prueba de su propio checkout.
+      "plan-exec.validation-execution",
       "plan-new.coherence-gate",
       "plan-refine.executability-gate",
       "quick.convergence-gate",

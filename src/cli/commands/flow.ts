@@ -84,6 +84,7 @@ const ENVELOPE = [
   "                  invocation: {program, args[], target, input} — el OBJETO idéntico al que la directiva selló; si cambia el programa, un argumento, el target o el input, se rechaza.",
   "                  validations: [{id, passed, detail, proof?}] — un ítem por CADA evidencia que la directiva exige, con `passed: true` y `detail` no vacío: ahí va la salida real de la herramienta, no una afirmación sobre ella.",
   "                  proof es obligatorio para `workline.source-bounded`: {kind: 'command'|'inspection', source, relative_cwd, checkout_digest, invocation}; sólo acredita un checkout vigente.",
+  "                  En la validación de fase de plan-exec va un ítem `workline.source-bounded` por CADA fuente del lote, cada uno con su prueba ('aw flow prove --source <alias>'), tomada después de los cambios del lote: sin cambios desde su base, o con una prueba que ya acreditó otro lote, no acredita.",
   "                  effects: {planned[], approved[], applied[]} — el registro de clases de efecto, no una lista.",
   "                  output: opcional — {value, reference: {id, revision, digest, locator}, completeness} o null.",
   "",

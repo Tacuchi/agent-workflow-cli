@@ -89,24 +89,23 @@ export type DrivenRun = { ok: true; state: FlowRunState; value: FlowDirective };
 /**
  * Run every internal action standing between here and the next real boundary.
  *
- * `executor` absent means this caller has no way to materialize anything — a
- * lightweight context, a test that only exercises the walk — and then an internal
- * action behaves exactly like an external one: the boundary is emitted with its
- * invocation, which is what the caller would have had to run anyway. That is a
- * degradation of the MECHANISM, never of the contract: nothing is credited, and
- * the directive says what is pending.
+ * The directive returned reports every step of THIS invocation: the ones the walk
+ * applied or skipped before the first internal action, then each driven one. Each
+ * settle builds its directive from its own step alone, so handing back only the
+ * last one dropped what the walk had already passed — skip reasons included.
  */
 export async function driveInternalActions(
   fs: FileSystemPort,
   location: FlowRunLocation,
-  executor: InternalActionExecutor | undefined,
+  executor: InternalActionExecutor,
   from: DrivenRun,
 ): Promise<DrivenRun | { ok: false; failure: CapabilityFailure }> {
-  if (executor === undefined) return from;
   let current = from;
+  const steps = [...from.value.applied];
+  const reported = (): DrivenRun => ({ ...current, value: { ...current.value, applied: steps } });
   for (let step = 0; step < MAX_INTERNAL_STEPS; step += 1) {
     const pending = nextInternal(current.state);
-    if (pending === null) return current;
+    if (pending === null) return reported();
 
     const marked = await markAttempted(fs, location, current);
     if (!marked.ok) return marked;
@@ -117,9 +116,10 @@ export async function driveInternalActions(
     const settled = await settle(fs, location, current, pending, outcome);
     if (!settled.ok) return settled;
     current = settled.run;
-    if (!settled.advanced) return current;
+    steps.push(...current.value.applied);
+    if (!settled.advanced) return reported();
   }
-  return current;
+  return reported();
 }
 
 interface PendingInternal {
@@ -262,7 +262,7 @@ function accept(
   const outputDigest = semanticDigest({ output: outcome.output });
 
   if (verdict !== null) {
-    const refused = refusalOf(pending, outcome, verdict.detail);
+    const refused = refusalOf(pending, outcome, verdict.detail, state.session);
     const failure: Extract<FlowRunEvent, { kind: "failed" }> = {
       kind: "failed",
       transition: pending.decision.id,
@@ -369,9 +369,16 @@ function refusalOf(
   pending: PendingInternal,
   outcome: InternalActionOutcome,
   verdict: { code: string; action: string },
+  session: string,
 ): { code: string; action: string } {
   if (outcome.ok) return verdict;
-  return { code: INTERNAL_ACTION_REFUSED, action: pending.action.recovery };
+  // Composed here and not in the registry: several recoveries still say "return
+  // the reading", written for when a caller could answer the row, and rewording
+  // them would move the sealed action of every internal row.
+  return {
+    code: INTERNAL_ACTION_REFUSED,
+    action: `${pending.action.recovery} — después corré 'aw flow advance --session ${session}': el CLI vuelve a correr la operación y la acredita`,
+  };
 }
 
 /**

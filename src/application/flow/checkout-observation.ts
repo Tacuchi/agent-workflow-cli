@@ -11,6 +11,8 @@
  * {@link observeCheckout}.
  */
 
+import { isAbsolute, relative } from "node:path";
+import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../../domain/source-boundary.js";
@@ -109,6 +111,63 @@ export async function observeCheckout(
     };
   } catch {
     return null;
+  }
+}
+
+/**
+ * The scoped fingerprint of every source a run declared, by alias — what a batch
+ * is compared against to know whether it changed anything of its own.
+ *
+ * Measured over the same roots the proofs are: the documentary root for
+ * `workspace`, this session's unit for every other alias. The CLI's own runtime
+ * folder is left out whether or not `.gitignore` covers it, so writing a
+ * CHECKPOINT, a lock or the run's state never counts as work. `null` is a source
+ * that is not an observable repository at all; a repository git fails to measure
+ * is a refusal instead, because sealing it as unobservable would keep that
+ * source from ever showing a change.
+ */
+export async function observeScopedFingerprints(
+  fs: FileSystemPort,
+  git: GitPort,
+  paths: PathsService,
+  session: string,
+  sources: readonly string[],
+): Promise<
+  { ok: true; base: Record<string, string | null> } | { ok: false; failure: CapabilityFailure }
+> {
+  const candidates = await resolveCheckoutCandidates(fs, paths, session);
+  const runtime = paths.cwdRoot();
+  const base: Record<string, string | null> = {};
+  for (const source of sources) {
+    const root = candidates.find((candidate) => candidate.source === source)?.root;
+    if (root === undefined || !(await isObservableRepo(fs, git, root))) {
+      base[source] = null;
+      continue;
+    }
+    const inside = relative(root, runtime);
+    const excluded =
+      inside.length > 0 && !inside.startsWith("..") && !isAbsolute(inside) ? [inside] : [];
+    try {
+      base[source] = await git.scopedFingerprint(root, excluded);
+    } catch (error) {
+      return {
+        ok: false,
+        failure: {
+          code: "WORKLINE_CHECKOUT_UNOBSERVABLE",
+          message: `no se pudo medir '${source}' en ${root}: ${error instanceof Error ? error.message : String(error)}`,
+          action: "resolvé lo que git reporta en ese checkout y volvé a correr 'aw flow advance'",
+        },
+      };
+    }
+  }
+  return { ok: true, base };
+}
+
+async function isObservableRepo(fs: FileSystemPort, git: GitPort, root: string): Promise<boolean> {
+  try {
+    return (await fs.exists(root)) && (await git.isGitRepo(root));
+  } catch {
+    return false;
   }
 }
 

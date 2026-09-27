@@ -962,6 +962,19 @@ const ROUTE_VALIDATION: RouteControlConfiguration = {
   risk: "la ausencia o sustitución de evidencia reduce el assurance del cierre",
 };
 
+/**
+ * The phase validation of `plan-exec`: substitutable, never omissible. Omitting it
+ * would credit a batch with no proof of its own checkout at all.
+ */
+const ROUTE_PHASE_VALIDATION: RouteControlConfiguration = {
+  recommendation: "apply",
+  consequences: {
+    apply: ROUTE_VALIDATION.consequences.apply,
+    substitute: ROUTE_VALIDATION.consequences.substitute,
+  },
+  risk: ROUTE_VALIDATION.risk,
+};
+
 const ROUTE_REVIEW: RouteControlConfiguration = {
   recommendation: "apply",
   consequences: {
@@ -2942,7 +2955,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     effects: ["execute"],
-    route_control: ROUTE_VALIDATION,
+    route_control: ROUTE_PHASE_VALIDATION,
     // Running the proofs the plan itself declares is the run verifying its own
     // work: custody covers the `execute`, and the real output stays mandatory.
     custody: "run",
@@ -2962,10 +2975,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         kind: "external",
         reason: "correr las pruebas de fase es ejecutar código, nunca una operación interna",
       },
-      evidence: ["plan.validaciones-de-fase-verdes"],
+      // One proof per source of the batch: what ties the output to THIS batch's
+      // checkout, so an envelope recycled from another batch cannot credit it.
+      evidence: ["plan.validaciones-de-fase-verdes", SOURCE_BOUNDED_EVIDENCE],
       idempotent: true,
       recovery:
-        "arreglá lo que la validación reprobó y volvé a correr las pruebas afectadas: la transición sigue pendiente hasta que su salida real vuelva en verde",
+        "arreglá lo que la validación reprobó y volvé a correr las pruebas afectadas: la transición sigue pendiente hasta que su salida real vuelva en verde, con una prueba 'aw flow prove --source <alias>' de cada fuente del lote tomada después de sus cambios",
     },
   },
   {
