@@ -17,6 +17,7 @@ import { contextPlanCommand } from "./context-plan.js";
 import { cutIntentCommand } from "./cut-intent.js";
 import { designsCommand } from "./designs.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
+import { docBranchCommand } from "./doc-branch.js";
 import { doctorCommand } from "./doctor.js";
 import {
   exportDiagramsCommand,
@@ -92,6 +93,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   flowCommand,
   designsCommand,
   sourcesCommand,
+  docBranchCommand,
   generateLaunchCommand,
   setWorkingBranchCommand,
   setQaBranchCommand,

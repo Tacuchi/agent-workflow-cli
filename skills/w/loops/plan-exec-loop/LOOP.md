@@ -259,10 +259,10 @@ without subagents runs a clean re-read instead, and the closing report declares 
   writing holds commits that live on `aw/<session>` and nowhere else, so a `done` stamped before the
   merge would be true of no branch anybody reads.
 - **Integrating is part of closing, not a chore after it.** `aw worktree integrate --code <NNN>`
-  merges every unit of the session into its source's working branch, in alias order, one at a time
-  over the live branch — never a rebase, a force, a push or a silent branch switch. A **conflict is a
+  merges each unit into its sealed base, in alias order, over the live branch — never a rebase,
+  force, push or silent branch switch. A **conflict is a
   live state, not a failure**: the unit, its commits and the merge are kept, the receipt names the
-  plan, the source and the files, and `aw fix-git --path <source>` (`prepare` → `apply` →
+  plan, the source and the files, and `aw fix-git --path <reported merge path>` (`prepare` → `apply` →
   `commit --confirm`) resolves it; then integrate again to confirm and give the unit back. The plan
   is not `done` and the session does not close while a unit is still alive.
 - **Marking done = ONE status line in the plan-doc**, under the title's blockquote: `> Estado: done`, updated in place on a re-run. The machine value **stands alone** — the date and session go on their own `> Cierre: YYYY-MM-DD · sesión NNN` line right under it, for the same reason a blocker never rides on a phase's state line. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
@@ -312,7 +312,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
       rejected → changes stay; record "batch uncommitted"
     if last Batch + final validation green:
       integrate: aw worktree integrate --code NNN            # every unit, alias order, live branch
-        conflict → keep unit + merge; report plan/source/files; aw fix-git --path <source>
+        conflict → keep unit + merge; report plan/source/files; aw fix-git --path <reported merge path>
                    (prepare → apply → commit --confirm) → integrate again → release
         refused (dirty checkout / off branch / uncommitted unit) → fix what it names; retry
       then mark plan done: > Estado: done + > Cierre: YYYY-MM-DD · sesión NNN under the title (Delta 6)
