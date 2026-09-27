@@ -82,6 +82,7 @@ import {
   degradeTransition,
   exhaustedRerunSpent,
   iterationOf,
+  planRefineHandoff,
   positionDigest,
   reconcileAttemptsAt,
   sameIteration,
@@ -90,6 +91,7 @@ import {
   skipTransition,
   withBoundary,
   withEvent,
+  withHandoff,
   withPendingAction,
   withPlanExecBatchStageForTransition,
   withRouteDecisions,
@@ -232,6 +234,19 @@ function walk(
       decision.id,
     );
     applied.push(stepOf(decision));
+    if (decision.handoff?.destination === "plan-refine") {
+      state = withHandoff(
+        state,
+        planRefineHandoff(
+          state,
+          {
+            reason: "brecha estructural detectada en la entrada; refinar antes de abrir unidades",
+          },
+          "plan.entry-gap-structural",
+        ),
+      );
+      break;
+    }
   }
   return { state, applied };
 }

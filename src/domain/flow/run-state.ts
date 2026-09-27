@@ -1139,6 +1139,12 @@ export interface FlowChoiceSelection {
   outcome: Extract<FlowChoiceOutcome, { kind: "register-decision" | "handoff" }>;
 }
 
+/** CLI observation at entry, before source-scope. Null phases means not observed. */
+export interface PlanExecEntry {
+  plan: string | null;
+  phases_without_open_tasks: number[] | null;
+}
+
 export interface FlowRunState {
   version: number;
   flow: WorklineFlow;
@@ -1146,6 +1152,8 @@ export interface FlowRunState {
   session: string;
   /** The plan and the sources this run isolates, or `null` before it fixed them. */
   scope: FlowRunScope | null;
+  /** Absent on older runs; never infer a successful entry reading from absence. */
+  plan_exec_entry?: PlanExecEntry;
   /**
    * Transition ids the run has already passed, in order — the journey's CURSOR.
    *
@@ -1839,6 +1847,38 @@ export function withHandoff(state: FlowRunState, handoff: FlowHandoff | null): F
   return sealRunState({ ...withoutSeal(state), handoff });
 }
 
+export function withPlanExecEntry(state: FlowRunState, entry: PlanExecEntry): FlowRunState {
+  return sealRunState({ ...withoutSeal(state), plan_exec_entry: entry });
+}
+
+/** Both the human exit and the structural rule deliver the same recoverable destination. */
+export function planRefineHandoff(
+  state: FlowRunState,
+  decisions: Record<string, unknown>,
+  selection: string,
+): FlowHandoff {
+  const plan = state.scope?.plan ?? state.plan_exec_entry?.plan ?? null;
+  const packageBody: FlowEscalationPackage = {
+    plan,
+    observations: state.observations.filter(
+      (observation) =>
+        observation.transition.startsWith("plan-exec.entry-") ||
+        observation.transition.startsWith("plan-exec.deviation-"),
+    ),
+    decisions:
+      plan === null
+        ? { ...decisions, recovery: "nombrá el plan que debe refinar /w:plan-refine <plan>" }
+        : decisions,
+    selection,
+  };
+  return {
+    destination: "plan-refine",
+    command: plan === null ? "/w:plan-refine <plan>" : `/w:plan-refine ${plan}`,
+    package: packageBody,
+    package_digest: semanticDigest(packageBody),
+  };
+}
+
 /** Persist the gate's executable consequence before the run leaves that boundary. */
 export function withSelectedChoice(
   state: FlowRunState,
@@ -2440,7 +2480,22 @@ function checkCommonRecordShape(
   if (!isInheritedBaseArray(parsed.inherited_bases)) {
     return invalid("hereda una base de batch sin sus fases o sin sus fuentes");
   }
+  if (!isPlanExecEntry(parsed.plan_exec_entry)) {
+    return invalid("declara una entrada de plan-exec sin plan o con fases inválidas");
+  }
   return null;
+}
+
+function isPlanExecEntry(value: unknown): value is PlanExecEntry | undefined {
+  if (value === undefined) return true;
+  if (!isRecord(value) || !(value.plan === null || isNonEmptyString(value.plan))) return false;
+  const phases = value.phases_without_open_tasks;
+  return (
+    phases === null ||
+    (Array.isArray(phases) &&
+      phases.every((phase) => Number.isInteger(phase) && phase > 0) &&
+      new Set(phases).size === phases.length)
+  );
 }
 
 function isInheritedBaseArray(value: unknown): value is PlanExecInheritedBase[] | undefined {

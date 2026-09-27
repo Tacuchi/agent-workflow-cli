@@ -260,7 +260,7 @@ const EMPTY_DERIVATION: Derivation = { paths: [] };
  * and SAYS so, because sealing the baseline of the wrong plan is worse than
  * sealing none — a later `reset` would put somebody else's bytes back.
  */
-async function deriveInputs(
+export async function deriveInputs(
   fs: FileSystemPort,
   paths: PathsService,
   name: string,
