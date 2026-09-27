@@ -78,6 +78,10 @@ Tramo plan.
 |---|---|---|
 | ${ALIAS} | /tmp/acme | main |
 
+## Pipeline
+
+- ${ALIAS}: build \`npm run build\` · test \`npm test\`
+
 ## Status
 
 - Ramas de trabajo actuales:

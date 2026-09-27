@@ -28,6 +28,9 @@ const folder = "044-nueva-plan-exec";
 const cpPath = `${sessionsDir}/${folder}/CHECKPOINT.md`;
 
 class FakeGit implements GitPort {
+  async upstreamBranch(): Promise<string | null> {
+    return null;
+  }
   async isGitRepo() {
     return true;
   }

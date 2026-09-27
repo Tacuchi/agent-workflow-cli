@@ -2,6 +2,8 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createInstallationProvider } from "../../src/application/doctor/provider-installation.js";
+import { createMcpsProvider } from "../../src/application/doctor/provider-mcps.js";
 import { runDoctor } from "../../src/application/doctor/report.js";
 import type { DoctorProvider, DoctorProviderInput } from "../../src/application/doctor/types.js";
 import { coverage } from "../../src/application/doctor/types.js";
@@ -266,7 +268,7 @@ describe("runDoctor", () => {
     // completo y no una rama corta que no escribiría igual. Y se afirman los
     // ARGS, no sólo el binario: `readNativeMcpState` podría pedir `mcp add` y un
     // doble que descarta los args lo dejaría pasar.
-    expect(asked).toEqual(NATIVE_READ_ONLY_CALLS);
+    expect(asked).toEqual(NATIVE_READ_ONLY_CALLS.filter((call) => call.command === "claude"));
 
     // Todo lo que se ejecutó —por el puerto y por el runner nativo— es de sólo
     // lectura, y se juzga el COMANDO JUNTO CON SUS ARGS. Colapsar la vía del
@@ -304,7 +306,7 @@ describe("runDoctor", () => {
    * en esta máquina» en una advertencia llena el informe de ruido permanente y
    * entrena a la persona a saltear la sección donde viven los bloqueos reales.
    */
-  it("participan ready e installable; el ausente se enumera y no genera hallazgos (AC-15)", async () => {
+  it("por defecto participa Workline instalado y los hosts sin uso quedan ausentes", async () => {
     const seen: string[][] = [];
     const report = await runDoctor(
       makeCtx(new RecordingFs(hostStateFs(home)), home, home),
@@ -312,14 +314,14 @@ describe("runDoctor", () => {
       { providers: [perHostProvider("mcps", { seen })] },
     );
 
-    expect(report.hosts.map((host) => host.host)).toEqual(["claude-code", "codex"]);
-    expect(report.hosts.map((host) => host.status)).toEqual(["ready", "installable"]);
+    expect(report.hosts.map((host) => host.host)).toEqual(["claude-code"]);
+    expect(report.hosts.map((host) => host.status)).toEqual(["ready"]);
 
-    const absent = CATALOG_ORDER.filter((id) => id !== "claude-code" && id !== "codex");
+    const absent = CATALOG_ORDER.filter((id) => id !== "claude-code");
     expect(report.hosts_absent).toEqual(absent);
 
     // Ni el proveedor los vio, ni el informe habla de ellos por ningún lado.
-    expect(seen).toEqual([["claude-code", "codex"]]);
+    expect(seen).toEqual([["claude-code"]]);
     for (const host of absent) {
       expect(report.findings.filter((finding) => finding.host === host)).toEqual([]);
       expect(report.coverage.filter((entry) => entry.host === host)).toEqual([]);
@@ -351,18 +353,15 @@ describe("runDoctor", () => {
     );
 
     const fallen = report.coverage.filter((entry) => entry.category === "skills");
-    expect(fallen.map((entry) => entry.host)).toEqual(["claude-code", "codex"]);
+    expect(fallen.map((entry) => entry.host)).toEqual(["claude-code"]);
     for (const entry of fallen) {
       expect(entry.state).toBe("unavailable");
       expect(entry.reason).toContain("EACCES al leer el índice de skills");
     }
 
     // El proveedor sano entregó igual: la caída de uno no cancela a los demás.
-    expect(report.findings.map((finding) => finding.id)).toEqual([
-      "claude-code/mcps/recurso",
-      "codex/mcps/recurso",
-    ]);
-    expect(report.coverage.filter((entry) => entry.category === "mcps")).toHaveLength(2);
+    expect(report.findings.map((finding) => finding.id)).toEqual(["claude-code/mcps/recurso"]);
+    expect(report.coverage.filter((entry) => entry.category === "mcps")).toHaveLength(1);
 
     expect(report.verdict.exit_code).toBe(1);
     expect(report.verdict.reason).toContain("skills");
@@ -388,13 +387,12 @@ describe("runDoctor", () => {
 
     const report = await runDoctor(
       makeCtx(new RecordingFs(hostStateFs(home)), home, home),
-      // kimi no está instalado en este entorno: la selección queda vacía.
-      { only: ["kimi"] },
+      { only: ["id-inexistente"] },
       { providers: [boom] },
     );
 
     expect(report.hosts).toEqual([]);
-    expect(report.hosts_absent).toEqual(["kimi"]);
+    expect(report.hosts_absent).toEqual([]);
     expect(
       report.coverage.map((entry) => `${entry.category}/${entry.host}/${entry.state}`),
     ).toEqual(["skills/workspace/unavailable"]);
@@ -445,34 +443,24 @@ describe("runDoctor", () => {
   });
 
   /**
-   * Un id LEGÍTIMO que no está en esta máquina: acá no hay nada que denunciar
-   * sobre el nombre —`kimi` existe en el catálogo— y tampoco hay nada que
-   * comprobar. La categoría igual declara su hueco con la razón, y el veredicto
-   * es 0: un host sin rastro no es una advertencia (AC-01), y marcar la corrida
-   * en rojo pondría en 1 la máquina de cualquiera que sólo tenga un host que
-   * este motor no mira.
+   * Un id legítimo que no está en esta máquina participa si --only lo pidió:
+   * la inspección explícita no se descarta por su ausencia.
    */
-  it("con --only sobre un host ausente ninguna categoría queda muda, y no se inventa un rojo", async () => {
+  it("con --only sobre un host ausente el host participa expresamente", async () => {
     const report = await runDoctor(
       makeCtx(new RecordingFs(hostStateFs(home)), home, home),
       { only: ["kimi"] },
       { providers: [perHostProvider("mcps"), perHostProvider("skills")] },
     );
 
-    expect(report.hosts).toEqual([]);
-    expect(report.hosts_absent).toEqual(["kimi"]);
-    // Ningún hallazgo inventado: el nombre era válido, sólo que el host no está.
-    expect(report.findings).toEqual([]);
+    expect(report.hosts.map((host) => `${host.host}/${host.status}`)).toEqual(["kimi/absent"]);
+    expect(report.hosts_absent).toEqual([]);
     expect(
       report.coverage.map((entry) => `${entry.category}/${entry.host}/${entry.state}`),
-    ).toEqual(["mcps/workspace/not-applicable", "skills/workspace/not-applicable"]);
-    for (const entry of report.coverage) {
-      expect(entry.reason).toContain("ningún host participa");
-    }
+    ).toEqual(["mcps/kimi/checked", "skills/kimi/checked"]);
     expect(report.verdict.exit_code).toBe(0);
-    // Y el hueco sigue VISIBLE, que es lo que AC-15 pide: sano sólo dentro de la
-    // cobertura comprobada, y acá no se comprobó nada.
-    expect(report.coverage.every((entry) => entry.state !== "checked")).toBe(true);
+    // El host pedido aparece en la cobertura sin fingir que está instalado.
+    expect(report.coverage.every((entry) => entry.state === "checked")).toBe(true);
   });
 
   /**
@@ -480,7 +468,7 @@ describe("runDoctor", () => {
    * SIN ningún host de agente instalado. Antes salía 0, el relleno de silencio la
    * puso en 1, y ninguna prueba lo cubría.
    */
-  it("una máquina sin ningún host de agente sale 0 y enumera los ocho como ausentes", async () => {
+  it("una máquina sin Workline dice que falta en todos los hosts y sale 1", async () => {
     const report = await runDoctor(
       // Ni configuración de ningún host ni binario que `which` resuelva: la
       // máquina limpia de verdad.
@@ -496,11 +484,42 @@ describe("runDoctor", () => {
 
     expect(report.hosts).toEqual([]);
     expect(report.hosts_absent.length).toBeGreaterThan(0);
-    expect(report.findings).toEqual([]);
+    expect(report.findings.map((finding) => finding.summary)).toEqual([
+      "Workline no está instalado en ningún host",
+    ]);
     for (const entry of report.coverage) {
       expect(entry.state).toBe("not-applicable");
       expect(entry.reason).toContain("ningún host participa");
     }
+    expect(report.verdict.exit_code).toBe(1);
+  });
+
+  it("Workline instalado en un host sin binario se denuncia como contradicción, sin exit 1", async () => {
+    const fs = new RecordingFs(hostStateFs(home));
+    const report = await runDoctor(
+      makeCtx(fs, home, home, new FakeProcess({ which: () => undefined })),
+      {},
+      {
+        providers: [
+          createInstallationProvider(),
+          createMcpsProvider({
+            native: {
+              run: () => ({ status: null, stdout: "", errorCode: "ENOENT", timedOut: false }),
+            },
+          }),
+        ],
+      },
+    );
+    expect(report.hosts.map((host) => host.host)).toEqual(["claude-code", "codex"]);
+    const contradiction = report.findings.find(
+      (finding) => finding.id === "claude-code/installation-hosts/workline",
+    );
+    expect(contradiction?.state).toBe("warning");
+    expect(contradiction?.summary).toContain("contradictoria");
+    expect(
+      report.coverage.find((entry) => entry.category === "mcps" && entry.host === "claude-code")
+        ?.state,
+    ).toBe("skipped");
     expect(report.verdict.exit_code).toBe(0);
   });
 
@@ -533,14 +552,10 @@ describe("runDoctor", () => {
     expect(first.findings.map((finding) => finding.id)).toEqual([
       "claude-code/installation-hosts/recurso",
       "claude-code/mcps/recurso",
-      "codex/installation-hosts/recurso",
-      "codex/mcps/recurso",
     ]);
     expect(first.coverage.map((entry) => `${entry.category}/${entry.host}`)).toEqual([
       "installation-hosts/claude-code",
-      "installation-hosts/codex",
       "mcps/claude-code",
-      "mcps/codex",
     ]);
   });
 
@@ -601,10 +616,7 @@ describe("runDoctor", () => {
 
     expect(asked).toEqual([]);
     const mcps = report.coverage.filter((entry) => entry.category === "mcps");
-    expect(mcps.map((entry) => `${entry.host}/${entry.state}`)).toEqual([
-      "claude-code/skipped",
-      "codex/skipped",
-    ]);
+    expect(mcps.map((entry) => `${entry.host}/${entry.state}`)).toEqual(["claude-code/skipped"]);
     for (const entry of mcps) expect(entry.reason).toContain("--skip-native");
   });
 
@@ -673,6 +685,9 @@ describe("runDoctor", () => {
     expect(highlighted.scope.only).toEqual([]);
     expect(highlighted.hosts.map((host) => host.host)).toEqual(["claude-code", "codex"]);
     expect(highlighted.hosts.map((host) => host.current)).toEqual([false, true]);
+
+    const absentRequested = await runDoctor(ctx, { host: "kimi" }, { providers: [] });
+    expect(absentRequested.hosts.map((host) => host.host)).toEqual(["claude-code", "kimi"]);
 
     const restricted = await runDoctor(
       ctx,

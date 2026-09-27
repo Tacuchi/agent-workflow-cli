@@ -156,6 +156,8 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "doctor-auth-flow-"));
   home = join(root, "home");
   mkdirSync(join(home, ".workflow", "dev"), { recursive: true });
+  // The auth tests isolate their own finding; Workline exists on one host.
+  mkdirSync(join(home, ".claude", "skills", "w"), { recursive: true });
   // Un registro de conexiones VACÍO: el `read_set` de cualquier lote lo lee, y así
   // el único sujeto de la corrida es el del doble.
   writeFileSync(

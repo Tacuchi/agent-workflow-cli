@@ -8,31 +8,39 @@ import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.j
  * the advice over as guidance rather than inventing a second phrasing of it.
  */
 import { selfDoctor } from "../self/doctor-self.js";
+import { checkDistIntegrity, installedDistRoot } from "./dist-integrity.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
 import { coverage } from "./types.js";
 
 const CATEGORY = "installation-hosts" as const;
 
-export const installationProvider: DoctorProvider = {
-  category: CATEGORY,
-  async run(input: DoctorProviderInput): Promise<DoctorProviderOutput> {
-    const report = await selfDoctor(input.ctx);
-    const targets = report.data?.skill.targets ?? [];
-    const findings: DoctorFinding[] = [];
+export function createInstallationProvider(distRoot = installedDistRoot()): DoctorProvider {
+  return {
+    category: CATEGORY,
+    async run(input: DoctorProviderInput): Promise<DoctorProviderOutput> {
+      const report = await selfDoctor(input.ctx);
+      const targets = report.data?.skill.targets ?? [];
+      const findings: DoctorFinding[] = [await checkDistIntegrity(input.ctx.fs, distRoot)];
 
-    for (const host of input.hosts) {
-      const state = input.hostStates.find((candidate) => candidate.host === host.host);
-      findings.push(hostFinding(host, state?.advice ?? null));
-      const target = targets.find((candidate) => candidate.target === host.target);
-      if (target !== undefined) findings.push(...targetFindings(host, target));
-    }
+      for (const host of input.hosts) {
+        const state = input.hostStates.find((candidate) => candidate.host === host.host);
+        findings.push(hostFinding(host, state?.advice ?? null));
+        const target = targets.find((candidate) => candidate.target === host.target);
+        if (target !== undefined) findings.push(...targetFindings(host, target));
+      }
 
-    return {
-      coverage: input.hosts.map((host) => coverage(CATEGORY, host.host, "checked")),
-      findings,
-    };
-  },
-};
+      return {
+        coverage: [
+          coverage(CATEGORY, "workspace", "checked"),
+          ...input.hosts.map((host) => coverage(CATEGORY, host.host, "checked")),
+        ],
+        findings,
+      };
+    },
+  };
+}
+
+export const installationProvider: DoctorProvider = createInstallationProvider();
 
 function hostFinding(
   host: DoctorProviderInput["hosts"][number],
@@ -51,6 +59,20 @@ function hostFinding(
     evidence,
     ownership: "ours" as const,
   };
+  if (host.workline_installed && host.runtime.state === "missing") {
+    return {
+      ...base,
+      state: "warning",
+      summary: `${host.label} tiene Workline instalado, pero su binario no responde: instalación contradictoria`,
+      impact:
+        "el host no puede ejecutar los hooks ni los comandos de Workline hasta restaurar el runtime",
+      remediation: {
+        kind: "manual",
+        action: null,
+        guidance: ["restaurá el binario del host y repetí aw doctor"],
+      },
+    };
+  }
   if (host.status === "ready") {
     return {
       ...base,

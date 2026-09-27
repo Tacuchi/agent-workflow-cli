@@ -259,6 +259,8 @@ export interface GitPort {
   branchExists(repoPath: string, branch: string): Promise<boolean>;
   /** Short names of every local branch (`for-each-ref refs/heads`). */
   localBranches(repoPath: string): Promise<string[]>;
+  /** Full upstream ref of a local branch, or null when it tracks nothing. Read-only. */
+  upstreamBranch(repoPath: string, branch: string): Promise<string | null>;
   /** `remote.origin.fetch`, every value; empty when origin is not configured. */
   originFetchRefspecs(repoPath: string): Promise<string[]>;
   /**

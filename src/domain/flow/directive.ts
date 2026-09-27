@@ -811,6 +811,9 @@ function askLines(directive: FlowDirective, detail: boolean): string[] {
     lines.push(`ejecutar: ${[call.program, ...call.args].join(" ")}`);
     lines.push(`en: ${call.target}${call.input === null ? "" : " (con input por stdin)"}`);
     lines.push(`evidencia exigida: ${directive.action.evidence.join(", ")}`);
+    for (const requirement of directive.action.requirements ?? []) {
+      lines.push(`validación final: ${requirement}`);
+    }
     // The root the validator will measure, said out loud. Publishing it is the
     // whole point: the prover cannot deduce which directory the digest covers, and
     // the alias alone sent readers hunting for a change in an intact tree.

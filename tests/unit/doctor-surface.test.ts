@@ -659,12 +659,12 @@ describe("aw doctor · el alias global se intercepta antes del menú", () => {
   });
 
   it("el despachador ejecuta el plan y no elige comandos por su cuenta", () => {
-    // La mitad que una función pura no puede probar: que `main.ts` resuelva el
+    // La mitad que una función pura no puede probar: que `full-cli.ts` resuelva el
     // nombre QUE EL PLAN LE DA. Un literal ahí —`registry.resolve("status")`—
     // dejaría a `aw --doctor` corriendo otra cosa con toda la lógica de arriba
     // intacta. Es una aserción sobre la forma del código, a propósito, porque
-    // `main.ts` corre el CLI al importarse y no hay otra manera de mirarlo.
-    const main = readFileSync(join(REPO_ROOT, "src", "cli", "main.ts"), "utf8");
+    // `full-cli.ts` corre el CLI al importarse y no hay otra manera de mirarlo.
+    const main = readFileSync(join(REPO_ROOT, "src", "cli", "full-cli.ts"), "utf8");
     expect(main).toContain("registry.resolve(plan.name)");
     expect(main).not.toMatch(/registry\.resolve\("/);
   });
@@ -674,7 +674,7 @@ describe("aw doctor · el alias global se intercepta antes del menú", () => {
  * AC-04: la fase diagnóstica se completa SIN ninguna escritura durable, y eso
  * incluye la bitácora del CLI.
  *
- * `main.ts` corre el CLI al importarse, así que su cableado sólo puede mirarse
+ * `full-cli.ts` corre el CLI al importarse, así que su cableado sólo puede mirarse
  * como texto — la misma razón, y el mismo precedente, que la aserción sobre
  * `registry.resolve(plan.name)`. Lo que se fija no es un detalle de estilo: con
  * el logger habilitado, cada `aw doctor` creaba `~/.workflow/logs/` y le anexaba
@@ -683,11 +683,11 @@ describe("aw doctor · el alias global se intercepta antes del menú", () => {
  * real aunque ningún proveedor escribiera un solo byte.
  */
 describe("aw doctor · el diagnóstico no escribe ni siquiera la bitácora (AC-04)", () => {
-  const main = readFileSync(join(REPO_ROOT, "src", "cli", "main.ts"), "utf8");
+  const main = readFileSync(join(REPO_ROOT, "src", "cli", "full-cli.ts"), "utf8");
 
   it("doctor es comando de sólo lectura estricta, y el predicado gobierna el logger", () => {
     const predicate = /function isStrictReadCommand\([\s\S]*?\n}/.exec(main)?.[0];
-    if (predicate === undefined) throw new Error("main.ts ya no declara isStrictReadCommand");
+    if (predicate === undefined) throw new Error("full-cli.ts ya no declara isStrictReadCommand");
     const exempt = [...predicate.matchAll(/"([a-z-]+)"/g)].map((match) => match[1]).sort();
     // `host-memory` is exempt for its own reason: it reads other hosts' private memory.
     expect(exempt).toEqual(["doctor", "host-memory", "resume", "status"]);
@@ -725,7 +725,7 @@ describe("aw doctor · el diagnóstico no escribe ni siquiera la bitácora (AC-0
     // `prepare`, que produce el digest que autoriza eso—. El informe sí promete
     // no escribir nada; sus subverbos no prometen eso en absoluto.
     const predicate = /function isStrictReadCommand\([\s\S]*?\n}/.exec(main)?.[0];
-    if (predicate === undefined) throw new Error("main.ts ya no declara isStrictReadCommand");
+    if (predicate === undefined) throw new Error("full-cli.ts ya no declara isStrictReadCommand");
     expect(predicate).toContain("parsed.rest.length === 0");
 
     // Y el parser deja el subverbo donde el predicado lo mira.
