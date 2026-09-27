@@ -271,7 +271,7 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     // lectura ligada a la sesión, donde una fuente sin unidad simplemente no
     // aparece.
     const quick = FLOW_DECISIONS.find((d) => d.id === "quick.branch-precondition") as FlowDecision;
-    expect(actionOf(quick)?.invocation.args).toEqual(["sources", "--verbose"]);
+    expect(actionOf(quick)?.invocation.args).toEqual(["sources", "--verbose", "--code", "{code}"]);
 
     const exec = rowOf(EXEC, "plan-exec.branch-precondition");
     expect(actionOf(exec)?.invocation.args).toEqual(["worktree", "list", "--code", "{code}"]);

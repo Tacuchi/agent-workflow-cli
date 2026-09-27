@@ -25,6 +25,18 @@ async function readRel(rel: string): Promise<string> {
   return readFile(join(SKILL_ROOT, rel), "utf8");
 }
 
+it("la doctrina nombra el cambio de rama del documento y la copia desde quick", async () => {
+  const git = await readRel("roles/git/ROLE.md");
+  const specNew = await readRel("commands/spec-new.md");
+  expect(git).toContain("### Branch verification");
+  expect(git).toContain("aw doc-branch set --doc <tipo:NNN>");
+  expect(git).toContain("preserves the document branch and its base");
+  expect(git).toContain("may remove only an `aw/*` unit branch already contained in that base");
+  expect(specNew).toContain(
+    "aw doc-branch set --doc spec:<NNN> --source <alias> --from quick:<NNN>",
+  );
+});
+
 /**
  * A document plus every module it points at — its whole doctrinal SURFACE.
  *

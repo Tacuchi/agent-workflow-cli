@@ -117,6 +117,10 @@ function formatBlockMessage(verdict: CheckBranchOutput, displayName: string): st
     ].join("\n");
   }
 
+  if (verdict.reason === "unreadable_identity") {
+    return `${head} No se puede verificar la rama: la custodia de la sesión es unreadable (${verdict.error}). Repará la custodia y reintentá.\n`;
+  }
+
   if (verdict.reason === "other_session_unit") {
     return [
       `${head} Ese árbol es la unidad de aislamiento de OTRA sesión.`,
@@ -135,7 +139,7 @@ function formatBlockMessage(verdict: CheckBranchOutput, displayName: string): st
     `${head} Rama de trabajo incorrecta para esta fuente.`,
     source,
     `  Rama actual:   ${verdict.current_branch}`,
-    `  Rama esperada: ${verdict.expected_work_branch}`,
+    `  Rama esperada: ${verdict.expected_work_branch} (origen: ${verdict.expected_origin ?? "registrada"})`,
   ];
   const changed = verdict.changed_files ?? [];
   if (changed.length > 0) {
@@ -148,11 +152,23 @@ function formatBlockMessage(verdict: CheckBranchOutput, displayName: string): st
         "Esperar a que el usuario resuelva manualmente (commit / stash / discard) " +
         "y luego reintentar la edicion.",
     );
+    if (verdict.identity_error) {
+      lines.push(`Después declará la sesión con --code <NNN>: ${verdict.identity_error}`);
+    }
   } else {
     lines.push("");
-    lines.push(
-      `Pedir confirmacion al usuario para ejecutar \`git checkout ${verdict.expected_work_branch}\` en esta fuente y luego reintentar la edicion.`,
-    );
+    if (verdict.identity_error) {
+      lines.push(`Declará la sesión con --code <NNN> y reintentá: ${verdict.identity_error}`);
+    } else {
+      lines.push(
+        `Pedir confirmacion al usuario para ejecutar \`git checkout ${verdict.expected_work_branch}\` en esta fuente y luego reintentar la edicion.`,
+      );
+      if (verdict.document && verdict.current_branch) {
+        lines.push(
+          `O confirmar \`aw doc-branch set --doc ${verdict.document} --source ${verdict.alias} --rama ${verdict.current_branch}\`.`,
+        );
+      }
+    }
   }
   lines.push("");
   lines.push(`Referencia: ${REFERENCE_DOC}`);

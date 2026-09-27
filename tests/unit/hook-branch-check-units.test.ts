@@ -7,9 +7,11 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
+import { appendDocBranch } from "../../src/application/doc-branch-ledger.js";
 import { runBranchCheckHook } from "../../src/application/hook-branch-check.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { type WorktreeEnsureOutput, runWorktree } from "../../src/application/worktree-service.js";
+import { sealCustody } from "../../src/domain/session/custody.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -125,6 +127,71 @@ describe("runBranchCheckHook — la línea de trabajo es la unidad del flujo", (
       sessionCode: code,
     })) as WorktreeEnsureOutput;
   }
+
+  it("una unidad del plan no bloquea el checkout del quick en su propia rama", async () => {
+    const quick = "105-cambio-quick";
+    session(quick);
+    const folder = join(workspace, ".workflow", "sessions", quick);
+    writeFileSync(
+      join(folder, ".custody.json"),
+      JSON.stringify(
+        sealCustody({
+          subject: { kind: "session", key: quick },
+          subjectPath: folder,
+          created: "2026-09-27",
+          parents: [],
+        }),
+      ),
+    );
+    await appendDocBranch(deps.fs, deps.paths, {
+      version: 1,
+      at: new Date().toISOString(),
+      doc: { kind: "quick", key: quick },
+      source: "acme",
+      branch: "feature/quick-105",
+      by: quick,
+      outcome: "existing",
+    });
+    const planUnit = await ensure("103");
+    git(source, "branch", "feature/quick-105");
+    git(source, "checkout", "-q", "feature/quick-105");
+    bind(CONTEXT_B, quick);
+    const allowed = await runBranchCheckHook({
+      ...deps,
+      stdin: edit(join(source, "README.md"), CONTEXT_B),
+    });
+    expect(allowed.exitCode).toBe(0);
+    writeFileSync(join(source, "quick.txt"), "quick\n");
+    git(source, "add", "quick.txt");
+    git(source, "commit", "-qm", "quick");
+    expect(git(source, "rev-parse", "HEAD")).not.toBe(git(planUnit.path, "rev-parse", "HEAD"));
+    expect(
+      (await runBranchCheckHook({ ...deps, stdin: edit(join(source, "README.md"), CONTEXT_A) }))
+        .exitCode,
+    ).toBe(2);
+    git(source, "checkout", "-q", "main");
+    const mismatch = await runBranchCheckHook({
+      ...deps,
+      stdin: edit(join(source, "README.md"), CONTEXT_B),
+    });
+    expect(mismatch.stderr).toContain("feature/quick-105 (origen: own)");
+    expect(mismatch.stderr).toContain("aw doc-branch set --doc quick:");
+  });
+
+  it("una custodia ilegible no autoriza editar el checkout con otra unidad viva", async () => {
+    await ensure("103");
+    writeFileSync(
+      join(workspace, ".workflow", "sessions", "104-dos-plan-exec", ".custody.json"),
+      "{bad",
+    );
+    bind(CONTEXT_B, "104-dos-plan-exec");
+    const verdict = await runBranchCheckHook({
+      ...deps,
+      stdin: edit(join(source, "README.md"), CONTEXT_B),
+    });
+    expect(verdict.exitCode).toBe(2);
+    expect(verdict.stderr).toContain("unreadable");
+  });
 
   it("caso 1 — editar dentro de la unidad propia pasa", async () => {
     const mine = await ensure("103");

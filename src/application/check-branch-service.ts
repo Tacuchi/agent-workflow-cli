@@ -7,6 +7,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
 import { expectedWorkBranch, findOwningSource } from "./branch-resolver.js";
+import { documentOfSession, readDocBranches, resolveDocBranch } from "./doc-branch-ledger.js";
 import { normalizePath } from "./multiroot/paths.js";
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
@@ -35,6 +36,10 @@ export interface CheckBranchOutput {
   path?: string;
   current_branch?: string | null;
   expected_work_branch?: string | null;
+  expected_origin?: string;
+  doc_branch_unreadable?: number;
+  document?: string | null;
+  identity_error?: string | null;
   dirty?: boolean | null;
   changed_files?: string[];
   is_repo?: boolean;
@@ -76,12 +81,56 @@ export async function runCheckBranch(
   // one this workspace had before the feature existed.
   const units = await unitsOf(git, paths, unitsRoot, target);
   if (units.length > 0) {
-    return unitVerdict(fs, paths, unitsRoot, target, units, input);
+    return unitVerdict(fs, git, paths, unitsRoot, target, block, units, input);
   }
 
   // Expected work branch comes from the WORKSPACE block working_branches for the
   // owning source. Decoupled from sessions/flow.
-  const expected = expectedWorkBranch(target, block?.working_branches ?? {});
+  const ledger = await readDocBranches(fs, paths);
+  const registered = expectedWorkBranch(target, block?.working_branches ?? {});
+  const hasEvents =
+    ledger.events.some((event) => event.source === target.alias) || ledger.unreadable > 0;
+  const identity = hasEvents ? await flowSession(fs, paths, input) : null;
+  if (input.sessionCode !== undefined && identity?.kind === "unresolved") {
+    return {
+      match: false,
+      reason: "unknown_identity",
+      alias: target.alias,
+      path: target.path,
+      error: identity.reason,
+      remedy: identity.action,
+    };
+  }
+  const effective =
+    identity?.kind === "resolved"
+      ? await resolveDocBranch(
+          fs,
+          paths,
+          target,
+          block,
+          await documentOfSession(fs, paths, identity.session),
+          ledger,
+        )
+      : null;
+  const expected = effective === null ? registered : effective.branch;
+  if (effective?.origin === "unreadable") {
+    return {
+      match: false,
+      reason: "unreadable_identity",
+      alias: target.alias,
+      path: target.path,
+      expected_origin: "unreadable",
+      error: effective.reason ?? "custodia ilegible",
+    };
+  }
+  const origin = effective?.origin ?? (registered === null ? "none" : "registered");
+  const extra = {
+    expected_origin: origin,
+    ...(ledger.unreadable > 0 ? { doc_branch_unreadable: ledger.unreadable } : {}),
+    document: effective?.doc ? `${effective.doc.kind}:${effective.doc.key}` : null,
+    identity_error: identity?.kind === "unresolved" ? identity.reason : null,
+    remedy: identity?.kind === "unresolved" ? identity.action : null,
+  };
 
   if (expected === null) {
     return {
@@ -89,6 +138,7 @@ export async function runCheckBranch(
       reason: "no_expected_branch_declared",
       alias: target.alias,
       path: target.path,
+      ...extra,
     };
   }
 
@@ -98,6 +148,7 @@ export async function runCheckBranch(
       ...target,
       match: false,
       expected_work_branch: expected,
+      ...extra,
       current_branch: null,
       dirty: null,
       changed_files: [],
@@ -112,6 +163,7 @@ export async function runCheckBranch(
       ...target,
       match: false,
       expected_work_branch: expected,
+      ...extra,
       current_branch: null,
       dirty: null,
       changed_files: [],
@@ -127,6 +179,7 @@ export async function runCheckBranch(
   return {
     ...target,
     expected_work_branch: expected,
+    ...extra,
     current_branch: current,
     match,
     ...(await treeState(git, target.path)),
@@ -155,9 +208,11 @@ export async function runCheckBranch(
  */
 async function unitVerdict(
   fs: FileSystemPort,
+  git: GitPort,
   paths: PathsService,
   unitsRoot: string,
   target: ProjectFuente,
+  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
   units: UnitRef[],
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
@@ -206,6 +261,47 @@ async function unitVerdict(
       };
     }
     return { ...base, match: true, reason: "inside_own_unit", work_branch: actual.branch };
+  }
+
+  // An unrelated isolated session does not claim the shared checkout.
+  if (expected === null) {
+    const effective = await resolveDocBranch(
+      fs,
+      paths,
+      target,
+      block,
+      await documentOfSession(fs, paths, session),
+    );
+    const branch = effective.branch;
+    if (effective.origin === "unreadable") {
+      return {
+        ...base,
+        match: false,
+        reason: "unreadable_identity",
+        expected_origin: effective.origin,
+        error: effective.reason ?? "custodia ilegible",
+      };
+    }
+    if (branch === null)
+      return {
+        ...base,
+        match: true,
+        reason: "no_expected_branch_declared",
+        expected_work_branch: null,
+        expected_origin: effective.origin,
+      };
+    const current = (await git.currentBranch(target.path)) ?? null;
+    return {
+      ...base,
+      expected_work_branch: branch,
+      expected_origin: effective.origin,
+      document: effective.doc ? `${effective.doc.kind}:${effective.doc.key}` : null,
+      current_branch: current,
+      match: current === branch,
+      ...(await treeState(git, target.path)),
+      is_repo: true,
+      error: null,
+    };
   }
 
   // Outside every unit: the main checkout, while some flow is isolated there.

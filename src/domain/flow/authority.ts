@@ -1490,7 +1490,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // Same read as PLAN's, and for the same reason: `aw check-branch` with no
     // --source resolves no target and passes unconditionally.
     action: {
-      invocation: { program: "aw", args: ["sources", "--verbose"], target: ".", input: null },
+      invocation: {
+        program: "aw",
+        args: ["sources", "--verbose", "--code", "{code}"],
+        target: ".",
+        input: null,
+      },
       execution: {
         kind: "external",
         reason:
@@ -3282,7 +3287,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       // thing, which is what lets the recovery end where it started.
       idempotent: true,
       recovery:
-        "una unidad en conflicto conserva su merge y sus commits: resolvé con 'aw fix-git --path <fuente>' (prepare → apply → commit --confirm) y volvé a correr la integración; la transición sigue pendiente mientras la sesión conserve una unidad",
+        "una unidad en conflicto conserva su merge y sus commits: resolvé con 'aw fix-git --path <ruta que reportó la integración>' (prepare → apply → commit --confirm) y volvé a correr la integración; la transición sigue pendiente mientras la sesión conserve una unidad",
     },
   },
   {
@@ -3726,6 +3731,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "stack", reason: "detección de stack informativa" },
   { command: "sources", reason: "inventario de fuentes del workspace" },
   { command: "set-working-branch", reason: "configuración declarativa de rama" },
+  {
+    command: "doc-branch",
+    reason:
+      "asociación declarativa de una rama de trabajo a un documento, con lectura sin efectos y escritura append-only después de asegurar la rama",
+  },
   { command: "set-qa-branch", reason: "configuración declarativa de rama" },
   { command: "remove-source", reason: "operación de configuración del workspace" },
   { command: "git-flow", reason: "utilidad de ramas sin recorrido de flow" },

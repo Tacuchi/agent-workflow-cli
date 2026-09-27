@@ -6,11 +6,15 @@ import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { proveFlowBoundary } from "../../src/application/flow/prove.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { validateCheckoutProof } from "../../src/application/source-boundary-policy.js";
+import { flowCommand } from "../../src/cli/commands/flow.js";
+import { parseArgv } from "../../src/cli/parser.js";
+import type { CliContext } from "../../src/cli/types.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
 import { FLOW_RUN_STATE_FILE } from "../../src/domain/flow/run-state.js";
 import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 import type { GitPort } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -208,5 +212,20 @@ describe("aw flow prove", () => {
     if ("session" in result) throw new Error("esperaba un fallo de capacidad");
     expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
     expect(result.failure.message).toContain("workspace");
+  });
+
+  it("el comando despacha --source desde valuesMulti; no prueba workspace por accidente", async () => {
+    const ctx = {
+      fs,
+      paths,
+      env: new FakeEnv(workdir),
+      git: gitDouble(),
+    } as unknown as CliContext;
+    const result = await flowCommand.execute(
+      parseArgv(["flow", "prove", "--session", "001", "--source", "un-alias-ajeno"]),
+      ctx,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
   });
 });

@@ -50,18 +50,22 @@ And **always** forbidden, even when the user asks for a commit: `--no-verify` (r
 
 ### Branch verification (before editing)
 
-The expected branch is **never assumed from the current branch** — the user may have switched it by hand. Verify against the flow's own line of work before any `Write/Edit`: its isolation unit's branch when the source has units (`aw worktree`), the source's declared work branch when it has none.
+The expected branch is **never assumed from the current branch** — the user may have switched it by hand. Verify before any `Write/Edit`: the session's isolation unit branch when it owns a unit (`aw worktree`); otherwise its document's own, inherited, or registered work branch (in that order). An unrelated unit does not block a document editing the shared checkout in its expected branch.
 
 **Primary mechanism**: `aw check-branch --source <alias>` (or `--file <path-of-the-imminent-edit>`; `--strict` returns exit 2 on mismatch — useful as a gate). It returns the per-source fields already computed: `alias`, `path`, `main_branch` (base), `expected_work_branch`, `current_branch`, `match` (`current == expected`), `dirty` (uncommitted changes). **Fallback** (loose repo without workspace/CLI): compute them with direct read-only git (`git branch --show-current` + `git status --porcelain`) plus the session's declared branch.
 
 Cases:
 
 - **`match=true`** → OK, edit.
-- **`match=false, dirty=false`** (Case A — different branch, clean repo) → *structured-choice*: `git checkout <expected>` / keep current and update the session's expectation / cancel.
+- **`match=false, dirty=false`** (Case A — different branch, clean repo) → *structured-choice*: `git checkout <expected>` / confirm `aw doc-branch set --doc <tipo:NNN> --source <alias> --rama <actual>` to use the current branch for this document / cancel.
 - **`match=false, dirty=true`** (Case B — different branch + uncommitted changes) → **pause and wait for manual resolution**. Never propose checkout (it could lose work). Ask the user to commit/stash/discard and to say when to continue.
-- **Cross-source (hub)**: if the touched sources point to different branches without declaring it, **hard gate** — block progress with *structured-choice* (align all / declare the divergence explicitly / cancel).
+- **Cross-source (hub)**: `aw sources --code <NNN>` checks each source against its own expected branch; different branch names are fine when every source matches. Pause only the divergent sources.
 - **Detached HEAD** → treat as Case A.
 - **Source outside git** (`is_repo=false`) → report, do not block.
+
+To request a document branch, first run `aw doc-branch show --code <NNN>` (or `--doc <tipo:NNN>`), ask the person to confirm or change its proposed name, then run `aw doc-branch set --code <NNN> --source <alias> --rama <nombre>`. No branch is registered just by showing a proposal.
+
+Closing, releasing or reclaiming a unit preserves the document branch and its base. A later cleanup may remove only an `aw/*` unit branch already contained in that base (decision `S049/AC-10`); it never deletes either protected branch.
 
 ### Commits — propose-then-execute, one source at a time
 
