@@ -92,3 +92,20 @@ describe("runHarness — detección data-driven desde HARNESSES registry", () =>
     }
   });
 });
+
+it.each([
+  ["CLAUDECODE", "claude-code"],
+  ["GEMINI_CLI", "gemini"],
+  ["OPENCODE", "opencode"],
+  ["CRUSH", "crush"],
+])("%s gana a ambas marcas de Warp", (marker, host) => {
+  const result = runHarness(
+    env({
+      [marker]: "1",
+      TERM_PROGRAM: "WarpTerminal",
+      WARP_IS_LOCAL_SHELL_SESSION: "1",
+    }),
+  );
+  expect(result.agent_host).toBe(host);
+  expect(result.terminal_host).toBe("warp");
+});

@@ -240,3 +240,14 @@ describe("proveedor de skills — la capacidad se comprueba por host", () => {
     expect(JSON.stringify(output)).not.toContain("host 'claude'");
   });
 });
+
+it.each([
+  ["codex", ".codex/skills"],
+  ["gemini", ".gemini/skills"],
+] as const)("doctor ve design en la carpeta nativa de %s", async (host, dir) => {
+  installDesignWrapper(dir);
+  const output = await skillsProvider.run(inputFor([hostView(host)]));
+  const finding = output.findings.find((item) => item.resource.kind === "capability");
+  expect(finding?.state).toBe("healthy");
+  expect(finding?.evidence.join(" | ")).toContain(`ruta directa en '${host}': ready`);
+});

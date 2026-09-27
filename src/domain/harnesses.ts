@@ -329,6 +329,8 @@ export interface HarnessSpec {
   pluginHooksDir: string | null;
   // Directories where skills are auto-discovered (relative to project root)
   skillsDirs: readonly string[];
+  // HOME discovery overrides when global roots differ from project roots.
+  globalSkillsDirs?: readonly string[];
   // Primary install destination used by install-skill
   installTarget: InstallTarget;
   /**
@@ -614,6 +616,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginManifest: null, // Gemini uses Extensions (gemini-extension.json) — Phase 2
     pluginHooksDir: null, // agy's hooks are its own hooks.json, not extension-bundled
     skillsDirs: [".agents/skills", ".gemini/skills"],
+    globalSkillsDirs: [".gemini/skills", ".gemini/antigravity-cli/skills"],
     installTarget: "gemini",
     invocation: MENTION,
     // The tool is `AskQuestion`, NOT the deprecated Gemini CLI's `ask_user`: the
@@ -739,12 +742,18 @@ export const HARNESSES: readonly HarnessSpec[] = [
     pluginHooksDir: null,
     // Global roots are XDG (~/.config/crush + ~/.config/agents); .crush/skills
     // is PROJECT-relative only (crush v0.81.0 GlobalSkillsDirs/projectSkillSubdirs).
-    // The resolver applies each dir under cwd AND home, so both scopes stay covered.
+    // Keep the project-only root out of HOME discovery.
     skillsDirs: [
       ".config/crush/skills",
       ".config/agents/skills",
       ".agents/skills",
       ".crush/skills",
+      ".claude/skills",
+    ],
+    globalSkillsDirs: [
+      ".config/crush/skills",
+      ".config/agents/skills",
+      ".agents/skills",
       ".claude/skills",
     ],
     installTarget: "crush",

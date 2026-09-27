@@ -33,6 +33,7 @@ import {
   INSTALL_TARGETS,
   LEGACY_SKILL_ROOTS_BY_TARGET,
   SHARED_INSTALL_TARGETS,
+  capabilityPlacement,
 } from "./install-targets.js";
 import {
   OPENCODE_PLUGIN_FILE,
@@ -164,7 +165,33 @@ export async function selfUninstall(
     targetArg === "all" ? [...ALL_TARGETS] : [targetArg as InstallTarget];
   const home = ctx.env.homeDir();
 
+  const installed: InstallTarget[] = [];
+  for (const target of INSTALL_TARGETS) {
+    if (await isOwnedBundleDir(join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME), ctx)) {
+      installed.push(target);
+    }
+  }
+  const placement = await capabilityPlacement(
+    ctx.fs,
+    home,
+    DESIGN_DESCRIPTOR.name,
+    targets,
+    "uninstall",
+    installed,
+  );
   const steps: UninstallStep[] = [];
+  for (const location of placement.remove) {
+    steps.push(...(await removeCapabilitySkill(ctx, location.root, location.target, flags.dryRun)));
+  }
+  for (const location of placement.keep.filter((item) => item.selected)) {
+    steps.push({
+      target: location.target,
+      kind: "skill",
+      path: join(location.root, DESIGN_DESCRIPTOR.name),
+      status: "skipped",
+      reason: "shared wrapper retained for another installed target",
+    });
+  }
   for (const target of targets) {
     steps.push(...(await uninstallOneTarget(ctx, home, target, flags)));
   }
@@ -237,10 +264,6 @@ async function uninstallOneTarget(
 ): Promise<UninstallStep[]> {
   const steps: UninstallStep[] = [];
   steps.push(...(await removeSkill(ctx, home, target, flags.includeLegacy, flags.dryRun)));
-  // Symmetric with install: the capability wrapper goes on every host and is
-  // NOT a command wrapper, so it is not gated by `--no-commands`. Ownership is
-  // fail-closed — a foreign skill under that name is reported, never deleted.
-  steps.push(...(await removeCapabilitySkill(ctx, home, target, flags.dryRun)));
   if (!flags.skipCommands) {
     // Synthesized w-* wrappers ARE the command surface on codex/warp/oz —
     // gated like the native command dirs (mirror of installOneTarget).
@@ -256,11 +279,10 @@ async function uninstallOneTarget(
 
 async function removeCapabilitySkill(
   ctx: CliContext,
-  home: string,
+  targetRoot: string,
   target: InstallTarget,
   dryRun: boolean,
 ): Promise<UninstallStep[]> {
-  const targetRoot = join(home, ...TARGET_ROOTS[target]);
   const path = join(targetRoot, DESIGN_DESCRIPTOR.name);
   if (!(await ctx.fs.exists(path))) return [];
   if (dryRun) return [{ target, kind: "skill", path, status: "dry-run" }];

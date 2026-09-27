@@ -350,3 +350,22 @@ describe("la proyección de invocación es la que el host soporta de verdad", ()
     expect(claude?.invocation?.template).toBe("<name>");
   });
 });
+
+it("el wrapper usa sólo flags reales y transporta los sobres por stdin", async () => {
+  const { capabilityCommand } = await import("../../src/cli/commands/capability.js");
+  for (const host of [undefined, "codex"] as const) {
+    const wrapper = renderCapabilitySkill(DESIGN_DESCRIPTOR, undefined, host);
+    expect(wrapper).not.toMatch(/--(?:request|plan)\b/);
+    for (const flag of wrapper.matchAll(/--([a-z][a-z-]*)/g)) {
+      expect([...(capabilityCommand.flags?.known ?? []), "help"]).toContain(flag[1]);
+    }
+    for (const verb of ["prepare", "continue", "validate", "apply"]) {
+      expect(wrapper).toContain(`${verb} --capability design --operation <op> [--input k=v ...]`);
+    }
+    expect(wrapper).toContain("--approval <plan.proposal.digest>");
+    expect(wrapper).toContain('stdin: {"request": <request>, "answer": <answer>}');
+    expect(wrapper).toContain('stdin: {"parent": <request>}');
+    expect(wrapper).toContain("aw capability --help");
+  }
+  expect(renderCapabilitySkill(DESIGN_DESCRIPTOR)).toContain("Si `aw harness` no reconoce el host");
+});

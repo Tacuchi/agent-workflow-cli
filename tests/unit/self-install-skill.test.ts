@@ -2,15 +2,26 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import "../../src/application/capability/design-handler.js";
+import { capabilityReadiness } from "../../src/application/capability/readiness.js";
+import { installCapabilitySkill } from "../../src/application/capability/wrapper.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   CLAUDE_PLUGIN_BUNDLE_ROOT,
   SKILL_DIR_NAME,
   selfInstallSkill,
 } from "../../src/application/self/install-skill.js";
+import { TARGET_ROOTS } from "../../src/application/self/install-targets.js";
+import { selfUninstall } from "../../src/application/self/uninstall.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { HOST_INSTALL_TARGETS, harnessByInstallTarget } from "../../src/domain/harnesses.js";
+import { DESIGN_DESCRIPTOR } from "../../src/domain/design/capability.js";
+import {
+  HARNESSES,
+  HOST_INSTALL_TARGETS,
+  harnessByInstallTarget,
+} from "../../src/domain/harnesses.js";
+import { stampForInstallTarget } from "../../src/domain/structured-choice-stamp.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -929,4 +940,189 @@ describe("selfInstallSkill · /w:recall reaches every host bound to it (plan 062
       }
     },
   );
+});
+
+describe("design convive entre destinos y conserva la cobertura al desinstalar", () => {
+  // Independent expectations: a placement bug must not redefine what the test can see.
+  const homeRoots = {
+    "claude-code": [".claude/skills"],
+    codex: [".agents/skills", ".codex/skills"],
+    oz: [".agents/skills"],
+    warp: [".warp/skills", ".agents/skills", ".claude/skills", ".codex/skills"],
+    gemini: [".gemini/skills", ".gemini/antigravity-cli/skills"],
+    opencode: [".opencode/skills", ".agents/skills", ".claude/skills"],
+    crush: [".config/crush/skills", ".config/agents/skills", ".agents/skills", ".claude/skills"],
+    kimi: [".kimi-code/skills", ".agents/skills"],
+  };
+  let root: string;
+  let home: string;
+  let source: string;
+  let ctx: CliContext;
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "aw-design-placement-"));
+    home = join(root, "home");
+    source = join(root, "source");
+    await mkdir(home, { recursive: true });
+    await makeFakeRepo(source);
+    await writeFile(join(source, "SKILL.md"), "---\nname: w\ndescription: Workline\n---\n");
+    await mkdir(join(source, "harness"));
+    await writeFile(join(source, "harness/HARNESS.md"), "# Harness\n");
+    ctx = buildCtx(home, new RealFs(), new FakeProcess());
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function install(target: string) {
+    const result = await selfInstallSkill(
+      buildArgs({ target, from: source }, ["--confirm-all", "--skill-only", "--force"]),
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok)
+      expect(result.data?.dests.every((item) => !item.capability_skill_conflict)).toBe(true);
+  }
+
+  async function visible(host: (typeof HARNESSES)[number]): Promise<string[]> {
+    const bodies: string[] = [];
+    for (const dir of homeRoots[host.id]) {
+      const path = join(home, dir, "design/SKILL.md");
+      if (!(await ctx.fs.exists(path))) continue;
+      const body = await readFile(path, "utf8");
+      for (const match of body.matchAll(/--host ([\w-]+)/g)) expect(match[1]).toBe(host.id);
+      bodies.push(body);
+    }
+    return bodies;
+  }
+
+  it("all conserva Gemini nativo y dos copias compartidas, sin bindings ajenos y con ready", async () => {
+    await install("all");
+    for (const host of HARNESSES) {
+      const bodies = await visible(host);
+      expect(bodies.length, host.id).toBe(["warp", "opencode", "crush"].includes(host.id) ? 2 : 1);
+      for (const body of bodies) {
+        if (host.id === "gemini") expect(body).toContain("--host gemini");
+        else expect(body).not.toMatch(/--host [\w-]+/);
+      }
+      const reports = await capabilityReadiness({
+        fs: ctx.fs,
+        env: ctx.env,
+        paths: ctx.paths,
+        host: host.id,
+      });
+      expect(reports.find((item) => item.capability === "design")?.exposures.direct.state).toBe(
+        "ready",
+      );
+    }
+    expect(await readFile(join(home, ".claude/skills/design/SKILL.md"), "utf8")).toContain(
+      "AskUserQuestion",
+    );
+    expect(await readFile(join(home, ".agents/skills/design/SKILL.md"), "utf8")).toContain(
+      stampForInstallTarget("agents"),
+    );
+    expect(await readFile(join(home, ".gemini/skills/design/SKILL.md"), "utf8")).toContain(
+      "aw capability --host gemini prepare",
+    );
+  });
+
+  it.each(HOST_INSTALL_TARGETS)("un destino %s no expone bindings ajenos", async (target) => {
+    await install(target);
+    const owner = harnessByInstallTarget(target);
+    expect(owner).not.toBeNull();
+    for (const host of HARNESSES) {
+      const bodies = await visible(host);
+      if (host.id === owner?.id) expect(bodies.length).toBe(1);
+    }
+  });
+
+  it("desinstalar oz conserva design para codex y quitar all retira las copias", async () => {
+    await install("all");
+    const removed = await selfUninstall(buildArgs({ target: "oz" }, ["--skill-only"]), ctx);
+    expect(removed.ok).toBe(true);
+    expect(await ctx.fs.exists(join(home, ".agents/skills/design/SKILL.md"))).toBe(true);
+    const reports = await capabilityReadiness({
+      fs: ctx.fs,
+      env: ctx.env,
+      paths: ctx.paths,
+      host: "codex",
+    });
+    expect(reports.find((item) => item.capability === "design")?.exposures.direct.state).toBe(
+      "ready",
+    );
+    await selfUninstall(buildArgs({ target: "all" }, ["--skill-only"]), ctx);
+    for (const host of HARNESSES) expect(await visible(host)).toEqual([]);
+  });
+
+  it("migra wrappers viejos propios, sin borrar una skill ajena en una raíz legada", async () => {
+    for (const host of HARNESSES) {
+      await installCapabilitySkill(
+        join(home, ...TARGET_ROOTS[host.installTarget]),
+        DESIGN_DESCRIPTOR,
+        undefined,
+        host.id,
+      );
+    }
+    const legacy = join(home, ".crush/skills/design");
+    await mkdir(legacy, { recursive: true });
+    await writeFile(join(legacy, "SKILL.md"), "design ajeno");
+    await install("all");
+    for (const host of HARNESSES) expect((await visible(host)).length).toBeGreaterThan(0);
+    expect(await readFile(join(legacy, "SKILL.md"), "utf8")).toBe("design ajeno");
+    await rm(legacy, { recursive: true });
+    await installCapabilitySkill(join(home, ".crush/skills"), DESIGN_DESCRIPTOR);
+    await install("crush");
+    expect(await ctx.fs.exists(legacy)).toBe(false);
+  });
+
+  it("una copia compartida ajena no suprime la instalación nativa", async () => {
+    await mkdir(join(home, ".agents/skills/design"), { recursive: true });
+    await writeFile(join(home, ".agents/skills/design/SKILL.md"), "design ajeno");
+    await install("kimi");
+    expect(await readFile(join(home, ".kimi-code/skills/design/SKILL.md"), "utf8")).toContain(
+      "--host kimi",
+    );
+    expect(await readFile(join(home, ".agents/skills/design/SKILL.md"), "utf8")).toBe(
+      "design ajeno",
+    );
+  });
+
+  it("un conflicto nativo conserva lo ajeno sin impedir retirar bindings viejos ya cubiertos", async () => {
+    for (const host of HARNESSES.filter((item) => item.id !== "gemini")) {
+      await installCapabilitySkill(
+        join(home, ...TARGET_ROOTS[host.installTarget]),
+        DESIGN_DESCRIPTOR,
+        undefined,
+        host.id,
+      );
+    }
+    const foreignPath = join(home, ".gemini/skills/design/SKILL.md");
+    await mkdir(join(home, ".gemini/skills/design"), { recursive: true });
+    await writeFile(foreignPath, "design ajeno");
+
+    const result = await selfInstallSkill(
+      buildArgs({ target: "all", from: source }, ["--confirm-all", "--skill-only", "--force"]),
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected installation with a reported conflict");
+    expect(
+      result.data?.dests
+        .filter((item) => item.capability_skill_conflict)
+        .map((item) => item.target),
+    ).toEqual(["gemini"]);
+    expect(await readFile(foreignPath, "utf8")).toBe("design ajeno");
+    expect(await ctx.fs.exists(join(home, ".codex/skills/design"))).toBe(false);
+    for (const host of HARNESSES.filter((item) => item.id !== "gemini")) {
+      expect((await visible(host)).length).toBeGreaterThan(0);
+      const reports = await capabilityReadiness({
+        fs: ctx.fs,
+        env: ctx.env,
+        paths: ctx.paths,
+        host: host.id,
+      });
+      expect(reports.find((item) => item.capability === "design")?.exposures.direct.state).toBe(
+        "ready",
+      );
+    }
+  });
 });

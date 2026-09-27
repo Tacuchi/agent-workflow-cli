@@ -157,7 +157,7 @@ Proven pattern (Spec Kit, 30+ agents): **one canonical source** + generate/symli
 
 ## Command packaging (harness-specific)
 
-Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The **file** the harness executes wraps that contract in its native format — the installer (`aw self install-skill`) emits the right wrapper per host, retargets bundle-relative links to that host's installed `skills/w` directory, binds its flow/capability calls with `--host <target>`, and materializes the authored `${CLAUDE_PLUGIN_ROOT}/skills/w` token to the same absolute bundle for `aw context-plan --root`. Claude's plugin surface expands that token natively; installed wrappers never rely on the CLI's potentially different packaged copy:
+Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The **file** the harness executes wraps that contract in its native format — the installer (`aw self install-skill`) emits the right wrapper per host, retargets bundle-relative links to that host's installed `skills/w` directory, binds command calls with `--host <target>`, and materializes the authored `${CLAUDE_PLUGIN_ROOT}/skills/w` token to the same absolute bundle for `aw context-plan --root`. Claude's plugin surface expands that token natively; installed wrappers never rely on the CLI's potentially different packaged copy:
 
 | Host | Wrapper installed | Invoked as |
 |---|---|---|
@@ -168,6 +168,8 @@ Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The *
 | Crush | `~/.crush/commands/w/<cmd>.md` (plain body — Crush parses no frontmatter) | palette `user:w:<cmd>` |
 | Warp/Oz | synthesized skill `w-<cmd>/SKILL.md` next to the bundle (Warp lists skills as `/name`) | `/w-<cmd>` |
 | Kimi Code | synthesized skill `~/.kimi-code/skills/w-<cmd>/SKILL.md` (reads no commands dir; verified vs v0.29.2) | `/skill:w-<cmd>` |
+
+Capability wrappers bind a host only in a directory read by that host alone. Shared directories carry unbound wrappers; runtime detection prefers agent markers over terminal markers. When `aw harness` returns `unknown`, pass `--host <id>` to each capability stage. The four-stage protocol is documented in `roles/design/CONTRACT.md` and `aw capability --help`.
 
 *Skill-as-command* (a synthesized `w-<cmd>` skill whose body is the command, with bundle references rewritten to `../w/…`) is the **universal fallback** for any host without a native commands surface. The loop/role/export manuals are deliberately **not** `SKILL.md` files (`LOOP.md`/`ROLE.md`/`EXPORT.md`/`HARNESS.md`): hosts that scan skill roots **recursively** (Codex ≤6 levels; OpenCode and Crush — which also cross-read `~/.claude/skills` and `~/.agents/skills`) must never index the internals as invocable skills. The contract never changes; the wrapper does (another column).
 

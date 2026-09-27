@@ -29,6 +29,7 @@ import { classifyCapabilityBinding } from "../../domain/skills.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
+import { homeSkillDirs } from "../self/install-targets.js";
 import { resolveSkills } from "../skills-resolver-service.js";
 import { capabilityHandler, registeredCapabilities } from "./dispatcher.js";
 import { buildCapabilityInventory } from "./installed-inventory.js";
@@ -210,23 +211,37 @@ async function directVerdict(
       action: "usá la ruta compuesta desde un flow, o instalá en un host soportado",
     };
   }
-  const root = join(input.env.homeDir(), ...(harness.skillsDirs[0]?.split("/") ?? []));
-  const ownership = await inspectCapabilityDirVia(input.fs, join(root, descriptor.name));
-  if (ownership.state === "foreign") {
-    return {
-      state: "misconfigured",
-      reason: ownership.why,
-      action: `renombrá o quitá esa skill y reinstalá con 'aw self install-skill'`,
-    };
+  const roots = homeSkillDirs(harness).map((dir) => join(input.env.homeDir(), dir));
+  let found = false;
+  for (const root of roots) {
+    const dir = join(root, descriptor.name);
+    const ownership = await inspectCapabilityDirVia(input.fs, dir);
+    if (ownership.state === "absent") continue;
+    if (ownership.state === "foreign") return wrapperMisconfigured(ownership.why);
+    const body = await input.fs.readText(join(dir, "SKILL.md"));
+    const bindings = [...body.matchAll(/aw capability[^\n]*?--host\s+([\w-]+)/g)];
+    const alien = bindings.find((binding) => binding[1] !== input.host);
+    if (alien !== undefined) {
+      return wrapperMisconfigured(`'${dir}' fija el host '${alien[1]}' para '${input.host}'`);
+    }
+    found = true;
   }
-  if (ownership.state === "absent") {
+  if (!found) {
     return {
       state: "unavailable",
-      reason: `no hay un wrapper '${descriptor.name}' instalado en ${root}`,
+      reason: `no hay un wrapper '${descriptor.name}' instalado en ${roots.join(", ")}`,
       action: "instalalo con 'aw self install-skill'",
     };
   }
   return verdict;
+}
+
+function wrapperMisconfigured(reason: string): ReadinessVerdict {
+  return {
+    state: "misconfigured",
+    reason,
+    action: "renombrá o quitá esa skill y reinstalá con 'aw self install-skill'",
+  };
 }
 
 /** What an AVAILABLE operation's state is when the capability itself is off. */

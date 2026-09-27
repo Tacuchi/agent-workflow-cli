@@ -12,10 +12,17 @@ This file is what a person or a loop reads.
 
 ```
 aw capability prepare  --capability design --operation <op> [--input k=v ...]
-aw capability continue                                       # stdin: {"parent": <request>}
-aw capability validate                                       # stdin: {"request": …, "answer": …}
-aw capability apply --approval <digest>                      # stdin: {"request": …, "plan": …}
+aw capability continue --capability design --operation <op> [--input k=v ...] # stdin: {"parent": <request>}
+aw capability validate --capability design --operation <op> [--input k=v ...] # stdin: {"request": …, "answer": …}
+aw capability apply --capability design --operation <op> [--input k=v ...] --approval <plan.proposal.digest> # stdin: {"request": …, "plan": …, "pin": …}
 ```
+
+Repeat the same `--capability`, `--operation`, every `--input` and
+`--consumer-document` (if used) at each stage. Carry the response as one JSON
+object on stdin; `prepare` reads no stdin and `pin` is optional. Approval is the
+digest of `plan.proposal.digest`. Read `aw capability --help` for the full envelope.
+Shared wrappers have no host binding: if `aw harness` returns `unknown`, pass
+`--host <id>` at every stage.
 
 The verbs are **stages**, never operations: the operation travels in the
 envelope. Every attempt returns `outcome`, `output` and `receipt`. A
