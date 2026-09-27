@@ -1,12 +1,12 @@
 import { copyFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { parse as parseToml } from "smol-toml";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readPackageVersion } from "../../runtime/version.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
+import { parseToml } from "../parsers/toml.js";
 import { CODEX_PLUGIN_DIR, buildCodexPluginBundle } from "./codex-plugin.js";
 import {
   AGY_HOOK_NAME,

@@ -25,6 +25,18 @@ async function readRel(rel: string): Promise<string> {
   return readFile(join(SKILL_ROOT, rel), "utf8");
 }
 
+it("la doctrina nombra el cambio de rama del documento y la copia desde quick", async () => {
+  const git = await readRel("roles/git/ROLE.md");
+  const specNew = await readRel("commands/spec-new.md");
+  expect(git).toContain("### Branch verification");
+  expect(git).toContain("aw doc-branch set --doc <tipo:NNN>");
+  expect(git).toContain("preserves the document branch and its base");
+  expect(git).toContain("may remove only an `aw/*` unit branch already contained in that base");
+  expect(specNew).toContain(
+    "aw doc-branch set --doc spec:<NNN> --source <alias> --from quick:<NNN>",
+  );
+});
+
 /**
  * A document plus every module it points at — its whole doctrinal SURFACE.
  *
@@ -1174,7 +1186,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(transversal).toContain("/w:resume");
   });
 
-  it("`resume` routes by plan_state — a closed plan is resumed only for its handoff", async () => {
+  it("`resume` routes by plan_state — a closed plan returns for a handoff or pending pass", async () => {
     // The routing table moved into the shared projection: `derivePipeline` skips
     // `done` and `planNext` gives every other state its own re-entry point, in one
     // chain. `resume` consumes that chain instead of running a second one — a
@@ -1189,7 +1201,9 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     // closed plan is still skipped, and the skip is still one line.
     const index = await readSrc("workline-index-service.ts");
     expect(index).toContain("export function planIsPending");
-    expect(index).toContain('return plan.plan_state !== "done" || liveHandoffs(plan) > 0;');
+    expect(index).toContain(
+      'return plan.plan_state !== "done" || liveHandoffs(plan) > 0 || pendingPasses(plan).length > 0;',
+    );
     expect(index).toContain("if (!planIsPending(plan)) continue;");
     expect(index).toContain('plan.plan_state === "inconsistent"');
     expect(index).toContain("plan.final_validation_pending");

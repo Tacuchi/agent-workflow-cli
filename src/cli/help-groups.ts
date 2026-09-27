@@ -33,9 +33,11 @@ const GROUPS: readonly CommandGroup[] = [
     commands: [
       "workspace-init",
       "sources",
+      "doc-branch",
       "generate-launch",
       "set-working-branch",
       "set-qa-branch",
+      "set-pipeline",
       "remove-source",
       "add-source",
       "git-flow",

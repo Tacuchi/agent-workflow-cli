@@ -39,6 +39,7 @@ import {
   type FlowDecision,
   proposalContractOf,
 } from "./authority.js";
+import { BATCH_REVIEW_CONTRACT, isBatchReview } from "./batch-review.js";
 import { type FlowBoundaryKind, type FlowChoice, STOP_LABEL, isFlowControl } from "./directive.js";
 
 /**
@@ -176,6 +177,11 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // batch's — nothing changed since its base, or they already credited another.
   PLAN_EXEC_BATCH_UNCHANGED: "evaluated",
   PLAN_EXEC_PROOF_REUSED: "evaluated",
+  PLAN_EXEC_BATCH_REVIEW_INVALID: "evaluated",
+  PLAN_TEST_RUN_NOT_EXECUTED: "evaluated",
+  PLAN_PREEXISTING_FAILURES_INVALID: "evaluated",
+  PLAN_TEST_FAILURES_UNREADABLE: "evaluated",
+  PLAN_TEST_FAILURE_NEW: "evaluated",
   // The scope boundary's own vocabulary. Its answer is `decisions.sources` plus
   // `decisions.plan`, and every one of these means the CLI read them and found
   // them wanting — a decision that did not resolve the gap.
@@ -388,6 +394,7 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
   // an attempt at exactly the boundary somebody was trying to pause.
   const control = flowControlOf(body);
   const substance = checkSubstance(body, {
+    decision: input.decision,
     signals,
     decisions,
     proposes: proposes !== null,
@@ -428,6 +435,21 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
 
 const EMPTY: SemanticArtifact[] = [];
 
+function checkAnswerContract(
+  decision: FlowDecision,
+  decisions: unknown,
+  control: string | null,
+): CapabilityFailure | null {
+  if (control !== null || decision.answer_contract !== "batch-review") return null;
+  if (isRecord(decisions) && isBatchReview(decisions.review)) return null;
+  return {
+    code: "PLAN_EXEC_BATCH_REVIEW_INVALID",
+    message:
+      "la revisión del lote falta o no demuestra un revisor distinto y cada corrección revisada",
+    action: BATCH_REVIEW_CONTRACT,
+  };
+}
+
 /**
  * Whether the answer says anything the CLI can act on — and the right thing.
  *
@@ -442,12 +464,15 @@ const EMPTY: SemanticArtifact[] = [];
 function checkSubstance(
   body: Record<string, unknown>,
   answered: {
+    decision: FlowDecision;
     signals: readonly string[];
     decisions: unknown;
     proposes: boolean;
     control: string | null;
   },
 ): CapabilityFailure | null {
+  const contract = checkAnswerContract(answered.decision, answered.decisions, answered.control);
+  if (contract !== null) return contract;
   const hasArtifacts = Array.isArray(body.artifacts) && body.artifacts.length > 0;
   if (hasArtifacts && !answered.proposes) {
     return {
@@ -603,7 +628,7 @@ function approvalAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
       failure: {
         code: "FLOW_APPROVAL_MISSING",
         message: "esta frontera necesita una aprobación de efecto y no llegó ninguna",
-        action: `volvé a invocar con --approval ${input.expectedApproval ?? "<digest>"}, o respondé '${STOP_LABEL}' para no autorizarla`,
+        action: `volvé a invocar con --approval ${input.expectedApproval ?? "<digest>"}, o respondé '${STOP_LABEL}' para cerrar la sesión conservando lo pendiente sin autorizar ese efecto`,
       },
     };
   }

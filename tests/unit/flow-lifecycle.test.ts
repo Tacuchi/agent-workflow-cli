@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { WorklineFlow } from "../../src/application/capability/compose.js";
+import { findActiveSessions } from "../../src/application/checkpoint-service.js";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { markCloseAtBoundary } from "../../src/application/flow/close-at-boundary.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
@@ -23,10 +25,14 @@ import {
   type FlowRunState,
   serializeRunState,
 } from "../../src/domain/flow/run-state.js";
+import { sealProposal } from "../../src/domain/proposal.js";
+import { reservationMarker } from "../../src/domain/reservation.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+import { RecordingGit } from "../helpers/fake-git.js";
 import { stateWrittenAt } from "../helpers/journey-fixtures.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * AC-13 de la spec 052: `aw session-close` sobre una sesión con corrida abierta
@@ -55,7 +61,12 @@ let ctx: CliContext;
 beforeEach(async () => {
   workdir = await mkdtemp(join(tmpdir(), "aw-ciclo-"));
   paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
-  ctx = { fs, env: new FakeEnv(workdir, workdir), paths } as unknown as CliContext;
+  ctx = {
+    fs,
+    env: new FakeEnv(workdir, workdir),
+    git: new RecordingGit(),
+    paths,
+  } as unknown as CliContext;
   units.listed = { units: [] };
   await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
   await writeFile(
@@ -100,6 +111,229 @@ const history = async () => {
   const file = paths.cwdHistoryFile();
   return existsSync(file) ? await readFile(file, "utf8") : "";
 };
+
+describe("Cerrar aplica finalize y conserva lo pendiente (073 F1)", () => {
+  async function seed(flow: WorklineFlow, boundary: string, extra: Partial<FlowRunState> = {}) {
+    const ids = journeyOfFlow(flow).map((row) => row.id);
+    const state = stateWrittenAt(
+      FLOW_RUN_STATE_VERSION,
+      flow,
+      SESSION,
+      ids.slice(0, ids.indexOf(boundary)),
+      boundary,
+      extra,
+    );
+    await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state));
+  }
+
+  async function chooseClose(git = new RecordingGit(), filesystem = fs) {
+    const state = await run();
+    const boundary = resolveBoundary(state, journeyForRun(state));
+    const result = await submitFlow(filesystem, paths, {
+      code: "051",
+      raw: JSON.stringify({ input_digest: boundary.seal, choice: "Cerrar" }),
+      approval: null,
+      executor: testExecutor(filesystem, paths, { git }),
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    return result.directive;
+  }
+
+  it.each([
+    ["spec-refine", "spec-refine.save-confirmation"],
+    ["plan-new", "plan-new.save-confirmation"],
+    ["plan-refine", "plan-refine.save-confirmation"],
+    ["plan-exec", "plan-exec.commit-authorization"],
+    ["quick", "quick.gate-choice"],
+  ] as const)("%s: cierra sesión, HISTORY y corrida, y reabre en %s", async (flow, boundary) => {
+    await seed(flow, boundary);
+    const result = await chooseClose();
+    expect(result.error).toBeNull();
+    expect(result.outcome).toBe("completed");
+    expect(closed()).toBe(true);
+    expect(await history()).toContain("closed");
+    expect(await findActiveSessions(fs, paths)).toEqual([]);
+    const state = await run();
+    expect(state.applied.at(-1)).toBe("chassis.finalize");
+    expect(state.applied).not.toContain(boundary);
+    expect(state.attempts.filter((attempt) => attempt.transition === boundary)).toEqual([]);
+    for (const artifact of ["CHECKPOINT.md", "BACKLOG.md"]) {
+      const text = await readFile(join(paths.cwdSessionsDir(), SESSION, artifact), "utf8");
+      expect(text).toContain(boundary);
+      expect(text).toContain(`aw session-resume --code ${SESSION} --reopen`);
+      expect(text).not.toContain("_[AI:");
+    }
+    const resumed = await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    expect(resumed).toMatchObject({ run: { resumes_at: boundary }, state: "active" });
+  });
+
+  it("conserva lote 2 sucio y unidades sin integrar, y avisa cuáles en la respuesta", async () => {
+    await seed("plan-exec", "plan-exec.commit-authorization", {
+      batches: [
+        {
+          id: "batch-2",
+          iteration: 2,
+          mode: "continuous",
+          phases: [2],
+          tasks: ["T2.1"],
+          plan_digest: "a".repeat(64),
+          stage: "closed",
+        },
+      ],
+    });
+    const unitPath = join(workdir, "unidad");
+    await mkdir(unitPath);
+    await writeFile(join(unitPath, "cambio.ts"), "trabajo del lote 2");
+    units.listed = {
+      units: [
+        { alias: "cli", session: SESSION, path: unitPath, branch: `aw/${SESSION}`, dirty: true },
+        { alias: "api", session: SESSION, path: "/tmp/api", branch: `aw/${SESSION}`, dirty: false },
+        {
+          alias: "ajena",
+          session: "099-ajena",
+          path: "/tmp/ajena",
+          branch: "aw/ajena",
+          dirty: true,
+        },
+      ],
+    };
+    const result = await chooseClose();
+    expect(result.error).toBeNull();
+    expect(result.next_action).toContain("lote 2 (batch-2): cli: sin commitear y sin integrar");
+    expect(result.next_action).toContain("api: sin integrar");
+    expect(result.next_action).not.toContain("ajena");
+    expect(await readFile(join(unitPath, "cambio.ts"), "utf8")).toBe("trabajo del lote 2");
+    expect(await readFile(join(paths.cwdSessionsDir(), SESSION, "BACKLOG.md"), "utf8")).toContain(
+      "lote 2",
+    );
+  });
+
+  it.each(["quick", "plan-exec"] as const)("%s avisa fuentes sucias", async (flow) => {
+    await seed(
+      flow,
+      flow === "quick" ? "quick.gate-choice" : "plan-exec.commit-authorization",
+      flow === "quick"
+        ? {}
+        : {
+            scope: { plan: "docs/plans/051-plan-ciclo.md", sources: ["workspace", "cli"] },
+            batches: [
+              {
+                id: "batch-2",
+                iteration: 2,
+                mode: "continuous",
+                phases: [2],
+                tasks: ["T2.1"],
+                plan_digest: "a".repeat(64),
+                stage: "closed",
+              },
+            ],
+          },
+    );
+    await mkdir(join(workdir, "cli"));
+    await writeFile(
+      join(workdir, "AGENTS.md"),
+      [
+        paths.blockMarkers().start,
+        "## Fuentes",
+        "| Alias | Path | Rama principal |",
+        "|---|---|---|",
+        `| cli | ${workdir}/cli | main |`,
+        paths.blockMarkers().end,
+      ].join("\n"),
+    );
+    const result = await chooseClose(new RecordingGit({ dirty: true }));
+    expect(result.error).toBeNull();
+    expect(result.next_action).toContain("cli: cambios sin commitear");
+    expect(result.next_action).toContain("workspace: cambios sin commitear");
+    if (flow === "plan-exec") {
+      expect(result.next_action).toContain("lote 2 (batch-2): cli: cambios sin commitear");
+      expect(result.next_action).toContain("lote 2 (batch-2): workspace: cambios sin commitear");
+    }
+    expect(closed()).toBe(true);
+  });
+
+  it.each(["Cerrar", "session-close"])("%s conserva y publica la reserva", async (method) => {
+    const path = "docs/specs/051-spec-ciclo.md";
+    const reserved = reservationMarker(SESSION);
+    await mkdir(join(workdir, "docs/specs"), { recursive: true });
+    await writeFile(join(workdir, path), reserved);
+    await writeFile(join(workdir, "docs/specs/052-spec-descartada.md"), reserved);
+    const proposal = sealProposal({
+      operation: "flow.spec-refine.content-authoring",
+      artifacts: [
+        { path, content: "# Spec 051 — propuesta pendiente\n", overwrite: false, reserved: true },
+      ],
+      bases: [{ path, digest: semanticDigest(reserved) }],
+      effects: ["local_additive"],
+      requiresApproval: [],
+    });
+    await seed("spec-refine", "spec-refine.save-confirmation", { proposal });
+    if (method === "Cerrar") expect((await chooseClose()).error).toBeNull();
+    else expect((await close()).ok).toBe(true);
+    // Retrying an already settled close must not discard the retained base.
+    expect((await close()).ok).toBe(true);
+    expect(await readFile(join(workdir, path), "utf8")).toBe(reserved);
+    expect(existsSync(join(workdir, "docs/specs/052-spec-descartada.md"))).toBe(false);
+    expect((await run()).proposal).toEqual(proposal);
+    await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    expect((await run()).proposal).toEqual(proposal);
+    const state = await run();
+    const result = await submitFlow(fs, paths, {
+      code: "051",
+      approval: null,
+      raw: JSON.stringify({
+        input_digest: resolveBoundary(state, journeyForRun(state)).seal,
+        choice: "Aprobar y guardar",
+      }),
+      executor: testExecutor(fs, paths),
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.directive.error).toBeNull();
+    expect(await readFile(join(workdir, path), "utf8")).toBe(proposal.artifacts[0]?.content);
+  });
+
+  it("una negativa conserva la sesión abierta en finalize y advance reintenta una sola copia", async () => {
+    await seed("quick", "quick.gate-choice");
+    const checkpoint = join(paths.cwdSessionsDir(), SESSION, "CHECKPOINT.md");
+    await writeFile(
+      checkpoint,
+      "# CHECKPOINT\n\n## Completed\n\nTrabajo previo.\n\n## Pending / Next\n\nNota propia.\n",
+    );
+    const backlog = join(paths.cwdSessionsDir(), SESSION, "BACKLOG.md");
+    class BacklogFailure extends NodeFileSystem {
+      override async writeText(path: string, text: string) {
+        if (path === backlog) throw new Error("BACKLOG no escribible");
+        return super.writeText(path, text);
+      }
+    }
+    const refused = await chooseClose(new RecordingGit(), new BacklogFailure());
+    expect(refused.error).not.toBeNull();
+    expect(refused.boundary.transition).toBe("chassis.finalize");
+    expect(closed()).toBe(false);
+    const retry = await advanceFlow(fs, paths, { code: "051", executor: testExecutor(fs, paths) });
+    if (!retry.ok) throw new Error(JSON.stringify(retry));
+    expect(retry.directive.error).toBeNull();
+    expect(closed()).toBe(true);
+    const text = await readFile(checkpoint, "utf8");
+    expect(text.match(/WORKLINE-CLOSE-START/g)).toHaveLength(1);
+    expect(text).toContain("Trabajo previo.");
+    expect(text).toContain("Nota propia.");
+    expect((await run()).reentries).toHaveLength(1);
+  });
+
+  it("no cierra si no puede observar las unidades; después de repararlas se reintenta", async () => {
+    await seed("quick", "quick.gate-choice");
+    units.listed = { error: "git no responde" };
+    const result = await chooseClose();
+    expect(result.error?.message).toContain("aw worktree list");
+    expect(closed()).toBe(false);
+    units.listed = { units: [] };
+    const retry = await advanceFlow(fs, paths, { code: "051", executor: testExecutor(fs, paths) });
+    if (!retry.ok) throw new Error(JSON.stringify(retry));
+    expect(retry.directive.outcome).toBe("completed");
+    expect(closed()).toBe(true);
+  });
+});
 
 describe("aw session-close sobre una corrida abierta", () => {
   it("cierra la sesión y termina la corrida en la frontera en que estaba", async () => {

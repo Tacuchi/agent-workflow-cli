@@ -208,7 +208,12 @@ it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin inv
   expect(flow.results[0]).toMatchObject({ source: "remoto", error_code: "SOURCE_PATH_MISSING" });
 
   const merge = await runMergeState(fs, git, env, paths, { source: "remoto" });
-  expect(merge.repos[0]).toMatchObject({ alias: "remoto", error_code: "SOURCE_PATH_MISSING" });
+  expect(merge.repos).toEqual([]);
+  expect(merge.unreadable[0]).toMatchObject({
+    alias: "remoto",
+    code: "SOURCE_PATH_MISSING",
+    action: expect.stringContaining("aw add-source remoto:<ruta>"),
+  });
 
   await expect(getDocsDir(fs, root, paths, "remoto")).rejects.toMatchObject({
     code: "SOURCE_PATH_MISSING",

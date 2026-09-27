@@ -9,7 +9,9 @@ import {
   type PreservedLine,
   type ProjectBlockMarkers,
   type ProjectFuente,
+  type ProjectPipeline,
   type ProjectStack,
+  formatPipelineRecord,
   parseProjectBlock,
   readWorkspaceBlock,
 } from "./parsers/project-block.js";
@@ -44,6 +46,8 @@ export interface ProjectMdUpsertInput {
   defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
+  /** Source pipeline records merged over the existing declarations. */
+  pipeline?: ProjectPipeline;
   /** `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repeatable). */
   fuentes?: ProjectMdUpsertFuente[];
   /** When true, the declared `fuentes` REPLACE the existing ones (no merge). workspace-init uses it to be authoritative and support removing sources. */
@@ -179,9 +183,17 @@ async function buildUpsertPlan(
   render.fuentes = migration.fuentes;
   render.markers = markers;
   if (mirrored.preserved.length > 0) render.preservedLines = mirrored.preserved;
+  for (const [alias, declaration] of Object.entries(mirrored.pipeline)) {
+    render.pipeline ??= {};
+    render.pipeline[alias] = { ...declaration, ...render.pipeline[alias] };
+  }
   if (input.lastActivity !== undefined) render.lastActivity = input.lastActivity;
 
-  const dropped = [...mirrored.dropped, ...pruneUndeclaredBranches(input, render)];
+  const dropped = [
+    ...mirrored.dropped,
+    ...pruneUndeclaredBranches(input, render),
+    ...prunePipeline(render),
+  ];
   return {
     block: renderProjectBlock(render),
     render,
@@ -263,15 +275,19 @@ async function readMirroredExtras(
   fs: FileSystemPort,
   cwd: string,
   markers: ProjectBlockMarkers,
-): Promise<{ preserved: PreservedLine[]; dropped: string[] }> {
+): Promise<{ preserved: PreservedLine[]; dropped: string[]; pipeline: ProjectPipeline }> {
   const preserved: PreservedLine[] = [];
   const dropped: string[] = [];
+  const pipeline: ProjectPipeline = {};
   const seenPreserved = new Set<string>();
   const seenDropped = new Set<string>();
   for (const file of blockFiles(cwd)) {
     if (!(await fs.exists(file))) continue;
     const block = parseProjectBlock(await fs.readText(file), markers);
     if (block === null) continue;
+    for (const [alias, declaration] of Object.entries(block.pipeline ?? {})) {
+      pipeline[alias] = { ...declaration, ...pipeline[alias] };
+    }
     for (const line of block.preserved_lines ?? []) {
       const key = `${line.slot}\u0000${line.text}`;
       if (seenPreserved.has(key)) continue;
@@ -284,7 +300,18 @@ async function readMirroredExtras(
       dropped.push(line);
     }
   }
-  return { preserved, dropped };
+  return { preserved, dropped, pipeline };
+}
+
+function prunePipeline(render: RenderProjectBlockInput): string[] {
+  const declared = new Set(render.fuentes.map((f) => f.alias));
+  const removed: string[] = [];
+  for (const [alias, value] of Object.entries(render.pipeline ?? {})) {
+    if (declared.has(alias)) continue;
+    removed.push(formatPipelineRecord(alias, value));
+    delete render.pipeline?.[alias];
+  }
+  return removed;
 }
 
 /**
@@ -344,11 +371,15 @@ async function buildRenderInput(
     ...(existing?.qa_branches ?? {}),
     ...(input.qaBranches ?? {}),
   };
+  const pipeline: ProjectPipeline = { ...(existing?.pipeline ?? {}) };
+  for (const [alias, value] of Object.entries(input.pipeline ?? {})) {
+    pipeline[alias] = { ...pipeline[alias], ...value };
+  }
   for (const alias of remove) {
     delete workingBranches[alias];
     delete qaBranches[alias];
   }
-  return { proyecto, fuentes, stack, defaultBranches, workingBranches, qaBranches };
+  return { proyecto, fuentes, stack, defaultBranches, workingBranches, qaBranches, pipeline };
 }
 
 /**
@@ -400,7 +431,7 @@ async function detectStackFromSources(
  * the user set in [Config].
  */
 function mergeFuentes(existing: ProjectFuente[], input: ProjectMdUpsertInput): ProjectFuente[] {
-  if (!input.fuentes || input.fuentes.length === 0) return existing;
+  if (!input.fuentes || input.fuentes.length === 0) return input.replaceFuentes ? [] : existing;
   const defaultRama = input.mainBranch ?? null;
   const byAlias = new Map<string, ProjectFuente>();
   // replaceFuentes: the declared set is authoritative; existing ones are not preserved.

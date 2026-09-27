@@ -28,6 +28,7 @@ import {
   serializeRunState,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { batchReview } from "../helpers/batch-review.js";
 import { decidedState } from "../helpers/decided-state.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 import { testExecutor } from "../helpers/test-executor.js";
@@ -966,7 +967,7 @@ describe("una acción interna sólo la acredita el CLI", () => {
     if (!batch.ok) throw new Error(batch.failure.message);
     const before = await standOn("plan-exec", "plan-exec.batch-close", {
       scope: { plan: PLAN, sources: ["workspace"] },
-      batches: [{ ...batch.batch, stage: "reviewing" }],
+      batches: [{ ...batch.batch, stage: "reviewing", review: batchReview() }],
     });
 
     const refused = await submitExternal(before);

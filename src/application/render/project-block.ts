@@ -6,6 +6,7 @@ import type {
   PreservedSlot,
   ProjectBlockMarkers,
   ProjectFuente,
+  ProjectPipeline,
   ProjectStack,
 } from "../parsers/project-block.js";
 import {
@@ -13,12 +14,14 @@ import {
   BLOCK_PLACEHOLDER_PROYECTO,
   BLOCK_PLACEHOLDER_STACK,
   DEFAULT_PROJECT_BLOCK_MARKERS,
+  formatPipelineRecord,
 } from "../parsers/project-block.js";
 
 export interface RenderProjectBlockInput {
   proyecto: string;
   fuentes: ProjectFuente[];
   stack: ProjectStack;
+  pipeline?: ProjectPipeline;
   lastActivity?: string;
   defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
@@ -60,6 +63,11 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
   statusLines.push(`- Histórico: \`${historicoPath}\``);
   statusLines.push(...slotLines(kept, "status:historico"));
 
+  const pipelineLines = Object.entries(input.pipeline ?? {})
+    .filter(([, value]) => value.build !== undefined || value.test !== undefined)
+    .map(([alias, value]) => formatPipelineRecord(alias, value));
+  pipelineLines.push(...slotLines(kept, "pipeline"));
+
   return [
     markers.start,
     "## Proyecto",
@@ -77,6 +85,7 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
     "## Status",
     "",
     statusLines.join("\n"),
+    ...(pipelineLines.length ? ["", "## Pipeline", "", pipelineLines.join("\n")] : []),
     // Sections the block does not own, heading and body, after everything it
     // does. Their place relative to generated sections cannot be honoured by a
     // rewrite, but losing them can be avoided — and that is the whole point.
@@ -104,6 +113,9 @@ export function blockFromParsed(
     proyecto: overrides.proyecto ?? parsed.proyecto,
     fuentes: overrides.fuentes ?? parsed.fuentes,
     stack: overrides.stack ?? parsed.stack,
+    ...((overrides.pipeline ?? parsed.pipeline) !== undefined
+      ? { pipeline: overrides.pipeline ?? parsed.pipeline }
+      : {}),
     defaultBranches: overrides.defaultBranches ?? parsed.default_branches,
     workingBranches: overrides.workingBranches ?? parsed.working_branches,
     qaBranches: overrides.qaBranches ?? parsed.qa_branches,

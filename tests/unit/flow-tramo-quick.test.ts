@@ -1136,10 +1136,10 @@ describe("resume y status proyectan la frontera vigente", () => {
     const execution = await projectRun(fs, paths, SESSION);
     expect(execution?.boundary).toBe("execution");
     expect(execution?.transition).toBe("quick.branch-precondition");
-    expect(execution?.invocation).toBe("aw sources --verbose");
+    expect(execution?.invocation).toBe("aw sources --verbose --code 007-tramo-quick-quick");
     // El comando que continúa la corrida ES la invocación: nadie tiene que
     // reconstruirla leyendo prosa.
-    expect(execution?.command).toBe("aw sources --verbose");
+    expect(execution?.command).toBe("aw sources --verbose --code 007-tramo-quick-quick");
     expect(execution?.summary).toContain("aw flow submit");
     expect(execution?.summary).not.toContain("quick.branch-precondition");
   });

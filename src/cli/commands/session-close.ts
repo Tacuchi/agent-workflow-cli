@@ -1,10 +1,15 @@
+import { preserveBoundaryClose } from "../../application/flow/close-artifacts.js";
 import {
   type CloseIntent,
   markCloseAtBoundary,
   settleCloseAtBoundary,
   withdrawCloseAtBoundary,
 } from "../../application/flow/close-at-boundary.js";
-import { type FlowRunLocation, locateRun } from "../../application/flow/run-state-service.js";
+import {
+  type FlowRunLocation,
+  locateRun,
+  readRun,
+} from "../../application/flow/run-state-service.js";
 import {
   type IsolationReader,
   type SessionCloseInput,
@@ -54,6 +59,17 @@ export const sessionCloseCommand: CliCommand = {
       });
     }
     if (location === null || intent?.kind !== "marked") {
+      // A repeated close still owns the proposal's bases, even after finalize
+      // was settled and no new close intention is necessary.
+      if (location !== null) {
+        const read = await readRun(ctx.fs, location);
+        if (!read.ok && read.failure.code !== "FLOW_RUN_ABSENT") {
+          return fail(read.failure.code, read.failure.message);
+        }
+        input.preserveReservations = read.ok
+          ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
+          : [];
+      }
       return rendered(await runSessionClose(ctx.fs, ctx.paths, input, unitsOf(ctx)));
     }
     return closeAtBoundary(ctx, input, location, intent);
@@ -91,8 +107,21 @@ async function closeAtBoundary(
     );
   }
   let data: SessionCloseResult;
+  let pending: string[] = [];
   try {
-    data = await runSessionClose(ctx.fs, ctx.paths, input, async () => units);
+    const read = await readRun(ctx.fs, location);
+    if (!read.ok) return withdraw(fail(read.failure.code, read.failure.message));
+    pending = await preserveBoundaryClose(ctx.fs, ctx.paths, ctx.git, read.state, units);
+    data = await runSessionClose(
+      ctx.fs,
+      ctx.paths,
+      {
+        ...input,
+        preserveReservations:
+          read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [],
+      },
+      async () => units,
+    );
   } catch (error) {
     // The close's own error is the one worth reporting; a failed withdraw here
     // would only hide it, and re-running the close resumes either way.
@@ -100,6 +129,8 @@ async function closeAtBoundary(
     throw error;
   }
   if (!("sessionClose" in data)) return withdraw(rendered(data));
+  data.sessionClose.pending_work = pending;
+  data.sessionClose.reopen = `aw session-resume --code ${location.session} --reopen`;
   const settled = await settleCloseAtBoundary(ctx.fs, location, data.sessionClose);
   if (settled !== null) {
     return fail(

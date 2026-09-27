@@ -3,6 +3,7 @@ import { validateDesignArtifact } from "../../domain/design/artifact.js";
 import type { ArtifactRef } from "../../domain/design/identity.js";
 import type { BaselineEntry, CatalogEntry, DesignFailure } from "../../domain/design/manifest.js";
 import type { SpecDesignReference, TaskDesignReference } from "../../domain/design/reference.js";
+import { SIMPLE_DESIGN_FILE, archivedDesignPath } from "../../domain/design/simple.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { DesignIndex, DesignPackageEntry } from "./design-index-service.js";
 
@@ -95,7 +96,11 @@ export function resolveBaselineReference(
     const pkg = matching[0] as DesignPackageEntry;
     const found = findBaseline(pkg, revision) as BaselineEntry;
     const path = `${pkg.path}/${found.path}`;
-    const stale = path !== reference.baseline_hint;
+    const movedBySimpleUpdate =
+      pkg.mode === "simple" &&
+      reference.baseline_hint === `${pkg.path}/${SIMPLE_DESIGN_FILE}` &&
+      found.path === archivedDesignPath(revision);
+    const stale = path !== reference.baseline_hint && !movedBySimpleUpdate;
     return {
       ok: true,
       value: {

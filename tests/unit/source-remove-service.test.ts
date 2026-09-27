@@ -65,6 +65,7 @@ describe("removeSource", () => {
       ],
       workingBranches: { plugin: "feature/x" },
       qaBranches: { plugin: "desarrollo" },
+      pipeline: { core: { build: "npm run build" }, plugin: { test: "npm test" } },
       lastActivity: FIXED_TS,
     });
   }
@@ -98,6 +99,8 @@ describe("removeSource", () => {
     expect(claude).not.toContain("../repo/plugin");
     expect(claude).not.toContain("feature/x");
     expect(claude).not.toContain("- plugin: desarrollo");
+    expect(claude).not.toContain("- plugin: test `npm test`");
+    expect(claude).toContain("- core: build `npm run build`");
     expect(await fs.exists(launchDir)).toBe(false);
     expect(proc.killed).toContain(4321);
     if (!("error" in result)) expect(result.processesStopped).toBe(1);

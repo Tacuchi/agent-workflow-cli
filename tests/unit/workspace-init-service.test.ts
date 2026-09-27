@@ -341,6 +341,17 @@ describe("runWorkspaceInit", () => {
       qaBranches: { a: "desarrollo", b: "qa/b" },
     });
 
+    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
+      const path = join(workspace, file);
+      writeFileSync(
+        path,
+        readFileSync(path, "utf-8").replace(
+          "<!-- WORKFLOW-PROJECT-END -->",
+          "## Pipeline\n\n- a: build `npm run build`\n- b: test `npm test`\n<!-- WORKFLOW-PROJECT-END -->",
+        ),
+      );
+    }
+
     const second = await init({ sources: [{ alias: "a", path: source("a") }] });
 
     // Ni en el bloque (los dos archivos) ni en el JSON que devuelve el comando.
@@ -349,6 +360,8 @@ describe("runWorkspaceInit", () => {
       expect(text).toContain("  - a: feature/a");
       expect(text).toContain("feature/b");
       expect(text).toContain("qa/b");
+      expect(text).toContain("- a: build `npm run build`");
+      expect(text).toContain("- b: test `npm test`");
     }
     const projectMd = second.project_md;
     if ("error" in projectMd) throw new Error(projectMd.error);

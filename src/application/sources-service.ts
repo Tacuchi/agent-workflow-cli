@@ -1,7 +1,7 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { expectedWorkBranch } from "./branch-resolver.js";
+import { documentOfSession, readDocBranches, resolveDocBranch } from "./doc-branch-ledger.js";
 import {
   type ProjectFuente,
   readWorkspaceBlock,
@@ -9,9 +9,11 @@ import {
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
+import { resolveSessionTarget } from "./session-resolver.js";
 
 export interface SourcesInput {
   sessionCode?: string;
+  contextId?: string;
   scope?: string[];
   skipGit?: boolean;
   verbose?: boolean;
@@ -19,6 +21,7 @@ export interface SourcesInput {
 
 export interface EnrichedSource extends ProjectFuente {
   expected_work_branch: string | null;
+  expected_origin?: string;
   current_branch: string | null;
   match: boolean | null;
   dirty: boolean | null;
@@ -39,6 +42,7 @@ export interface SourcesOutput {
   working_branches_from_status: Record<string, string>;
   cross_source_consistent: boolean;
   divergent_sources: DivergentSource[];
+  doc_branch_unreadable?: number;
   session_code?: string;
   scope?: string[] | null;
   error?: string;
@@ -72,10 +76,31 @@ export async function runSources(
   // Expected work branch comes from WORKSPACE block working_branches per source;
   // decoupled from sessions/flow.
   const workingBranches = block.working_branches;
+  const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "read",
+    bind: false,
+    ...(input.sessionCode ? { code: input.sessionCode } : {}),
+    ...(input.contextId ? { contextId: input.contextId } : {}),
+  });
+  if (input.sessionCode !== undefined && resolution?.outcome !== "resolved") {
+    return {
+      sources: [],
+      working_branches_from_status: workingBranches,
+      cross_source_consistent: false,
+      divergent_sources: [],
+      error: resolution?.message ?? "sesión no resuelta",
+    };
+  }
+  const document =
+    resolution?.outcome === "resolved"
+      ? await documentOfSession(fs, paths, resolution.session.folder)
+      : { status: "none" as const };
+  const ledger = await readDocBranches(fs, paths);
 
   const enriched: EnrichedSource[] = [];
   for (const src of sources) {
-    const expected = expectedWorkBranch(src, workingBranches);
+    const effective = await resolveDocBranch(fs, paths, src, block, document, ledger);
+    const expected = effective.branch;
     if (input.skipGit === true) {
       // Mirror Python: skip_git produces only alias/path/main_branch/expected_work_branch.
       enriched.push({
@@ -83,9 +108,13 @@ export async function runSources(
         path: src.path,
         main_branch: src.main_branch,
         expected_work_branch: expected,
+        expected_origin: effective.origin,
       } as EnrichedSource);
     } else {
-      enriched.push(await checkSourceBranch(fs, git, src, expected));
+      enriched.push({
+        ...(await checkSourceBranch(fs, git, src, expected)),
+        expected_origin: effective.origin,
+      });
     }
   }
 
@@ -98,6 +127,7 @@ export async function runSources(
     working_branches_from_status: workingBranches,
     cross_source_consistent: consistent,
     divergent_sources: divergent,
+    ...(ledger.unreadable > 0 ? { doc_branch_unreadable: ledger.unreadable } : {}),
   };
 
   if (verbose) {
@@ -156,12 +186,11 @@ function computeCrossSourceConsistency(sources: EnrichedSource[]): {
   consistent: boolean;
   divergent: DivergentSource[];
 } {
-  const candidates = sources.filter((s) => s.is_repo && s.error === null && s.current_branch);
-  if (candidates.length < 2) return { consistent: true, divergent: [] };
-  const branches = new Set(candidates.map((s) => s.current_branch));
-  if (branches.size <= 1) return { consistent: true, divergent: [] };
+  const candidates = sources.filter(
+    (s) => s.is_repo && s.error === null && s.expected_work_branch !== null && s.match === false,
+  );
   return {
-    consistent: false,
+    consistent: candidates.length === 0,
     divergent: candidates.map((s) => ({
       alias: s.alias,
       current: s.current_branch,

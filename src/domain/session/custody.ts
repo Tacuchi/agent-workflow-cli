@@ -83,6 +83,8 @@ export interface CustodyArtifact {
  */
 export interface CustodySource {
   alias: string;
+  /** Base chosen when taking the unit, independent of later document changes. */
+  base_branch?: string;
   /** Absolute path of the source repository itself (never the unit). */
   path: string;
   /** Branch the source's own checkout was on at baseline. */

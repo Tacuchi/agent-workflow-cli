@@ -85,6 +85,7 @@ async function readSourceBaseline(deps: RecorderDeps, facts: UnitFacts): Promise
   return {
     alias: facts.alias,
     path: facts.sourcePath,
+    base_branch: facts.base,
     branch: (await safeBranch(deps.git, facts.sourcePath)) ?? facts.base,
     baseline_head: await safeHead(deps.git, facts.unitPath, facts.sourcePath),
     unit_branch: facts.unitBranch,
@@ -134,19 +135,18 @@ async function safeChangedFiles(git: GitPort, path: string): Promise<string[]> {
   }
 }
 
-/** An integration landed: the merge commit it produced is the session's own. */
+/** An integration landed: record the destination ref's observed transition. */
 export async function recordIntegration(
   deps: RecorderDeps,
   sessionFolder: string,
-  facts: { alias: string; sourcePath: string; into: string; before: string | null },
+  facts: { alias: string; into: string; before: string; after: string },
 ): Promise<CustodyUpdate> {
-  const after = await tryHead(deps.git, facts.sourcePath);
   return extendCustody(deps.fs, sessionPathOf(deps.paths, sessionFolder), (custody) =>
     withEffect(custody, {
       ...effectNow("unit_integrated", {
         alias: facts.alias,
         before: facts.before,
-        after,
+        after: facts.after,
         ref: `refs/heads/${facts.into}`,
       }),
     }),

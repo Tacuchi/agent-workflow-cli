@@ -39,8 +39,10 @@ import {
 import {
   DESIGN_MANIFEST_FILE,
   DESIGN_MANIFEST_SCHEMA_ID,
+  type DesignFailure,
   type DesignManifest,
 } from "../../domain/design/manifest.js";
+import { HANDOFF_RULES } from "../../domain/design/maturity.js";
 import { PROJECTIONS } from "../../domain/design/naming.js";
 import { DESIGN_ADAPTERS } from "../../domain/design/profiles.js";
 import {
@@ -294,14 +296,14 @@ async function authoring(ctx: HandlerContext): Promise<HandlerResult> {
   const sources = declaredSources(ctx);
   const report = reportSources(sources, ctx.operation.name);
   if (report.failures.length > 0) {
-    const first = report.failures[0];
     return {
       kind: "blocked",
-      failure: {
-        code: first?.code ?? "DESIGN_SOURCE_INVALID",
-        message: first?.message ?? "una fuente declarada no es reportable",
-        action: first?.action ?? "declará la causa de cada fuente que no se usó",
-      },
+      failure: combinedFailure(
+        report.failures,
+        "DESIGN_SOURCE_INVALID",
+        "una fuente declarada no es reportable",
+        "declará la causa de cada fuente que no se usó",
+      ),
     };
   }
 
@@ -467,9 +469,10 @@ async function decideRoute(
   const named = packageInput(ctx);
   const targeted = named === null ? null : (index.packages.find((p) => p.id === named) ?? null);
 
-  const verdict = judgeExpansion(
+  const judged = judgeExpansion(
     declaredExpansionSignals(ctx),
     deriveStructuralSignals({
+      mode: ctx.operation.name === "update" ? (targeted?.manifest?.mode ?? null) : null,
       sensitiveSources: ctx.request.policy.sensitive_sources === true,
       externalTransmission: ctx.request.policy.external_transmission === true,
       sources,
@@ -479,6 +482,26 @@ async function decideRoute(
       publishedRevisions: targeted?.manifest?.baselines.length ?? 0,
     }),
   );
+  const verdict: ExpansionVerdict =
+    ctx.operation.name === "update" && targeted?.manifest?.mode === "package"
+      ? { ...judged, mode: "package", cause: judged.cause ?? "el manifest publicado es package" }
+      : judged;
+
+  // A published mode is a durable contract: an update cannot silently convert a
+  // simple design into a package or strip a package down to one document.
+  if (ctx.operation.name === "update" && targeted?.manifest?.mode === "simple") {
+    if (verdict.fired.length > 0) {
+      return {
+        ok: false,
+        failure: {
+          code: "DESIGN_ROUTE_INCOMPATIBLE",
+          message: `el diseño ${targeted.id} sigue en modo simple; ${verdict.fired.map((s) => s.id).join(", ")} requiere un package`,
+          action:
+            "cerrá la causa de expansión o publicá un package nuevo: un update no cambia el modo sellado",
+        },
+      };
+    }
+  }
 
   // The package route is also the only one available outside `docs/designs/`: a
   // simple design derives its identity from the index, and a root the index does
@@ -748,14 +771,15 @@ function locatePackage(index: DesignIndex, named: string): PackageLookup {
   // whoever has to fix one, so what comes back is the manifest's own diagnosis
   // and not «no existe».
   if (found.manifest === null) {
-    const first = found.failures[0];
     return {
       ok: false,
-      failure: {
-        code: first?.code ?? "DESIGN_MANIFEST_MISSING",
-        message: `${found.manifest_path}: ${first?.message ?? "el package no tiene un manifest legible"}`,
-        action: first?.action ?? "reparalo antes de publicar sobre él",
-      },
+      failure: combinedFailure(
+        found.failures,
+        "DESIGN_MANIFEST_MISSING",
+        "el package no tiene un manifest legible",
+        "reparalo antes de publicar sobre él",
+        found.manifest_path,
+      ),
     };
   }
   return { ok: true, value: { ...found, manifest: found.manifest } };
@@ -779,6 +803,16 @@ function continuePackageTarget(ctx: HandlerContext, index: DesignIndex): Package
 
   const found = located.value;
   const manifest = found.manifest;
+  if (manifest.mode === "simple") {
+    return {
+      ok: false,
+      failure: {
+        code: "DESIGN_ROUTE_INCOMPATIBLE",
+        message: `${named} es un diseño simple: la ruta package no puede continuar su manifest`,
+        action: "actualizalo con un único DESIGN.md por la ruta simple",
+      },
+    };
+  }
   const current = manifest.current_baseline;
   const actual = current === null ? null : `${manifest.id}@r${current.revision}`;
   // The declared base is text on the wire: "null" is how a caller states the
@@ -875,14 +909,14 @@ async function simpleProposal(
     docs_canon: docsCanon,
   });
   if (!built.ok) {
-    const first = built.failures[0];
     return {
       kind: "blocked",
-      failure: {
-        code: first?.code ?? "DESIGN_FIELD_INVALID",
-        message: first?.message ?? "el documento no cumple el contrato de un diseño simple",
-        action: first?.action ?? "corregí el documento y volvé a responder",
-      },
+      failure: combinedFailure(
+        built.failures,
+        "DESIGN_FIELD_INVALID",
+        "el documento no cumple el contrato de un diseño simple",
+        "corregí el documento y volvé a responder",
+      ),
     };
   }
 
@@ -974,14 +1008,14 @@ async function packageProposal(
   if (!candidate.ok) {
     // The gate's own verdict, with its real code and next action: this is where
     // an invalid tree stops being publishable instead of being sealed verbatim.
-    const first = candidate.failures[0];
     return {
       kind: "blocked",
-      failure: {
-        code: first?.code ?? "DESIGN_FIELD_INVALID",
-        message: first?.message ?? "el package no cumple el contrato de publicación",
-        action: first?.action ?? "corregí los artefactos y volvé a responder",
-      },
+      failure: combinedFailure(
+        candidate.failures,
+        "DESIGN_FIELD_INVALID",
+        "el package no cumple el contrato de publicación",
+        "corregí los artefactos y volvé a responder",
+      ),
     };
   }
 
@@ -1242,9 +1276,13 @@ async function operationPrecondition(ctx: HandlerContext): Promise<CapabilityFai
     const id = inputValue(ctx, "package");
     if (typeof id === "string" && id.trim().length > 0) {
       const outcome = await checkRecordPrecondition(ctx.fs, ctx.workspace, id.trim());
-      const first = outcome.failures[0];
-      if (!outcome.ok && first !== undefined) {
-        return { code: first.code, message: first.message, action: first.action };
+      if (!outcome.ok) {
+        return combinedFailure(
+          outcome.failures,
+          "DESIGN_RECORD_INVALID",
+          "la evidencia de record no está vigente",
+          "revisá la evidencia y volvé a intentar",
+        );
       }
     }
   }
@@ -1361,6 +1399,7 @@ function packageContract(operation: string, target: PackageTarget): string {
     `El id asignado es '${target.packageId}' y la carpeta '${target.path}': ambos van en el 'inventory' del request.`,
     `El frontmatter de cada artefacto declara ese id de package (por ejemplo '${target.packageId}/FLW-001').`,
     "NO autores 'design-manifest.json', nada bajo 'baselines/' ni 'PACKAGE.md': el CLI los deriva y sella a partir de tus artefactos, y rechaza la respuesta si los incluye.",
+    `Para declarar 'handoff': ${HANDOFF_RULES.map((rule) => `${rule.code}: ${rule.description}`).join(" · ")}.`,
     "Respondé un único objeto JSON con 'version', 'operation', 'input_digest', 'state': 'proposed' y 'artifacts': [{path, content}]. Cada 'path' es relativo al workspace y cae dentro de los destinos permitidos. Ningún artefacto inventa un formato: los del UI Design Package v1 son los únicos aceptados.",
   ]
     .join(" ")
@@ -1416,3 +1455,23 @@ function proposalBases(...candidates: Array<ProposalBase | null>): ProposalBase[
 
 /** The five operations this floor answers — the descriptor's, not a second list. */
 export const DESIGN_FLOOR_OPERATIONS = DESIGN_OPERATIONS;
+
+/** Preserve the first diagnostic code while never hiding subsequent failures. */
+function combinedFailure(
+  failures: readonly DesignFailure[],
+  fallbackCode: string,
+  fallbackMessage: string,
+  fallbackAction: string,
+  prefix?: string,
+): CapabilityFailure {
+  const first = failures[0];
+  const messages =
+    failures.length > 1
+      ? failures.map((f) => `${f.artifact}: ${f.code}: ${f.message}`).join("; ")
+      : (first?.message ?? fallbackMessage);
+  return {
+    code: first?.code ?? fallbackCode,
+    message: `${prefix === undefined ? "" : `${prefix}: `}${messages}`,
+    action: [...new Set(failures.map((f) => f.action))].join("; ") || fallbackAction,
+  };
+}

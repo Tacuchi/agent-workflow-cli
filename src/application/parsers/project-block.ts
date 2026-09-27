@@ -133,6 +133,37 @@ export interface ProjectStack {
   build?: string;
 }
 
+/** A declared pipeline command, or an explicit omission. Missing keys are undeclared. */
+export type SourcePipelineDeclaration = Partial<Record<"build" | "test", string>>;
+export type ProjectPipeline = Record<string, SourcePipelineDeclaration>;
+
+/** A pipeline record has one alias on one line, even when two sources share commands. */
+export function parsePipelineRecord(
+  line: string,
+): { alias: string; value: SourcePipelineDeclaration } | null {
+  const match = /^- ([^:\s]+):\s+(.+)$/.exec(line.trim());
+  if (!match?.[1] || !match[2]) return null;
+  const value: SourcePipelineDeclaration = {};
+  const parts = match[2].split(/\s+·\s+/);
+  for (const part of parts) {
+    const field = /^(build|test)\s+(`[^`\r\n]+`|ninguno)$/.exec(part);
+    if (!field?.[1] || !field[2] || value[field[1] as "build" | "test"] !== undefined) return null;
+    value[field[1] as "build" | "test"] =
+      field[2] === "ninguno" ? "ninguno" : field[2].slice(1, -1);
+  }
+  return Object.keys(value).length ? { alias: match[1], value } : null;
+}
+
+export function formatPipelineRecord(alias: string, value: SourcePipelineDeclaration): string {
+  const fields = (["build", "test"] as const).flatMap((key) => {
+    const command = value[key];
+    return command === undefined
+      ? []
+      : [`${key} ${command === "ninguno" ? command : `\`${command}\``}`];
+  });
+  return `- ${alias}: ${fields.join(" · ")}`;
+}
+
 /**
  * Where a preserved line goes back when the block is re-rendered. The Status
  * slots name the recognized entry the line followed, so a rewrite puts a hand
@@ -141,6 +172,7 @@ export interface ProjectStack {
 export type PreservedSlot =
   | "fuentes"
   | "stack"
+  | "pipeline"
   | "status:start"
   | "status:defaults"
   | "status:working"
@@ -170,6 +202,7 @@ export interface ParsedProjectBlock {
   proyecto: string;
   fuentes: ProjectFuente[];
   stack: ProjectStack;
+  pipeline?: ProjectPipeline;
   default_branches: DefaultBranches;
   working_branches: Record<string, string>;
   qa_branches: Record<string, string>;
@@ -236,17 +269,34 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
   const fuentesText = parseMdSection(inner, "Fuentes") ?? "";
   const stackText = parseMdSection(inner, "Stack") ?? "";
   const statusText = parseMdSection(inner, "Status") ?? "";
+  const pipelineText = parseMdSection(inner, "Pipeline") ?? "";
 
   const fuentes = parseFuentesTable(fuentesText);
   const stack = parseStackList(stackText);
   // Aliases first: a Status entry is a branch because it names a DECLARED
   // source, not because of where it sits (see `readNestedRecord`).
   const status = parseStatusBlock(statusText, new Set(fuentes.fuentes.map((f) => f.alias)));
+  const pipeline: ProjectPipeline = {};
+  const pipelinePreserved: PreservedLine[] = [];
+  const pipelineDropped: string[] = [];
+  const known = new Set(fuentes.fuentes.map((f) => f.alias));
+  for (const raw of pipelineText.split("\n")) {
+    if (!raw.trim()) continue;
+    const record = parsePipelineRecord(raw);
+    if (record === null) {
+      pipelinePreserved.push({ slot: "pipeline", text: trimTrailing(raw) });
+    } else if (!known.has(record.alias)) {
+      pipelineDropped.push(trimTrailing(raw));
+    } else {
+      pipeline[record.alias] = { ...pipeline[record.alias], ...record.value };
+    }
+  }
 
   const block: ParsedProjectBlock = {
     proyecto: stripLegacyModeLine(proyectoText),
     fuentes: fuentes.fuentes,
     stack: stack.stack,
+    ...(Object.keys(pipeline).length > 0 ? { pipeline } : {}),
     default_branches: status.defaultBranches,
     working_branches: status.workingBranches,
     qa_branches: status.qaBranches,
@@ -256,15 +306,23 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
     ...fuentes.preserved,
     ...stack.preserved,
     ...status.preserved,
+    ...pipelinePreserved,
     ...foreignSections(inner),
   ];
   if (preserved.length > 0) block.preserved_lines = preserved;
-  if (status.dropped.length > 0) block.dropped_lines = status.dropped;
+  if (status.dropped.length + pipelineDropped.length > 0)
+    block.dropped_lines = [...status.dropped, ...pipelineDropped];
   return block;
 }
 
 /** The four `##` sections this block owns; anything else under a heading is somebody else's. */
-const OWNED_SECTIONS: ReadonlySet<string> = new Set(["proyecto", "fuentes", "stack", "status"]);
+const OWNED_SECTIONS: ReadonlySet<string> = new Set([
+  "proyecto",
+  "fuentes",
+  "stack",
+  "status",
+  "pipeline",
+]);
 
 /**
  * Whole sections the block does not own, heading included.

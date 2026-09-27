@@ -1,3 +1,4 @@
+import { isPlanHandoffHeading } from "../domain/plan-handoff.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type {
   CheckoutProof,
@@ -106,7 +107,6 @@ interface SemanticClause {
 // These are structural labels that define a closing clause, not a vocabulary of
 // forbidden deployment words. The policy then reasons from a *positive* local
 // proof grammar and from locators, whose syntax carries their surface.
-const HANDOFF_HEADING = /^(?:handoff operativo|operational handoff)$/i;
 const VALIDATIONS_HEADING = /^(?:validaciones|validations)$/i;
 const PHASE_VALIDATION_LINE =
   /^\s*(?:[-*]\s*)?(?:\*\*)?\s*(?:validaci[oó]n(?: de fase)?|phase validation)(?:\*\*)?\s*:/i;
@@ -424,7 +424,7 @@ function sourceBoundedClauses(text: string): SemanticClause[] {
     if (heading !== undefined) {
       const folded = foldHeading(heading.title);
       if (heading.level <= 2) {
-        inHandoff = HANDOFF_HEADING.test(folded);
+        inHandoff = isPlanHandoffHeading(folded);
         inValidations = VALIDATIONS_HEADING.test(folded);
         inTasks = folded === TASKS_HEADING;
         inPhase = false;
