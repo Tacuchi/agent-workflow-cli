@@ -202,6 +202,7 @@ async function judgeReference(
 
   const onDisk = await resolveBaselineOnDisk(ctx.fs, ctx.workspace, resolved.value, artifact);
   if (!onDisk.ok) return blocked(onDisk.failure);
+  if (onDisk.value.disk_warning !== undefined) base.notices.push(onDisk.value.disk_warning);
 
   const anchored = await resolveStateAnchor(ctx.fs, ctx.workspace, resolved.value, artifact);
   if (!anchored.ok) return blocked(anchored.failure);

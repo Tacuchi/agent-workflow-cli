@@ -12,7 +12,13 @@ import { flowCommand } from "../../src/cli/commands/flow.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
-import { FLOW_RUN_STATE_FILE, attemptAccountingAt } from "../../src/domain/flow/run-state.js";
+import {
+  FLOW_RUN_STATE_FILE,
+  attemptAccountingAt,
+  newRunState,
+  serializeRunState,
+  withScope,
+} from "../../src/domain/flow/run-state.js";
 import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 import type { GitPort } from "../../src/ports/git.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -115,6 +121,29 @@ describe("aw flow prove", () => {
   });
 
   const statePath = (): string => join(paths.cwdSessionsDir(), SESSION, FLOW_RUN_STATE_FILE);
+
+  it("plan-exec in-place acredita la fuente en su checkout y no en una unidad", async () => {
+    const source = join(workdir, "codigo");
+    await mkdir(source);
+    await writeFile(
+      join(workdir, "CLAUDE.md"),
+      `<!-- AGENT-WORKFLOW-PROJECT-START -->\n## Proyecto\nPrueba\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| codigo | ${source} | main |\n## Status\n- Modo de edición: in-place\n<!-- AGENT-WORKFLOW-PROJECT-END -->`,
+    );
+    const state = withScope(newRunState("plan-exec", SESSION), {
+      plan: "docs/plans/072-plan-test.md",
+      sources: ["codigo"],
+      isolation: "in-place",
+    });
+    await writeFile(statePath(), serializeRunState(state));
+    const result = await proveFlowBoundary(fs, paths, {
+      code: "001",
+      source: "codigo",
+      git: gitDouble(),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.receipt.checkout).toEqual({ source: "codigo", root: source });
+  });
 
   it("produce un proof que la política del submit acepta, y nombra la raíz que midió", async () => {
     const result = await proveFlowBoundary(fs, paths, { code: "001", git: gitDouble() });

@@ -65,7 +65,7 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 14;
+export const FLOW_RUN_STATE_VERSION = 15;
 
 /**
  * The versions this CLI CONTINUES without adoption, newest first.
@@ -86,7 +86,13 @@ export const FLOW_RUN_STATE_VERSION = 14;
  */
 // v14 adds batch reviews, signal retractions and QUICK checkout observations.
 // Older observations and events remain unchanged.
-export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 13, 12, 11];
+export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [
+  FLOW_RUN_STATE_VERSION,
+  14,
+  13,
+  12,
+  11,
+];
 
 /**
  * The versions this CLI READS, newest first.
@@ -115,6 +121,11 @@ const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => Flo
   12: (state) => ({ ...state, version: 13 }),
   // Historical reviews are never fabricated. A still-open batch must supply one.
   13: (state) => ({ ...state, version: 14 }),
+  14: (state) => ({
+    ...state,
+    version: 15,
+    ...(state.scope ? { scope: { isolation: "unit", ...state.scope } } : {}),
+  }),
 };
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
@@ -962,6 +973,8 @@ export interface FlowRunScope {
   plan: string;
   /** `workspace` plus declared aliases this run may touch — non-empty, no repeats. */
   sources: string[];
+  /** Missing on older runs; their truthful isolation is unit. */
+  isolation?: "unit" | "in-place";
   /** Commands resolved from the scoped plan and versioned source declarations. */
   final_validation?: FinalValidationSource[];
 }
@@ -1065,7 +1078,13 @@ export interface PlanExecBatch {
   /** Git state at acquisition; absent on batches born before per-batch commits. */
   snapshot?: Record<string, { head: string; branch: string; dirty: DirtyPath[] }>;
   commit_proposal?: {
-    sources: { alias: string; paths: string[]; dirty: DirtyPath[]; message: string }[];
+    sources: {
+      alias: string;
+      paths: string[];
+      dirty: DirtyPath[];
+      message: string;
+      foreign_paths?: string[];
+    }[];
     digest: string;
     approved_digest?: string;
   };
@@ -3038,6 +3057,8 @@ function isScope(value: unknown): value is FlowRunScope | null {
   if (!isRecord(value)) return false;
   if (typeof value.plan !== "string" || value.plan.trim().length === 0) return false;
   if (!isStringArray(value.sources) || value.sources.length === 0) return false;
+  if (value.isolation !== undefined && value.isolation !== "unit" && value.isolation !== "in-place")
+    return false;
   if (
     value.final_validation !== undefined &&
     (!Array.isArray(value.final_validation) ||
@@ -3143,6 +3164,7 @@ function isBatchCommitProposal(value: unknown): boolean {
         isNonEmptyString(item.alias) &&
         isNonEmptyString(item.message) &&
         isStringArray(item.paths) &&
+        (item.foreign_paths === undefined || isStringArray(item.foreign_paths)) &&
         item.paths.length > 0 &&
         Array.isArray(item.dirty) &&
         item.dirty.length === item.paths.length &&

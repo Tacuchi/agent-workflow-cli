@@ -388,6 +388,7 @@ interface ScopeSnapshot {
   boundary_failures: ReturnType<typeof validatePlanSourceBoundary> | null;
   /** A plan outside the resolved core canon is never a flow scope. */
   plan_error: string | null;
+  isolation: "unit" | "in-place";
 }
 
 interface Observation {
@@ -618,6 +619,7 @@ async function observeScope(
     final_validation: null,
     boundary_failures: null,
     plan_error: null,
+    isolation: "unit",
   };
   let parsed: unknown;
   try {
@@ -637,7 +639,7 @@ async function observeScope(
   const named = (decisions as { plan?: unknown }).plan;
   const plan = typeof named === "string" ? named.trim() : null;
   if (plan === null || plan.length === 0 || !checkSafeRelativePath(plan).ok) {
-    return { ...empty, declared, plan };
+    return { ...empty, declared, plan, isolation: block?.edit_mode ?? "unit" };
   }
   const canon = await resolveCoreDocsCanon(fs, paths);
   if (!canon.ok) return { ...empty, declared, plan, plan_error: canon.error };
@@ -666,6 +668,9 @@ async function observeScope(
     ),
     boundary_failures: planGrammarAtEntry(text, declared),
     plan_error: null,
+    isolation: /^> Aislamiento: unidad\s*$/m.test(text.split(/^## /m, 1)[0] ?? "")
+      ? "unit"
+      : (block?.edit_mode ?? "unit"),
   };
 }
 
@@ -1174,6 +1179,12 @@ async function commitProposalFrom(
     };
   }
   const messages = answer.decisions.messages;
+  const declaredPaths = answer.decisions.paths;
+  const pathMap =
+    typeof declaredPaths === "object" && declaredPaths !== null && !Array.isArray(declaredPaths)
+      ? (declaredPaths as Record<string, unknown>)
+      : {};
+  const inPlace = state.scope?.isolation === "in-place";
   const given =
     typeof messages === "object" && messages !== null && !Array.isArray(messages)
       ? (messages as Record<string, unknown>)
@@ -1184,6 +1195,7 @@ async function commitProposalFrom(
     paths: string[];
     dirty: { path: string; digest: string }[];
     message: string;
+    foreign_paths?: string[];
   }[] = [];
   for (const [alias, base] of Object.entries(batch.snapshot).sort(([a], [b]) =>
     a.localeCompare(b),
@@ -1198,7 +1210,7 @@ async function commitProposalFrom(
         },
       };
     const dirty = await git.dirtyPaths(root);
-    const paths = dirty
+    const changed = dirty
       .filter(
         (entry) =>
           !base.dirty.some(
@@ -1206,6 +1218,44 @@ async function commitProposalFrom(
           ),
       )
       .map((entry) => entry.path);
+    const askedPaths = pathMap[alias];
+    if (
+      inPlace &&
+      (!Array.isArray(askedPaths) ||
+        !askedPaths.length ||
+        askedPaths.some((path) => typeof path !== "string" || !path.trim()) ||
+        new Set(askedPaths).size !== askedPaths.length)
+    )
+      return {
+        failure: {
+          code: "PLAN_EXEC_BATCH_PATHS_REQUIRED",
+          message: `${alias}: declarás decisions.paths[${alias}] como lista exacta de rutas de la corrida`,
+          action: "indicá sólo rutas de la corrida en este checkout",
+        },
+      };
+    const paths = inPlace ? (askedPaths as string[]) : changed;
+    if (inPlace) {
+      for (const path of paths) {
+        const before = base.dirty.find((entry) => entry.path === path);
+        const after = dirty.find((entry) => entry.path === path);
+        if (before && after?.digest !== before.digest)
+          return {
+            failure: {
+              code: "PLAN_EXEC_BATCH_SHARED_PATH",
+              message: `${alias}: ${path} fue tocada por el usuario y por la corrida`,
+              action: "detené el lote sin commitear y acordá la separación de cambios",
+            },
+          };
+        if (before || !after)
+          return {
+            failure: {
+              code: "PLAN_EXEC_BATCH_PATH_NOT_OWNED",
+              message: `${alias}: ${path} ya era del usuario o no está sucia`,
+              action: "declarás únicamente rutas nuevas de la corrida",
+            },
+          };
+      }
+    }
     if (paths.length === 0) continue;
     const message = given[alias];
     if (
@@ -1228,6 +1278,13 @@ async function commitProposalFrom(
       paths: paths.sort(),
       dirty: dirty.filter((entry) => paths.includes(entry.path)),
       message,
+      ...(inPlace
+        ? {
+            foreign_paths: dirty
+              .filter((entry) => !paths.includes(entry.path))
+              .map((entry) => entry.path),
+          }
+        : {}),
     });
   }
   const digest = semanticDigest({ batch: batch.id, snapshot: batch.snapshot, sources });
@@ -1687,6 +1744,7 @@ function scopeFrom(
     state: withScope(state, {
       plan,
       sources: aliases,
+      isolation: snapshot.isolation,
       ...(snapshot.final_validation === null
         ? {}
         : { final_validation: snapshot.final_validation }),

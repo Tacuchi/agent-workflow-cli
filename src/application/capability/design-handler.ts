@@ -149,8 +149,8 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
   // structural check alone answered `handoff` for a tree the listing then
   // rejected — the verdict and the listing have to be the same verdict.
   const content = await gatePackageContent(ctx.fs, ctx.workspace, found);
-  const failures = [...found.failures, ...content];
-  const ok = found.ok && content.length === 0;
+  const failures = [...found.failures, ...content.failures];
+  const ok = found.ok && content.failures.length === 0;
   const validations: ValidationOutcome[] = [
     {
       id: "design-manifest",
@@ -159,9 +159,11 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
     },
     {
       id: "design-content",
-      passed: content.length === 0,
+      passed: content.failures.length === 0,
       detail:
-        content.length === 0 ? null : content.map((f) => `${f.code}: ${f.message}`).join("; "),
+        content.failures.length === 0
+          ? null
+          : content.failures.map((f) => `${f.code}: ${f.message}`).join("; "),
     },
   ];
   const report = reportSources([], `${id}`);
@@ -195,7 +197,13 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
     kind: "completed",
     validations,
     output: {
-      value: { design: fields, ok, failures, gaps: [...gate.reasons, ...maturity.gaps] },
+      value: {
+        design: fields,
+        ok,
+        failures,
+        warnings: content.warnings,
+        gaps: [...gate.reasons, ...maturity.gaps],
+      },
       reference:
         found.id === null || found.current_baseline === null
           ? null
@@ -1008,6 +1016,7 @@ async function simpleProposal(
       value: {
         design: fields,
         artifacts: built.value.artifacts.map((a) => a.path),
+        warnings: built.value.warnings,
         gaps: [...gate.reasons, ...maturity.gaps],
       },
       reference: null,

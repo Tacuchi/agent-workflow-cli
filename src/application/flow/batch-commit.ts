@@ -69,6 +69,7 @@ export async function verifyBatchGitState(
   deps: InternalActionDeps,
   run: InternalActionRun,
   batch: PlanExecBatch,
+  inPlace: boolean,
 ): Promise<CapabilityFailure | null> {
   if (batch.snapshot === undefined || batch.commit_result === undefined) return null;
   const roots = await resolveCheckoutCandidates(deps.fs, deps.paths, run.session);
@@ -89,7 +90,13 @@ export async function verifyBatchGitState(
       if (
         head !== (batch.commit_result[alias]?.after ?? base.head) ||
         branch !== base.branch ||
-        dirty.length !== 0
+        (!inPlace && dirty.length !== 0) ||
+        (inPlace &&
+          dirty.some((entry) =>
+            batch.commit_proposal?.sources
+              .find((source) => source.alias === alias)
+              ?.paths.includes(entry.path),
+          ))
       ) {
         return failed(
           "PLAN_EXEC_BATCH_COMMIT_REFUSED",
@@ -138,6 +145,7 @@ async function checkSource(
   source: Source | undefined,
   alias: string,
   roots: { source: string; root: string }[],
+  inPlace: boolean,
 ): Promise<CheckedSource | null> {
   const path = roots.find((item) => item.source === alias)?.root;
   const base = batch.snapshot?.[alias];
@@ -153,13 +161,14 @@ async function checkSource(
       source === undefined ||
       head !== recorded.after ||
       branch !== base.branch ||
-      dirty.length !== 0
+      (!inPlace && dirty.length !== 0) ||
+      (inPlace && dirty.some((entry) => source.paths.includes(entry.path)))
     )
       throw new Error(`${alias}: el recibo ya no coincide con git`);
     return { source, path, receipt: recorded };
   }
   if (source === undefined) {
-    if (head !== base.head || branch !== base.branch || dirty.length !== 0)
+    if (head !== base.head || branch !== base.branch || (!inPlace && dirty.length !== 0))
       throw new Error(`${alias}: una fuente sin rutas propuestas cambió antes del commit`);
     return null;
   }
@@ -172,10 +181,18 @@ async function checkSource(
       receipt: await recognize(deps, path, source, base, head, branch, dirty),
     };
   }
+  const proposed = dirty.filter((entry) => source.paths.includes(entry.path));
+  const shared =
+    inPlace &&
+    base.dirty.some(
+      (entry) => dirty.find((now) => now.path === entry.path)?.digest !== entry.digest,
+    );
   if (
     branch !== base.branch ||
-    dirty.map((entry) => `${entry.path}:${entry.digest}`).join("\0") !==
-      source.dirty.map((entry) => `${entry.path}:${entry.digest}`).join("\0")
+    shared ||
+    proposed.map((entry) => `${entry.path}:${entry.digest}`).join("\0") !==
+      source.dirty.map((entry) => `${entry.path}:${entry.digest}`).join("\0") ||
+    (!inPlace && dirty.length !== proposed.length)
   ) {
     throw new Error(`${source.alias}: las rutas, sus bytes o la rama cambiaron`);
   }
@@ -196,7 +213,9 @@ async function commitOne(
   const info = await deps.git.commitInfo(path, receipt.after);
   if (
     head !== receipt.after ||
-    dirty.length !== 0 ||
+    (run.scope?.isolation !== "in-place" && dirty.length !== 0) ||
+    (run.scope?.isolation === "in-place" &&
+      dirty.some((entry) => source.paths.includes(entry.path))) ||
     receipt.before !== info.parents[0] ||
     info.parents.length !== 1 ||
     info.message !== source.message ||
@@ -252,6 +271,7 @@ export async function commitBatch(
           batch.commit_proposal?.sources.find((source) => source.alias === alias),
           alias,
           roots,
+          run.scope?.isolation === "in-place",
         ),
       ),
     );

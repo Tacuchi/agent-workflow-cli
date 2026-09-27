@@ -3805,6 +3805,8 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
       "asociación declarativa de una rama de trabajo a un documento, con lectura sin efectos y escritura append-only después de asegurar la rama",
   },
   { command: "set-qa-branch", reason: "configuración declarativa de rama" },
+  { command: "set-exception-branch", reason: "configuración declarativa de rama" },
+  { command: "set-edit-mode", reason: "configuración declarativa del workspace" },
   { command: "set-pipeline", reason: "configuración declarativa de build y test por fuente" },
   { command: "remove-source", reason: "operación de configuración del workspace" },
   { command: "add-source", reason: "operación de configuración del workspace" },

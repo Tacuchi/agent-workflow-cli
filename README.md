@@ -93,6 +93,8 @@ The bundle's internal manuals (`loops/*/LOOP.md`, `roles/*/ROLE.md`, `exports/*/
 
 Opt-out flags: `--skill-only`, `--no-commands`, `--no-hooks`. Override the source with `--from /path/to/skills/w`. Other flags: `--confirm-all` (required with `--target all`), `--keep-cache`, `--force`, `--dry-run`.
 
+To add the `UserPromptSubmit` branch advisory to an existing Claude or Kimi installation, rerun `aw self install-hooks --target claude` or `--target kimi`; updating the CLI alone does not reinstall hooks. Editing remains protected by `branch-check` on all managed hosts.
+
 **What `--target all` means.** Every **host** — never the shared skills dirs, which are install destinations rather than hosts and are reached explicitly (`--target agents`). `install` and `uninstall` use the same set, so the round trip matches: what `all` installs is what `all` removes. (`oz` installs into `~/.agents/skills`, so that directory is still covered under `all` through its host.)
 
 ### Support levels and how long a verification is worth
@@ -181,7 +183,8 @@ Workspace artifacts live under `.<namespace>/`. Resolution order (first match wi
 - `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-resume` / `session-artifacts` — internal session lifecycle (used by the loops).
 - `checkpoint-read` / `checkpoint-write` — `CHECKPOINT.md` handling.
 - `flow <advance|submit>` — the direction engine: `advance` applies every consecutive `cli`-owned transition of a flow run and returns the directive of the first non-deterministic frontier; `submit` takes the response as JSON via stdin (`--approval <digest>` for effects) and keeps advancing.
-- `sources` / `check-branch` / `set-working-branch` / `set-qa-branch` — multi-source git-safety (per-source base / working / QA branches).
+- `sources` / `check-branch` / `set-working-branch` / `set-qa-branch` / `set-exception-branch` — multi-source git-safety (per-source base / working / QA / exception branches).
+- `set-edit-mode in-place|unit` — declares checkout editing or isolated units in the WORKSPACE block; plans can require `> Aislamiento: unidad`.
 - `doc-branch show|set` — propone y asocia una rama de trabajo por documento y fuente, heredada por sus planes; `show` no modifica nada.
 - `git-flow <sync|to-dev|to-qa|to-prod> [--source|--all] [--target] [--dry-run]` — run the per-source branch flows (sync working ← base, promote to dev/QA/prod) with conflict-pause; `--all` processes every source and reports each one. Also surfaced as Project-tab actions.
 - `release-data` — corpus reader backing the `export-*` skills.

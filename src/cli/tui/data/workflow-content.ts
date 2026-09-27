@@ -93,6 +93,11 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
   // template's own events so a hardcoded copy cannot drift from it.
   hooks: [
     {
+      name: "UserPromptSubmit",
+      matcher: "(any)",
+      fires: "turn-start — advises on checkout branch before editing",
+    },
+    {
       name: "SessionStart",
       matcher: "startup|resume|clear",
       fires: "Inject namespace into ~/.config/agent-workflow/namespace",

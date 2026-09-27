@@ -46,6 +46,8 @@ export interface ProjectMdUpsertInput {
   defaultBranches?: DefaultBranches;
   workingBranches?: Record<string, string>;
   qaBranches?: Record<string, string>;
+  exceptionBranches?: Record<string, string>;
+  editMode?: "in-place" | "unit";
   /** Source pipeline records merged over the existing declarations. */
   pipeline?: ProjectPipeline;
   /** `--init`: declare fuentes from CLI flags (`--fuente alias:path[:rama]`, repeatable). */
@@ -333,6 +335,7 @@ function pruneUndeclaredBranches(
   return [
     ...dropUndeclared(render.workingBranches, declared),
     ...dropUndeclared(render.qaBranches, declared),
+    ...dropUndeclared(render.exceptionBranches, declared),
   ];
 }
 
@@ -372,6 +375,10 @@ async function buildRenderInput(
     ...(existing?.qa_branches ?? {}),
     ...(input.qaBranches ?? {}),
   };
+  const exceptionBranches = {
+    ...(existing?.exception_branches ?? {}),
+    ...(input.exceptionBranches ?? {}),
+  };
   const pipeline: ProjectPipeline = { ...(existing?.pipeline ?? {}) };
   for (const [alias, value] of Object.entries(input.pipeline ?? {})) {
     pipeline[alias] = { ...pipeline[alias], ...value };
@@ -379,8 +386,20 @@ async function buildRenderInput(
   for (const alias of remove) {
     delete workingBranches[alias];
     delete qaBranches[alias];
+    delete exceptionBranches[alias];
   }
-  return { proyecto, fuentes, stack, defaultBranches, workingBranches, qaBranches, pipeline };
+  const editMode = input.editMode ?? existing?.edit_mode;
+  return {
+    proyecto,
+    fuentes,
+    stack,
+    defaultBranches,
+    workingBranches,
+    qaBranches,
+    exceptionBranches,
+    ...(editMode ? { editMode } : {}),
+    pipeline,
+  };
 }
 
 /**

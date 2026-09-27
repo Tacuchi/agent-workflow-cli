@@ -91,6 +91,9 @@ function formatBlockMessage(verdict: CheckBranchOutput, displayName: string): st
   const head = `[${displayName}]`;
   const source = `  Fuente:        ${verdict.alias} (${verdict.path})`;
 
+  if (verdict.reason === "on_development_branch")
+    return `${head} Edición denegada: el checkout está en la rama de desarrollo '${verdict.current_branch}'.\n${source}\nVolvé a la rama del documento (${verdict.expected_work_branch ?? "declarala con aw doc-branch"}); si hay cambios sin commitear, pausá y acordá cómo conservarlos. No cambies la rama sin consentimiento.\nReferencia: ${REFERENCE_DOC}\n`;
+
   if (verdict.reason === "outside_unit") {
     return [
       `${head} Esta fuente se está editando por unidad de aislamiento, y este archivo queda fuera.`,
