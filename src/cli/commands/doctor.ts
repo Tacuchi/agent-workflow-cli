@@ -84,7 +84,11 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
   flags: {
     // `doctor`: `aw --doctor` dispatches here with the alias flag still set.
     known: ["doctor", "host", "only", "skip-native", "verify-connection"],
-    actions: { prepare: { known: ["select"] }, apply: { known: ["select", "approval"] } },
+    repeatable: ["only"],
+    actions: {
+      prepare: { known: ["select"], repeatable: ["select"] },
+      apply: { known: ["select", "approval"], repeatable: ["select"], required: ["approval"] },
+    },
   },
   describe:
     "aw doctor: diagnóstico contextual de la instalación y los recursos de Workline en los hosts detectados, con cobertura por categoría y veredicto en el código de salida. Con --verify-connection autorizás verificar las credenciales contra su servicio.",

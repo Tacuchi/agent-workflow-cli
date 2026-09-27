@@ -20,6 +20,8 @@ description: >-
 
 Operate git in a **safe, controlled** way: verify the expected branch before editing, **propose** commits per source, and never run destructive or publishing operations without the user's explicit request.
 
+Use `aw git-flow` for per-source development/QA/production flows; preview and request approval before an effect. A force-push is always performed by the user.
+
 ## Composed by
 
 - **`plan-exec-loop`** — verifies the branch before each edit; proposes commits on close/checkpoint.

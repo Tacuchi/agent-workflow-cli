@@ -25,6 +25,109 @@ async function readRel(rel: string): Promise<string> {
   return readFile(join(SKILL_ROOT, rel), "utf8");
 }
 
+describe("DOC-01 — doctrina y binario integrados", () => {
+  it("PEX-01 y PEX-03: lote continuo y commit por fuente al cerrarlo", async () => {
+    const batches = await readRel("modules/PLAN-EXECUTION-BATCHES.md");
+    expect(batches).toContain("implement every phase first");
+    expect(batches).toContain("one commit per changed Git source");
+    expect(await readSrc("plan-exec-batch-service.ts")).toContain(
+      "preparePlanExecBatchPublication",
+    );
+  });
+
+  it("R-07: CLI sella evidencia y assurance, sin fecha obligatoria", async () => {
+    const exec = await readRel("loops/plan-exec-loop/LOOP.md");
+    const runtime = await readSrc("plan-exec-batch-service.ts");
+    expect(exec).toContain("> Assurance: verified|partially_verified|unverified_accepted");
+    expect(runtime).toContain("`> Assurance: ${assurance}`");
+    expect(exec).not.toContain("> Cierre: YYYY-MM-DD · sesión NNN");
+  });
+
+  it("FLOW-13: Refinar vuelve a redacción sin escribir", async () => {
+    for (const flow of ["spec-refine", "plan-new", "plan-refine"]) {
+      expect(labelsOf(`${flow}.save-confirmation`)).toContain("Refinar");
+    }
+    expect(await readRel("loops/plan-new-loop/LOOP.md")).toContain("nothing is written");
+  });
+
+  it("PLAN-08: los scripts son origen declarado del export, no DDL ejecutado", async () => {
+    const exportScripts = await readRel("exports/export-scripts/EXPORT.md");
+    expect(exportScripts).toContain("docs/scripts/*.sql");
+    expect(exportScripts).toContain("SCRIPTS.sql");
+    expect(await readRel("loops/CODE-POLICIES.md")).toContain("DB scripts-only");
+  });
+
+  it("EXP-08: complement del CLI publica sólo INDEX.md", async () => {
+    expect(await readRel("exports/export-manuals/EXPORT.md")).toContain(
+      "index-only response → `complement`",
+    );
+    expect(await readSrc("export-service.ts")).toContain(
+      'if (files.length === 0) return { mode: "complement"',
+    );
+  });
+
+  it("PEX-08: la brecha estructural lleva a plan-refine", async () => {
+    expect(await readRel("loops/plan-exec-loop/LOOP.md")).toContain(
+      "Structural deviation — stop and return to `plan-refine`",
+    );
+    expect(labelsOf("plan-exec.deviation-gate")).toContain("Volver a plan-refine");
+  });
+});
+
+describe("Reglas de host y verbos vigentes", () => {
+  it("las cinco reglas son comunes y los verbos de recuperación están disponibles", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    for (const rule of [
+      "file tool",
+      "heredoc",
+      "CLI verb",
+      "approvable effect",
+      "force-push",
+      "PYTHONUTF8=1",
+    ]) {
+      expect(chassis, rule).toContain(rule);
+    }
+    for (const verb of [
+      "--adopt",
+      "aw flow recover",
+      "aw flow prove",
+      "aw flow restart",
+      "aw flow annul",
+    ]) {
+      expect(chassis, verb).toContain(verb);
+    }
+    expect(await readRel("roles/git/ROLE.md")).toContain("aw git-flow");
+  });
+
+  it("los comandos escriben sobres con herramienta de archivos, no con echo o heredoc", async () => {
+    const commands = await listMdFiles(join(SKILL_ROOT, "commands"));
+    for (const path of commands) {
+      const content = await readFile(path, "utf8");
+      expect(content, path).not.toMatch(/echo ['"]<json>|<<\s*['"]?(?:EOF|JSON)/i);
+    }
+    for (const name of [
+      "export-diagrams",
+      "export-manuals",
+      "export-reports",
+      "export-scripts",
+      "persist",
+      "fix-git",
+    ]) {
+      const guide = await readRel(`commands/${name}.md`);
+      expect(guide, name).toMatch(/file.tool JSON|JSON with the file tool/);
+      expect(guide, name).toContain(`< <file>`);
+    }
+  });
+
+  it("la memoria opcional de Codex tiene respaldo estático", async () => {
+    const row = (await readRel("harness/HARNESS.md"))
+      .split("\n")
+      .find((line) => line.startsWith("| **host-memory** | `MEMORY.md`"));
+    expect(row).toContain("~/.codex/memories/");
+    expect(row).toContain("`AGENTS.md` static fallback");
+  });
+});
+
 it("la doctrina nombra el cambio de rama del documento y la copia desde quick", async () => {
   const git = await readRel("roles/git/ROLE.md");
   const specNew = await readRel("commands/spec-new.md");
@@ -478,7 +581,8 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     expect(planExec).toContain("NEVER append a duplicate `### Fn` block");
     expect(planExec).toContain("**Marking done = ONE status line in the plan-doc**");
     expect(planExec).toContain("> Estado: done");
-    expect(planExec).toContain("> Cierre: YYYY-MM-DD · sesión NNN");
+    expect(planExec).toContain("> Cierre:` with evidence of the run");
+    expect(planExec).toContain("> Assurance: verified|partially_verified|unverified_accepted");
   });
 
   it("the residue rule carves out the Open-questions deferrals, the phase state and its blocker line", async () => {
@@ -495,7 +599,7 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     expect(sentence).toMatch(/deferral/i);
     expect(sentence).toContain("> Estado:");
     expect(sentence).toContain("> Bloqueo:");
-    expect(sentence).toMatch(/five things/);
+    expect(sentence).toContain("> Assurance:");
   });
 
   it("the schemas that dropped ## Q&A traceability cannot resurrect it", async () => {
@@ -1037,7 +1141,8 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     const contract = await phaseContract();
     expect(contract).toContain("**The plan carries its own state, and it is a different axis.**");
     expect(contract).toContain("`open` | `done`");
-    expect(contract).toContain("> Cierre: YYYY-MM-DD · sesión NNN");
+    expect(contract).toContain("> Cierre:` (run evidence)");
+    expect(contract).toContain("> Assurance:");
     // Position is the discriminator; one rule for both marks would let a
     // validated first phase close the plan.
     expect(contract).toContain("Position disambiguates the two marks");
@@ -1639,7 +1744,9 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     expect(exec).toContain("a session holding a live unit does NOT close");
     expect(batches).toContain("`done` is sealed after git/integration in the workspace plan");
     expect(exec).toContain("if plan is not done:");
-    expect(exec).toContain("then mark plan done");
+    expect(exec).toContain(
+      "then CLI seals plan: > Estado: done + > Cierre: run evidence + > Assurance: verdict",
+    );
     expect(exec).toContain("CLI commits those paths, verifies git and stores receipts");
   });
 

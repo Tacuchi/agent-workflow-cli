@@ -107,7 +107,7 @@ Use exact runner file/full-case identifiers (JVM: class/method), no wildcards.
 uses its own `> Bloqueo: <reason>` line and the session records.
 
 **The plan carries its own state, and it is a different axis.** Its title-level value is `open` | `done`;
-only final validation writes `done` plus `> Cierre: YYYY-MM-DD · sesión NNN`.
+only the CLI seals `done`, `> Cierre:` (run evidence) and `> Assurance:` after final validation.
 Position disambiguates the two marks. `done` with open work is `inconsistent`; all phases green without
 closure is `final_validation_pending`.
 

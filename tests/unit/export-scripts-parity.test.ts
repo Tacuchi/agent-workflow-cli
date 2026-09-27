@@ -59,6 +59,29 @@ describe("export-scripts — paridad entre guía directa y contrato generado", (
     expect(manual).toContain("MATERIAL A RECONCILIAR");
   });
 
+  it("el manual consolida por estado final y deriva rollback en orden seguro de FK", async () => {
+    const manual = await readFile(AUTHORING_MANUAL, "utf8");
+    for (const rule of [
+      "Created, then dropped",
+      "Created, then changed",
+      "Retired by session context",
+      "Synthesize, never invent",
+      "read-only",
+      "dependency-safe order",
+      "QA data repairs",
+      "Corpus ≠ live source environment",
+      "Portable",
+      "compare source and target object by object",
+      "after application",
+      "guards assert existence",
+      "live catalog",
+      "omit a replacement when live",
+    ]) {
+      expect(manual, rule).toContain(rule);
+    }
+    expect(manual).not.toContain("safe reverse order (05→01)");
+  });
+
   /**
    * The drift this guards against was real: the manual documented
    * `--skip-standalone` and `--dry-run` for versions, and the CLI accepted

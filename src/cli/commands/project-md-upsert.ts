@@ -15,6 +15,8 @@ export const projectMdUpsertCommand: CliCommand = {
   name: "project-md-upsert",
   flags: {
     known: ["init", "read", "proyecto", "fuente", "main-branch", "working-branch", "verbose"],
+    exclusive: [["read", "init"]],
+    repeatable: ["fuente", "working-branch"],
   },
   describe:
     "Read or update the <NS>-PROJECT block in CLAUDE.md/AGENTS.md. " +
@@ -23,13 +25,12 @@ export const projectMdUpsertCommand: CliCommand = {
     "[--main-branch <rama>] [--verbose].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verbose = args.flags.has("--verbose");
+    if (args.flags.has("--read") === args.flags.has("--init")) {
+      return fail("INVALID_INPUT", "Especifica exactamente uno de --read o --init");
+    }
     if (args.flags.has("--read")) {
       const data = await runProjectMdRead(ctx.fs, ctx.env, ctx.paths, { verbose });
       return { ok: true, data, exitCode: 0 };
-    }
-
-    if (!args.flags.has("--init")) {
-      return fail("INVALID_INPUT", "Especifica una operación: --init | --read");
     }
 
     const inputResult = buildUpsertInput(args, verbose);

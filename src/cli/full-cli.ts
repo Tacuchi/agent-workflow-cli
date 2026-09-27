@@ -364,7 +364,7 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
 
   // `<command> --help` shows the subcommand's help (its describe), not the global help.
   if (plan.help) {
-    printCommandHelp(command, output);
+    printCommandHelp(command, output, parsed.rest[0]);
     return 0;
   }
 
@@ -646,8 +646,12 @@ function printHelp(commands: string[], mode: Pick<OutputMode, "ascii">): void {
   writeStdout(forPerson(globalHelpText(commands, commandDescribes(), DEFAULT_NAMESPACE), mode));
 }
 
-function printCommandHelp(command: CliCommand, mode: Pick<OutputMode, "ascii">): void {
-  writeStdout(forPerson(`${commandHelpText(command)}\n`, mode));
+function printCommandHelp(
+  command: CliCommand,
+  mode: Pick<OutputMode, "ascii">,
+  action?: string,
+): void {
+  writeStdout(forPerson(`${commandHelpText(command, action)}\n`, mode));
 }
 
 // Do not force-exit after writing JSON: a piped 4 MiB tool response may still

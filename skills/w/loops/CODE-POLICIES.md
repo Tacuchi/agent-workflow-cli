@@ -21,6 +21,8 @@ blocked naming the command that gets one, and at close `aw worktree integrate` m
 the source's work branch; a conflict is reported, routed to `aw fix-git --path`, never alone.
 An in-place workspace declares `Modo de edición: in-place`; a plan may override it with `> Aislamiento: unidad`. In-place declares and approves only its own paths against the acquisition snapshot, without integration.
 
+For frontend sources, install dependencies (`npm ci` if the lockfile changes) inside each acquired unit: `node_modules` belongs to that worktree, never to a sibling checkout.
+
 > **When the branch is verified, when a commit becomes available and what an approval covers is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Approving is the person's act and committing is a separate effect that comes back as the units' own git state — which is what makes "the checks passed" impossible to assert without having run them.
 
 ## Closing review gate (conventions, pre-commit)

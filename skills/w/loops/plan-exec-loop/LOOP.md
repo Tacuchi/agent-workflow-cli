@@ -111,6 +111,8 @@ reconciliation** in `CHECKPOINT`, never reported as published.
 
 ## Delta 1 — One session per run; execution-unit cycle in the plan-doc
 
+`aw flow advance --adopt` adopts an existing plan; `aw flow recover` restores exhausted no-effect frontiers, `aw flow restart` unsticks runs, `aw flow annul` reopens miscredited batches. `aw flow prove --source <alias>` supplies checkout-bound evidence to `aw flow submit` after validation.
+
 - Walk the plan's `### Fn` blocks under `## Tasks` in dependency order inside one session. Infer
   effective `continuous`/`isolated` batches first; legacy `## Phases` tables degrade the same way.
 - In-place `branch-precondition`: clean on another branch → offer switch, change document branch or cancel; dirty on another branch → pause; expected branch with user changes → proceed. Switch only with consent; the hook guards edits and the commit fences HEAD/branch against acquisition.
@@ -124,7 +126,7 @@ reconciliation** in `CHECKPOINT`, never reported as published.
   **Never** because all its checkboxes are ticked.
 - **Intermediate states:** `bloqueada` = the phase is stopped on a live checkout blocker — recorded in `CHECKPOINT` + the plan's `## Open questions`, back to `en ejecución` when it clears; it counts as **not validated**. A proof that cannot run **stays `bloqueada`**. A deferred check never counts as a passed one. A script awaiting real-world application is a **handoff**, not a blocker: local fixture/ephemeral validation can still establish the promised behavior and the phase may become `validada`.
 - **A blocker without a reason is not a blocker (hard rule).** Writing `> Estado: bloqueada` **always** writes its `> Bloqueo:` line in the same edit: a state that says "stopped" without saying on what is a dead end for whoever reads `aw status` next. The runtime tolerates a legacy block that states none (`blocker: null`) — this loop never produces one. `CHECKPOINT.Next` names **the action that unblocks it** in the checkout, never an operator's deployed run.
-- **Plan-doc residue (hard rule):** execution writes into the plan-doc **only** five things — checkbox flips (`- [ ]` → `- [x]`), the phase's own `> Estado:` line, its `> Bloqueo:` line while blocked, deferrals appended to its `## Open questions`, and the plan's own status mark (its `> Estado:` line and, on close, its `> Cierre:` line — Delta 6). The declared-gap hatch is Deltas 4, 5 and 7. Per-phase results, review-gate findings and metrics go to the session's `DECISION`/`CHECKPOINT` — **never** into the plan-doc. Phase blocks are updated **in place — NEVER append a duplicate `### Fn` block** (same contract as CHECKPOINT sections). The entry gate's consented normalization is the single exception, and it lands before execution starts.
+- **Plan-doc residue (hard rule):** execution writes **only** checkbox flips (`- [ ]` → `- [x]`), phase `> Estado:` and `> Bloqueo:` while blocked, deferrals in `## Open questions`, and the plan's title-level `> Estado:`, `> Cierre:` and `> Assurance:` (CLI-sealed at close). Deltas 4, 5 and 7 permit declared gaps; consented normalization occurs before execution. Results, findings and metrics belong in session `DECISION`/`CHECKPOINT`, **never** the plan. Update phases **in place — NEVER append a duplicate `### Fn` block**.
 - **CHECKPOINT per execution unit:** record its effective grouping, functional states, simulation
   boundary when applicable, checks/results, decisions, deferrals and next intent. The task boxes
   and `en ejecución` marks preserve an intra-batch resume.
@@ -223,7 +225,7 @@ adds nothing of its own beyond running on a verified branch and never
   1. **phase proof** — component interaction, endpoint smoke test, vertical run down to the stub, persistence integration, or the main path end to end;
   2. **focused tests** — added when the layer carries its own rules, a relevant transformation, error handling, persistence, transactions, temporal logic or external integration;
   3. **risk tests** — security, concurrency, idempotency, retries, known regressions.
-- **One vertical proof per operation** (request → controller → use case → repository → stub → response); do not repeat the happy path at every layer or test trivial mappers/DTOs.
+- **One vertical proof per operation**; don't repeat happy paths or test trivial mappers/DTOs.
 - `isolated` remains compatible with literal TDD. A continuous batch may author evidence before
   code, but first runs it at batch close. No phase becomes `validada` before its exit is demonstrated.
 - **Continuous means all checks at batch close.** Do not run its phase proofs, focused/risk tests,
@@ -267,7 +269,7 @@ without subagents runs a clean re-read instead, and the closing report declares 
   plan, the source and the files, and `aw fix-git --path <reported merge path>` (`prepare` → `apply` →
   `commit --confirm`) resolves it; then integrate again to confirm and give the unit back. The plan
   is not `done` and the session does not close while a unit is still alive.
-- **Marking done = ONE status line in the plan-doc**, under the title's blockquote: `> Estado: done`, updated in place on a re-run. The machine value **stands alone** — the date and session go on their own `> Cierre: YYYY-MM-DD · sesión NNN` line right under it, for the same reason a blocker never rides on a phase's state line. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
+- **Marking done = ONE status line in the plan-doc** under the title: `> Estado: done`. The CLI seals `> Cierre:` with evidence of the run and `> Assurance: verified|partially_verified|unverified_accepted` on separate lines. Position distinguishes title from phase states; no per-phase result tables or suffixes (use session `DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
 - **No automatic export**: session artifacts stay there; only a later explicit `export-*` promotes them to `docs/`.
 
@@ -314,7 +316,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
         conflict → keep unit + merge; report plan/source/files; aw fix-git --path <reported merge path>
                    (prepare → apply → commit --confirm) → integrate again → release
         refused (dirty checkout / off branch / uncommitted unit) → fix what it names; retry
-      then mark plan done: > Estado: done + > Cierre: YYYY-MM-DD · sesión NNN under the title (Delta 6)
+      then CLI seals plan: > Estado: done + > Cierre: run evidence + > Assurance: verdict (Delta 6)
     next-batch precondition: working trees clean or acknowledged
   if no Batch ran and phases are already validada:
     run final validation now; if green → same integrate-then-mark-done branch

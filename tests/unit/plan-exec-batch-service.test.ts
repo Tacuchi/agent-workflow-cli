@@ -405,6 +405,7 @@ describe("plan-exec batch publication", () => {
     if (!done.ok) throw new Error(done.failure.message);
     expect(done.prepared.content).toContain("> Estado: done");
     expect(done.prepared.content).toContain("> Cierre: validación final, commits e integración");
+    expect(done.prepared.content).toContain("> Assurance: verified");
     expect(done.prepared.content).not.toContain("> Baseline:");
 
     const retry = preparePlanExecDoneSeal(done.prepared.content, {

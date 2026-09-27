@@ -23,6 +23,12 @@ export interface FlagContract {
   known: readonly string[];
   /** Names once accepted and now inert: tolerated, never refused. */
   retired?: readonly string[];
+  /** Help metadata for a flag required by this invocation. */
+  required?: readonly string[];
+  /** Help metadata for flags of which precisely one must be supplied. */
+  exclusive?: readonly (readonly string[])[];
+  /** Help metadata for flags the parser collects more than once. */
+  repeatable?: readonly string[];
 }
 
 /**

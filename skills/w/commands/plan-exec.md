@@ -32,6 +32,8 @@ checkboxes and `> Estado:` line in the living plan.
 2. Follow it end to end: check executability, infer live batches, execute each without internal
    validation pauses, then validate/review/commit at its close.
 
+`aw flow advance --session <NNN> --flow plan-exec --adopt` resumes an adopted plan. At a stuck frontier use `aw flow recover` (no effects) or `aw flow restart`; `aw flow annul` reopens a miscredited batch. After validation use `aw flow prove --session <NNN> --source <alias>` for each batch source before `aw flow submit`.
+
 > `plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body. It is **resumable**: an existing CHECKPOINT continues from there.
 
 ## Two gates that send work back
