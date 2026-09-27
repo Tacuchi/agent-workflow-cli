@@ -2,7 +2,11 @@ import { join } from "node:path";
 import type { FlowRunState } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import { readWorkspaceBlock } from "../parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
 import type { IsolationReader } from "../session-close-service.js";
 
@@ -12,10 +16,16 @@ export async function preserveBoundaryClose(
   paths: PathsService,
   git: GitPort,
   state: FlowRunState,
-  units: Awaited<ReturnType<IsolationReader>>,
+  units: Extract<Awaited<ReturnType<IsolationReader>>, unknown[]>,
+  unreadable: Array<{ alias: string; error: string; code?: string }> = [],
 ): Promise<string[]> {
   const boundary = state.reentries?.at(-1)?.transition ?? "chassis.finalize";
   const pending = [`Frontera pendiente: ${boundary}.`];
+  if (state.handoff != null) {
+    pending.push(
+      `Escalación: seguí con ${state.handoff.command}; pedido y contexto conservados en el paquete de la corrida.`,
+    );
+  }
   const batch = state.flow === "plan-exec" ? state.batches?.at(-1) : undefined;
   const prefix = batch === undefined ? "" : `lote ${batch.iteration} (${batch.id}): `;
   const own = units.filter((unit) => unit.session === state.session);
@@ -28,15 +38,15 @@ export async function preserveBoundaryClose(
           : "sin integrar; no se pudo determinar si hay cambios sin commitear";
     pending.push(`${prefix}${unit.alias}: ${status} en ${unit.path} (${unit.branch}).`);
   }
+  for (const source of unreadable.filter((item) => item.code === "SOURCE_PATH_MISSING")) {
+    pending.push(`${prefix}${source.alias}: unidad no verificable; ${source.error}.`);
+  }
+  const unavailable = unreadable
+    .filter((item) => item.code === "SOURCE_PATH_MISSING")
+    .map((item) => item.alias);
   pending.push(
     ...(
-      await uncommittedSources(
-        fs,
-        paths,
-        git,
-        state,
-        own.map((u) => u.alias),
-      )
+      await uncommittedSources(fs, paths, git, state, [...own.map((u) => u.alias), ...unavailable])
     ).map((item) => `${prefix}${item}`),
   );
   if (state.proposal !== null) {
@@ -65,14 +75,24 @@ async function uncommittedSources(
   // Other sessions' units are not this run's work. Only its unisolated source
   // checkouts are observed here; git errors propagate rather than saying clean.
   const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
-  const sources = [{ alias: "workspace", path: paths.workspaceDir() }, ...(block?.fuentes ?? [])];
+  const sources: ProjectFuente[] = [
+    { alias: "workspace", path: paths.workspaceDir(), main_branch: null },
+    ...(block?.fuentes ?? []),
+  ];
   const pending: string[] = [];
   for (const source of sources) {
     if (isolated.includes(source.alias)) continue;
     if (state.scope !== null && !state.scope.sources.includes(source.alias)) continue;
-    if (!(await git.isGitRepo(source.path))) continue;
-    if (await git.isDirty(source.path)) {
-      pending.push(`${source.alias}: cambios sin commitear en ${source.path}.`);
+    let repo: string;
+    try {
+      repo = await requireSourcePath(fs, source);
+    } catch (err) {
+      pending.push(`${source.alias}: no verificable; ${(err as Error).message}.`);
+      continue;
+    }
+    if (!(await git.isGitRepo(repo))) continue;
+    if (await git.isDirty(repo)) {
+      pending.push(`${source.alias}: cambios sin commitear en ${repo}.`);
     }
   }
   return pending;

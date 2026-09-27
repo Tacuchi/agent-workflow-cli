@@ -3,7 +3,11 @@ import { parseUnitPath, workspaceKey } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface MergeStateInput {
@@ -29,6 +33,8 @@ export interface RepoMergeState {
   merge_origin: string | null;
   conflicted_files: string[];
   dirty: boolean;
+  error?: string;
+  error_code?: "SOURCE_PATH_MISSING";
 }
 
 export interface MergeStateOutput {
@@ -60,7 +66,10 @@ export async function runMergeState(
         alias: t.alias,
         path: t.path,
         code: "SOURCE_PATH_MISSING",
-        action: `la ruta ${t.path} no existe en esta máquina: corregí la fuente o elegí una ruta existente`,
+        action:
+          t.alias === null
+            ? `la ruta ${t.path} no existe en esta máquina: elegí una ruta existente`
+            : `la ruta de la fuente ${t.alias} no existe en este host: declárala con aw add-source ${t.alias}:<ruta>`,
       });
       continue;
     }
@@ -143,7 +152,7 @@ async function resolveTargets(
     return [{ alias: null, path: p }];
   }
   if (input.source !== undefined || input.all) {
-    let fuentes: Array<{ alias: string; path: string }> | undefined;
+    let fuentes: ProjectFuente[] | undefined;
     try {
       const block = await readWorkspaceBlock(
         fs,
@@ -166,16 +175,31 @@ async function resolveTargets(
     }
     if (input.source !== undefined) {
       const f = fuentes.find((x) => x.alias === input.source);
-      if (!f)
+      if (f === undefined) {
         unreadable.push({
           alias: input.source,
           path: null,
           code: "SOURCE_UNKNOWN",
           action: `la fuente ${input.source} no está declarada; alias disponibles: ${fuentes.map((s) => s.alias).join(", ")}`,
         });
-      return f ? [{ alias: f.alias, path: f.path }] : [];
+        return [];
+      }
     }
-    return fuentes.map((f) => ({ alias: f.alias, path: f.path }));
+    const targets: Array<{ alias: string; path: string }> = [];
+    for (const fuente of fuentes) {
+      if (input.source !== undefined && fuente.alias !== input.source) continue;
+      try {
+        targets.push({ alias: fuente.alias, path: await requireSourcePath(fs, fuente) });
+      } catch (err) {
+        unreadable.push({
+          alias: fuente.alias,
+          path: fuente.path,
+          code: "SOURCE_PATH_MISSING",
+          action: (err as Error).message,
+        });
+      }
+    }
+    return targets;
   }
   return [{ alias: null, path: cwd }];
 }

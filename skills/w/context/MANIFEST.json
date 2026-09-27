@@ -62,7 +62,7 @@
     "plan.escalation-adopted": "this refine consumed the escalation package an execution handed over, instead of re-deriving its diagnosis",
     "plan.escalation-absent": "no escalation package reached this refine, so it starts from the document alone",
     "chassis.context-pressure": "a fresh reader would need the CHECKPOINT to continue this run",
-    "quick.db-touched": "the task read from or wrote to a database, so there is a statement to derive into the session script"
+    "quick.db-touched": "the task mutates a database; derive its DDL or DML into the session script"
   },
   "commands": {
     "doctor": {

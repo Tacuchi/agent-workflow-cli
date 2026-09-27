@@ -398,6 +398,20 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     expect(again.effects).toEqual(first.effects);
   });
 
+  it("el resumen dirigido del cierre incluye el SQL de migración aún sin bundle", async () => {
+    await writeFile(
+      join(paths.cwdSessionsDir(), SESSION, "SCRIPTS.sql"),
+      "-- [M1] Type: B\nCREATE TABLE prueba (id integer);\n",
+    );
+    const outcome = await executor(
+      { operation: "session.close" },
+      { session: SESSION, code: "001" },
+    );
+    expect(outcome.ok).toBe(true);
+    expect(outcome.summary).toContain("sql_pending_export: SCRIPTS.sql");
+    expect(outcome.summary).toContain("aw export-scripts prepare --sessions 001");
+  });
+
   it("un criterio de éxito vacío es la plantilla, no una condición de terminado", async () => {
     const dump = { operation: "session.artifacts", dump: ["objetivo"] } as const;
     // Lo que `aw session-create` deja: la casilla existe y no dice nada. Contarla

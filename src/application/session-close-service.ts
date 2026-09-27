@@ -1,11 +1,14 @@
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { leadingCorrelative } from "../domain/correlative.js";
-import { reservationMarker } from "../domain/reservation.js";
+import { FOLDER_RESERVATION_MARKER, reservationMarker } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { appendClaimEvent } from "./claims-ledger.js";
 import { historyFields, sharedNumberError, upsertHistoryRow } from "./history-update-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
+import { readScriptsArtifacts } from "./release-data/artifacts.js";
+import { listGraduatedBundles } from "./release-data/bundles.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
 import { invalidateBindingsTo } from "./session-binding-service.js";
 import { writeSessionNarrative } from "./session-narrative.js";
@@ -76,6 +79,8 @@ export interface SessionCloseOutput {
   reopen?: string;
   /** Pending work preserved by the owning flow before closing at a boundary. */
   pending_work?: string[];
+  /** Read-only guidance from the run's effective decision notes. */
+  outdated_documents?: string[];
   /**
    * Non-fatal, and never silent: the isolation state could not be read.
    *
@@ -84,6 +89,8 @@ export interface SessionCloseOutput {
    * a different fact from "there was nothing to integrate".
    */
   pending_integration_error?: string;
+  /** Sources with no resolvable location here: their units could not be verified. */
+  unverifiable_sources?: Array<{ alias: string; reason: string }>;
   /**
    * Numbering reservations this session held and never completed, now removed.
    *
@@ -103,6 +110,9 @@ export interface SessionCloseOutput {
    * `reservations_released` would say "there was nothing to release".
    */
   reservations_error?: string;
+  /** Non-blocking reminder: migration SQL not traced by a published bundle. */
+  sql_pending_export?: { files: string[]; command: string };
+  sql_pending_export_error?: string;
 }
 
 export interface SessionCloseFullOutput {
@@ -161,6 +171,13 @@ export async function runSessionClose(
   // moves.
   const sharing = await sessionsSharingNumber(fs, paths, session.folder);
   if (sharing.length > 1) return { sessionError: sharedNumberError(session.folder, sharing) };
+  let sqlPending: SessionCloseOutput["sql_pending_export"];
+  let sqlPendingError: string | undefined;
+  try {
+    sqlPending = await pendingSqlExport(fs, paths, session);
+  } catch (error) {
+    sqlPendingError = error instanceof Error ? error.message : String(error);
+  }
 
   // Durable artifacts survive close. CHECKPOINT is a resume safety net (no-op
   // when the loop already wrote one). BACKLOG is NOT fabricated: the owning loop
@@ -194,6 +211,8 @@ export async function runSessionClose(
     bindings_invalidated: closure.bindings_invalidated,
     ...(closure.history ? { history: closure.history } : {}),
     ...(closure.history_error !== undefined ? { history_error: closure.history_error } : {}),
+    ...(sqlPending === undefined ? {} : { sql_pending_export: sqlPending }),
+    ...(sqlPendingError === undefined ? {} : { sql_pending_export_error: sqlPendingError }),
   };
   reportHeld(sessionClose, session.folder, units);
   reportReservations(
@@ -207,9 +226,67 @@ export async function runSessionClose(
   return { sessionClose };
 }
 
+async function pendingSqlExport(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+): Promise<SessionCloseOutput["sql_pending_export"]> {
+  const scripts = (await readScriptsArtifacts(fs, session.path)).filter(
+    (file) => !file.is_rollback,
+  );
+  if (scripts.length === 0) return undefined;
+  const bundles = await listGraduatedBundles(fs, paths.workspaceDir(), paths);
+  const exported = new Set<string>();
+  for (const bundle of bundles) {
+    const manifest = join(bundle.path, "bundle.json");
+    if (!(await fs.exists(manifest))) continue;
+    try {
+      const parsed: unknown = JSON.parse(await fs.readText(manifest));
+      if (typeof parsed !== "object" || parsed === null) continue;
+      const origin = (
+        parsed as {
+          origin?: { sessions?: Array<{ session: string; files: Array<{ digest: string }> }> };
+        }
+      ).origin;
+      for (const entry of origin?.sessions ?? []) {
+        if (entry.session === session.folder)
+          for (const file of entry.files) exported.add(file.digest);
+      }
+    } catch {
+      /* A bundle without readable metadata cannot claim this SQL. */
+    }
+  }
+  const pending: string[] = [];
+  for (const file of scripts) {
+    const text = await fs.readText(file.path);
+    if (
+      /--\s*\[Q\d+\].*Type:\s*A\b/i.test(text) &&
+      !/--\s*(?:\[M\d+\]|@category:\s*0[1-5]|Type:\s*B\b)/i.test(text)
+    )
+      continue;
+    if (
+      !/(?:--\s*(?:\[M\d+\]|@category:\s*0[1-5]|Type:\s*B\b)|\b(?:CREATE|ALTER|DROP|UPDATE|DELETE|INSERT|GRANT|REVOKE|TRUNCATE)\b)/i.test(
+        text,
+      )
+    )
+      continue;
+    const digest = `sha256:${createHash("sha256")
+      .update(await fs.readBytes(file.path))
+      .digest("hex")}`;
+    if (!exported.has(digest)) pending.push(file.name);
+  }
+  return pending.length > 0
+    ? {
+        files: pending,
+        command: `aw export-scripts prepare --sessions ${leadingCorrelative(session.folder) ?? session.code ?? session.folder}`,
+      }
+    : undefined;
+}
+
 /** Units survived the close: say so, and say how to come back for them. */
 function reportHeld(output: SessionCloseOutput, folder: string, units: HeldUnits): void {
   if (units.error !== undefined) output.pending_integration_error = units.error;
+  if (units.unverifiable.length > 0) output.unverifiable_sources = units.unverifiable;
   if (units.held.length === 0) return;
   output.pending_integration = units.held;
   output.reopen = `aw session-resume --code ${folder} --reopen`;
@@ -242,13 +319,24 @@ function refuseHeld(code: string, folder: string, units: HeldUnits): SessionClos
 
 /** Reads this workspace's live isolation units; absent when the caller has no git port. */
 export type IsolationReader = () => Promise<
-  Array<{ alias: string; session: string; path: string; branch: string; dirty?: boolean | null }>
+  | Array<{ alias: string; session: string; path: string; branch: string; dirty?: boolean | null }>
+  | {
+      units: Array<{
+        alias: string;
+        session: string;
+        path: string;
+        branch: string;
+        dirty?: boolean | null;
+      }>;
+      unreadable: Array<{ alias: string; error: string; code?: string }>;
+    }
 >;
 
 /** What the session holds, and whether that reading could be made at all. */
 interface HeldUnits {
   held: NonNullable<SessionCloseOutput["pending_integration"]>;
   error?: string;
+  unverifiable: NonNullable<SessionCloseOutput["unverifiable_sources"]>;
 }
 
 /**
@@ -264,17 +352,30 @@ async function heldUnits(
   isolation: IsolationReader | undefined,
   folder: string,
 ): Promise<HeldUnits> {
-  if (isolation === undefined) return { held: [] };
-  let units: Awaited<ReturnType<IsolationReader>>;
+  if (isolation === undefined) return { held: [], unverifiable: [] };
+  let inventory: Awaited<ReturnType<IsolationReader>>;
   try {
-    units = await isolation();
+    inventory = await isolation();
   } catch (error) {
     return {
       held: [],
+      unverifiable: [],
       error: `no se pudieron leer las unidades de ${folder}: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+  const units = Array.isArray(inventory) ? inventory : inventory.units;
+  const unreadable = Array.isArray(inventory) ? [] : inventory.unreadable;
+  const unverifiable = unreadable
+    .filter((item) => item.code === "SOURCE_PATH_MISSING")
+    .map((item) => ({ alias: item.alias, reason: item.error }));
+  const otherErrors = unreadable.filter((item) => item.code !== "SOURCE_PATH_MISSING");
   return {
+    unverifiable,
+    ...(otherErrors.length > 0
+      ? {
+          error: `inventario ilegible: ${otherErrors.map((item) => `${item.alias}: ${item.error}`).join("; ")}`,
+        }
+      : {}),
     held: units
       .filter((u) => u.session === folder)
       .map((u) => ({
@@ -318,10 +419,23 @@ async function releaseReservations(
       if (category.type !== "dir") continue;
       for (const entry of await fs.list(category.path)) {
         const correlative = leadingCorrelative(entry.name);
-        if (entry.type !== "file" || correlative === null || retained.has(entry.path)) {
+        if (
+          (entry.type !== "file" && entry.type !== "dir") ||
+          correlative === null ||
+          retained.has(entry.path)
+        ) {
           continue;
         }
-        if ((await fs.readText(entry.path)) !== marker) continue;
+        if (entry.type === "dir") {
+          const contents = await fs.list(entry.path);
+          if (contents.length !== 1 || contents[0]?.name !== FOLDER_RESERVATION_MARKER) continue;
+        }
+        if (
+          (await fs.readText(
+            entry.type === "dir" ? join(entry.path, FOLDER_RESERVATION_MARKER) : entry.path,
+          )) !== marker
+        )
+          continue;
         // The record goes in BEFORE the file is removed, and the order is the
         // whole safety argument. Recording after would leave a window — an I/O
         // error, a Ctrl-C, a SIGKILL — where the marker is already gone and no

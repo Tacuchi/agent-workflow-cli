@@ -89,8 +89,8 @@ function nextNumberRefusal(input: {
   if (claim !== undefined && publish !== undefined) {
     return "--claim y --publish se excluyen: un reclamo reserva el número para escribirlo después, una publicación lo asigna y escribe el documento en el mismo acto";
   }
-  if ((claim ?? publish) !== undefined && dryRun) {
-    return "--dry-run no se combina con --claim ni con --publish: los dos escriben, y una consulta no";
+  if (claim !== undefined && dryRun) {
+    return "--dry-run no se combina con --claim: una consulta no puede poseer una reserva";
   }
   if (code !== undefined && claim === undefined) {
     return "--code sólo tiene sentido con --claim: una consulta no reserva nada y una publicación no deja reserva que atribuir";
@@ -106,19 +106,22 @@ function nextNumberRefusal(input: {
 
 export const nextNumberCommand: CliCommand = {
   name: "next-number",
-  flags: { known: ["claim", "publish", "code", "dry-run"] },
+  flags: { known: ["claim", "publish", "code", "dry-run", "folder"] },
   describe:
-    "Compute next NNN correlative for a directory, creating it when missing. With --claim <resto-del-nombre> --code <NNN> the number is CLAIMED for that session: the file is materialized under the workspace lock so two concurrent flows never receive the same NNN, only that session's own sealed proposal can complete it, asking again returns the same slot, and closing the session releases it if it never did. A claim WITHOUT --code is refused: a durable reservation belongs to a session. With --publish <resto-del-nombre> the number is assigned and the final document — read from stdin — is written in ONE atomic operation, which is how a single-pass creation with no session gets a document instead of a reservation. Usage: aw next-number <directorio> [--claim <resto-del-nombre> --code <NNN>] [--publish <resto-del-nombre>] [--dry-run].",
+    "Compute next NNN correlative for a directory. --claim <nombre> --code <sesión> reserves a file; add --folder to reserve a directory with its marker inside. --publish <nombre> writes an idempotent numbered document with NNN in its title, or previews it with --dry-run; requires a materialized Workline workspace. Usage: aw next-number <directorio> [--claim <nombre> --code <sesión> [--folder]] [--publish <nombre> [--dry-run]] [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
     const usage =
-      "uso: next-number <directorio> [--claim <resto-del-nombre> --code <NNN>] [--publish <resto-del-nombre>] [--dry-run]";
+      "uso: next-number <directorio> [--claim <nombre> --code <sesión> [--folder]] [--publish <nombre> [--dry-run]] [--dry-run]";
     if (!dir) return fail("INVALID_INPUT", usage, { error: usage });
 
     const claim = args.values.get("claim");
     const publish = args.values.get("publish");
     const code = args.values.get("code");
     const dryRun = args.flags.has("--dry-run");
+    const folder = args.flags.has("--folder");
+    if (folder && claim === undefined)
+      return fail("INVALID_INPUT", "--folder exige --claim <nombre> y --code <sesión>");
 
     const valuelessFlags = ["--claim", "--publish", "--code"].filter((f) => args.flags.has(f));
     const refusal = nextNumberRefusal({ claim, publish, code, dryRun, valuelessFlags });
@@ -138,12 +141,25 @@ export const nextNumberCommand: CliCommand = {
       }
       const data = await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
         directory: dir,
-        claim: { name: claim, owner: resolution.session.folder },
+        claim: {
+          name: claim,
+          owner: resolution.session.folder,
+          ...(folder ? { folder: true } : {}),
+        },
       });
       return { ok: true, data, exitCode: 0 };
     }
 
     if (publish !== undefined) {
+      if (!(await ctx.fs.exists(ctx.paths.cwdSessionsDir()))) {
+        return fail(
+          "WORKSPACE_ABSENT",
+          "--publish necesita un workspace Workline materializado; no se creó ninguno",
+          {
+            action: "invocá el comando desde un workspace con .workflow/sessions/ existente",
+          },
+        );
+      }
       const content = await readRequiredStdin();
       if (content.length === 0) {
         const message =
@@ -153,6 +169,7 @@ export const nextNumberCommand: CliCommand = {
       const data = await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
         directory: dir,
         publish: { name: publish, content },
+        dryRun,
       });
       return { ok: true, data, exitCode: 0 };
     }

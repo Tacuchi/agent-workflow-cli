@@ -17,7 +17,7 @@ import {
   type SessionUnit,
   buildWorklineIndex,
 } from "./workline-index-service.js";
-import type { OrphanUnit } from "./worktree-service.js";
+import type { OrphanUnit, WorktreeListOutput } from "./worktree-service.js";
 
 /**
  * `status` projected out of the Workline index.
@@ -60,6 +60,7 @@ export interface StatusSession {
 
 export interface StatusOutput {
   workspace: IndexedWorkspace;
+  last_activity: string | null;
   specs: IndexedSpec[];
   plans: IndexedPlan[];
   sessions: {
@@ -105,6 +106,8 @@ export interface StatusOutput {
   designs: DesignGraph;
   /** Units that outlived their session: pending cleanup, never cleaned on their own. */
   orphan_units: OrphanUnit[];
+  unreadable_sources?: WorktreeListOutput["unreadable"];
+  isolation_error?: string;
   /** Invalid `[docs]` config: no documentary path was guessed. */
   docs_canon_error?: string;
   counts: {
@@ -159,6 +162,7 @@ export async function runStatusCommand(
 
   return {
     workspace: index.workspace,
+    last_activity: index.last_activity,
     specs: index.specs,
     plans: index.plans,
     sessions: { active, closed },
@@ -173,6 +177,10 @@ export async function runStatusCommand(
     loose_sessions: index.loose_sessions,
     designs: index.designs,
     orphan_units: index.orphan_units,
+    ...(index.unreadable_sources !== undefined
+      ? { unreadable_sources: index.unreadable_sources }
+      : {}),
+    ...(index.isolation_error !== undefined ? { isolation_error: index.isolation_error } : {}),
     ...(index.docs_canon_error !== undefined ? { docs_canon_error: index.docs_canon_error } : {}),
     counts: {
       specs: index.specs.length,

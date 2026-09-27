@@ -11,6 +11,7 @@ import {
   advanceFlow,
   recoverFlowBoundary,
   restartFlow,
+  retractFlowSignal,
 } from "../../application/flow/flow-service.js";
 import {
   type InternalActionExecutor,
@@ -58,7 +59,7 @@ import type { CliContext } from "../types.js";
  */
 type FlowResult = FlowDirective | CheckoutProofReceipt | AnnulPreview;
 
-const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul"] as const;
+const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul", "retract"] as const;
 
 /**
  * The answer envelope, published where an executor can read it WITHOUT running a
@@ -210,10 +211,13 @@ export const flowCommand: CliCommand<FlowResult> = {
       submit: { known: ["approval"] },
       prove: { known: ["source", "artifact"] },
       recover: { known: ["transition"] },
+      retract: { known: ["signal"] },
       annul: { known: ["from", "approval"] },
     },
   },
   describe: `Avanza un recorrido de Workline hasta su primera frontera no determinista y devuelve su directiva. Verbos: ${VERBS.join(" | ")}. La respuesta de submit entra por stdin como JSON y la aprobación de efecto viaja aparte en --approval. recover le devuelve los intentos a la frontera agotada vigente conservando todo lo aplicado, y se niega si esa frontera ya ejerció efectos. restart saca de cualquier estado trabado —frontera agotada con efectos, registro ilegible o sellado mal, anterior a la v11, contador de intentos ilegible o revertido—: archiva el registro y su contador en un archivo con fecha y sello dentro de la sesión, re-adopta el mismo flow (del registro, de la custodia o de --flow) y lo deja en la traza; nunca hace falta tocar .flow-run.json a mano. annul reabre un lote mal acreditado y los posteriores: sin --approval muestra las fases y tareas que reabre y el digest que lo aprueba, sin escribir nada; con ese digest las deja pendientes y abiertas en el plan, retira su sello done si lo tenía, re-adopta la corrida para que las vuelva a inferir y lo deja en la traza; git no se toca. Usage: aw flow advance --session <código> [--flow <flow> --adopt] · aw flow recover --session <código> [--transition <id>] · aw flow prove --session <código> [--source <alias>] [--artifact <ruta>] · aw flow restart --session <código> [--flow <flow>] · aw flow annul --session <código> --from <lote> [--approval <digest>].
+
+retract retira una señal antes de que se aplique su fila consumidora y deja una traza, sin perdonar intentos: aw flow retract --session <código> --signal <señal>.
 
 ${ENVELOPE}
 
@@ -223,6 +227,7 @@ ${CHECKOUT}`,
     const parsed = readFlowArgs(args, ctx);
     if (!parsed.ok) return parsed.failure;
     const { verb, flow, session } = parsed;
+    if (verb === "retract") return retractVerb(args, ctx, session);
 
     // Before the executor, and without stdin: recovery is not a walk. It returns
     // the boundary to an answerable state and stops there, so whatever runs next
@@ -306,6 +311,17 @@ ${CHECKOUT}`,
     return `${renderDirectiveHuman(data, context.detail)}\n`;
   },
 };
+
+async function retractVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+  session: { code?: string; contextId?: string },
+): Promise<CommandResult<FlowResult>> {
+  const signal = flagValue(args, "signal")?.trim();
+  if (!signal)
+    return fail("ARGS_INVALID", "uso: aw flow retract --session <código> --signal <señal>");
+  return project(await retractFlowSignal(ctx.fs, ctx.paths, { ...session, signal, git: ctx.git }));
+}
 
 /**
  * A capture, read by a person: the root it measured first, the bytes to paste last.

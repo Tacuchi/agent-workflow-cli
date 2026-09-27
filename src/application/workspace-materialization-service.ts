@@ -11,6 +11,7 @@ export function runtimeGitignoreEntries(namespace: string): string[] {
     `.${namespace}/.lock`,
     `.${namespace}/processes.json`,
     `.${namespace}/launch/`,
+    `.${namespace}/local.json`,
     "docs/logs/",
   ];
 }
@@ -112,6 +113,10 @@ export class MaterializingWorkspaceFileSystem implements FileSystemPort {
   async publishTextExclusive(path: string, content: string): Promise<{ created: boolean }> {
     await this.beforeWorkspaceMutation(path);
     return await this.delegate.publishTextExclusive(path, content);
+  }
+  async publishBytesExclusive(path: string, content: Uint8Array): Promise<{ created: boolean }> {
+    await this.beforeWorkspaceMutation(path);
+    return await this.delegate.publishBytesExclusive(path, content);
   }
 
   async remove(path: string): Promise<void> {

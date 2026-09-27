@@ -25,8 +25,8 @@ describe("pipeline versionado en el bloque", () => {
       op: "init",
       lastActivity: "2026-01-01",
       fuentes: [
-        { alias: "core", path: "/repo/core" },
-        { alias: "plugin", path: "/repo/plugin" },
+        { alias: "core", path: "../repo/core" },
+        { alias: "plugin", path: "../repo/plugin" },
       ],
       pipeline: {
         core: { build: "npm run build", test: "npm test" },
@@ -68,7 +68,7 @@ describe("pipeline versionado en el bloque", () => {
     );
     const replaced = await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
-      fuentes: [{ alias: "core", path: "/repo/core" }],
+      fuentes: [{ alias: "core", path: "../repo/core" }],
       replaceFuentes: true,
       lastActivity: "2026-01-01",
     });

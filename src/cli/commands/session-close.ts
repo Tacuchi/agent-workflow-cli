@@ -92,9 +92,9 @@ async function closeAtBoundary(
 ): Promise<CommandResult> {
   const { boundary } = intent;
   const withdraw = (refusal: CommandResult) => withdrawn(ctx, location, intent, refusal);
-  let units: Awaited<ReturnType<IsolationReader>>;
+  let inventory: Awaited<ReturnType<IsolationReader>>;
   try {
-    units = await unitsOf(ctx)();
+    inventory = await unitsOf(ctx)();
   } catch (error) {
     return withdraw(
       fail(
@@ -106,12 +106,21 @@ async function closeAtBoundary(
       ),
     );
   }
+  const units = Array.isArray(inventory) ? inventory : inventory.units;
+  const unreadable = Array.isArray(inventory) ? [] : inventory.unreadable;
   let data: SessionCloseResult;
   let pending: string[] = [];
   try {
     const read = await readRun(ctx.fs, location);
     if (!read.ok) return withdraw(fail(read.failure.code, read.failure.message));
-    pending = await preserveBoundaryClose(ctx.fs, ctx.paths, ctx.git, read.state, units);
+    pending = await preserveBoundaryClose(
+      ctx.fs,
+      ctx.paths,
+      ctx.git,
+      read.state,
+      units,
+      unreadable,
+    );
     data = await runSessionClose(
       ctx.fs,
       ctx.paths,
@@ -120,7 +129,7 @@ async function closeAtBoundary(
         preserveReservations:
           read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [],
       },
-      async () => units,
+      async () => inventory,
     );
   } catch (error) {
     // The close's own error is the one worth reporting; a failed withdraw here
@@ -206,7 +215,7 @@ function unitsOf(ctx: CliContext): IsolationReader {
     // Never the reassuring half: an unreadable list comes back as the error the
     // receipt reports, not as "this session held nothing".
     if (!("units" in listed)) throw new Error(JSON.stringify(listed));
-    return listed.units;
+    return { units: listed.units, unreadable: listed.unreadable ?? [] };
   };
 }
 

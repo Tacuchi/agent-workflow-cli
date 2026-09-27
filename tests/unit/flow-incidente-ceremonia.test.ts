@@ -36,7 +36,11 @@ import { testExecutor } from "../helpers/test-executor.js";
  * de las que ya tenía.
  */
 
-const fs = new NodeFileSystem();
+const fs = new (class extends NodeFileSystem {
+  override async exists(path: string): Promise<boolean> {
+    return path === "/tmp/selva" || super.exists(path);
+  }
+})();
 const SESSION = "001-migracion-plan-exec";
 const CODE = "001";
 const ALIAS = "selva";

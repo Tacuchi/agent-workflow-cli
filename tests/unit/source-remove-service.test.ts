@@ -60,8 +60,8 @@ describe("removeSource", () => {
     await runProjectMdUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
-        { alias: "core", path: "/repo/core", mainBranch: "main" },
-        { alias: "plugin", path: "/repo/plugin", mainBranch: "main" },
+        { alias: "core", path: "../repo/core", mainBranch: "main" },
+        { alias: "plugin", path: "../repo/plugin", mainBranch: "main" },
       ],
       workingBranches: { plugin: "feature/x" },
       qaBranches: { plugin: "desarrollo" },
@@ -95,8 +95,8 @@ describe("removeSource", () => {
 
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | /repo/core | main |");
-    expect(claude).not.toContain("/repo/plugin");
+    expect(claude).toContain("| core | ../repo/core | main |");
+    expect(claude).not.toContain("../repo/plugin");
     expect(claude).not.toContain("feature/x");
     expect(claude).not.toContain("- plugin: desarrollo");
     expect(claude).not.toContain("- plugin: test `npm test`");
@@ -121,7 +121,50 @@ describe("removeSource", () => {
     const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "core");
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).not.toContain("/repo/core");
-    expect(claude).toContain("/repo/plugin");
+    expect(claude).not.toContain("../repo/core");
+    expect(claude).toContain("../repo/plugin");
+  });
+
+  it("elimina la entrada local aunque la ruta no exista en este host", async () => {
+    const env = new FakeEnv(cwd);
+    const paths = makePaths(cwd);
+    await seedBlock(env, paths);
+    await writeFile(
+      paths.cwdLocalConfigFile(),
+      JSON.stringify({ version: 1, sources: { core: "/ruta/ausente" }, otra_clave: true }),
+    );
+    const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "core");
+    expect("error" in result).toBe(false);
+    const local = JSON.parse(await readFile(paths.cwdLocalConfigFile(), "utf8"));
+    expect(local.sources.core).toBeUndefined();
+    expect(local.otra_clave).toBe(true);
+    expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).not.toContain("| core |");
+  });
+
+  it("al quitar la única fuente Java recalcula el Stack sin conservar Java", async () => {
+    const env = new FakeEnv(cwd);
+    const paths = makePaths(cwd);
+    const java = join(cwd, "java");
+    const angular = join(cwd, "angular");
+    await mkdir(java);
+    await mkdir(angular);
+    await writeFile(join(java, "pom.xml"), "<project/>");
+    await writeFile(join(angular, "angular.json"), "{}");
+    await runProjectMdUpsertWrite(fs, env, paths, {
+      op: "init",
+      fuentes: [
+        { alias: "java", path: java, mainBranch: "main" },
+        { alias: "angular", path: angular, mainBranch: "main" },
+      ],
+    });
+    expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).toContain(
+      "- Lenguaje: Java, TypeScript",
+    );
+    const removed = await removeSource({ fs, env, proc: new FakeProc(), paths }, "java");
+    expect("error" in removed).toBe(false);
+    const block = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    expect(block).toContain("- Lenguaje: TypeScript");
+    expect(block).not.toContain("Java");
+    expect(block).toContain("- Framework: Angular");
   });
 });

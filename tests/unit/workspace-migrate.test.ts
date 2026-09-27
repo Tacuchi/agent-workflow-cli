@@ -10,6 +10,7 @@ import { planWorkspaceMigration } from "../../src/application/workspace-migrate/
 import { workspaceMigrateCommand } from "../../src/cli/commands/workspace-migrate.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import type { FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { dispatch } from "../helpers/dispatch.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -109,6 +110,31 @@ function context(fs: MemFs): CliContext {
 // ─── el hub legacy completo ──────────────────────────────────────────────────
 
 describe("un hub con serie legacy queda operable después de migrarlo", () => {
+  it("un fallo en el segundo espejo revierte ambos bloques migrados", async () => {
+    const fs = hub({ claude: RICH_BLOCK });
+    const agents = "/cwd/AGENTS.md";
+    fs.file(agents, RICH_BLOCK);
+    const originals = [await fs.readText(HUB), await fs.readText(agents)];
+    let failed = false;
+    const injected: FileSystemPort = new Proxy(fs, {
+      get(target, property) {
+        if (property === "writeText") {
+          return async (path: string, text: string) => {
+            if (path === agents && !failed) {
+              failed = true;
+              throw new Error("fallo inyectado en AGENTS.md");
+            }
+            return target.writeText(path, text);
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(applyWorkspaceMigration(injected, paths)).rejects.toThrow("fallo inyectado");
+    expect([await fs.readText(HUB), await fs.readText(agents)]).toEqual(originals);
+  });
+
   function legacyHub(): MemFs {
     return hub({
       claude: `# CLAUDE.md\n\n${RICH_BLOCK}\n\n${APPENDED_STUB}\n`,
@@ -234,6 +260,37 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
 // ─── ante duda, no se adivina ────────────────────────────────────────────────
 
 describe("cuando el histórico y el disco se contradicen, la sesión no se toca", () => {
+  it("una fila (local) y la absoluta vieja de la misma fuente se comparan por la ruta resuelta", async () => {
+    const portable = APPENDED_STUB.replace(
+      "_Sin fuentes declaradas. Edita manualmente o usa `project-md-upsert --init`._",
+      "| Alias | Path | Rama principal |\n|---|---|---|\n| cli | (local) | main |",
+    );
+    const text = `${RICH_BLOCK}\n\n${portable}\n`;
+    const fs = hub({ claude: text });
+    fs.file(
+      paths.cwdLocalConfigFile(),
+      JSON.stringify({ version: 1, sources: { cli: "/repos/cli" } }),
+    );
+    const plan = await planWorkspaceMigration(fs, paths);
+    expect(plan.conflicts).toEqual([]);
+    expect(plan.markers).toMatchObject([{ drops_duplicate: true }]);
+    expect(await fs.readText(HUB)).toBe(text);
+    const applied = await applyWorkspaceMigration(fs, paths);
+    if ("error" in applied) throw new Error(applied.error);
+    expect((await fs.readText(HUB)).match(/WORKFLOW-PROJECT-START/g)).toHaveLength(1);
+  });
+
+  it("sin la ruta local no adivina que (local) equivale a una absoluta vieja", async () => {
+    const portable = APPENDED_STUB.replace(
+      "_Sin fuentes declaradas. Edita manualmente o usa `project-md-upsert --init`._",
+      "| Alias | Path | Rama principal |\n|---|---|---|\n| cli | (local) | main |",
+    );
+    const fs = hub({ claude: `${RICH_BLOCK}\n\n${portable}\n` });
+    const plan = await planWorkspaceMigration(fs, paths);
+    expect(plan.markers).toEqual([]);
+    expect(plan.conflicts.map((conflict) => conflict.reason)).toEqual(["duplicado_con_contenido"]);
+  });
+
   it("el histórico la da por activa y la carpeta ya tiene su centinela", async () => {
     const fs = hub({
       history: history("| 007-triage | 2025-11-03 | active | — |"),

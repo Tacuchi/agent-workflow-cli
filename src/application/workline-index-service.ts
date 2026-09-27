@@ -31,6 +31,7 @@ import {
   DEFAULT_DOCS_CANON,
   resolveCoreDocsCanon,
 } from "./docs-canon-service.js";
+import { readHistoryRows } from "./history-table.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
@@ -65,7 +66,7 @@ import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
 import { SessionsService } from "./sessions-service.js";
 import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
-import { type OrphanUnit, runWorktree } from "./worktree-service.js";
+import { type OrphanUnit, type WorktreeListOutput, runWorktree } from "./worktree-service.js";
 
 /**
  * The one reading of the workspace's Workline documents.
@@ -451,6 +452,8 @@ export interface PipelineItem {
 
 export interface WorklineIndex {
   workspace: IndexedWorkspace;
+  /** Newest declared HISTORY date or CHECKPOINT modification day; no stored block timestamp. */
+  last_activity: string | null;
   specs: IndexedSpec[];
   plans: IndexedPlan[];
   sessions: IndexedSession[];
@@ -475,6 +478,9 @@ export interface WorklineIndex {
    * uncommitted.
    */
   orphan_units: OrphanUnit[];
+  /** Sources not inspectable here: a partial worktree inventory is never an empty one. */
+  unreadable_sources?: WorktreeListOutput["unreadable"];
+  isolation_error?: string;
   /**
    * Retirements left IN FLIGHT — neither applied nor undone.
    *
@@ -569,6 +575,7 @@ export async function buildWorklineIndex(
   const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now, heldPaths);
   const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now, heldPaths);
   const sessions = await readSessions(fs, env, paths, now, docs);
+  const lastActivity = await workspaceLastActivity(fs, paths, sessions);
   const isolation = await readIsolation(fs, env, paths, input.git);
   for (const session of sessions) {
     session.units = isolation.bySession.get(session.folder) ?? [];
@@ -610,6 +617,7 @@ export async function buildWorklineIndex(
 
   return {
     workspace,
+    last_activity: lastActivity,
     specs,
     plans,
     sessions,
@@ -618,6 +626,8 @@ export async function buildWorklineIndex(
     loose_sessions: looseSessions(sessions),
     designs,
     orphan_units: isolation.orphans,
+    ...(isolation.unreadable.length > 0 ? { unreadable_sources: isolation.unreadable } : {}),
+    ...(isolation.error !== undefined ? { isolation_error: isolation.error } : {}),
     pending_retirements: await readPendingRetirements(fs, paths),
     reservations: slotScan.slots.map((slot) => ({
       file: slot.path,
@@ -632,6 +642,32 @@ export async function buildWorklineIndex(
     ...(slotScan.error !== undefined ? { reservations_error: slotScan.error } : {}),
     ...(canon.ok ? {} : { docs_canon_error: canon.error }),
   };
+}
+
+async function workspaceLastActivity(
+  fs: FileSystemPort,
+  paths: PathsService,
+  sessions: IndexedSession[],
+): Promise<string | null> {
+  const dates: string[] = [];
+  try {
+    if (await fs.exists(paths.cwdHistoryFile())) {
+      for (const row of readHistoryRows(await fs.readText(paths.cwdHistoryFile()))) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(row.date)) dates.push(row.date);
+      }
+    }
+  } catch {
+    // A missing/unreadable record cannot contribute a date.
+  }
+  for (const session of sessions) {
+    if (!session.has_checkpoint) continue;
+    try {
+      dates.push(localDateIso((await fs.stat(join(session.path, "CHECKPOINT.md"))).mtime));
+    } catch {
+      // A checkpoint not stat-able contributes no evidence of activity.
+    }
+  }
+  return dates.sort().at(-1) ?? null;
 }
 
 /**
@@ -679,23 +715,34 @@ async function readIsolation(
   env: EnvPort,
   paths: PathsService,
   git: GitPort | undefined,
-): Promise<{ bySession: Map<string, SessionUnit[]>; orphans: OrphanUnit[] }> {
-  const empty = { bySession: new Map<string, SessionUnit[]>(), orphans: [] };
+): Promise<{
+  bySession: Map<string, SessionUnit[]>;
+  orphans: OrphanUnit[];
+  unreadable: WorktreeListOutput["unreadable"];
+  error?: string;
+}> {
+  const empty = {
+    bySession: new Map<string, SessionUnit[]>(),
+    orphans: [] as OrphanUnit[],
+    unreadable: [] as WorktreeListOutput["unreadable"],
+  };
   if (git === undefined) return empty;
   let listed: Awaited<ReturnType<typeof runWorktree>>;
   try {
     listed = await runWorktree({ fs, env, git, paths }, { action: "list" });
-  } catch {
-    return empty;
+  } catch (err) {
+    return { ...empty, error: `no se pudieron listar las unidades: ${(err as Error).message}` };
   }
-  if (!("units" in listed)) return empty;
+  if ("error" in listed) return { ...empty, error: listed.message };
+  if (!("units" in listed))
+    return { ...empty, error: "aw worktree list devolvió un inventario inesperado" };
   const bySession = new Map<string, SessionUnit[]>();
   for (const unit of listed.units) {
     const current = bySession.get(unit.session) ?? [];
     current.push({ alias: unit.alias, path: unit.path, branch: unit.branch });
     bySession.set(unit.session, current);
   }
-  return { bySession, orphans: listed.orphans };
+  return { bySession, orphans: listed.orphans, unreadable: listed.unreadable };
 }
 
 // ── pipeline ─────────────────────────────────────────────────────────────────
@@ -1397,7 +1444,7 @@ async function readWorkspace(
       const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
       if (block !== null) configured = true;
       if (block?.proyecto) {
-        name = block.proyecto;
+        name = block.proyecto.split("\n")[0]?.trim() || name;
         break;
       }
     } catch {

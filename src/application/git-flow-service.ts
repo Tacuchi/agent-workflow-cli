@@ -6,7 +6,12 @@ import {
   isWorkingBranch,
   resolveSourceBranches,
 } from "./branch-resolver.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ProjectFuente,
+  SourcePathMissingError,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProdConsent, spendProdConsent } from "./prod-consent.js";
 import { semanticDigest } from "./semantic-operation/protocol.js";
@@ -61,6 +66,7 @@ export interface GitFlowSourceResult {
   merge_origin?: string | null;
   conflicted_files?: string[];
   error?: string;
+  error_code?: "SOURCE_PATH_MISSING";
 }
 
 export interface GitFlowResult {
@@ -134,9 +140,23 @@ export async function runGitFlow(
   }
 
   const dryRun = input.dryRun === true;
-  const entries = selected.sources.map((source) =>
-    planSource(source, resolveSourceBranches(source, block), input),
-  );
+  const entries: PlannedSource[] = [];
+  for (const source of selected.sources) {
+    try {
+      const path = await requireSourcePath(fs, source);
+      entries.push(planSource({ ...source, path }, resolveSourceBranches(source, block), input));
+    } catch (err) {
+      entries.push({
+        source,
+        ops: null,
+        result: {
+          ...sourceError(source.alias, (err as Error).message),
+          ...(err instanceof SourcePathMissingError ? { error_code: err.code } : {}),
+        },
+        publishesProd: false,
+      });
+    }
+  }
 
   const gated = dryRun ? null : prodPublicationGate(input, entries);
   if (gated !== null) return gated;
@@ -219,7 +239,7 @@ function planDigest(entries: PlannedSource[]): string {
 
 /** One selected source, planned: either its ops, or the result that replaces running them. */
 type PlannedSource =
-  | { source: ProjectFuente; ops: PlannedOp[]; publishesProd: boolean }
+  | { source: ProjectFuente & { path: string }; ops: PlannedOp[]; publishesProd: boolean }
   | { source: ProjectFuente; ops: null; result: GitFlowSourceResult; publishesProd: false };
 
 /**
@@ -227,7 +247,7 @@ type PlannedSource =
  * a fact about the whole plan, and consent is asked for it before the first step.
  */
 function planSource(
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   branches: SourceBranchRoles,
   input: GitFlowInput,
 ): PlannedSource {
@@ -459,7 +479,7 @@ function syncPlan(prod: string, workDest: string): PlannedOp[] {
 
 async function executePlan(
   git: GitPort,
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   ops: PlannedOp[],
 ): Promise<GitFlowSourceResult> {
   const repo = source.path;

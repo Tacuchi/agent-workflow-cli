@@ -199,6 +199,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       PLAN_EXEC_BATCH_COMMIT_UNOBSERVABLE: "envelope",
       PLAN_EXEC_BATCH_COMMIT_MESSAGE_INVALID: "evaluated",
       PLAN_TEST_RUN_NOT_EXECUTED: "evaluated",
+      PLAN_FINAL_PIPELINE_MISSING: "evaluated",
       PLAN_PREEXISTING_FAILURES_INVALID: "evaluated",
       PLAN_TEST_FAILURES_UNREADABLE: "evaluated",
       PLAN_TEST_FAILURE_NEW: "evaluated",
@@ -1282,6 +1283,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
     it("el contrato persistido no se movió: una prueba lo fija", () => {
       // La v12 agregó tipos de traza y la v13 las reentradas, la base y la acreditación
       // de cada lote; la v11 y la v12 se siguen continuando con su paso de subida, y de la v10 hacia atrás sólo se lee.
+      // La v14 registra retiros de señales; v11–v13 conservan su pasado.
       expect(FLOW_RUN_STATE_VERSION).toBe(14);
     });
 

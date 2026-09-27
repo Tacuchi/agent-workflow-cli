@@ -229,6 +229,7 @@ describe("Cerrar aplica finalize y conserva lo pendiente (073 F1)", () => {
             ],
           },
     );
+    await mkdir(join(workdir, "cli"));
     await writeFile(
       join(workdir, "AGENTS.md"),
       [

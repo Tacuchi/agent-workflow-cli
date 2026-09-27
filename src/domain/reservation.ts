@@ -17,11 +17,14 @@
  */
 
 /** The exact bytes a claim leaves behind for the session that owns it. */
-export function reservationMarker(owner: string): string {
-  return `<!-- aw:reserva ${owner} -->\n`;
+export function reservationMarker(owner: string, material?: string): string {
+  return `<!-- aw:reserva ${owner} -->\n${material === undefined ? "" : `<!-- aw:material ${material} -->\n`}`;
 }
 
-const MARKER = /^<!--\s*aw:reserva\s+(\S+)\s*-->$/;
+/** Lives inside a numbered directory; a marker-only directory is not a published dossier. */
+export const FOLDER_RESERVATION_MARKER = ".aw-reservation";
+
+const MARKER = /^<!--\s*aw:reserva\s+(\S+)\s*-->(?:\n<!-- aw:material \S+ -->)?$/;
 
 /**
  * The session a reservation marker names, or `null` for anything that is not one.

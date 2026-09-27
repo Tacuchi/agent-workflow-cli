@@ -104,10 +104,8 @@ export type HookArtifact =
  * What ONE template event does on this host.
  *
  * `degraded` exists because "carried" and "omitted" cannot describe an event
- * that arrives with a piece missing — kimi takes `PostCompact` but cannot
- * express its `type: "prompt"` handler. Folding that into "carried" would
- * promise a resume the host never performs; folding it into "omitted" would
- * hide a hook that does run.
+ * that arrives with a piece missing. Keep this state for future template
+ * handlers a host cannot carry, not for the command-only PostCompact of today.
  */
 export type HookEventSupport =
   | { state: "carried"; native: string }
@@ -814,11 +812,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
         PreToolUse: { state: "carried", native: "PreToolUse" },
         SessionEnd: { state: "carried", native: "SessionEnd" },
         PreCompact: { state: "carried", native: "PreCompact" },
-        PostCompact: {
-          state: "degraded",
-          native: "PostCompact",
-          loss: 'its type: "prompt" handler cannot be expressed in config.toml and is reported as skipped',
-        },
+        PostCompact: { state: "carried", native: "PostCompact" },
       },
       verified: "2026-07-29, against kimi 0.29.2 (shipped binary + live probes)",
     },

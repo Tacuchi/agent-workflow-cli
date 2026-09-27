@@ -37,6 +37,9 @@ class AtomicFakeFs implements FileSystemPort {
   async publishTextExclusive(p: string, content: string): Promise<{ created: boolean }> {
     return this.writeTextExclusive(p, content);
   }
+  async publishBytesExclusive(): Promise<{ created: boolean }> {
+    throw new Error("lock fake does not publish binary artifacts");
+  }
   async remove(p: string): Promise<void> {
     this.files.delete(p);
   }

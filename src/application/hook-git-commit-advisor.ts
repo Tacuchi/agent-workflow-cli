@@ -6,7 +6,7 @@ import { parseHookPayload } from "./hook-common.js";
 import type { PathsService } from "./paths-service.js";
 import { CLOSED_MARKER, listSessionFolders, sessionNumericCode } from "./session-resolver.js";
 
-const REFERENCE_DOC = "skills/session/references/commits-policy.md";
+const REFERENCE_DOC = "skills/w/roles/git/ROLE.md · Canonical message format";
 const GIT_COMMIT_RE = /\bgit\s+commit\b/;
 const COMMIT_MSG_RE = /\s-m\s+(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/;
 const SESSION_TAG_RE = new RegExp(`\\bsession${CORRELATIVE_SOURCE}\\b`, "i");

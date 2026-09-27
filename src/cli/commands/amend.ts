@@ -14,6 +14,7 @@
  */
 
 import {
+  type AmendCheck,
   type Amendment,
   type AmendmentEvent,
   amendDocument,
@@ -31,7 +32,7 @@ type Action = "apply" | "revert" | "list";
 const ACTIONS = new Set<Action>(["apply", "revert", "list"]);
 
 const USAGE =
-  "uso: amend apply <spec|plan> --de <texto> --a <texto> --declaracion <motivo> | amend revert <id> | amend list [documento]";
+  "uso: amend apply <spec|plan> --de <texto> --a <texto> [--check | --declaracion <motivo>] | amend revert <id> | amend list [documento]";
 
 export interface AmendApplyOutput {
   action: "apply";
@@ -53,7 +54,11 @@ export interface AmendListOutput {
   events: AmendmentEvent[];
 }
 
-export type AmendOutput = AmendApplyOutput | AmendRevertOutput | AmendListOutput;
+export type AmendOutput =
+  | AmendApplyOutput
+  | AmendRevertOutput
+  | AmendListOutput
+  | (AmendCheck & { action: "check"; next: string });
 
 function refuse(code: string, message: string, action: string): CommandResult<AmendOutput> {
   return failSemantic<AmendOutput>({ code, message, action });
@@ -61,13 +66,17 @@ function refuse(code: string, message: string, action: string): CommandResult<Am
 
 export const amendCommand: CliCommand<AmendOutput> = {
   name: "amend",
-  flags: { known: ["de", "a", "declaracion", "declaration"] },
+  flags: {
+    known: ["de", "a", "declaracion", "declaration"],
+    actions: { apply: { known: ["check"] } },
+  },
   describe:
     "Correct the WORDING of an already closed spec or plan, in one act, without opening a refinement. " +
     "Cross-cutting: it opens no flow and creates no session. It demands an explicit declaration that the correction changes no scope, criteria or rules, " +
     "writes under the workspace lock with the document's own digest as the compare-and-swap base, and records the exact pre-image in an append-only ledger. " +
     "It refuses structurally what does touch the contract — a spec's functional content, or a plan's header, phase/task graph, closing clauses or batches — and names the refinement instead. " +
-    "`revert` undoes one recorded correction. Usage: aw amend apply <documento> --de <texto> --a <texto> --declaracion <motivo> | aw amend revert <id> | aw amend list [documento].",
+    "`apply --check` classifies the replacement without writing or recording: wording → aw amend, contract or open document → its refine. No declaration is required to check. " +
+    "`revert` undoes one recorded correction. Usage: aw amend apply <documento> --de <texto> --a <texto> [--check | --declaracion <motivo>] | aw amend revert <id> | aw amend list [documento].",
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<AmendOutput>> {
     const action = args.rest[0] as Action | undefined;
@@ -114,9 +123,13 @@ export const amendCommand: CliCommand<AmendOutput> = {
       from,
       to,
       declaration: declaration ?? "",
+      check: args.flags.has("--check"),
     });
     if (applied.status === "failed") {
       return refuse(applied.failure.code, applied.failure.message, applied.failure.action);
+    }
+    if (applied.status === "checked") {
+      return { ok: true, data: { ...applied, action: "check", next: applied.action }, exitCode: 0 };
     }
     return {
       ok: true,
@@ -134,6 +147,9 @@ export const amendCommand: CliCommand<AmendOutput> = {
     if (!result.ok || result.data === undefined) return "";
     const data = result.data;
     if (data.action === "list") return renderList(data);
+    if (data.action === "check") {
+      return `${data.document}:${data.line} · ${data.classification}\n${data.reason}\nPropuesta: ${data.next}\nSin escrituras ni registro.`;
+    }
     const verb = data.action === "apply" ? "Corregido" : "Revertido";
     return [
       `${verb} ${data.amendment.document} · corrección ${data.amendment.id}`,

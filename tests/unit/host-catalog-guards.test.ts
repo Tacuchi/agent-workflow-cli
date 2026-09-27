@@ -201,6 +201,14 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
     }
   });
 
+  it("kimi lleva PostCompact completo y sin pérdida de prompt", () => {
+    const hooks = HARNESSES.find((h) => h.id === "kimi")?.hooks;
+    expect(hooks?.events.PostCompact).toEqual({ state: "carried", native: "PostCompact" });
+    expect(hooks === null || hooks === undefined ? "" : hookCoverage(hooks)).not.toContain(
+      "partial: PostCompact",
+    );
+  });
+
   it("la asimetría se proyecta: el estado de hooks dice qué lleva y qué omite", () => {
     for (const spec of HOSTS_WITH_HOOKS) {
       const hooks = spec.hooks;

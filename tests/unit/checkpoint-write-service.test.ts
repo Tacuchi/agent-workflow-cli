@@ -54,6 +54,9 @@ const localChange = (path: string, untracked = false): LocalChange => ({
  * feature they are supposed to cover.
  */
 class FakeGit implements GitPort {
+  async upstreamBranch(): Promise<string | null> {
+    return null;
+  }
   /** Every repoPath git was asked about, so a test can prove WHERE it looked. */
   readonly asked: string[] = [];
 

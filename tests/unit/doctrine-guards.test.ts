@@ -1275,18 +1275,14 @@ describe("Doctrine guards — G20 · what a pending item owes, and how the choic
   });
 
   it("la escalación a SPEC del fix preview tiene puntero escribible y su rótulo no queda huérfano", async () => {
-    // `Escalar a spec` is offered at the fix preview — with the quick session
-    // ALREADY seeded and before a single line of code — and the CLI hands off
-    // terminally to `/w:spec-new`. Neither disposition case written for the
-    // mid-loop escalation fits it (there is no edited code, and no `NNN` yet),
-    // and the only session-less exception the doctrine grants is the entry gate,
-    // so without these two sentences the run leaves a quick session open whose
-    // `BACKLOG` pointer has no writable form.
+    // Both entry and preview escalation close the existing quick in the CLI,
+    // which must preserve a usable pointer before the session closes.
     const quick = await readSurface(join("loops", "quick-loop", "LOOP.md"));
     expect(quick).toContain("`Escalar a spec` → *Mid-loop escalation*");
     expect(quick).toContain(
-      '"escalated at the preview — continue in `/w:spec-new`" when no code and no `NNN` exist yet',
+      "The CLI writes the escalation pointer in `BACKLOG` before closing the quick.",
     );
+    expect(quick).toContain("**`Cambiar a SPEC`** closes the existing quick");
     // And the code the pointer travels with may not exist at all.
     expect(quick).toContain("**Any already-edited code stays**");
     // The label is the CLI's, read where it lives.

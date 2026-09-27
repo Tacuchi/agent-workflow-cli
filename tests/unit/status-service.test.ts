@@ -78,6 +78,34 @@ function fullWorkspace(): FakeFs {
 // ── tests ──────────────────────────────────────────────────────────────────
 
 describe("runStatusCommand — full dashboard", () => {
+  it("usa la fecha más reciente entre HISTORY y CHECKPOINT y sólo la primera línea del nombre", async () => {
+    const fs = fullWorkspace();
+    fs.file(
+      "/cwd/CLAUDE.md",
+      "<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nNombre\n\nDescripción\n<!-- WORKFLOW-PROJECT-END -->\n",
+    );
+    fs.file(
+      "/cwd/.workflow/HISTORY.md",
+      "# HISTORY\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 002-plan-exec | 2026-06-22 | cerrada | — |\n",
+    );
+    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
+    expect(out.workspace.name).toBe("Nombre");
+    expect(out.last_activity).toBe("2026-06-22");
+    const rendered = statusCommand.renderHuman?.({ ok: true, data: out, exitCode: 0 }, {
+      detail: false,
+    } as never);
+    expect(rendered).toContain("Última actividad: 2026-06-22");
+
+    fs.file(
+      "/cwd/.workflow/HISTORY.md",
+      "# HISTORY\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 002-plan-exec | 2026-06-19 | cerrada | — |\n",
+      new Date(2026, 11, 1),
+    );
+    expect((await runStatusCommand(fs, fakeEnv, paths(), { now: NOW })).last_activity).toBe(
+      "2026-06-20",
+    );
+  });
+
   it("aggregates workspace, specs, plans, sessions, discarded", async () => {
     const out = await runStatusCommand(fullWorkspace(), fakeEnv, paths(), { now: NOW });
 

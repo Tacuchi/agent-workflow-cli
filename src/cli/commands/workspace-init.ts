@@ -67,8 +67,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
         : {
             error: {
               code: "WORKSPACE_INIT_FAILED",
-              message:
-                "workspace-init no completó exitosamente; revisar data.project_md y data.attach_multiroot",
+              message: workspaceInitFailureMessage(data),
             },
           }),
       exitCode: data.ok ? 0 : 1,
@@ -95,6 +94,22 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     // carry is the one thing here a person has to know, and declaring it only in
     // a JSON field this projection replaces is not declaring it at all.
     const projectMd = data.project_md;
+    if ("results" in projectMd) {
+      for (const file of projectMd.results ?? []) {
+        lines.push(
+          `  ${file.file} ${file.action ?? "revertido"} · ${file.path}${file.error ? ` · error: ${file.error}` : ""}`,
+        );
+      }
+    }
+    for (const source of data.source_actions ?? [])
+      lines.push(
+        `  fuente ${source.alias}: ${source.error ? "revertida" : source.action}${source.error ? ` · error: ${source.error}` : ""}`,
+      );
+    if ("migrated" in projectMd) {
+      for (const alias of projectMd.migrated ?? []) lines.push(`  fuente ${alias}: ruta migrada`);
+      for (const alias of projectMd.not_migrated ?? [])
+        lines.push(`  fuente ${alias}: ruta no migrada (no existe en este host)`);
+    }
     const dropped =
       projectMd !== undefined && "dropped_lines" in projectMd
         ? (projectMd.dropped_lines ?? [])
@@ -108,6 +123,24 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     return `${lines.join("\n")}\n`;
   },
 };
+
+function workspaceInitFailureMessage(data: WorkspaceInitResult): string {
+  const lines = ["workspace-init no completó exitosamente"];
+  if ("results" in data.project_md) {
+    for (const file of data.project_md.results ?? []) {
+      lines.push(
+        `${file.file}: ${file.error ? `revertido (${file.error})` : (file.action ?? "sin cambio")} · ${file.path}`,
+      );
+    }
+  } else if ("error" in data.project_md) {
+    lines.push(`bloque: ${data.project_md.error}`);
+  }
+  for (const source of data.source_actions ?? []) {
+    lines.push(`fuente ${source.alias}: ${source.error ?? source.action}`);
+  }
+  if ("error" in data.attach_multiroot) lines.push(`multiroot: ${data.attach_multiroot.error}`);
+  return lines.join("\n");
+}
 
 function toWorkspaceSource(spec: FuenteSpec): WorkspaceSource {
   return {

@@ -15,7 +15,11 @@ import { locateRun, readRun } from "./flow/run-state-service.js";
 import { withCwdLock } from "./lock-service.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { recordIntegration, recordUnitTaken } from "./session-custody-recorder.js";
 import { readCustody } from "./session-custody-service.js";
@@ -111,7 +115,7 @@ export interface WorktreeListOutput {
   units: ListedUnit[];
   orphans: OrphanUnit[];
   /** Sources whose worktrees could not be read; their units are NOT in the lists. */
-  unreadable: Array<{ alias: string; error: string }>;
+  unreadable: Array<{ alias: string; error: string; code?: "SOURCE_PATH_MISSING" }>;
   /** The session the list was narrowed to, when the caller named one. */
   session?: string;
 }
@@ -189,6 +193,8 @@ export interface WorktreeIntegrateSessionOutput {
   reclaimed: ReclaimedUnit[];
   /** Units of this session left standing, each with why and its next step. */
   retained: RetainedUnit[];
+  /** Declared sources whose units could not be inspected on this host. */
+  unreadable?: WorktreeListOutput["unreadable"];
   /** What to run for the first pending alias or retained unit; `null` when there is none. */
   next: string | null;
 }
@@ -243,7 +249,7 @@ export interface WorktreeReclaimOutput {
   reclaimed: ReclaimedUnit[];
   retained: RetainedUnit[];
   /** Sources whose trees could not be read; nothing of theirs was collected. */
-  unreadable: Array<{ alias: string; error: string }>;
+  unreadable: Array<{ alias: string; error: string; code?: "SOURCE_PATH_MISSING" }>;
   /** What to run for the first retained unit; `null` when nothing was retained. */
   next: string | null;
 }
@@ -315,8 +321,20 @@ async function integrateSession(
   const swept = await reclaimUnits(deps, { action: "reclaim", sessionCode: session });
   const residue =
     "error" in swept
-      ? { reclaimed: [] as ReclaimedUnit[], retained: [] as RetainedUnit[], next: null }
+      ? {
+          reclaimed: [] as ReclaimedUnit[],
+          retained: [] as RetainedUnit[],
+          unreadable: [
+            { alias: "workspace", error: swept.message },
+          ] as WorktreeReclaimOutput["unreadable"],
+          next: null,
+        }
       : swept;
+  const unreadable = [
+    ...new Map(
+      [...listed.unreadable, ...residue.unreadable].map((item) => [item.alias, item] as const),
+    ).values(),
+  ];
   // An alias whose unit was collected is no longer holding one, so it leaves
   // `pending`. That is not hiding its refusal — the refusal stays in `results` —
   // it is that a unit with nothing the working branch lacks had no merge pending
@@ -333,7 +351,13 @@ async function integrateSession(
     pending: holding,
     reclaimed: residue.reclaimed,
     retained: residue.retained,
-    next: (first !== undefined ? (nextOf.get(first) ?? null) : null) ?? residue.next,
+    ...(unreadable.length > 0 ? { unreadable } : {}),
+    next:
+      (first !== undefined ? (nextOf.get(first) ?? null) : null) ??
+      residue.next ??
+      (unreadable[0]?.code === "SOURCE_PATH_MISSING"
+        ? `aw add-source ${unreadable[0].alias}:<ruta>`
+        : null),
   };
 }
 
@@ -578,7 +602,7 @@ async function integrateLocked(
 }
 
 interface ResolvedTarget {
-  source: ProjectFuente;
+  source: ProjectFuente & { path: string };
   identity: UnitIdentity;
   path: string;
   branch: string;
@@ -601,7 +625,7 @@ async function resolveTarget(
     return {
       error: "no_sources_declared",
       message: "el bloque WORKSPACE no declara ninguna fuente",
-      hint: "declará la fuente en la tabla Fuentes antes de pedir una unidad",
+      hint: "declará la fuente con aw add-source <alias>:<ruta>:<rama> antes de pedir una unidad",
     };
   }
   if (input.alias === undefined) {
@@ -618,6 +642,13 @@ async function resolveTarget(
       message: `'${input.alias}' no es una fuente declarada`,
       hint: `fuentes declaradas: ${sources.map((s) => s.alias).join(", ")}`,
     };
+  }
+
+  let sourcePath: string;
+  try {
+    sourcePath = await requireSourcePath(deps.fs, source);
+  } catch (err) {
+    return { error: "SOURCE_PATH_MISSING", message: (err as Error).message };
   }
 
   const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
@@ -659,7 +690,7 @@ async function resolveTarget(
       message: effective.reason ?? "custodia ilegible",
     };
   return {
-    source,
+    source: { ...source, path: sourcePath },
     identity,
     path: unitPath(await canonicalUnitsRoot(deps), identity),
     branch: unitBranch(session),
@@ -884,7 +915,7 @@ async function reclaimUnits(
     return {
       error: "no_sources_declared",
       message: "el bloque WORKSPACE no declara ninguna fuente",
-      hint: "declará la fuente en la tabla Fuentes antes de pedir una recogida",
+      hint: "declará la fuente con aw add-source <alias>:<ruta>:<rama> antes de pedir una recogida",
     };
   }
   if (input.alias !== undefined && !sources.some((s) => s.alias === input.alias)) {
@@ -906,7 +937,11 @@ async function reclaimUnits(
     if (input.alias !== undefined && source.alias !== input.alias) continue;
     const swept = await sweepSource(deps, source, { root, key, only, sessions, block });
     if ("error" in swept) {
-      unreadable.push({ alias: source.alias, error: swept.error });
+      unreadable.push({
+        alias: source.alias,
+        error: swept.error,
+        ...(swept.code ? { code: swept.code } : {}),
+      });
       continue;
     }
     reclaimed.push(...swept.reclaimed);
@@ -918,7 +953,11 @@ async function reclaimUnits(
     reclaimed,
     retained,
     unreadable,
-    next: retained[0]?.next ?? null,
+    next:
+      retained[0]?.next ??
+      (unreadable[0]?.code === "SOURCE_PATH_MISSING"
+        ? `aw add-source ${unreadable[0].alias}:<ruta>`
+        : null),
   };
 }
 
@@ -933,11 +972,20 @@ async function sweepSource(
     sessions: SessionStates;
     block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
   },
-): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] } | { error: string }> {
-  if (!(await deps.git.isGitRepo(source.path))) return { reclaimed: [], retained: [] };
+): Promise<
+  | { reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }
+  | { error: string; code?: "SOURCE_PATH_MISSING" }
+> {
+  let repo: string;
+  try {
+    repo = await requireSourcePath(deps.fs, source);
+  } catch (err) {
+    return { error: (err as Error).message, code: "SOURCE_PATH_MISSING" };
+  }
+  if (!(await deps.git.isGitRepo(repo))) return { reclaimed: [], retained: [] };
   let trees: WorktreeEntry[];
   try {
-    trees = await deps.git.worktreeList(source.path);
+    trees = await deps.git.worktreeList(repo);
   } catch (err) {
     return { error: (err as Error).message };
   }
@@ -953,7 +1001,7 @@ async function sweepSource(
       candidate.session,
       resolveSourceBranches(source, ctx.block).work,
     );
-    const swept = await sweepOne(deps, source, tree, work, candidate);
+    const swept = await sweepOne(deps, { ...source, path: repo }, tree, work, candidate);
     if ("retained" in swept) {
       retained.push(swept.retained);
       continue;
@@ -965,7 +1013,7 @@ async function sweepSource(
     else reclaimed.push(swept.reclaimed);
   }
   if (vanished.length > 0) {
-    const settled = await prune(deps, source, vanished);
+    const settled = await prune(deps, { ...source, path: repo }, vanished);
     reclaimed.push(...settled.reclaimed);
     retained.push(...settled.retained);
   }
@@ -988,7 +1036,7 @@ async function baseForReclaim(
 /** The vanished trees git dropped, or the same ones still listed and why. */
 async function prune(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   vanished: ReclaimedUnit[],
 ): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }> {
   await ensureWorklineMaterialized(deps.fs, deps.paths);
@@ -1030,7 +1078,7 @@ function candidateOf(
 /** One candidate, weighed and then collected or left standing. */
 async function sweepOne(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   tree: WorktreeEntry,
   work: string | null,
   candidate: { session: string; alias: string; orphan: OrphanUnit["reason"] | null },
@@ -1099,7 +1147,7 @@ async function sweepOne(
  */
 async function reclaimability(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   tree: WorktreeEntry,
   work: string,
   orphan: OrphanUnit["reason"] | null,
@@ -1177,7 +1225,7 @@ async function reclaimability(
 
 /** How the work of a unit that is not on the working branch gets back onto it. */
 function recoveryFor(
-  source: ProjectFuente,
+  source: ProjectFuente & { path: string },
   tree: WorktreeEntry,
   orphan: OrphanUnit["reason"] | null,
   work: string,
@@ -1232,7 +1280,11 @@ async function listUnits(
       // Reported, never skipped in silence: a source whose trees cannot be read
       // would otherwise show up as "no units", which is the one answer that is
       // certainly wrong — its flows are exactly the ones nobody would clean up.
-      unreadable.push({ alias: source.alias, error: scanned.error });
+      unreadable.push({
+        alias: source.alias,
+        error: scanned.error,
+        ...(scanned.code ? { code: scanned.code } : {}),
+      });
       continue;
     }
     units.push(...scanned.units);
@@ -1252,14 +1304,22 @@ async function scanSource(
   deps: WorktreeDeps,
   source: ProjectFuente,
   ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
-): Promise<{ units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string }> {
+): Promise<
+  { units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string; code?: "SOURCE_PATH_MISSING" }
+> {
   const empty = { units: [], orphans: [] };
   // Not a repo is not unreadable: it has no worktrees to report, and calling it
   // an error would put every non-git source in front of the reader forever.
-  if (!(await deps.git.isGitRepo(source.path))) return empty;
+  let repo: string;
+  try {
+    repo = await requireSourcePath(deps.fs, source);
+  } catch (err) {
+    return { error: (err as Error).message, code: "SOURCE_PATH_MISSING" };
+  }
+  if (!(await deps.git.isGitRepo(repo))) return empty;
   let trees: WorktreeEntry[];
   try {
-    trees = await deps.git.worktreeList(source.path);
+    trees = await deps.git.worktreeList(repo);
   } catch (err) {
     return { error: (err as Error).message };
   }
@@ -1270,7 +1330,7 @@ async function scanSource(
     if (identity === null || identity.workspaceKey !== ctx.key) continue;
     if (ctx.only !== null && identity.session !== ctx.only) continue;
     const reason = orphanReason(identity.session, ctx.sessions, tree.prunable);
-    if (reason === null) units.push(await liveUnit(deps, identity, source.path, tree));
+    if (reason === null) units.push(await liveUnit(deps, identity, repo, tree));
     else orphans.push(orphanOf(identity, tree, reason));
   }
   return { units, orphans };

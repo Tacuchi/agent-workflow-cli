@@ -12,10 +12,37 @@ const DIRECT_GUIDE = fileURLToPath(
 const AUTHORING_MANUAL = fileURLToPath(
   new URL("../../skills/w/exports/export-scripts/EXPORT.md", import.meta.url),
 );
+const SQL_ROLE = fileURLToPath(new URL("../../skills/w/roles/sql/ROLE.md", import.meta.url));
+const SCRIPTS_FORWARD = fileURLToPath(
+  new URL("../../skills/w/artifacts/artifacts-core/SCRIPTS.sql", import.meta.url),
+);
+const SCRIPTS_REVERSE = fileURLToPath(
+  new URL("../../skills/w/artifacts/artifacts-core/SCRIPTS.rollback.sql", import.meta.url),
+);
 /** Documented for a long time, accepted by the CLI never. */
 const NEVER_EXISTED = ["--skip-standalone", "--dry-run"];
 
 describe("export-scripts — paridad entre guía directa y contrato generado", () => {
+  it("nunca pide borrar un bundle publicado para regenerarlo", async () => {
+    const manual = await readFile(AUTHORING_MANUAL, "utf8");
+    expect(manual).not.toMatch(/To regenerate, delete/);
+    expect(manual).toContain("supersede");
+  });
+
+  it("doctrina, rol y plantilla comparten cinco categorías y separan forward y rollback", async () => {
+    const [guide, manual, role, forward, reverse] = await Promise.all(
+      [DIRECT_GUIDE, AUTHORING_MANUAL, SQL_ROLE, SCRIPTS_FORWARD, SCRIPTS_REVERSE].map((file) =>
+        readFile(file, "utf8"),
+      ),
+    );
+    for (const text of [guide, manual, role, SCRIPTS_FINAL_STATE_CONTRACT]) {
+      expect(text).toContain("05-grants");
+      expect(text).toContain("rollback/");
+    }
+    expect(forward).toContain("SCRIPTS.rollback.sql");
+    expect(forward).not.toContain("-- rollback:\nALTER TABLE");
+    expect(reverse).toContain("ALTER TABLE");
+  });
   it("mantiene los anclajes del estado final neto en ambas superficies", async () => {
     const guide = await readFile(DIRECT_GUIDE, "utf8");
     for (const anchor of SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS) {

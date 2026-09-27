@@ -108,6 +108,49 @@ describe("runWorktree — the isolation unit of a flow", () => {
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
+  it("una fuente con ruta de otro host queda ilegible por alias, nunca ejecuta git en cwd", async () => {
+    writeFileSync(join(workspace, "CLAUDE.md"), block("C:/Source/acme"));
+    const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
+    expect(listed.unreadable).toEqual([
+      expect.objectContaining({
+        alias: "acme",
+        code: "SOURCE_PATH_MISSING",
+        error: expect.stringContaining("la ruta de la fuente acme no existe en este host"),
+      }),
+    ]);
+  });
+
+  it("lista e integra la fuente presente y reporta por separado la ausente", async () => {
+    writeFileSync(
+      join(workspace, "CLAUDE.md"),
+      block(source).replace(
+        `| acme | ${source} | main |`,
+        `| acme | ${source} | main |\n| remoto | (local) | main |`,
+      ),
+    );
+    const taken = await runWorktree(deps, { action: "ensure", alias: "acme", sessionCode: "103" });
+    if ("error" in taken) throw new Error(taken.message);
+    const listed = await runWorktree(deps, { action: "list" });
+    if ("error" in listed) throw new Error(listed.message);
+    expect(listed.units.map((unit) => unit.alias)).toEqual(["acme"]);
+    expect(listed.unreadable).toEqual([
+      expect.objectContaining({ alias: "remoto", code: "SOURCE_PATH_MISSING" }),
+    ]);
+
+    const integrated = await runWorktree(deps, { action: "integrate", sessionCode: "103" });
+    if ("error" in integrated || !("results" in integrated)) throw new Error("integración ausente");
+    expect(integrated.integrated).toEqual(["acme"]);
+    expect(integrated.unreadable).toEqual([
+      expect.objectContaining({ alias: "remoto", code: "SOURCE_PATH_MISSING" }),
+    ]);
+    expect(integrated.next).toBe("aw add-source remoto:<ruta>");
+    const reclaimed = await runWorktree(deps, { action: "reclaim" });
+    if ("error" in reclaimed || !("unreadable" in reclaimed)) throw new Error("recogida ausente");
+    expect(reclaimed.unreadable).toEqual([
+      expect.objectContaining({ alias: "remoto", code: "SOURCE_PATH_MISSING" }),
+    ]);
+  });
+
   it("creates the unit at its conventional path, on its own branch, leaving the checkout untouched", async () => {
     const unit = (await runWorktree(deps, {
       action: "ensure",

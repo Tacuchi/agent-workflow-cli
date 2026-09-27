@@ -59,7 +59,7 @@ describe("reportHooksArmed — el estado declara lo que el host no puede cargar"
     expect(reports.map((r) => r.target).sort()).toEqual([...HOOKS_MANAGED_TARGETS].sort());
   });
 
-  it("kimi declara sus dos pérdidas reales de la plantilla instalada", async () => {
+  it("kimi sólo declara la pérdida real del matcher de SessionStart", async () => {
     const reports = await reportHookTemplateLosses(buildCtx(home));
     const kimi = reports.find((r) => r.target === "kimi");
     expect(kimi).toBeDefined();
@@ -67,10 +67,8 @@ describe("reportHooksArmed — el estado declara lo que el host no puede cargar"
     // "no sé" y no "no pierde nada", y esa diferencia es la que este campo fija.
     expect(kimi?.template_read).toBe(true);
     const declared = (kimi?.losses ?? []).join(" | ");
-    // 1) el hook `type: "prompt"` de PostCompact no tiene comando: se omite.
-    expect(declared).toMatch(/PostCompact/);
-    expect(declared).toMatch(/prompt/);
-    // 2) el matcher de SessionStart no viaja: el hook queda sin matcher.
+    expect(declared).not.toMatch(/PostCompact|prompt/);
+    // El matcher de SessionStart no viaja: el hook queda sin matcher.
     expect(declared).toMatch(/SessionStart/);
     expect(declared).toMatch(/matcher/);
   });

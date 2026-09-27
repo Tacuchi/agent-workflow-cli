@@ -118,6 +118,7 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
 // (No flag here is ever read via `values.get()`, so routing them to `flags`
 // changes no value semantics.)
 const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
+  "check",
   "all",
   // The global alias `aw --doctor`. Without it `consumeOptionFlag` eats the next
   // token WITHOUT a leading dash as its value: `aw --doctor extra` would swallow
@@ -132,6 +133,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "verify-connection",
   "verbose",
   "dry-run",
+  "folder",
   "deep",
   "force",
   "strict",

@@ -111,7 +111,8 @@ export interface GitPort {
    * Checkout-bound evidence needs the latter distinction, so this fingerprint
    * includes the binary patch, status metadata and untracked file blobs.
    */
-  checkoutFingerprint(repoPath: string): Promise<string>;
+  /** With exclusions, bound the reading to this root and include untracked modes/types. */
+  checkoutFingerprint(repoPath: string, excluded?: readonly string[]): Promise<string>;
   /**
    * Digest of the working-tree content under `root` only, with `excluded`
    * (paths relative to `root`) left out whether or not git ignores them.
@@ -274,6 +275,8 @@ export interface GitPort {
   branchExists(repoPath: string, branch: string): Promise<boolean>;
   /** Short names of every local branch (`for-each-ref refs/heads`). */
   localBranches(repoPath: string): Promise<string[]>;
+  /** Full upstream ref of a local branch, or null when it tracks nothing. Read-only. */
+  upstreamBranch(repoPath: string, branch: string): Promise<string | null>;
   /** `remote.origin.fetch`, every value; empty when origin is not configured. */
   originFetchRefspecs(repoPath: string): Promise<string[]>;
   /**

@@ -50,6 +50,8 @@ export interface FileSystemPort {
    * mint can move to the next correlative without inspecting anything.
    */
   publishTextExclusive(path: string, content: string): Promise<{ created: boolean }>;
+  /** Publish raw bytes without lossy text conversion, atomically and exclusively. */
+  publishBytesExclusive(path: string, content: Uint8Array): Promise<{ created: boolean }>;
   /** Idempotent removal of a file or directory (recursive). A missing path is silently ignored. */
   remove(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;

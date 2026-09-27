@@ -46,6 +46,12 @@ export async function ensureWorkingBranch(
     return { ok: false, branch, reason: `${branch} no es un nombre de rama simple` };
   }
   const repo = source.path;
+  if (repo === null)
+    return {
+      ok: false,
+      branch,
+      reason: `la ruta de la fuente ${source.alias} no existe en este host; declárala con aw add-source ${source.alias}:<ruta>`,
+    };
   try {
     const local = await git.localBranches(repo);
     if (local.includes(branch)) return { ok: true, outcome: "existing", branch };

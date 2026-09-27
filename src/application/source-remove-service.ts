@@ -7,6 +7,7 @@ import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.
 import type { PathsService } from "./paths-service.js";
 import { ProcessRegistryService } from "./process-registry-service.js";
 import { runProjectMdUpsertWrite } from "./project-md-upsert-service.js";
+import { writeWorkspaceLocalConfig } from "./workspace-local-config.js";
 import {
   type WorklineMaterialization,
   ensureWorklineMaterialized,
@@ -65,10 +66,21 @@ export async function removeSource(
   const materialization = await ensureWorklineMaterialized(fs, paths);
 
   // 2. Remove multi-root visibility (claude/codex/warp/oz). Idempotent per host.
-  await runMultiroot(fs, env, paths, "detach", { paths: [fuente.path] });
+  if (fuente.path !== null) await runMultiroot(fs, env, paths, "detach", { paths: [fuente.path] });
 
   // 3. Prune the WORKSPACE block: Fuentes + working_branches + qa_branches for the alias.
-  await runProjectMdUpsertWrite(fs, env, paths, { op: "init", removeAliases: [alias] });
+  const updated = await runProjectMdUpsertWrite(fs, env, paths, {
+    op: "init",
+    removeAliases: [alias],
+  });
+  if ("error" in updated || !updated.ok)
+    return {
+      error:
+        "error" in updated
+          ? updated.error
+          : (updated.results?.find((file) => file.error)?.error ?? "el bloque no se publicó"),
+    };
+  await writeWorkspaceLocalConfig(fs, paths, { [alias]: null });
 
   // 4. Stop running processes launched from this source.
   const registry = new ProcessRegistryService(
@@ -90,7 +102,7 @@ export async function removeSource(
 
   return {
     alias,
-    path: fuente.path,
+    path: fuente.path ?? "(local)",
     processesStopped: running.length,
     ...(materialization.materialized ? { materialization } : {}),
   };

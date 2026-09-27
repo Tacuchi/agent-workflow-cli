@@ -1,10 +1,11 @@
-import { join } from "node:path";
+import { join, relative, win32 } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
 import type { PathsService } from "../paths-service.js";
 import { type ArtifactKind, findArtifact } from "../session-artifacts.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import { collectFilesByExt } from "./common.js";
+import { isRollbackSql } from "./rollback.js";
 
 // Each request-kind maps to an ordered list of on-disk ArtifactKinds tried in
 // turn (first match wins). The descriptor request-kind `objetivo` reads the new
@@ -105,13 +106,18 @@ async function detectLegacyFormat(
   };
 }
 
-async function readScriptsArtifacts(
+export async function readScriptsArtifacts(
   fs: FileSystemPort,
   sessionPath: string,
 ): Promise<{ name: string; path: string; size: number | null; is_rollback: boolean }[]> {
   const scriptsDir = join(sessionPath, SCRIPTS_SUBDIR);
-  if (!(await fs.exists(scriptsDir))) return [];
-  const files = await collectFilesByExt(fs, scriptsDir, ".sql");
+  const files = (await fs.exists(scriptsDir))
+    ? await collectFilesByExt(fs, scriptsDir, ".sql")
+    : [];
+  for (const name of ["SCRIPTS.sql", "SCRIPTS.rollback.sql"]) {
+    const path = join(sessionPath, name);
+    if (await fs.exists(path)) files.push(path);
+  }
   files.sort((a, b) => a.localeCompare(b));
   const items: { name: string; path: string; size: number | null; is_rollback: boolean }[] = [];
   for (const f of files) {
@@ -122,10 +128,13 @@ async function readScriptsArtifacts(
       // ignore
     }
     items.push({
-      name: f.split("/").pop() ?? f,
+      name: (f.includes("\\")
+        ? win32.relative(sessionPath, f)
+        : relative(sessionPath, f)
+      ).replaceAll("\\", "/"),
       path: f,
       size,
-      is_rollback: f.endsWith(".rollback.sql"),
+      is_rollback: isRollbackSql(f),
     });
   }
   return items;

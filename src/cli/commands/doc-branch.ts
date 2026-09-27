@@ -13,7 +13,7 @@ import {
   readDocBranches,
   resolveDocBranch,
 } from "../../application/doc-branch-ledger.js";
-import { readWorkspaceBlock } from "../../application/parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "../../application/parsers/project-block.js";
 import { resolveSessionTarget, sessionSlug } from "../../application/session-resolver.js";
 import { ensureWorkingBranch } from "../../application/working-branch-service.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -76,13 +76,26 @@ export const docBranchCommand: CliCommand = {
             read,
           );
           const proposed = await proposedName(identity, ctx);
-          const local =
-            proposed === null ? false : await ctx.git.branchExists(source.path, proposed);
+          let repo: string;
+          try {
+            repo = await requireSourcePath(ctx.fs, source);
+          } catch (err) {
+            return {
+              source: source.alias,
+              ...effective,
+              proposed,
+              local: false,
+              remote: false,
+              error_code: "SOURCE_PATH_MISSING",
+              error: (err as Error).message,
+            };
+          }
+          const local = proposed === null ? false : await ctx.git.branchExists(repo, proposed);
           // The locally fetched refs only: show must never contact origin.
           const remote =
             proposed === null
               ? false
-              : (await ctx.git.refValue(source.path, `refs/remotes/origin/${proposed}`)) !== null;
+              : (await ctx.git.refValue(repo, `refs/remotes/origin/${proposed}`)) !== null;
           return { source: source.alias, ...effective, proposed, local, remote };
         }),
       );
@@ -102,6 +115,12 @@ export const docBranchCommand: CliCommand = {
     const source = block.fuentes.find((item) => item.alias === alias);
     if (!source)
       return fail("INVALID_SOURCE", `la fuente ${alias ?? "(ausente)"} no está declarada`);
+    let repo: string;
+    try {
+      repo = await requireSourcePath(ctx.fs, source);
+    } catch (err) {
+      return fail("SOURCE_PATH_MISSING", (err as Error).message);
+    }
     const from = flagValue(args, "from");
     const rama = args.values.get("rama");
     if ((from === undefined) === (rama === undefined)) return fail("INVALID_INPUT", USAGE);
@@ -127,7 +146,7 @@ export const docBranchCommand: CliCommand = {
     }
     const result = await ensureWorkingBranch(
       ctx.git,
-      source,
+      { ...source, path: repo },
       branch,
       resolveSourceBranches(source, block).prod,
     );

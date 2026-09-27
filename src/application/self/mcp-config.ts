@@ -180,6 +180,8 @@ type RegisteredConnectionResult =
 
 export interface SelfMcpConfigData {
   action: SelfMcpAction;
+  /** Whether install left the chosen host with a current descriptor on disk. */
+  installed?: boolean;
   connection: SelfMcpConnectionView | null;
   connections?: SelfMcpConnectionView[];
   table?: string;
@@ -431,40 +433,50 @@ async function installConnection(
   const setup = await runGlobalSetupWithEvidence(ctx, setupInput);
   if ("ok" in setup) return refusal(hostAction(host), connectionView(ctx, connection), setup.hint);
   const doctor = runDoctor(ctx, connection, [host]);
-  const hasProblems = setup.errors.length > 0 || setup.conflicts.length > 0;
+  const installed =
+    !setup.dry_run &&
+    setup.conflicts.length === 0 &&
+    connectionView(ctx, connection).instalado[host] === "si";
+  const verificationNote =
+    installed && (setup.errors.length > 0 || doctor.summary.ok < doctor.reports.length)
+      ? ` Verificación posterior pendiente: ${setup.errors.length > 0 ? `${setup.errors.length} aviso(s) en recibo, arranque o visibilidad` : "el diagnóstico del host no confirmó la conexión"}; consultá data.setup.errors y data.doctor.`
+      : "";
   const views = connectionViews(ctx);
   if (views.kind === "invalid") return invalidRegistryResult(hostAction(host), views.issue);
   // The hint cites the file actually written (per-platform global path).
   const warpTarget = [...setup.applied, ...setup.skipped].find((r) => r.host === "warp")?.target;
   const warpHint =
-    host === "warp" && !hasProblems && warpTarget
+    host === "warp" && installed && verificationNote.length === 0 && warpTarget
       ? buildWarpPostInstallHint(mcpEntryNameFor(connection.name), "global", warpTarget)
       : undefined;
   return {
-    ok: !hasProblems,
+    ok: setup.dry_run || installed,
     data: {
       action: hostAction(host),
+      installed,
       connection: connectionView(ctx, connection),
       connections: views.connections,
       table: formatConnectionsTable(views.connections),
       setup,
       doctor,
       ...(warpHint ? { warp_hint: warpHint } : {}),
-      summary: warpHint
-        ? `Conexión '${connection.name}' escrita en ${warpHint.file}. Activá 'File-based MCP Servers' en Warp Settings para que la spawnee.`
-        : hasProblems
-          ? `No se instaló '${connection.name}' en ${hostLabel(host)}.${setupProblemNote(setup, ctx.env.homeDir())}`
-          : `Conexión '${connection.name}' instalada en ${hostLabel(host)}.`,
+      summary: setup.dry_run
+        ? `Previsualización de instalación de '${connection.name}' en ${hostLabel(host)}.`
+        : warpHint
+          ? `Conexión '${connection.name}' escrita en ${warpHint.file}. Activá 'File-based MCP Servers' en Warp Settings para que la spawnee.`
+          : !installed
+            ? `No se instaló '${connection.name}' en ${hostLabel(host)}.${setupProblemNote(setup, ctx.env.homeDir())}`
+            : `Conexión '${connection.name}' instalada en ${hostLabel(host)}.${verificationNote}`,
     },
-    ...(hasProblems
+    ...(!setup.dry_run && !installed
       ? {
           error: {
             code: "MCP_SETUP_PARTIAL",
-            message: `${setup.errors.length} error(es) y ${setup.conflicts.length} conflicto(s) durante setup; ver data.setup.errors y data.setup.conflicts`,
+            message: `${setup.errors.length} error(es) y ${setup.conflicts.length} conflicto(s) impidieron instalar; ver data.setup.errors y data.setup.conflicts`,
           },
         }
       : {}),
-    exitCode: hasProblems ? 1 : 0,
+    exitCode: setup.dry_run || installed ? 0 : 1,
   };
 }
 

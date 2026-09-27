@@ -1,19 +1,19 @@
 ---
 description: Use to consolidate the workspace's pending SQL into a docs/scripts/ bundle from a declared origin — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes SQL. Never automatic.
-argument-hint: "[--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>] [--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
+argument-hint: "[--code <session>] [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>] [--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
 allowed-tools: ["Bash", "Read"]
 ---
 
 ## Run
 
 1. `aw export-scripts prepare --format human` (+ the flags above) → origin, material, destination, `input_digest`.
-2. Answer with one JSON — `aw export-scripts --help` publishes the envelope. Copy its `scope` **verbatim**: it carries the prepared origin, so 3 and 4 never repeat flags. `NNN` is advisory: `apply` renumbers.
+2. Answer with one JSON — `aw export-scripts --help` publishes the envelope. Copy `scope` **verbatim**, including `scope.seal`; 3 and 4 never repeat flags. The approved `NNN` is immutable.
 3. `echo '<json>' | aw export-scripts validate --format human` → preview + `approval_digest`; confirm origin and destination.
 4. `echo '<json>' | aw export-scripts apply --approval <digest>`. On rejection nothing was written: fix and repeat step 3.
 
 ## What it produces
 
-- `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`: `00-ROLLBACK.sql` and `README.md` required, + forwards `NN-<nombre>.sql` numbered **continuously from 01**; a gap is rejected.
+- Bundle: README; forwards `01-ddl-tablas/`…`05-grants/NN-<nombre>.sql`; reverses in `rollback/<categoría>/`, global in `rollback/00-global/00-ROLLBACK.sql`.
 - Nothing here executes SQL: applying the bundle is a handoff to an authorized operator.
 - Never write into `docs/` with a file tool: one pass, all or nothing; no session touched.
 

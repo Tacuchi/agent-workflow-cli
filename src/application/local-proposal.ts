@@ -19,12 +19,14 @@
  * conflict nobody can resolve.
  */
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { EffectClass } from "../domain/capability/effects.js";
 import type { CapabilityFailure } from "../domain/capability/protocol.js";
 import type { LocalProposal, ProposalArtifact } from "../domain/proposal.js";
 import { baseDigest } from "../domain/proposal.js";
+import { FOLDER_RESERVATION_MARKER, reservationOwnerOf } from "../domain/reservation.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { appendClaimEvent, claimOfDocsPath } from "./claims-ledger.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { publishArtifacts } from "./semantic-operation/publish.js";
@@ -109,7 +111,7 @@ export async function applyLocalProposal(
   // one critical section. Checking bases before taking the lock would leave a
   // M1 -> M2 window: a candidate derived from M1 could validate M1, wait for a
   // different publisher, then overwrite M2 once it obtained the lock.
-  const outcome = await withCwdLock(fs, paths, () => applyCritical(fs, input));
+  const outcome = await withCwdLock(fs, paths, () => applyCritical(fs, paths, input));
   if ("error" in outcome) {
     return {
       ok: false,
@@ -158,6 +160,7 @@ type CriticalProposalOutcome =
  */
 async function applyCritical(
   fs: FileSystemPort,
+  paths: PathsService,
   input: ApplyProposalInput,
 ): Promise<CriticalProposalOutcome> {
   // First, and ahead of the already-landed shortcut on purpose: a forbidden
@@ -168,7 +171,10 @@ async function applyCritical(
     const refused = await input.precondition(input.proposal.artifacts.map((a) => a.path));
     if (refused !== null) return { kind: "refused", failure: refused };
   }
-  if (await alreadyLanded(fs, input.root, input.proposal.artifacts)) return { kind: "already" };
+  if (await alreadyLanded(fs, input.root, input.proposal.artifacts)) {
+    await consumeFolderReservation(fs, paths, input);
+    return { kind: "already" };
+  }
 
   const stale = await checkBases(fs, input);
   if (stale !== null) return { kind: "refused", failure: stale };
@@ -190,7 +196,35 @@ async function applyCritical(
       },
     };
   }
+  await consumeFolderReservation(fs, paths, input);
   return { kind: "written", written: published.value.written };
+}
+
+async function consumeFolderReservation(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: ApplyProposalInput,
+): Promise<void> {
+  const markerBase = input.proposal.bases.find((base) =>
+    base.path.endsWith(`/${FOLDER_RESERVATION_MARKER}`),
+  );
+  if (markerBase === undefined) return;
+  const markerPath = join(input.root, markerBase.path);
+  if (!(await fs.exists(markerPath))) return;
+  const marker = await fs.readText(markerPath);
+  if (baseDigest(marker) !== markerBase.digest)
+    throw new Error("la reserva del diseño cambió antes de consumirse");
+  const owner = reservationOwnerOf(marker);
+  const claim = owner === null ? null : claimOfDocsPath(dirname(markerBase.path), owner);
+  if (claim !== null) {
+    await appendClaimEvent(fs, paths, {
+      at: new Date().toISOString(),
+      event: "published",
+      claim,
+      cause: "aw capability design apply: carpeta reservada publicada",
+    });
+  }
+  await fs.remove(markerPath);
 }
 
 /**

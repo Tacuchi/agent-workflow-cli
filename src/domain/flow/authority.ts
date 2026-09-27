@@ -28,6 +28,7 @@ import type { EffectClass } from "../capability/effects.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
 import type { RouteControlConfiguration } from "./route.js";
+import type { FinalValidationSource } from "./run-state.js";
 
 const SPEC_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.spec;
 const PLAN_DOCS_DIR = DEFAULT_CORE_DOCS_CANON.plan;
@@ -613,6 +614,10 @@ export type ActionExecution =
  */
 export interface DelegatedAction {
   invocation: DelegatedInvocation;
+  /** Resolved final-validation commands, printed alongside the sealed evidence. */
+  requirements?: readonly string[];
+  /** The command behind each final-validation evidence id. */
+  final_validation?: readonly FinalValidationSource[];
   /**
    * Who runs it — required, so a new row cannot arrive without answering.
    *
@@ -1371,9 +1376,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       {
         label: "Cambiar a SPEC",
         consequence:
-          "no se crea sesión quick: la línea de trabajo pasa al flow SPEC con el objetivo original",
+          "se cierra la sesión quick conservando lo pendiente y se entrega el pedido a /w:spec-new",
         recommended: true,
-        outcome: { kind: "continue" },
+        outcome: { kind: "handoff", destination: "spec-new" },
       },
       {
         label: "Seguir en quick",
@@ -1473,7 +1478,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       ],
       idempotent: true,
       recovery:
-        "sembrá lo que falte (objetivo, criterios de éxito y CHECKPOINT.Pending) y volvé a devolver el dump: sembrar de nuevo lo ya escrito no rompe nada",
+        "completá el objetivo y los criterios de éxito y corré aw flow advance: el CLI siembra el CHECKPOINT que falta sin reemplazar lo escrito",
     },
   },
   {
@@ -1583,12 +1588,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "quick.db-touched",
     scope: "quick",
-    title: "reconocer si la tarea llegó a tocar una base de datos",
+    title: "reconocer si la tarea mutó una base de datos; leer no declara la señal",
     authority: "agent",
     ownership: "cli-owned",
     document: DB_SCRIPTS_ONLY,
     attribution: PLAN_ATTRIBUTION,
-    // A quick that never went near a database has no statement to derive and no
+    // A read-only quick has no mutation statement to derive and no
     // `SCRIPTS.sql` to hand back, so the row below it used to demand an artifact
     // that should not exist. Declaring the signal is what lets the rule apply
     // exactly where it has something to govern.
@@ -1605,7 +1610,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     effects: ["local_additive"],
     condition: {
       threshold: { observed: "quick.db-touched", of: ["quick.db-touched"], min: 1 },
-      otherwise: "la tarea no tocó ninguna base de datos: no hay sentencia que derivar",
+      otherwise: "la tarea no mutó la base de datos: las lecturas no exigen scripts",
     },
     // Migrated with the PLAN tranche and not with QUICK, for the same reason
     // CODE-POLICIES was: `plan-exec` reads this module too, and retiring its rule
@@ -1623,7 +1628,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["quick.scripts-derivados"],
       idempotent: true,
       recovery:
-        "escribí el DDL o DML en el SCRIPTS.sql de la sesión y volvé a devolver el dump; ejecutarlo no es una alternativa que este contrato admita",
+        "escribí el DDL o DML en SCRIPTS.sql o scripts/*.sql de la sesión y corré aw flow advance; si sólo leíste la base, retirá la señal con aw flow retract --session <código> --signal quick.db-touched; el CLI no ejecuta SQL",
     },
   },
   {
@@ -3211,7 +3216,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
-    route_control: ROUTE_VALIDATION,
     // BEFORE Git, and the real walk is what proved it: the registry had inherited
     // an order where the plan was committed and only then validated and stamped.
     // The document says the opposite — "last Batch also runs final validation
@@ -3803,6 +3807,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "set-qa-branch", reason: "configuración declarativa de rama" },
   { command: "set-pipeline", reason: "configuración declarativa de build y test por fuente" },
   { command: "remove-source", reason: "operación de configuración del workspace" },
+  { command: "add-source", reason: "operación de configuración del workspace" },
   { command: "git-flow", reason: "utilidad de ramas sin recorrido de flow" },
   { command: "merge-state", reason: "lectura del estado de una fusión" },
   { command: "attach-multiroot", reason: "configuración de multiroot" },

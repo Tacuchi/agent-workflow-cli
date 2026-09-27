@@ -24,7 +24,7 @@ export interface SqlStatement {
   end: number;
   /**
    * Upper-cased words, quoted identifiers verbatim with their quotes, and the
-   * marks `(`, `)` and `,`, outside literals and comments.
+   * marks `(`, `)`, `,` and `.`, outside literals and comments.
    */
   tokens: string[];
   literals: SqlLiteral[];
@@ -152,7 +152,7 @@ function consumePlainSqlCharacter(state: SqlScanState, char: string): void {
   if (char === ";") {
     state.semicolons += 1;
     closeStatement(state, state.index);
-  } else if (char === "(" || char === ")" || char === ",") {
+  } else if (char === "(" || char === ")" || char === "," || char === ".") {
     state.statement.tokens.push(char);
   } else if (char === "#") {
     mark(state, "hash");

@@ -33,12 +33,21 @@ export const statusCommand: CliCommand<StatusOutput> = {
 
     const header = `${data.workspace.name} · ${data.workspace.path}`;
     const lines = [header, ""];
+    if (data.last_activity !== null) lines.push(`Última actividad: ${data.last_activity}`, "");
     lines.push(...renderPipeline(data.pipeline, context.detail));
     // A broken design reference is PENDING work, not history: it stays in the
     // default view for the same reason an open plan does. Valid references and
     // orphaned packages are inventory and wait for `--detail`.
     lines.push(...renderDesignAlerts(data, lines.at(-1)));
     lines.push(...renderLooseSessions(data, lines.at(-1)));
+    if (data.unreadable_sources?.length || data.isolation_error) {
+      lines.push("Fuentes sin ruta o unidades no verificables");
+      for (const source of data.unreadable_sources ?? []) {
+        lines.push(`  ${source.alias}: ${source.error}`);
+      }
+      if (data.isolation_error) lines.push(`  ${data.isolation_error}`);
+      lines.push("");
+    }
     // A held correlative is not pending work — nobody should weigh it against an
     // open plan — but it must be VISIBLE. Leaving it out of the human view took
     // the board from wrong (it used to offer `/w:plan-exec` on a bare marker) to

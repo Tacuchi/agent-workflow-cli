@@ -6,7 +6,7 @@ import { parseHookPayload } from "./hook-common.js";
 import type { PathsService } from "./paths-service.js";
 
 const TOOLS_OF_INTEREST = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const REFERENCE_DOC = "skills/session/references/branch-verification.md";
+const REFERENCE_DOC = "skills/w/roles/git/ROLE.md · Branch verification";
 
 export interface BranchCheckResult {
   exitCode: 0 | 2;
@@ -53,6 +53,12 @@ export async function runBranchCheckHook(input: BranchCheckInput): Promise<Branc
     ...(contextId !== undefined && contextId.length > 0 ? { contextId } : {}),
   });
   if (verdict.match) return { exitCode: 0 };
+  if (verdict.reason === "SOURCE_PATH_MISSING") {
+    return {
+      exitCode: 0,
+      stderr: `[${input.displayName ?? "agent-workflow"}] Aviso: ${verdict.error ?? `la ruta de la fuente ${verdict.alias} no existe en este host`}. La edición fuera de ella no se bloquea.`,
+    };
+  }
   // A source that is missing or is not a repo is not something an edit can fix,
   // and blocking on it would make an unrelated misconfiguration look like a
   // branch violation. That case stayed permissive before this feature; it stays.

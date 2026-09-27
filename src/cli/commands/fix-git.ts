@@ -13,7 +13,7 @@ import {
   validateFixGit,
 } from "../../application/fix-git-service.js";
 import { runMergeState } from "../../application/merge-state-service.js";
-import { readWorkspaceBlock } from "../../application/parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "../../application/parsers/project-block.js";
 import {
   type SemanticFailure,
   type SemanticRequest,
@@ -65,7 +65,6 @@ export const fixGitCommand: CliCommand<FixGitData> = {
         "no se pudo resolver el repositorio: pasá --source <alias> o --path <ruta>",
       );
     }
-
     const roles = await rolesOf(ctx, target);
     if ("failure" in roles) return failSemantic(roles.failure);
     if (stage === "commit") return await runCommit(args, ctx, target.path, roles);
@@ -267,11 +266,34 @@ async function resolveRepo(
   // so `values.get()` silently returns undefined. `flagValue` reads both.
   const source = flagValue(args, "source");
   const path = flagValue(args, "path");
+  if (path !== undefined) {
+    const block = await readWorkspaceBlock(
+      ctx.fs,
+      ctx.paths.workspaceDir(),
+      ctx.paths.blockMarkers(),
+    );
+    const declared = block?.fuentes.find(
+      (item) => item.path === path || item.declared_path === path,
+    );
+    if (declared !== undefined) {
+      try {
+        await requireSourcePath(ctx.fs, declared);
+      } catch (err) {
+        return { failure: fail("SOURCE_PATH_MISSING", (err as Error).message) };
+      }
+    }
+  }
   const state = await runMergeState(ctx.fs, ctx.git, ctx.env, ctx.paths, {
     ...(source !== undefined ? { source } : {}),
     ...(path !== undefined ? { path } : {}),
   });
   if (state.unreadable.length) {
+    const missing = state.unreadable.find(
+      (entry) => entry.code === "SOURCE_PATH_MISSING" && entry.alias !== null,
+    );
+    if (missing !== undefined) {
+      return { failure: fail("SOURCE_PATH_MISSING", missing.action) };
+    }
     return {
       failure: fail(
         "MERGE_STATE_UNREADABLE",

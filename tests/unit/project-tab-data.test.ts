@@ -61,6 +61,7 @@ interface FakeDepsOptions {
   processCwds?: string[];
   /** Filesystem paths checked by the launchability probe. */
   existsPaths?: string[];
+  missingPaths?: string[];
   /** Make the counter's subprocess THROW (vs. exit non-zero) to exercise safeRun. */
   throwOnCounter?: boolean;
 }
@@ -73,13 +74,15 @@ function buildDeps({
   gitPaths,
   processCwds,
   existsPaths,
+  missingPaths,
   throwOnCounter,
 }: FakeDepsOptions) {
   return {
     fs: {
       exists: async (p: string) => {
         existsPaths?.push(p);
-        return p === "/ws/CLAUDE.md";
+        if (missingPaths?.includes(p)) return false;
+        return p === "/ws/CLAUDE.md" || p.startsWith("/src/") || p.startsWith("/ws/repos/");
       },
       readText: async (p: string) => (p === "/ws/CLAUDE.md" ? claudeMd : ""),
       list: async () => [],
@@ -140,6 +143,31 @@ function buildDeps({
 }
 
 describe("buildProjectTabData — workspace view", () => {
+  it("no omite una fuente sin ruta: conserva su alias y avisa sin consultar git allí", async () => {
+    const gitPaths: string[] = [];
+    const data = await buildProjectTabData(
+      buildDeps({
+        claudeMd: workspaceBlock(true),
+        currentBranch: "feature/x",
+        missingPaths: ["/src/pefectivo"],
+        gitPaths,
+      }),
+    );
+    expect(data.sources.map((source) => source.alias)).toEqual([
+      "autoservicio-solicitud-spring",
+      "pefectivo-solicitud-spring",
+    ]);
+    expect(data.sources[1]?.error).toContain(
+      "la ruta de la fuente pefectivo-solicitud-spring no existe en este host",
+    );
+    expect(
+      data.warnings.some((warning) =>
+        warning.includes("aw add-source pefectivo-solicitud-spring:<ruta>"),
+      ),
+    ).toBe(true);
+    expect(gitPaths).not.toContain("/src/pefectivo");
+  });
+
   it("expone las fuentes declaradas y sus ramas principales", async () => {
     const deps = buildDeps({ claudeMd: workspaceBlock(true), currentBranch: "desarrollo" });
 

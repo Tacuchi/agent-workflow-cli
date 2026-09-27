@@ -85,6 +85,7 @@ export interface WorkspaceInitResult {
   dry_run: boolean;
   workspace: string;
   sources: number;
+  source_actions?: { alias: string; action: "added" | "updated"; error?: string }[];
   scaffold: ScaffoldSummary;
   /** The exact first-write effects, also present in dry-run. */
   materialization: WorklineMaterialization;
@@ -135,11 +136,11 @@ export async function runWorkspaceInit(
   // convenient early materialization command, not a mandatory gate before
   // status/resume or every flow.  It deliberately does not create skills.toml,
   // a WORKSPACE block, docs/, launch artifacts, HISTORY, or a Git repository.
-  if (input.sources.length === 0) {
+  if (input.sources.length === 0 && input.proyecto === undefined) {
     if (metadataRequested) {
       return {
         error: "no_sources",
-        hint: "las opciones de configuración requieren al menos una fuente (--source alias:path[:rama]); sin fuentes workspace-init sólo materializa el runtime",
+        hint: "las opciones de rama requieren al menos una fuente (--source alias:path[:rama]); sin fuentes workspace-init sólo materializa el runtime",
       };
     }
     const materialization = input.dryRun
@@ -158,22 +159,35 @@ export async function runWorkspaceInit(
     };
   }
 
-  // Reconcile: an explicit source declaration is authoritative, while the
-  // previous block is read first to detach only sources it actually replaces.
+  // Source declarations are additive; omitted aliases keep their branches and visibility.
   const existing = await readExistingBlock(fs, workspace, wsPaths);
-  const validation = validateSources(input.sources);
+  if (
+    input.sources.length === 0 &&
+    (input.mainBranch !== undefined ||
+      input.workingBranches !== undefined ||
+      input.qaBranches !== undefined)
+  ) {
+    return {
+      error: "no_sources",
+      hint: "las opciones de rama requieren una fuente; --proyecto puede usarse solo",
+    };
+  }
+  const validation = input.sources.length > 0 ? validateSources(input.sources) : null;
   if (validation) return validation;
-  // Source locations become workspace-rooted at the configuration boundary.
-  // A nested invocation must not leave a relative path whose meaning changes
-  // with the next process cwd (or with the TUI's later Git/launch probes).
-  const sources = canonicalSources(input.sources, workspace);
+  const sources = input.sources;
+  const previousAliases = new Set(existing?.fuentes.map((f) => f.alias) ?? []);
+  const sourceActions = sources.map((source) => ({
+    alias: source.alias,
+    action: previousAliases.has(source.alias) ? ("updated" as const) : ("added" as const),
+  }));
   const proyecto = resolveProyecto(input.proyecto, existing?.proyecto, workspace);
 
   // Built once: the preview must describe the very upsert the real run performs.
   const upsertInput = buildUpsertInput(input, proyecto, sources, mainBranch);
 
   if (input.dryRun) {
-    return buildDryRunResult(fs, env, workspace, wsPaths, sources, upsertInput);
+    const preview = await buildDryRunResult(fs, env, workspace, wsPaths, sources, upsertInput);
+    return { ...preview, source_actions: sourceActions };
   }
 
   const materialization = await ensureWorklineMaterialized(fs, wsPaths);
@@ -183,16 +197,24 @@ export async function runWorkspaceInit(
   const skillsToml = (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped";
 
   // Previous sources (to detach removed ones) come from the same existing block.
-  const previousPaths = (existing?.fuentes ?? []).map((f) => f.path).filter((p) => p.length > 0);
+  const updatedAliases = new Set(sources.map((source) => source.alias));
+  const previousPaths = (existing?.fuentes ?? [])
+    .filter((f) => updatedAliases.has(f.alias) && f.path !== null)
+    .map((f) => f.path as string);
 
   const projectMd = await runProjectMdUpsertWrite(fs, env, wsPaths, upsertInput);
 
-  if ("error" in projectMd) {
+  if ("error" in projectMd || !projectMd.ok) {
+    const cause =
+      "error" in projectMd
+        ? projectMd.error
+        : (projectMd.results?.find((file) => file.error)?.error ?? "el bloque no se publicó");
     return {
       ok: false,
       dry_run: false,
       workspace,
       sources: sources.length,
+      source_actions: sourceActions.map((source) => ({ ...source, error: cause })),
       scaffold,
       materialization,
       skills_toml: skillsToml,
@@ -208,6 +230,7 @@ export async function runWorkspaceInit(
     dry_run: false,
     workspace,
     sources: sources.length,
+    source_actions: sourceActions,
     scaffold,
     materialization,
     skills_toml: skillsToml,
@@ -232,9 +255,6 @@ function buildUpsertInput(
       path: s.path,
       ...(s.mainBranch !== undefined ? { mainBranch: s.mainBranch } : {}),
     })),
-    // Declared set is authoritative (supports removing a source by re-running),
-    // which is also what makes the upsert prune the branches it leaves behind.
-    replaceFuentes: true,
     ...(mainBranch !== undefined ? { mainBranch } : {}),
     ...(input.workingBranches !== undefined ? { workingBranches: input.workingBranches } : {}),
     ...(input.qaBranches !== undefined ? { qaBranches: input.qaBranches } : {}),
@@ -331,11 +351,13 @@ async function reconcileVisibility(
   // workspace (init in-place) needs nothing.
   const external = sources
     .filter((s) => isExternalToWorkspace(s.path, workspace))
-    .map((s) => s.path);
+    .map((s) => resolveWorkspaceSourcePath(workspace, s.path));
 
   // Detach sources that were in the previous block and no longer are (reconcile),
   // regardless of whether any external source remains.
-  const currentNorm = new Set(sources.map((s) => normalizePath(s.path)));
+  const currentNorm = new Set(
+    sources.map((s) => normalizePath(resolveWorkspaceSourcePath(workspace, s.path))),
+  );
   const removed = previousPaths.filter((p) => !currentNorm.has(normalizePath(p)));
   const detached =
     removed.length > 0
@@ -367,14 +389,6 @@ function isExternalToWorkspace(sourcePath: string, workspace: string): boolean {
   return src !== ws && !src.startsWith(`${ws}/`);
 }
 
-/** Persist source paths as absolute coordinates rooted in the resolved workspace. */
-function canonicalSources(sources: WorkspaceSource[], workspace: string): WorkspaceSource[] {
-  return sources.map((source) => ({
-    ...source,
-    path: resolveWorkspaceSourcePath(workspace, source.path),
-  }));
-}
-
 /** Proyecto + sources declared in the current block (before it is rewritten),
  *  used to preserve them on a reconcile re-run. Null when no block exists yet. */
 async function readExistingBlock(
@@ -387,12 +401,12 @@ async function readExistingBlock(
   return {
     proyecto: block.proyecto,
     fuentes: block.fuentes
-      .filter((f) => f.path.length > 0)
+      .filter((f) => f.path !== null)
       .map((f) => ({
         alias: f.alias,
         // Reconcile a legacy relative entry against the same root before it is
         // compared, detached or re-emitted as canonical metadata.
-        path: resolveWorkspaceSourcePath(workspace, f.path),
+        path: f.path as string,
         ...(f.main_branch ? { mainBranch: f.main_branch } : {}),
       })),
   };
@@ -424,7 +438,7 @@ function validateSources(sources: WorkspaceSource[]): WorkspaceInitInputError | 
   if (!sources || sources.length < 1) {
     return {
       error: "no_sources",
-      hint: "workspace-init requiere al menos 1 fuente (--source alias:path[:rama]); o re-corré en un workspace ya inicializado para reconciliar preservando las existentes",
+      hint: "declará una fuente con aw add-source <alias>:<ruta>:<rama>; workspace-init --proyecto <nombre> funciona sin fuentes",
     };
   }
   const aliases = new Set<string>();

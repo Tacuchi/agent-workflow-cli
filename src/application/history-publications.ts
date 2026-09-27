@@ -13,11 +13,37 @@
  * publication does not undo.
  */
 
+import { basename } from "node:path";
+import { leadingCorrelative } from "../domain/correlative.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
 import { ensureHistoryFile } from "./history-table.js";
 
 const HEADING = "## Publicaciones";
+
+/** Numbers already published in this destination, including deleted artifacts. */
+export async function publishedCorrelatives(
+  fs: FileSystemPort,
+  historyFile: string,
+  directory: string,
+): Promise<Set<string>> {
+  if (!(await fs.exists(historyFile))) return new Set();
+  const text = await fs.readText(historyFile);
+  const result = new Set<string>();
+  const prefix = `${directory.replace(/\\/g, "/").replace(/\/$/, "")}/`;
+  const section = text.split(HEADING)[1]?.split(/\n## /)[0] ?? "";
+  for (const line of section.split("\n")) {
+    const path = line
+      .match(/^\|\s*([^|]+?)\s*\|/)?.[1]
+      ?.trim()
+      .replace(/\\/g, "/");
+    if (!path?.startsWith(prefix)) continue;
+    const name = path.slice(prefix.length).split("/")[0];
+    const number = leadingCorrelative(basename(name ?? ""));
+    if (number !== null) result.add(number);
+  }
+  return result;
+}
 
 const TABLE_HEADER =
   "| Documento | Fecha | Comando |\n" + //

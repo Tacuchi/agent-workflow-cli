@@ -56,6 +56,10 @@ export interface DatabaseRoleOutcome {
   exitCode: 0 | 1 | 2;
 }
 
+export type CatalogColumns =
+  | { ok: true; columns: Array<{ schema: string; table: string; column: string }> }
+  | { ok: false; code: string; message: string };
+
 type PreparedToolCall =
   | {
       tool: "execute_sql";
@@ -81,6 +85,45 @@ type ToolCallPreparation =
  */
 export class DatabaseToolCatalog {
   constructor(private readonly deps: DatabaseToolCatalogDeps) {}
+
+  /** One parameterized catalog read, through the same connection and READ ONLY port as aw tool. */
+  async lookupColumns(connection: string, schemas: readonly string[]): Promise<CatalogColumns> {
+    const selected = this.selectConnection(connection);
+    if (!selected.ok)
+      return { ok: false, code: selected.response.code, message: selected.response.error };
+    const dsn = this.resolveDsn(selected.connection);
+    if (!dsn.ok) return { ok: false, code: dsn.response.code, message: dsn.response.error };
+    try {
+      const result = await this.deps.postgres.query(
+        "SELECT table_schema, table_name, column_name FROM information_schema.columns WHERE table_schema = ANY($1::text[]) ORDER BY table_schema, table_name, ordinal_position",
+        [[...new Set(schemas)]],
+        dsn.value,
+      );
+      if (result.truncated)
+        return {
+          ok: false,
+          code: "DATABASE_RESULT_TRUNCATED",
+          message: "El catálogo devolvió un resultado incompleto.",
+        };
+      return {
+        ok: true,
+        columns: result.rows.flatMap((row) =>
+          typeof row.table_schema === "string" &&
+          typeof row.table_name === "string" &&
+          typeof row.column_name === "string"
+            ? [{ schema: row.table_schema, table: row.table_name, column: row.column_name }]
+            : [],
+        ),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        code: error instanceof PostgresToolError ? error.code : "DATABASE_QUERY_FAILED",
+        message:
+          error instanceof PostgresToolError ? error.message : "No se pudo consultar el catálogo.",
+      };
+    }
+  }
 
   list(connection: string): DatabaseToolListOutcome {
     const selected = this.selectConnection(connection);

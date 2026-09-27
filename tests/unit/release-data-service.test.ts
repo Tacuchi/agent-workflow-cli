@@ -215,6 +215,23 @@ describe("readSessionArtifacts", () => {
     expect(result.scripts).toEqual([]);
   });
 
+  it("incluye forward y rollback de la raíz sin perder los scripts anidados", async () => {
+    const fs = sessionsFs({
+      "session001-dev-migracion": {
+        "OBJETIVO.md": "# cambio",
+        "SCRIPTS.sql": "CREATE TABLE t (id int);",
+        "SCRIPTS.rollback.sql": "DROP TABLE t;",
+        "scripts/01-otra.sql": "ALTER TABLE t ADD c int;",
+      },
+    });
+    const result = await readSessionArtifacts(fs, paths, "001", ["scripts"]);
+    expect(result.scripts?.map((script) => [script.name, script.is_rollback])).toEqual([
+      ["SCRIPTS.rollback.sql", true],
+      ["SCRIPTS.sql", false],
+      ["scripts/01-otra.sql", false],
+    ]);
+  });
+
   it("normalizes session code with 'session' prefix and pads to 3 digits", async () => {
     const fs = sessionsFs({ "session007-dev-norm": { "OBJETIVO.md": "# norm" } });
     const r1 = await readSessionArtifacts(fs, paths, "7");
@@ -260,6 +277,55 @@ describe("listGraduatedBundles + listStandaloneSql (F7)", () => {
       forward_count: 1,
       rollback_count: 1, // 00-ROLLBACK.sql counts as rollback (modern naming)
     });
+  });
+
+  it("clasifica el layout nuevo sin perder los bundles planos ya publicados", async () => {
+    const fs = scriptsFs();
+    const fresh = `${scripts}/003-export-scripts-2026-07-29`;
+    fs.file(`${fresh}/01-ddl-tablas/01-crea.sql`, "CREATE TABLE t (id int);");
+    fs.file(`${fresh}/rollback/01-ddl-tablas/01-crea.rollback.sql`, "DROP TABLE t;");
+    fs.file(`${fresh}/rollback/00-global/00-ROLLBACK.sql`, "DROP TABLE t;");
+    const result = await listGraduatedBundles(fs, "/cwd", paths);
+    expect(
+      result.map((bundle) => [bundle.nnn, bundle.forward_count, bundle.rollback_count]),
+    ).toEqual([
+      ["001", 1, 1],
+      ["002", 1, 1],
+      ["003", 1, 2],
+    ]);
+  });
+
+  it("incluye un NNN-<nombre> con SQL y señala el bundle que otro supera", async () => {
+    const fs = scriptsFs();
+    const named = `${scripts}/003-retiro-hinovill`;
+    const newer = `${scripts}/004-export-scripts-2026-08-01`;
+    fs.file(`${named}/01-ddl-tablas/01-legacy.sql`, "CREATE TABLE t (id int);");
+    fs.file(`${newer}/01-ddl-tablas/01-new.sql`, "CREATE TABLE t (id bigint);");
+    fs.file(
+      `${newer}/bundle.json`,
+      JSON.stringify({
+        supersedes: ["003-retiro-hinovill"],
+        requires: [],
+        origin: {
+          standalone_sql: [{ path: "docs/scripts/suelto-limpieza.sql", digest: "sha256:abc" }],
+        },
+      }),
+    );
+    const bundles = await listGraduatedBundles(fs, "/cwd", paths);
+    expect(bundles.find((bundle) => bundle.nnn === "003")).toMatchObject({
+      kind: "named",
+      metadata: "absent",
+      superseded_by: ["004-export-scripts-2026-08-01"],
+    });
+    expect(bundles.find((bundle) => bundle.nnn === "004")).toMatchObject({
+      metadata: "present",
+      supersedes: ["003-retiro-hinovill"],
+      origin_standalone_sql: ["docs/scripts/suelto-limpieza.sql"],
+    });
+    fs.dir(`${scripts}/005-export-scripts-2026-08-02`);
+    expect(
+      (await listGraduatedBundles(fs, "/cwd", paths)).some((bundle) => bundle.nnn === "005"),
+    ).toBe(false);
   });
 
   it("el filtro por sessionCode aplica solo a bundles legacy (los modernos son cross-session)", async () => {

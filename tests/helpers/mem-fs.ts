@@ -75,6 +75,11 @@ export class MemFs implements FileSystemPort {
     await this.writeText(p, content);
     return { created: true };
   }
+  async publishBytesExclusive(p: string, content: Uint8Array): Promise<{ created: boolean }> {
+    if (this.files.has(p)) return { created: false };
+    this.binary(p, content);
+    return { created: true };
+  }
   async remove(p: string): Promise<void> {
     this.files.delete(p);
     this.dirMtime.delete(p);

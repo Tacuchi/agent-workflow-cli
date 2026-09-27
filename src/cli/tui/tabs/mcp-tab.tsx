@@ -276,12 +276,13 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
       setMode({ kind: "busy", label: `installing ${name} → ${installDestination(host)}…` });
       try {
         const result = await selfMcpConfig(buildArgs(`install-${host}`, { name }), ctx);
+        const installed = result.data?.installed === true;
         onToast?.({
-          tone: result.ok ? "ok" : "err",
-          title: result.ok ? `Installed · ${name}` : `Install failed · ${name}`,
+          tone: installed ? "ok" : "err",
+          title: installed ? `Installed · ${name}` : `Install failed · ${name}`,
           body: result.data?.summary ?? result.error?.message ?? "",
         });
-        if (result.ok) void ctx.logger?.info(formatTuiEvent(`mcp install ${name}`, "ok"));
+        if (installed) void ctx.logger?.info(formatTuiEvent(`mcp install ${name}`, "ok"));
       } catch (err) {
         onToast?.({ tone: "err", title: "Install failed", body: (err as Error).message });
       }
