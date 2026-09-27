@@ -1114,7 +1114,7 @@ export function flowControlChoices(stopping?: string): FlowDirective["choices"] 
     {
       label: STOP_LABEL,
       consequence:
-        stopping ?? "el recorrido queda detenido acá, con su estado y su frontera persistidos",
+        stopping ?? "se cierra la sesión y se conserva lo pendiente para retomarlo al reabrir",
       recommended: false,
       outcome: { kind: "control", control: "stop" },
     },
@@ -1281,7 +1281,7 @@ function authorizationChoices(
       outcome: { kind: "continue" },
     },
     ...flowControlChoices(
-      `no se ejerce ${missing} y el recorrido queda detenido acá, sin nada aplicado`,
+      `se cierra la sesión conservando lo pendiente, sin autorizar ${missing} para esta acción`,
     ),
   ];
 }
@@ -1308,6 +1308,12 @@ function choicesFor(
  * are in the state either way; this is what makes them impossible to miss.
  */
 function finalAction(state: FlowRunState): string {
+  if (state.reentries?.at(-1)?.kind === "close") {
+    const closed = [...(state.events ?? [])]
+      .reverse()
+      .find((event) => event.kind === "executed" && event.operation === "session.close");
+    if (closed?.kind === "executed") return closed.summary;
+  }
   const degraded = state.degraded ?? [];
   if (degraded.length === 0) {
     return state.assurance === "verified"

@@ -152,6 +152,7 @@ import {
   withObservedCheckouts,
 } from "./checkout-observation.js";
 import { resolveCheckoutCandidates } from "./checkout-observation.js";
+import { closeAtBoundaryState } from "./close-at-boundary.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
 import { journeyForRun } from "./run-journey.js";
@@ -2144,11 +2145,8 @@ function admit(
       ),
     };
   }
-  // The flow control is a real answer, and neither half applies anything. They
-  // are kept apart because the outcomes differ and the difference is the point:
-  // stopping ends the run here (`cancelled`), pausing keeps the very same
-  // boundary standing so the run picks it up after compacting (`needs_input`).
-  // Collapsing them would report a paused run as a cancelled one.
+  // Pause leaves the boundary standing; stop places the shared close intention.
+  // The driver runs finalize after this transaction releases the run lock.
   if (parsed.answer.choice === PAUSE_LABEL) {
     return {
       decision: reject(
@@ -2165,25 +2163,28 @@ function admit(
     };
   }
   if (parsed.answer.choice === STOP_LABEL) {
-    return {
-      decision: reject(
-        state,
-        resolved,
-        `'${STOP_LABEL}': el recorrido queda detenido en esta frontera`,
-        {
-          code: "FLOW_BOUNDARY_DECLINED",
-          action: "reanudá con 'aw flow advance' cuando quieras retomar esta frontera",
-          outcome: "cancelled",
-        },
-        cost,
-      ),
-    };
+    return { decision: closeFromAnswer(state) };
   }
   // An execution result has to EARN the transition. Anything short of a completed
   // run with its evidence and its whole effect keeps the boundary standing: the
   // work stays pending, with the recovery the action declared.
   if (resolved.kind !== "execution") return parsed;
   return earned(state, resolved, stopped, parsed, cost, checkouts, scoped);
+}
+
+function closeFromAnswer(state: FlowRunState): SubmitDecision {
+  const closing = closeAtBoundaryState(state);
+  if (!closing.ok) return closing;
+  const advanced = advanceFlowRun({
+    state: closing.state,
+    journey: journeyForRun(closing.state),
+  });
+  if (!advanced.ok) return advanced;
+  return {
+    ok: true,
+    state: advanced.state,
+    value: { directive: advanced.directive, advanced: true },
+  };
 }
 
 type Admitted = {

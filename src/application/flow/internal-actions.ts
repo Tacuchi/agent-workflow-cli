@@ -77,6 +77,7 @@ import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
 import { observeScopedFingerprints } from "./checkout-observation.js";
+import { preserveBoundaryClose } from "./close-artifacts.js";
 import { projectRun } from "./run-projection.js";
 import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
@@ -1364,20 +1365,36 @@ async function close(
   deps: InternalActionDeps,
   run: InternalActionRun,
 ): Promise<InternalActionOutcome> {
+  const read = await readRun(deps.fs, locateRun(deps.paths, run.session));
+  if (!read.ok && read.failure.code !== "FLOW_RUN_ABSENT") {
+    return refusal("session.close", read.failure.message, canonicalJson(read.failure));
+  }
+  const boundaryClose = read.ok && read.state.reentries?.at(-1)?.kind === "close";
+  const listed = await runWorktree(
+    { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+    { action: "list" },
+  );
+  if (!("units" in listed)) {
+    return refusal(
+      "session.close",
+      "no se pudieron leer las unidades; revisá 'aw worktree list' y reintentá con 'aw flow advance'",
+      canonicalJson(listed),
+    );
+  }
+  const pending = boundaryClose
+    ? await preserveBoundaryClose(deps.fs, deps.paths, deps.git, read.state, listed.units)
+    : [];
   const result = await runSessionClose(
     deps.fs,
     deps.paths,
-    { code: run.code, requireIntegrated: true },
-    async () => {
-      const listed = await runWorktree(
-        { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
-        { action: "list" },
-      );
-      // A list that did not come back is NOT "no units": the close refuses on it,
-      // which is the whole point of asking before writing the marker.
-      if (!("units" in listed)) throw new Error(JSON.stringify(listed));
-      return listed.units;
+    {
+      code: run.code,
+      requireIntegrated: !boundaryClose,
+      preserveReservations: boundaryClose
+        ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
+        : [],
     },
+    async () => listed.units,
   );
   if ("sessionHeld" in result) {
     const held = result.sessionHeld;
@@ -1392,9 +1409,13 @@ async function close(
     return refusal("session.close", `la sesión no cerró: ${why}`, canonicalJson(result));
   }
   const closed = result.sessionClose;
+  if (boundaryClose) {
+    closed.pending_work = pending;
+    closed.reopen = `aw session-resume --code ${run.session} --reopen`;
+  }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

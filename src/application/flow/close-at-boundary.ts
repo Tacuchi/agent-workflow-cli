@@ -90,28 +90,40 @@ export async function markCloseAtBoundary(
       const boundary = standingOnClose(state) ? closedAt(state) : FINALIZE;
       return { ok: true, state, value: { kind: "marked", boundary, wrote: false }, persist: false };
     }
-    const journey = journeyForRun(state);
-    const position = state.applied.length;
-    const boundary = journey[position]?.id ?? FINALIZE;
-    const closing = withBoundary(
-      withReentry(state, {
-        kind: "close",
-        transition: boundary,
-        occurrence: occurrenceAt(journey, position),
-        from: null,
-      }),
-      FINALIZE,
-    );
-    // A close this journey cannot place would report a finalize nobody applied.
-    if (!standingOnClose(closing)) {
-      return { ok: false, failure: unplaceable(boundary, location.session) };
-    }
-    return { ok: true, state: closing, value: { kind: "marked", boundary, wrote: true } };
+    const closing = closeAtBoundaryState(state);
+    if (!closing.ok) return closing;
+    return {
+      ok: true,
+      state: closing.state,
+      value: { kind: "marked", boundary: closedAt(closing.state), wrote: true },
+    };
   });
   if (marked.ok) return marked.value;
   // The run vanished between the read and the lock: there is nothing to close.
   if (marked.failure.code === ABSENT.code) return { kind: "none" };
   return { kind: "failed", failure: marked.failure };
+}
+
+/** Shared intention for session-close and Cerrar; the caller owns the run lock. */
+export function closeAtBoundaryState(
+  state: FlowRunState,
+): { ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure } {
+  if (standingOnFinalize(state)) return { ok: true, state };
+  const journey = journeyForRun(state);
+  const position = state.applied.length;
+  const boundary = journey[position]?.id ?? FINALIZE;
+  const closing = withBoundary(
+    withReentry(state, {
+      kind: "close",
+      transition: boundary,
+      occurrence: occurrenceAt(journey, position),
+      from: null,
+    }),
+    FINALIZE,
+  );
+  return standingOnClose(closing)
+    ? { ok: true, state: closing }
+    : { ok: false, failure: unplaceable(boundary, state.session) };
 }
 
 function closedAt(state: FlowRunState): string {
