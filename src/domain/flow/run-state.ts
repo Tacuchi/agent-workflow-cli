@@ -32,7 +32,13 @@ import { type DecisionNote, normalizeObligations, validateDecisionNote } from ".
 import type { DecisionPreview } from "../decision-preview.js";
 import type { LocalProposal } from "../proposal.js";
 import type { PlanReconciliation } from "../reconciliation.js";
-import { type FlowChoiceOutcome, type FlowDecision, journeyOfFlow } from "./authority.js";
+import {
+  type FlowChoiceOutcome,
+  type FlowDecision,
+  type JourneyReentry,
+  expandJourney,
+  journeyOfFlow,
+} from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
 import { V11_JOURNEY_BASE } from "./journey-baseline.js";
 import {
@@ -56,7 +62,7 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 12;
+export const FLOW_RUN_STATE_VERSION = 13;
 
 /**
  * The versions this CLI CONTINUES without adoption, newest first.
@@ -67,8 +73,12 @@ export const FLOW_RUN_STATE_VERSION = 12;
  * cursor, the answers or the attempts. Every later version joins this set with its own
  * upgrade step, which is what keeps "v11 or later survives an update" true
  * without an exception per release.
+ *
+ * v13 added `reentries` and the `reentry_iteration` of attempts, observations and
+ * events. All three are absent on a run that never re-entered, which is every
+ * v12 run, so its upgrade step only re-stamps the version.
  */
-export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 11];
+export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 12, 11];
 
 /**
  * The versions this CLI READS, newest first.
@@ -94,6 +104,7 @@ export const FLOW_RUN_STATE_READABLE: readonly number[] = [
  */
 const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => FlowRunState>> = {
   11: (state) => ({ ...state, version: 12, journey_base: [...V11_JOURNEY_BASE[state.flow]] }),
+  12: (state) => ({ ...state, version: 13 }),
 };
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
@@ -127,6 +138,18 @@ export interface FlowRunAttempt {
    * history in one append-only ledger.
    */
   batch_iteration?: number;
+  /**
+   * The reentry that inserted the row this attempt answered, when the run walks
+   * a copy of it (see {@link FlowRunReentry}). Absent on a row's own place, so a
+   * run that never re-entered keeps exactly the identities it always had.
+   */
+  reentry_iteration?: number;
+}
+
+/** Which repeat of a row a record belongs to; an absent field is the row's own walk. */
+export interface RowIteration {
+  batch_iteration?: number;
+  reentry_iteration?: number;
 }
 
 /**
@@ -180,16 +203,53 @@ export function attemptsAt(state: FlowRunState, transition: string): number {
 
 /** The monotone-counter key for one boundary, scoped when that boundary repeats in a batch. */
 export function attemptCounterKey(state: FlowRunState, transition: string): string {
-  const iteration = currentBatchIteration(state, transition);
-  return attemptCounterKeyForIteration(transition, iteration ?? undefined);
+  return attemptCounterKeyForIteration(transition, iterationOf(state, transition));
 }
 
-/** Stable counter key for a historical attempt whose batch iteration is recorded on the row. */
-export function attemptCounterKeyForIteration(
-  transition: string,
-  iteration: number | undefined,
-): string {
-  return iteration === undefined ? transition : `${transition}@batch-${iteration}`;
+/** Stable counter key for a historical attempt whose iteration is recorded on the row. */
+export function attemptCounterKeyForIteration(transition: string, iteration: RowIteration): string {
+  const batch =
+    iteration.batch_iteration === undefined ? "" : `@batch-${iteration.batch_iteration}`;
+  const reentry =
+    iteration.reentry_iteration === undefined ? "" : `@reentry-${iteration.reentry_iteration}`;
+  return `${transition}${batch}${reentry}`;
+}
+
+/**
+ * The iteration of `transition` where the run stands: its batch copy and its
+ * reentry copy. Spread it into any record keyed per boundary.
+ */
+export function iterationOf(state: FlowRunState, transition: string): RowIteration {
+  const batch = currentBatchIteration(state, transition);
+  const reentry = currentReentryIteration(state, transition);
+  return {
+    ...(batch === null ? {} : { batch_iteration: batch }),
+    ...(reentry === null ? {} : { reentry_iteration: reentry }),
+  };
+}
+
+/** Whether a persisted record belongs to this iteration of its boundary. */
+export function sameIteration(record: RowIteration, iteration: RowIteration): boolean {
+  return (
+    record.batch_iteration === iteration.batch_iteration &&
+    record.reentry_iteration === iteration.reentry_iteration
+  );
+}
+
+/**
+ * Which reentry inserted the row of `transition` the cursor is on, or `null` on
+ * the row's own place. Read at the cursor and backwards from it, so it answers
+ * the same before the row is applied and right after.
+ */
+export function currentReentryIteration(state: FlowRunState, transition: string): number | null {
+  if ((state.reentries ?? []).length === 0) return null;
+  const { rows, copies } = expandJourney(state);
+  for (let index = Math.min(state.applied.length, rows.length - 1); index >= 0; index -= 1) {
+    if (rows[index]?.id !== transition) continue;
+    const copy = copies[index] ?? 0;
+    return copy === 0 ? null : copy;
+  }
+  return null;
 }
 
 /**
@@ -204,13 +264,9 @@ function spendAt(
   state: FlowRunState,
   transition: string,
 ): { rows: FlowRunAttempt[]; floor: number; granted: number; spent: number } {
-  const iteration = currentBatchIteration(state, transition);
+  const iteration = iterationOf(state, transition);
   const rows = state.attempts.filter(
-    (attempt) =>
-      attempt.transition === transition &&
-      (iteration === null
-        ? attempt.batch_iteration === undefined
-        : attempt.batch_iteration === iteration),
+    (attempt) => attempt.transition === transition && sameIteration(attempt, iteration),
   );
   const key = attemptCounterKey(state, transition);
   const floor = state.attempt_floor?.[key] ?? 0;
@@ -510,11 +566,10 @@ export function applyAttemptReconciliation(
     grants[key] = repair.after;
     next = sealRunState({ ...withoutSeal(next), attempt_grants: grants });
   }
-  const iteration = currentBatchIteration(next, reconciliation.transition);
   return withEvent(next, {
     kind: "reconciled",
     transition: reconciliation.transition,
-    ...(iteration === null ? {} : { batch_iteration: iteration }),
+    ...iterationOf(next, reconciliation.transition),
     operation: "flow.attempt-reconciliation",
     repairs: reconciliation.repairs,
   });
@@ -575,13 +630,9 @@ export type RecoveryBlocker =
   | { reason: "unverified" };
 
 export function recoveryBlockedAt(state: FlowRunState, transition: string): RecoveryBlocker | null {
-  const iteration = currentBatchIteration(state, transition);
+  const iteration = iterationOf(state, transition);
   const trace = state.events.filter(
-    (event) =>
-      event.transition === transition &&
-      (iteration === null
-        ? event.batch_iteration === undefined
-        : event.batch_iteration === iteration),
+    (event) => event.transition === transition && sameIteration(event, iteration),
   );
   const material = [...trace].reverse().find(declaresMaterialEffect);
   if (material !== undefined) return { reason: "materialized", event: material };
@@ -687,6 +738,8 @@ export interface FlowObservation {
   signals: string[];
   /** See {@link FlowRunAttempt.batch_iteration}. */
   batch_iteration?: number;
+  /** See {@link FlowRunAttempt.reentry_iteration}. */
+  reentry_iteration?: number;
 }
 
 /**
@@ -711,6 +764,8 @@ export type FlowRunEvent =
       transition: string;
       /** See {@link FlowRunAttempt.batch_iteration}. */
       batch_iteration?: number;
+      /** See {@link FlowRunAttempt.reentry_iteration}. */
+      reentry_iteration?: number;
       operation: string;
       /** One line, derived from the operation's own output. Never a claim. */
       summary: string;
@@ -734,6 +789,8 @@ export type FlowRunEvent =
       transition: string;
       /** See {@link FlowRunAttempt.batch_iteration}. */
       batch_iteration?: number;
+      /** See {@link FlowRunAttempt.reentry_iteration}. */
+      reentry_iteration?: number;
       operation: string;
       /** Every repair applied, with the conflict it answered and its two values. */
       repairs: AttemptRepair[];
@@ -751,6 +808,8 @@ export type FlowRunEvent =
       transition: string;
       /** See {@link FlowRunAttempt.batch_iteration}. */
       batch_iteration?: number;
+      /** See {@link FlowRunAttempt.reentry_iteration}. */
+      reentry_iteration?: number;
       operation: string;
       /** The index the inserted boundary took in `applied`. */
       position: number;
@@ -766,6 +825,8 @@ export type FlowRunEvent =
       transition: string;
       /** See {@link FlowRunAttempt.batch_iteration}. */
       batch_iteration?: number;
+      /** See {@link FlowRunAttempt.reentry_iteration}. */
+      reentry_iteration?: number;
       operation: string;
       /** Session-relative path of the archived registry. */
       archive: string;
@@ -782,6 +843,8 @@ export type FlowRunEvent =
       transition: string;
       /** See {@link FlowRunAttempt.batch_iteration}. */
       batch_iteration?: number;
+      /** See {@link FlowRunAttempt.reentry_iteration}. */
+      reentry_iteration?: number;
       operation: string;
       batches: string[];
       phases: number[];
@@ -794,6 +857,8 @@ export type FlowRunEvent =
       transition: string;
       /** See {@link FlowRunAttempt.batch_iteration}. */
       batch_iteration?: number;
+      /** See {@link FlowRunAttempt.reentry_iteration}. */
+      reentry_iteration?: number;
       operation: string;
       code: string;
       message: string;
@@ -1142,6 +1207,15 @@ export interface FlowRunState {
    * new loop over already-recorded batches.
    */
   batch_loop?: PlanExecBatchLoop;
+  /**
+   * Where this run's journey was re-entered, oldest first: a redraft chosen at a
+   * confirmation, a close at a boundary, a reopen after a close or after the end.
+   *
+   * The cursor never rewinds for any of them; the journey gains the rows instead
+   * (see `journeyForState`). Optional and never written by default: a run that
+   * never re-entered serializes the bytes it did before this field existed.
+   */
+  reentries?: FlowRunReentry[];
   /** A selected non-local route. An active handoff makes plan-exec terminal. */
   handoff?: FlowHandoff | null;
   /** Durable record of the chosen decision/handoff route, never inferred from prose. */
@@ -1198,6 +1272,9 @@ export interface FlowRunState {
   /** Seal over every field above. */
   digest: string;
 }
+
+/** One reentry of a run's journey; see `JourneyReentry` for what each kind inserts. */
+export type FlowRunReentry = JourneyReentry;
 
 /**
  * WHAT A DECISION OF THIS RUN DECLARED, kept as the run's own bookkeeping.
@@ -1461,6 +1538,25 @@ export function upgradeContinuable(state: FlowRunState): FlowRunState {
     current = step(current);
   }
   return sealRunState(withoutSeal(current));
+}
+
+/** Record a reentry of the journey, after every one already recorded. */
+export function withReentry(state: FlowRunState, reentry: FlowRunReentry): FlowRunState {
+  return sealRunState({
+    ...withoutSeal(state),
+    reentries: [...(state.reentries ?? []), reentry],
+  });
+}
+
+/**
+ * Take back the last reentry, for the close that recorded its intention and then
+ * could not happen. The field goes back to absent when it empties, so the run
+ * serializes the bytes it had before the intention.
+ */
+export function withoutLastReentry(state: FlowRunState): FlowRunState {
+  const { reentries: _all, ...rest } = withoutSeal(state);
+  const kept = (state.reentries ?? []).slice(0, -1);
+  return sealRunState(kept.length === 0 ? rest : { ...rest, reentries: kept });
 }
 
 /** Record one inferred or declared batch, refusing duplicate ids at the caller's boundary. */
@@ -1831,7 +1927,7 @@ export function restatesLastEvent(state: FlowRunState, event: FlowRunEvent): boo
   if (last === undefined || last.kind !== "failed" || event.kind !== "failed") return false;
   return (
     last.transition === event.transition &&
-    last.batch_iteration === event.batch_iteration &&
+    sameIteration(last, event) &&
     last.code === event.code &&
     last.message === event.message
   );
@@ -1856,7 +1952,7 @@ export function withObservation(state: FlowRunState, observation: FlowObservatio
   const repeated = state.observations.some(
     (past) =>
       past.transition === observation.transition &&
-      past.batch_iteration === observation.batch_iteration &&
+      sameIteration(past, observation) &&
       sameSignals(past.signals, observation.signals),
   );
   if (repeated) return state;
@@ -2219,6 +2315,9 @@ function checkRecordShape(
   }
   if (version >= 12 && !isStringArray(parsed.journey_base)) {
     return invalid("no dice contra qué recorrido se escribió su cursor");
+  }
+  if (!isReentryArray(parsed.reentries)) {
+    return invalid("declara una reentrada sin tipo, frontera, ocurrencia u origen");
   }
   if (parsed.exhausted_reruns !== undefined && !isStringArray(parsed.exhausted_reruns)) {
     return invalid("declara vueltas de fronteras agotadas que no son transiciones");
@@ -2853,12 +2952,7 @@ function isEventArray(value: unknown): value is FlowRunEvent[] {
 function isEvent(entry: unknown): boolean {
   if (!isRecord(entry)) return false;
   if (typeof entry.transition !== "string" || typeof entry.operation !== "string") return false;
-  if (
-    entry.batch_iteration !== undefined &&
-    (!Number.isInteger(entry.batch_iteration) || (entry.batch_iteration as number) < 1)
-  ) {
-    return false;
-  }
+  if (!isIterationRecord(entry)) return false;
   return EVENT_BODIES.get(entry.kind as string)?.(entry) === true;
 }
 
@@ -2919,9 +3013,35 @@ function isObservationArray(value: unknown): value is FlowObservation[] {
       isRecord(entry) &&
       typeof entry.transition === "string" &&
       isStringArray(entry.signals) &&
-      (entry.batch_iteration === undefined ||
-        (Number.isInteger(entry.batch_iteration) && (entry.batch_iteration as number) >= 1)),
+      isIterationRecord(entry),
   );
+}
+
+const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen"];
+
+/** Absent, or reentries each with its kind, its boundary, its occurrence and its origin. */
+function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
+  if (value === undefined) return true;
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      REENTRY_KINDS.includes(entry.kind as string) &&
+      nonEmpty(entry.transition) &&
+      Number.isInteger(entry.occurrence) &&
+      (entry.occurrence as number) >= 1 &&
+      // A redraft names where it re-enters; the other kinds repeat from their row.
+      (entry.kind === "refine"
+        ? nonEmpty(entry.from)
+        : entry.from === null || nonEmpty(entry.from)),
+  );
+}
+
+/** Both iteration fields, each absent or a positive integer. */
+function isIterationRecord(entry: Record<string, unknown>): boolean {
+  const ordinal = (value: unknown): boolean =>
+    value === undefined || (Number.isInteger(value) && (value as number) >= 1);
+  return ordinal(entry.batch_iteration) && ordinal(entry.reentry_iteration);
 }
 
 /**
@@ -2960,8 +3080,7 @@ function isAttemptArray(value: unknown): value is FlowRunAttempt[] {
       Number.isInteger(entry.attempt) &&
       typeof entry.request_digest === "string" &&
       typeof entry.transition === "string" &&
-      (entry.batch_iteration === undefined ||
-        (Number.isInteger(entry.batch_iteration) && (entry.batch_iteration as number) >= 1)) &&
+      isIterationRecord(entry) &&
       (entry.parent_request_digest === null || typeof entry.parent_request_digest === "string"),
   );
 }

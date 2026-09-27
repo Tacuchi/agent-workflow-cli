@@ -197,6 +197,15 @@ export interface FlowDecision {
    */
   publishes?: { approve: string };
   /**
+   * This human row's `label` sends the run back to redraft, from the row `from`.
+   *
+   * Choosing it records a reentry: the journey gains a copy of the stretch from
+   * `from` up to this row, inserted right after it, so the redraft walks its own
+   * gate again before a new confirmation. `from` is the flow's authoring
+   * boundary, declared here because which row redrafts is a fact about the flow.
+   */
+  reenters?: { label: string; from: string };
+  /**
    * This human row's `approve` label authorizes the named transition's effects.
    *
    * The move {@link publishes} makes for a sealed proposal, for a delegated
@@ -317,6 +326,11 @@ export function proposalContractOf(decision: FlowDecision): ProposalContract | n
 /** The approve label of a row that decides a standing proposal, or `null`. */
 export function publishApprovalOf(decision: FlowDecision): string | null {
   return decision.publishes?.approve ?? null;
+}
+
+/** The redraft alternative of a confirmation row and where it re-enters, or `null`. */
+export function reentryOf(decision: FlowDecision): { label: string; from: string } | null {
+  return decision.reenters ?? null;
 }
 
 /** Whether this row's answer is what fixes the run's plan and its sources. */
@@ -1257,7 +1271,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["chassis.sesion-cerrada"],
       idempotent: true,
       recovery:
-        "una sesión que no cerró deja la corrida abierta: no la marques finalizada — reparás la fila del registro con 'aw history-update' y volvés a cerrar",
+        "una sesión que no cerró deja la corrida abierta: no la marques finalizada — reparás la fila del registro con 'aw history-update' y volvés a cerrar; si el cierre lo empezó 'aw session-close', volvé a correrlo: termina la corrida en su frontera conservando las unidades",
     },
   },
 
@@ -2002,6 +2016,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // person would have been confirming a write that already happened. The
     // doctrine's own line is `edit_in_place_with_confirm(spec) + stamp`.
     publishes: { approve: "Aprobar y guardar" },
+    reenters: { label: "Refinar", from: "spec-refine.content-authoring" },
     alternatives: [
       {
         label: "Aprobar y guardar",
@@ -2288,6 +2303,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_NEW_LOOP,
     attribution: PLAN_ATTRIBUTION,
     publishes: { approve: "Aprobar y guardar" },
+    reenters: { label: "Refinar", from: "plan-new.phase-shaping" },
     alternatives: [
       {
         label: "Aprobar y guardar",
@@ -2509,6 +2525,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_REFINE_LOOP,
     attribution: PLAN_ATTRIBUTION,
     publishes: { approve: "Aprobar y guardar" },
+    reenters: { label: "Refinar", from: "plan-refine.journey-map" },
     alternatives: [
       {
         label: "Aprobar y guardar",
@@ -3777,33 +3794,94 @@ export function journeyOfFlow(flow: WorklineFlow): readonly FlowDecision[] {
 }
 
 /**
+ * A reentry a run recorded: where its journey stops being the registry's list.
+ *
+ * Declared here, not in the run state, so the journey stays computable from the
+ * small shape this module reads without a dependency back on the state domain.
+ *
+ * The row it happened at is named by id and by `occurrence` — which walk of that
+ * id it was, counting from 1 — never by index: a later build may add rows before
+ * it, and an index would then point somewhere else.
+ *
+ * - `refine`: a confirmation row chose its redraft alternative. The stretch from
+ *   `from` (the flow's authoring row) up to `transition` is inserted right after
+ *   that row, before publication and finalize.
+ * - `close`: the session was closed while the run stood on `transition`. The
+ *   journey ends in a `chassis.finalize` placed there.
+ * - `reopen`: the closed session was reopened. After a `close`, the rows it cut
+ *   come back after that finalize; after a finished journey, the stretch from
+ *   `transition` (its last human row) to the end is walked again.
+ */
+export interface JourneyReentry {
+  kind: "refine" | "close" | "reopen";
+  transition: string;
+  occurrence: number;
+  from: string | null;
+}
+
+/**
+ * A walked journey plus, per row, the reentry that inserted it (0 = the row's
+ * own place). Two copies of one row differ only in that number, which is what
+ * keeps their attempts, counters and trace apart.
+ */
+export interface ExpandedJourney {
+  rows: readonly FlowDecision[];
+  copies: readonly number[];
+}
+
+/** The journey state shape {@link journeyForState} reads. */
+export interface JourneyState {
+  flow: WorklineFlow;
+  batches?: readonly { published_plan_digest?: string }[];
+  batch_loop?: { pending: boolean; iteration: number | null };
+  applied?: readonly string[];
+  boundary?: string | null;
+  reentries?: readonly JourneyReentry[];
+}
+
+const FINALIZE_TRANSITION = "chassis.finalize";
+
+/**
  * The actual cursor journey for a persisted run.
  *
- * PLAN-exec alone has a repeatable middle: every sealed batch appends another
- * copy of `batch-inference … batch-close` to the journey while an open phase
- * remains.  The cursor therefore remains a normal append-only prefix — it never
- * rewinds to make a second batch look like a first one — and the final close
- * simply stops adding a copy, exposing final validation, Git and `done`.
+ * The registry list, with two kinds of repetition layered on it: plan-exec's
+ * batch segment (see {@link batchSegments}) and the reentries the run recorded
+ * (see {@link JourneyReentry}). Both only ever INSERT rows at or after the
+ * cursor, so the cursor remains an append-only prefix — it never rewinds, which
+ * would make already-applied transitions re-runnable.
  *
  * This intentionally accepts only the small state shape it reads, avoiding a
  * runtime dependency back from the authority registry to the run-state domain.
  */
 export function journeyForState(
-  state: {
-    flow: WorklineFlow;
-    batches?: readonly { published_plan_digest?: string }[];
-    batch_loop?: { pending: boolean; iteration: number | null };
-    applied?: readonly string[];
-    boundary?: string | null;
-  },
+  state: JourneyState,
   baseJourney?: readonly FlowDecision[],
 ): readonly FlowDecision[] {
-  // The runtime normally supplies no base, so this reads the registry directly.
-  // A controlled host may supply its own fixture journey: PLAN-exec still adds
-  // its cursor only when that journey actually contains the batch segment.
-  const base = baseJourney ?? journeyOfFlow(state.flow);
-  if (state.flow !== "plan-exec") return base;
+  return expandJourney(state, baseJourney).rows;
+}
 
+/** {@link journeyForState} with the reentry each row came from. */
+export function expandJourney(
+  state: JourneyState,
+  baseJourney?: readonly FlowDecision[],
+): ExpandedJourney {
+  // The runtime normally supplies no base, so this reads the registry directly.
+  // A controlled host may supply its own fixture journey.
+  const base = baseJourney ?? journeyOfFlow(state.flow);
+  const batched = state.flow === "plan-exec" ? batchSegments(state, base) : base;
+  return withReentries(batched, base, state.reentries ?? []);
+}
+
+/**
+ * PLAN-exec's repeatable middle: every sealed batch appends another copy of
+ * `batch-eligibility-signal … batch-close` while an open phase remains, and the
+ * final close simply stops adding a copy, exposing final validation, Git and
+ * `done`. A fixture journey without the segment keeps its ordinary path.
+ */
+function batchSegments(
+  state: JourneyState,
+  base: readonly FlowDecision[],
+): readonly FlowDecision[] {
   const first = base.findIndex((decision) => decision.id === "plan-exec.batch-eligibility-signal");
   const last = base.findIndex((decision) => decision.id === "plan-exec.batch-close");
   // A registry build missing either boundary must keep the ordinary path rather
@@ -3832,7 +3910,11 @@ export function journeyForState(
     copies === 0 &&
     inference >= first &&
     (state.applied?.includes("plan-exec.batch-inference") === true ||
-      state.boundary === "plan-exec.batch-inference");
+      state.boundary === "plan-exec.batch-inference" ||
+      // A close there moves the boundary to its finalize; the row stood on is the same.
+      (state.reentries ?? []).some(
+        (reentry) => reentry.kind === "close" && reentry.transition === "plan-exec.batch-inference",
+      ));
   if (noWorkInferenceStarted) {
     return [...base.slice(0, first), ...base.slice(first, inference + 1), ...base.slice(last + 1)];
   }
@@ -3844,6 +3926,119 @@ export function journeyForState(
     ...Array.from({ length: copies }, () => segment).flat(),
     ...base.slice(last + 1),
   ];
+}
+
+/**
+ * Lay the recorded reentries over the journey, oldest first.
+ *
+ * Each one names its row as the run walked it at that moment, which is exactly
+ * what replaying them in order rebuilds. A reentry whose rows this build no
+ * longer has is left out rather than approximated — and so is the reopen of a
+ * close left out — so the cursor check names the mismatch instead of the run
+ * walking an invented stretch.
+ */
+function withReentries(
+  rows: readonly FlowDecision[],
+  base: readonly FlowDecision[],
+  reentries: readonly JourneyReentry[],
+): ExpandedJourney {
+  let journey: ExpandedJourney = { rows, copies: rows.map(() => 0) };
+  let cut: ExpandedJourney | "dropped" | null = null;
+  for (const [index, reentry] of reentries.entries()) {
+    const ordinal = index + 1;
+    if (reentry.kind === "refine") {
+      journey = insertRedraft(journey, base, reentry, ordinal);
+    } else if (reentry.kind === "close") {
+      const closed = closeAt(journey, base, reentry, ordinal);
+      journey = closed?.journey ?? journey;
+      cut = closed?.cut ?? "dropped";
+    } else {
+      if (cut !== "dropped") journey = reopen(journey, cut, reentry, ordinal);
+      cut = null;
+    }
+  }
+  return journey;
+}
+
+/** Index of the `occurrence`-th row of `transition`, or -1 when there is none. */
+export function occurrenceIndex(
+  rows: readonly FlowDecision[],
+  transition: string,
+  occurrence: number,
+): number {
+  let seen = 0;
+  for (const [index, row] of rows.entries()) {
+    if (row.id !== transition) continue;
+    seen += 1;
+    if (seen === occurrence) return index;
+  }
+  return -1;
+}
+
+/** Which walk of its id the row at `index` is, counting from 1. */
+export function occurrenceAt(rows: readonly FlowDecision[], index: number): number {
+  const id = rows[index]?.id;
+  return rows.slice(0, index + 1).filter((row) => row.id === id).length;
+}
+
+function insertRedraft(
+  journey: ExpandedJourney,
+  base: readonly FlowDecision[],
+  reentry: JourneyReentry,
+  ordinal: number,
+): ExpandedJourney {
+  const from = base.findIndex((decision) => decision.id === reentry.from);
+  const to = base.findIndex((decision) => decision.id === reentry.transition);
+  const origin = occurrenceIndex(journey.rows, reentry.transition, reentry.occurrence);
+  if (from < 0 || to < from || origin < 0) return journey;
+  const at = origin + 1;
+  const segment = base.slice(from, to + 1);
+  return {
+    rows: [...journey.rows.slice(0, at), ...segment, ...journey.rows.slice(at)],
+    copies: [
+      ...journey.copies.slice(0, at),
+      ...segment.map(() => ordinal),
+      ...journey.copies.slice(at),
+    ],
+  };
+}
+
+function closeAt(
+  journey: ExpandedJourney,
+  base: readonly FlowDecision[],
+  reentry: JourneyReentry,
+  ordinal: number,
+): { journey: ExpandedJourney; cut: ExpandedJourney } | null {
+  const finalize = base.find((decision) => decision.id === FINALIZE_TRANSITION);
+  const at = occurrenceIndex(journey.rows, reentry.transition, reentry.occurrence);
+  if (finalize === undefined || at < 0) return null;
+  return {
+    journey: {
+      rows: [...journey.rows.slice(0, at), finalize],
+      copies: [...journey.copies.slice(0, at), ordinal],
+    },
+    cut: { rows: journey.rows.slice(at), copies: journey.copies.slice(at) },
+  };
+}
+
+function reopen(
+  journey: ExpandedJourney,
+  cut: ExpandedJourney | null,
+  reentry: JourneyReentry,
+  ordinal: number,
+): ExpandedJourney {
+  // After a close, the rows it cut are the same rows, not copies: the boundary it
+  // stood on keeps its attempts, so closing and reopening never refills a budget.
+  if (cut !== null) {
+    return { rows: [...journey.rows, ...cut.rows], copies: [...journey.copies, ...cut.copies] };
+  }
+  const from = occurrenceIndex(journey.rows, reentry.transition, reentry.occurrence);
+  if (from < 0) return journey;
+  const again = journey.rows.slice(from);
+  return {
+    rows: [...journey.rows, ...again],
+    copies: [...journey.copies, ...again.map(() => ordinal)],
+  };
 }
 
 /**

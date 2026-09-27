@@ -3,26 +3,36 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { WorklineFlow } from "../../src/application/capability/compose.js";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import {
   type InternalActionExecutor,
   internalActionExecutor,
 } from "../../src/application/flow/internal-actions.js";
-import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
+import { journeyForRun } from "../../src/application/flow/run-journey.js";
+import {
+  applyUnderLock,
+  locateRun,
+  readRun,
+} from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
+import { CLOSED_MARKER } from "../../src/application/session-resolver.js";
 import { SELF_AUTHORIZABLE_CLASSES } from "../../src/domain/capability/effects.js";
 import {
   FLOW_DECISIONS,
   type FlowDecision,
+  effectsOf,
   journeyOfFlow,
   proposalContractOf,
   publishApprovalOf,
+  reentryOf,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
+import { attemptAccountingAt, withProposal } from "../../src/domain/flow/run-state.js";
 import { sealProposal } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
@@ -320,6 +330,12 @@ describe("los tres guardados hablan el mismo contrato", () => {
       ).toEqual(["Aprobar y guardar", "Refinar"]);
       expect(row.alternatives?.[0]?.recommended, row.id).toBe(true);
       expect(publishApprovalOf(row), row.id).toBe("Aprobar y guardar");
+      // Y `Refinar` vuelve a una fila de redacción que su recorrido tiene antes.
+      const redraft = reentryOf(row);
+      const ids = journeyOfFlow(row.scope as WorklineFlow).map((decision) => decision.id);
+      expect(redraft?.label, row.id).toBe("Refinar");
+      expect(ids.indexOf(redraft?.from ?? ""), row.id).toBeGreaterThanOrEqual(0);
+      expect(ids.indexOf(redraft?.from ?? ""), row.id).toBeLessThan(ids.indexOf(row.id));
     }
   });
 
@@ -340,4 +356,281 @@ describe("los tres guardados hablan el mismo contrato", () => {
       expect(row.authority, row.id).toBe("agent");
     }
   });
+});
+
+describe("Refinar vuelve a la redacción en los tres flujos que lo ofrecen", () => {
+  /**
+   * AC-12 de la spec 052. `Refinar` descarta la propuesta sin escribir y deja la
+   * corrida y la sesión abiertas: la siguiente `advance` para en la frontera de
+   * redacción del flujo, el gate vuelve a correr sobre los bytes nuevos con sus
+   * propios intentos, y lo aprobado en la segunda confirmación es lo publicado.
+   */
+  const PLAN_V = (version: string) =>
+    [
+      `# Plan 041 — refinado ${version}`,
+      "",
+      "> Standalone: prueba de Refinar",
+      "> Límite de ejecución: checkout",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — algo",
+      "> Fuentes: workspace",
+      "",
+      "- [ ] T1.1 — hacer algo _(fuentes: workspace)_",
+      "",
+      "**Validación de fase:** `npm test` pasa.",
+      "**Condición de salida:** hecho.",
+      "",
+      "## Execution batches",
+      "",
+      "- B1 · isolated · F1",
+      "",
+      "## Validations",
+      "",
+      "- `npm test` pasa.",
+      "",
+    ].join("\n");
+  const CASES = [
+    {
+      flow: "spec-refine",
+      authoring: "spec-refine.content-authoring",
+      gate: "spec-refine.ready-gate",
+      doc: "docs/specs/041-spec-refinada.md",
+      bytes: (version: string) => `---\nstatus: ready-for-plan\n---\n\n# Spec 041 — ${version}\n`,
+    },
+    {
+      flow: "plan-new",
+      authoring: "plan-new.phase-shaping",
+      gate: "plan-new.coherence-gate",
+      doc: "docs/plans/041-plan-refinado.md",
+      bytes: PLAN_V,
+    },
+    {
+      flow: "plan-refine",
+      authoring: "plan-refine.journey-map",
+      gate: "plan-refine.executability-gate",
+      doc: "docs/plans/041-plan-refinado.md",
+      bytes: PLAN_V,
+    },
+  ] as const;
+
+  let workdir: string;
+  let paths: PathsService;
+  let executor: InternalActionExecutor;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-refinar-"));
+    paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
+    executor = internalActionExecutor({
+      fs,
+      env: new FakeEnv(workdir, workdir),
+      paths,
+      git: new RecordingGit(),
+    });
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  for (const scenario of CASES) {
+    const session = `041-refinar-${scenario.flow}`;
+
+    async function current() {
+      const read = await readRun(fs, locateRun(paths, session));
+      if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
+      return {
+        state: read.state,
+        resolved: resolveBoundary(read.state, journeyForRun(read.state)),
+      };
+    }
+
+    async function answer(body: unknown, approval: string | null = null): Promise<FlowDirective> {
+      const result = await submitFlow(fs, paths, {
+        code: "041",
+        raw: JSON.stringify(body),
+        approval,
+        executor,
+      });
+      if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
+      return result.directive;
+    }
+
+    function executionBody(
+      resolved: Awaited<ReturnType<typeof current>>["resolved"],
+      detail = "salida real",
+    ): Record<string, unknown> {
+      const action = resolved.action;
+      if (action === null) throw new Error("una frontera de ejecución sin invocación");
+      const declared = resolved.proposal?.effects ?? effectsOf(resolved.stopped as FlowDecision);
+      return {
+        input_digest: resolved.seal,
+        outcome: "completed",
+        invocation: action.invocation,
+        validations: action.evidence.map((id) => ({
+          id,
+          passed: true,
+          detail,
+          ...(id === "workline.source-bounded"
+            ? {
+                proof: {
+                  kind: "inspection" as const,
+                  source: "workspace",
+                  relative_cwd: ".",
+                  checkout_digest: "test-checkout",
+                  invocation: { artifact: "tests/unit/flow-proposal.test.ts" },
+                },
+              }
+            : {}),
+        })),
+        effects: { planned: [...declared], approved: [], applied: [...declared] },
+        output: null,
+      };
+    }
+
+    /** What the boundary in force admits, and the approval it asks for, if any. */
+    function bodyFor(
+      resolved: Awaited<ReturnType<typeof current>>["resolved"],
+      content: string,
+    ): { body: Record<string, unknown>; approval: string | null } {
+      const stopped = resolved.stopped as FlowDecision;
+      const seal = resolved.seal;
+      if (resolved.kind === "authorization") {
+        const planned = resolved.authorization?.planned ?? [];
+        const approval = effectApprovalDigest(stopped.id, planned);
+        return { body: { input_digest: seal, choice: "Autorizar el efecto" }, approval };
+      }
+      if (resolved.kind === "execution") return { body: executionBody(resolved), approval: null };
+      if (resolved.kind !== "semantic") {
+        return {
+          body: { input_digest: seal, choice: resolved.choices[0]?.label ?? "" },
+          approval: null,
+        };
+      }
+      const body =
+        proposalContractOf(stopped) !== null
+          ? { input_digest: seal, artifacts: [{ path: scenario.doc, content }] }
+          : { input_digest: seal, signals: [], decisions: { paso: stopped.id } };
+      return { body, approval: null };
+    }
+
+    /**
+     * Contesta hasta la confirmación. En el gate manda antes `refusals` veces la
+     * misma evidencia sin salida real: cada vez se evalúa, se rechaza y gasta.
+     */
+    /** The same evidence without real output: evaluated, refused, and charged. */
+    async function refuseAtGate(resolved: Awaited<ReturnType<typeof current>>["resolved"]) {
+      const directive = await answer(executionBody(resolved, "  "));
+      expect(directive.error?.code, scenario.flow).toBe("FLOW_EVIDENCE_MISSING");
+    }
+
+    /** Whether the run stands on the confirmation with a proposal to decide. */
+    function atConfirmation(resolved: Awaited<ReturnType<typeof current>>["resolved"]): boolean {
+      if (resolved.stopped === null) throw new Error("el recorrido terminó sin confirmación");
+      return publishApprovalOf(resolved.stopped) !== null && resolved.proposal !== null;
+    }
+
+    /** Answers one boundary; `null` once at the confirmation, else the refusals left. */
+    async function answerOne(content: string, pending: number): Promise<number | null> {
+      const { resolved } = await current();
+      if (atConfirmation(resolved)) return null;
+      if (pending > 0 && resolved.stopped?.id === scenario.gate) {
+        await refuseAtGate(resolved);
+        return pending - 1;
+      }
+      const { body, approval } = bodyFor(resolved, content);
+      await answer(body, approval);
+      return pending;
+    }
+
+    /** Contesta hasta la confirmación, rechazando antes `refusals` veces en el gate. */
+    async function walkToConfirmation(content: string, refusals: number): Promise<void> {
+      let pending: number | null = refusals;
+      for (let step = 0; step < 40 && pending !== null; step += 1) {
+        pending = await answerOne(content, pending);
+      }
+      if (pending !== null) throw new Error("el recorrido nunca llegó a la confirmación");
+    }
+
+    async function adoptRun(): Promise<void> {
+      await mkdir(join(paths.cwdSessionsDir(), session), { recursive: true });
+      await writeFile(
+        join(paths.cwdSessionsDir(), session, "SESSION.md"),
+        "# SESSION — refinar\n\n## Objective\nrefinar y guardar\n",
+        "utf8",
+      );
+      const adopted = await advanceFlow(fs, paths, {
+        code: "041",
+        flow: scenario.flow,
+        adopt: true,
+        executor,
+      });
+      if (!adopted.ok) throw new Error("esperaba adoptar la corrida");
+      await acceptAdaptiveRoute(fs, paths, session, { executor });
+    }
+
+    it(`${scenario.flow}: Refinar no escribe, deja la sesión abierta y vuelve a la redacción`, async () => {
+      await adoptRun();
+      await walkToConfirmation(scenario.bytes("v1"), 1);
+      expect(attemptAccountingAt((await current()).state, scenario.gate).spent).toBe(2);
+
+      const gate = await current();
+      const choice = { input_digest: gate.resolved.seal, choice: "Refinar" };
+      const refined = await answer(choice);
+      expect(refined.error).toBeNull();
+      expect(refined.boundary.transition).toBe(scenario.authoring);
+      expect(existsSync(join(workdir, scenario.doc))).toBe(false);
+      expect(existsSync(join(paths.cwdSessionsDir(), session, CLOSED_MARKER))).toBe(false);
+      const after = await current();
+      expect(after.state.proposal).toBeNull();
+      expect(after.state.authorizations).toEqual([]);
+      const reentry = {
+        kind: "refine",
+        transition: `${scenario.flow}.save-confirmation`,
+        occurrence: 1,
+        from: scenario.authoring,
+      };
+      expect(after.state.reentries).toEqual([reentry]);
+
+      // Reenviar la misma elección no registra una segunda reentrada.
+      expect((await answer(choice)).error?.code).toBe("FLOW_ANSWER_RESENT");
+      expect((await current()).state.reentries).toEqual([reentry]);
+
+      // La siguiente advance vuelve a parar en la redacción, no avanza sola.
+      const resumed = await advanceFlow(fs, paths, { code: "041", executor });
+      if (!resumed.ok) throw new Error("esperaba retomar la corrida");
+      expect(resumed.directive.boundary.transition).toBe(scenario.authoring);
+
+      // En la copia, reintentar la misma evidencia rechazada vuelve a diagnosticarse
+      // y a cobrarse: la copia no hereda el «ya se aplicó» de la primera pasada.
+      await walkToConfirmation(scenario.bytes("v2"), 2);
+      const second = await current();
+      expect(attemptAccountingAt(second.state, scenario.gate).spent).toBe(3);
+      const published = await answer({
+        input_digest: second.resolved.seal,
+        choice: "Aprobar y guardar",
+      });
+      expect(published.error).toBeNull();
+      expect(await readFile(join(workdir, scenario.doc), "utf8")).toBe(scenario.bytes("v2"));
+    });
+
+    it(`${scenario.flow}: sin propuesta en pie, Refinar también vuelve a la redacción`, async () => {
+      await adoptRun();
+      await walkToConfirmation(scenario.bytes("v1"), 0);
+      // La propuesta que la corrida abandonó: la confirmación sigue en pie sin ella.
+      const location = locateRun(paths, session);
+      await applyUnderLock(fs, location, (state) =>
+        state === null
+          ? { ok: false as const, failure: { code: "X", message: "sin corrida", action: "-" } }
+          : { ok: true as const, state: withProposal(state, null), value: null },
+      );
+      const gate = await current();
+      expect(gate.resolved.stopped?.id).toBe(`${scenario.flow}.save-confirmation`);
+      const refined = await answer({ input_digest: gate.resolved.seal, choice: "Refinar" });
+      expect(refined.boundary.transition).toBe(scenario.authoring);
+      expect(existsSync(join(paths.cwdSessionsDir(), session, CLOSED_MARKER))).toBe(false);
+      expect((await current()).state.reentries).toHaveLength(1);
+    });
+  }
 });

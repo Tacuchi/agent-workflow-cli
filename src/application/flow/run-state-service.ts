@@ -267,7 +267,7 @@ async function raiseCounters(
 
   const spent = new Map<string, number>();
   for (const attempt of state.attempts) {
-    const key = attemptCounterKeyForIteration(attempt.transition, attempt.batch_iteration);
+    const key = attemptCounterKeyForIteration(attempt.transition, attempt);
     spent.set(key, (spent.get(key) ?? 0) + 1);
   }
   const attempts = { ...current.value.attempts };

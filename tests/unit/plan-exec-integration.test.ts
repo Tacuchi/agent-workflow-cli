@@ -14,6 +14,9 @@ import {
   type WorktreeListOutput,
   runWorktree,
 } from "../../src/application/worktree-service.js";
+import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
+import { parseArgv } from "../../src/cli/parser.js";
+import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { planExecWalk } from "../helpers/plan-exec-walk.js";
@@ -349,6 +352,33 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     if (!("sessionClose" in cerrado)) throw new Error("el cierre a mano tenía que cerrar");
     expect(cerrado.sessionClose.pending_integration).toBeUndefined();
     expect(cerrado.sessionClose.pending_integration_error).toContain("no respondió");
+  });
+
+  it("aw session-close con la corrida a mitad de lote la termina ahí y conserva la unidad", async () => {
+    const dos = await unitOf(DOS);
+    const sha = commitIn(dos, PROPIO_DOS, "export const dos = 2;\n", "beta");
+
+    const result = await sessionCloseCommand.execute(
+      parseArgv(["session-close", "--code", DOS.code]),
+      deps as unknown as CliContext,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
+      run: { closed_at: "plan-exec.implementation", finalize: "applied" },
+      reopen: `aw session-resume --code ${DOS.folder} --reopen`,
+    });
+    // La unidad y su commit sobreviven al cierre: nada se integró ni se liberó.
+    // Con la sesión cerrada la lista la muestra entre las huérfanas, que es lo
+    // que la reapertura del recibo resuelve.
+    const listed = await liveUnits();
+    expect(listed.orphans.map((unit) => unit.session)).toContain(DOS.folder);
+    expect(git(dos, "rev-parse", "HEAD").trim()).toBe(sha);
+    const final = await walk.current(DOS.folder);
+    expect(final.state.applied.at(-1)).toBe("chassis.finalize");
+    expect(final.state.reentries?.at(-1)).toMatchObject({
+      kind: "close",
+      transition: "plan-exec.implementation",
+    });
   });
 
   it("el cierre a mano sigue cerrando, y su recibo conserva el remedio de reapertura", async () => {

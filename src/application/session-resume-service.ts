@@ -2,6 +2,8 @@ import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { type CheckpointFields, readLatestCheckpoint } from "./checkpoint-service.js";
+import { type RunReopen, reopenRun } from "./flow/reopen-run.js";
+import { locateRun } from "./flow/run-state-service.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
@@ -37,6 +39,13 @@ export interface SessionResumeOutput {
   objetivo: string | null;
   objetivo_text: string | null;
   checkpoint: CheckpointFields | null;
+  /** Where the reopened session's run resumes; absent when it had none to reopen. */
+  run?: { resumes_at: string };
+  /**
+   * Non-fatal, and never silent: the session reopened but its run did not. Re-running
+   * the reopen retries it — the reopen of an active session is a no-op.
+   */
+  run_error?: { code: string; message: string; action: string };
 }
 
 export interface SessionResumeError {
@@ -74,6 +83,7 @@ export async function runSessionResume(
   const session = resolution.session;
 
   let state = session.state;
+  let run: RunReopen = { ok: true, resumes_at: null };
   if (input.reopen === true) {
     const reopened = await reopenUnderLock(fs, paths, session, input.contextId);
     if (reopened !== null) return reopened;
@@ -84,6 +94,9 @@ export async function runSessionResume(
     // — and that block is the FIRST thing an agent reads when it comes back,
     // including in the payload below, which carries the document verbatim.
     await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
+    // A separate step, after the workspace lock is released: the run lock is
+    // taken on its own, so the two locks are never nested.
+    run = await reopenRun(fs, locateRun(paths, session.folder));
   }
 
   const cwd = paths.workspaceDir();
@@ -104,6 +117,8 @@ export async function runSessionResume(
     objetivo: objetivoText,
     objetivo_text: objetivoText,
     checkpoint,
+    ...(run.ok && run.resumes_at !== null ? { run: { resumes_at: run.resumes_at } } : {}),
+    ...(run.ok ? {} : { run_error: run.failure }),
   };
 }
 

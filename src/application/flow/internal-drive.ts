@@ -46,8 +46,8 @@ import {
   type FlowRunState,
   applyTransition,
   attemptsAt,
-  currentBatchIteration,
   grantAttempts,
+  iterationOf,
   restatesLastEvent,
   withActionAttempted,
   withAttempt,
@@ -253,7 +253,7 @@ function accept(
   // A stateful batch close returns the NEXT iteration's loop cursor. Its event
   // still belongs to the batch whose action just ran, so identity comes from the
   // marked pre-action state rather than the post-publication state we settle.
-  const batchIteration = currentBatchIteration(actionState, pending.decision.id);
+  const rowIteration = iterationOf(actionState, pending.decision.id);
   // What the row declares is the CEILING; what a sealed proposal really does is
   // the effect. Judging the publication against the ceiling would refuse a
   // proposal that only creates files on a row that also permits overwriting.
@@ -266,7 +266,7 @@ function accept(
     const failure: Extract<FlowRunEvent, { kind: "failed" }> = {
       kind: "failed",
       transition: pending.decision.id,
-      ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+      ...rowIteration,
       operation: pending.plan.operation,
       code: refused.code,
       // What the operation really found, not the contract's restatement of it:
@@ -321,7 +321,7 @@ function accept(
   let next = withEvent(forgiven, {
     kind: "executed",
     transition: pending.decision.id,
-    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+    ...rowIteration,
     operation: pending.plan.operation,
     summary: outcome.summary,
     output_digest: outputDigest,

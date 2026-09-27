@@ -35,6 +35,7 @@ import {
   SETTLEMENT_READINGS,
   actionOf,
   alternativesOf,
+  conditionOf,
   effectsOf,
   internalActionOf,
   isRouteEvaluation,
@@ -78,11 +79,12 @@ import {
   attemptAccountingAt,
   attemptsAt,
   checkAgainstJourney,
-  currentBatchIteration,
   degradeTransition,
   exhaustedRerunSpent,
+  iterationOf,
   positionDigest,
   reconcileAttemptsAt,
+  sameIteration,
   settlementAmbiguous,
   settlementOwed,
   skipTransition,
@@ -246,9 +248,12 @@ function passOver(
   decision: FlowDecision,
   journey: readonly FlowDecision[],
 ): { state: FlowRunState; step: FlowStep } | null {
+  // The rule counts what its OBSERVED row declared on its latest walk: a redraft
+  // copy of a conditional row still reads the observation made before the copy.
+  const observed = conditionOf(decision)?.threshold.observed ?? decision.id;
   const conditional =
     routeSkipReason(state, decision) ??
-    skipReason(decision, journey, state.observations, currentBatchIteration(state, decision.id)) ??
+    skipReason(decision, journey, state.observations, iterationOf(state, observed)) ??
     nothingToPublish(state, decision) ??
     nothingToSettle(state, decision);
   const degraded = conditional === null ? exhaustionSkip(state, decision) : null;
@@ -663,7 +668,12 @@ function executionFailure(
   state: FlowRunState,
   transition: string,
 ): Extract<FlowRunEvent, { kind: "failed" }> | null {
-  const last = state.events.filter((event) => event.transition === transition).at(-1);
+  // The same row walked again (a batch or redraft copy) is a different boundary:
+  // its predecessor's failure is not this one's.
+  const iteration = iterationOf(state, transition);
+  const last = state.events
+    .filter((event) => event.transition === transition && sameIteration(event, iteration))
+    .at(-1);
   return last !== undefined && last.kind === "failed" ? last : null;
 }
 
@@ -689,7 +699,7 @@ export function failedExecutionAttempt(
   failure: { code: string; message: string },
 ): FlowRunAttempt {
   const seal = boundarySeal(state, decision);
-  const batchIteration = currentBatchIteration(state, decision.id);
+  const rowIteration = iterationOf(state, decision.id);
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
   const attempt = prior.length + 1;
   return {
@@ -705,7 +715,7 @@ export function failedExecutionAttempt(
     parent_request_digest:
       prior.find((past) => past.attempt === attempt - 1)?.request_digest ?? null,
     transition: decision.id,
-    ...(batchIteration === null ? {} : { batch_iteration: batchIteration }),
+    ...rowIteration,
   };
 }
 

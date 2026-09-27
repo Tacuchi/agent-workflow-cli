@@ -1,17 +1,21 @@
 /**
  * The journey that a persisted run may cross.
  *
- * PLAN-exec is the single flow whose persisted batch cursor changes the shape of
- * its journey. Every other flow remains the registry journey verbatim. Keeping
- * that distinction at this application seam also lets controlled registry
- * fixtures replace `journeyOfFlow` without accidentally reading the production
- * registry through `journeyForState`'s lexical implementation.
+ * Every flow expands its registry journey with the reentries its run recorded,
+ * and PLAN-exec also with its batch cursor. Keeping the base lookup at this
+ * application seam also lets controlled registry fixtures replace
+ * `journeyOfFlow` without accidentally reading the production registry through
+ * `journeyForState`'s lexical implementation.
  */
 
-import { journeyForState, journeyOfFlow } from "../../domain/flow/authority.js";
+import { expandJourney, journeyForState, journeyOfFlow } from "../../domain/flow/authority.js";
 import type { FlowRunState } from "../../domain/flow/run-state.js";
 
 export function journeyForRun(state: FlowRunState) {
-  const base = journeyOfFlow(state.flow);
-  return state.flow === "plan-exec" ? journeyForState(state, base) : base;
+  return journeyForState(state, journeyOfFlow(state.flow));
+}
+
+/** {@link journeyForRun} with the reentry each row came from, over the same base. */
+export function expandedJourneyForRun(state: FlowRunState) {
+  return expandJourney(state, journeyOfFlow(state.flow));
 }
