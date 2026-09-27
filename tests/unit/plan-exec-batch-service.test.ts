@@ -177,6 +177,16 @@ describe("plan-exec batch publication", () => {
       }),
     ).toMatchObject({ ok: false, failure: { code: "PLAN_EXEC_DONE_TASKS_OPEN" } });
   });
+
+  it("sella done con casillas legadas y un pase pendiente dentro del traspaso", () => {
+    const plan = `${PLAN.replace("> Estado: en ejecución\n- [ ] T4.1", "> Estado: validada\n- [x] T4.1").replace("- [ ] T4.2", "- [x] T4.2")}\n## Handoff operativo\n- [ ] registrar el pase\n- Pase a cert: corte-1\n`;
+    const sealed = preparePlanExecDoneSeal(plan, {
+      plan: "docs/plans/032-plan-batch.md",
+      closure: "sesión 131",
+    });
+    expect(sealed).toMatchObject({ ok: true });
+    expect(parseTasks(plan)).toMatchObject({ total: 9, closed: 9 });
+  });
 });
 
 describe("recuperación durable del batch", () => {

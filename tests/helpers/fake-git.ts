@@ -45,6 +45,7 @@ export interface RecordingGitOptions {
   throwOnRepos?: string[];
   /** Start mid-merge (MERGE_HEAD present) without calling `merge()` first. */
   merging?: boolean;
+  mergeBases?: string[];
   /** Conflicted files returned by `conflictedFiles()` while mid-merge. */
   conflicted?: string[];
   /** Incoming (theirs) branch name returned by `mergeOrigin()` while mid-merge. */
@@ -98,6 +99,9 @@ export class RecordingGit implements GitPort {
 
   async isGitRepo(_repo: string): Promise<boolean> {
     return this.opts.isRepo ?? true;
+  }
+  async isWorktreeCleanPath(): Promise<boolean> {
+    return true;
   }
 
   async currentBranch(repo: string): Promise<string | undefined> {
@@ -229,6 +233,10 @@ export class RecordingGit implements GitPort {
   async mergeOrigin(repo: string): Promise<string | undefined> {
     this.calls.push({ op: "mergeOrigin", repo });
     return this.isMergingIn(repo) ? this.opts.mergeOrigin : undefined;
+  }
+  async mergeBases(repo: string): Promise<string[]> {
+    this.calls.push({ op: "mergeBases", repo });
+    return this.opts.mergeBases ?? ["a".repeat(40)];
   }
 
   async worktreeList(repo: string): Promise<WorktreeEntry[]> {

@@ -23,7 +23,13 @@ import { renderProjectBlock } from "../../src/application/render/project-block.j
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { type GitCall, RecordingGit } from "../helpers/fake-git.js";
 
-const fs = new NodeFileSystem();
+// RecordingGit models repositories under /repo; make that synthetic filesystem
+// coordinate observable while leaving the workspace's real files on disk.
+const fs = new (class extends NodeFileSystem {
+  override async exists(path: string): Promise<boolean> {
+    return path.startsWith("/repo/") || super.exists(path);
+  }
+})();
 
 interface SourceSpec {
   alias: string;

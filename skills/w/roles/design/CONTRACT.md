@@ -68,7 +68,7 @@ closed to five — one is enough:
 | `design.independent-outcomes` | two or more results each worth delivering | agent |
 | `design.functional-blocking` | an unclosed functional decision blocks the design | agent |
 | `design.clarity-lost` | one document would stop being readable | agent |
-| `design.governance-or-system-reuse` | the package already carries governance or several revisions | **CLI derives** |
+| `design.governance-or-system-reuse` | a **package** already carries governance or several revisions | **CLI derives** |
 | `design.special-source-or-effect` | a sensitive source, an external transmission, or a declared source that did not contribute | **CLI derives** |
 
 Recognizing a semantic signal is judgment and travels as `--input expansion=<id>`;
@@ -77,9 +77,11 @@ refused rather than believed. The receipt carries the mode, the signals that fir
 and the one-line cause — every artifact beyond the simple document traces back to
 the need it covers. `render` and `record` are package operations regardless.
 
-Publishing a second simple revision archives the outgoing bytes inside the same
-approved proposal, so a reference pinned to `@r1` keeps resolving after `@r2`
-lands: a published revision is never taken away by the next one.
+Publishing each successive simple revision (including the third and later ones)
+archives the outgoing bytes inside the same approved proposal. The manifest stays
+`simple`, and a reference pinned to an older revision keeps resolving. An update
+that requires package-only behavior names its expansion signal and refuses the
+conversion instead of changing the published mode.
 
 ## Evidence and lifecycle inside a package
 

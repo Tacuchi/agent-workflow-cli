@@ -116,6 +116,7 @@ export function findOwningSource(
   unitsRoot?: string,
 ): ProjectFuente | null {
   for (const s of sources) {
+    if (s.path === null) continue;
     // A path boundary, not a string prefix: `/src/core2` is not inside `/src/core`.
     const root = s.path.endsWith("/") ? s.path : `${s.path}/`;
     if (filePath === s.path || filePath.startsWith(root)) return s;

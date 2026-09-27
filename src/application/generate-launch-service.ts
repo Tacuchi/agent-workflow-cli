@@ -4,7 +4,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import {
   type ProjectFuente,
   readWorkspaceBlock,
-  resolveWorkspaceSourcePath,
+  requireSourcePath,
 } from "./parsers/project-block.js";
 import { PathsService } from "./paths-service.js";
 import {
@@ -44,6 +44,7 @@ export interface GenerateLaunchResult {
   unknown_aliases?: string[];
   /** Declared sources whose path does not exist on disk (skipped). */
   missing_sources?: string[];
+  unreadable_sources?: { alias: string; code: "SOURCE_PATH_MISSING"; error: string }[];
 }
 
 /**
@@ -65,11 +66,11 @@ export async function runGenerateLaunch(
   const wsPaths = new PathsService(paths.namespace, env.homeDir(), workspace);
 
   const block = await readWorkspaceBlock(fs, workspace, wsPaths.blockMarkers());
-  const declared = (block?.fuentes ?? []).filter((f) => f.path.length > 0);
+  const declared = block?.fuentes ?? [];
   if (declared.length === 0) {
     return {
       error: "no_sources_declared",
-      hint: "no sources in the WORKSPACE block — configurá al menos una con 'aw workspace-init --source alias:path'",
+      hint: "no sources in the WORKSPACE block — configurá al menos una con 'aw add-source <alias>:<ruta>:<rama>'",
     };
   }
 
@@ -91,10 +92,18 @@ export async function runGenerateLaunch(
   const launchDir = wsPaths.cwdLaunchDir();
   const sources: SourceArtifactResult[] = [];
   const missing: string[] = [];
+  const unreadable: NonNullable<GenerateLaunchResult["unreadable_sources"]> = [];
   for (const fuente of selected) {
-    const sourcePath = resolveWorkspaceSourcePath(workspace, fuente.path);
-    if (!(await fs.exists(sourcePath))) {
+    let sourcePath: string;
+    try {
+      sourcePath = await requireSourcePath(fs, fuente);
+    } catch (err) {
       missing.push(fuente.alias);
+      unreadable.push({
+        alias: fuente.alias,
+        code: "SOURCE_PATH_MISSING",
+        error: (err as Error).message,
+      });
       continue;
     }
     sources.push(
@@ -107,12 +116,13 @@ export async function runGenerateLaunch(
   }
 
   return {
-    ok: true,
+    ok: unreadable.length === 0,
     dry_run: dryRun,
     workspace,
     sources,
     ...(unknown.length > 0 ? { unknown_aliases: unknown } : {}),
     ...(missing.length > 0 ? { missing_sources: missing } : {}),
+    ...(unreadable.length > 0 ? { unreadable_sources: unreadable } : {}),
   };
 }
 

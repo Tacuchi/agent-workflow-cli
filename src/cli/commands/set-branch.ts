@@ -1,5 +1,5 @@
 import { resolveSourceBranches } from "../../application/branch-resolver.js";
-import { readWorkspaceBlock } from "../../application/parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "../../application/parsers/project-block.js";
 import { runProjectMdUpsertWrite } from "../../application/project-md-upsert-service.js";
 import {
   type WorkingBranchResolution,
@@ -87,8 +87,14 @@ const ensureDeclaredWorkingBranch: PrepareBranch = async (alias, rama, ctx) => {
       notice: `${alias} no es una fuente declarada: la rama ${rama} se registró sin comprobarla ni crearla`,
     };
   }
+  let path: string;
+  try {
+    path = await requireSourcePath(ctx.fs, source);
+  } catch (err) {
+    return { refusal: fail("SOURCE_PATH_MISSING", (err as Error).message) };
+  }
   const prod = resolveSourceBranches(source, block).prod;
-  const resolution = await ensureWorkingBranch(ctx.git, source, rama, prod);
+  const resolution = await ensureWorkingBranch(ctx.git, { ...source, path }, rama, prod);
   if (!resolution.ok) {
     return {
       refusal: fail(

@@ -2,7 +2,11 @@ import { join } from "node:path";
 import type { FlowRunState } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import { readWorkspaceBlock } from "../parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
 import type { IsolationReader } from "../session-close-service.js";
 
@@ -65,14 +69,24 @@ async function uncommittedSources(
   // Other sessions' units are not this run's work. Only its unisolated source
   // checkouts are observed here; git errors propagate rather than saying clean.
   const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
-  const sources = [{ alias: "workspace", path: paths.workspaceDir() }, ...(block?.fuentes ?? [])];
+  const sources: ProjectFuente[] = [
+    { alias: "workspace", path: paths.workspaceDir(), main_branch: null },
+    ...(block?.fuentes ?? []),
+  ];
   const pending: string[] = [];
   for (const source of sources) {
     if (isolated.includes(source.alias)) continue;
     if (state.scope !== null && !state.scope.sources.includes(source.alias)) continue;
-    if (!(await git.isGitRepo(source.path))) continue;
-    if (await git.isDirty(source.path)) {
-      pending.push(`${source.alias}: cambios sin commitear en ${source.path}.`);
+    let repo: string;
+    try {
+      repo = await requireSourcePath(fs, source);
+    } catch (err) {
+      pending.push(`${source.alias}: no verificable; ${(err as Error).message}.`);
+      continue;
+    }
+    if (!(await git.isGitRepo(repo))) continue;
+    if (await git.isDirty(repo)) {
+      pending.push(`${source.alias}: cambios sin commitear en ${repo}.`);
     }
   }
   return pending;

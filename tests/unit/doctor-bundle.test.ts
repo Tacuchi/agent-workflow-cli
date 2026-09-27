@@ -176,7 +176,7 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
     // El defecto que atrapa: el techo de este archivo custodia el documento que
     // SOBRA. Con 2524 bytes `doctor.md` pasó a ser la mediana, pero el margen es
     // de la banda entera: `reset.md` (2537) ya está por encima del objetivo y
-    // sólo lo salva ser el 11.º valor, y `fix-git.md` (2519) es el 9.º. Fijar la
+    // sólo lo salva ser el 11.º valor, y `fix-git.md` (2520) es el 9.º. Fijar la
     // mediana medida es lo que hace que crecer CUALQUIER comando rompa una
     // prueba en vez de romper el gate en la próxima corrida de otra persona.
     const { runContextBudget } = await import("../../src/application/context/budget-service.js");
@@ -193,8 +193,21 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
     expect(median?.actual ?? 0).toBeLessThanOrEqual(DOC_CEILING);
     // Y los dos vecinos que definen el hueco, con sus bytes: si alguno se mueve,
     // esta prueba lo dice antes que el gate.
-    expect(entries.get("fix-git")).toBe(2519);
+    expect(entries.get("fix-git")).toBe(2520);
     expect(entries.get("reset")).toBe(2537);
+  });
+
+  it("fix-git enseña el camino parcial con build y sin pasos de índice manuales", () => {
+    const guide = readFileSync(join(BUNDLE, "commands", "fix-git.md"), "utf8");
+    const role = readFileSync(join(BUNDLE, "roles", "git", "ROLE.md"), "utf8");
+    for (const flag of ["--show", "--adapt", "--skip-build"]) {
+      expect(guide, flag).toContain(flag);
+      expect(role, flag).toContain(flag);
+    }
+    expect(guide).toContain("left_out");
+    expect(role).toContain("left_out");
+    expect(guide).not.toContain("git checkout --ours");
+    expect(role).not.toContain("git checkout --ours");
   });
 
   it("el MANIFEST lo declara con su core y sólo módulos ya contabilizados", () => {

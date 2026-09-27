@@ -115,7 +115,8 @@ const POLICIES: Record<ExportCategory, CategoryPolicy> = {
   },
 };
 
-const LIMITS = { max_artifacts: 64, max_artifact_bytes: 512 * 1024 };
+const FORWARD_MAX_BYTES = 512 * 1024;
+const LIMITS = { max_artifacts: 64, max_artifact_bytes: 4 * 1024 * 1024 };
 const FORWARD_RE = /^(\d{2})-[^/]+\.sql$/;
 
 /**
@@ -329,7 +330,7 @@ export async function prepareExport(
     },
     sealed: "el material del alcance o el destino declarado de la categoría",
     scope,
-    contract: `${policy.contract} Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN es consultivo: el CLI reasigna el número dentro del lock. Copiá 'scope' TAL CUAL en tu respuesta: validate y apply lo leen en vez de re-derivarlo.`,
+    contract: `${policy.contract} Cada pieza divisible (incluidos forwards) admite ${FORWARD_MAX_BYTES} B y se divide en más archivos; un informe, README.md, RUNBOOK.md o 00-ROLLBACK.sql admite hasta ${LIMITS.max_artifact_bytes} B. Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN es consultivo: el CLI reasigna el número dentro del lock. Copiá 'scope' TAL CUAL en tu respuesta: validate y apply lo leen en vez de re-derivarlo.`,
     inventory,
     allowedDestinations: [unit, ...(policy.overwritable === null ? [] : [policy.overwritable])],
     limits: LIMITS,
@@ -765,6 +766,17 @@ function checkShape(
 
   const names = artifacts.map((a) => a.path.slice(unit.length + 1));
   for (const artifact of artifacts) {
+    const name = artifact.path.slice(unit.length + 1);
+    const indivisible =
+      policy.shape === "document" || ["README.md", "RUNBOOK.md", "00-ROLLBACK.sql"].includes(name);
+    const bytes = Buffer.byteLength(artifact.content, "utf8");
+    if (!indivisible && bytes > FORWARD_MAX_BYTES) {
+      return {
+        code: "EXPORT_LIMIT_EXCEEDED",
+        message: `'${artifact.path}' pesa ${bytes} B y el máximo por pieza divisible es ${FORWARD_MAX_BYTES} B`,
+        action: "partí el forward en archivos NN-<nombre>.sql consecutivos y repetí validate",
+      };
+    }
     if (!policy.extensions.some((ext) => artifact.path.endsWith(ext))) {
       return reject(
         `'${artifact.path}' no usa una extensión permitida (${policy.extensions.join(", ")})`,

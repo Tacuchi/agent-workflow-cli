@@ -30,9 +30,10 @@ import type {
   RetirementPublication,
   RetirementRevert,
 } from "../../domain/retirement/proposal.js";
-import type { CustodySource, SessionCustody } from "../../domain/session/custody.js";
+import type { CustodyEffect, CustodySource, SessionCustody } from "../../domain/session/custody.js";
 import { attributableCommits } from "../../domain/session/custody.js";
 import type { GitPort, LocalChange } from "../../ports/git.js";
+import { normalizePath } from "../multiroot/paths.js";
 
 export interface AttributionBlock {
   /** Which source could not be attributed cleanly. */
@@ -50,6 +51,8 @@ export interface Attribution {
   publication: RetirementPublication | null;
   /** Non-empty = the whole operation blocks before mutating anything. */
   blocks: AttributionBlock[];
+  /** Observed heads for the seal, without asking a released directory again. */
+  heads: Array<{ alias: string; head: string | null }>;
 }
 
 export interface AttributionOptions {
@@ -71,52 +74,24 @@ export async function attributeGitEffects(
   custody: SessionCustody,
   options: AttributionOptions,
 ): Promise<Attribution> {
-  const dirty: RetirementDirtyChange[] = [];
-  const reverts: RetirementRevert[] = [];
-  const blocks: AttributionBlock[] = [];
+  const result: Attribution = { dirty: [], reverts: [], publication: null, blocks: [], heads: [] };
+  const { blocks } = result;
   const publications: RetirementPublication[] = [];
 
   for (const source of custody.sources) {
-    const tree = source.unit_path ?? source.path;
-
-    // The operation state comes FIRST: a repository in the middle of something has
-    // an index and a HEAD mid-transition, so nothing read from it is a baseline —
-    // including the changes below. Reading them first and then discarding them
-    // would be computing an attribution from a state we already decided not to
-    // trust.
-    const state = await git.operationState(tree);
-    if (state !== "clean") {
-      blocks.push({
-        alias: source.alias,
-        reason: `'${source.alias}' tiene una operación git en curso (${state})`,
-        contested: [],
-        action: `terminá o abortá ese ${state} y reintentá: no se prepara un retiro sobre un índice a medio camino`,
-      });
-      continue;
-    }
-
-    let changes: LocalChange[];
     try {
-      changes = await git.localChanges(tree);
+      const prepared = await attributeSource(git, custody, source, options, result);
+      if (prepared === null) continue;
+      result.reverts.push(...prepared.reverts);
+      publications.push(prepared.publication);
     } catch (err) {
       blocks.push({
         alias: source.alias,
-        reason: `no se pudo leer el estado de '${tree}': ${message(err)}`,
+        reason: `no se pudo verificar el retiro de '${source.alias}': ${message(err)}`,
         contested: [],
-        action: "verificá que la fuente siga siendo un repositorio legible y reintentá",
+        action: "revisá la unidad, el destino y la custodia antes de reintentar; nada se retiró",
       });
-      continue;
     }
-
-    const change = dirtyChangeOf(source, tree, changes, blocks);
-    if (change !== null) dirty.push(change);
-
-    const commits = attributableCommits(custody, source.alias);
-    if (commits.length === 0) continue;
-    const prepared = await prepareReverts(git, source, tree, custody, commits, options, blocks);
-    if (prepared === null) continue;
-    reverts.push(...prepared.reverts);
-    publications.push(prepared.publication);
   }
 
   // ONE commit point or none. Two refs cannot be swapped as a single operation,
@@ -133,11 +108,134 @@ export async function attributeGitEffects(
   }
 
   return {
-    dirty,
-    reverts,
+    ...result,
     publication: publications.length === 1 ? (publications[0] as RetirementPublication) : null,
-    blocks,
   };
+}
+
+async function attributeSource(
+  git: GitPort,
+  custody: SessionCustody,
+  source: CustodySource,
+  options: AttributionOptions,
+  result: Attribution,
+): Promise<PreparedReverts | null> {
+  const integrated = await releasedIntegration(git, custody, source);
+  const tree = integrated === null ? (source.unit_path ?? source.path) : source.path;
+  const changes = await readableChanges(git, source, tree, result.blocks);
+  if (changes === null) return null;
+  if (integrated !== null && changes.length > 0) {
+    throw new Error(
+      "el destino integrado tiene cambios locales que no se pueden atribuir a esta sesión",
+    );
+  }
+  const change = dirtyChangeOf(source, tree, changes, result.blocks);
+  if (change !== null) result.dirty.push(change);
+  result.heads.push({ alias: source.alias, head: await git.head(tree) });
+
+  const commits =
+    integrated === null
+      ? attributableCommits(custody, source.alias)
+      : await integrationCommits(git, source, integrated);
+  if (commits.length === 0) return null;
+  return prepareReverts(git, source, tree, custody, commits, options, result.blocks, integrated);
+}
+
+async function readableChanges(
+  git: GitPort,
+  source: CustodySource,
+  tree: string,
+  blocks: AttributionBlock[],
+): Promise<LocalChange[] | null> {
+  // Read operation state before the index or HEAD: neither is stable mid-merge.
+  const state = await git.operationState(tree);
+  if (state !== "clean") {
+    blocks.push({
+      alias: source.alias,
+      reason: `'${source.alias}' tiene una operación git en curso (${state})`,
+      contested: [],
+      action: `terminá o abortá ese ${state} y reintentá: no se prepara un retiro sobre un índice a medio camino`,
+    });
+    return null;
+  }
+  return git.localChanges(tree);
+}
+
+/** A receipt alone does not prove release: the live git inventory must agree. */
+async function releasedIntegration(
+  git: GitPort,
+  custody: SessionCustody,
+  source: CustodySource,
+): Promise<CustodyEffect | null> {
+  if (source.unit_path === null) return null;
+  const integrations = custody.effects.filter(
+    (effect) => effect.kind === "unit_integrated" && effect.alias === source.alias,
+  );
+  if (integrations.length > 1) {
+    throw new Error(
+      "hay varias integraciones de esta fuente; no se puede atribuir todo el retiro a una sola",
+    );
+  }
+  const receipt = integrations[0];
+  if (receipt === undefined) return null;
+  const trees = await git.worktreeList(source.path);
+  if (
+    trees.some(
+      (tree) =>
+        tree.branch === source.unit_branch ||
+        normalizePath(tree.path) === normalizePath(source.unit_path ?? ""),
+    )
+  ) {
+    throw new Error("la unidad integrada aún figura en git; no se pudo verificar su liberación");
+  }
+  if (receipt.before === null || receipt.after === null || receipt.ref === null) {
+    throw new Error(
+      "la integración no registra origen, resultado y referencia destino verificables",
+    );
+  }
+  // The coordinator syncs the source checkout after publishing. Do not approve
+  // that effect against a different branch, or infer where another checkout is.
+  if (`refs/heads/${await git.currentBranch(source.path)}` !== receipt.ref) {
+    throw new Error(
+      `el destino integrado ${receipt.ref} no está en el checkout de la fuente; posicioná ese checkout en el destino antes de retirar`,
+    );
+  }
+  const unitHead = await git.refValue(source.path, refOf(source));
+  if (unitHead === null || !(await git.isAncestor(source.path, unitHead, receipt.after))) {
+    throw new Error(
+      "no se puede verificar que todo el trabajo de la rama de la unidad esté integrado",
+    );
+  }
+  if (!(await git.isAncestor(source.path, receipt.after, receipt.ref))) {
+    throw new Error("el destino ya no contiene la integración registrada");
+  }
+  return receipt;
+}
+
+async function integrationCommits(
+  git: GitPort,
+  source: CustodySource,
+  integration: CustodyEffect,
+): Promise<string[]> {
+  const { before, after } = integration;
+  if (before === null || after === null) throw new Error("integración sin extremos verificables");
+  // A merge made inside the unit (067) can have the destination as parent TWO.
+  const parents = await parentsOf(git, source.path, after);
+  if (parents.includes(before)) return [after];
+  if (!(await git.isAncestor(source.path, before, after))) {
+    throw new Error("el resultado de integración no contiene su destino previo");
+  }
+  return git.revList(source.path, after, [before], { firstParent: true });
+}
+
+async function parentsOf(git: GitPort, repo: string, commit: string): Promise<string[]> {
+  if ((await git.refValue(repo, commit)) === null) throw new Error(`commit ilegible: ${commit}`);
+  const parents: string[] = [];
+  for (let index = 1; ; index++) {
+    const parent = await git.refValue(repo, `${commit}^${index}`);
+    if (parent === null) return parents;
+    parents.push(parent);
+  }
 }
 
 /**
@@ -216,9 +314,10 @@ async function prepareReverts(
   commits: readonly string[],
   options: AttributionOptions,
   blocks: AttributionBlock[],
+  integration: CustodyEffect | null,
 ): Promise<PreparedReverts | null> {
   const repo = source.path;
-  const ref = refOf(source);
+  const ref = integration?.ref ?? refOf(source);
   const expectedOld = await git.refValue(repo, ref);
   if (expectedOld === null) {
     blocks.push({
@@ -253,6 +352,7 @@ async function prepareReverts(
     custody,
     source,
     options,
+    integration,
   );
   if ("reason" in rehearsal) {
     blocks.push({ alias: source.alias, ...rehearsal });
@@ -336,6 +436,7 @@ async function rehearse(
   custody: SessionCustody,
   source: CustodySource,
   options: AttributionOptions,
+  integration: CustodyEffect | null,
 ): Promise<PreparedReverts | RehearsalFailure> {
   // A UNIQUE directory per rehearsal, and the uniqueness is the fix for a real
   // collision. The path used to be `rehearsal-<opId>-<alias>`, where `opId` is a
@@ -375,7 +476,7 @@ async function rehearse(
   try {
     const reverts: RetirementRevert[] = [];
     for (const commit of ordered) {
-      const one = await rehearseOne(git, repo, ref, worktree, commit, custody, source);
+      const one = await rehearseOne(git, repo, ref, worktree, commit, custody, source, integration);
       if ("reason" in one) return one;
       reverts.push(one.revert);
     }
@@ -422,6 +523,17 @@ async function rehearse(
     }
 
     const expectedTree = await git.treeOf(worktree, preparedTip);
+    if (
+      integration !== null &&
+      (integration.before === null || expectedTree !== (await git.treeOf(repo, integration.before)))
+    ) {
+      return {
+        reason: `no se pudo verificar que los reverts restauren el destino previo a la integración en ${source.alias}`,
+        contested: [...ordered],
+        action:
+          "revisá la integración y sus padres; el retiro no acredita un resultado distinto del registrado",
+      };
+    }
     if (expectedTree === null) {
       return {
         reason: `no se pudo leer el árbol resultante del ensayo en ${source.alias}`,
@@ -473,12 +585,16 @@ async function rehearseOne(
   commit: string,
   custody: SessionCustody,
   source: CustodySource,
+  integration: CustodyEffect | null,
 ): Promise<{ revert: RetirementRevert } | RehearsalFailure> {
   const receipt = receiptFor(custody, source.alias, commit);
-  const parents = receipt?.parents ?? [];
-  // A merge needs its mainline, and the recorded parents are what name it: the
-  // first parent is the side the branch was on, so that is the one kept.
-  const mainline = parents.length > 1 ? 1 : null;
+  const parents =
+    integration === null ? (receipt?.parents ?? []) : await parentsOf(git, repo, commit);
+  // Keep the recorded destination, even when the merge happened in the unit.
+  // For a longer fast-forward, the final tree must still match that destination.
+  const destinationParent =
+    integration?.before === null || integration === null ? -1 : parents.indexOf(integration.before);
+  const mainline = parents.length > 1 ? (destinationParent < 0 ? 1 : destinationParent + 1) : null;
   const attempt = await git.rehearseRevert(worktree, commit, mainline);
   if (!attempt.ok) {
     return {

@@ -28,7 +28,7 @@ it("declara build y test, ninguno explícito, en los dos espejos y rechaza alias
   const ctx = { fs, env, paths } as unknown as CliContext;
   await runProjectMdUpsertWrite(fs, env, paths, {
     op: "init",
-    fuentes: [{ alias: "core", path: "/repo" }],
+    fuentes: [{ alias: "core", path: "../repo" }],
   });
   expect(
     (await setPipelineCommand.execute(args(["other", "build", "ninguno"]), ctx)).error?.code,

@@ -106,7 +106,7 @@ sections admit no such claim.
 | | `flow` (`workline.ui-flow/v1`) | `screen` (`workline.ui-screen/v1`) |
 |---|---|---|
 | Answers | how the journey runs | what one surface is |
-| Frontmatter core | `actors`, `entry`, `nodes`, `edges` | `default_state`, `states[]`, `flow_refs`, `dependencies` |
+| Frontmatter core | `actors`, `entry`, `nodes`, `edges` | `default_state`, `states[]`, `flow_refs`, optional `screen_refs`, `dependencies` |
 | Sections | Goal and outcome · Preconditions and entry · Main journey · Alternatives and recovery · Permissions and privacy · Traceability | Purpose and context · Structure and content · Components and design-system deltas · Data, permissions and validation · States and transitions · Interaction and navigation · Responsive and adaptation · Localization · Accessibility · Edge cases and degradation · Traceability |
 | Essential (no waiver) | Goal and outcome · Main journey · Traceability | Purpose and context · Structure and content · States and transitions · Interaction and navigation · Accessibility · Traceability |
 
@@ -115,7 +115,9 @@ sections admit no such claim.
 `DES-001/SCR-001@r2#error` — package / artifact @ revision # state anchor. A
 reference always pins the revision: **a later revision never invalidates a
 reference already fixed**. Baselines are cited as `DES-001@r2` plus the digest
-that seals them.
+that seals them. A screen may declare `screen_refs: [DES-001/SCR-002@r1]`
+to cite another screen or its state (`DES-001/SCR-002@r1#empty`). It does not
+extend the package closure, just like `flow_refs`.
 
 ### Maturity: `outline` → `handoff`
 

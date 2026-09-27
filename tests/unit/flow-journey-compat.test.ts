@@ -15,6 +15,7 @@ import { V11_JOURNEY_BASE } from "../../src/domain/flow/journey-baseline.js";
 import {
   FLOW_RUN_STATE_VERSION,
   type FlowRunReentry,
+  type FlowRunState,
   checkAgainstJourney,
   parseRunState,
   serializeRunState,
@@ -34,6 +35,21 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
 
 const fixtures = loadJourneyFixtures();
 const newest = fixtures.at(-1);
+
+function expectPersistedPrefix(
+  before: FlowRunState,
+  disk: FlowRunState,
+  ids: readonly string[],
+): void {
+  const expected = [...before.applied];
+  const consent = "plan-exec.unchanged-phase-consent";
+  const scope = expected.indexOf("plan-exec.source-scope");
+  if (!ids.includes(consent) && scope >= 0) {
+    expected.splice(scope, 0, consent);
+    expect(disk.skipped).toContain(consent);
+  }
+  expect(disk.applied).toEqual(expected);
+}
 
 describe("recorridos congelados — el instalado es el de la última release", () => {
   it("hay al menos un fixture, y el último declara el registro que la release escribía", () => {
@@ -130,7 +146,7 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
         const disk = parseRunState(await readFile(location.statePath, "utf8"));
         if (!disk.ok) throw new Error(`${flow}: ${disk.failure.code}`);
         expect(disk.state.version).toBe(FLOW_RUN_STATE_VERSION);
-        expect(disk.state.applied).toEqual(before.applied);
+        expectPersistedPrefix(before, disk.state, ids);
         expect(disk.state.boundary).toBe(before.boundary);
         expect(disk.state.journey_base).toEqual(journeyOfFlow(flow).map((decision) => decision.id));
       });

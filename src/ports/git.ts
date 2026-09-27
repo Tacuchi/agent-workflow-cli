@@ -188,6 +188,8 @@ export interface GitPort {
    * merge is in progress.
    */
   mergeHeads(repoPath: string): Promise<string[]>;
+  /** Every common ancestor of HEAD and MERGE_HEAD; several imply a virtual base. */
+  mergeBases(repoPath: string): Promise<string[]>;
   /** Unmerged paths: `git diff --name-only --diff-filter=U`. */
   conflictedFiles(repoPath: string): Promise<string[]>;
   /**
@@ -203,6 +205,18 @@ export interface GitPort {
    * refuse one whose stages moved underneath it.
    */
   conflictStages(repoPath: string, path: string): Promise<ConflictStages>;
+  /** Stage-zero index entry of an adapted tracked file (null when untracked). */
+  indexEntry(repoPath: string, path: string): Promise<{ mode: string; hash: string } | null>;
+  /** True when the working file equals its stage-zero blob, even if the merge staged it. */
+  isWorktreeCleanPath(repoPath: string, path: string): Promise<boolean>;
+  /** Read the index blob of a clean adapted path for size and EOL policy. */
+  readBlob(repoPath: string, hash: string): Promise<{ content: string | null; bytes: number }>;
+  /** Store exactly these blob bytes, without applying worktree filters. */
+  hashBlob(repoPath: string, content: string): Promise<string>;
+  /** Resolve a path to one stage-zero blob, then materialize it under the repo's attributes. */
+  setIndexEntry(repoPath: string, path: string, mode: string, hash: string): Promise<void>;
+  /** Stage deletion without `git add` and without reviving a deleted conflict. */
+  removeIndexEntry(repoPath: string, path: string): Promise<void>;
   /** `git add -- <path>`. Throws on failure. Never `git add -A`. */
   stagePath(repoPath: string, path: string): Promise<void>;
   /**
@@ -354,6 +368,8 @@ export interface ConflictStage {
   /** Decoded text, `null` when the stage is absent or is not UTF-8 text. */
   content: string | null;
   bytes: number;
+  /** Octal file mode from `ls-files -u` (null for an absent stage). */
+  mode?: string | null;
 }
 
 export interface ConflictStages {

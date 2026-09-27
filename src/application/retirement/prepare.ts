@@ -321,11 +321,10 @@ async function collectSession(
   collector.reverts.push(...attribution.reverts);
   collector.blocks.push(...attribution.blocks);
   if (attribution.publication !== null) collector.publications.push(attribution.publication);
-  for (const source of custody.sources) {
-    const tree = source.unit_path ?? source.path;
+  for (const source of attribution.heads) {
     collector.readSet.push({
       id: `git:${source.alias}/HEAD`,
-      digest: (await headOf(deps.git, tree)) ?? "unborn",
+      digest: source.head ?? "unborn",
     });
   }
 }
@@ -433,14 +432,6 @@ async function digestOf(fs: FileSystemPort, absolute: string): Promise<string | 
   if (!(await fs.exists(absolute))) return null;
   try {
     return baselineDigest(await fs.readText(absolute));
-  } catch {
-    return null;
-  }
-}
-
-async function headOf(git: GitPort, tree: string): Promise<string | null> {
-  try {
-    return await git.head(tree);
   } catch {
     return null;
   }

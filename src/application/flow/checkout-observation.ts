@@ -18,7 +18,7 @@ import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../../domain/source-boundary.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import { readWorkspaceBlock } from "../parsers/project-block.js";
+import { readWorkspaceBlock, requireSourcePath } from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { type CheckoutState, checkoutDigest } from "../source-boundary-policy.js";
 
@@ -52,6 +52,13 @@ export async function resolveCheckoutCandidates(
       const units = await fs.realPath(paths.userUnitsDir());
       const key = workspaceKey(paths.workspaceDir());
       for (const source of block.fuentes) {
+        try {
+          await requireSourcePath(fs, source);
+        } catch {
+          // A unit on disk is not proof that its declared source resolves on this host.
+          // The caller of observeScopedFingerprints reports the typed reason.
+          continue;
+        }
         const unit = unitPath(units, { workspaceKey: key, alias: source.alias, session });
         // Only a unit this session actually TOOK is published. Listing every alias
         // the workspace block declares would advertise roots the validator then
@@ -137,8 +144,24 @@ export async function observeScopedFingerprints(
 > {
   const candidates = await resolveCheckoutCandidates(fs, paths, session);
   const runtime = paths.cwdRoot();
+  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
   const base: Record<string, string | null> = {};
   for (const source of sources) {
+    const declared = block?.fuentes.find((item) => item.alias === source);
+    if (declared !== undefined) {
+      try {
+        await requireSourcePath(fs, declared);
+      } catch (error) {
+        return {
+          ok: false,
+          failure: {
+            code: "SOURCE_PATH_MISSING",
+            message: (error as Error).message,
+            action: `aw add-source ${source}:<ruta>`,
+          },
+        };
+      }
+    }
     const root = candidates.find((candidate) => candidate.source === source)?.root;
     if (root === undefined || !(await isObservableRepo(fs, git, root))) {
       base[source] = null;

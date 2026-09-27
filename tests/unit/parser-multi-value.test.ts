@@ -89,6 +89,14 @@ describe("flagValue accessor (multi-routed flags reach commands that read single
 });
 
 describe("repeated --path / --pattern route to valuesMulti", () => {
+  it("conserva ambas rutas de --show en fix-git prepare", () => {
+    const parsed = parseArgv(["fix-git", "prepare", "--show", "a.txt", "--show", "b.txt"]);
+    expect(parsed.valuesMulti.get("show")).toEqual(["a.txt", "b.txt"]);
+  });
+  it("conserva todas las rutas limpias de --adapt en fix-git prepare", () => {
+    const parsed = parseArgv(["fix-git", "prepare", "--adapt", "a.ts", "--adapt", "b.ts"]);
+    expect(parsed.valuesMulti.get("adapt")).toEqual(["a.ts", "b.ts"]);
+  });
   // Regression: attach-multiroot/code-scan re-scanned raw process.argv because
   // the parser overwrote repeated non-multi values (last-wins). Now both are
   // MULTI_VALUE_FLAGS so every occurrence is captured.

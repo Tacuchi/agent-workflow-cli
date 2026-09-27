@@ -16,7 +16,6 @@
 // runtime and must never inflate a host count (spec 010, criterion 3).
 
 import { dirname, join } from "node:path";
-import { parse as parseToml } from "smol-toml";
 import type { CliContext } from "../../cli/types.js";
 import {
   HARNESSES,
@@ -32,6 +31,7 @@ import {
 import type { HarnessVerification } from "../../domain/host-verification.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath } from "../multiroot/warp.js";
+import { parseToml } from "../parsers/toml.js";
 import {
   countOurAgyHooks,
   countOurCrushHooks,

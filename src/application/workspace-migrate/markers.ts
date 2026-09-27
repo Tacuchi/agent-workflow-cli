@@ -11,12 +11,13 @@
  * Renaming the markers is what makes the rich block the one that answers.
  */
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import {
   type ParsedProjectBlock,
   type ProjectBlockMarkers,
   parseProjectBlock,
+  resolveWorkspaceSourcePath,
 } from "../parsers/project-block.js";
 
 /** The hub files, in the order `readWorkspaceBlock` consults them. */
@@ -92,6 +93,7 @@ export function planHubMarkers(
   path: string,
   text: string,
   current: ProjectBlockMarkers,
+  localSources: Readonly<Record<string, string>> = {},
 ): HubMarkerOutcome {
   const currentPrefix = prefixOf(current.start);
   const prefixes = blockPrefixes(text);
@@ -119,7 +121,8 @@ export function planHubMarkers(
   // above it — but "usually" is not a licence to delete, so what it declares is
   // compared before it goes.
   const duplicate = parseProjectBlock(text, current);
-  const extra = duplicate === null ? [] : extraDeclarations(duplicate, adopted);
+  const extra =
+    duplicate === null ? [] : extraDeclarations(duplicate, adopted, dirname(path), localSources);
   if (extra.length > 0) {
     return refuse(
       "duplicado_con_contenido",
@@ -195,13 +198,25 @@ function dropBlock(text: string, markers: ProjectBlockMarkers): string {
  * timestamp the writer stamps on every write, not something a workspace
  * declared, and the appended block always carries the fresher one.
  */
-function extraDeclarations(candidate: ParsedProjectBlock, adopted: ParsedProjectBlock): string[] {
+function extraDeclarations(
+  candidate: ParsedProjectBlock,
+  adopted: ParsedProjectBlock,
+  workspace: string,
+  localSources: Readonly<Record<string, string>>,
+): string[] {
   const extra: string[] = [];
   if (isDeclared(candidate.proyecto) && candidate.proyecto !== adopted.proyecto) {
     extra.push(`Proyecto: ${firstLine(candidate.proyecto)}`);
   }
   for (const fuente of candidate.fuentes) {
-    const same = adopted.fuentes.some((f) => f.alias === fuente.alias && f.path === fuente.path);
+    const resolvePath = (path: string | null, alias: string): string | null =>
+      localSources[alias] ??
+      (path === null || path === "(local)" ? null : resolveWorkspaceSourcePath(workspace, path));
+    const same = adopted.fuentes.some(
+      (f) =>
+        f.alias === fuente.alias &&
+        resolvePath(f.path, f.alias) === resolvePath(fuente.path, fuente.alias),
+    );
     if (!same) extra.push(`Fuente: ${fuente.alias} → ${fuente.path}`);
   }
   extra.push(...extraEntries("Stack", candidate.stack, adopted.stack));

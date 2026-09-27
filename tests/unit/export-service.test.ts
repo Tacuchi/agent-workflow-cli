@@ -126,6 +126,30 @@ describe("prepareExport — the corpus decides whether there is anything to expo
 // ── per-category shape ───────────────────────────────────────────────────────
 
 describe("validateExport — each category enforces its own shape", () => {
+  it("un informe indivisible supera 512 KiB; un forward grande indica cómo partirlo", async () => {
+    const fs = workspace();
+    const report = await prepare(fs, "reports");
+    const largeReport = validateExport(
+      answer(report, [[`${report.unit}/informe.md`, `# Informe\n${"a".repeat(600_000)}`]]),
+      report,
+    );
+    expect(largeReport.ok).toBe(true);
+    const scripts = await prepare(fs, "scripts");
+    const raw = answer(scripts, [
+      [`${scripts.unit}/README.md`, "# Bundle\n"],
+      [`${scripts.unit}/00-ROLLBACK.sql`, "-- rollback\n"],
+      [`${scripts.unit}/01-forward.sql`, `-- forward\n${"x".repeat(600_000)}`],
+    ]);
+    const invalid = validateExport(raw, scripts);
+    expect(invalid).toMatchObject({
+      ok: false,
+      failure: {
+        code: "EXPORT_LIMIT_EXCEEDED",
+        message: expect.stringContaining("524288"),
+        action: expect.stringContaining("partí"),
+      },
+    });
+  });
   it("diagrams exige README y admite Markdown más DSL", async () => {
     const fs = workspace();
     const prepared = await prepare(fs, "diagrams");

@@ -85,6 +85,28 @@ const proposal = {
 };
 
 describe("ruta adaptativa", () => {
+  it("una omisión histórica de la revisión ahora pide evidencia y deja traza", () => {
+    const review = FLOW_DECISIONS.find((row) => row.id === "plan-exec.review-findings");
+    if (review === undefined) throw new Error("falta review-findings");
+    expect(routeControlOf(review)).toBeNull();
+    const state = withRouteDecisions(newRunState("plan-exec", "001-review-plan-exec"), [
+      { transition: review.id, disposition: "omit", substitution: null },
+    ]);
+    const result = advanceFlowRun({ state, journey: [review] });
+    if (!result.ok) throw new Error(result.failure.code);
+    expect(result.directive.boundary.transition).toBe(review.id);
+    expect(result.directive.boundary.kind).toBe("semantic");
+    expect(result.directive.request?.contract).toContain("decisions.review");
+    expect(result.state.skipped).toEqual([]);
+    expect(result.state.events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "route-refused", transition: review.id }),
+      ]),
+    );
+    const again = advanceFlowRun({ state: result.state, journey: [review] });
+    if (!again.ok) throw new Error(again.failure.code);
+    expect(again.state.events).toEqual(result.state.events);
+  });
   it("sella una propuesta, pide aceptación humana y ajustar no mueve el cursor", () => {
     expect(ROUTE_ACCEPT_LABEL).toBe("Aceptar propuesta");
     expect(ROUTE_ADJUST_LABEL).toBe("Pedir ajustes");

@@ -153,11 +153,15 @@ export interface FlowDecision {
    * claiming a decision nobody made. See {@link TransitionCondition}.
    */
   condition?: TransitionCondition;
+  /** Terminal outcome of a deterministic conditional row. */
+  handoff?: Extract<FlowChoiceOutcome, { kind: "handoff" }>;
   /**
    * An explicitly adaptable methodological control.  Its absence is meaningful:
    * the transition remains a hard gate and follows the legacy path.
    */
   route_control?: RouteControlConfiguration;
+  /** Typed semantic evidence required before this row can apply. */
+  answer_contract?: "batch-review";
   /** The one prefix boundary where an agent prepares the route for this run. */
   route_evaluation?: true;
   /**
@@ -987,16 +991,6 @@ const ROUTE_PHASE_VALIDATION: RouteControlConfiguration = {
     substitute: ROUTE_VALIDATION.consequences.substitute,
   },
   risk: ROUTE_VALIDATION.risk,
-};
-
-const ROUTE_REVIEW: RouteControlConfiguration = {
-  recommendation: "apply",
-  consequences: {
-    apply: "se revisan los hallazgos del cambio antes de continuar",
-    omit: "se continúa sin esa revisión y queda el riesgo aceptado",
-    substitute: "se usa la revisión o inspección sustituta declarada",
-  },
-  risk: "un cambio sin revisión puede conservar defectos o deuda innecesaria",
 };
 
 /** The five signals of the multi-plan split gate, shared by both plan loops. */
@@ -2651,9 +2645,14 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: PLAN_EXEC_LOOP,
     attribution: PLAN_ATTRIBUTION,
     condition: {
-      threshold: { observed: "plan-exec.entry-gap-recognition", min: 1 },
-      otherwise: "el gate de entrada no encontró ningún hueco: no hay severidad que clasificar",
+      threshold: {
+        observed: "plan-exec.entry-gap-recognition",
+        of: ["plan.entry-gap-structural"],
+        min: 1,
+      },
+      otherwise: "el gate de entrada no encontró un hueco estructural: no hay que escalar",
     },
+    handoff: { kind: "handoff", destination: "plan-refine" },
   },
   {
     id: "plan-exec.normalization-consent",
@@ -2688,6 +2687,24 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
           "la ejecución no arranca: el hallazgo queda en CHECKPOINT y el trabajo sigue en /w:plan-refine",
         recommended: false,
         outcome: { kind: "handoff", destination: "plan-refine" },
+      },
+    ],
+  },
+  {
+    id: "plan-exec.unchanged-phase-consent",
+    scope: "plan-exec",
+    title: "aprobar la validación sin cambios de las fases detectadas al entrar",
+    authority: "human",
+    ownership: "cli-owned",
+    document: PLAN_EXEC_LOOP,
+    attribution: PLAN_ATTRIBUTION,
+    alternatives: [
+      {
+        label: "Aprobar validación sin cambios",
+        consequence:
+          "se validan con evidencia real sólo las fases sin tareas abiertas observadas al entrar; no se cierra ninguna tarea y el crédito se puede anular",
+        recommended: true,
+        outcome: { kind: "continue" },
       },
     ],
   },
@@ -3022,7 +3039,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
-    route_control: ROUTE_REVIEW,
+    answer_contract: "batch-review",
   },
   {
     id: "plan-exec.batch-close",
@@ -3739,6 +3756,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "set-qa-branch", reason: "configuración declarativa de rama" },
   { command: "set-pipeline", reason: "configuración declarativa de build y test por fuente" },
   { command: "remove-source", reason: "operación de configuración del workspace" },
+  { command: "add-source", reason: "operación de configuración del workspace" },
   { command: "git-flow", reason: "utilidad de ramas sin recorrido de flow" },
   { command: "merge-state", reason: "lectura del estado de una fusión" },
   { command: "attach-multiroot", reason: "configuración de multiroot" },
@@ -3839,7 +3857,7 @@ export function journeyOfFlow(flow: WorklineFlow): readonly FlowDecision[] {
  *   `transition` (its last human row) to the end is walked again.
  */
 export interface JourneyReentry {
-  kind: "refine" | "close" | "reopen";
+  kind: "refine" | "close" | "reopen" | "review";
   transition: string;
   occurrence: number;
   from: string | null;
@@ -3974,6 +3992,8 @@ function withReentries(
     const ordinal = index + 1;
     if (reentry.kind === "refine") {
       journey = insertRedraft(journey, base, reentry, ordinal);
+    } else if (reentry.kind === "review") {
+      journey = insertReview(journey, base, reentry, ordinal);
     } else if (reentry.kind === "close") {
       const closed = closeAt(journey, base, reentry, ordinal);
       journey = closed?.journey ?? journey;
@@ -4026,6 +4046,22 @@ function insertRedraft(
       ...segment.map(() => ordinal),
       ...journey.copies.slice(at),
     ],
+  };
+}
+
+/** Restore required evidence immediately before a legacy pending close, even after reopening. */
+function insertReview(
+  journey: ExpandedJourney,
+  base: readonly FlowDecision[],
+  reentry: JourneyReentry,
+  ordinal: number,
+): ExpandedJourney {
+  const row = base.find((decision) => decision.id === "plan-exec.review-findings");
+  const at = occurrenceIndex(journey.rows, reentry.transition, reentry.occurrence);
+  if (row === undefined || at < 0) return journey;
+  return {
+    rows: [...journey.rows.slice(0, at), row, ...journey.rows.slice(at)],
+    copies: [...journey.copies.slice(0, at), ordinal, ...journey.copies.slice(at)],
   };
 }
 

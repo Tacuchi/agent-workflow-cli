@@ -132,6 +132,7 @@ describe("registro de autoridad — forma y unicidad", () => {
       "plan-refine.save-confirmation",
       "plan-exec.entry-gap-recognition",
       "plan-exec.normalization-consent",
+      "plan-exec.unchanged-phase-consent",
       // Qué fuentes toca un plan lo dice el PLAN, y el motor nunca leyó uno: la
       // fila entrega ese juicio y el CLI lo valida contra el workspace antes de
       // persistirlo. Es la única de la jornada que devuelve datos en vez de
@@ -485,7 +486,7 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // flow. Las tres se saltan solas cuando el plan no debe compensación, así que
     // un cierre sin obligaciones sigue teniendo exactamente las fronteras que
     // tenía. Edición consciente: el orden de estas filas ES la doctrina.
-    expect(plan).toHaveLength(59);
+    expect(plan).toHaveLength(60);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos

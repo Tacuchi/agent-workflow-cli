@@ -18,6 +18,24 @@ import {
 import { parseArtifactId, parseArtifactRef } from "./identity.js";
 import type { DesignFailure } from "./validation.js";
 
+/** The public checklist for claiming handoff, tied to the gate's failure codes. */
+export const HANDOFF_RULES = [
+  { code: "DESIGN_MATURITY_BLOCKED", description: "resolver las incógnitas bloqueantes" },
+  {
+    code: "DESIGN_MATURITY_INCOMPLETE",
+    description: "cerrar secciones aplicables, trazabilidad y transiciones del flow",
+  },
+  {
+    code: "DESIGN_EVIDENCE_INSUFFICIENT",
+    description:
+      "documentar semántica, fijar proveedores externos y clasificar la evidencia visual",
+  },
+  {
+    code: "DESIGN_VISUAL_EVIDENCE_REQUIRED",
+    description: "conservar una preview local del estado base cuando haya criterios visuales",
+  },
+] as const;
+
 /**
  * The `handoff` gate: does this revision say enough to be implemented against?
  *

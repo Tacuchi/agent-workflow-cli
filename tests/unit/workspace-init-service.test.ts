@@ -16,19 +16,25 @@ import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("runWorkspaceInit", () => {
   let workspace: string;
+  let sourceRoot: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
     workspace = mkdtempSync(join(tmpdir(), "ws-init-svc-"));
+    sourceRoot = mkdtempSync(join(tmpdir(), "ws-init-source-"));
+    for (const name of ["app", "app-fake", "lib-fake", "a", "b", "c"])
+      mkdirSync(join(sourceRoot, name));
     env = new FakeEnv(workspace);
     paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
     fs = new NodeFileSystem();
   });
   afterEach(() => {
     rmSync(workspace, { recursive: true, force: true });
+    rmSync(sourceRoot, { recursive: true, force: true });
   });
+  const source = (name: string) => join(sourceRoot, name);
 
   // Default happy-path arrange (one source + fixed timestamp); `over` layers
   // option deltas on top. Throws if init returns an error result, so callers
@@ -36,7 +42,7 @@ describe("runWorkspaceInit", () => {
   // custom-env test below call runWorkspaceInit directly instead.
   async function init(over: Partial<WorkspaceInitInput> = {}) {
     const result = await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
+      sources: [{ alias: "app", path: source("app") }],
       workspace,
       lastActivity: "2026-01-01 00:00",
       ...over,
@@ -51,34 +57,33 @@ describe("runWorkspaceInit", () => {
     // y un re-init pisaría una celda dejada vacía a propósito.
     await init();
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| app | /tmp/app |  |");
-    expect(claude).not.toMatch(/\| app \| \/tmp\/app \| \S+ \|/);
+    expect(claude).toContain("| app | (local) |  |");
+    expect(claude).not.toMatch(/\| app \| \(local\) \| \S+ \|/);
   });
 
-  it("--main-branch explícito SÍ se escribe, y un re-init no pisa la celda vacía", async () => {
+  it("--main-branch explícito SÍ se escribe, y un re-init conserva la rama desde el espejo restante", async () => {
     await init({ mainBranch: "trunk" });
     expect(readFileSync(join(workspace, "CLAUDE.md"), "utf8")).toContain(
-      "| app | /tmp/app | trunk |",
+      "| app | (local) | trunk |",
     );
 
-    // Workspace nuevo: celda vacía; la reconciliación declarada conserva la
-    // fuente y no inventa una rama principal.
+    // La otra copia del bloque todavía declara trunk: reescribir no la pierde.
     rmSync(join(workspace, "CLAUDE.md"), { force: true });
     await init();
     await runWorkspaceInit(fs, env, paths, {
-      sources: [{ alias: "app", path: "/tmp/app" }],
+      sources: [{ alias: "app", path: source("app") }],
       workspace,
       lastActivity: "2026-01-01 00:00",
     });
     const after = readFileSync(join(workspace, "CLAUDE.md"), "utf8");
-    expect(after).toContain("| app | /tmp/app |  |");
-    expect(after).not.toContain("| app | /tmp/app | main |");
+    expect(after).toContain("| app | (local) | trunk |");
+    expect(after).not.toContain("| app | (local) | main |");
   });
 
   it("single source EXTERNA: runtime + bloque SIN Mode + visibilidad, sin template de skills", async () => {
     const result = await init({
       proyecto: "Solo",
-      sources: [{ alias: "app", path: "/tmp/app-fake" }],
+      sources: [{ alias: "app", path: source("app-fake") }],
     });
     expect(result.ok).toBe(true);
     expect(result.sources).toBe(1);
@@ -107,7 +112,7 @@ describe("runWorkspaceInit", () => {
     const settings = JSON.parse(
       readFileSync(join(workspace, ".claude", "settings.local.json"), "utf-8"),
     );
-    expect(settings.permissions.additionalDirectories).toContain("/tmp/app-fake");
+    expect(settings.permissions.additionalDirectories).toContain(source("app-fake"));
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     // Visibility uses a pattern: also covers the .bak.<epoch> backups.
     expect(gitignore).toContain(".claude/settings.local.json*");
@@ -196,7 +201,7 @@ describe("runWorkspaceInit", () => {
 
   it("qaBranches: renderiza la sección 'Ramas QA actuales' en el bloque", async () => {
     await init({
-      sources: [{ alias: "app", path: "/tmp/app-fake" }],
+      sources: [{ alias: "app", path: source("app-fake") }],
       workingBranches: { app: "feature/x" },
       qaBranches: { app: "desarrollo" },
     });
@@ -211,8 +216,8 @@ describe("runWorkspaceInit", () => {
     const result = await init({
       proyecto: "Multi",
       sources: [
-        { alias: "a", path: "/tmp/a-fake" },
-        { alias: "b", path: "/tmp/b-fake" },
+        { alias: "a", path: source("a") },
+        { alias: "b", path: source("b") },
       ],
     });
     expect(result.ok).toBe(true);
@@ -222,7 +227,7 @@ describe("runWorkspaceInit", () => {
       readFileSync(join(workspace, ".claude", "settings.local.json"), "utf-8"),
     );
     expect(settings.permissions.additionalDirectories).toEqual(
-      expect.arrayContaining(["/tmp/a-fake", "/tmp/b-fake"]),
+      expect.arrayContaining([source("a"), source("b")]),
     );
     const gitignore = readFileSync(join(workspace, ".gitignore"), "utf-8");
     expect(gitignore).toContain(".claude/settings.local.json");
@@ -244,35 +249,72 @@ describe("runWorkspaceInit", () => {
     expect(second.skills_toml).toBe("skipped");
   });
 
-  it("reconcile multi-source: re-correr con una fuente removida la detachea", async () => {
+  it("reconcile multi-source: re-correr conserva una fuente omitida y vincula la nueva", async () => {
     await init({
       sources: [
-        { alias: "a", path: "/tmp/a" },
-        { alias: "b", path: "/tmp/b" },
+        { alias: "a", path: source("a") },
+        { alias: "b", path: source("b") },
       ],
     });
     const second = await init({
       sources: [
-        { alias: "a", path: "/tmp/a" },
-        { alias: "c", path: "/tmp/c" },
+        { alias: "a", path: source("a") },
+        { alias: "c", path: source("c") },
       ],
     });
     const settings = JSON.parse(
       readFileSync(join(workspace, ".claude", "settings.local.json"), "utf-8"),
     );
     const dirs = settings.permissions.additionalDirectories;
-    expect(dirs).toContain("/tmp/a");
-    expect(dirs).toContain("/tmp/c");
-    expect(dirs).not.toContain("/tmp/b");
-    expect(second.detached_removed).toBeDefined();
+    expect(dirs).toContain(source("a"));
+    expect(dirs).toContain(source("b"));
+    expect(dirs).toContain(source("c"));
+    expect(second.detached_removed).toBeUndefined();
+  });
+
+  it("re-correr con una sola fuente de ocho conserva las ocho y su visibilidad", async () => {
+    const eight = Array.from({ length: 8 }, (_, index) => {
+      const alias = `p${index}`;
+      mkdirSync(source(alias));
+      return { alias, path: source(alias) };
+    });
+    await init({ sources: eight });
+    const selected = eight[3];
+    if (!selected) throw new Error("faltó la cuarta fuente");
+    await init({ sources: [selected], proyecto: "Proyecto renombrado" });
+    const block = readFileSync(join(workspace, "CLAUDE.md"), "utf8");
+    expect(block).toContain("Proyecto renombrado");
+    for (const item of eight) expect(block).toContain(`| ${item.alias} | (local) |`);
+    const settings = JSON.parse(
+      readFileSync(join(workspace, ".claude", "settings.local.json"), "utf8"),
+    );
+    expect(settings.permissions.additionalDirectories).toEqual(
+      expect.arrayContaining(eight.map((item) => item.path)),
+    );
+  });
+
+  it("una ruta explícita nueva actualiza la entrada local sin tocar la otra fuente", async () => {
+    await init({
+      sources: [
+        { alias: "a", path: source("a") },
+        { alias: "b", path: source("b") },
+      ],
+    });
+    await init({ sources: [{ alias: "a", path: source("c") }] });
+    const local = JSON.parse(readFileSync(paths.cwdLocalConfigFile(), "utf8"));
+    expect(local.sources.a).toBe(source("c"));
+    expect(local.sources.b).toBe(source("b"));
+    const block = readFileSync(join(workspace, "CLAUDE.md"), "utf8");
+    expect(block).toContain("| a | (local) |");
+    expect(block).toContain("| b | (local) |");
   });
 
   it("sin fuentes no reconcilia metadata: materializa solamente y rechaza opciones de configuración", async () => {
     await init({
       proyecto: "Mi Proyecto",
       sources: [
-        { alias: "app", path: "/tmp/app-fake" },
-        { alias: "lib", path: "/tmp/lib-fake" },
+        { alias: "app", path: source("app-fake") },
+        { alias: "lib", path: source("lib-fake") },
       ],
     });
     const before = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
@@ -285,15 +327,15 @@ describe("runWorkspaceInit", () => {
     const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf-8");
     expect(claude).toBe(before);
     expect(claude).toContain("Mi Proyecto");
-    expect(claude).toContain("/tmp/app-fake");
-    expect(claude).toContain("/tmp/lib-fake");
+    expect(claude).toContain("| app | (local) |");
+    expect(claude).toContain("| lib | (local) |");
   });
 
-  it("reconcile sin una fuente: no deja su rama de trabajo ni la de QA huérfanas", async () => {
+  it("reconcile con una fuente: conserva la rama de trabajo y QA de la omitida", async () => {
     await init({
       sources: [
-        { alias: "a", path: "/tmp/a" },
-        { alias: "b", path: "/tmp/b" },
+        { alias: "a", path: source("a") },
+        { alias: "b", path: source("b") },
       ],
       workingBranches: { a: "feature/a", b: "feature/b" },
       qaBranches: { a: "desarrollo", b: "qa/b" },
@@ -310,26 +352,22 @@ describe("runWorkspaceInit", () => {
       );
     }
 
-    const second = await init({ sources: [{ alias: "a", path: "/tmp/a" }] });
+    const second = await init({ sources: [{ alias: "a", path: source("a") }] });
 
     // Ni en el bloque (los dos archivos) ni en el JSON que devuelve el comando.
     for (const file of ["CLAUDE.md", "AGENTS.md"]) {
       const text = readFileSync(join(workspace, file), "utf-8");
       expect(text).toContain("  - a: feature/a");
-      expect(text).not.toContain("feature/b");
-      expect(text).not.toContain("qa/b");
+      expect(text).toContain("feature/b");
+      expect(text).toContain("qa/b");
       expect(text).toContain("- a: build `npm run build`");
-      expect(text).not.toContain("- b: test `npm test`");
+      expect(text).toContain("- b: test `npm test`");
     }
     const projectMd = second.project_md;
     if ("error" in projectMd) throw new Error(projectMd.error);
-    expect(projectMd.working_branches).toEqual({ a: "feature/a" });
-    expect(projectMd.qa_branches).toEqual({ a: "desarrollo" });
-    expect(projectMd.dropped_lines).toEqual([
-      "  - b: feature/b",
-      "  - b: qa/b",
-      "- b: test `npm test`",
-    ]);
+    expect(projectMd.working_branches).toEqual({ a: "feature/a", b: "feature/b" });
+    expect(projectMd.qa_branches).toEqual({ a: "desarrollo", b: "qa/b" });
+    expect(projectMd.dropped_lines).toBeUndefined();
   });
 
   it("--proyecto sobre un workspace descrito: renombra y PRESERVA la descripción", async () => {
@@ -422,7 +460,7 @@ describe("runWorkspaceInit", () => {
     const callerPaths = new PathsService(normalizeNamespace("workflow"), callerCwd, callerCwd);
     try {
       const result = await runWorkspaceInit(fs, callerEnv, callerPaths, {
-        sources: [{ alias: "app", path: "/tmp/app" }],
+        sources: [{ alias: "app", path: source("app") }],
         workspace: target,
         lastActivity: "2026-01-01 00:00",
       });
@@ -451,7 +489,7 @@ describe("runWorkspaceInit", () => {
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
 
-    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf-8")).toContain(`| app | ${source} |  |`);
+    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf-8")).toContain("| app | repo |  |");
     expect(result.attach_multiroot).toEqual({ skipped: true, reason: "no_external_sources" });
     expect(existsSync(join(nestedCwd, "repo"))).toBe(false);
   });
@@ -465,11 +503,20 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(false);
   });
 
+  it("--proyecto configura un workspace sin fuentes y no fabrica filas", async () => {
+    const result = await runWorkspaceInit(fs, env, paths, { sources: [], proyecto: "Sin fuentes" });
+    if ("error" in result) throw new Error(result.error);
+    expect(result.ok).toBe(true);
+    const claude = readFileSync(join(workspace, "CLAUDE.md"), "utf8");
+    expect(claude).toContain("Sin fuentes");
+    expect(claude).toContain("Sin fuentes declaradas");
+  });
+
   it("rechaza si alias duplicado", async () => {
     const result = await runWorkspaceInit(fs, env, paths, {
       sources: [
-        { alias: "a", path: "/tmp/a" },
-        { alias: "a", path: "/tmp/b" },
+        { alias: "a", path: source("a") },
+        { alias: "a", path: source("b") },
       ],
       workspace,
     });

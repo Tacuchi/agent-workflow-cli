@@ -18,6 +18,7 @@ import type { CapabilityInputValue } from "../../src/domain/capability/protocol.
 import { validateDesignBaseline } from "../../src/domain/design/baseline.js";
 import { validateDesignManifest } from "../../src/domain/design/manifest.js";
 import type { DesignManifest } from "../../src/domain/design/manifest.js";
+import { HANDOFF_RULES } from "../../src/domain/design/maturity.js";
 import {
   checkProjection,
   renderDesignMd,
@@ -725,6 +726,27 @@ function receiptMaturity(result: DispatchResult): {
 }
 
 describe("publicar por la ruta de paquete: o el árbol queda legible, o no se escribe", () => {
+  it("prepare declara las reglas de handoff y validate nombra dos archivos inválidos juntos", async () => {
+    const fs = new MemFs();
+    const inputs = createInputs();
+    const prepared = await dispatch(fs, "prepare", "create", inputs);
+    expect(prepared.ok).toBe(true);
+    if (!prepared.ok) return;
+    const directive = prepared.attempt.receipt.gaps.join(" ");
+    for (const rule of HANDOFF_RULES) expect(directive).toContain(rule.code);
+
+    const validated = await validateWith(fs, "create", inputs, [
+      { path: `${NEW_PKG}/flows/FLW-001-r001-alta-miembro.md`, content: "roto" },
+      { path: `${NEW_PKG}/screens/SCR-001-r001-formulario-alta.md`, content: "roto" },
+    ]);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.attempt.receipt.outcome).toBe("blocked");
+    const message = validated.attempt.receipt.error?.message ?? "";
+    expect(message).toContain("FLW-001-r001-alta-miembro.md");
+    expect(message).toContain("SCR-001-r001-formulario-alta.md");
+  });
+
   it("una revisión publicada deja el árbol que el listado acepta", async () => {
     const fs = new MemFs();
     const inputs = createInputs();

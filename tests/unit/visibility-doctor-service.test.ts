@@ -14,6 +14,13 @@ import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
+class VisibilityFixtureFs extends NodeFileSystem {
+  override async exists(path: string): Promise<boolean> {
+    // Visibility registrations in these tests model sources present on the host.
+    return path.startsWith("/tmp/") || super.exists(path);
+  }
+}
+
 function writeProjectBlock(workspace: string, fuentes: { alias: string; path: string }[]): void {
   const start = "<!-- WORKFLOW-PROJECT-START -->";
   const end = "<!-- WORKFLOW-PROJECT-END -->";
@@ -68,7 +75,16 @@ describe("runVisibilityDoctor", () => {
     workspace = mkdtempSync(join(tmpdir(), "vis-doctor-"));
     env = new FakeEnv(workspace);
     paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
-    fs = new NodeFileSystem();
+    fs = new VisibilityFixtureFs();
+  });
+  it("una fuente sin ruta no convierte las rutas registradas en sobrantes", async () => {
+    writeProjectBlock(workspace, [{ alias: "remoto", path: "C:/Source/remoto" }]);
+    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/a"]);
+    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const claude = claudeOf(result);
+    expect(claude?.status).toBe("source-path-missing");
+    expect(claude?.extra).toEqual([]);
+    expect(result.unreadable_sources?.[0]).toContain("aw add-source remoto:<ruta>");
   });
   afterEach(() => {
     rmSync(workspace, { recursive: true, force: true });
@@ -313,7 +329,7 @@ describe("aw visibility doctor — proyección humana", () => {
     workspace = mkdtempSync(join(tmpdir(), "vis-render-"));
     env = new FakeEnv(workspace);
     paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
-    fs = new NodeFileSystem();
+    fs = new VisibilityFixtureFs();
   });
   afterEach(() => {
     rmSync(workspace, { recursive: true, force: true });

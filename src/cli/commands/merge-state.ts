@@ -10,7 +10,7 @@ export const mergeStateCommand: CliCommand = {
   describe:
     "Inspect in-progress merge state per repo, read-only (origin/destination + conflicted files). " +
     "Usage: aw merge-state [<repo-path>] [--source <alias>] [--all]. Works on any repo (no workspace needed). " +
-    "Exit 2 when a merge is in progress.",
+    "Exit 2 when a merge is in progress; exit 1 when a source or unit cannot be read and no merge was found.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: MergeStateInput = {};
     const path = args.rest[0];
@@ -22,7 +22,7 @@ export const mergeStateCommand: CliCommand = {
     const data = await runMergeState(ctx.fs, ctx.git, ctx.env, ctx.paths, input);
     // A merge in progress is an expected, actionable state → exit 2 (like git-flow
     // conflict / check-branch --strict) so callers/loops can detect "needs resolution".
-    const exit: 0 | 2 = data.any_merging ? 2 : 0;
+    const exit: 0 | 1 | 2 = data.any_merging === true ? 2 : data.unreadable.length ? 1 : 0;
     return { ok: true, data, exitCode: exit };
   },
 };

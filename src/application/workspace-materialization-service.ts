@@ -11,6 +11,7 @@ export function runtimeGitignoreEntries(namespace: string): string[] {
     `.${namespace}/.lock`,
     `.${namespace}/processes.json`,
     `.${namespace}/launch/`,
+    `.${namespace}/local.json`,
     "docs/logs/",
   ];
 }

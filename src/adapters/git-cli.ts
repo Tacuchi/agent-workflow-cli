@@ -67,8 +67,13 @@ export class GitCliAdapter implements GitPort {
   }
 
   /** Run git, throwing `git <label> failed in <repo>: <stderr>` on non-zero exit. */
-  private async mustRun(label: string, args: string[], repoPath: string): Promise<RunResult> {
-    const result = await this.process.run("git", args, this.opts(repoPath));
+  private async mustRun(
+    label: string,
+    args: string[],
+    repoPath: string,
+    extra: Partial<RunOptions> = {},
+  ): Promise<RunResult> {
+    const result = await this.process.run("git", args, this.opts(repoPath, extra));
     if (result.code !== 0) {
       throw this.failed(label, repoPath, result.stderr);
     }
@@ -462,6 +467,20 @@ export class GitCliAdapter implements GitPort {
     }
   }
 
+  async mergeBases(repoPath: string): Promise<string[]> {
+    const result = await this.process.run(
+      "git",
+      ["merge-base", "--all", "HEAD", "MERGE_HEAD"],
+      this.opts(repoPath),
+    );
+    if (result.code === 1) return [];
+    if (result.code !== 0) throw this.failed("merge-base --all", repoPath, result.stderr);
+    return result.stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+  }
+
   async conflictedFiles(repoPath: string): Promise<string[]> {
     const result = await this.process.run(
       "git",
@@ -498,11 +517,12 @@ export class GitCliAdapter implements GitPort {
       ["ls-files", "-u", "--", path],
       this.opts(repoPath),
     );
-    const hashes = new Map<string, string>();
+    const hashes = new Map<string, { hash: string; mode: string }>();
     if (listed.code === 0) {
       for (const line of listed.stdout.split("\n")) {
-        const match = /^\d+ ([0-9a-f]{40}) ([123])\t/.exec(line);
-        if (match?.[1] && match[2]) hashes.set(match[2], match[1]);
+        const match = /^(\d{6}) ([0-9a-f]{40}|[0-9a-f]{64}) ([123])\t/.exec(line);
+        if (match?.[1] && match[2] && match[3])
+          hashes.set(match[3], { mode: match[1], hash: match[2] });
       }
     }
 
@@ -519,14 +539,74 @@ export class GitCliAdapter implements GitPort {
     };
   }
 
-  private async readStage(repoPath: string, hash: string | undefined): Promise<ConflictStage> {
-    if (hash === undefined) return { hash: null, content: null, bytes: 0 };
+  async indexEntry(repoPath: string, path: string): Promise<{ mode: string; hash: string } | null> {
+    const listed = await this.mustRun(
+      `ls-files -s ${path}`,
+      ["ls-files", "-s", "--", path],
+      repoPath,
+    );
+    const match = /^(\d{6}) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t/.exec(listed.stdout);
+    return match?.[1] && match[2] ? { mode: match[1], hash: match[2] } : null;
+  }
+
+  async isWorktreeCleanPath(repoPath: string, path: string): Promise<boolean> {
+    const result = await this.process.run(
+      "git",
+      ["diff", "--quiet", "--", path],
+      this.opts(repoPath),
+    );
+    if (result.code === 0) return true;
+    if (result.code === 1) return false;
+    throw this.failed(`diff --quiet ${path}`, repoPath, result.stderr);
+  }
+
+  async readBlob(
+    repoPath: string,
+    hash: string,
+  ): Promise<{ content: string | null; bytes: number }> {
+    const stage = await this.readStage(repoPath, { hash, mode: "100644" });
+    return { content: stage.content, bytes: stage.bytes };
+  }
+
+  async hashBlob(repoPath: string, content: string): Promise<string> {
+    const result = await this.mustRun(
+      "hash-object",
+      ["hash-object", "-w", "--no-filters", "--stdin"],
+      repoPath,
+      { stdin: content },
+    );
+    return result.stdout.trim();
+  }
+
+  async setIndexEntry(repoPath: string, path: string, mode: string, hash: string): Promise<void> {
+    await this.mustRun(
+      `update-index ${path}`,
+      ["update-index", "--add", "--cacheinfo", `${mode},${hash},${path}`],
+      repoPath,
+    );
+    await this.mustRun(`checkout-index ${path}`, ["checkout-index", "-f", "--", path], repoPath);
+  }
+
+  async removeIndexEntry(repoPath: string, path: string): Promise<void> {
+    await this.mustRun(
+      `update-index --force-remove ${path}`,
+      ["update-index", "--force-remove", "--", path],
+      repoPath,
+    );
+  }
+
+  private async readStage(
+    repoPath: string,
+    entry: { hash: string; mode: string } | undefined,
+  ): Promise<ConflictStage> {
+    if (entry === undefined) return { hash: null, content: null, bytes: 0, mode: null };
+    const { hash, mode } = entry;
     const result = await this.process.runBinary(
       "git",
       ["cat-file", "-p", hash],
       this.opts(repoPath),
     );
-    if (result.code !== 0) return { hash, content: null, bytes: 0 };
+    if (result.code !== 0) return { hash, content: null, bytes: 0, mode };
     // A NUL byte is the same heuristic git itself uses to call a blob binary.
     const binary = result.stdout.includes(0);
     // The size is the bytes git stored, which a decoded blob no longer measures.
@@ -534,6 +614,7 @@ export class GitCliAdapter implements GitPort {
       hash,
       content: binary ? null : result.stdout.toString("utf8"),
       bytes: result.stdout.length,
+      mode,
     };
   }
 

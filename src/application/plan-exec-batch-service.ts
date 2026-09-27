@@ -46,6 +46,7 @@ export interface BatchPhaseUpdate {
 }
 
 export interface InferPlanExecBatchInput {
+  validation_only?: true;
   id: string;
   iteration: number;
   mode: PlanExecBatch["mode"];
@@ -76,16 +77,20 @@ export function inferPlanExecBatch(text: string, input: InferPlanExecBatchInput)
       `el batch nombra fases que el plan no declara: ${absent.map((phase) => `F${phase}`).join(", ")}`,
     );
   }
-  const tasks = parseTasks(text)
-    .items // A batch only owns work still open when its snapshot is sealed. Already
-    // checked tasks stay evidence of an earlier iteration; including them here
-    // would let a retry appear to re-accredit somebody else's completed work.
-    .filter(
-      (task) => task.status === "open" && task.phase !== undefined && phases.includes(task.phase),
-    )
+  const openTasks = parseTasks(text).items.filter(
+    (task) => task.status === "open" && task.phase !== undefined && phases.includes(task.phase),
+  );
+  if (input.validation_only && openTasks.length > 0) {
+    return fail(
+      "PLAN_VALIDATION_ONLY_HAS_TASKS",
+      "una fase con tareas abiertas no puede acreditarse como validación sin cambios",
+    );
+  }
+  // Checked tasks remain evidence of previous work, never re-accredited here.
+  const tasks = openTasks
     .map((task) => taskIdOf(task.text))
     .filter((id): id is string => id !== null);
-  if (tasks.length === 0 || new Set(tasks).size !== tasks.length) {
+  if ((!input.validation_only && tasks.length === 0) || new Set(tasks).size !== tasks.length) {
     return fail(
       "PLAN_EXEC_BATCH_INVALID",
       "las fases del batch no exponen tareas Tn.m únicas que el CLI pueda acreditar",
@@ -95,6 +100,7 @@ export function inferPlanExecBatch(text: string, input: InferPlanExecBatchInput)
     ok: true,
     batch: {
       id: input.id,
+      ...(input.validation_only ? { kind: "validation-only" as const } : {}),
       iteration: input.iteration,
       mode: input.mode,
       phases,
@@ -150,6 +156,17 @@ export function preparePlanExecBatchPublication(
     );
   }
   const parsedTasks = parseTasks(text).items;
+  if (
+    input.batch.kind === "validation-only" &&
+    parsedTasks.some(
+      (task) => task.status === "open" && input.batch.phases.includes(task.phase ?? -1),
+    )
+  ) {
+    return fail(
+      "PLAN_VALIDATION_ONLY_HAS_TASKS",
+      "el lote de validación sin cambios ahora tiene tareas abiertas",
+    );
+  }
   const byId = new Map(
     parsedTasks
       .map((task) => [taskIdOf(task.text), task] as const)

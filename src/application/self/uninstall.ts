@@ -1,13 +1,13 @@
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { parse as parseToml } from "smol-toml";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
 import type { CommandResult } from "../../domain/types.js";
 import { uninstallCapabilitySkill } from "../capability/wrapper.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
+import { parseToml } from "../parsers/toml.js";
 import { CODEX_PLUGIN_DIR, isOurCodexPlugin } from "./codex-plugin.js";
 import { isOurCommand } from "./hooks-dialect.js";
 import { stripOurAgyHooks, stripOurCrushHooks } from "./hooks-json.js";
