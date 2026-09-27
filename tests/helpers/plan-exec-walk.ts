@@ -16,6 +16,7 @@ import type { EnvPort } from "../../src/ports/env.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import type { GitPort } from "../../src/ports/git.js";
 import { acceptAdaptiveRoute } from "./accept-adaptive-route.js";
+import { batchReview } from "./batch-review.js";
 
 /**
  * Drive a REAL `plan-exec` run over a real workspace, one boundary at a time.
@@ -163,7 +164,9 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
         decisions:
           stopped.scopes_sources === true
             ? { plan: run.plan, sources: [...sources] }
-            : { paso: stopped.id },
+            : stopped.answer_contract === "batch-review"
+              ? { review: batchReview() }
+              : { paso: stopped.id },
       };
     }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };

@@ -21,6 +21,8 @@ const GLYPHS: ReadonlyMap<string, string> = new Map([
   ["‘", "'"],
   ["’", "'"],
   ["✓", "OK"],
+  ["❯", ">"],
+  ["●", "*"],
   ["✔", "OK"],
   ["✗", "X"],
   ["✘", "X"],

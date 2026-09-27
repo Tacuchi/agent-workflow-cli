@@ -56,6 +56,7 @@ import {
   scopesSources,
 } from "../../domain/flow/authority.js";
 import { effectApprovalDigest } from "../../domain/flow/authorization.js";
+import { isBatchReview } from "../../domain/flow/batch-review.js";
 import {
   type FlowDirective,
   PAUSE_LABEL,
@@ -98,6 +99,7 @@ import {
   withHandoff,
   withObservation,
   withPlanExecBatchCredit,
+  withPlanExecBatchReview,
   withPlanExecBatchStageForTransition,
   withProposal,
   withReentry,
@@ -107,6 +109,7 @@ import {
   withSelectedChoice,
   withSettlementDeclarations,
 } from "../../domain/flow/run-state.js";
+import type { TestFailure } from "../../domain/flow/test-run-evidence.js";
 import { type SpecBaseline, withSpecBaseline } from "../../domain/lineage.js";
 import { destinationsOf, observedEffects, sealProposal } from "../../domain/proposal.js";
 import { baseDigest } from "../../domain/proposal.js";
@@ -117,6 +120,7 @@ import type { CheckoutIdentity } from "../../domain/source-boundary.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
+import { parsePhases } from "../parsers/phases.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
@@ -309,6 +313,7 @@ interface ScopeSnapshot {
 }
 
 interface Observation {
+  preexisting: TestFailure[] | null;
   /** Resolved once for this submit; decision registration uses the same root. */
   root: string;
   destinations: DestinationSnapshot;
@@ -343,6 +348,7 @@ async function observe(
     plans: plans.evidence,
     checkouts: await observeCheckouts(fs, paths, session, git),
     scoped: await observeBatchSources(fs, paths, session, git),
+    preexisting: await observePreexistingFailures(fs, paths, session, root),
     baselines: plans.baselines,
   };
 }
@@ -378,6 +384,32 @@ async function observeBatchSources(
 }
 
 const PHASE_VALIDATION = "plan-exec.validation-execution";
+
+async function observePreexistingFailures(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: string,
+  root: string,
+): Promise<TestFailure[] | null> {
+  const read = await readRun(fs, locateRun(paths, session));
+  if (!read.ok || read.state.boundary !== PHASE_VALIDATION) return [];
+  const state = read.state;
+  if (state.scope === null) return null;
+  const batch = state.batches?.find((entry) => entry.iteration === state.batch_loop?.iteration);
+  if (batch === undefined) return [];
+  try {
+    const phases = parsePhases(await fs.readText(join(root, state.scope.plan))).items;
+    const selected = phases.filter((phase) => batch.phases.includes(phase.n));
+    if (
+      selected.length !== batch.phases.length ||
+      selected.some((phase) => phase.preexisting_failures === null)
+    )
+      return null;
+    return selected.flatMap((phase) => phase.preexisting_failures ?? []);
+  } catch {
+    return null;
+  }
+}
 
 type BaselineSnapshot = ReadonlyMap<string, SpecBaseline>;
 
@@ -706,6 +738,7 @@ async function decide(
     cost,
     snapshot.checkouts,
     snapshot.scoped,
+    snapshot.preexisting,
   );
   if ("decision" in admissible) return admissible.decision;
   const parsed = admissible;
@@ -2101,6 +2134,7 @@ function admit(
   cost: RejectionCost,
   checkouts: readonly CheckoutState[] | null,
   scoped: Record<string, string | null> | null,
+  preexisting: readonly TestFailure[] | null,
 ): Admitted | { decision: SubmitDecision } {
   const expectedApproval =
     resolved.kind === "authorization"
@@ -2183,7 +2217,7 @@ function admit(
   // run with its evidence and its whole effect keeps the boundary standing: the
   // work stays pending, with the recovery the action declared.
   if (resolved.kind !== "execution") return parsed;
-  return earned(state, resolved, stopped, parsed, cost, checkouts, scoped);
+  return earned(state, resolved, stopped, parsed, cost, checkouts, scoped, preexisting);
 }
 
 type Admitted = {
@@ -2201,6 +2235,7 @@ function earned(
   cost: RejectionCost,
   checkouts: readonly CheckoutState[] | null,
   scoped: Record<string, string | null> | null,
+  preexisting: readonly TestFailure[] | null,
 ): Admitted | { decision: SubmitDecision } {
   // The row's `effects` are the ceiling and the sealed proposal is what really
   // happens: demanding an overwrite from a publication that only creates files
@@ -2210,6 +2245,7 @@ function earned(
     resolved.action,
     effectsOfTransition(state, stopped),
     checkouts,
+    preexisting,
   );
   if (verdict !== null) {
     const trace = declaredTrace(state, stopped, resolved, parsed.answer, verdict);
@@ -2369,6 +2405,9 @@ function applyAndAdvance(
     answer.signals.length > 0
       ? withObservation(approved, observationFor(approved, stopped.id, answer.signals))
       : approved;
+  if (stopped.answer_contract === "batch-review" && isBatchReview(answer.decisions.review)) {
+    next = withPlanExecBatchReview(next, answer.decisions.review);
+  }
   next = withPlanExecBatchStageForTransition(
     applyTransition(next, stopped.id, effectsOfTransition(next, stopped)),
     stopped.id,
