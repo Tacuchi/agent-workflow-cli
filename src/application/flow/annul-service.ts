@@ -186,6 +186,7 @@ async function annulmentOf(
     operation: ANNUL_OPERATION,
     artifacts: [{ path: plan, content: rewrite.prepared.content, overwrite: true }],
     bases: [{ path: plan, digest: rewrite.prepared.before_digest }],
+    scope: { workspace_root: root },
     effects: ["mutate_overwrite"],
     requiresApproval: ["mutate_overwrite"],
   });

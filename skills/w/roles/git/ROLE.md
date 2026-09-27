@@ -20,6 +20,8 @@ description: >-
 
 Operate git in a **safe, controlled** way: verify the expected branch before editing, **propose** commits per source, and never run destructive or publishing operations without the user's explicit request.
 
+Use `aw git-flow` for per-source development/QA/production flows; preview and request approval before an effect. A force-push is always performed by the user.
+
 ## Composed by
 
 - **`plan-exec-loop`** — verifies the branch before each edit; proposes commits on close/checkpoint.
@@ -59,6 +61,7 @@ Cases:
 - **`match=true`** → OK, edit.
 - **`match=false, dirty=false`** (Case A — different branch, clean repo) → *structured-choice*: `git checkout <expected>` / confirm `aw doc-branch set --doc <tipo:NNN> --source <alias> --rama <actual>` to use the current branch for this document / cancel.
 - **`match=false, dirty=true`** (Case B — different branch + uncommitted changes) → **pause and wait for manual resolution**. Never propose checkout (it could lose work). Ask the user to commit/stash/discard and to say when to continue.
+- **In-place, match=true with user changes** → proceed; declare only run-owned paths against the acquisition snapshot. `branch-check` rejects development and the commit fences branch and HEAD. Never switch branches without consent.
 - **Cross-source (hub)**: `aw sources --code <NNN>` checks each source against its own expected branch; different branch names are fine when every source matches. Pause only the divergent sources.
 - **Detached HEAD** → treat as Case A.
 - **Source outside git** (`is_repo=false`) → report, do not block.

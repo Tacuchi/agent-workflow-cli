@@ -178,8 +178,16 @@ const WIRING: ReadonlyArray<{
     args: { provider: "doble", subject: "fixture:uno" },
     argv: ["login-de-prueba", "--sujeto", "uno"],
   },
-  { op: "multiroot.attach", delegate: "runMultiroot", args: { scope: "workspace" } },
-  { op: "multiroot.detach", delegate: "runMultiroot", args: { scope: "workspace" } },
+  {
+    op: "multiroot.attach",
+    delegate: "runMultiroot",
+    args: { scope: "workspace", host: "claude", paths: '["/tmp/alpha"]' },
+  },
+  {
+    op: "multiroot.detach",
+    delegate: "runMultiroot",
+    args: { scope: "workspace", host: "claude", paths: '["/tmp/alpha"]' },
+  },
   {
     op: "workspace.remove-retired-section",
     delegate: "applyRetiredSectionRemoval",
@@ -211,6 +219,21 @@ describe("el cableado entre una operación y la función que escribe", () => {
       expect(outcome.status).toBe("applied");
     });
   }
+
+  it("desvincula sólo las rutas sobrantes de la propuesta sellada, sin fromSources", async () => {
+    const action = actionFor("multiroot.detach", {
+      scope: "workspace",
+      host: "claude",
+      paths: '["/ws/intrusa"]',
+    });
+    expect((await runDoctorRepair(action, ctx)).status).toBe("applied");
+    expect(invocations[0]?.args[4]).toMatchObject({
+      paths: ["/ws/intrusa"],
+      skipClaude: false,
+      skipCodex: true,
+    });
+    expect(invocations[0]?.args[4]).not.toHaveProperty("fromSources");
+  });
 
   it("la tabla cubre TODAS las operaciones del catálogo, sin faltar ni sobrar", () => {
     // Sin esto, agregar una operación al catálogo dejaría su cableado sin probar

@@ -30,6 +30,13 @@ import {
   resolveSessionTarget,
   sessionFolderMatches,
 } from "./session-resolver.js";
+import {
+  type UnitDependencyState,
+  linkUnitDependencies,
+  removeUnitSafely,
+} from "./unit-dependencies.js";
+import { hubUnitPaths } from "./unit-membership.js";
+import { finishResidue } from "./unit-residue.js";
 import { ensureWorklineMaterialized } from "./workspace-materialization-service.js";
 
 /**
@@ -92,7 +99,10 @@ export interface WorktreeError {
 
 export type WorktreeEnsureOutput = IsolationUnit & {
   visibility: "attached" | "unavailable";
-  base: string;
+  visibility_error?: string;
+  base: string | null;
+  dependencies: UnitDependencyState;
+  longpaths_enabled: boolean;
 };
 
 /**
@@ -109,7 +119,86 @@ export type ListedUnit = IsolationUnit & {
   session_active: boolean;
   dirty: boolean | null;
   head: string | null;
+  classification?: "empty" | "preserved" | "retained" | "pending";
+  classification_reason?: string;
+  preserved_in?: string;
+  integrated?: boolean;
 };
+
+/** Read-only close classification: never treats an unreadable tree as empty. */
+export async function classifyListedUnits(
+  deps: WorktreeDeps,
+  units: ListedUnit[],
+): Promise<ListedUnit[]> {
+  const block = await readWorkspaceBlock(
+    deps.fs,
+    deps.paths.workspaceDir(),
+    deps.paths.blockMarkers(),
+  );
+  const declared = new Set<string>();
+  for (const source of block?.fuentes ?? []) {
+    const roles = resolveSourceBranches(source, block);
+    for (const name of [
+      roles.prod,
+      roles.work,
+      block?.qa_branches[source.alias] ?? block?.default_branches.qa,
+    ])
+      if (name) declared.add(`refs/heads/${name}`);
+  }
+  return Promise.all(
+    units.map(async (unit): Promise<ListedUnit> => {
+      const classify = (
+        classification: NonNullable<ListedUnit["classification"]>,
+        reason: string,
+        preservedIn?: string,
+      ): ListedUnit => ({
+        ...unit,
+        classification,
+        classification_reason: reason,
+        ...(preservedIn ? { preserved_in: preservedIn } : {}),
+      });
+      try {
+        if (unit.dirty === null || unit.head === null)
+          return classify("retained", "no se pudo leer HEAD o limpieza de la unidad");
+        if ((await deps.git.operationState(unit.path)) !== "clean")
+          return classify("retained", "operación git a medio resolver");
+        if (unit.dirty) return classify("retained", "cambios sin commitear");
+        const custody = await readCustody(deps.fs, join(deps.paths.cwdSessionsDir(), unit.session));
+        if (custody.status === "unreadable")
+          return classify("retained", `custodia ilegible: ${custody.reason}`);
+        const sealed =
+          custody.status === "present"
+            ? custody.custody.sources.find((entry) => entry.alias === unit.alias)?.base_branch
+            : undefined;
+        const source = block?.fuentes.find((entry) => entry.alias === unit.alias);
+        const work = source ? resolveSourceBranches(source, block).work : null;
+        const base = sealed ?? work;
+        if (base === null || base === undefined)
+          return classify("pending", "sin base sellada ni rama de trabajo declarada");
+        const baseline =
+          sealed !== undefined && custody.status === "present"
+            ? custody.custody.sources.find((entry) => entry.alias === unit.alias)?.baseline_head
+            : null;
+        if (baseline !== null && baseline !== undefined && unit.head === baseline)
+          return classify("empty", `sin commits sobre ${base}`);
+        const refs = await deps.git.refsContaining(unit.source_path, unit.head);
+        const baseRef = `refs/heads/${base}`;
+        const preserved =
+          refs.includes(baseRef) && declared.has(baseRef)
+            ? baseRef
+            : refs.find((ref) => declared.has(ref) || ref.startsWith("refs/remotes/"));
+        if (preserved)
+          return {
+            ...classify("preserved", `commits contenidos en ${preserved}`, preserved),
+            integrated: preserved === baseRef,
+          };
+        return classify("pending", "commits no contenidos en una rama declarada ni remota");
+      } catch (err) {
+        return classify("retained", `no se pudo verificar la unidad: ${(err as Error).message}`);
+      }
+    }),
+  );
+}
 
 export interface WorktreeListOutput {
   workspace_key: string;
@@ -128,6 +217,9 @@ export interface WorktreeReleaseOutput {
   branch: string;
   released: boolean;
   visibility: "detached" | "unavailable";
+  visibility_error?: string;
+  branch_kept?: string;
+  residue_completed?: boolean;
 }
 
 export interface WorktreeDeps {
@@ -135,6 +227,7 @@ export interface WorktreeDeps {
   env: EnvPort;
   git: GitPort;
   paths: PathsService;
+  platform?: NodeJS.Platform;
 }
 
 export interface WorktreeIntegrateOutput {
@@ -152,6 +245,8 @@ export interface WorktreeIntegrateOutput {
   released: boolean;
   /** What to run next: resolve the conflict, or nothing. */
   next: string | null;
+  branch_kept?: string;
+  visibility_error?: string;
 }
 
 /**
@@ -215,6 +310,8 @@ export interface ReclaimedUnit {
   path: string;
   branch: string | null;
   reason: ReclaimReason;
+  branch_kept?: string;
+  visibility_error?: string;
 }
 
 /**
@@ -229,7 +326,8 @@ export type RetentionReason =
   | "operation_in_progress"
   | "commits_outside_work_branch"
   | "unreadable"
-  | "remove_refused";
+  | "remove_refused"
+  | "archivos_no_recuperables";
 
 export interface RetainedUnit {
   alias: string;
@@ -306,6 +404,7 @@ async function integrateSession(
 ): Promise<WorktreeIntegrateSessionOutput | WorktreeError> {
   const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
     intent: "write",
+    allowClosed: input.sessionCode !== undefined,
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
   });
@@ -425,6 +524,7 @@ async function integrateUnit(
   target: ResolvedTarget,
 ): Promise<WorktreeIntegrateOutput | WorktreeError> {
   const { source, path, branch, base, identity } = target;
+  if (base === null) return undeclaredWorkBranch(source.alias);
   if (!(await deps.git.isGitRepo(source.path))) {
     return {
       error: "not_a_repo",
@@ -464,9 +564,14 @@ async function integrateUnit(
   }
 
   await ensureWorklineMaterialized(deps.fs, deps.paths);
-  const merged = await withCwdLock(deps.fs, deps.paths, () => integrateLocked(deps, target), {
-    waitMs: INTEGRATE_LOCK_WAIT_MS,
-  });
+  const merged = await withCwdLock(
+    deps.fs,
+    deps.paths,
+    () => integrateLocked(deps, { ...target, base }),
+    {
+      waitMs: INTEGRATE_LOCK_WAIT_MS,
+    },
+  );
   if ("error" in merged) {
     return {
       error: "integration_locked",
@@ -492,12 +597,24 @@ async function integrateUnit(
     };
   }
   if (merged.before !== null && merged.after !== null && merged.before !== merged.after) {
-    await recordIntegration(deps, identity.session, {
+    const tip = await deps.git.head(path);
+    if (tip === null)
+      return {
+        error: "custody_unreadable",
+        message: `no se pudo leer la punta de la unidad ${path} antes de liberarla`,
+      };
+    const recorded = await recordIntegration(deps, identity.session, {
       alias: source.alias,
       into: base,
       before: merged.before,
       after: merged.after,
+      unitTip: tip,
     });
+    if (recorded.status === "unreadable")
+      return {
+        error: "custody_unreadable",
+        message: `la integración de ${source.alias} llegó a ${base}, pero no se pudo registrar la punta ${tip} en la custodia: ${recorded.reason}; la unidad conserva su rama`,
+      };
   }
   const release = await releaseUnit(deps, target);
   return {
@@ -509,7 +626,19 @@ async function integrateUnit(
     integrated: true,
     conflicted: [],
     released: "released" in release ? release.released : false,
-    next: null,
+    ...("branch_kept" in release && release.branch_kept
+      ? { branch_kept: release.branch_kept }
+      : {}),
+    ...("visibility_error" in release && release.visibility_error
+      ? { visibility_error: release.visibility_error }
+      : {}),
+    ...("visibility_error" in release && release.visibility_error
+      ? { visibility_error: release.visibility_error }
+      : {}),
+    next:
+      "released" in release && release.released
+        ? null
+        : `aw worktree release --source ${source.alias} --code ${identity.session}`,
   };
 }
 
@@ -521,7 +650,7 @@ type LockedIntegration =
 /** All ref reads, occupancy checks and the move happen under the integration lock. */
 async function integrateLocked(
   deps: WorktreeDeps,
-  target: ResolvedTarget,
+  target: ResolvedTarget & { base: string },
 ): Promise<LockedIntegration> {
   const { source, path, branch, base, roles } = target;
   const current = await deps.git.currentBranch(source.path);
@@ -608,7 +737,7 @@ interface ResolvedTarget {
   path: string;
   branch: string;
   /** Branch the unit is cut FROM: the source's declared working branch. */
-  base: string;
+  base: string | null;
   roles: ReturnType<typeof resolveSourceBranches>;
 }
 
@@ -654,6 +783,7 @@ async function resolveTarget(
 
   const resolution = await resolveSessionTarget(deps.fs, deps.paths, {
     intent: "write",
+    allowClosed: input.action !== "ensure" && input.sessionCode !== undefined,
     ...(input.sessionCode !== undefined ? { code: input.sessionCode } : {}),
     ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
   });
@@ -675,6 +805,32 @@ async function resolveTarget(
     custody.status === "present"
       ? custody.custody.sources.find((s) => s.alias === source.alias)?.base_branch
       : undefined;
+  const recorded =
+    custody.status === "present"
+      ? custody.custody.sources.find((s) => s.alias === source.alias)
+      : undefined;
+  if (recorded?.unit_path) {
+    const oldIdentity = parseUnitPath(await canonicalUnitsRootForRead(deps), recorded.unit_path);
+    if (oldIdentity?.alias === source.alias && oldIdentity.session === session)
+      identity.workspaceKey = oldIdentity.workspaceKey;
+  }
+  let previous: WorktreeEntry | undefined;
+  if (custody.status === "absent") {
+    const root = await canonicalUnitsRootForRead(deps);
+    const owns = await hubUnitPaths(deps.fs, deps.paths, root);
+    try {
+      previous = (await deps.git.worktreeList(sourcePath)).find((tree) => {
+        const found = parseUnitPath(root, tree.path);
+        return found?.session === session && found.alias === source.alias && owns(tree.path);
+      });
+    } catch {
+      /* a broken git inventory is reported by ensure/list itself */
+    }
+    if (previous) {
+      const found = parseUnitPath(root, previous.path);
+      if (found) identity.workspaceKey = found.workspaceKey;
+    }
+  }
   const effective =
     sealed === undefined
       ? await resolveDocBranch(
@@ -693,9 +849,11 @@ async function resolveTarget(
   return {
     source: { ...source, path: sourcePath },
     identity,
-    path: unitPath(await canonicalUnitsRoot(deps), identity),
-    branch: unitBranch(session),
-    base: sealed ?? effective?.branch ?? roles.work,
+    path:
+      recorded?.unit_path ?? previous?.path ?? unitPath(await canonicalUnitsRoot(deps), identity),
+    branch:
+      recorded?.unit_branch ?? previous?.branch ?? unitBranch(session, deps.paths.workspaceDir()),
+    base: sealed ?? effective?.branch ?? null,
     roles,
   };
 }
@@ -715,6 +873,14 @@ function sessionRefusal(resolution: SessionResolutionError): WorktreeError {
     error: "session_unresolved",
     message: `una unidad de aislamiento pertenece a una sesión: ${resolution.message}`,
     hint: resolution.action,
+  };
+}
+
+function undeclaredWorkBranch(alias: string): WorktreeError {
+  return {
+    error: "working_branch_undeclared",
+    message: `rama de trabajo no declarada para ${alias}`,
+    hint: `usá 'aw set-working-branch ${alias} <rama>'`,
   };
 }
 
@@ -762,6 +928,7 @@ async function ensureUnit(
       message: `${source.alias} (${source.path}) no es un repositorio git`,
     };
   }
+  const longpathsEnabled = await enableLongPaths(deps, source.path);
 
   // Vanished directories keep holding their branch until git is told, so the
   // prune runs BEFORE the occupancy read — otherwise a unit whose folder the
@@ -770,17 +937,51 @@ async function ensureUnit(
   // root, so materialize explicitly before this first Git mutation rather than
   // relying on a workspace-path filesystem write to notice it.
   await ensureWorklineMaterialized(deps.fs, deps.paths);
+  const unitsRoot = await canonicalUnitsRootForRead(deps);
+  const owns = await hubUnitPaths(deps.fs, deps.paths, unitsRoot);
+  const staleErrors: string[] = [];
+  for (const tree of await deps.git.worktreeList(source.path)) {
+    if (!tree.prunable || !owns(tree.path) || (await deps.fs.lstat(tree.path)) !== null) continue;
+    const result = await detach(deps, tree.path);
+    if (result.error) staleErrors.push(`${tree.path}: ${result.error}`);
+  }
   await deps.git.worktreePrune(source.path);
   const existing = await deps.git.worktreeList(source.path);
 
   const mine = existing.find((w) => samePath(w.path, path));
   if (mine !== undefined) {
+    const custody = await readCustody(
+      deps.fs,
+      join(deps.paths.cwdSessionsDir(), target.identity.session),
+    );
+    const recorded =
+      custody.status === "present"
+        ? custody.custody.sources.find((s) => s.alias === source.alias)
+        : undefined;
+    if (
+      custody.status === "present" &&
+      (recorded?.unit_path !== path || recorded.unit_branch !== branch || mine.branch !== branch)
+    ) {
+      return {
+        error: "unit_foreign",
+        message: `La unidad ${path} no está registrada en la custodia de esta sesión.`,
+      };
+    }
     // Idempotent: the unit is already there, on its own branch. The baseline is
     // sealed here too — it is idempotent by alias, so the FIRST reading wins and a
     // second `ensure` can never overwrite it with a state the session produced.
-    const sealed = await sealBaseline(deps, target);
+    const sealed = base === null ? null : await sealBaseline(deps, { ...target, base });
     if (sealed !== null) return sealed;
-    return { ...unitOf(target, false), base, visibility: await attach(deps, path) };
+    const visible = await attach(deps, path);
+    const visibilityError = [...staleErrors, visible.error].filter(Boolean).join("; ");
+    return {
+      ...unitOf(target, false),
+      base,
+      visibility: visible.state,
+      ...(visibilityError ? { visibility_error: visibilityError } : {}),
+      longpaths_enabled: longpathsEnabled,
+      dependencies: await linkUnitDependencies(deps.fs, deps.git, source.path, path),
+    };
   }
 
   const occupant = existing.find((w) => w.branch === branch);
@@ -797,19 +998,63 @@ async function ensureUnit(
   // An existing branch is checked out, not recreated: a flow that released its
   // unit and asks again must land back on its own commits, not on a fresh branch
   // that silently drops them.
-  const from = (await deps.git.branchExists(source.path, branch)) ? null : base;
+  const exists = await deps.git.branchExists(source.path, branch);
+  const custody = await readCustody(
+    deps.fs,
+    join(deps.paths.cwdSessionsDir(), target.identity.session),
+  );
+  const recorded =
+    custody.status === "present"
+      ? custody.custody.sources.find((s) => s.alias === source.alias)
+      : undefined;
+  if (
+    exists &&
+    custody.status === "present" &&
+    (recorded?.unit_branch !== branch || recorded.unit_path !== path)
+  ) {
+    return {
+      error: "unit_foreign",
+      message: `La rama ${branch} no está registrada en la custodia de esta sesión.`,
+    };
+  }
+  const from = exists ? null : base;
+  if (from === null && !exists) return undeclaredWorkBranch(source.alias);
+  if (from !== null && !(await deps.git.branchExists(source.path, from))) {
+    return {
+      error: "base_missing",
+      message: `la rama base '${from}' no existe en ${source.alias}`,
+      hint: `restaurá '${from}' antes de abrir la unidad`,
+    };
+  }
   try {
     await deps.git.worktreeAdd(source.path, path, branch, from);
   } catch (err) {
     return {
       error: "worktree_add_failed",
       message: (err as Error).message,
-      hint: `verificá que la rama base '${base}' exista en ${source.alias}`,
     };
   }
-  const sealed = await sealBaseline(deps, target);
+  const sealed = base === null ? null : await sealBaseline(deps, { ...target, base });
   if (sealed !== null) return sealed;
-  return { ...unitOf(target, true), base, visibility: await attach(deps, path) };
+  const visible = await attach(deps, path);
+  const visibilityError = [...staleErrors, visible.error].filter(Boolean).join("; ");
+  return {
+    ...unitOf(target, true),
+    base,
+    visibility: visible.state,
+    ...(visibilityError ? { visibility_error: visibilityError } : {}),
+    longpaths_enabled: longpathsEnabled,
+    dependencies: await linkUnitDependencies(deps.fs, deps.git, source.path, path),
+  };
+}
+
+async function enableLongPaths(deps: WorktreeDeps, repo: string): Promise<boolean> {
+  if ((deps.platform ?? process.platform) !== "win32") return false;
+  if (!deps.git.readConfig || !deps.git.writeLocalConfig)
+    throw new Error("git no permite configurar core.longpaths localmente");
+  if ((await deps.git.readConfig(repo, "core.longpaths"))?.toLowerCase() === "true") return false;
+  await deps.git.writeLocalConfig(repo, "core.longpaths", "true");
+  return true;
 }
 
 /**
@@ -825,7 +1070,7 @@ async function ensureUnit(
  */
 async function sealBaseline(
   deps: WorktreeDeps,
-  target: ResolvedTarget,
+  target: ResolvedTarget & { base: string },
 ): Promise<WorktreeError | null> {
   const update = await recordUnitTaken(deps, target.identity.session, {
     alias: target.source.alias,
@@ -854,36 +1099,104 @@ async function releaseUnit(
     };
   }
   const existing = await deps.git.worktreeList(source.path);
-  if (!existing.some((w) => samePath(w.path, path))) {
+  const registered = existing.find((w) => samePath(w.path, path));
+  if (registered && (await deps.fs.lstat(path)) === null) {
+    await deps.git.worktreePrune(source.path);
+    if ((await deps.git.worktreeList(source.path)).some((w) => samePath(w.path, path)))
+      return { error: "remove_blocked", message: `git aún registra la unidad sin carpeta ${path}` };
+    return releaseUnit(deps, target);
+  }
+  if (registered === undefined) {
     await ensureWorklineMaterialized(deps.fs, deps.paths);
     await deps.git.worktreePrune(source.path);
+    let completed = false;
+    if ((await deps.fs.lstat(path)) !== null) {
+      try {
+        const blockers = await finishResidue(deps.fs, deps.git, source.path, path, branch);
+        if (blockers.length > 0)
+          return {
+            error: "remove_blocked",
+            message: `quedó residuo en ${path}: ${blockers.join(", ")}`,
+            hint: `revisá los archivos nombrados y volvé a correr 'aw worktree release --source ${source.alias} --code ${identity.session}'`,
+          };
+        completed = true;
+      } catch (err) {
+        return {
+          error: "remove_blocked",
+          message: `quedó residuo en ${path}: ${(err as Error).message}`,
+        };
+      }
+    }
+    const branchKept = await deleteContainedUnitBranch(deps, target);
+    const visible = await detach(deps, path);
     return {
       alias: source.alias,
       session: identity.session,
       path,
       branch,
-      released: false,
-      visibility: await detach(deps, path),
+      released: completed,
+      residue_completed: completed,
+      ...(branchKept ? { branch_kept: branchKept } : {}),
+      visibility: visible.state,
+      ...(visible.error ? { visibility_error: visible.error } : {}),
     };
   }
+  if (registered.branch !== branch)
+    return {
+      error: "unit_foreign",
+      message: `la unidad ${path} usa ${registered.branch}, no ${branch}`,
+    };
   await ensureWorklineMaterialized(deps.fs, deps.paths);
   try {
-    await deps.git.worktreeRemove(source.path, path);
+    await removeUnitSafely(deps.fs, deps.git, source.path, path);
   } catch (err) {
+    const now = await deps.git.worktreeList(source.path);
+    if (!now.some((w) => samePath(w.path, path))) return releaseUnit(deps, target);
     return {
-      error: "unit_not_clean",
-      message: (err as Error).message,
-      hint: "commiteá o descartá los cambios de la unidad y volvé a liberarla; nada se borra por la fuerza",
+      error: (await deps.git.isDirty(path)) ? "unit_not_clean" : "remove_blocked",
+      message: `quedó ${path}: ${(err as Error).message}`,
+      hint: `revisá ${path} y volvé a correr 'aw worktree release --source ${source.alias} --code ${identity.session}'`,
     };
   }
+  if ((await deps.fs.lstat(path)) !== null) {
+    const blockers = await finishResidue(deps.fs, deps.git, source.path, path, branch);
+    if (blockers.length > 0)
+      return { error: "remove_blocked", message: `quedó ${path}: ${blockers.join(", ")}` };
+  }
+  const branchKept = await deleteContainedUnitBranch(deps, target);
+  const visible = await detach(deps, path);
   return {
     alias: source.alias,
     session: identity.session,
     path,
     branch,
     released: true,
-    visibility: await detach(deps, path),
+    ...(branchKept ? { branch_kept: branchKept } : {}),
+    visibility: visible.state,
+    ...(visible.error ? { visibility_error: visible.error } : {}),
   };
+}
+
+/** Only a unit branch, only with a sealed/effective base, only by the observed tip. */
+async function deleteContainedUnitBranch(
+  deps: WorktreeDeps,
+  target: Pick<ResolvedTarget, "source" | "path" | "branch" | "base">,
+): Promise<string | null> {
+  const { source, path, branch, base } = target;
+  if (!branch.startsWith("aw/") || branch === base) return "no es una rama de unidad borrable";
+  if (
+    (await deps.fs.lstat(path)) !== null ||
+    (await deps.git.worktreeList(source.path)).some((tree) => tree.branch === branch)
+  )
+    return "la carpeta o la rama siguen ocupadas; no se borra";
+  const tip = await deps.git.refValue(source.path, `refs/heads/${branch}`);
+  if (tip === null) return null;
+  if (base === null) return "sin base sellada o rama de trabajo; la rama se conserva";
+  const baseTip = await deps.git.refValue(source.path, `refs/heads/${base}`);
+  if (baseTip === null || !(await deps.git.isAncestor(source.path, tip, baseTip)))
+    return `commits de ${branch} no contenidos en ${base}; la rama se conserva`;
+  const deleted = await deps.git.deleteRef(source.path, `refs/heads/${branch}`, tip);
+  return deleted.ok ? null : `no se pudo borrar ${branch} con punta ${tip}: ${deleted.why}`;
 }
 
 /**
@@ -929,6 +1242,7 @@ async function reclaimUnits(
   const key = workspaceKey(deps.paths.workspaceDir());
   const root = await canonicalUnitsRootForRead(deps);
   const sessions = await sessionStates(deps);
+  const owns = await hubUnitPaths(deps.fs, deps.paths, root);
   const only = input.sessionCode ?? null;
 
   const reclaimed: ReclaimedUnit[] = [];
@@ -936,7 +1250,7 @@ async function reclaimUnits(
   const unreadable: WorktreeReclaimOutput["unreadable"] = [];
   for (const source of sources) {
     if (input.alias !== undefined && source.alias !== input.alias) continue;
-    const swept = await sweepSource(deps, source, { root, key, only, sessions, block });
+    const swept = await sweepSource(deps, source, { root, key, only, sessions, block, owns });
     if ("error" in swept) {
       unreadable.push({
         alias: source.alias,
@@ -971,6 +1285,7 @@ async function sweepSource(
     key: string;
     only: string | null;
     sessions: SessionStates;
+    owns: (path: string) => boolean;
     block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
   },
 ): Promise<
@@ -1014,18 +1329,109 @@ async function sweepSource(
     else reclaimed.push(swept.reclaimed);
   }
   if (vanished.length > 0) {
-    const settled = await prune(deps, { ...source, path: repo }, vanished);
+    const settled = await prune(deps, { ...source, path: repo }, vanished, ctx.block);
     reclaimed.push(...settled.reclaimed);
     retained.push(...settled.retained);
   }
+  const registered = new Set(trees.map((tree) => normalizePath(tree.path)));
+  // Also visit previous workspace keys registered by 075, without claiming another hub's units.
+  for (const keyEntry of (await deps.fs.lstat(ctx.root)) === null
+    ? []
+    : await deps.fs.list(ctx.root)) {
+    if (keyEntry.type !== "dir") continue;
+    const aliasDir = join(keyEntry.path, source.alias);
+    if ((await deps.fs.lstat(aliasDir))?.type !== "dir") continue;
+    for (const sessionEntry of await deps.fs.list(aliasDir)) {
+      if (
+        sessionEntry.type !== "dir" ||
+        registered.has(normalizePath(sessionEntry.path)) ||
+        !ctx.owns(sessionEntry.path)
+      )
+        continue;
+      const identity = parseUnitPath(ctx.root, sessionEntry.path);
+      if (
+        identity?.alias !== source.alias ||
+        (ctx.only !== null && !sessionFolderMatches(identity.session, ctx.only))
+      )
+        continue;
+      const orphan = orphanReason(identity.session, ctx.sessions, false);
+      if (orphan === null && ctx.only === null) continue;
+      const branch = await branchForResidue(deps, repo, identity, sessionEntry.path);
+      const where = {
+        alias: source.alias,
+        session: identity.session,
+        path: sessionEntry.path,
+        branch,
+      };
+      try {
+        const blockers = await finishResidue(deps.fs, deps.git, repo, sessionEntry.path, branch);
+        if (blockers.length > 0) {
+          retained.push({
+            ...where,
+            reason: "archivos_no_recuperables",
+            detail: blockers.join(", "),
+            next: `revisá ${sessionEntry.path} y volvé a correr 'aw worktree reclaim --code ${identity.session}'`,
+          });
+          continue;
+        }
+        await deps.git.worktreePrune(repo);
+        const base = await baseForReclaim(
+          deps,
+          source.alias,
+          identity.session,
+          resolveSourceBranches(source, ctx.block).work,
+        );
+        const kept = await deleteContainedUnitBranch(deps, {
+          source: { ...source, path: repo },
+          path: sessionEntry.path,
+          branch: branch ?? "",
+          base,
+        });
+        const visible = await detach(deps, sessionEntry.path);
+        reclaimed.push({
+          ...where,
+          reason: orphan ?? "already_on_work_branch",
+          ...(kept ? { branch_kept: kept } : {}),
+          ...(visible.error ? { visibility_error: visible.error } : {}),
+        });
+      } catch (err) {
+        retained.push({
+          ...where,
+          reason: "unreadable",
+          detail: (err as Error).message,
+          next: `revisá ${sessionEntry.path} antes de recoger`,
+        });
+      }
+    }
+  }
   return { reclaimed, retained };
+}
+
+async function branchForResidue(
+  deps: WorktreeDeps,
+  repo: string,
+  identity: UnitIdentity,
+  path: string,
+): Promise<string | null> {
+  const custody = await readCustody(deps.fs, join(deps.paths.cwdSessionsDir(), identity.session));
+  const recorded =
+    custody.status === "present"
+      ? custody.custody.sources.find((s) => s.alias === identity.alias && s.unit_path === path)
+      : undefined;
+  if (recorded?.unit_branch) return recorded.unit_branch;
+  const names = [
+    `aw/${identity.workspaceKey.slice(-8)}/${identity.session}`,
+    unitBranch(identity.session),
+  ];
+  for (const branch of names) if (await deps.git.branchExists(repo, branch)) return branch;
+  return null;
 }
 
 async function baseForReclaim(
   deps: WorktreeDeps,
   alias: string,
   session: string,
-  fallback: string,
+  fallback: string | null,
 ): Promise<string | null> {
   const read = await readCustody(deps.fs, join(deps.paths.cwdSessionsDir(), session));
   if (read.status === "unreadable") return null;
@@ -1039,11 +1445,33 @@ async function prune(
   deps: WorktreeDeps,
   source: ProjectFuente & { path: string },
   vanished: ReclaimedUnit[],
+  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
 ): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }> {
   await ensureWorklineMaterialized(deps.fs, deps.paths);
   try {
     await deps.git.worktreePrune(source.path);
-    return { reclaimed: vanished, retained: [] };
+    const reclaimed: ReclaimedUnit[] = [];
+    for (const unit of vanished) {
+      const base = await baseForReclaim(
+        deps,
+        unit.alias,
+        unit.session,
+        resolveSourceBranches(source, block).work,
+      );
+      const kept = await deleteContainedUnitBranch(deps, {
+        source,
+        path: unit.path,
+        branch: unit.branch ?? "",
+        base,
+      });
+      const visible = await detach(deps, unit.path);
+      reclaimed.push({
+        ...unit,
+        ...(kept ? { branch_kept: kept } : {}),
+        ...(visible.error ? { visibility_error: visible.error } : {}),
+      });
+    }
+    return { reclaimed, retained: [] };
   } catch (err) {
     return {
       reclaimed: [],
@@ -1063,10 +1491,16 @@ async function prune(
 /** The identity and residue state of a tree this sweep may act on; `null` otherwise. */
 function candidateOf(
   tree: WorktreeEntry,
-  ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
+  ctx: {
+    root: string;
+    key: string;
+    only: string | null;
+    sessions: SessionStates;
+    owns: (path: string) => boolean;
+  },
 ): { session: string; alias: string; orphan: OrphanUnit["reason"] | null } | null {
   const identity = tree.main ? null : parseUnitPath(ctx.root, tree.path);
-  if (identity === null || identity.workspaceKey !== ctx.key) return null;
+  if (identity === null || !ctx.owns(tree.path)) return null;
   if (ctx.only !== null && !sessionFolderMatches(identity.session, ctx.only)) return null;
   const orphan = orphanReason(identity.session, ctx.sessions, tree.prunable);
   // Outside a named session only residue is touched: a live session's unit is
@@ -1101,8 +1535,8 @@ async function sweepOne(
       retained: {
         ...where,
         reason: "unreadable",
-        detail: "la custodia no permite leer la base sellada",
-        next: `revisá la custodia de ${candidate.session} antes de recoger`,
+        detail: `no se pudo determinar la base sellada ni una rama de trabajo para ${source.alias}`,
+        next: `revisá la custodia de ${candidate.session} o usá 'aw set-working-branch ${source.alias} <rama>' antes de recoger`,
       },
     };
   const verdict = await reclaimability(
@@ -1116,22 +1550,56 @@ async function sweepOne(
   if (!verdict.free) return { retained: { ...where, ...verdict.retention } };
   await ensureWorklineMaterialized(deps.fs, deps.paths);
   try {
-    await deps.git.worktreeRemove(source.path, tree.path);
+    await removeUnitSafely(deps.fs, deps.git, source.path, tree.path);
   } catch (err) {
-    // git refused, and git refusing is the last line of the same rule: never
-    // `--force`, so whatever it is holding stays held.
-    return {
-      retained: {
-        ...where,
-        reason: "remove_refused",
-        detail: (err as Error).message,
-        next: `revisá ${tree.path} y volvé a correr 'aw worktree reclaim'; nada se borra por la fuerza`,
-      },
-    };
+    if ((await deps.git.worktreeList(source.path)).some((w) => samePath(w.path, tree.path)))
+      return {
+        retained: {
+          ...where,
+          reason: "remove_refused",
+          detail: (err as Error).message,
+          next: `revisá ${tree.path} y volvé a correr 'aw worktree reclaim'; nada se borra por la fuerza`,
+        },
+      };
   }
-  await detach(deps, tree.path);
+  if ((await deps.fs.lstat(tree.path)) !== null) {
+    try {
+      const blockers = await finishResidue(deps.fs, deps.git, source.path, tree.path, tree.branch);
+      if (blockers.length > 0)
+        return {
+          retained: {
+            ...where,
+            reason: "archivos_no_recuperables",
+            detail: blockers.join(", "),
+            next: `revisá ${tree.path} y volvé a recoger`,
+          },
+        };
+    } catch (err) {
+      return {
+        retained: {
+          ...where,
+          reason: "remove_refused",
+          detail: (err as Error).message,
+          next: `revisá ${tree.path} y volvé a recoger`,
+        },
+      };
+    }
+  }
+  await deps.git.worktreePrune(source.path);
+  const branchKept = await deleteContainedUnitBranch(deps, {
+    source,
+    path: tree.path,
+    branch: tree.branch ?? "",
+    base: work,
+  });
+  const visible = await detach(deps, tree.path);
   return {
-    reclaimed: { ...where, reason: candidate.orphan ?? "already_on_work_branch" },
+    reclaimed: {
+      ...where,
+      reason: candidate.orphan ?? "already_on_work_branch",
+      ...(branchKept ? { branch_kept: branchKept } : {}),
+      ...(visible.error ? { visibility_error: visible.error } : {}),
+    },
     prune: false,
   };
 }
@@ -1233,7 +1701,7 @@ function recoveryFor(
   session: string,
 ): string {
   if (orphan === "session_closed") {
-    return `aw session-resume --code ${session} --reopen y después 'aw worktree integrate --source ${source.alias} --code ${session}'`;
+    return `aw worktree integrate --source ${source.alias} --code ${session}`;
   }
   if (orphan === "session_absent") {
     return `la sesión ${session} ya no existe: revisá la rama ${tree.branch ?? unitBranch(session)} en ${source.path} y llevá sus commits a '${work}' antes de volver a recoger`;
@@ -1271,12 +1739,13 @@ async function listUnits(
   const key = workspaceKey(deps.paths.workspaceDir());
   const root = await canonicalUnitsRootForRead(deps);
   const sessions = await sessionStates(deps);
+  const owns = await hubUnitPaths(deps.fs, deps.paths, root);
 
   const units: ListedUnit[] = [];
   const orphans: OrphanUnit[] = [];
   const unreadable: WorktreeListOutput["unreadable"] = [];
   for (const source of block?.fuentes ?? []) {
-    const scanned = await scanSource(deps, source, { root, key, only, sessions });
+    const scanned = await scanSource(deps, source, { root, key, only, sessions, owns });
     if ("error" in scanned) {
       // Reported, never skipped in silence: a source whose trees cannot be read
       // would otherwise show up as "no units", which is the one answer that is
@@ -1304,7 +1773,13 @@ async function listUnits(
 async function scanSource(
   deps: WorktreeDeps,
   source: ProjectFuente,
-  ctx: { root: string; key: string; only: string | null; sessions: SessionStates },
+  ctx: {
+    root: string;
+    key: string;
+    only: string | null;
+    sessions: SessionStates;
+    owns: (path: string) => boolean;
+  },
 ): Promise<
   { units: ListedUnit[]; orphans: OrphanUnit[] } | { error: string; code?: "SOURCE_PATH_MISSING" }
 > {
@@ -1328,7 +1803,7 @@ async function scanSource(
   const orphans: OrphanUnit[] = [];
   for (const tree of trees) {
     const identity = tree.main ? null : parseUnitPath(ctx.root, tree.path);
-    if (identity === null || identity.workspaceKey !== ctx.key) continue;
+    if (identity === null || !ctx.owns(tree.path)) continue;
     if (ctx.only !== null && identity.session !== ctx.only) continue;
     const reason = orphanReason(identity.session, ctx.sessions, tree.prunable);
     if (reason === null) units.push(await liveUnit(deps, identity, repo, tree));
@@ -1450,14 +1925,24 @@ function unitOf(target: ResolvedTarget, created: boolean): IsolationUnit {
  * failure is reported, never swallowed: a unit nobody can see is not a usable
  * unit, and the caller has to know which of the two it got.
  */
-async function attach(deps: WorktreeDeps, path: string): Promise<"attached" | "unavailable"> {
+async function attach(
+  deps: WorktreeDeps,
+  path: string,
+): Promise<{ state: "attached" | "unavailable"; error?: string }> {
   const result = await runMultiroot(deps.fs, deps.env, deps.paths, "attach", { paths: [path] });
-  return "error" in result ? "unavailable" : "attached";
+  return "error" in result
+    ? { state: "unavailable", error: `${result.error}: ${result.hint ?? "sin detalle"}` }
+    : { state: "attached" };
 }
 
-async function detach(deps: WorktreeDeps, path: string): Promise<"detached" | "unavailable"> {
+async function detach(
+  deps: WorktreeDeps,
+  path: string,
+): Promise<{ state: "detached" | "unavailable"; error?: string }> {
   const result = await runMultiroot(deps.fs, deps.env, deps.paths, "detach", { paths: [path] });
-  return "error" in result ? "unavailable" : "detached";
+  return "error" in result
+    ? { state: "unavailable", error: `${result.error}: ${result.hint ?? "sin detalle"}` }
+    : { state: "detached" };
 }
 
 function samePath(a: string, b: string): boolean {

@@ -47,6 +47,7 @@ const units = vi.hoisted(() => ({
 
 vi.mock("../../src/application/worktree-service.js", () => ({
   runWorktree: async () => units.listed,
+  classifyListedUnits: async (_deps: unknown, listed: unknown) => listed,
 }));
 
 const fs = new NodeFileSystem();

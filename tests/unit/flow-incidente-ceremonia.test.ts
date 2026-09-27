@@ -9,6 +9,7 @@ import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { validatePlanSourceBoundary } from "../../src/application/source-boundary-policy.js";
 import { type FlowDecision, effectsOf, journeyForState } from "../../src/domain/flow/authority.js";
+import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import {
   FLOW_RUN_STATE_FILE,
@@ -32,8 +33,8 @@ import { testExecutor } from "../helpers/test-executor.js";
  * restaurar una copia anterior del ledger.
  *
  * Lo que se fija es el resultado que el usuario pidió: el recorrido llega a su
- * primera tarea sin ningún refinamiento y sin ninguna interacción humana además
- * de las que ya tenía.
+ * primera tarea sin refinamiento; la adquisición pide autorización porque ahora
+ * puede escribir core.longpaths en la configuración local de la fuente.
  */
 
 const fs = new (class extends NodeFileSystem {
@@ -133,10 +134,11 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
     };
   }
 
-  async function answer(body: unknown): Promise<FlowDirective> {
+  async function answer(body: unknown, approval?: string): Promise<FlowDirective> {
     const result = await submitFlow(fs, paths, {
       code: CODE,
       raw: JSON.stringify(body),
+      ...(approval ? { approval } : {}),
       executor: testExecutor(fs, paths),
     });
     if (!result.ok) throw new Error("un rechazo de negocio viaja ok:true");
@@ -236,7 +238,22 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
       }
       if (verdict.kind === "human") {
         out.humanBoundaries.push(verdict.transition);
-        return out;
+        if (
+          verdict.transition !== "plan-exec.unit-acquisition" ||
+          current.resolved.kind !== "authorization"
+        )
+          return out;
+        const approval = effectApprovalDigest(
+          verdict.transition,
+          current.resolved.authorization?.planned ?? [],
+        );
+        const directive = await answer(
+          { input_digest: current.resolved.seal, choice: "Autorizar el efecto" },
+          approval,
+        );
+        if (directive.error !== null)
+          out.errors.push({ code: directive.error.code, action: directive.error.action });
+        continue;
       }
       const directive = await answer(bodyFor(current.resolved));
       if (directive.error !== null) {
@@ -254,7 +271,7 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
     expect(PLAN_TEXT).not.toMatch(/\b(prueba|test|fixture|inspecci[oó]n|lint|typecheck|golden)\b/i);
   });
 
-  it("llega a su primera tarea con los intentos intactos, sin degradación y sin frontera humana", async () => {
+  it("llega a su primera tarea sin degradación tras autorizar la escritura de configuración", async () => {
     const executor = testExecutor(fs, paths);
     const adopted = await advanceFlow(fs, paths, {
       code: CODE,
@@ -312,7 +329,7 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
     // El resultado que el usuario pidió: la primera tarea, sin nada en el medio.
     expect(final.resolved.stopped?.id).toBe("plan-exec.implementation");
     expect(errors).toEqual([]);
-    expect(humanBoundaries).toEqual([]);
+    expect(humanBoundaries).toEqual(["plan-exec.unit-acquisition"]);
     // Sin el código de evidencia local ausente, sin frontera agotada y sin
     // incontestable: la lista de errores vacía ya lo dice, y esto lo nombra.
     expect(errors.map((entry) => entry.code)).not.toContain("PLAN_SOURCE_LOCAL_PROOF_MISSING");

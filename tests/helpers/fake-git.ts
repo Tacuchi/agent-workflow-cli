@@ -295,7 +295,11 @@ export class RecordingGit implements GitPort {
 
   async branchExists(repo: string, branch: string): Promise<boolean> {
     this.calls.push({ op: "branchExists", repo, arg: branch });
-    return this.opts.existingBranches?.includes(branch) ?? false;
+    // The checked-out branch necessarily exists, even when tests do not list
+    // every local ref explicitly in existingBranches.
+    return (
+      branch === this.branchOf(repo) || (this.opts.existingBranches?.includes(branch) ?? false)
+    );
   }
 
   /** Helper for tests that drive resume: clear the mid-merge state everywhere. */

@@ -30,6 +30,13 @@ export interface WorktreeEntry {
   prunable: boolean;
 }
 
+/** A tracked file at the tip of a branch, including its git object identity. */
+export interface TreeEntry {
+  path: string;
+  mode: string;
+  hash: string;
+}
+
 /**
  * One path git reports as changed, in the detail an attribution needs.
  *
@@ -102,6 +109,7 @@ export interface GitPort {
   isGitRepo(repoPath: string): Promise<boolean>;
   /** Optional local git configuration; absent keys return null. */
   readConfig?(repoPath: string, key: string): Promise<string | null>;
+  writeLocalConfig?(repoPath: string, key: string, value: string): Promise<void>;
   currentBranch(repoPath: string): Promise<string | undefined>;
   isDirty(repoPath: string): Promise<boolean>;
   changedFiles(repoPath: string): Promise<string[]>;
@@ -327,6 +335,12 @@ export interface GitPort {
    * so the dry run answers about tracked content only, and this closes the rest.
    */
   treePaths(repoPath: string, rev: string): Promise<string[]>;
+  treeEntries?(repoPath: string, rev: string): Promise<TreeEntry[]>;
+  hashWorktreePath?(repoPath: string, path: string, symlink: boolean): Promise<string>;
+  worktreeFileMode?(path: string): Promise<string>;
+  ignoredOutsideIndex?(repoPath: string, treePath: string, relativePath: string): Promise<boolean>;
+  ignoredInSource?(repoPath: string, relativePath: string): Promise<boolean>;
+  excludePattern?(repoPath: string, pattern: string): Promise<void>;
   /** Whether a git operation is half-done, so nothing is attempted over it. */
   operationState(repoPath: string): Promise<GitOperationState>;
   /** True when `ancestor` is reachable from `descendant`. */
@@ -379,7 +393,7 @@ export interface GitPort {
   /** Point a private ref at a commit, so a prepared result stays reachable. */
   setRef(repoPath: string, ref: string, sha: string): Promise<GitAttempt>;
   /** Drop a ref this operation created. Never used on a ref it did not create. */
-  deleteRef(repoPath: string, ref: string): Promise<GitAttempt>;
+  deleteRef(repoPath: string, ref: string, expectedOld?: string): Promise<GitAttempt>;
 }
 
 export interface ConflictStage {

@@ -272,10 +272,13 @@ describe("git-flow service", () => {
   });
 
   it("to-dev termina ok SIN merges cuando la rama de trabajo ya es la de desarrollo", async () => {
-    // Sin rama de trabajo declarada, work y dev resuelven ambos al default.
-    await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
-      desarrollo: "develop",
-    });
+    // Una rama de trabajo explícita puede coincidir con desarrollo.
+    await writeBlock(
+      [{ alias: "core", path: "/repo/core", main: "certificacion", work: "develop" }],
+      {
+        desarrollo: "develop",
+      },
+    );
     const git = new RecordingGit({ currentBranch: "develop" });
 
     const result = await runGitFlow(fs, git, paths(), { action: "to-dev", source: "core" });
@@ -291,7 +294,15 @@ describe("git-flow service", () => {
     // se convertiría en un salto silencioso. El destino es una rama de entorno
     // (la de QA): hacia una rama de trabajo, PR-04 rechazaría llevar develop.
     await writeBlock(
-      [{ alias: "core", path: "/repo/core", main: "certificacion", qa: "integration" }],
+      [
+        {
+          alias: "core",
+          path: "/repo/core",
+          main: "certificacion",
+          work: "develop",
+          qa: "integration",
+        },
+      ],
       { desarrollo: "develop" },
     );
     const git = new RecordingGit({ currentBranch: "develop" });
@@ -312,7 +323,7 @@ describe("git-flow service", () => {
   it("to-dev --all: una fuente degenerada no impide procesar el resto", async () => {
     await writeBlock(
       [
-        { alias: "core", path: "/repo/core", main: "certificacion" }, // sin work → no-op
+        { alias: "core", path: "/repo/core", main: "certificacion", work: "develop" },
         { alias: "ui", path: "/repo/ui", main: "main", work: "feature/y" },
       ],
       { desarrollo: "develop" },
@@ -833,25 +844,28 @@ describe("git-flow service", () => {
     expect(opLog(git.calls)).toContain("push qa");
   });
 
-  it("a source with no working branch resolves work to the workspace 'desarrollo' default", async () => {
+  it("refuses a source without a working branch before preview or git mutation", async () => {
     await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
       desarrollo: "develop",
     });
     const git = new RecordingGit({ currentBranch: "certificacion" });
 
-    const result = await runGitFlow(fs, git, paths(), { action: "sync", source: "core" });
+    const result = await runGitFlow(fs, git, paths(), {
+      action: "to-prod",
+      source: "core",
+      dryRun: true,
+    });
 
-    expect(result.status).toBe("ok");
-    expect(opLog(git.calls)).toEqual([
-      "checkout develop",
-      "fetch develop",
-      "merge origin/develop",
-      "checkout certificacion",
-      "fetch certificacion",
-      "ff refs/remotes/origin/certificacion",
-      "checkout develop",
-      "merge certificacion",
-    ]);
+    expect(result.status).toBe("error");
+    expect(result.results[0]?.error).toContain("aw set-working-branch core <rama>");
+    expect(opLog(git.calls)).toEqual([]);
+    const explicit = await runGitFlow(fs, git, paths(), {
+      action: "sync",
+      source: "core",
+      target: "feature/x",
+      dryRun: true,
+    });
+    expect(explicit.status).toBe("ok");
   });
 
   it("a declared per-source branch wins over the workspace default", async () => {
@@ -1374,13 +1388,15 @@ describe("git-flow service", () => {
   });
 
   describe("PR-04: ningún plan mezcla la rama de desarrollo en una rama de trabajo", () => {
-    // Sin rama de trabajo declarada, work cae al default de desarrollo: promoverla
-    // hacia una feature o una unidad aw/* llevaría desarrollo a una rama de trabajo.
+    // Incluso declarada explícitamente, desarrollo no fluye hacia una feature o aw/*.
     for (const target of ["feature/y", "aw/215-salvaguardas-de-produccion-plan-exec"]) {
       it(`to-qa --target ${target} se rechaza antes de tocar git`, async () => {
-        await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
-          desarrollo: "develop",
-        });
+        await writeBlock(
+          [{ alias: "core", path: "/repo/core", main: "certificacion", work: "develop" }],
+          {
+            desarrollo: "develop",
+          },
+        );
         const git = new RecordingGit({ currentBranch: "develop" });
 
         const result = await runGitFlow(fs, git, paths(), {
@@ -1398,9 +1414,12 @@ describe("git-flow service", () => {
     }
 
     it("también en --dry-run: el plan prohibido no se muestra como ejecutable", async () => {
-      await writeBlock([{ alias: "core", path: "/repo/core", main: "certificacion" }], {
-        desarrollo: "develop",
-      });
+      await writeBlock(
+        [{ alias: "core", path: "/repo/core", main: "certificacion", work: "develop" }],
+        {
+          desarrollo: "develop",
+        },
+      );
       const git = new RecordingGit({ currentBranch: "develop" });
 
       const result = await runGitFlow(fs, git, paths(), {

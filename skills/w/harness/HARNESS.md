@@ -74,7 +74,7 @@ coordination, without turning a deterministic CLI rule into model work.
 
 ## Harness binding matrix
 
-Concrete mechanism per harness (matrix base verified **Jul-2026**; the `structured-choice` row re-verified **2026-08-22**, the Codex `hooks` row **2026-08-05** and the crush/gemini/opencode `hooks` contract **2026-08-18**, all against the INSTALLED runtimes plus real runs — not docs; `~` partial). Antigravity CLI reuses Gemini's surfaces (`~/.gemini/`); Oz reuses Warp's (they share the **Warp / Oz** column, with MCP via flag — see the note under the matrix).
+Concrete mechanism per harness (matrix base verified **Jul-2026**; `structured-choice` re-verified **2026-08-22**, Codex `hooks` **2026-08-05**, crush/gemini/opencode `hooks` **2026-08-18**; Codex `host-memory` **2026-09-27**; installed runtimes and real runs, `~` partial). Antigravity reuses Gemini's surfaces; Oz reuses Warp's (MCP via flag — see below).
 
 | Capability | Claude Code | Codex | Kimi Code | Gemini / Antigravity | OpenCode | Crush | Warp / Oz | Generic |
 |---|---|---|---|---|---|---|---|---|
@@ -84,7 +84,7 @@ Concrete mechanism per harness (matrix base verified **Jul-2026**; the `structur
 | compaction | `/compact` | Pre/PostCompact hooks | `/compact` + Pre/PostCompact hooks | ~ | `session.compacted` | ~ | ~ | CHECKPOINT + resume |
 | subagent-dispatch | `Task` (parallel) | `agents` | `SubagentStart` | agents (`.gemini/agents`) | `.opencode/agent/*.md` | inline | inline (Oz cloud orchestration is not a direct worker binding) | inline |
 | persistent-context | `CLAUDE.md` (does **not** read AGENTS.md → symlink) | `AGENTS.md` | `AGENTS.md` (hierarchical) | `GEMINI.md` + `AGENTS.md` | `AGENTS.md` | `CRUSH.md` + `AGENTS.md` | `AGENTS.md` (auto) | `AGENTS.md` |
-| **host-memory** | `MEMORY.md` (cheap) + transcripts/`--resume` (deep) | `AGENTS.md` (static → fallback) | sessions with resume/fork (`kimi -S`) + `AGENTS.md` | `GEMINI.md`+`AGENTS.md` (static → fallback) | `AGENTS.md` (static → fallback) | `CRUSH.md`+`AGENTS.md` (static → fallback) | rules / history (~) | git/`docs/` + ask |
+| **host-memory** | `MEMORY.md` (cheap) + transcripts/`--resume` (deep) | `~/.codex/memories/` (config-enabled); `AGENTS.md` static fallback | sessions with resume/fork (`kimi -S`) + `AGENTS.md` | `GEMINI.md`+`AGENTS.md` (static → fallback) | `AGENTS.md` (static → fallback) | `CRUSH.md`+`AGENTS.md` (static → fallback) | rules / history (~) | git/`docs/` + ask |
 | **web-research** | `WebSearch` / `WebFetch` | `web_search` (opt-in config) | moonshot search + fetch services | `google_web_search` + `web_fetch` | `webfetch` (~) | ~ | ~ (agent web access) | — (offline + declare) |
 | external-data (MCP) | `.mcp.json` | `.codex/config.toml` `[mcp_servers]` | `~/.kimi-code/mcp.json` `mcpServers` (also reads project `.mcp.json`) | `settings.json` `mcpServers` | `opencode.json` `mcp` | `crush.json` `mcp` | `.warp/.mcp.json` (+auto-discovers `.mcp.json`) · Oz: `--mcp` flag | — |
 | **enforcement (deny tool)** | `PreToolUse` → `permissionDecision:deny` / exit 2 | `PreToolUse` (**≈same protocol**) | `PreToolUse` → block / exit 2 | `PreToolUse` in its `hooks.json` (Claude-shaped; `BeforeTool` **does not exist**) | plugin `tool.execute.before` (`throw`) | `PreToolUse` in `crush.json` → `hooks` (+ `allowed_tools` allowlist) | allow/deny lists (**coarse**) | doctrine (git-safe #5) |

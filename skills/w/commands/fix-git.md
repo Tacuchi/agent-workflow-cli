@@ -20,7 +20,7 @@ No loop, no session, never writes `docs/`. Any repo; output in the user's langua
 1. `aw fix-git prepare [--source <alias> | --path <ruta>]` summarizes kind, binary, bytes, EOL, allowed choices/cap and virtual base. Repeat `--show <ruta>` for versions; `--adapt <ruta>` includes tracked clean files, even after conflicts end.
 2. Resolve by intent (`base`/`ours`/`theirs`); inspect code and `git log --merge -p -- <file>` if unclear.
 3. Reply JSON copying `version`, `operation`, `input_digest`, any `scope`, `state: "proposed"`, and a subset of `artifacts: [{path,content}]` and/or `resolutions: [{path,choice}]`. Binary → `ours|theirs`; absent stage → `delete`; doubt → `ambiguous` with `reason`.
-4. Pipe JSON to `aw fix-git apply [--source …]`; partial apply leaves the rest. Repeat prepare/apply. No manual `git add`.
+4. Write file-tool JSON → `aw fix-git apply [--source …] < <file>`. Partial? Repeat; no manual `git add`. No shell JSON.
 5. Preview `aw fix-git commit --message "<mensaje>"`: build, included, `left_out`. After approval add `--confirm`; missing/failed build refuses. `ninguno` or `--skip-build "<motivo>"` reports skipped + origin. Use a long host timeout.
 
 ## What the CLI decides

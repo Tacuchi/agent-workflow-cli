@@ -139,7 +139,7 @@ async function safeChangedFiles(git: GitPort, path: string): Promise<string[]> {
 export async function recordIntegration(
   deps: RecorderDeps,
   sessionFolder: string,
-  facts: { alias: string; into: string; before: string; after: string },
+  facts: { alias: string; into: string; before: string; after: string; unitTip: string },
 ): Promise<CustodyUpdate> {
   return extendCustody(deps.fs, sessionPathOf(deps.paths, sessionFolder), (custody) =>
     withEffect(custody, {
@@ -149,6 +149,7 @@ export async function recordIntegration(
         after: facts.after,
         ref: `refs/heads/${facts.into}`,
       }),
+      unit_tip: facts.unitTip,
     }),
   );
 }

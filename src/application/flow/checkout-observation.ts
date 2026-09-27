@@ -11,7 +11,7 @@
  * {@link observeCheckout}.
  */
 
-import { isAbsolute, relative } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
@@ -20,7 +20,9 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { readWorkspaceBlock, requireSourcePath } from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { readCustody } from "../session-custody-service.js";
 import { type CheckoutState, checkoutDigest } from "../source-boundary-policy.js";
+import { locateRun, readRun } from "./run-state-service.js";
 
 /**
  * The alias→root map a run's source-bounded evidence is measured against.
@@ -48,9 +50,25 @@ export async function resolveCheckoutCandidates(
   }
   const candidates: CheckoutIdentity[] = [{ source: "workspace", root }];
   if (block !== null) {
+    const live = await readRun(fs, locateRun(paths, session));
+    const inPlace =
+      live.ok && live.state.flow === "plan-exec" && live.state.scope?.isolation === "in-place";
+    if (inPlace) {
+      for (const alias of live.state.scope?.sources ?? []) {
+        const source = block.fuentes.find((item) => item.alias === alias);
+        if (!source) continue;
+        try {
+          candidates.push({ source: alias, root: await requireSourcePath(fs, source) });
+        } catch {
+          // A missing source is never advertised as an eligible checkout.
+        }
+      }
+      return candidates;
+    }
     try {
       const units = await fs.realPath(paths.userUnitsDir());
       const key = workspaceKey(paths.workspaceDir());
+      const custody = await readCustody(fs, join(paths.cwdSessionsDir(), session));
       for (const source of block.fuentes) {
         try {
           await requireSourcePath(fs, source);
@@ -59,7 +77,11 @@ export async function resolveCheckoutCandidates(
           // The caller of observeScopedFingerprints reports the typed reason.
           continue;
         }
-        const unit = unitPath(units, { workspaceKey: key, alias: source.alias, session });
+        const unit =
+          custody.status === "present"
+            ? (custody.custody.sources.find((entry) => entry.alias === source.alias)?.unit_path ??
+              unitPath(units, { workspaceKey: key, alias: source.alias, session }))
+            : unitPath(units, { workspaceKey: key, alias: source.alias, session });
         // Only a unit this session actually TOOK is published. Listing every alias
         // the workspace block declares would advertise roots the validator then
         // refuses as ineligible — the same divergence between what a run shows and

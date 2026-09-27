@@ -200,7 +200,7 @@ async function releasedIntegration(
       `el destino integrado ${receipt.ref} no está en el checkout de la fuente; posicioná ese checkout en el destino antes de retirar`,
     );
   }
-  const unitHead = await git.refValue(source.path, refOf(source));
+  const unitHead = (await git.refValue(source.path, refOf(source))) ?? receipt.unit_tip ?? null;
   if (unitHead === null || !(await git.isAncestor(source.path, unitHead, receipt.after))) {
     throw new Error(
       "no se puede verificar que todo el trabajo de la rama de la unidad esté integrado",

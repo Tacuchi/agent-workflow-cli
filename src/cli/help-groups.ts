@@ -1,3 +1,6 @@
+import type { FlagContract } from "./commands/unknown-flags.js";
+import type { CommandFlags } from "./registry.js";
+
 // Help grouping for `aw --help` (Propuesta 002 G4 H-06). Commands are organized by
 // family so users can scan by intent (session lifecycle, checkpoint workflow,
 // orchestration helpers, etc.) instead of one long alphabetical list.
@@ -34,11 +37,14 @@ const GROUPS: readonly CommandGroup[] = [
     name: "Sources / Branches",
     commands: [
       "workspace-init",
+      "workspace-move",
       "sources",
       "doc-branch",
       "generate-launch",
       "set-working-branch",
       "set-qa-branch",
+      "set-exception-branch",
+      "set-edit-mode",
       "set-pipeline",
       "remove-source",
       "add-source",
@@ -221,14 +227,73 @@ export function renderGroupedCommandLines(
 }
 
 /**
- * Help body for `<command> --help`: the command name + its `describe`. Kept here
- * (pure, tested) so `main.ts` only does the I/O. The `describe` already carries the
- * flag summary, so this is the per-subcommand help — not the global command list.
+ * The same flag contract used by the dispatcher drives command and action help.
+ * The declared usage is authoritative; historical Usage clauses in `describe`
+ * may advertise flags belonging to another action or retired flags.
  */
-export function commandHelpText(command: { name: string; describe?: string }): string {
-  return [`agent-workflow ${command.name}`, "", command.describe ?? "(sin descripción)", ""].join(
-    "\n",
-  );
+export function commandHelpText(
+  command: { name: string; describe?: string; flags?: CommandFlags },
+  action?: string,
+): string {
+  const actions = command.flags?.actions;
+  const selected = action !== undefined && actions?.[action] !== undefined ? action : undefined;
+  const description = command.describe ?? "(sin descripción)";
+  const usageAt = description.indexOf("Usage:");
+  const firstLine = usageAt < 0 ? description : description.slice(0, usageAt).trimEnd();
+  const remainder =
+    usageAt < 0 ? "" : description.slice(usageAt).split("\n").slice(1).join("\n").trim();
+  const lines = [`agent-workflow ${command.name}${selected ? ` ${selected}` : ""}`, "", firstLine];
+  if (command.flags?.usage) {
+    lines.push("", `Usage: ${command.flags.usage.replace(/^Usage:\s*/, "")}`);
+  } else if (usageAt >= 0) {
+    lines.push("", description.slice(usageAt).split("\n")[0] ?? "");
+  }
+  if (actions && selected === undefined) {
+    lines.push("", `Subverbos: ${Object.keys(actions).join(", ")}`);
+  }
+  if (command.flags) lines.push(...renderFlagLines(command.flags, selected));
+  if (remainder) lines.push("", remainder);
+  return `${lines.join("\n")}\n`;
+}
+
+function helpScopes(
+  flags: CommandFlags,
+  selected?: string,
+): { contract: FlagContract; label: string }[] {
+  const scopes = [{ contract: flags as FlagContract, label: "común" }];
+  for (const [name, contract] of Object.entries(flags.actions ?? {})) {
+    if (selected === undefined || selected === name) scopes.push({ contract, label: name });
+  }
+  return scopes;
+}
+
+function flagLabel(contract: FlagContract, flag: string, scope: string): string {
+  const modifiers = [
+    contract.required?.includes(flag) ? "obligatorio" : "",
+    contract.exclusive?.some((group) => group.includes(flag)) ? "excluyente" : "",
+    contract.repeatable?.includes(flag) ? "repetible" : "",
+  ].filter(Boolean);
+  return [scope, ...modifiers].join(", ");
+}
+
+function renderFlagLines(flags: CommandFlags, selected?: string): string[] {
+  const scopes = helpScopes(flags, selected);
+  const byName = new Map<string, string[]>();
+  const lines: string[] = [];
+  for (const { contract, label } of scopes) {
+    for (const flag of contract.known) {
+      byName.set(flag, [...(byName.get(flag) ?? []), flagLabel(contract, flag, label)]);
+    }
+  }
+  if (byName.size === 0) return [];
+  lines.push("", "Flags:");
+  for (const [flag, labels] of byName) lines.push(`  --${flag} (${labels.join("; ")})`);
+  for (const { contract } of scopes) {
+    for (const names of contract.exclusive ?? []) {
+      lines.push(`  exactamente uno: ${names.map((name) => `--${name}`).join(" | ")}`);
+    }
+  }
+  return lines;
 }
 
 /**
@@ -245,13 +310,15 @@ export function globalHelpText(
     "",
     "Usage:",
     "  agent-workflow [--namespace <name>]",
+    "                 [--workspace <path>]",
     "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
     "                 <command> [args...]",
     "",
     "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
     "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
-    `default '${defaultNamespace}'. Without a marker, the invoked directory is the`,
-    "implicit root; new workspaces materialize .<namespace>/sessions/ on first write.",
+    `default '${defaultNamespace}'. --workspace selects an explicit workspace. Without`,
+    "a marker, a directory outside a git checkout is an implicit root; inside",
+    "an unclaimed checkout, specify --workspace or initialize a workspace.",
     "",
     "Output (any command):",
     "  --format human|json  projection of the result; default human in a terminal, json in a pipe",

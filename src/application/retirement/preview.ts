@@ -24,7 +24,12 @@ export interface RetirementPreview {
   /** What disappears, in removal order. */
   disappears: Array<{ node: string; path: string; reason: string }>;
   /** Paths whose bytes come back, and the ones that go back to not existing. */
-  restores: Array<{ path: string; to: "bytes-previos" | "inexistente"; changed_since: boolean }>;
+  restores: Array<{
+    path: string;
+    to: "bytes-previos" | "inexistente";
+    changed_since: boolean;
+    eol_only?: boolean;
+  }>;
   /**
    * What each session in the closure declared it was holding.
    *
@@ -94,6 +99,7 @@ export function retirementPreview(proposal: RetirementProposal): RetirementPrevi
       // What the person most needs to see: the file moved since the baseline was
       // sealed, so restoring it discards whatever happened in between.
       changed_since: restore.current_digest !== restore.digest,
+      ...(restore.eol_only === true ? { eol_only: true } : {}),
     })),
     custody: proposal.custody.map((scope) => ({
       session: scope.session,
@@ -178,7 +184,8 @@ export function renderRetirementPreview(preview: RetirementPreview): string {
     lines,
     "Vuelve atrás",
     preview.restores.map(
-      (r) => `${r.path} → ${r.to}${r.changed_since ? " (cambió desde el baseline)" : ""}`,
+      (r) =>
+        `${r.path} → ${r.to}${r.eol_only ? " (aviso: sólo difiere el fin de línea)" : r.changed_since ? " (cambió desde el baseline)" : ""}`,
     ),
   );
   section(

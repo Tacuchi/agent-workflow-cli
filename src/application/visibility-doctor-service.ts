@@ -1,10 +1,15 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { parseUnitPath, unitPath } from "../domain/isolation-unit.js";
 import type { McpHost } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { normalizePath } from "./multiroot/paths.js";
 import { readWorkspaceBlock, requireSourcePath } from "./parsers/project-block.js";
-import type { PathsService } from "./paths-service.js";
+import { PathsService } from "./paths-service.js";
+import { readCustody } from "./session-custody-service.js";
+import { listSessionFolders } from "./session-resolver.js";
+import { hubUnitPaths } from "./unit-membership.js";
 
 export type VisibilityDriftStatus =
   | "ok"
@@ -83,8 +88,28 @@ export async function runVisibilityDoctor(
   input: VisibilityDoctorInput,
 ): Promise<VisibilityDoctorResult> {
   const workspace = input.workspace ? resolve(input.workspace) : paths.workspaceDir();
-  const sourceReading = await readDeclaredFuentes(fs, paths, workspace);
-  const declared = sourceReading.paths;
+  const scoped = new PathsService(paths.namespace, dirname(paths.userRoot()), workspace);
+  const sourceReading = await readDeclaredFuentes(fs, scoped, workspace);
+  const initial = sourceReading.paths;
+  const visible = [
+    inspectClaude(workspace, initial, "workspace"),
+    inspectCodex(workspace, initial, "workspace"),
+  ];
+  const unitsRoot = await fs.realPath(scoped.userUnitsDir()).catch(() => scoped.userUnitsDir());
+  const owns = await hubUnitPaths(fs, scoped, unitsRoot);
+  const livingUnits: string[] = [];
+  for (const path of new Set(visible.flatMap((report) => report.registered_paths))) {
+    const identity = parseUnitPath(unitsRoot, path);
+    if (
+      identity === null ||
+      normalizePath(path) !== normalizePath(unitPath(unitsRoot, identity)) ||
+      !owns(path)
+    )
+      continue;
+    const stat = await fs.lstat(path);
+    if (stat?.type === "dir" && !stat.isSymlink) livingUnits.push(path);
+  }
+  const declared = initial === null ? null : [...new Set([...initial, ...livingUnits])];
   const reports: VisibilityHostReport[] = [
     inspectClaude(workspace, declared, "workspace"),
     inspectCodex(workspace, declared, "workspace"),
@@ -139,6 +164,18 @@ async function readDeclaredFuentes(
       pathsFound.push(await requireSourcePath(fs, source));
     } catch (err) {
       errors.push((err as Error).message);
+    }
+  }
+  const unitsRoot = await fs.realPath(paths.userUnitsDir()).catch(() => paths.userUnitsDir());
+  const owns = await hubUnitPaths(fs, paths, unitsRoot);
+  for (const session of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    const custody = await readCustody(fs, session.path);
+    if (custody.status !== "present") continue;
+    for (const source of custody.custody.sources) {
+      const stat = source.unit_path ? await fs.lstat(source.unit_path) : null;
+      if (source.unit_path && owns(source.unit_path) && stat?.type === "dir" && !stat.isSymlink) {
+        pathsFound.push(source.unit_path);
+      }
     }
   }
   return { paths: pathsFound, errors };

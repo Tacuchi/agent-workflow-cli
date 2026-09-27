@@ -251,6 +251,17 @@ function planSource(
   branches: SourceBranchRoles,
   input: GitFlowInput,
 ): PlannedSource {
+  if (branches.work === null && !(input.action === "sync" && input.target !== undefined)) {
+    return {
+      source,
+      ops: null,
+      result: sourceError(
+        source.alias,
+        `rama de trabajo no declarada para ${source.alias}; usá 'aw set-working-branch ${source.alias} <rama>'`,
+      ),
+      publishesProd: false,
+    };
+  }
   // Promoting work→dev when they are the same branch would merge a branch onto
   // itself: report it as done instead of running redundant merges.
   const noop = noopReason(input.action, branches, input.target);
@@ -384,8 +395,11 @@ function buildPlan(
   const work = branches.work;
 
   if (action === "sync") {
-    return syncPlan(prod, target ?? work);
+    if (target !== undefined) return syncPlan(prod, target);
+    if (work === null) throw new Error("rama de trabajo no declarada");
+    return syncPlan(prod, work);
   }
+  if (work === null) throw new Error("rama de trabajo no declarada");
   if (action === "to-prod") {
     const dest = target ?? prod;
     // syncPlan already checked out + pulled prod; promoting just goes back to

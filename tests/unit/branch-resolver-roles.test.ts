@@ -23,7 +23,7 @@ function block(over: Partial<ParsedProjectBlock> = {}): ParsedProjectBlock {
   };
 }
 
-describe("resolveSourceBranches — per-source → workspace default → fallback", () => {
+describe("resolveSourceBranches — declared work, default development", () => {
   // Pinned against the LITERALS, not the constant: the rest of this file asserts
   // symbolically (which reads better), so without this anchor a typo or rename of
   // the floor would ship green — every source with nothing declared would then be
@@ -40,7 +40,7 @@ describe("resolveSourceBranches — per-source → workspace default → fallbac
     const roles = resolveSourceBranches({ ...source, main_branch: null }, block());
     expect(roles).toEqual({
       prod: BRANCH_ROLE_FALLBACKS.principal,
-      work: BRANCH_ROLE_FALLBACKS.desarrollo,
+      work: null,
       qa: BRANCH_ROLE_FALLBACKS.qa,
       dev: BRANCH_ROLE_FALLBACKS.desarrollo,
     });
@@ -51,7 +51,7 @@ describe("resolveSourceBranches — per-source → workspace default → fallbac
       { ...source, main_branch: null },
       block({ default_branches: { principal: "trunk", desarrollo: "develop", qa: "release/qa" } }),
     );
-    expect(roles).toEqual({ prod: "trunk", work: "develop", qa: "release/qa", dev: "develop" });
+    expect(roles).toEqual({ prod: "trunk", work: null, qa: "release/qa", dev: "develop" });
   });
 
   it("uses the per-source values over the workspace defaults", () => {
@@ -72,13 +72,13 @@ describe("resolveSourceBranches — per-source → workspace default → fallbac
     });
   });
 
-  it("ignores per-source empty strings and falls through", () => {
+  it("ignores per-source empty strings without inventing a working branch", () => {
     const roles = resolveSourceBranches(
       { ...source, main_branch: "" },
       block({ working_branches: { core: "" }, qa_branches: { core: "" } }),
     );
     expect(roles.prod).toBe(BRANCH_ROLE_FALLBACKS.principal);
-    expect(roles.work).toBe(BRANCH_ROLE_FALLBACKS.desarrollo);
+    expect(roles.work).toBeNull();
     expect(roles.qa).toBe(BRANCH_ROLE_FALLBACKS.qa);
   });
 
@@ -87,14 +87,14 @@ describe("resolveSourceBranches — per-source → workspace default → fallbac
       source,
       block({ working_branches: { other: "feature/y" }, qa_branches: { other: "staging" } }),
     );
-    expect(roles.work).toBe(BRANCH_ROLE_FALLBACKS.desarrollo);
+    expect(roles.work).toBeNull();
     expect(roles.qa).toBe(BRANCH_ROLE_FALLBACKS.qa);
   });
 
   it("resolves against a null block (no workspace)", () => {
     expect(resolveSourceBranches(source, null)).toEqual({
       prod: "certificacion",
-      work: BRANCH_ROLE_FALLBACKS.desarrollo,
+      work: null,
       qa: BRANCH_ROLE_FALLBACKS.qa,
       dev: BRANCH_ROLE_FALLBACKS.desarrollo,
     });

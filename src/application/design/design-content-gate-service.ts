@@ -7,6 +7,7 @@ import { type DesignRendition, validateDesignRendition } from "../../domain/desi
 import { crossVisualEvidence } from "../../domain/design/visual-evidence.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { DesignPackageEntry } from "./design-index-service.js";
+import { compareDesignDigest, designDigestMismatch, designEolWarning } from "./digest.js";
 
 /**
  * The content gate over an ALREADY published package.
@@ -30,11 +31,30 @@ export async function gatePackageContent(
   fs: FileSystemPort,
   workspace: string,
   entry: DesignPackageEntry,
-): Promise<DesignFailure[]> {
+): Promise<{ failures: DesignFailure[]; warnings: DesignFailure[] }> {
   // A package with no readable manifest is already reported by the index: the
   // structural diagnosis is its own, and there is no catalog to gate here.
-  if (entry.manifest === null) return [];
+  if (entry.manifest === null) return { failures: [], warnings: [] };
   const manifest = entry.manifest;
+
+  if (entry.mode === "simple") {
+    const failures: DesignFailure[] = [];
+    const warnings: DesignFailure[] = [];
+    for (const baseline of manifest.baselines) {
+      const path = `${entry.path}/${baseline.path}`;
+      if (!(await fs.exists(join(workspace, path)))) {
+        failures.push(missingFile(baseline.path, entry.path));
+        continue;
+      }
+      const comparison = compareDesignDigest(
+        await fs.readBytes(join(workspace, path)),
+        baseline.digest,
+      );
+      if (comparison.kind === "different") failures.push(designDigestMismatch(path));
+      if (comparison.kind === "eol-only") warnings.push(designEolWarning(path));
+    }
+    return { failures, warnings };
+  }
 
   const flows = currentEntries(manifest, "flows");
   const screens = currentEntries(manifest, "screens");
@@ -51,7 +71,7 @@ export async function gatePackageContent(
       ...crossScreenEvidence(documents, catalogEntry, entry.path, manifest, renditions),
     );
   }
-  return failures;
+  return { failures, warnings: [] };
 }
 
 /**

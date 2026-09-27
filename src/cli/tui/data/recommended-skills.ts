@@ -7,8 +7,8 @@
 // the full inventory. `RECOMMENDED_SKILLS` is DERIVED from it — the habitual
 // set the list opens on.
 //
-// Drift point: mirror of the companion marketplace README § "Skills externas
-// recomendadas" — if that section changes, update this file (and vice versa).
+// Drift point: this CLI catalog is the source of truth; the companion marketplace
+// README § "Skills externas recomendadas" reflects it via its captured catalog.
 // Counts are derived with `.length` — do NOT hardcode counts in strings.
 //
 // A recommended skill never leaves the list: `Remove` drops its registration

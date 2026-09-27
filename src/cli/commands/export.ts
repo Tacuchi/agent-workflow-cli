@@ -96,8 +96,14 @@ function exportFlags(category: ExportCategory): CommandFlags {
       category === "scripts"
         ? [...scope, "from", "exclude", "environment", "code", "catalog"]
         : scope,
+    repeatable: category === "scripts" ? ["exclude"] : [],
     actions: {
-      apply: { known: category === "manuals" ? ["approval", "overwrite"] : ["approval"] },
+      apply: {
+        known: category === "manuals" ? ["approval", "overwrite"] : ["approval"],
+        required: ["approval"],
+      },
+      prepare: { known: [] },
+      validate: { known: [] },
     },
   };
 }

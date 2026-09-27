@@ -166,26 +166,20 @@ describe("attachClaude / detachClaude — visibilidad multi-root de Claude Code"
     expect(existsSync(settingsFile())).toBe(false);
   });
 
-  // Un settings.local.json a mano puede tener cualquier cosa: el contenido previo
-  // se respalda ANTES de sobrescribir, o una edición manual se pierde sin rastro.
-  it("respalda el contenido previo antes de sobrescribir (attach y detach)", () => {
+  it("adjunta y desvincula conservando lo ajeno sin dejar respaldos", () => {
     attachClaude(["/tmp/uno"], scopeDir);
-    const before = readFileSync(settingsFile(), "utf-8");
 
     const second = attachClaude(["/tmp/dos"], scopeDir) as AttachShape;
-    expect(second.backup).not.toBeNull();
-    expect(readFileSync(second.backup as string, "utf-8")).toBe(before);
+    expect(second.backup).toBeNull();
 
-    const afterAttach = readFileSync(settingsFile(), "utf-8");
     const removal = detachClaude(["/tmp/dos"], scopeDir) as DetachShape;
-    expect(removal.backup).not.toBeNull();
-    expect(readFileSync(removal.backup as string, "utf-8")).toBe(afterAttach);
+    expect(removal.backup).toBeNull();
+    expect(additionalDirs(settingsFile())).toEqual(["/tmp/uno"]);
 
-    // Keep-latest: los .bak no se acumulan.
     const baks = readdirSync(join(scopeDir, ".claude")).filter((f) =>
       f.startsWith("settings.local.json.bak."),
     );
-    expect(baks).toHaveLength(1);
+    expect(baks).toHaveLength(0);
   });
 
   it("la primera escritura no inventa un backup de un archivo inexistente", () => {

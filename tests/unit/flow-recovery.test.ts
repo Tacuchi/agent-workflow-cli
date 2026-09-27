@@ -170,6 +170,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_ANSWER_MISSING: "envelope",
       FLOW_ANSWER_INVALID: "envelope",
       FLOW_ANSWER_STALE: "envelope",
+      WORKSPACE_MISMATCH: "envelope",
       FLOW_ANSWER_NOT_EXPECTED: "envelope",
       FLOW_RESULT_INVALID: "envelope",
       FLOW_ARTIFACTS_MISSING: "envelope",
@@ -203,6 +204,9 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       PLAN_EXEC_BATCH_REVIEW_INVALID: "evaluated",
       PLAN_EXEC_BATCH_COMMIT_UNOBSERVABLE: "envelope",
       PLAN_EXEC_BATCH_COMMIT_MESSAGE_INVALID: "evaluated",
+      PLAN_EXEC_BATCH_PATHS_REQUIRED: "evaluated",
+      PLAN_EXEC_BATCH_SHARED_PATH: "evaluated",
+      PLAN_EXEC_BATCH_PATH_NOT_OWNED: "evaluated",
       PLAN_TEST_RUN_NOT_EXECUTED: "evaluated",
       PLAN_FINAL_PIPELINE_MISSING: "evaluated",
       PLAN_PREEXISTING_FAILURES_INVALID: "evaluated",
@@ -227,6 +231,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       FLOW_SETTLEMENT_INVALID: "evaluated",
       FLOW_SETTLEMENT_INCOMPLETE: "evaluated",
       PLAN_SOURCE_BOUNDARY_MISSING: "envelope",
+      PLAN_ISOLATION_INVALID: "envelope",
       PLAN_SOURCE_UNKNOWN: "envelope",
       PLAN_TASK_SOURCE_OUTSIDE_PHASE: "envelope",
       PLAN_SOURCE_EXTERNAL_CLOSURE: "envelope",
@@ -285,6 +290,7 @@ describe("el corte entre un rechazo por forma y una respuesta evaluada", () => {
       // Y la compensación que sigue pendiente: decir la verdad sobre trabajo que
       // no se hizo no puede costarle a la corrida uno de sus intentos.
       PLAN_EXEC_SETTLEMENT_PENDING: "control",
+      PLAN_EXEC_BATCH_STALE: "control",
       FLOW_BOUNDARY_PAUSED: "control",
       FLOW_BOUNDARY_DECLINED: "control",
       FLOW_ANSWER_RESENT: "control",
@@ -1355,7 +1361,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       // La v12 agregó tipos de traza y la v13 las reentradas, la base y la acreditación
       // de cada lote; la v11 y la v12 se siguen continuando con su paso de subida, y de la v10 hacia atrás sólo se lee.
       // La v14 registra retiros de señales; v11–v13 conservan su pasado.
-      expect(FLOW_RUN_STATE_VERSION).toBe(14);
+      expect(FLOW_RUN_STATE_VERSION).toBe(15);
     });
 
     it("renumerar la cadena no devuelve intentos: el techo lo siguen fijando piso y grants", async () => {

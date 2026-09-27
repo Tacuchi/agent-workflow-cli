@@ -1,0 +1,165 @@
+import { access, realpath, stat } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { declaringHubs, gitCommonDirectory, registerHub } from "../application/hub-registry.js";
+import { PathsService } from "../application/paths-service.js";
+import { hubUnitPaths } from "../application/unit-membership.js";
+import type { FileSystemPort } from "../ports/file-system.js";
+import type { WorklineDirectory } from "./namespace-resolver.js";
+import { isWorklineRoot } from "./workline-marker.js";
+
+export class WorkspaceResolutionError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly roots: string[] = [],
+  ) {
+    super(message);
+  }
+}
+
+function contains(parent: string, child: string): boolean {
+  const path = relative(parent, child);
+  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+}
+
+/** Real repository boundary, not the common git directory shared with its units. */
+export async function repositoryRoot(from: string): Promise<string | null> {
+  let dir = resolve(from);
+  while (true) {
+    try {
+      await stat(join(dir, ".git"));
+      return dir;
+    } catch {
+      /* ancestor search */
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+export async function resolveWorkspaceDirectory(
+  fs: FileSystemPort,
+  directory: WorklineDirectory,
+  cwd: string,
+  home: string,
+  explicit?: string,
+): Promise<WorklineDirectory> {
+  const namespace = directory.namespace;
+  const repo = await repositoryRoot(cwd);
+  if (explicit !== undefined) {
+    const root = resolve(cwd, explicit);
+    try {
+      if (!(await stat(root)).isDirectory()) throw new Error("no es directorio");
+    } catch {
+      throw new WorkspaceResolutionError("WORKSPACE_INVALID", `El workspace ${root} no existe.`);
+    }
+    const marked = await isWorklineRoot(fs, root, namespace);
+    if (
+      root === home ||
+      contains(join(home, `.${namespace}`, "worktrees"), root) ||
+      (repo !== null && contains(repo, root) && root !== repo && !marked)
+    ) {
+      throw new WorkspaceResolutionError(
+        "WORKSPACE_INVALID",
+        `La carpeta ${root} no es una raíz de workspace válida.`,
+      );
+    }
+    if (
+      !marked &&
+      (await repositoryRoot(root)) !== null &&
+      (await declaringHubs(fs, home, namespace, root)).some((hub) => hub.root !== root)
+    ) {
+      throw new WorkspaceResolutionError(
+        "WORKSPACE_INVALID",
+        `${root} es una fuente declarada; indica la raíz del hub, no la fuente.`,
+      );
+    }
+    let parent = dirname(root);
+    while (parent !== dirname(parent)) {
+      if (parent !== home && (await isWorklineRoot(fs, parent, namespace))) {
+        throw new WorkspaceResolutionError(
+          "WORKSPACE_INVALID",
+          `${root} está dentro del workspace ${parent}; --workspace nombra la raíz exacta.`,
+        );
+      }
+      parent = dirname(parent);
+    }
+    return { ...directory, root: await realpath(root), materialized: marked };
+  }
+
+  // A marker above the git boundary (particularly ~/.workflow) is not the
+  // source's own workspace. A marker within the repository wins over claims.
+  if (
+    directory.materialized &&
+    directory.root !== home &&
+    (repo === null || contains(repo, directory.root))
+  )
+    return { ...directory, root: await realpath(directory.root) };
+  if (repo !== null && (await gitCommonDirectory(repo)) !== null) {
+    const hubs = await declaringHubs(fs, home, namespace, repo);
+    const first = hubs[0];
+    if (hubs.length === 1 && first) return { ...directory, root: first.root, materialized: true };
+    if (hubs.length > 1) {
+      const roots = [...new Set(hubs.map((hub) => hub.root))];
+      if (roots.length === 1 && roots[0])
+        return { ...directory, root: roots[0], materialized: true };
+      const units = join(home, `.${namespace}`, "worktrees");
+      const unitsRoot = await realpath(units).catch(() => units);
+      const unitRepo = await realpath(repo).catch(() => repo);
+      if (contains(unitsRoot, unitRepo)) {
+        const owners: string[] = [];
+        for (const root of roots) {
+          const owns = await hubUnitPaths(fs, new PathsService(namespace, home, root), unitsRoot);
+          if (owns(unitRepo)) owners.push(root);
+        }
+        if (owners.length === 1 && owners[0])
+          return { ...directory, root: owners[0], materialized: true };
+      }
+      throw new WorkspaceResolutionError(
+        "WORKSPACE_AMBIGUOUS",
+        `El checkout es fuente de ${roots.join(", ")}; indica --workspace <ruta>.`,
+        roots,
+      );
+    }
+    if (directory.root === home || (await isWorklineRoot(fs, home, namespace)))
+      throw new WorkspaceResolutionError(
+        "WORKSPACE_UNRESOLVED",
+        `No hay hub registrado para ${repo}; indica --workspace o ejecuta aw en el hub.`,
+      );
+  }
+  if (cwd === home)
+    throw new WorkspaceResolutionError(
+      "WORKSPACE_INVALID",
+      "$HOME no es un workspace; indica --workspace <ruta>.",
+    );
+  if (directory.root === home) {
+    if (repo !== null)
+      throw new WorkspaceResolutionError(
+        "WORKSPACE_UNRESOLVED",
+        `No hay hub registrado para ${repo}; indica --workspace o ejecuta aw en el hub.`,
+      );
+    return { ...directory, root: cwd, materialized: false };
+  }
+  return { ...directory, root: directory.materialized ? directory.root : cwd };
+}
+
+export async function registerResolvedWorkspace(
+  fs: FileSystemPort,
+  home: string,
+  directory: WorklineDirectory,
+): Promise<string | null> {
+  if (directory.root === home || !(await isWorklineRoot(fs, directory.root, directory.namespace)))
+    return null;
+  try {
+    await access(directory.root);
+    await registerHub(
+      fs,
+      new PathsService(directory.namespace, home, directory.root),
+      directory.root,
+    );
+    return null;
+  } catch (error) {
+    return `No se pudo registrar el hub ${directory.root}: ${String(error)}`;
+  }
+}

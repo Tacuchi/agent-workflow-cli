@@ -8,8 +8,8 @@ allowed-tools: ["Bash", "Read"]
 
 1. `aw export-manuals prepare --format human` (+ `--sessions`/`--since`/`--source`) → corpus, destination, shape, `input_digest`.
 2. Answer with one JSON: `version`/`operation`/`input_digest`/`scope` **verbatim** (including `scope.seal`), `state: "proposed"`, `artifacts` = `{ path, content }` per file. The approved `NNN` is immutable; 3 and 4 need no scope flags.
-3. `echo '<json>' | aw export-manuals validate --format human` → preview + `approval_digest`; confirm scope and destination with the user.
-4. `echo '<json>' | aw export-manuals apply --approval <digest> [--overwrite]`. On rejection nothing was written: fix and repeat step 3.
+3. Write JSON with the file tool; `aw export-manuals validate --format human < <file>` → preview + digest; confirm scope.
+4. `aw export-manuals apply --approval <digest> [--overwrite] < <file>`. Rejected? Fix and revalidate.
 
 ## What it produces
 

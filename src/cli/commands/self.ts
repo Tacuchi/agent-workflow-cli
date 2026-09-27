@@ -56,6 +56,8 @@ export const selfCommand: CliCommand = {
     actions: {
       // SessionStart runs `self namespace --pin`: a hook, so it warns and runs.
       namespace: { known: ["pin"], mode: "warn" },
+      doctor: { known: [] },
+      "detect-hosts": { known: [] },
       update: { known: ["dry-run", "yes", "y"] },
       install: { known: INSTALL_SKILL_FLAGS },
       "install-skill": { known: INSTALL_SKILL_FLAGS },
@@ -68,12 +70,14 @@ export const selfCommand: CliCommand = {
       "uninstall-skill": { known: ["target", "legacy", "dry-run"] },
       "clean-cache": { known: ["plugin", "target", "dry-run"] },
       "clean-legacy": { known: ["target", "prefix", "dry-run"] },
-      mcp: { known: ["action", "name", "instance", "var", "dsn-var", "dry-run"] },
+      mcp: {
+        known: ["action", "name", "instance", "var", "dsn-var", "dry-run"],
+        repeatable: ["var"],
+      },
       bootstrap: { known: ["dry-run"] },
     },
   },
-  describe:
-    "Manage the agent-workflow CLI itself (namespace, doctor, detect-hosts, update, install-skill, install-hooks, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap). 'self namespace' prints the active namespace; 'self namespace --pin <name>' persists it to ~/.config/agent-workflow/namespace (cross-platform).",
+  describe: `Manage the agent-workflow CLI itself (${SELF_SUBCOMMANDS.join(", ")}). 'self namespace' prints the active namespace; 'self namespace --pin <name>' persists it to ~/.config/agent-workflow/namespace (cross-platform).`,
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const sub = args.rest[0];
     switch (sub) {

@@ -1,6 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { backupFile, escapeRegex, normalizePath, toCodexPath } from "./paths.js";
+import { atomicWriteFileSync, withHostConfigLock } from "../mcp-host-writer.js";
+import { escapeRegex, normalizePath, toCodexPath } from "./paths.js";
 
 interface CodexAttachOk {
   file: string;
@@ -35,6 +36,17 @@ export function attachCodex(
   scopeDir: string,
   options: { dryRun?: boolean } = {},
 ): CodexResult {
+  if (options.dryRun) return attachCodexUnlocked(paths, scopeDir, options);
+  return withHostConfigLock(codexConfigPath(scopeDir), () =>
+    attachCodexUnlocked(paths, scopeDir, options),
+  );
+}
+
+function attachCodexUnlocked(
+  paths: string[],
+  scopeDir: string,
+  options: { dryRun?: boolean },
+): CodexResult {
   const configFile = codexConfigPath(scopeDir);
   const dryRun = options.dryRun === true;
   let content = "";
@@ -44,17 +56,14 @@ export function attachCodex(
   const r1 = updateWritableRoots(content, pathsCodex);
   const r2 = ensureProjectTrust(r1.content, pathsCodex);
 
-  let backup: string | null = null;
   let written = false;
   if (r2.content !== content && !dryRun) {
-    mkdirSync(join(scopeDir, ".codex"), { recursive: true });
-    backup = backupFile(configFile);
-    writeFileSync(configFile, r2.content, "utf-8");
+    atomicWriteFileSync(configFile, r2.content);
     written = true;
   }
   return {
     file: configFile,
-    backup,
+    backup: null,
     additional_writable_roots: { added: r1.added, already_present: r1.already },
     projects_trusted: { added: r2.added, already_present: r2.already },
     written,
@@ -66,6 +75,17 @@ export function detachCodex(
   paths: string[],
   scopeDir: string,
   options: { dryRun?: boolean } = {},
+): CodexResult {
+  if (options.dryRun) return detachCodexUnlocked(paths, scopeDir, options);
+  return withHostConfigLock(codexConfigPath(scopeDir), () =>
+    detachCodexUnlocked(paths, scopeDir, options),
+  );
+}
+
+function detachCodexUnlocked(
+  paths: string[],
+  scopeDir: string,
+  options: { dryRun?: boolean },
 ): CodexResult {
   const configFile = codexConfigPath(scopeDir);
   const dryRun = options.dryRun === true;
@@ -83,16 +103,14 @@ export function detachCodex(
   const r1 = removeFromWritableRoots(content, pathsCodex);
   const r2 = removeProjectTrust(r1.content, pathsCodex);
 
-  let backup: string | null = null;
   let written = false;
   if (r2.content !== content && !dryRun) {
-    backup = backupFile(configFile);
-    writeFileSync(configFile, r2.content, "utf-8");
+    atomicWriteFileSync(configFile, r2.content);
     written = true;
   }
   return {
     file: configFile,
-    backup,
+    backup: null,
     additional_writable_roots: { removed: r1.removed, not_present: r1.notPresent },
     projects_trusted: {
       removed: r2.removed,

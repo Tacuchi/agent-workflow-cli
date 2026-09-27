@@ -258,6 +258,6 @@ describe("proyección de estado", () => {
     const hooks = capabilitiesFor(opencode).find((c) => c.id === "hooks");
     expect(hooks?.status).toBe("degraded");
     expect(hooks?.detail).toContain("plugin module");
-    expect(hooks?.detail).toContain("omits SessionStart");
+    expect(hooks?.detail).toContain("omits UserPromptSubmit, SessionStart");
   });
 });

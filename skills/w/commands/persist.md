@@ -32,9 +32,9 @@ Captures **work already produced in this conversation** — with or without host
    - `state` — `proposed`, or `ambiguous` when the inventory already holds this work (explain in `reason`; the CLI turns that into a question, never a write);
    - `decisions` — `{ category, slug, mode }`, plus `target` + `target_digest` when `mode` is `update`;
    - `artifacts` — exactly one `{ path, content }`.
-3. `echo '<json>' | aw persist validate --format human` → preview + `approval_digest`.
+3. Write JSON with the file tool; `aw persist validate --format human < <file>` → preview + digest.
 4. **Confirm classification and destination** with the user via structured-choice, showing that preview.
-5. `echo '<json>' | aw persist apply --approval <digest> --format human`.
+5. `aw persist apply --approval <digest> --format human < <file>`.
 
 Every rejection names its cause and one valid next action; nothing was written. Fix the answer and repeat from step 3.
 

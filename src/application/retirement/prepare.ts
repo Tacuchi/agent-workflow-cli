@@ -13,6 +13,7 @@
 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { canonicalEol } from "../../domain/proposal.js";
 import { reservationOwnerOf } from "../../domain/reservation.js";
 import {
   type ClosureEntry,
@@ -201,6 +202,7 @@ async function buildProposal(
   return {
     ok: true,
     proposal: sealRetirementProposal({
+      workspace_root: deps.paths.workspaceDir(),
       mode: closure.mode,
       target: closure.target.id,
       closure: closure.entries.map(
@@ -295,12 +297,24 @@ async function collectSession(
     }
     if (collector.mode !== "reset") continue;
     const absolute = join(deps.paths.workspaceDir(), artifact.path);
+    const previous = artifact.before.content;
+    let eolOnly = false;
+    if (previous !== null) {
+      try {
+        const live = (await deps.fs.exists(absolute)) ? await deps.fs.readText(absolute) : null;
+        eolOnly =
+          live !== null && live !== previous && canonicalEol(live) === canonicalEol(previous);
+      } catch {
+        // The digest read below retains the legacy missing/unreadable behavior.
+      }
+    }
     collector.restores.push({
       path: artifact.path,
       existed: artifact.before.existed,
       content: artifact.before.content,
       digest: artifact.before.digest,
       current_digest: await digestOf(deps.fs, absolute),
+      ...(eolOnly ? { eol_only: true } : {}),
     });
     collector.restored.add(artifact.path);
   }

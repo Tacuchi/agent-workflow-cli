@@ -19,7 +19,7 @@ import {
 } from "../../application/session-close-service.js";
 import { writeSessionNarrative } from "../../application/session-narrative.js";
 import { resolveSessionTarget } from "../../application/session-resolver.js";
-import { runWorktree } from "../../application/worktree-service.js";
+import { classifyListedUnits, runWorktree } from "../../application/worktree-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand, CommandFlags } from "../registry.js";
@@ -76,7 +76,15 @@ export const sessionCloseCommand: CliCommand = {
           : [];
       }
       return rendered(
-        await runSessionClose(ctx.fs, ctx.paths, input, unitsOf(ctx), ctx.git, ctx.process),
+        await runSessionClose(
+          ctx.fs,
+          ctx.paths,
+          input,
+          unitsOf(ctx),
+          ctx.git,
+          ctx.process,
+          unitReleaser(ctx),
+        ),
       );
     }
     return closeAtBoundary(ctx, input, location, intent);
@@ -145,12 +153,14 @@ async function closeAtBoundary(
       ctx.paths,
       {
         ...input,
+        final: false,
         preserveReservations:
           read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [],
       },
       async () => inventory,
       ctx.git,
       ctx.process,
+      unitReleaser(ctx),
     );
   } catch (error) {
     // The close's own error is the one worth reporting; a failed withdraw here
@@ -237,7 +247,24 @@ function unitsOf(ctx: CliContext): IsolationReader {
     // Never the reassuring half: an unreadable list comes back as the error the
     // receipt reports, not as "this session held nothing".
     if (!("units" in listed)) throw new Error(JSON.stringify(listed));
-    return { units: listed.units, unreadable: listed.unreadable ?? [] };
+    return {
+      units: await classifyListedUnits(
+        { fs: ctx.fs, env: ctx.env, git: ctx.git, paths: ctx.paths },
+        listed.units,
+      ),
+      unreadable: listed.unreadable ?? [],
+    };
+  };
+}
+
+function unitReleaser(ctx: CliContext) {
+  return async (alias: string, folder: string) => {
+    const result = await runWorktree(
+      { fs: ctx.fs, env: ctx.env, git: ctx.git, paths: ctx.paths },
+      { action: "release", alias, sessionCode: folder },
+    );
+    if ("error" in result || "released" in result) return result;
+    return { error: "unit_unresolved", message: `no se pudo liberar ${alias} de ${folder}` };
   };
 }
 

@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +17,10 @@ import {
 } from "../../src/application/worktree-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+
+function branchOf(workspace: string, session: string): string {
+  return `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session}`;
+}
 
 function git(repo: string, ...args: string[]): string {
   return execFileSync("git", args, {
@@ -158,7 +163,9 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
     expect(conflicted.next).toContain("aw fix-git --path");
     // La unidad SOBREVIVE: sus commits son la única copia de un lado del merge.
     expect(conflicted.released).toBe(false);
-    expect(git(source, "worktree", "list", "--porcelain")).toContain("aw/104-dos-plan-exec");
+    expect(git(source, "worktree", "list", "--porcelain")).toContain(
+      branchOf(workspace, "104-dos-plan-exec"),
+    );
     // Y el merge queda en curso, para que `aw fix-git` lo encuentre.
     expect(git(source, "status", "--porcelain")).toContain("choque.txt");
     expect(readFileSync(join(second.path, "choque.txt"), "utf-8")).toBe("version dos\n");
@@ -235,7 +242,7 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
 
     const live = status.sessions.active.find((s) => s.folder === "103-uno-plan-exec");
     expect(live?.units).toEqual([
-      expect.objectContaining({ alias: "acme", branch: "aw/103-uno-plan-exec" }),
+      expect.objectContaining({ alias: "acme", branch: branchOf(workspace, "103-uno-plan-exec") }),
     ]);
     expect(status.orphan_units).toHaveLength(1);
     expect(status.orphan_units[0]).toMatchObject({
@@ -353,7 +360,7 @@ ${work}
     expect(result.next).toContain("aw fix-git --path");
     // La unidad que choca SOBREVIVE: sus commits son el único lado suyo del merge.
     expect(git(sources.beta as string, "worktree", "list", "--porcelain")).toContain(
-      "aw/103-uno-plan-exec",
+      branchOf(workspace, "103-uno-plan-exec"),
     );
     expect(readFileSync(join(units.beta as string, "choque.txt"), "utf-8")).toBe("unidad beta\n");
     // Y la recogida del cierre no la tocó, porque lo suyo no está en la rama de trabajo.

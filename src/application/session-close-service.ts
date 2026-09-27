@@ -62,6 +62,8 @@ export interface SessionCloseInput {
    * being written over work no branch anybody reads contains.
    */
   requireIntegrated?: boolean;
+  /** Derived from run state: a mid-journey finalize is re-openable, not final. */
+  final?: boolean;
   /** Workspace-relative reservations still backing an unpublished proposal. */
   preserveReservations?: readonly string[];
 }
@@ -93,16 +95,18 @@ export interface SessionCloseOutput {
     path: string;
     command: string;
     dirty?: boolean | null;
+    classification?: "retained" | "pending";
+    reason?: string;
   }>;
-  /**
-   * How to get back to a session that closed still holding units.
-   *
-   * Reported beside `pending_integration` and only with it, because without it
-   * the receipt hands out a command that no longer works: every integrate command
-   * above resolves its session, and a closed one is refused. Naming the reopen is
-   * what keeps the remedy usable after the act that made it necessary.
-   */
+  released_empty?: UnitCloseSummary[];
+  released_preserved?: UnitCloseSummary[];
+  released_integrated?: UnitCloseSummary[];
+  empty_units?: UnitCloseSummary[];
+  preserved_units?: UnitCloseSummary[];
+  /** Reopen the flow's journey after an early close; unit integration works directly. */
   reopen?: string;
+  /** A held unit can be integrated directly, even after the session closed. */
+  integrate?: string;
   /** Pending work preserved by the owning flow before closing at a boundary. */
   pending_work?: string[];
   /** Read-only guidance from the run's effective decision notes. */
@@ -177,6 +181,19 @@ export type SessionCloseResult =
   | SessionCloseError
   | { sessionError: SessionResolutionError };
 
+interface UnitCloseSummary {
+  alias: string;
+  branch: string;
+  path: string;
+  preserved_in?: string;
+  branch_kept?: string;
+}
+
+export type IsolationReleaser = (
+  alias: string,
+  folder: string,
+) => Promise<{ released: boolean; branch_kept?: string } | { error: string; message: string }>;
+
 export async function runSessionClose(
   fs: FileSystemPort,
   paths: PathsService,
@@ -184,6 +201,7 @@ export async function runSessionClose(
   isolation?: IsolationReader,
   git?: GitPort,
   process?: ProcessPort,
+  release?: IsolationReleaser,
 ): Promise<SessionCloseResult> {
   if (await fs.exists(join(paths.cwdRoot(), "renumber-pending.json"))) {
     try {
@@ -242,7 +260,7 @@ export async function runSessionClose(
   // BEFORE the marker, and that is the whole of it: `.closed` is what makes the
   // integrate commands below stop resolving, so a check that ran after writing it
   // would be a receipt for a state it had just made harder to leave.
-  const units = await heldUnits(isolation, session.folder);
+  const units = await heldUnits(isolation, session.folder, input.final !== false, release);
   if (input.requireIntegrated === true && (units.held.length > 0 || units.error !== undefined)) {
     return refuseHeld(session.code ?? input.code, session.folder, units);
   }
@@ -310,6 +328,13 @@ export async function runSessionClose(
     ...(closure.evidence_copied?.length ? { evidence_copied: closure.evidence_copied } : {}),
   };
   reportHeld(sessionClose, session.folder, units);
+  if (units.released_empty.length > 0) sessionClose.released_empty = units.released_empty;
+  if (units.released_preserved.length > 0)
+    sessionClose.released_preserved = units.released_preserved;
+  if (units.released_integrated.length > 0)
+    sessionClose.released_integrated = units.released_integrated;
+  if (units.empty.length > 0) sessionClose.empty_units = units.empty;
+  if (units.preserved.length > 0) sessionClose.preserved_units = units.preserved;
   reportReservations(sessionClose, closure.reservations);
   if (git && process) {
     const offer = await runWorkspaceCommit(fs, git, process, paths, { code: session.folder });
@@ -413,7 +438,7 @@ function reportHeld(output: SessionCloseOutput, folder: string, units: HeldUnits
   if (units.unverifiable.length > 0) output.unverifiable_sources = units.unverifiable;
   if (units.held.length === 0) return;
   output.pending_integration = units.held;
-  output.reopen = `aw session-resume --code ${folder} --reopen`;
+  output.integrate = `aw worktree integrate --code ${folder}`;
 }
 
 function reportReservations(
@@ -434,7 +459,7 @@ function refuseHeld(code: string, folder: string, units: HeldUnits): SessionClos
       reason:
         units.error !== undefined
           ? `no se pudo comprobar si la sesión conserva unidades — ${units.error}`
-          : `la sesión todavía tiene ${units.held.length} unidad(es) sin integrar: su trabajo son commits que no están en ninguna rama de trabajo`,
+          : `la sesión todavía tiene ${units.held.length} unidad(es) sin integrar o retenida(s) por cambios locales`,
       pending_integration: units.held,
       integrate: `aw worktree integrate --code ${folder}`,
     },
@@ -443,24 +468,35 @@ function refuseHeld(code: string, folder: string, units: HeldUnits): SessionClos
 
 /** Reads this workspace's live isolation units; absent when the caller has no git port. */
 export type IsolationReader = () => Promise<
-  | Array<{ alias: string; session: string; path: string; branch: string; dirty?: boolean | null }>
+  | Array<ClassifiedUnit>
   | {
-      units: Array<{
-        alias: string;
-        session: string;
-        path: string;
-        branch: string;
-        dirty?: boolean | null;
-      }>;
+      units: Array<ClassifiedUnit>;
       unreadable: Array<{ alias: string; error: string; code?: string }>;
     }
 >;
+
+export interface ClassifiedUnit {
+  alias: string;
+  session: string;
+  path: string;
+  branch: string;
+  dirty?: boolean | null;
+  classification?: "empty" | "preserved" | "retained" | "pending";
+  classification_reason?: string;
+  preserved_in?: string;
+  integrated?: boolean;
+}
 
 /** What the session holds, and whether that reading could be made at all. */
 interface HeldUnits {
   held: NonNullable<SessionCloseOutput["pending_integration"]>;
   error?: string;
   unverifiable: NonNullable<SessionCloseOutput["unverifiable_sources"]>;
+  empty: UnitCloseSummary[];
+  preserved: UnitCloseSummary[];
+  released_empty: UnitCloseSummary[];
+  released_preserved: UnitCloseSummary[];
+  released_integrated: UnitCloseSummary[];
 }
 
 /**
@@ -475,15 +511,25 @@ interface HeldUnits {
 async function heldUnits(
   isolation: IsolationReader | undefined,
   folder: string,
+  final: boolean,
+  release?: IsolationReleaser,
 ): Promise<HeldUnits> {
-  if (isolation === undefined) return { held: [], unverifiable: [] };
+  const emptyResult = (): HeldUnits => ({
+    held: [],
+    unverifiable: [],
+    empty: [],
+    preserved: [],
+    released_empty: [],
+    released_preserved: [],
+    released_integrated: [],
+  });
+  if (isolation === undefined) return emptyResult();
   let inventory: Awaited<ReturnType<IsolationReader>>;
   try {
     inventory = await isolation();
   } catch (error) {
     return {
-      held: [],
-      unverifiable: [],
+      ...emptyResult(),
       error: `no se pudieron leer las unidades de ${folder}: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
@@ -493,23 +539,67 @@ async function heldUnits(
     .filter((item) => item.code === "SOURCE_PATH_MISSING")
     .map((item) => ({ alias: item.alias, reason: item.error }));
   const otherErrors = unreadable.filter((item) => item.code !== "SOURCE_PATH_MISSING");
-  return {
+  const result: HeldUnits = {
+    ...emptyResult(),
     unverifiable,
     ...(otherErrors.length > 0
       ? {
           error: `inventario ilegible: ${otherErrors.map((item) => `${item.alias}: ${item.error}`).join("; ")}`,
         }
       : {}),
-    held: units
-      .filter((u) => u.session === folder)
-      .map((u) => ({
-        alias: u.alias,
-        branch: u.branch,
-        path: u.path,
-        ...(u.dirty === undefined ? {} : { dirty: u.dirty }),
-        command: `aw worktree integrate --source ${u.alias} --code ${folder}`,
-      })),
   };
+  for (const unit of units.filter((entry) => entry.session === folder)) {
+    const summary: UnitCloseSummary = {
+      alias: unit.alias,
+      branch: unit.branch,
+      path: unit.path,
+      ...(unit.preserved_in ? { preserved_in: unit.preserved_in } : {}),
+    };
+    const kind = unit.classification ?? (unit.dirty === true ? "retained" : "pending");
+    if (kind === "empty" || kind === "preserved") {
+      if (!final) {
+        result[kind === "empty" ? "empty" : "preserved"].push(summary);
+        continue;
+      }
+      if (release !== undefined) {
+        try {
+          const freed = await release(unit.alias, folder);
+          if ("released" in freed && freed.released) {
+            const named = {
+              ...summary,
+              ...(freed.branch_kept ? { branch_kept: freed.branch_kept } : {}),
+            };
+            const collection =
+              kind === "empty"
+                ? result.released_empty
+                : unit.integrated
+                  ? result.released_integrated
+                  : result.released_preserved;
+            collection.push(named);
+            continue;
+          }
+          unit.classification_reason = "error" in freed ? freed.message : "liberación incompleta";
+        } catch (err) {
+          unit.classification_reason = `liberación fallida: ${(err as Error).message}`;
+        }
+      } else unit.classification_reason = "sin operación de liberación verificable";
+    }
+    result.held.push({
+      alias: unit.alias,
+      branch: unit.branch,
+      path: unit.path,
+      ...(unit.dirty === undefined ? {} : { dirty: unit.dirty }),
+      classification: kind === "retained" ? "retained" : "pending",
+      reason: unit.classification_reason ?? "commits no preservados",
+      command:
+        kind === "retained" && unit.dirty === true
+          ? `commiteá el trabajo en ${unit.path} y después aw worktree integrate --source ${unit.alias} --code ${folder}`
+          : kind === "retained" && unit.classification_reason?.includes("operación git")
+            ? `aw fix-git --path ${unit.path}`
+            : `aw worktree integrate --source ${unit.alias} --code ${folder}`,
+    });
+  }
+  return result;
 }
 
 /**

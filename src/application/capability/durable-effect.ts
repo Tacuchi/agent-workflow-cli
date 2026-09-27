@@ -113,6 +113,9 @@ export function prepareDurableEffect(input: PrepareDurableEffectInput): Prepared
         scope: {
           sensitive_sources: input.request.policy.sensitive_sources === true,
           scope_expanded: false,
+          ...(input.request.context.workspace
+            ? { workspace_root: input.request.context.workspace }
+            : {}),
         },
         effects: durable,
         requiresApproval: input.authorization.needsPreflight,

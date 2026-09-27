@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,12 +26,18 @@ import { prepareRetirement } from "../../src/application/retirement/prepare.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { recordPublication } from "../../src/application/session-custody-recorder.js";
 import { recordCommit, recordUnitTaken } from "../../src/application/session-custody-recorder.js";
+import { readCustody, writeCustody } from "../../src/application/session-custody-service.js";
 import { nextSessionCorrelative } from "../../src/application/session-resolver.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { runWorktree } from "../../src/application/worktree-service.js";
 import type { RetirementProposal } from "../../src/domain/retirement/proposal.js";
+import { sealCustody } from "../../src/domain/session/custody.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+
+function movedBranch(workspace: string, folder: string): string {
+  return `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${folder}`;
+}
 
 function git(repo: string, ...args: string[]): string {
   return execFileSync("git", args, {
@@ -201,6 +208,20 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
     expect(outcome.result.restored).toEqual([planPath]);
     expect(rowsFor(proposal.digest)).toBe(1);
+  });
+
+  it("reset restaura los bytes originales aunque un editor sólo cambie LF a CRLF después de preparar", async () => {
+    await session("algo-plan-exec", [planPath]);
+    const proposal = await proposalFor("reset", planPath);
+    writeFileSync(join(workspace, planPath), PLAN_OPEN.replace(/\n/g, "\r\n"));
+
+    const outcome = await applyRetirement(deps, {
+      mode: "reset",
+      target: planPath,
+      approval: proposal.digest,
+    });
+    expect(outcome.ok).toBe(true);
+    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(PLAN_OPEN);
   });
 
   it("una aprobación que no es la del alcance vigente no toca nada", async () => {
@@ -431,17 +452,31 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // La unidad se toma por el camino real (`aw worktree ensure`), porque sólo las
     // que viven en la ruta canónica son las que el tablero —y por lo tanto la
     // propuesta— reconocen como unidades de una sesión.
+    writeFileSync(join(source, ".gitignore"), "node_modules/\n");
+    writeFileSync(join(source, "package.json"), '{"name":"test","version":"1.0.0"}\n');
+    writeFileSync(join(source, "package-lock.json"), '{"lockfileVersion":3}\n');
+    git(source, "add", "-A");
+    git(source, "commit", "-qm", "dependencias declaradas");
+    mkdirSync(join(source, "node_modules"));
+    writeFileSync(join(source, "node_modules", "sentinel"), "intacto");
     const folder = await session("algo-plan-exec", [planPath]);
     const ensured = await runWorktree(
       { fs, env: deps.env, git: deps.git, paths },
       { action: "ensure", alias: "acme", sessionCode: folder },
     );
     if ("error" in ensured) throw new Error(`no se pudo tomar la unidad: ${ensured.message}`);
+    expect(ensured.dependencies.status).toBe("linked");
     expect(existsSync(ensured.path)).toBe(true);
 
     const proposal = await proposalFor("discard", "plan:024");
     expect(proposal.units).toEqual([
-      { alias: "acme", session: folder, path: ensured.path, branch: `aw/${folder}`, repo: source },
+      {
+        alias: "acme",
+        session: folder,
+        path: ensured.path,
+        branch: movedBranch(workspace, folder),
+        repo: source,
+      },
     ]);
 
     const outcome = await applyRetirement(deps, {
@@ -452,15 +487,16 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
 
-    expect(outcome.result.units_released).toEqual([`acme:aw/${folder}`]);
+    expect(outcome.result.units_released).toEqual([`acme:${movedBranch(workspace, folder)}`]);
     expect(outcome.result.pending_reconciliation).toEqual([]);
     expect(existsSync(ensured.path)).toBe(false);
+    expect(readFileSync(join(source, "node_modules", "sentinel"), "utf8")).toBe("intacto");
     expect(git(source, "worktree", "list", "--porcelain")).not.toContain(folder);
     // La rama sobrevive: es la única alcanzabilidad de los commits de la sesión, y
     // borrarla los volvería inalcanzables. Retirar la unidad no es borrar historia.
-    expect(git(source, "rev-parse", "--verify", `refs/heads/aw/${folder}`)).toMatch(
-      /^[0-9a-f]{40}$/,
-    );
+    expect(
+      git(source, "rev-parse", "--verify", `refs/heads/${movedBranch(workspace, folder)}`),
+    ).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it("una unidad con trabajo sin commitear se REPORTA, nunca se fuerza", async () => {
@@ -484,7 +520,9 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (!outcome.ok) return;
 
     expect(outcome.result.units_released).toEqual([]);
-    expect(outcome.result.pending_reconciliation).toEqual([`acme:aw/${folder}`]);
+    expect(outcome.result.pending_reconciliation).toEqual([
+      `acme:${movedBranch(workspace, folder)}`,
+    ]);
     expect(readFileSync(join(ensured.path, "a-medio-hacer.txt"), "utf-8")).toBe(
       "trabajo sin commitear\n",
     );
@@ -543,7 +581,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       expect(outcome.result.pending_reconciliation).toEqual([]);
       expect(git(source, "rev-parse", "HEAD^{tree}")).toBe(baseline);
       expect(git(source, "merge-base", "--is-ancestor", receipt.after, "main")).toBe("");
-      expect(git(source, "rev-parse", ensured.branch)).toBe(unitHead);
+      expect(git(source, "branch", "--list", ensured.branch)).toBe("");
       expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
       expect(existsSync(join(workspace, planPath))).toBe(mode === "reset");
       expect(rowsFor(proposal.digest)).toBe(1);
@@ -605,16 +643,38 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
   it.each([
     ["destino sucio", "cambios locales"],
     ["otra rama", "no está en el checkout"],
-    ["rama ausente", "todo el trabajo"],
+    ["punta registrada ilegible", "todo el trabajo"],
     ["unidad reaparecida", "no se pudo verificar su liberación"],
     ["fuente ilegible", "no se pudo verificar"],
   ])("rechaza sin efectos un retiro integrado no verificable: %s", async (fault, reason) => {
     const { folder, ensured, after } = await integratedMerge(false);
     if (fault === "destino sucio") writeFileSync(join(source, "ajeno.txt"), "otro trabajo local\n");
     if (fault === "otra rama") git(source, "checkout", "-qb", "otra");
-    if (fault === "rama ausente") git(source, "branch", "-d", ensured.branch);
-    if (fault === "unidad reaparecida")
+    if (fault === "punta registrada ilegible") {
+      const sessionPath = join(workspace, ".workflow", "sessions", folder);
+      const read = await readCustody(deps.fs, sessionPath);
+      if (read.status !== "present") throw new Error("custodia ausente");
+      const record = read.custody;
+      await writeCustody(
+        deps.fs,
+        sessionPath,
+        sealCustody({
+          subject: record.subject,
+          subjectPath: record.subject_path,
+          parents: record.parents,
+          created: record.created,
+          artifacts: record.artifacts,
+          sources: record.sources,
+          effects: record.effects.map((effect) =>
+            effect.kind === "unit_integrated" ? { ...effect, unit_tip: "f".repeat(40) } : effect,
+          ),
+        }),
+      );
+    }
+    if (fault === "unidad reaparecida") {
+      git(source, "branch", ensured.branch, after);
       git(source, "worktree", "add", ensured.path, ensured.branch);
+    }
     if (fault === "fuente ilegible") rmSync(source, { recursive: true });
     const outcome = await applyRetirement(deps, {
       mode: "discard",

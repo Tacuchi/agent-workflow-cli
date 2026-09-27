@@ -28,7 +28,7 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
  * AC-08 of spec 052: an open run survives updating the CLI.
  *
  * Every release that changes a journey freezes it under `tests/fixtures/journeys`.
- * The installed build must walk exactly the newest one, and a v11 run stopped at
+ * The installed build must walk exactly the newest snapshot, and a run stopped at
  * ANY position of ANY frozen journey must keep going on it without a new
  * session and without being asked again what it already answered.
  */
@@ -52,6 +52,24 @@ function expectPersistedPrefix(
 }
 
 describe("recorridos congelados — el instalado es el de la última release", () => {
+  it("conserva los recorridos históricos junto al gate de cierre nuevo", () => {
+    expect(fixtures.map((fixture) => fixture.cli_version)).toEqual([
+      "25.6.1",
+      "25.8.0",
+      "25.8.0-next",
+      "25.8.1",
+    ]);
+    const published = fixtures.find((fixture) => fixture.cli_version === "25.8.0");
+    expect(published?.run_state_version).toBe(13);
+    const ids = published?.journeys["plan-exec"] ?? [];
+    expect(ids).toContain("plan-exec.batch-close");
+    expect(ids).not.toContain("plan-exec.batch-commit");
+    expect(ids.indexOf("plan-exec.source-scope")).toBeGreaterThan(
+      ids.indexOf("plan-exec.normalization-consent"),
+    );
+    expect(newest?.journeys["plan-exec"]).toContain("plan-exec.batch-commit");
+  });
+
   it("hay al menos un fixture, y el último declara el registro que la release escribía", () => {
     expect(newest).toBeDefined();
     expect(newest?.run_state_version).toBeLessThanOrEqual(FLOW_RUN_STATE_VERSION);

@@ -17,6 +17,7 @@ import {
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { sealedPlanPath } from "../../src/application/plan-exec-plan-diff.js";
 import {
   baselineOf,
   birthCustody,
@@ -47,6 +48,7 @@ import {
   serializeRunState,
   withAttempt,
   withProposal,
+  withScope,
 } from "../../src/domain/flow/run-state.js";
 import { sealProposal } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -248,6 +250,31 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     if (!read.ok) throw new Error(`esperaba leer la corrida: ${read.failure.code}`);
     return read.state;
   }
+
+  it("la inferencia guarda en la sesión la copia exacta direccionada por el sello", async () => {
+    const plan = "docs/plans/001-plan.md";
+    const text =
+      "# Plan 001\n> Estado: open\n## Tasks\n### F1 — trabajo\n> Estado: pendiente\n> Fuentes: workspace\n- [ ] T1.1 — prueba _(fuentes: workspace)_\n";
+    await mkdir(join(workdir, "docs/plans"), { recursive: true });
+    await writeFile(join(workdir, plan), text);
+    const run = withScope(newRunState("plan-exec", SESSION), { plan, sources: ["workspace"] });
+    await writeFile(statePath(), serializeRunState(run));
+    const outcome = await executor(
+      { operation: "plan-exec.batch-infer" },
+      { session: SESSION, code: "001", scope: run.scope, proposal: null },
+    );
+    expect(outcome.ok).toBe(true);
+    const batch = (await state()).batches?.[0];
+    expect(batch).toBeDefined();
+    if (batch !== undefined) {
+      expect(
+        await readFile(
+          sealedPlanPath(join(paths.cwdSessionsDir(), SESSION), batch.plan_digest),
+          "utf8",
+        ),
+      ).toBe(text);
+    }
+  });
 
   async function advance(over?: InternalActionExecutor) {
     const result = await advanceFlow(fs, paths, {

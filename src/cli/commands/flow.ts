@@ -6,6 +6,7 @@ import {
   applyAnnulment,
   prepareAnnulment,
 } from "../../application/flow/annul-service.js";
+import { publishObservedCheckouts } from "../../application/flow/checkout-observation.js";
 import {
   type AdvanceFlowResult,
   advanceFlow,
@@ -23,11 +24,17 @@ import {
   proveFlowBoundary,
 } from "../../application/flow/prove.js";
 import {
+  type ReinferBatchPreview,
+  applyReinferBatch,
+  previewReinferBatch,
+} from "../../application/flow/reinfer-batch.js";
+import {
   type FlowCheckReceipt,
   type SubmitFlowResult,
   checkFlow,
   submitFlow,
 } from "../../application/flow/submit.js";
+import { resolveSessionTarget } from "../../application/session-resolver.js";
 import { runWorkspaceCommit } from "../../application/workspace-commit-service.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
@@ -63,7 +70,12 @@ import type { CliContext } from "../types.js";
  * directive whose action carried the proof — would make the run look like it had
  * moved when nothing did.
  */
-type FlowResult = FlowDirective | CheckoutProofReceipt | AnnulPreview | FlowCheckReceipt;
+type FlowResult =
+  | FlowDirective
+  | CheckoutProofReceipt
+  | AnnulPreview
+  | FlowCheckReceipt
+  | ReinferBatchPreview;
 
 const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul", "retract"] as const;
 
@@ -217,14 +229,17 @@ export const flowCommand: CliCommand<FlowResult> = {
       advance: { known: ["adopt"] },
       submit: { known: ["approval", "check"] },
       prove: { known: ["source", "artifact"] },
-      recover: { known: ["transition"] },
+      recover: { known: ["transition", "reinfer-batch", "approval"] },
       retract: { known: ["signal"] },
       annul: { known: ["from", "approval"] },
+      restart: { known: [] },
     },
   },
   describe: `Avanza un recorrido de Workline hasta su primera frontera no determinista y devuelve su directiva. Verbos: ${VERBS.join(" | ")}. La respuesta de submit entra por stdin como JSON y la aprobación de efecto viaja aparte en --approval. recover le devuelve los intentos a la frontera agotada vigente conservando todo lo aplicado, y se niega si esa frontera ya ejerció efectos. restart saca de cualquier estado trabado —frontera agotada con efectos, registro ilegible o sellado mal, anterior a la v11, contador de intentos ilegible o revertido—: archiva el registro y su contador en un archivo con fecha y sello dentro de la sesión, re-adopta el mismo flow (del registro, de la custodia o de --flow) y lo deja en la traza; nunca hace falta tocar .flow-run.json a mano. annul reabre un lote mal acreditado y los posteriores: sin --approval muestra las fases y tareas que reabre y el digest que lo aprueba, sin escribir nada; con ese digest las deja pendientes y abiertas en el plan, retira su sello done si lo tenía, re-adopta la corrida para que las vuelva a inferir y lo deja en la traza; git no se toca. Usage: aw flow advance --session <código> [--flow <flow> --adopt] · aw flow recover --session <código> [--transition <id>] · aw flow prove --session <código> [--source <alias>] [--artifact <ruta>] · aw flow restart --session <código> [--flow <flow>] · aw flow annul --session <código> --from <lote> [--approval <digest>].
 
 retract retira una señal antes de que se aplique su fila consumidora y deja una traza, sin perdonar intentos: aw flow retract --session <código> --signal <señal>.
+
+recover --reinfer-batch muestra el diff del lote inferido sin escribir; con --approval <digest> re-sella el mismo lote no publicado y obliga a repetir validación y revisión. Uso: aw flow recover --session <código> --reinfer-batch [--approval <digest>].
 
 ${ENVELOPE}
 
@@ -240,6 +255,13 @@ ${CHECKOUT}`,
     // the boundary to an answerable state and stops there, so whatever runs next
     // is decided by whoever answers it — never by the command that unblocked it.
     if (verb === "recover") {
+      if (args.flags.has("--reinfer-batch")) {
+        if (args.values.has("transition"))
+          return fail("ARGS_INVALID", "--reinfer-batch no admite --transition");
+        return reinferVerb(args, ctx, session);
+      }
+      if (args.values.has("approval"))
+        return fail("ARGS_INVALID", "--approval en recover exige --reinfer-batch");
       const transition = args.values.get("transition");
       return project(
         await recoverFlowBoundary(ctx.fs, ctx.paths, {
@@ -332,10 +354,41 @@ ${CHECKOUT}`,
         ? "sobre válido: 0 violaciones\n"
         : `${data.violations.map((item) => `${item.field}: ${item.message}`).join("\n")}\n`;
     if ("proof" in data) return `${renderProofHuman(data)}\n`;
+    if ("reinfer_batch" in data)
+      return `Lote ${data.batch}: ${data.old_digest} → ${data.new_digest}\n${data.diff}\nDigest de aprobación: ${data.approval_digest}\n${data.next}\n`;
     if ("batches" in data) return `${renderAnnulHuman(data)}\n`;
     return `${renderDirectiveHuman(data, context.detail)}\n`;
   },
 };
+
+async function reinferVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+  session: { code?: string; contextId?: string },
+): Promise<CommandResult<FlowResult>> {
+  const approval = args.values.get("approval");
+  const resolved = await resolveSessionTarget(ctx.fs, ctx.paths, {
+    ...session,
+    intent: approval === undefined ? "read" : "write",
+    allowClosed: false,
+  });
+  if (resolved.outcome !== "resolved")
+    return failSessionResolution(resolved) as CommandResult<FlowResult>;
+  const folder = resolved.session.folder;
+  if (approval === undefined) {
+    const preview = await previewReinferBatch(ctx.fs, ctx.paths, folder);
+    return preview.ok
+      ? { ok: true, data: preview.preview, exitCode: 0 }
+      : failSemantic(preview.failure);
+  }
+  const applied = await applyReinferBatch(ctx.fs, ctx.paths, folder, approval);
+  if (!applied.ok) return failSemantic(applied.failure);
+  return {
+    ok: true,
+    data: await publishObservedCheckouts(ctx.fs, ctx.paths, folder, ctx.git, applied.directive),
+    exitCode: 0,
+  };
+}
 
 function projectCheck(result: Awaited<ReturnType<typeof checkFlow>>): CommandResult<FlowResult> {
   if (result.ok) return { ok: true, data: result.receipt, exitCode: 0 };

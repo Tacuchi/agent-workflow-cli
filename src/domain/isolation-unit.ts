@@ -49,8 +49,8 @@ export function workspaceKey(workspaceDir: string): string {
 }
 
 /** The branch a session works on inside its units, across every source. */
-export function unitBranch(session: string): string {
-  return `${UNIT_BRANCH_PREFIX}${session}`;
+export function unitBranch(session: string, workspaceDir?: string): string {
+  return `${UNIT_BRANCH_PREFIX}${workspaceDir === undefined ? "" : `${workspaceKey(workspaceDir).slice(-8)}/`}${session}`;
 }
 
 /** `<userRoot>/worktrees` — the root every unit of every workspace hangs from. */

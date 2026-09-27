@@ -57,7 +57,12 @@ import { sessionCreateCommand } from "./session-create.js";
 import { sessionPauseCommand } from "./session-pause.js";
 import { sessionResumeCommand } from "./session-resume.js";
 import { sessionsCommand } from "./sessions.js";
-import { setQaBranchCommand, setWorkingBranchCommand } from "./set-branch.js";
+import {
+  setExceptionBranchCommand,
+  setQaBranchCommand,
+  setWorkingBranchCommand,
+} from "./set-branch.js";
+import { setEditModeCommand } from "./set-edit-mode.js";
 import { setPipelineCommand } from "./set-pipeline.js";
 import { settleCommand } from "./settle.js";
 import { skillIndexCommand } from "./skill-index.js";
@@ -70,6 +75,7 @@ import { visibilityCommand } from "./visibility.js";
 import { workspaceCommitCommand } from "./workspace-commit.js";
 import { workspaceInitCommand } from "./workspace-init.js";
 import { workspaceMigrateCommand } from "./workspace-migrate.js";
+import { workspaceMoveCommand } from "./workspace-move.js";
 import { worktreeCommand } from "./worktree.js";
 
 export const ALL_COMMANDS: readonly CliCommand[] = [
@@ -92,6 +98,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   stackCommand,
   workspaceInitCommand,
   workspaceCommitCommand,
+  workspaceMoveCommand,
   addSourceCommand,
   skillIndexCommand,
   contextBudgetCommand,
@@ -105,6 +112,8 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   generateLaunchCommand,
   setWorkingBranchCommand,
   setQaBranchCommand,
+  setExceptionBranchCommand,
+  setEditModeCommand,
   setPipelineCommand,
   removeSourceCommand,
   gitFlowCommand,

@@ -86,6 +86,27 @@ Reconcile every candidate the origin brought against the code and the declared f
 objects born and retired within the sequence; write migrated objects directly in their final form;
 omit explicitly retired objects even when their deletion is absent from the input.
 
+| History in the corpus | Publish |
+|---|---|
+| Created, then dropped | Nothing: neither forward nor rollback |
+| Created, then changed (type/rename) | One statement in final form |
+| Created, untouched | The original statement |
+| Retired by session context without an explicit `DROP` | Omit it |
+
+**Synthesize, never invent:** folding `CREATE` + `ALTER` into a final `CREATE` is required;
+adding a migration no session performed is forbidden. Session context outranks script chronology:
+a retired object stays out even when no file dropped it. Check actual state **read-only** before
+deciding what remains; reconcile code (including entity mappings and native queries) with it.
+Do not promote one-off QA data repairs into release migrations.
+
+**Corpus ≠ live source environment.** Hand edits may never appear in a script. As an
+operational handoff after application, compare source and target object by object through
+read-only inspections; before application the planned delta hides omissions. Portable
+guards assert existence, not a source-specific row count. Compare routine definitions
+from the live catalog, not the file that once created them: omit a replacement when live
+bodies already agree. User-visible labels matter too; an older label can leave an object
+present but unfindable. None of these remote observations is a local closure criterion.
+
 **A previous bundle in the origin is MATERIAL A RECONCILIAR, not untouchable history.** Two that
 contradict — one creating an object, a later one retiring it — publish the resulting net final state,
 never their chronological sum: the new bundle does not create it, and its global rollback does not
@@ -103,7 +124,7 @@ Write each forward in its category folder with a concise header and useful origi
 
 ### Step 6 — Derive `00-ROLLBACK.sql` (at the end)
 
-For every forward `<categoría>/NN-<nombre>.sql`, write `rollback/<categoría>/NN-<nombre>.rollback.sql`. Then derive `rollback/00-global/00-ROLLBACK.sql` from the final forwards in safe reverse order (05→01), not from the session's original chronology.
+For every forward `<categoría>/NN-<nombre>.sql`, write `rollback/<categoría>/NN-<nombre>.rollback.sql`. Derive `rollback/00-global/00-ROLLBACK.sql` from the consolidated final state, **in dependency-safe order**: drop referencing rows/tables before their FK targets; never reverse the session chronology or file order literally. Verify the real state only through read-only inspection; application is the user's handoff.
 
 ### Step 7 — Write the `README.md` (3 sections)
 

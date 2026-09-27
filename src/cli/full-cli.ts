@@ -10,6 +10,7 @@ import {
 } from "../application/logging/log-events.js";
 import { Logger } from "../application/logging/logger.js";
 import { PathsService } from "../application/paths-service.js";
+import { preparationMismatch, recordPreparation } from "../application/preparation-receipts.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
 import { MaterializingWorkspaceFileSystem } from "../application/workspace-materialization-service.js";
 import { encodeToolResponse, toolFailure } from "../domain/database-tools.js";
@@ -25,6 +26,11 @@ import {
 } from "../runtime/namespace-resolver.js";
 import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
+import {
+  WorkspaceResolutionError,
+  registerResolvedWorkspace,
+  resolveWorkspaceDirectory,
+} from "../runtime/workspace-resolution.js";
 import { ALL_COMMANDS, commandDescribes } from "./commands/index.js";
 import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
@@ -57,14 +63,20 @@ async function run(argv: string[]): Promise<ExitCode> {
   const prepared = prepareInvocation(argv);
   if (typeof prepared === "number") return prepared;
   const initialized = await initializeCliContext(prepared.parsed, fs, env, proc, git);
-  if (initialized === null) return transportExitCode(prepared.parsed);
+  if (initialized === null)
+    return prepared.parsed.command === "hook" ? 0 : transportExitCode(prepared.parsed);
 
-  return await dispatchParsedCommand({
+  const exit = await dispatchParsedCommand({
     ...prepared,
     ctx: initialized.ctx,
     registry: commandRegistry(),
     workspaceFs: initialized.workspaceFs,
   });
+  const warning = initialized.ctx.directory
+    ? await registerResolvedWorkspace(fs, env.homeDir(), initialized.ctx.directory)
+    : null;
+  if (warning) writeStderr(warning);
+  return exit;
 }
 
 interface PreparedInvocation {
@@ -130,8 +142,10 @@ async function initializeCliContext(
   proc: NodeProcess,
   git: GitCliAdapter,
 ): Promise<{ ctx: CliContext; workspaceFs: MaterializingWorkspaceFileSystem } | null> {
-  const directory = await resolveWorklineDirectory(new NamespaceResolver(fs, env), parsed);
+  const directory = await resolveWorklineDirectory(new NamespaceResolver(fs, env), parsed, fs, env);
   if (directory === null) return null;
+  const warning = await registerResolvedWorkspace(fs, env.homeDir(), directory);
+  if (warning) writeStderr(warning);
   const namespace = { namespace: directory.namespace, source: directory.namespaceSource };
   const paths = new PathsService(namespace.namespace, env.homeDir(), directory.root);
   const workspaceFs = new MaterializingWorkspaceFileSystem(fs, paths);
@@ -196,10 +210,47 @@ function parseCli(argv: string[]): ParsedArgs | null {
 async function resolveWorklineDirectory(
   resolver: NamespaceResolver,
   parsed: ParsedArgs,
+  fs: NodeFileSystem,
+  env: NodeEnv,
 ): Promise<WorklineDirectory | null> {
   try {
-    return await resolver.resolveDirectory(parsed.values.get("namespace"));
+    const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
+    if (parsed.command === "workspace-init") return directory;
+    const bypass =
+      parsed.command === "tool" ||
+      parsed.command === "self" ||
+      parsed.command === "context-budget" ||
+      isMcpStdioInvocation(parsed) ||
+      parsed.flags.has("--help") ||
+      parsed.flags.has("-h") ||
+      parsed.command === undefined;
+    try {
+      return await resolveWorkspaceDirectory(
+        fs,
+        directory,
+        env.cwd(),
+        env.homeDir(),
+        parsed.values.get("workspace"),
+      );
+    } catch (error) {
+      if (error instanceof WorkspaceResolutionError && (bypass || parsed.command === "hook")) {
+        if (parsed.command === "hook") {
+          writeStderr(error.message);
+          return null;
+        }
+        return { ...directory, root: env.cwd(), materialized: false };
+      }
+      throw error;
+    }
   } catch (err) {
+    if (err instanceof WorkspaceResolutionError) {
+      if (parsed.command === "hook") {
+        writeStderr(err.message);
+        return null;
+      }
+      emitError({ code: err.code, message: err.message, details: { roots: err.roots } });
+      return null;
+    }
     if (!(err instanceof WorklineDirectoryError)) {
       if (parsed.command === "tool") {
         emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
@@ -256,6 +307,7 @@ function firstCommandToken(argv: readonly string[]): string | undefined {
     // can precede it. Skip its value while detecting a parse-time tool error so
     // the CLI never falls back to the generic `{ ok, error }` envelope.
     "--format",
+    "--workspace",
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -264,7 +316,12 @@ function firstCommandToken(argv: readonly string[]): string | undefined {
       index += 1;
       continue;
     }
-    if (token.startsWith("--namespace=") || token.startsWith("--plugin-")) continue;
+    if (
+      token.startsWith("--namespace=") ||
+      token.startsWith("--workspace=") ||
+      token.startsWith("--plugin-")
+    )
+      continue;
     if (token.startsWith("-")) continue;
     return token;
   }
@@ -308,7 +365,7 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
 
   // `<command> --help` shows the subcommand's help (its describe), not the global help.
   if (plan.help) {
-    printCommandHelp(command, output);
+    printCommandHelp(command, output, parsed.rest[0]);
     return 0;
   }
 
@@ -345,6 +402,15 @@ async function executeCommand(
   }
   if (gate.notice !== undefined) writeStderr(gate.notice);
   try {
+    const approval = parsed.values.get("approval");
+    if (approval && WORKSPACE_SEALED_COMMANDS.has(command.name)) {
+      const mismatch = await preparationMismatch(ctx.paths, command.name, approval);
+      if (mismatch) {
+        const refused = fail("WORKSPACE_MISMATCH", mismatch);
+        emit(refused, command, output);
+        return refused.exitCode;
+      }
+    }
     const commandCtx = commandOwnsMaterializationReceipt(command.name)
       ? { ...ctx, fs: ctx.rawFs ?? ctx.fs }
       : ctx;
@@ -352,6 +418,27 @@ async function executeCommand(
       await command.execute(parsed, commandCtx),
       workspaceFs,
     );
+    if (
+      result.ok &&
+      WORKSPACE_SEALED_COMMANDS.has(command.name) &&
+      result.data &&
+      typeof result.data === "object"
+    ) {
+      const data = result.data as Record<string, unknown>;
+      const digest =
+        data.approval_digest ??
+        data.digest ??
+        (data.proposal && typeof data.proposal === "object"
+          ? (data.proposal as Record<string, unknown>).digest
+          : undefined);
+      if (typeof digest === "string" && digest.length > 0 && parsed.rest[0] !== "apply") {
+        try {
+          await recordPreparation(ctx.rawFs ?? ctx.fs, ctx.paths, command.name, digest);
+        } catch (error) {
+          writeStderr(`No se pudo guardar el recibo de preparación: ${String(error)}`);
+        }
+      }
+    }
     await ctx.logger?.log(
       result.ok ? "info" : "error",
       formatCommandOutcome(command.name, result.exitCode),
@@ -369,6 +456,23 @@ async function executeCommand(
     return 1;
   }
 }
+
+const WORKSPACE_SEALED_COMMANDS = new Set([
+  "persist",
+  "export-scripts",
+  "export-diagrams",
+  "export-reports",
+  "export-manuals",
+  "capability",
+  "reseal",
+  "settle",
+  "claims",
+  "flow",
+  "discard",
+  "reset",
+  "doctor",
+  "fix-git",
+]);
 
 /** Services whose public output already declares the exact first-write effects. */
 function commandOwnsMaterializationReceipt(command: string): boolean {
@@ -543,8 +647,12 @@ function printHelp(commands: string[], mode: Pick<OutputMode, "ascii">): void {
   writeStdout(forPerson(globalHelpText(commands, commandDescribes(), DEFAULT_NAMESPACE), mode));
 }
 
-function printCommandHelp(command: CliCommand, mode: Pick<OutputMode, "ascii">): void {
-  writeStdout(forPerson(`${commandHelpText(command)}\n`, mode));
+function printCommandHelp(
+  command: CliCommand,
+  mode: Pick<OutputMode, "ascii">,
+  action?: string,
+): void {
+  writeStdout(forPerson(`${commandHelpText(command, action)}\n`, mode));
 }
 
 // Do not force-exit after writing JSON: a piped 4 MiB tool response may still

@@ -90,6 +90,8 @@ export interface BaselineInput {
    * caller has no spec text to digest, and then only `digest` is accepted.
    */
   legacy_digest?: string | undefined;
+  /** Pre-EOL canonicalization seal over the same spec's CRLF bytes. */
+  legacy_eol_digest?: string | undefined;
   /** The criteria the spec states, in document order. */
   criteria: readonly string[];
 }
@@ -167,7 +169,12 @@ function claimFirst(into: Map<string, string>, items: readonly string[], noteId:
  */
 function checkBaseline(note: DecisionNote, baseline: BaselineInput): NoteFailure[] {
   const pinned = note.lineage.spec.digest;
-  if (pinned === baseline.digest || pinned === baseline.legacy_digest) return [];
+  if (
+    pinned === baseline.digest ||
+    pinned === baseline.legacy_digest ||
+    pinned === baseline.legacy_eol_digest
+  )
+    return [];
   return [
     {
       code: "CONTRACT_BASELINE_ABSENT",

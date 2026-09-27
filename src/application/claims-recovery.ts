@@ -287,6 +287,7 @@ export async function scanSlots(
 
 interface RecoveryProposal {
   version: 1;
+  workspace_root?: string;
   target: string;
   kind: SlotKind;
   claim: ClaimIdentity | null;
@@ -341,6 +342,7 @@ export async function previewRecovery(
   return {
     proposal: sealRecovery({
       version: 1,
+      workspace_root: paths.workspaceDir(),
       target: slot.path,
       kind: slot.kind,
       claim: claimOfSlot(slot),

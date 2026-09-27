@@ -65,7 +65,7 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 14;
+export const FLOW_RUN_STATE_VERSION = 15;
 
 /**
  * The versions this CLI CONTINUES without adoption, newest first.
@@ -86,7 +86,13 @@ export const FLOW_RUN_STATE_VERSION = 14;
  */
 // v14 adds batch reviews, signal retractions and QUICK checkout observations.
 // Older observations and events remain unchanged.
-export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 13, 12, 11];
+export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [
+  FLOW_RUN_STATE_VERSION,
+  14,
+  13,
+  12,
+  11,
+];
 
 /**
  * The versions this CLI READS, newest first.
@@ -115,6 +121,11 @@ const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => Flo
   12: (state) => ({ ...state, version: 13 }),
   // Historical reviews are never fabricated. A still-open batch must supply one.
   13: (state) => ({ ...state, version: 14 }),
+  14: (state) => ({
+    ...state,
+    version: 15,
+    ...(state.scope ? { scope: { isolation: "unit", ...state.scope } } : {}),
+  }),
 };
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
@@ -962,6 +973,8 @@ export interface FlowRunScope {
   plan: string;
   /** `workspace` plus declared aliases this run may touch — non-empty, no repeats. */
   sources: string[];
+  /** Missing on older runs; their truthful isolation is unit. */
+  isolation?: "unit" | "in-place";
   /** Commands resolved from the scoped plan and versioned source declarations. */
   final_validation?: FinalValidationSource[];
 }
@@ -1065,7 +1078,13 @@ export interface PlanExecBatch {
   /** Git state at acquisition; absent on batches born before per-batch commits. */
   snapshot?: Record<string, { head: string; branch: string; dirty: DirtyPath[] }>;
   commit_proposal?: {
-    sources: { alias: string; paths: string[]; dirty: DirtyPath[]; message: string }[];
+    sources: {
+      alias: string;
+      paths: string[];
+      dirty: DirtyPath[];
+      message: string;
+      foreign_paths?: string[];
+    }[];
     digest: string;
     approved_digest?: string;
   };
@@ -1751,6 +1770,40 @@ export function withPlanExecBatchUpdate(
     ...withoutSeal(state),
     batches: (state.batches ?? []).map((batch) => (batch.id === id ? update(batch) : batch)),
   });
+}
+
+/** Re-seal the SAME unpublished batch; old validation/review cannot credit a new base. */
+export function withReinferredPlanExecBatch(
+  state: FlowRunState,
+  batchId: string,
+  planDigest: string,
+  anchor: string | null,
+): FlowRunState {
+  const replaced = withPlanExecBatchUpdate(state, batchId, (batch) => {
+    const {
+      credit: _credit,
+      credit_phases: _phases,
+      review: _review,
+      commit_proposal: _proposal,
+      ...rest
+    } = batch;
+    return { ...rest, plan_digest: planDigest, stage: "inferred" };
+  });
+  const traced = withPlanExecBatchStage(
+    replaced,
+    batchId,
+    "inferred",
+    "plan-exec.batch-inference",
+    "entered",
+  );
+  if (anchor === null) return traced;
+  const reentered = withReentry(traced, {
+    kind: "reinfer",
+    transition: anchor,
+    occurrence: state.applied.filter((id) => id === anchor).length + 1,
+    from: "plan-exec.validation-execution",
+  });
+  return withPendingAction(withBoundary(reentered, "plan-exec.validation-execution"), null);
 }
 
 /** Old runs that closed even one batch without a commit result stay on the old tail. */
@@ -3004,6 +3057,8 @@ function isScope(value: unknown): value is FlowRunScope | null {
   if (!isRecord(value)) return false;
   if (typeof value.plan !== "string" || value.plan.trim().length === 0) return false;
   if (!isStringArray(value.sources) || value.sources.length === 0) return false;
+  if (value.isolation !== undefined && value.isolation !== "unit" && value.isolation !== "in-place")
+    return false;
   if (
     value.final_validation !== undefined &&
     (!Array.isArray(value.final_validation) ||
@@ -3109,6 +3164,7 @@ function isBatchCommitProposal(value: unknown): boolean {
         isNonEmptyString(item.alias) &&
         isNonEmptyString(item.message) &&
         isStringArray(item.paths) &&
+        (item.foreign_paths === undefined || isStringArray(item.foreign_paths)) &&
         item.paths.length > 0 &&
         Array.isArray(item.dirty) &&
         item.dirty.length === item.paths.length &&
@@ -3621,7 +3677,7 @@ function isObservationArray(value: unknown): value is FlowObservation[] {
   );
 }
 
-const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen", "review"];
+const REENTRY_KINDS: readonly string[] = ["refine", "close", "reopen", "review", "reinfer"];
 
 /** Absent, or reentries each with its kind, its boundary, its occurrence and its origin. */
 function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
@@ -3634,6 +3690,14 @@ function isReentryArray(value: unknown): value is FlowRunReentry[] | undefined {
       (entry.kind !== "review" ||
         (entry.transition === "plan-exec.batch-close" &&
           entry.from === "plan-exec.review-findings")) &&
+      (entry.kind !== "reinfer" ||
+        (entry.from === "plan-exec.validation-execution" &&
+          [
+            "plan-exec.deferred-check",
+            "plan-exec.review-findings",
+            "plan-exec.batch-commit-proposal",
+            "plan-exec.batch-close",
+          ].includes(entry.transition as string))) &&
       nonEmpty(entry.transition) &&
       Number.isInteger(entry.occurrence) &&
       (entry.occurrence as number) >= 1 &&

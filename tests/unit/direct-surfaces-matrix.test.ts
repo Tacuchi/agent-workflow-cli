@@ -138,6 +138,8 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // lo que una persona lee antes de tipear `--apply` es exactamente este
     // texto, y sale del mismo plan que viaja en el JSON.
     "workspace-migrate",
+    // La mudanza informa cada referencia reparada y cualquier archivo manual preservado.
+    "workspace-move",
     // La vista previa de un re-sello, y la razón es la misma que en `discard`
     // llevada un paso más lejos: re-sellar es una AFIRMACIÓN humana («revisé el
     // plan contra la spec vigente y sigue valiendo»), así que lo que una persona

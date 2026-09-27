@@ -8,8 +8,8 @@ allowed-tools: ["Bash", "Read"]
 
 1. `aw export-scripts prepare --format human` (+ the flags above) → origin, material, destination, `input_digest`.
 2. Answer with one JSON — `aw export-scripts --help` publishes the envelope. Copy `scope` **verbatim**, including `scope.seal`; 3 and 4 never repeat flags. The approved `NNN` is immutable.
-3. `echo '<json>' | aw export-scripts validate --format human` → preview + `approval_digest`; confirm origin and destination.
-4. `echo '<json>' | aw export-scripts apply --approval <digest>`. On rejection nothing was written: fix and repeat step 3.
+3. Write JSON with the file tool; `aw export-scripts validate --format human < <file>` → preview + digest; confirm scope.
+4. `aw export-scripts apply --approval <digest> < <file>`. Rejected? Fix and revalidate.
 
 ## What it produces
 

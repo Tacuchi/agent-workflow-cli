@@ -89,6 +89,8 @@ function actionFor(
   switch (code) {
     case "PLAN_SOURCE_BOUNDARY_MISSING":
       return `falta la declaración estructural: '> Límite de ejecución: checkout' bajo el título y '> Fuentes:' en cada fase — ${then}`;
+    case "PLAN_ISOLATION_INVALID":
+      return `'> Aislamiento:' sólo admite unidad; corregí la cabecera — ${then}`;
     case "PLAN_SOURCE_UNKNOWN":
       return `ese alias no está en la tabla Fuentes del bloque WORKSPACE: declaralo ahí, o usá uno de los que ya están — ${then}`;
     case "PLAN_TASK_SOURCE_OUTSIDE_PHASE":

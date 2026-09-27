@@ -1,8 +1,14 @@
 # CHASSIS — the loop engine
 
-The **common engine** of the Workline loops: every loop reads it from its `## Inherits`, **always, before its deltas**. Edit the engine **here**; heirs only reference it.
+The **common engine** of Workline loops: heirs read it before their deltas and only reference it.
 
-> **When each step below happens is no longer this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. They consume no model worker, subagent or external process: the CLI advances them locally to the first real frontier. What stays is what each rule is FOR — the half no engine carries. Answering the frontier it stops at is `aw flow submit`, and its envelope — which fields each kind of frontier demands, and where each digest comes from — is **read** with `aw flow --help`, never guessed.
+> **When:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. `aw flow submit` answers the frontier. Read its envelope and digest from `aw flow --help`, never guess. Use `--adopt` for an existing run; `aw flow recover` restores a no-effect exhausted frontier, `aw flow restart` handles stuck runs, `aw flow annul` reopens miscredited batches, and `aw flow prove` binds evidence to the checkout.
+
+## Host execution rules
+
+- Write JSON envelopes with the file tool, never heredoc or shell-built JSON; redirect the file to stdin.
+- Use a CLI verb before editing the runtime; make one call per approvable effect.
+- The user executes force-push; on Windows set `PYTHONUTF8=1` for Python consumers.
 
 ## Heirs (canonical list)
 
@@ -18,9 +24,9 @@ The two that edit code also apply [`CODE-POLICIES.md`](CODE-POLICIES.md).
 
 ## Persistent objective
 
-A loop **is a persistent objective**: it exists to fulfill the `SESSION.Objective` declared at start, and **it is not finished until the convergence gate confirms the objective was met**. Gap-driven iteration is the *method*; the artifacts are the *record*; the objective is the *frame*.
+A loop fulfills `SESSION.Objective` until its convergence gate confirms it. Gaps are the method; artifacts the record.
 
-"Don't stop until convergence" is sustained by the loop itself — its `repeat:` plus the convergence gate — never by a host hook, which is what makes it harness-agnostic.
+The loop's `repeat:` and gate sustain convergence, not a host hook.
 
 > **Inter-turn continuity.** The same `CHECKPOINT`+resume governs the **next prompt**: the objective persists **across turns**, not only within a run. Its canonical rules have their **single source** in [`../SKILL.md`](../SKILL.md) § *Operating context*; this engine executes them via *Compact / resume* (case 3).
 
@@ -125,8 +131,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 ## Convergence / exit
 
 - **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop **flips the green criteria** in `SESSION.md` (`- [ ]` → `- [x]`) and offers its closing action. The checklist must reflect the real final state: a criterion left unchecked at `finalize` needs an explicit reason. Each heir names its own instance of this gate, and those instances are what realize it.
-- After sources: paths, exclusions, message, digest. `finalize` writes CHECKPOINT, archive and HISTORY; commit only on approval, no push.
-- `Cerrar` (the `flow` control, at any time) → `finalize`, the last step of every journey. **`finalize` always persists `CHECKPOINT.md`** (resumable) and, **only if** something was deferred, writes `BACKLOG.md` (close reason + the deferred items); closes the session and reports. Progress survives even without a prior `Compactar`.
+- Finish sources → approve exact workspace paths/message or skip → `finalize` persists CHECKPOINT, deferred BACKLOG if needed, archive and HISTORY; an approved commit runs last, never push. `Cerrar` at any time uses `finalize` and preserves progress.
 
 ## docs/ boundary — no auto-export (hard rule)
 

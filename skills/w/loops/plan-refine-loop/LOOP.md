@@ -141,6 +141,8 @@ This loop's instance of the chassis convergence gate — the same one `plan-exec
 - **Execution batches** — every phase appears once; maximal continuous ranges cross no decision, proof, handoff, irreversible action or required recovery boundary.
 - **Resumability** — tasks legible enough for a `CHECKPOINT`, intermediate states stable, pending work distinguishable from work already `validada`.
 
+The CLI alone seals `> Cierre:` with run evidence and `> Assurance:` after final validation; refinement only changes the plan's structure.
+
 ## Sequence
 
 ```

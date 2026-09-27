@@ -74,6 +74,129 @@ const PLAN_WITH_NEXT_BATCH = [
 ].join("\n");
 
 describe("plan-exec batch publication", () => {
+  it("infiere y publica un plan CRLF conservando su fin de línea", () => {
+    const text = PLAN.replace(/\n/g, "\r\n");
+    const inferred = inferPlanExecBatch(text, {
+      id: "batch-1",
+      iteration: 1,
+      mode: "isolated",
+      phases: [4],
+    });
+    if (!inferred.ok) throw new Error(inferred.failure.message);
+    expect(inferred.batch.tasks).toEqual(["T4.1", "T4.2"]);
+    const closed = preparePlanExecBatchPublication(text, {
+      plan: "docs/plans/032-plan-batch.md",
+      batch: inferred.batch,
+      sealed_text: text,
+      completed_tasks: inferred.batch.tasks,
+      phase_updates: [{ phase: 4, state: "validada" }],
+      transition: "plan-exec.batch-close",
+    });
+    expect(closed.ok).toBe(true);
+    if (closed.ok) {
+      expect(closed.prepared.content).toContain(
+        "### F4 — cierre\r\n> Estado: validada\r\n- [x] T4.1",
+      );
+      expect(closed.prepared.content.replace(/\r\n/g, "")).not.toContain("\n");
+    }
+  });
+
+  it("tolera sólo casillas y marcas de las fases del lote; muestra el diff de cualquier otro cambio", () => {
+    const inferred = inferPlanExecBatch(PLAN_WITH_NEXT_BATCH, {
+      id: "batch-1",
+      iteration: 1,
+      mode: "isolated",
+      phases: [4],
+    });
+    if (!inferred.ok) throw new Error(inferred.failure.message);
+    const input = {
+      plan: "docs/plans/032-plan-batch.md",
+      batch: inferred.batch,
+      sealed_text: PLAN_WITH_NEXT_BATCH,
+      completed_tasks: inferred.batch.tasks,
+      phase_updates: [{ phase: 4, state: "validada" as const }],
+      transition: "plan-exec.batch-close",
+    };
+    const own = PLAN_WITH_NEXT_BATCH.replace("- [ ] T4.1", "- [x] T4.1").replace(
+      "### F4 — cierre\n> Estado: en ejecución",
+      "### F4 — cierre\n> Estado: validada",
+    );
+    expect(preparePlanExecBatchPublication(own, input).ok).toBe(true);
+    const outside = PLAN_WITH_NEXT_BATCH.replace("- [ ] T5.1", "- [x] T5.1");
+    expect(preparePlanExecBatchPublication(outside, input)).toMatchObject({
+      ok: false,
+      failure: { code: "PLAN_EXEC_BATCH_STALE", action: expect.stringContaining("T5.1") },
+    });
+    const header = PLAN_WITH_NEXT_BATCH.replace("> Estado: open", "> Estado: done");
+    expect(preparePlanExecBatchPublication(header, input)).toMatchObject({
+      ok: false,
+      failure: { code: "PLAN_EXEC_BATCH_STALE", action: expect.stringContaining("Estado: done") },
+    });
+    const prose = PLAN_WITH_NEXT_BATCH.replace("primer trabajo ya hecho", "texto modificado");
+    expect(preparePlanExecBatchPublication(prose, input)).toMatchObject({
+      ok: false,
+      failure: {
+        code: "PLAN_EXEC_BATCH_STALE",
+        action: expect.stringContaining("texto modificado"),
+      },
+    });
+    const mixed = prose.replace(/\n/g, "\r\n");
+    expect(preparePlanExecBatchPublication(mixed, input)).toMatchObject({
+      ok: false,
+      failure: { action: expect.stringContaining("fin de línea") },
+    });
+    expect(preparePlanExecBatchPublication(prose, { ...input, sealed_text: null })).toMatchObject({
+      ok: false,
+      failure: { action: expect.stringContaining("no hay copia") },
+    });
+    expect(preparePlanExecBatchPublication(prose, { ...input, sealed_text: prose })).toMatchObject({
+      ok: false,
+      failure: { code: "PLAN_EXEC_BATCH_SNAPSHOT_INVALID" },
+    });
+  });
+
+  it("la cabecera de cierre en CRLF no duplica Estado ni cambia los fines de línea", () => {
+    const text = PLAN.replace("> Estado: en ejecución", "> Estado: validada")
+      .replaceAll("- [ ]", "- [x]")
+      .replace(/\n/g, "\r\n");
+    const closed = preparePlanExecDoneSeal(text, {
+      plan: "docs/plans/032-plan-batch.md",
+      closure: "2026-09-27 · sesión 241",
+    });
+    expect(closed.ok).toBe(true);
+    if (closed.ok) {
+      expect(closed.prepared.content.match(/> Estado: done/g)).toHaveLength(1);
+      expect(closed.prepared.content.replace(/\r\n/g, "")).not.toContain("\n");
+    }
+  });
+
+  it("una marca de F4 citada fuera de Tasks no pertenece al lote", () => {
+    const sealed = PLAN.replace(
+      "## Tasks",
+      "## Solution\n### F4 — ejemplo\n> Estado: pendiente\n\n## Tasks",
+    );
+    const inferred = inferPlanExecBatch(sealed, {
+      id: "batch-1",
+      iteration: 1,
+      mode: "isolated",
+      phases: [4],
+    });
+    if (!inferred.ok) throw new Error(inferred.failure.message);
+    const current = sealed.replace(
+      "### F4 — ejemplo\n> Estado: pendiente",
+      "### F4 — ejemplo\n> Estado: validada",
+    );
+    expect(
+      preparePlanExecBatchPublication(current, {
+        plan: "docs/plans/032-plan-batch.md",
+        batch: inferred.batch,
+        sealed_text: sealed,
+        completed_tasks: inferred.batch.tasks,
+        phase_updates: [{ phase: 4, state: "validada" }],
+        transition: "plan-exec.batch-close",
+      }),
+    ).toMatchObject({ ok: false, failure: { code: "PLAN_EXEC_BATCH_STALE" } });
+  });
   it.each(["", "## Execution batches\n- B1 · continuous · F1-F4"])(
     "no sella un rango ilegible cuando las fases están desordenadas (%s)",
     (batches) => {
@@ -282,6 +405,7 @@ describe("plan-exec batch publication", () => {
     if (!done.ok) throw new Error(done.failure.message);
     expect(done.prepared.content).toContain("> Estado: done");
     expect(done.prepared.content).toContain("> Cierre: validación final, commits e integración");
+    expect(done.prepared.content).toContain("> Assurance: verified");
     expect(done.prepared.content).not.toContain("> Baseline:");
 
     const retry = preparePlanExecDoneSeal(done.prepared.content, {

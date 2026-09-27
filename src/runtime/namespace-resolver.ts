@@ -135,6 +135,7 @@ export class NamespaceResolver {
   ): Promise<{ root: string; namespace: Namespace } | null> {
     let dir = cwd;
     while (true) {
+      if (dir === this.env.homeDir()) return null;
       const matches = await this.namespacesAt(dir);
       if (matches.length > 1) throw new WorklineDirectoryError(dir, matches);
       const [namespace] = matches;
@@ -148,6 +149,7 @@ export class NamespaceResolver {
   private async findMarkerForNamespace(cwd: string, namespace: Namespace): Promise<string | null> {
     let dir = cwd;
     while (true) {
+      if (dir === this.env.homeDir()) return null;
       if (await isWorklineRoot(this.fs, dir, namespace)) return dir;
       const parent = dirname(dir);
       if (parent === dir) return null;

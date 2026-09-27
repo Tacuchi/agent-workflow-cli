@@ -358,6 +358,25 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(true);
   });
 
+  it("finalize libera una unidad cuyos commits están sólo preservados en origin", async () => {
+    const unit = await unitOf(DOS);
+    commitIn(unit, PROPIO_DOS, "export const dos = 2;\n", "beta preservada");
+    git(
+      source,
+      "update-ref",
+      "refs/remotes/origin/preserved",
+      git(unit, "rev-parse", "HEAD").trim(),
+    );
+    const closed = await walk.executor()(
+      { kind: "internal", operation: "session.close" },
+      { session: DOS.folder, code: DOS.code, scope: null, proposal: null },
+    );
+    expect(closed.ok).toBe(true);
+    expect(closed.summary).toContain("preservadas liberadas: acme");
+    expect(existsSync(unit)).toBe(false);
+    expect(git(source, "branch", "--list", "aw/*")).toContain("aw/");
+  });
+
   it("finalize conserva el gate de la fuente presente y cierra avisando la no verificable", async () => {
     const portable = block(source).replace(
       `| ${ALIAS} | ${source} | main |`,
@@ -530,7 +549,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     });
   });
 
-  it("el cierre a mano sigue cerrando, y su recibo conserva el remedio de reapertura", async () => {
+  it("el cierre a mano conserva la unidad y ofrece integración directa sin reapertura", async () => {
     const dos = await unitOf(DOS);
     commitIn(dos, PROPIO_DOS, "export const dos = 2;\n", "beta");
 
@@ -545,19 +564,13 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     expect(closed.sessionClose.pending_integration?.[0]?.command).toBe(
       `aw worktree integrate --source ${ALIAS} --code ${DOS.folder}`,
     );
-    // Y acá el remedio que antes faltaba: cerrada la sesión, ese comando ya no
-    // resuelve, así que el recibo tiene que decir cómo volver.
-    expect(closed.sessionClose.reopen).toBe(`aw session-resume --code ${DOS.folder} --reopen`);
+    expect(closed.sessionClose.integrate).toBe(`aw worktree integrate --code ${DOS.folder}`);
 
-    // La prueba de que hacía falta: sin reabrir, la integración se niega — y lo
-    // dice con el motivo del resolver, no con un "pasá --code" que ya se pasó.
-    const negada = await runWorktree(deps, {
+    const integrated = await runWorktree(deps, {
       action: "integrate",
       alias: ALIAS,
       sessionCode: DOS.code,
     });
-    if (!("error" in negada)) throw new Error("una sesión cerrada no puede integrar");
-    expect(negada.error).toBe("session_unresolved");
-    expect(negada.hint).toContain("--reopen");
+    expect(integrated).toMatchObject({ integrated: true, released: true });
   });
 });
