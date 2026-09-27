@@ -189,17 +189,24 @@ it("commitea sólo las rutas declaradas en la rama del checkout, sin crear aw/*"
   expect(shared.ok).toBe(false);
   expect(command("log", "-1", "--format=%s")).toBe("base");
   await writeFile(join(repo, "user.txt"), "edición del usuario\n");
+  // Git completed the approved commit, but the process died before writing its receipt.
+  const gitOnly = await git.commitPaths(repo, "feat: corrida in-place", ["run.txt"]);
+  const interrupted = await readRun(fs, locateRun(paths, session));
+  expect(interrupted.ok && interrupted.state.batches?.[0]?.commit_result).toBeUndefined();
   const committed = await internalActionExecutor({ fs, git, env, paths })(
     { operation: "plan-exec.batch-commit" },
     { session, code: session, scope, proposal: null, state_digest: updated.digest },
   );
   expect(committed.ok).toBe(true);
+  expect(command("rev-parse", "HEAD")).toBe(gitOnly.after);
+  expect(command("rev-list", "--count", `${gitOnly.before}..HEAD`)).toBe("1");
   expect(command("branch", "--show-current")).toBe("feature/verificaciones-rechazo");
   expect(command("show", "--format=", "--name-only", "HEAD")).toBe("run.txt");
   expect(command("status", "--short")).toContain("user.txt");
   expect(command("status", "--short")).toContain("stranger.txt");
   const afterClose = await readRun(fs, locateRun(paths, session));
   if (!afterClose.ok) throw new Error(JSON.stringify(afterClose));
+  expect(afterClose.state.batches?.[0]?.commit_result?.codigo).toEqual(gitOnly);
   const finished = await preserveBoundaryClose(fs, paths, git, afterClose.state, []);
   expect(finished.join(" ")).not.toContain("sin commitear");
   expect(command("branch", "--list", "aw/*")).toBe("");

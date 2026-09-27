@@ -219,6 +219,7 @@ async function resolveWorklineDirectory(
     const bypass =
       parsed.command === "tool" ||
       parsed.command === "self" ||
+      parsed.command === "context-budget" ||
       isMcpStdioInvocation(parsed) ||
       parsed.flags.has("--help") ||
       parsed.flags.has("-h") ||

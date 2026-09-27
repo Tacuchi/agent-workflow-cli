@@ -33,7 +33,8 @@ function compareSemver(a: string, b: string): number {
     const delta = (left[index] ?? 0) - (right[index] ?? 0);
     if (delta !== 0) return delta;
   }
-  return 0;
+  // A development `-next` snapshot follows the actual release with the same numbers.
+  return a.localeCompare(b);
 }
 
 /** Every frozen release, oldest first. */

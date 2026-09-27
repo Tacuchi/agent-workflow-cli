@@ -225,8 +225,8 @@ export function renderGroupedCommandLines(
 
 /**
  * The same flag contract used by the dispatcher drives command and action help.
- * Historical Usage clauses in `describe` are not authoritative: they may advertise
- * flags belonging to another action or retired flags.
+ * The declared usage is authoritative; historical Usage clauses in `describe`
+ * may advertise flags belonging to another action or retired flags.
  */
 export function commandHelpText(
   command: { name: string; describe?: string; flags?: CommandFlags },
@@ -240,6 +240,11 @@ export function commandHelpText(
   const remainder =
     usageAt < 0 ? "" : description.slice(usageAt).split("\n").slice(1).join("\n").trim();
   const lines = [`agent-workflow ${command.name}${selected ? ` ${selected}` : ""}`, "", firstLine];
+  if (command.flags?.usage) {
+    lines.push("", `Usage: ${command.flags.usage.replace(/^Usage:\s*/, "")}`);
+  } else if (usageAt >= 0) {
+    lines.push("", description.slice(usageAt).split("\n")[0] ?? "");
+  }
   if (actions && selected === undefined) {
     lines.push("", `Subverbos: ${Object.keys(actions).join(", ")}`);
   }
@@ -302,13 +307,15 @@ export function globalHelpText(
     "",
     "Usage:",
     "  agent-workflow [--namespace <name>]",
+    "                 [--workspace <path>]",
     "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
     "                 <command> [args...]",
     "",
     "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
     "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
-    `default '${defaultNamespace}'. Without a marker, the invoked directory is the`,
-    "implicit root; new workspaces materialize .<namespace>/sessions/ on first write.",
+    `default '${defaultNamespace}'. --workspace selects an explicit workspace. Without`,
+    "a marker, a directory outside a git checkout is an implicit root; inside",
+    "an unclaimed checkout, specify --workspace or initialize a workspace.",
     "",
     "Output (any command):",
     "  --format human|json  projection of the result; default human in a terminal, json in a pipe",

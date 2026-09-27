@@ -125,3 +125,31 @@ it("un repo sin hub con marcador en HOME no funda runtime ni edita .gitignore", 
   expect(readdirSync(repo)).not.toContain(".workflow");
   expect(readdirSync(repo)).not.toContain(".gitignore");
 });
+
+it("context-budget mide el bundle desde un checkout sin hub ni --workspace", () => {
+  root = mkdtempSync(join(tmpdir(), "aw-budget-no-hub-"));
+  const home = join(root, "home");
+  const repo = join(root, "repo");
+  mkdirSync(home);
+  mkdirSync(repo);
+  spawnSync("git", ["init", "-q", repo]);
+  const checkout = fileURLToPath(new URL("../../", import.meta.url));
+  const result = spawnSync(
+    process.execPath,
+    [
+      cli,
+      "context-budget",
+      "--root",
+      join(checkout, "skills", "w"),
+      "--baseline",
+      join(checkout, "tests", "fixtures", "context-baseline.json"),
+      "--json",
+    ],
+    { cwd: repo, env: { ...process.env, HOME: home, AW_NAMESPACE: "workflow" }, encoding: "utf8" },
+  );
+  expect(result.status, result.stderr || result.stdout).toBe(0);
+  const body = JSON.parse(result.stdout);
+  expect(body.verdict).toBe("ok");
+  expect(body.offenders).toEqual([]);
+  expect(readdirSync(repo)).not.toContain(".workflow");
+});

@@ -6,6 +6,7 @@ import { projectMdUpsertCommand } from "../../src/cli/commands/project-md-upsert
 import {
   commandHelpText,
   commandSummary,
+  globalHelpText,
   groupCommands,
   renderGroupedCommandLines,
 } from "../../src/cli/help-groups.js";
@@ -142,6 +143,33 @@ describe("renderGroupedCommandLines with describes", () => {
 });
 
 describe("commandHelpText", () => {
+  it("muestra la sintaxis declarada para set-pipeline, doc-branch y workspace-move", () => {
+    const byName = (name: string) => {
+      const command = ALL_COMMANDS.find((item) => item.name === name);
+      if (!command) throw new Error(name);
+      return command;
+    };
+    expect(commandHelpText(byName("set-pipeline"))).toContain(
+      "Usage: aw set-pipeline <alias> <build|test> <comando|ninguno>",
+    );
+    expect(commandHelpText(byName("doc-branch"), "set")).toContain(
+      "aw doc-branch set (--code <NNN>|--doc <tipo:NNN>) --source <alias> (--rama <nombre>|--from <tipo:NNN>)",
+    );
+    expect(commandHelpText(byName("doc-branch"), "show")).toContain(
+      "Usage: aw doc-branch show (--code <NNN>|--doc <spec|plan:NNN|quick:NNN>)",
+    );
+    expect(commandHelpText(byName("workspace-move"))).toContain(
+      "Usage: aw workspace-move <destino> [--dry-run] | aw workspace-move --repair",
+    );
+  });
+
+  it("la ayuda global anuncia --workspace sin prometer una raíz implícita en un checkout", () => {
+    const help = globalHelpText([], new Map(), "workflow");
+    expect(help).toContain("[--workspace <path>]");
+    expect(help).toContain("inside\nan unclaimed checkout, specify --workspace");
+    expect(help).not.toContain("the invoked directory is the\nimplicit root");
+  });
+
   it("renders the command name and its describe (per-subcommand help, not the global list)", () => {
     const out = commandHelpText({
       name: "workspace-init",

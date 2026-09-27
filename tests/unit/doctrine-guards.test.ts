@@ -115,7 +115,7 @@ describe("Reglas de host y verbos vigentes", () => {
     ]) {
       const guide = await readRel(`commands/${name}.md`);
       expect(guide, name).toMatch(/file.tool JSON|JSON with the file tool/);
-      expect(guide, name).toContain(`< <file>`);
+      expect(guide, name).toContain("< <file>");
     }
   });
 

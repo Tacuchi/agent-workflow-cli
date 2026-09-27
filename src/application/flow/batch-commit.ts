@@ -124,6 +124,7 @@ async function recognize(
   head: string,
   branch: string,
   dirty: DirtyPath[],
+  inPlace: boolean,
 ): Promise<CommitReceipt> {
   const info = await deps.git.commitInfo(path, head);
   if (
@@ -132,7 +133,7 @@ async function recognize(
     info.parents[0] !== base.head ||
     info.message !== source.message ||
     info.paths.join("\0") !== [...source.paths].sort().join("\0") ||
-    dirty.length !== 0
+    (inPlace ? dirty.some((entry) => source.paths.includes(entry.path)) : dirty.length !== 0)
   ) {
     throw new Error(`${source.alias}: HEAD se movió con un commit ajeno a la propuesta`);
   }
@@ -178,7 +179,7 @@ async function checkSource(
     return {
       source,
       path,
-      receipt: await recognize(deps, path, source, base, head, branch, dirty),
+      receipt: await recognize(deps, path, source, base, head, branch, dirty, inPlace),
     };
   }
   const proposed = dirty.filter((entry) => source.paths.includes(entry.path));
