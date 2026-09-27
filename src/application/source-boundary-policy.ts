@@ -20,6 +20,7 @@ export const CHECKOUT_EXECUTION_SURFACE: ExecutionSurface = "checkout";
 
 export type SourceBoundaryCode =
   | "PLAN_SOURCE_BOUNDARY_MISSING"
+  | "PLAN_ISOLATION_INVALID"
   | "PLAN_SOURCE_UNKNOWN"
   | "PLAN_TASK_SOURCE_OUTSIDE_PHASE"
   | "PLAN_SOURCE_EXTERNAL_CLOSURE"
@@ -334,6 +335,16 @@ export function validatePlanSourceBoundary(
 ): SourceBoundaryFailure[] {
   const parsed = parsePlanSourceBoundary(text);
   const failures: SourceBoundaryFailure[] = [];
+  const header = text.split(/^## /m, 1)[0] ?? "";
+  for (const [index, line] of header.split("\n").entries()) {
+    const match = /^> Aislamiento:\s*(.*)$/.exec(line);
+    if (match && match[1]?.trim() !== "unidad")
+      failures.push({
+        code: "PLAN_ISOLATION_INVALID",
+        message: "'> Aislamiento:' sólo admite unidad",
+        line: index + 1,
+      });
+  }
   if (parsed.execution_surface !== CHECKOUT_EXECUTION_SURFACE) {
     failures.push({
       code: "PLAN_SOURCE_BOUNDARY_MISSING",

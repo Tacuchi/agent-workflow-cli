@@ -263,12 +263,13 @@ describe("selfInstallHooks", () => {
   // mergeados en settings.json tal cual, sin transformación y sin pérdidas. Los
   // demás tests de claude usan una plantilla de 3 eventos; este cierra la
   // distancia entre "el merge funciona" y "el merge funciona con lo que enviamos".
-  it("claude: la plantilla REAL del bundle mergea sus 5 eventos sin transformar ni degradar", async () => {
+  it("claude: la plantilla REAL del bundle mergea sus 6 eventos sin transformar ni degradar", async () => {
     const bundled = await resolveBundledHookTemplate();
     expect(bundled, "la plantilla del bundle tiene que resolverse").not.toBeNull();
     const template = JSON.parse(await readFile(bundled as string, "utf8"));
     const events = Object.keys(template.hooks);
     expect(events).toEqual([
+      "UserPromptSubmit",
       "SessionStart",
       "PreToolUse",
       "SessionEnd",

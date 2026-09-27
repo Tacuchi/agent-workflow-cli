@@ -282,6 +282,9 @@ function passOver(
   // copy of a conditional row still reads the observation made before the copy.
   const observed = conditionOf(decision)?.threshold.observed ?? decision.id;
   const conditional =
+    (decision.id === "plan-exec.unit-integration" && state.scope?.isolation === "in-place"
+      ? "in-place: sin unidad que integrar"
+      : null) ??
     batchCommitSkip(state, decision) ??
     validationOnlySkip(state, decision) ??
     routeSkipReason(state, decision) ??
@@ -1233,7 +1236,10 @@ function boundaryTitle(state: FlowRunState, decision: FlowDecision): string {
     const batch = state.batches?.find((item) => item.iteration === state.batch_loop?.iteration);
     const preview =
       batch?.commit_proposal?.sources
-        .map((source) => `${source.alias}: ${source.message} — ${source.paths.join(", ")}`)
+        .map(
+          (source) =>
+            `${source.alias}: ${source.message} — ${source.paths.join(", ")}${source.foreign_paths?.length ? `; ajenas fuera del commit: ${source.foreign_paths.join(", ")}` : ""}`,
+        )
         .join("; ") ?? "sin propuesta";
     return `${decision.title}: ${preview}`;
   }

@@ -113,6 +113,7 @@ reconciliation** in `CHECKPOINT`, never reported as published.
 
 - Walk the plan's `### Fn` blocks under `## Tasks` in dependency order inside one session. Infer
   effective `continuous`/`isolated` batches first; legacy `## Phases` tables degrade the same way.
+- In-place `branch-precondition`: clean on another branch → offer switch, change document branch or cancel; dirty on another branch → pause; expected branch with user changes → proceed. Switch only with consent; the hook guards edits and the commit fences HEAD/branch against acquisition.
 - **Execution-unit cycle:** seed one batch intent; implement all its phases in order; validate and
   review at unit close; then update states/`CHECKPOINT` and enter Git. An isolated unit contains
   one phase. A continuous unit follows `PLAN-EXECUTION-BATCHES`: no proof, runner, build, lint,
@@ -254,7 +255,7 @@ without subagents runs a clean re-read instead, and the closing report declares 
 
 - A phase closes as `validada` only after its exit, proof and batch review pass. An operative handoff leaves it `bloqueada` and uncommitted.
 - Check each known outdated spec/plan line with `aw amend apply … --check` before closing; propose its path, edit only with approval.
-- **The plan's own state is the third axis, and it stays `open` during the whole run.** Every phase `validada` is **not** the plan closed: the final validation still has to run. Keep `> Estado: open` under the title while executing — stamping it on the first write if the plan carries none — and never write `done` from the counters — a legacy plan with every box ticked is not closed by that fact (§ *Legacy plans degrade safely*).
+- **The plan stays `open` until final validation.** Every phase `validada` is **not** the plan closed; keep `> Estado: open` under the title (stamp it if absent); never write `done` from the counters (§ *Legacy plans degrade safely*).
 - **Every phase `validada` + final validation passed** unlocks completion, and the mark is written
   **after Git**: commit each unit, integrate it, and only then seal `done`. A run that isolates its
   writing holds commits that live on `aw/<session>` and nowhere else, so a `done` stamped before the

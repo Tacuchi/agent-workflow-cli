@@ -177,6 +177,8 @@ export type PreservedSlot =
   | "status:defaults"
   | "status:working"
   | "status:qa"
+  | "status:exceptions"
+  | "status:edit-mode"
   | "status:activity"
   | "status:historico"
   /**
@@ -206,6 +208,8 @@ export interface ParsedProjectBlock {
   default_branches: DefaultBranches;
   working_branches: Record<string, string>;
   qa_branches: Record<string, string>;
+  exception_branches?: Record<string, string>;
+  edit_mode?: "in-place" | "unit";
   last_activity: string | null;
   /** Foreign lines kept verbatim. Absent (not empty) when the block is clean. */
   preserved_lines?: PreservedLine[];
@@ -300,6 +304,10 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
     default_branches: status.defaultBranches,
     working_branches: status.workingBranches,
     qa_branches: status.qaBranches,
+    ...(Object.keys(status.exceptionBranches).length
+      ? { exception_branches: status.exceptionBranches }
+      : {}),
+    ...(status.editMode ? { edit_mode: status.editMode } : {}),
     last_activity: status.lastActivity,
   };
   const preserved = [
@@ -440,12 +448,14 @@ interface StatusBlock {
   defaultBranches: DefaultBranches;
   workingBranches: Record<string, string>;
   qaBranches: Record<string, string>;
+  exceptionBranches: Record<string, string>;
+  editMode?: "in-place" | "unit";
   lastActivity: string | null;
   preserved: PreservedLine[];
   dropped: string[];
 }
 
-type StatusSection = "none" | "defaults" | "working" | "qa";
+type StatusSection = "none" | "defaults" | "working" | "qa" | "exceptions";
 type StatusSlot = Extract<PreservedSlot, `status:${string}`>;
 
 const DEFAULT_BRANCH_KEYS: ReadonlySet<string> = new Set(["principal", "desarrollo", "qa"]);
@@ -460,6 +470,8 @@ function parseStatusBlock(text: string, knownAliases: ReadonlySet<string>): Stat
   const defaultBranches: DefaultBranches = {};
   const workingBranches: Record<string, string> = {};
   const qaBranches: Record<string, string> = {};
+  const exceptionBranches: Record<string, string> = {};
+  let editMode: "in-place" | "unit" | undefined;
   const preserved: PreservedLine[] = [];
   const dropped: string[] = [];
   let lastActivity: string | null = null;
@@ -476,6 +488,7 @@ function parseStatusBlock(text: string, knownAliases: ReadonlySet<string>): Stat
       if (transition.lastActivity !== undefined) {
         lastActivity = transition.lastActivity;
       }
+      if (transition.editMode !== undefined) editMode = transition.editMode;
       continue;
     }
     const record = readNestedRecord(raw, stripped);
@@ -483,7 +496,7 @@ function parseStatusBlock(text: string, knownAliases: ReadonlySet<string>): Stat
       preserved.push({ slot, text: trimTrailing(raw) });
       continue;
     }
-    const out = { defaultBranches, workingBranches, qaBranches };
+    const out = { defaultBranches, workingBranches, qaBranches, exceptionBranches };
     if (acceptRecord(section, record, out, knownAliases)) continue;
     // Shape matched but the block cannot honour the key. Indentation decides
     // WHERE it goes, and only here: an indented entry is one this CLI wrote, so
@@ -494,7 +507,16 @@ function parseStatusBlock(text: string, knownAliases: ReadonlySet<string>): Stat
     else preserved.push({ slot, text: trimTrailing(raw) });
   }
 
-  return { defaultBranches, workingBranches, qaBranches, lastActivity, preserved, dropped };
+  return {
+    defaultBranches,
+    workingBranches,
+    qaBranches,
+    exceptionBranches,
+    ...(editMode ? { editMode } : {}),
+    lastActivity,
+    preserved,
+    dropped,
+  };
 }
 
 /**
@@ -526,6 +548,7 @@ interface StatusRecords {
   defaultBranches: DefaultBranches;
   workingBranches: Record<string, string>;
   qaBranches: Record<string, string>;
+  exceptionBranches: Record<string, string>;
 }
 
 /** True when the record was stored; false when the block cannot honour it. */
@@ -542,7 +565,12 @@ function acceptRecord(
     return true;
   }
   if (!knownAliases.has(record.key)) return false;
-  const target = section === "working" ? out.workingBranches : out.qaBranches;
+  const target =
+    section === "working"
+      ? out.workingBranches
+      : section === "qa"
+        ? out.qaBranches
+        : out.exceptionBranches;
   target[record.key] = record.value;
   return true;
 }
@@ -552,13 +580,23 @@ function transitionSection(stripped: string): {
   next: StatusSection;
   slot: StatusSlot;
   lastActivity?: string | null;
+  editMode?: "in-place" | "unit";
 } {
+  if (stripped === "- Modo de edición: in-place" || stripped === "- Modo de edición: unit")
+    return {
+      handled: true,
+      next: "none",
+      slot: "status:edit-mode",
+      editMode: stripped.endsWith("in-place") ? "in-place" : "unit",
+    };
   if (stripped.startsWith("- Ramas por defecto:"))
     return { handled: true, next: "defaults", slot: "status:defaults" };
   if (stripped.startsWith("- Ramas de trabajo actuales:"))
     return { handled: true, next: "working", slot: "status:working" };
   if (stripped.startsWith("- Ramas QA actuales:"))
     return { handled: true, next: "qa", slot: "status:qa" };
+  if (stripped.startsWith("- Ramas de excepción:"))
+    return { handled: true, next: "exceptions", slot: "status:exceptions" };
   if (stripped.startsWith("- Última actividad:")) {
     const idx = stripped.indexOf(":");
     return {
