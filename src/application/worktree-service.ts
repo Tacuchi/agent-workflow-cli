@@ -193,6 +193,8 @@ export interface WorktreeIntegrateSessionOutput {
   reclaimed: ReclaimedUnit[];
   /** Units of this session left standing, each with why and its next step. */
   retained: RetainedUnit[];
+  /** Declared sources whose units could not be inspected on this host. */
+  unreadable?: WorktreeListOutput["unreadable"];
   /** What to run for the first pending alias or retained unit; `null` when there is none. */
   next: string | null;
 }
@@ -319,8 +321,20 @@ async function integrateSession(
   const swept = await reclaimUnits(deps, { action: "reclaim", sessionCode: session });
   const residue =
     "error" in swept
-      ? { reclaimed: [] as ReclaimedUnit[], retained: [] as RetainedUnit[], next: null }
+      ? {
+          reclaimed: [] as ReclaimedUnit[],
+          retained: [] as RetainedUnit[],
+          unreadable: [
+            { alias: "workspace", error: swept.message },
+          ] as WorktreeReclaimOutput["unreadable"],
+          next: null,
+        }
       : swept;
+  const unreadable = [
+    ...new Map(
+      [...listed.unreadable, ...residue.unreadable].map((item) => [item.alias, item] as const),
+    ).values(),
+  ];
   // An alias whose unit was collected is no longer holding one, so it leaves
   // `pending`. That is not hiding its refusal — the refusal stays in `results` —
   // it is that a unit with nothing the working branch lacks had no merge pending
@@ -337,7 +351,13 @@ async function integrateSession(
     pending: holding,
     reclaimed: residue.reclaimed,
     retained: residue.retained,
-    next: (first !== undefined ? (nextOf.get(first) ?? null) : null) ?? residue.next,
+    ...(unreadable.length > 0 ? { unreadable } : {}),
+    next:
+      (first !== undefined ? (nextOf.get(first) ?? null) : null) ??
+      residue.next ??
+      (unreadable[0]?.code === "SOURCE_PATH_MISSING"
+        ? `aw add-source ${unreadable[0].alias}:<ruta>`
+        : null),
   };
 }
 
@@ -933,7 +953,11 @@ async function reclaimUnits(
     reclaimed,
     retained,
     unreadable,
-    next: retained[0]?.next ?? null,
+    next:
+      retained[0]?.next ??
+      (unreadable[0]?.code === "SOURCE_PATH_MISSING"
+        ? `aw add-source ${unreadable[0].alias}:<ruta>`
+        : null),
   };
 }
 

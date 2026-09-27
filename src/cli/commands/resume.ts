@@ -54,14 +54,18 @@ export const resumeCommand: CliCommand<ResumeOutcome> = {
   renderHuman(result: CommandResult<ResumeOutcome>, context: HumanRenderContext): string {
     const outcome = result.data;
     if (outcome === undefined) return "";
+    const notice =
+      outcome.unreadable_sources?.length || outcome.isolation_error
+        ? `\nFuentes sin ruta o unidades no verificables:\n${(outcome.unreadable_sources ?? []).map((item) => `  ${item.alias}: ${item.error}\n`).join("")}${outcome.isolation_error ? `  ${outcome.isolation_error}\n` : ""}`
+        : "";
     switch (outcome.status) {
       case "idle":
       case "invalid_target":
-        return `${outcome.action}\n`;
+        return `${outcome.action}\n${notice}`;
       case "proposal":
-        return renderRecommendation(outcome.proposal, outcome.candidates, context.detail);
+        return renderRecommendation(outcome.proposal, outcome.candidates, context.detail) + notice;
       case "candidates":
-        return renderCandidates(outcome.candidates, outcome.action, context.detail);
+        return renderCandidates(outcome.candidates, outcome.action, context.detail) + notice;
     }
   },
 };

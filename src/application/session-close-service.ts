@@ -84,6 +84,8 @@ export interface SessionCloseOutput {
    * a different fact from "there was nothing to integrate".
    */
   pending_integration_error?: string;
+  /** Sources with no resolvable location here: their units could not be verified. */
+  unverifiable_sources?: Array<{ alias: string; reason: string }>;
   /**
    * Numbering reservations this session held and never completed, now removed.
    *
@@ -210,6 +212,7 @@ export async function runSessionClose(
 /** Units survived the close: say so, and say how to come back for them. */
 function reportHeld(output: SessionCloseOutput, folder: string, units: HeldUnits): void {
   if (units.error !== undefined) output.pending_integration_error = units.error;
+  if (units.unverifiable.length > 0) output.unverifiable_sources = units.unverifiable;
   if (units.held.length === 0) return;
   output.pending_integration = units.held;
   output.reopen = `aw session-resume --code ${folder} --reopen`;
@@ -242,13 +245,24 @@ function refuseHeld(code: string, folder: string, units: HeldUnits): SessionClos
 
 /** Reads this workspace's live isolation units; absent when the caller has no git port. */
 export type IsolationReader = () => Promise<
-  Array<{ alias: string; session: string; path: string; branch: string; dirty?: boolean | null }>
+  | Array<{ alias: string; session: string; path: string; branch: string; dirty?: boolean | null }>
+  | {
+      units: Array<{
+        alias: string;
+        session: string;
+        path: string;
+        branch: string;
+        dirty?: boolean | null;
+      }>;
+      unreadable: Array<{ alias: string; error: string; code?: string }>;
+    }
 >;
 
 /** What the session holds, and whether that reading could be made at all. */
 interface HeldUnits {
   held: NonNullable<SessionCloseOutput["pending_integration"]>;
   error?: string;
+  unverifiable: NonNullable<SessionCloseOutput["unverifiable_sources"]>;
 }
 
 /**
@@ -264,17 +278,30 @@ async function heldUnits(
   isolation: IsolationReader | undefined,
   folder: string,
 ): Promise<HeldUnits> {
-  if (isolation === undefined) return { held: [] };
-  let units: Awaited<ReturnType<IsolationReader>>;
+  if (isolation === undefined) return { held: [], unverifiable: [] };
+  let inventory: Awaited<ReturnType<IsolationReader>>;
   try {
-    units = await isolation();
+    inventory = await isolation();
   } catch (error) {
     return {
       held: [],
+      unverifiable: [],
       error: `no se pudieron leer las unidades de ${folder}: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+  const units = Array.isArray(inventory) ? inventory : inventory.units;
+  const unreadable = Array.isArray(inventory) ? [] : inventory.unreadable;
+  const unverifiable = unreadable
+    .filter((item) => item.code === "SOURCE_PATH_MISSING")
+    .map((item) => ({ alias: item.alias, reason: item.error }));
+  const otherErrors = unreadable.filter((item) => item.code !== "SOURCE_PATH_MISSING");
   return {
+    unverifiable,
+    ...(otherErrors.length > 0
+      ? {
+          error: `inventario ilegible: ${otherErrors.map((item) => `${item.alias}: ${item.error}`).join("; ")}`,
+        }
+      : {}),
     held: units
       .filter((u) => u.session === folder)
       .map((u) => ({

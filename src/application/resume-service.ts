@@ -24,6 +24,7 @@ import {
   specDetail,
   unresolvedDesignRefs,
 } from "./workline-index-service.js";
+import type { WorktreeListOutput } from "./worktree-service.js";
 
 /**
  * `resume` — what to pick up, and the exact command that continues it.
@@ -96,7 +97,7 @@ export interface ResumeProposal {
   scope?: FlowRunScope;
 }
 
-export type ResumeOutcome =
+export type ResumeOutcome = (
   | {
       status: "proposal";
       via: "explicit" | "pipeline";
@@ -110,7 +111,8 @@ export type ResumeOutcome =
     }
   | { status: "candidates"; candidates: ResumeProposal[]; action: string }
   | { status: "idle"; action: string }
-  | { status: "invalid_target"; target: string; action: string };
+  | { status: "invalid_target"; target: string; action: string }
+) & { unreadable_sources?: WorktreeListOutput["unreadable"]; isolation_error?: string };
 
 export async function runResume(
   fs: FileSystemPort,
@@ -131,9 +133,19 @@ export async function runResume(
     };
   }
 
-  if (input.code !== undefined) return await resumeSession(fs, paths, index, input);
-  if (input.target !== undefined) return resumeTarget(index, input.target);
-  return resumePipeline(index);
+  const outcome =
+    input.code !== undefined
+      ? await resumeSession(fs, paths, index, input)
+      : input.target !== undefined
+        ? resumeTarget(index, input.target)
+        : resumePipeline(index);
+  return {
+    ...outcome,
+    ...(index.unreadable_sources !== undefined
+      ? { unreadable_sources: index.unreadable_sources }
+      : {}),
+    ...(index.isolation_error !== undefined ? { isolation_error: index.isolation_error } : {}),
+  };
 }
 
 // ── explicit target ──────────────────────────────────────────────────────────

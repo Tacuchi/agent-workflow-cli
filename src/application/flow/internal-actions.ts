@@ -1493,7 +1493,14 @@ async function close(
     );
   }
   const pending = boundaryClose
-    ? await preserveBoundaryClose(deps.fs, deps.paths, deps.git, read.state, listed.units)
+    ? await preserveBoundaryClose(
+        deps.fs,
+        deps.paths,
+        deps.git,
+        read.state,
+        listed.units,
+        listed.unreadable ?? [],
+      )
     : [];
   const result = await runSessionClose(
     deps.fs,
@@ -1505,7 +1512,7 @@ async function close(
         ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
         : [],
     },
-    async () => listed.units,
+    async () => ({ units: listed.units, unreadable: listed.unreadable ?? [] }),
   );
   if ("sessionHeld" in result) {
     const held = result.sessionHeld;
@@ -1526,7 +1533,7 @@ async function close(
   }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

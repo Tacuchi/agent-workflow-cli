@@ -16,11 +16,15 @@ import { runMultiroot } from "../../src/application/multiroot-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { buildProjectTabData } from "../../src/application/project-tab-data.js";
 import { getDocsDir } from "../../src/application/release-data/common.js";
+import { runResume } from "../../src/application/resume-service.js";
 import { runSources } from "../../src/application/sources-service.js";
+import { runStatusCommand } from "../../src/application/status-service.js";
 import { runVisibilityDoctor } from "../../src/application/visibility-doctor-service.js";
 import { runWorktree } from "../../src/application/worktree-service.js";
 import { fixGitCommand } from "../../src/cli/commands/fix-git.js";
+import { resumeCommand } from "../../src/cli/commands/resume.js";
 import { setWorkingBranchCommand } from "../../src/cli/commands/set-branch.js";
+import { statusCommand } from "../../src/cli/commands/status.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { unitPath, workspaceKey } from "../../src/domain/isolation-unit.js";
@@ -246,4 +250,23 @@ it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin inv
   const project = await buildProjectTabData({ fs, env, git, process: proc, paths });
   expect(project.git).toBeNull();
   expect(project.sources[0]?.error).toContain("la ruta de la fuente remoto no existe en este host");
+});
+
+it("status y resume no descartan la fuente ausente ni en JSON ni en la salida humana", async () => {
+  const { fs, env, git, paths } = await missingHub();
+  const status = await runStatusCommand(fs, env, paths, { git });
+  expect(status.unreadable_sources).toEqual([
+    expect.objectContaining({ alias: "remoto", code: "SOURCE_PATH_MISSING" }),
+  ]);
+  const renderedStatus = statusCommand.renderHuman?.({ ok: true, data: status, exitCode: 0 }, {
+    detail: false,
+  } as never);
+  expect(renderedStatus).toContain("aw add-source remoto:<ruta>");
+
+  const resumed = await runResume(fs, env, paths, { git });
+  expect(resumed.unreadable_sources?.[0]?.alias).toBe("remoto");
+  const renderedResume = resumeCommand.renderHuman?.({ ok: true, data: resumed, exitCode: 0 }, {
+    detail: false,
+  } as never);
+  expect(renderedResume).toContain("aw add-source remoto:<ruta>");
 });

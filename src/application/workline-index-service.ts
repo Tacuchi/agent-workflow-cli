@@ -65,7 +65,7 @@ import { findArtifact } from "./session-artifacts.js";
 import { readSessionPhase } from "./session-narrative.js";
 import { SessionsService } from "./sessions-service.js";
 import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
-import { type OrphanUnit, runWorktree } from "./worktree-service.js";
+import { type OrphanUnit, type WorktreeListOutput, runWorktree } from "./worktree-service.js";
 
 /**
  * The one reading of the workspace's Workline documents.
@@ -475,6 +475,9 @@ export interface WorklineIndex {
    * uncommitted.
    */
   orphan_units: OrphanUnit[];
+  /** Sources not inspectable here: a partial worktree inventory is never an empty one. */
+  unreadable_sources?: WorktreeListOutput["unreadable"];
+  isolation_error?: string;
   /**
    * Retirements left IN FLIGHT — neither applied nor undone.
    *
@@ -618,6 +621,8 @@ export async function buildWorklineIndex(
     loose_sessions: looseSessions(sessions),
     designs,
     orphan_units: isolation.orphans,
+    ...(isolation.unreadable.length > 0 ? { unreadable_sources: isolation.unreadable } : {}),
+    ...(isolation.error !== undefined ? { isolation_error: isolation.error } : {}),
     pending_retirements: await readPendingRetirements(fs, paths),
     reservations: slotScan.slots.map((slot) => ({
       file: slot.path,
@@ -679,23 +684,34 @@ async function readIsolation(
   env: EnvPort,
   paths: PathsService,
   git: GitPort | undefined,
-): Promise<{ bySession: Map<string, SessionUnit[]>; orphans: OrphanUnit[] }> {
-  const empty = { bySession: new Map<string, SessionUnit[]>(), orphans: [] };
+): Promise<{
+  bySession: Map<string, SessionUnit[]>;
+  orphans: OrphanUnit[];
+  unreadable: WorktreeListOutput["unreadable"];
+  error?: string;
+}> {
+  const empty = {
+    bySession: new Map<string, SessionUnit[]>(),
+    orphans: [] as OrphanUnit[],
+    unreadable: [] as WorktreeListOutput["unreadable"],
+  };
   if (git === undefined) return empty;
   let listed: Awaited<ReturnType<typeof runWorktree>>;
   try {
     listed = await runWorktree({ fs, env, git, paths }, { action: "list" });
-  } catch {
-    return empty;
+  } catch (err) {
+    return { ...empty, error: `no se pudieron listar las unidades: ${(err as Error).message}` };
   }
-  if (!("units" in listed)) return empty;
+  if ("error" in listed) return { ...empty, error: listed.message };
+  if (!("units" in listed))
+    return { ...empty, error: "aw worktree list devolvió un inventario inesperado" };
   const bySession = new Map<string, SessionUnit[]>();
   for (const unit of listed.units) {
     const current = bySession.get(unit.session) ?? [];
     current.push({ alias: unit.alias, path: unit.path, branch: unit.branch });
     bySession.set(unit.session, current);
   }
-  return { bySession, orphans: listed.orphans };
+  return { bySession, orphans: listed.orphans, unreadable: listed.unreadable };
 }
 
 // ── pipeline ─────────────────────────────────────────────────────────────────
