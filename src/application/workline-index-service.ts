@@ -31,6 +31,7 @@ import {
   DEFAULT_DOCS_CANON,
   resolveCoreDocsCanon,
 } from "./docs-canon-service.js";
+import { readHistoryRows } from "./history-table.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
@@ -451,6 +452,8 @@ export interface PipelineItem {
 
 export interface WorklineIndex {
   workspace: IndexedWorkspace;
+  /** Newest declared HISTORY date or CHECKPOINT modification day; no stored block timestamp. */
+  last_activity: string | null;
   specs: IndexedSpec[];
   plans: IndexedPlan[];
   sessions: IndexedSession[];
@@ -572,6 +575,7 @@ export async function buildWorklineIndex(
   const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now, heldPaths);
   const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now, heldPaths);
   const sessions = await readSessions(fs, env, paths, now, docs);
+  const lastActivity = await workspaceLastActivity(fs, paths, sessions);
   const isolation = await readIsolation(fs, env, paths, input.git);
   for (const session of sessions) {
     session.units = isolation.bySession.get(session.folder) ?? [];
@@ -613,6 +617,7 @@ export async function buildWorklineIndex(
 
   return {
     workspace,
+    last_activity: lastActivity,
     specs,
     plans,
     sessions,
@@ -637,6 +642,32 @@ export async function buildWorklineIndex(
     ...(slotScan.error !== undefined ? { reservations_error: slotScan.error } : {}),
     ...(canon.ok ? {} : { docs_canon_error: canon.error }),
   };
+}
+
+async function workspaceLastActivity(
+  fs: FileSystemPort,
+  paths: PathsService,
+  sessions: IndexedSession[],
+): Promise<string | null> {
+  const dates: string[] = [];
+  try {
+    if (await fs.exists(paths.cwdHistoryFile())) {
+      for (const row of readHistoryRows(await fs.readText(paths.cwdHistoryFile()))) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(row.date)) dates.push(row.date);
+      }
+    }
+  } catch {
+    // A missing/unreadable record cannot contribute a date.
+  }
+  for (const session of sessions) {
+    if (!session.has_checkpoint) continue;
+    try {
+      dates.push(localDateIso((await fs.stat(join(session.path, "CHECKPOINT.md"))).mtime));
+    } catch {
+      // A checkpoint not stat-able contributes no evidence of activity.
+    }
+  }
+  return dates.sort().at(-1) ?? null;
 }
 
 /**
@@ -1413,7 +1444,7 @@ async function readWorkspace(
       const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
       if (block !== null) configured = true;
       if (block?.proyecto) {
-        name = block.proyecto;
+        name = block.proyecto.split("\n")[0]?.trim() || name;
         break;
       }
     } catch {

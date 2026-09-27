@@ -323,6 +323,9 @@ function targetsOf(ctx: CliContext, action: DoctorBatchAction): string[] {
     case "multiroot.attach":
     case "multiroot.detach":
       return [join(scope, ".claude", "settings.local.json"), join(scope, ".codex", "config.toml")];
+    case "workspace.remove-retired-section":
+    case "skills.migrate-template":
+      return action.locator === null ? [] : [action.locator];
     default:
       return [join(home, ".claude", "settings.json")];
   }

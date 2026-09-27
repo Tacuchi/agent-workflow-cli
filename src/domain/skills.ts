@@ -116,3 +116,6 @@ export const RETIRED_SKILL_IDENTITIES: ReadonlyMap<string, string> = new Map([
     "'ui-spec' es el render legacy y no implementa 'design', cuyo único formato es el UI Design Package v1",
   ],
 ]);
+
+/** Names the Workline bundle itself retired; unknown plugin skills are never inferred retired. */
+export const RETIRED_WORKLINE_SKILLS: ReadonlySet<string> = new Set(["agent-workflow:rules"]);

@@ -148,6 +148,22 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     summary: "quita del host rutas registradas que el workspace no declara",
     verb: () => "aw detach-multiroot --from-sources",
   },
+  {
+    op: "workspace.remove-retired-section",
+    delegates: "applyRetiredSectionRemoval",
+    effects: ["destructive"],
+    expected: "healthy",
+    summary: "quita las secciones que citan comandos o skills retirados del archivo del proyecto",
+    verb: () => "aw doctor prepare --select <hallazgo-archivo>",
+  },
+  {
+    op: "skills.migrate-template",
+    delegates: "applySkillsTomlMigration",
+    effects: ["mutate_overwrite", "destructive"],
+    expected: "healthy",
+    summary: "migra sólo las líneas obsoletas de la plantilla skills.toml",
+    verb: () => "aw doctor prepare --select <hallazgo-skills.toml>",
+  },
 ];
 
 const BY_OP = new Map(DOCTOR_OPERATIONS.map((spec) => [spec.op, spec]));

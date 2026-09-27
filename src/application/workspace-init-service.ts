@@ -85,7 +85,7 @@ export interface WorkspaceInitResult {
   dry_run: boolean;
   workspace: string;
   sources: number;
-  source_actions?: { alias: string; action: "added" | "updated" }[];
+  source_actions?: { alias: string; action: "added" | "updated"; error?: string }[];
   scaffold: ScaffoldSummary;
   /** The exact first-write effects, also present in dry-run. */
   materialization: WorklineMaterialization;
@@ -204,13 +204,17 @@ export async function runWorkspaceInit(
 
   const projectMd = await runProjectMdUpsertWrite(fs, env, wsPaths, upsertInput);
 
-  if ("error" in projectMd) {
+  if ("error" in projectMd || !projectMd.ok) {
+    const cause =
+      "error" in projectMd
+        ? projectMd.error
+        : (projectMd.results?.find((file) => file.error)?.error ?? "el bloque no se publicó");
     return {
       ok: false,
       dry_run: false,
       workspace,
       sources: sources.length,
-      source_actions: sourceActions,
+      source_actions: sourceActions.map((source) => ({ ...source, error: cause })),
       scaffold,
       materialization,
       skills_toml: skillsToml,

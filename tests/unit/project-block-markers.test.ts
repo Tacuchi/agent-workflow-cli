@@ -61,7 +61,8 @@ describe("project-block markers — parametric", () => {
     });
     expect(out.startsWith(DEFAULT_PROJECT_BLOCK_MARKERS.start)).toBe(true);
     expect(out.endsWith(DEFAULT_PROJECT_BLOCK_MARKERS.end)).toBe(true);
-    expect(out).toContain("- Histórico: `.workflow/HISTORY.md`");
+    expect(out).not.toContain("- Histórico:");
+    expect(out).not.toContain("Última actividad:");
   });
 
   it("render and parse keep caller-provided markers", () => {

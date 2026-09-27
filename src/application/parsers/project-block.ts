@@ -310,8 +310,15 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
     ...foreignSections(inner),
   ];
   if (preserved.length > 0) block.preserved_lines = preserved;
-  if (status.dropped.length + pipelineDropped.length > 0)
-    block.dropped_lines = [...status.dropped, ...pipelineDropped];
+  const projectedBranches = fuentes.workingColumn.filter(
+    (row) => row.value !== (status.workingBranches[row.alias] ?? ""),
+  );
+  if (status.dropped.length + pipelineDropped.length + projectedBranches.length > 0)
+    block.dropped_lines = [
+      ...status.dropped,
+      ...pipelineDropped,
+      ...projectedBranches.map((row) => row.raw),
+    ];
   return block;
 }
 
@@ -357,11 +364,13 @@ function trimTrailing(raw: string): string {
 interface FuentesParse {
   fuentes: ProjectFuente[];
   preserved: PreservedLine[];
+  workingColumn: Array<{ alias: string; value: string; raw: string }>;
 }
 
 function parseFuentesTable(text: string): FuentesParse {
   const fuentes: ProjectFuente[] = [];
   const preserved: PreservedLine[] = [];
+  const workingColumn: FuentesParse["workingColumn"] = [];
   let header: string[] | null = null;
   for (const raw of text.split("\n")) {
     const line = raw.trim();
@@ -398,8 +407,10 @@ function parseFuentesTable(text: string): FuentesParse {
       // Empty cell = undeclared: the workspace default applies at resolution time.
       main_branch: mainBranch !== undefined && mainBranch.length > 0 ? mainBranch : null,
     });
+    if (header[3] === "rama de trabajo")
+      workingColumn.push({ alias, value: cells[3] ?? "", raw: trimTrailing(raw) });
   }
-  return { fuentes, preserved };
+  return { fuentes, preserved, workingColumn };
 }
 
 interface StackParse {

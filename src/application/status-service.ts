@@ -60,6 +60,7 @@ export interface StatusSession {
 
 export interface StatusOutput {
   workspace: IndexedWorkspace;
+  last_activity: string | null;
   specs: IndexedSpec[];
   plans: IndexedPlan[];
   sessions: {
@@ -161,6 +162,7 @@ export async function runStatusCommand(
 
   return {
     workspace: index.workspace,
+    last_activity: index.last_activity,
     specs: index.specs,
     plans: index.plans,
     sessions: { active, closed },

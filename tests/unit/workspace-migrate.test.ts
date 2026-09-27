@@ -10,6 +10,7 @@ import { planWorkspaceMigration } from "../../src/application/workspace-migrate/
 import { workspaceMigrateCommand } from "../../src/cli/commands/workspace-migrate.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import type { FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { dispatch } from "../helpers/dispatch.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -109,6 +110,31 @@ function context(fs: MemFs): CliContext {
 // ─── el hub legacy completo ──────────────────────────────────────────────────
 
 describe("un hub con serie legacy queda operable después de migrarlo", () => {
+  it("un fallo en el segundo espejo revierte ambos bloques migrados", async () => {
+    const fs = hub({ claude: RICH_BLOCK });
+    const agents = "/cwd/AGENTS.md";
+    fs.file(agents, RICH_BLOCK);
+    const originals = [await fs.readText(HUB), await fs.readText(agents)];
+    let failed = false;
+    const injected: FileSystemPort = new Proxy(fs, {
+      get(target, property) {
+        if (property === "writeText") {
+          return async (path: string, text: string) => {
+            if (path === agents && !failed) {
+              failed = true;
+              throw new Error("fallo inyectado en AGENTS.md");
+            }
+            return target.writeText(path, text);
+          };
+        }
+        const value = Reflect.get(target, property);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    await expect(applyWorkspaceMigration(injected, paths)).rejects.toThrow("fallo inyectado");
+    expect([await fs.readText(HUB), await fs.readText(agents)]).toEqual(originals);
+  });
+
   function legacyHub(): MemFs {
     return hub({
       claude: `# CLAUDE.md\n\n${RICH_BLOCK}\n\n${APPENDED_STUB}\n`,

@@ -9,10 +9,12 @@
  * theirs before converging.
  */
 
+import { relative } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { upsertHistoryRow } from "../history-update-service.js";
 import { withCwdLock } from "../lock-service.js";
 import type { PathsService } from "../paths-service.js";
+import { publishArtifacts } from "../semantic-operation/publish.js";
 import {
   type MigrationConflict,
   type WorkspaceMigrationPlan,
@@ -61,8 +63,17 @@ async function writePlan(
   paths: PathsService,
   plan: WorkspaceMigrationPlan,
 ): Promise<void> {
-  for (const hub of plan.markers) {
-    await fs.writeText(hub.path, hub.text);
+  if (plan.markers.length > 0) {
+    const published = await publishArtifacts(
+      fs,
+      plan.workspace,
+      plan.markers.map((hub) => ({
+        path: relative(plan.workspace, hub.path),
+        content: hub.text,
+        overwrite: true,
+      })),
+    );
+    if (!published.ok) throw new Error(published.failure.message);
   }
   for (const seed of plan.sentinels) {
     // Empty, byte for byte what `session-close` writes: the sentinel says

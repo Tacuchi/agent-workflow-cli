@@ -33,6 +33,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
 
     const header = `${data.workspace.name} · ${data.workspace.path}`;
     const lines = [header, ""];
+    if (data.last_activity !== null) lines.push(`Última actividad: ${data.last_activity}`, "");
     lines.push(...renderPipeline(data.pipeline, context.detail));
     // A broken design reference is PENDING work, not history: it stays in the
     // default view for the same reason an open plan does. Valid references and

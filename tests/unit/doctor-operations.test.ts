@@ -180,6 +180,24 @@ const CATALOG: readonly CatalogRow[] = [
     args: { scope: "user" },
     verb: "aw detach-multiroot --from-sources",
   },
+  {
+    op: "workspace.remove-retired-section",
+    module: "../../src/application/doctor/provider-workspace-block.js",
+    delegates: "applyRetiredSectionRemoval",
+    effects: ["destructive"],
+    expected: "healthy",
+    args: { file: "CLAUDE.md" },
+    verb: "aw doctor prepare --select <hallazgo-archivo>",
+  },
+  {
+    op: "skills.migrate-template",
+    module: "../../src/application/doctor/skills-toml-migrate.js",
+    delegates: "applySkillsTomlMigration",
+    effects: ["mutate_overwrite", "destructive"],
+    expected: "healthy",
+    args: { path: "/cwd/.workflow/skills.toml" },
+    verb: "aw doctor prepare --select <hallazgo-skills.toml>",
+  },
 ];
 
 /** Los módulos que la tabla nombra, sin repetir: uno por import. */

@@ -69,7 +69,17 @@ export async function removeSource(
   if (fuente.path !== null) await runMultiroot(fs, env, paths, "detach", { paths: [fuente.path] });
 
   // 3. Prune the WORKSPACE block: Fuentes + working_branches + qa_branches for the alias.
-  await runProjectMdUpsertWrite(fs, env, paths, { op: "init", removeAliases: [alias] });
+  const updated = await runProjectMdUpsertWrite(fs, env, paths, {
+    op: "init",
+    removeAliases: [alias],
+  });
+  if ("error" in updated || !updated.ok)
+    return {
+      error:
+        "error" in updated
+          ? updated.error
+          : (updated.results?.find((file) => file.error)?.error ?? "el bloque no se publicó"),
+    };
   await writeWorkspaceLocalConfig(fs, paths, { [alias]: null });
 
   // 4. Stop running processes launched from this source.
