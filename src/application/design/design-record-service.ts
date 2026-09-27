@@ -18,6 +18,7 @@
 
 import { createHash } from "node:crypto";
 import { join } from "node:path";
+import { parseArtifactRef } from "../../domain/design/identity.js";
 import type { DesignManifest } from "../../domain/design/manifest.js";
 import type { DesignRendition } from "../../domain/design/rendition.js";
 import { validateDesignRendition } from "../../domain/design/rendition.js";
@@ -63,17 +64,24 @@ export async function checkRecordPrecondition(
   }
 
   const catalog = entry.manifest.catalog;
-  const current = await currentDigests(fs, join(workspace, entry.path), catalog);
+  const current = await currentDigests(fs, join(workspace, entry.path), entry.manifest.id, catalog);
 
   const stale: string[] = [];
   const failures: DesignFailure[] = [];
   for (const member of catalog.renditions) {
     const rendition = await readRendition(fs, join(workspace, entry.path), member.path);
     if (rendition === null) continue;
-    const verdict = checkStale(rendition, current);
+    const referenced = new Map(
+      rendition.sources.map((source) => {
+        const ref = parseArtifactRef(source.ref);
+        const key = ref === null ? source.ref : `${ref.package}/${ref.artifact}@r${ref.revision}`;
+        return [source.ref, current.get(key) ?? ""] as const;
+      }),
+    );
+    const verdict = checkStale(rendition, referenced);
     if (verdict === null) continue;
     stale.push(member.id);
-    failures.push(staleFailure(verdict, `${member.path}/rendition.json`));
+    failures.push(staleFailure(verdict, member.path));
   }
 
   return { ok: failures.length === 0, stale, failures };
@@ -83,6 +91,7 @@ export async function checkRecordPrecondition(
 async function currentDigests(
   fs: FileSystemPort,
   packageRoot: string,
+  packageId: string,
   catalog: DesignManifest["catalog"],
 ): Promise<Map<string, string>> {
   const current = new Map<string, string>();
@@ -90,7 +99,10 @@ async function currentDigests(
     for (const member of group) {
       const absolute = join(packageRoot, member.path);
       if (!(await fs.exists(absolute))) continue;
-      current.set(`${member.id}@r${member.revision}`, digestOf(await fs.readBytes(absolute)));
+      current.set(
+        `${packageId}/${member.id}@r${member.revision}`,
+        digestOf(await fs.readBytes(absolute)),
+      );
     }
   }
   return current;
@@ -108,7 +120,7 @@ async function readRendition(
   packageRoot: string,
   memberPath: string,
 ): Promise<DesignRendition | null> {
-  const absolute = join(packageRoot, memberPath, "rendition.json");
+  const absolute = join(packageRoot, memberPath);
   if (!(await fs.exists(absolute))) return null;
   let parsed: unknown;
   try {
@@ -116,7 +128,7 @@ async function readRendition(
   } catch {
     return null;
   }
-  const validation = validateDesignRendition(parsed, `${memberPath}/rendition.json`);
+  const validation = validateDesignRendition(parsed, memberPath);
   return validation.ok ? validation.value : null;
 }
 

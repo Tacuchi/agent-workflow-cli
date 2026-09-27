@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { capabilityCommand } from "../../src/cli/commands/capability.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
@@ -14,6 +17,7 @@ import {
   isIndexable,
   resolveOutputRoot,
 } from "../../src/domain/design/direct.js";
+import { computeSourceDigest } from "../../src/domain/design/rendition.js";
 import { reportRetiredDesign } from "../../src/domain/design/retired.js";
 import {
   type DesignSource,
@@ -332,6 +336,44 @@ describe("F10 · crear fuera de un workspace: un contrato que se pueda contestar
 });
 
 describe("F10 · el receipt lleva los campos de dominio y ninguna ruta simula handoff", () => {
+  it("record prepare bloquea una rendition cuya pantalla cambió después del corte", async () => {
+    const fixture = (name: string): string =>
+      readFileSync(fileURLToPath(new URL(`../fixtures/design/${name}`, import.meta.url)), "utf8");
+    const folder = `${WORKSPACE}/docs/designs/001-design-alta`;
+    const rendition = JSON.parse(fixture("rendition-VIS-001-r001.json")) as Record<string, unknown>;
+    const source = {
+      ref: "DES-001/SCR-001@r1#default",
+      sha256: `sha256:${createHash("sha256").update("pantalla anterior").digest("hex")}`,
+    };
+    rendition.sources = [source];
+    rendition.source_digest = computeSourceDigest([source]);
+    const fs = new MemFs()
+      .file(`${folder}/design-manifest.json`, fixture("manifest-maximal.json"))
+      .file(`${folder}/screens/SCR-001-r001-formulario-alta.md`, "pantalla alterada")
+      .file(
+        `${folder}/renditions/VIS-001-r001-formulario-alta/rendition.json`,
+        JSON.stringify(rendition),
+      );
+    const result = await dispatchCapability(
+      {
+        verb: "prepare",
+        capability: "design",
+        operation: "record",
+        route: "direct",
+        inputs: [
+          text("package", "DES-001"),
+          text("revision", "DES-001@r2"),
+          text("decision", "approve"),
+        ],
+      },
+      context(WORKSPACE, fs),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.code).toBe("DESIGN_RENDITION_STALE");
+  });
+
   it("refuses a compound-design entry when the core documentary canon is invalid", async () => {
     const fs = new MemFs().file(
       `${WORKSPACE}/.workflow/skills.toml`,

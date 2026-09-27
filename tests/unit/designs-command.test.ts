@@ -5,6 +5,7 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { designsCommand } from "../../src/cli/commands/designs.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { HANDOFF_RULES } from "../../src/domain/design/maturity.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
@@ -29,6 +30,23 @@ async function run(fs: MemFs, argv: string[]) {
 }
 
 describe("aw designs — el listado", () => {
+  it("la ayuda publica cada regla de handoff con un código de fallo real", () => {
+    const sources = [
+      readFileSync(
+        fileURLToPath(new URL("../../src/domain/design/maturity.ts", import.meta.url)),
+        "utf8",
+      ),
+      readFileSync(
+        fileURLToPath(new URL("../../src/domain/design/visual-evidence.ts", import.meta.url)),
+        "utf8",
+      ),
+    ];
+    for (const rule of HANDOFF_RULES) {
+      expect(designsCommand.describe).toContain(`${rule.code}: ${rule.description}`);
+      expect(sources.some((source) => source.includes(`code: "${rule.code}"`))).toBe(true);
+    }
+  });
+
   it("proyecta el manifest afuera: un catálogo no es un listado", async () => {
     const result = await run(workspace(), []);
     const data = result.data as { packages: Array<{ id: string; manifest: unknown }> };
