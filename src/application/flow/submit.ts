@@ -100,6 +100,7 @@ import {
   withPlanExecBatchCredit,
   withPlanExecBatchStageForTransition,
   withProposal,
+  withQuickCheckouts,
   withReentry,
   withRouteDecisions,
   withRouteProposal,
@@ -117,6 +118,7 @@ import type { CheckoutIdentity } from "../../domain/source-boundary.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
+import { parseMdSectionBilingual } from "../markdown.js";
 import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
@@ -155,6 +157,7 @@ import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import { closeAtBoundaryState } from "./close-at-boundary.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
+import { observeQuickCheckouts } from "./quick-checkouts.js";
 import { journeyForRun } from "./run-journey.js";
 import { type FlowRunMutation, applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
@@ -310,6 +313,7 @@ interface ScopeSnapshot {
 }
 
 interface Observation {
+  quickCheckouts: Record<string, string> | null;
   /** Resolved once for this submit; decision registration uses the same root. */
   root: string;
   destinations: DestinationSnapshot;
@@ -339,6 +343,7 @@ async function observe(
   const plans = await observePlanArtifacts(fs, paths, raw);
   return {
     root,
+    quickCheckouts: await observeQuickCheckouts(fs, paths, session, git),
     destinations: await observeDestinations(fs, paths, raw),
     scope: await observeScope(fs, paths, raw),
     plans: plans.evidence,
@@ -749,6 +754,12 @@ async function decide(
       parsed.answer,
       selected,
       specPath,
+      state.flow === "quick"
+        ? (parseMdSectionBilingual(
+            await fs.readText(join(paths.cwdSessionsDir(), state.session, "SESSION.md")),
+            "Objective",
+          )?.trim() ?? "")
+        : null,
     );
   }
   // The fix preview is checked HERE and nowhere else: it is a declaration, so no
@@ -862,8 +873,12 @@ async function decide(
   // cuya respuesta se tiraba —así que `Compactar` ahí volvía a una pregunta que
   // ya nadie podía mostrar.
   if (preview.preview !== null) {
-    selectedState = withFixPreview(selectedState, preview.preview);
+    selectedState = withFixPreview(selectedState, {
+      ...preview.preview,
+      ...(snapshot.quickCheckouts === null ? {} : { checkouts: snapshot.quickCheckouts }),
+    });
   }
+  selectedState = withQuickCheckouts(selectedState, snapshot.quickCheckouts);
   // A redraft recorded by `grantOf` inserted rows after this boundary, so the
   // transition is applied against the journey as it now reads.
   const walked = journeyForRun(selectedState);
@@ -2438,6 +2453,7 @@ function applyAndHandoff(
   answer: FlowAnswer,
   outcome: Extract<FlowChoiceOutcome, { kind: "handoff" }>,
   specPath: string | null,
+  request: string | null,
 ): SubmitDecision {
   const plan = state.scope?.plan ?? null;
   if (outcome.destination === "plan-refine" && plan === null) {
@@ -2464,8 +2480,11 @@ function applyAndHandoff(
     // declared preview travels with it — the destination is the one place that
     // rewrites it, and rediscovering it there is exactly what the package exists
     // to avoid.
-    decisions:
-      fixPreview === null ? answer.decisions : { ...answer.decisions, preview: fixPreview },
+    decisions: {
+      ...answer.decisions,
+      ...(fixPreview === null ? {} : { preview: fixPreview }),
+      ...(request === null ? {} : { request }),
+    },
     selection: answer.choice ?? "",
   };
   // The handoff to `spec-refine` used to be the bare command while the one to
@@ -2473,14 +2492,7 @@ function applyAndHandoff(
   // spec again — the escalation package exists precisely so nothing is
   // re-derived at the destination. An unreadable plan degrades to the bare
   // command: an escalation is never blocked over the convenience of an argument.
-  const command =
-    outcome.destination === "plan-refine"
-      ? `/w:plan-refine ${plan}`
-      : outcome.destination === "spec-refine"
-        ? specPath === null
-          ? "/w:spec-refine"
-          : `/w:spec-refine ${specPath}`
-        : "/w:spec-new";
+  const command = handoffCommand(outcome.destination, plan, specPath);
   let next = withSelectedChoice(state, {
     transition: stopped.id,
     label: answer.choice ?? "",
@@ -2498,13 +2510,29 @@ function applyAndHandoff(
     package_digest: semanticDigest(packageBody),
   });
   next = withBoundary(next, journey[next.applied.length]?.id ?? null);
-  const advanced = advanceFlowRun({ state: next, journey, applied: [stepOf(stopped)] });
+  if (state.flow === "quick" && outcome.destination === "spec-new") {
+    const closing = closeAtBoundaryState(next);
+    if (!closing.ok) return closing;
+    next = closing.state;
+  }
+  const advanced = advanceFlowRun({
+    state: next,
+    journey: journeyForRun(next),
+    applied: [stepOf(stopped)],
+  });
   if (!advanced.ok) return { ok: false, failure: advanced.failure };
   return {
     ok: true,
     state: advanced.state,
     value: { directive: advanced.directive, advanced: true },
   };
+}
+
+function handoffCommand(destination: string, plan: string | null, spec: string | null): string {
+  if (destination === "plan-refine") return `/w:plan-refine ${plan}`;
+  if (destination === "spec-refine")
+    return spec === null ? "/w:spec-refine" : `/w:spec-refine ${spec}`;
+  return "/w:spec-new";
 }
 
 /**

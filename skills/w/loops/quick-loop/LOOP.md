@@ -34,7 +34,7 @@ QUICK
 
 ## Internal session
 
-- **ALWAYS** creates a light session with descriptor `<slug>-quick` → `NNN-<slug>-quick` (Type = `quick`, ≈ `exec`): `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (+ `BACKLOG` only if something is deferred). A single session. Research is **inline** inside it (`ANALYSIS-FILE`/`CONCLUSIONS` + read-only `SCRIPTS.sql` in its folder). **Exception:** an entry-gate escalation to SPEC creates no quick session — the run never comes to exist and the session is the `spec-refine-loop` one.
+- **ALWAYS** creates a light session with descriptor `<slug>-quick` → `NNN-<slug>-quick` (Type = `quick`, ≈ `exec`): `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (+ `BACKLOG` only if something is deferred). Research stays **inline** (`ANALYSIS-FILE`/`CONCLUSIONS` + read-only `SCRIPTS.sql`). Escalation closes this session before SPEC continues.
 
 ## Inherits
 
@@ -53,16 +53,16 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 - **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, verify each source's expected branch (`aw check-branch`); **proposed** commit (approve first) — never `push`/`--amend`/`--no-verify`. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql`; fixture/ephemeral checks are local proof and any remote read is research context, never closure.
 - **Fix preview, before executing**: declare the fix you are about to make — files to touch, intent, expected shape of the diff. It is **proportional**: one line for something trivial; approach, files and risks for something complex. Above the same signal threshold that fires the entry size gate (below), a person approves it (`Ejecutar tal cual` · `Ajustar el enfoque` · `Escalar a spec` → *Mid-loop escalation*). **Below the threshold there is no human stop**: the preview stays declared in the session and the task executes.
 - **One session. One commit** proposed at the end (only if there were code changes), **after the proportional closing review gate** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate*): diff re-read + ambient conventions; fix or defer; nothing reaches the commit unreviewed.
-- **Entry SIZE GATE** (before creating the session): a quick that should have been a spec costs more than the ceremony it saved, so the size of the objective is judged **before** anything exists. Your part is recognizing the signals; the threshold, its anti-duplicate search, the question and its options are the CLI's. A signal already resolved by *adopted context* is **not** a signal (chassis § *Adopted context*). A **resume** of an existing quick never re-fires it.
+- **Entry SIZE GATE** (before implementation): a quick that should have been a spec costs more than the ceremony it saved. Recognize the signals; the threshold, anti-duplicate search and alternatives are the CLI's. A signal resolved by *adopted context* is **not** a signal (chassis § *Adopted context*). A **resume** never re-fires the gate.
   - **`Recortar alcance`**, if chosen: propose the **sub-task that DOES fit** a quick (`SESSION.Objective` = the sub-task; the original prompt goes into `## Origin`) and defer the rest to `BACKLOG` ("trimmed at the gate — may warrant its own spec, `/w:spec-new`").
-  - **`Cambiar a SPEC`**, if chosen: **no quick session is created** — run the *Live transition to SPEC* (next bullet).
+  - **`Cambiar a SPEC`** closes the existing quick, preserving its request for *Live transition to SPEC*.
 - **Live transition to SPEC** (shared by the gate and mid-loop escalation). On acceptance, the work line **moves to the SPEC flow**: the explicit consent in the structured-choice **equals invoking the destination command** (*consented exception* — rule 3 of the *Continuity rule*, [`../../SKILL.md`](../../SKILL.md) § *Operating context*). On the SPEC side:
   1. **Materialize the draft** via the [`../../commands/spec-new.md`](../../commands/spec-new.md) procedure: `aw next-number docs/specs --publish spec-<slug>.md` with the finished draft on stdin (one atomic act: number assigned, document written, no reservation left), schema, single-pass **NO RESEARCH** — its bounded reconnaissance does **not** re-fire (this run's context arrives adopted). `## Origin` = "escalated from `/w:quick`" + the original prompt (+ the origin quick session if it exists). The draft is born `status: draft`: only the SPEC gate promotes it to `ready-for-plan`.
   2. **Load and execute** [`../spec-refine-loop/LOOP.md`](../spec-refine-loop/LOOP.md) — over that spec (trampoline pattern).
   3. The run's session is that loop's **normal** `NNN-<slug>-spec-refine` (the CLI numbers it; its `## Origin` records the escalation). **Invariant 2 intact**: quick, while it is quick, never writes `docs/` — the draft is written by the SPEC flow, post-consent.
 - **Mid-loop escalation + handoff**: if the task grows, declare the signals again — the CLI applies the same threshold and, if it fires, asks. If the user accepts moving up:
   1. **Any already-edited code stays** in the working tree (never reverted) and is **recorded** in `CHECKPOINT` + `BACKLOG`: "uncommitted changes in `<source>` — decide commit/discard on resume" (the "rejected commit" pattern of *Safe git*).
-  2. The quick session goes to `finalize` with the **pointer** in `BACKLOG`: to **PLAN** → "escalated to `docs/plans/PPP` — resume there" (**deferred**: seed + pointer, no live entry); to **SPEC** → "escalated to `docs/specs/NNN` — **continued live** (session `NNN-<slug>-spec-refine`)", or "escalated at the preview — continue in `/w:spec-new`" when no code and no `NNN` exist yet.
+  2. The CLI writes the escalation pointer in `BACKLOG` before closing the quick. **SPEC** continues through `/w:spec-new` with the preserved request; **PLAN** stays deferred (seed + pointer, no live entry).
   3. The artifacts (`DECISION`, `SCRIPTS.sql`) **stay in the quick session** as referenceable context, never migrated.
   4. **SPEC enters live**: after `finalize`, run the *Live transition to SPEC* (draft **only if no spec exists** for this objective; then the loop). **Asymmetry** intact: PLAN can **absorb** the progress (plan-exec picks up the existing working tree); SPEC **restarts** the design cycle and treats the half-done code as context/reference, never as ingested work.
 
@@ -71,7 +71,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 ```
 quick-loop(prompt):
   # `Cambiar a SPEC` → live transition (see delta): draft (spec-new procedure) +
-  #                    load and execute ../spec-refine-loop/LOOP.md → END (no quick session)
+  #                    load ../spec-refine-loop/LOOP.md → END (quick closed by CLI)
   if the conversation already established analysis/conclusions →                 # adopted context (chassis)
     adopt them (SESSION.Origin = "adopted from host conversation"; reference in CONCLUSIONS) — never re-derive/re-ask
   author SESSION.Success criteria = the deliverable's check  # test(s) if code · short RATIFIED rubric if analysis/design
@@ -99,6 +99,7 @@ finalize: CHECKPOINT (AFTER: Pending→Completed) + BACKLOG (only if something i
 
 ## Convergence / exit
 
+- Before closing, run `aw amend apply … --check` for each spec/plan line known to be outdated. Propose its returned path; never edit without approval.
 - Closing review gate passed and commit proposed if there was code (or skipping it approved) → `Cerrar`.
 - `Cerrar`/`Compactar` (`flow` control) → persists `CHECKPOINT` + `BACKLOG` (resumable).
 - **No export**: nothing goes to `docs/` (§ *Writes*); escalating is the only way up.

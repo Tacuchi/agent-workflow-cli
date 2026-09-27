@@ -13,7 +13,11 @@
  */
 
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
-import { type FlowDecision, occurrenceAt } from "../../domain/flow/authority.js";
+import {
+  FIX_PREVIEW_TRANSITION,
+  type FlowDecision,
+  occurrenceAt,
+} from "../../domain/flow/authority.js";
 import {
   type FlowRunReentry,
   type FlowRunState,
@@ -118,9 +122,9 @@ function reopenOf(
     return { reentry: { kind: "reopen", transition, occurrence, from: transition } };
   }
   const { rows } = expandedJourneyForRun(state);
-  const human = lastHumanApplied(state);
-  const row = human === null ? undefined : rows[human];
-  if (human === null || row === undefined) {
+  const resume = lastHumanApplied(state) ?? quickPreviewWithoutCommit(state);
+  const row = resume === null ? undefined : rows[resume];
+  if (resume === null || row === undefined) {
     return {
       failure: {
         code: "FLOW_REOPEN_NO_HUMAN",
@@ -129,8 +133,15 @@ function reopenOf(
       },
     };
   }
-  const occurrence = occurrenceAt(rows, human);
+  const occurrence = occurrenceAt(rows, resume);
   return { reentry: { kind: "reopen", transition: row.id, occurrence, from: row.id } };
+}
+
+/** A no-code quick may never ask a human: reopen before its next deliverable. */
+function quickPreviewWithoutCommit(state: FlowRunState): number | null {
+  if (state.flow !== "quick" || !state.skipped.includes("quick.commit-authorization")) return null;
+  const index = state.applied.lastIndexOf(FIX_PREVIEW_TRANSITION);
+  return index >= 0 ? index : null;
 }
 
 /**

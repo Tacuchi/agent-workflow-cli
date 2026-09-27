@@ -105,7 +105,8 @@ export interface GitPort {
    * Checkout-bound evidence needs the latter distinction, so this fingerprint
    * includes the binary patch, status metadata and untracked file blobs.
    */
-  checkoutFingerprint(repoPath: string): Promise<string>;
+  /** With exclusions, bound the reading to this root and include untracked modes/types. */
+  checkoutFingerprint(repoPath: string, excluded?: readonly string[]): Promise<string>;
   /**
    * Digest of the working-tree content under `root` only, with `excluded`
    * (paths relative to `root`) left out whether or not git ignores them.

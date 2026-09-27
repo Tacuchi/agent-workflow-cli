@@ -76,6 +76,8 @@ export interface SessionCloseOutput {
   reopen?: string;
   /** Pending work preserved by the owning flow before closing at a boundary. */
   pending_work?: string[];
+  /** Read-only guidance from the run's effective decision notes. */
+  outdated_documents?: string[];
   /**
    * Non-fatal, and never silent: the isolation state could not be read.
    *

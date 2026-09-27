@@ -24,8 +24,10 @@ import {
   reconcileAttemptsAt,
   recoveryBlockedAt,
   restartInvocation,
+  retractSignal,
   withEvent,
   withInheritedBases,
+  withQuickCheckouts,
   withoutExhaustedRerun,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -40,6 +42,7 @@ import { advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
 import { publishObservedCheckouts } from "./checkout-observation.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
+import { observeQuickCheckouts } from "./quick-checkouts.js";
 import { journeyForRun } from "./run-journey.js";
 import {
   type FlowRunLocation,
@@ -117,6 +120,7 @@ export async function advanceFlow(
   // Read BEFORE the advance: afterwards the state file always exists, so this is
   // the only moment that can tell an adoption from an ordinary advance.
   const adopting = input.adopt && !(await fs.exists(location.statePath));
+  const quickCheckouts = await observeQuickCheckouts(fs, paths, session, input.git);
 
   const applied = await applyUnderLock<FlowDirective>(
     fs,
@@ -141,7 +145,7 @@ export async function advanceFlow(
         };
       }
       const advance = advanceFlowRun({
-        state: seeded,
+        state: withQuickCheckouts(seeded, quickCheckouts),
         journey: journeyForRun(seeded),
       });
       if (!advance.ok) return { ok: false, failure: advance.failure };
@@ -411,6 +415,51 @@ export interface RecoverFlowInput {
    * the run has since moved, instead of recovering something they did not mean.
    */
   transition?: string;
+}
+
+/** Retraction changes observations, never the cursor, attempts or effect ledger. */
+export async function retractFlowSignal(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: { code?: string; contextId?: string; signal: string; git?: GitPort },
+): Promise<AdvanceFlowResult> {
+  const resolution = await resolveSessionTarget(fs, paths, {
+    intent: "write",
+    allowClosed: false,
+    bind: true,
+    ...(input.code === undefined ? {} : { code: input.code }),
+    ...(input.contextId === undefined ? {} : { contextId: input.contextId }),
+  });
+  if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
+  const session = resolution.session.folder;
+  const applied = await applyUnderLock<FlowDirective>(fs, locateRun(paths, session), (state) => {
+    if (state === null)
+      return refuse(
+        "FLOW_RUN_ABSENT",
+        "no hay corrida para retirar la señal",
+        "adoptá primero la corrida con aw flow advance",
+      );
+    const journey = journeyForRun(state);
+    const incoherent = checkAgainstJourney(state, journey);
+    if (incoherent !== null) return { ok: false, failure: incoherent };
+    const retracted = retractSignal(state, journey, input.signal);
+    if (!retracted.ok) return retracted;
+    const built = directiveFor(retracted.state, resolveBoundary(retracted.state, journey), [], {
+      nextAction: `se retiró '${input.signal}'; continuá con aw flow advance --session ${session}`,
+    });
+    if (!built.ok) return built;
+    return {
+      ok: true,
+      state: built.state,
+      value: built.directive,
+      persist: retracted.state !== state,
+    };
+  });
+  if (!applied.ok) return applied;
+  return {
+    ok: true,
+    directive: await publishObservedCheckouts(fs, paths, session, input.git, applied.value),
+  };
 }
 
 /**

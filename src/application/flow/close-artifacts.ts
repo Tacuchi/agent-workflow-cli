@@ -16,6 +16,11 @@ export async function preserveBoundaryClose(
 ): Promise<string[]> {
   const boundary = state.reentries?.at(-1)?.transition ?? "chassis.finalize";
   const pending = [`Frontera pendiente: ${boundary}.`];
+  if (state.handoff != null) {
+    pending.push(
+      `Escalación: seguí con ${state.handoff.command}; pedido y contexto conservados en el paquete de la corrida.`,
+    );
+  }
   const batch = state.flow === "plan-exec" ? state.batches?.at(-1) : undefined;
   const prefix = batch === undefined ? "" : `lote ${batch.iteration} (${batch.id}): `;
   const own = units.filter((unit) => unit.session === state.session);

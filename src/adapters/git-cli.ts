@@ -141,21 +141,28 @@ export class GitCliAdapter implements GitPort {
    * Git's output is hashed as BYTES and never decoded: a digest that has to be
    * reproducible cannot depend on a text encoding it does not need.
    */
-  async checkoutFingerprint(repoPath: string): Promise<string> {
+  async checkoutFingerprint(repoPath: string, excluded?: readonly string[]): Promise<string> {
+    const scope = excluded === undefined ? [] : [".", ...excluded.map((p) => `:(exclude)${p}`)];
     const [patch, status, untracked] = await Promise.all([
       this.mustRunBinary(
         "diff for checkout fingerprint",
-        ["diff", "--binary", "--full-index", "--no-ext-diff", "HEAD", "--"],
+        ["diff", "--binary", "--full-index", "--no-ext-diff", "HEAD", "--", ...scope],
         repoPath,
       ),
       this.mustRunBinary(
         "status for checkout fingerprint",
-        ["status", "--porcelain=v2", "-z"],
+        ["status", "--porcelain=v2", "-z", ...(excluded === undefined ? [] : ["--", ...scope])],
         repoPath,
       ),
       this.mustRunBinary(
         "untracked files for checkout fingerprint",
-        ["ls-files", "--others", "--exclude-standard", "-z"],
+        [
+          "ls-files",
+          "--others",
+          "--exclude-standard",
+          "-z",
+          ...(excluded === undefined ? [] : ["--", ...scope]),
+        ],
         repoPath,
       ),
     ]);
@@ -165,6 +172,20 @@ export class GitCliAdapter implements GitPort {
     hash.update("status\0", "utf8");
     hash.update(status.stdout);
     await this.hashUntracked(hash, repoPath, untracked.stdout);
+    if (excluded !== undefined) {
+      // hash-object alone follows symlinks and omits execute bits. A no-index
+      // patch includes both Git's file mode and a symlink's destination.
+      for (const path of nulSeparated(untracked.stdout).sort()) {
+        const patch = await this.process.runBinary(
+          "git",
+          ["diff", "--no-index", "--binary", "--no-ext-diff", "--", "/dev/null", path],
+          this.opts(repoPath),
+        );
+        if (patch.code !== 0 && patch.code !== 1)
+          throw this.failed("untracked state", repoPath, patch.stderr.toString());
+        hash.update(patch.stdout);
+      }
+    }
     return `sha256:${hash.digest("hex")}`;
   }
 

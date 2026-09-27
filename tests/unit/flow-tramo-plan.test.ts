@@ -2,13 +2,17 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NOTE_INDEX_SCHEMA, sealNote } from "../../src/application/decision-note-service.js";
+import type { DecisionIndex } from "../../src/application/decision-note-service.js";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { lintPlan } from "../../src/application/plan-lint-service.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
+import { NOTE_SCHEMA } from "../../src/domain/decision-note.js";
 import {
   FLOW_DECISIONS,
   type FlowDecision,
@@ -23,9 +27,15 @@ import {
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
-import { attemptAccountingAt } from "../../src/domain/flow/run-state.js";
+import {
+  FLOW_RUN_STATE_VERSION,
+  attemptAccountingAt,
+  serializeRunState,
+} from "../../src/domain/flow/run-state.js";
+import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
+import { stateWrittenAt } from "../helpers/journey-fixtures.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 import { testExecutor } from "../helpers/test-executor.js";
 
@@ -78,6 +88,94 @@ Tramo plan.
 const EXEC = journeyOfFlow("plan-exec");
 const NEW = journeyOfFlow("plan-new");
 const REFINE = journeyOfFlow("plan-refine");
+
+it("el cierre señala las notas efectivas propias, la línea del criterio y el refine sin editar", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aw-close-guidance-"));
+  const paths = new PathsService(normalizeNamespace("agent-workflow"), root, root);
+  const specPath = "docs/specs/031-spec-tramo.md";
+  const spec =
+    "---\nstatus: ready-for-plan\n---\n# Spec 031\n\n## Origin\nReferencia a S031/AC-01.\n\n## Acceptance criteria\n- [ ] AC-02: depende de S031/AC-01.\n- [ ] AC-01: requisito primero.\n";
+  const plan = `# Plan 031\n\n> Derived from ${specPath}\n> Estado: done\n`;
+  try {
+    for (const dir of ["docs/specs", "docs/plans", "docs/decisions"])
+      await mkdir(join(root, dir), { recursive: true });
+    await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
+    await writeFile(
+      join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
+      "# SESSION\n\n## Objective\nCerrar el plan.\n",
+    );
+    await writeFile(join(root, specPath), spec);
+    await writeFile(join(root, PLAN_DOC), plan);
+    const index: DecisionIndex = {
+      schema: NOTE_INDEX_SCHEMA,
+      spec: { path: specPath, number: "031" },
+      notes: [],
+    };
+    const add = (
+      scope: "functional" | "plan-only",
+      owner: string,
+      assertions: string[],
+      replaces: string | null = null,
+    ) => {
+      index.notes.push(
+        sealNote(index, {
+          schema: NOTE_SCHEMA,
+          lineage: {
+            spec: { path: specPath, number: "031", digest: functionalSpecDigest(spec) },
+            plan: { path: PLAN_DOC, number: "031", digest: `sha256:${baseDigest(plan)}` },
+            execution: { session: owner, phase: "F1" },
+          },
+          decision: "ajustar la realización",
+          reason: "evidencia del checkout",
+          supersedes_assertions: assertions,
+          supersedes_note: replaces,
+          scope,
+          consumers: [PLAN_DOC],
+          evidence_preserved: ["prueba local"],
+          evidence_invalidated: [],
+          obligations: [],
+          resume_point: "F1",
+          date: "2026-09-27",
+        }),
+      );
+    };
+    add("functional", SESSION, ["S031/AC-01"]);
+    add("plan-only", SESSION, []);
+    add("functional", "099-otra-plan-exec", ["S031/AC-02"]);
+    add("functional", SESSION, ["S031/AC-01"], "DEC-001");
+    await writeFile(join(root, "docs/decisions/031-decisions-tramo.json"), JSON.stringify(index));
+    const ids = EXEC.map((row) => row.id);
+    const state = stateWrittenAt(
+      FLOW_RUN_STATE_VERSION,
+      "plan-exec",
+      SESSION,
+      ids.slice(0, ids.indexOf("chassis.finalize")),
+      "chassis.finalize",
+      { scope: { plan: PLAN_DOC, sources: ["workspace"] } },
+    );
+    await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state));
+    const result = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "plan-exec",
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.directive.error).toBeNull();
+    expect(result.directive.next_action).toContain(`DEC-004: S031/AC-01 amended · ${specPath}:11`);
+    expect(result.directive.next_action).toContain(`/w:spec-refine ${specPath}`);
+    expect(result.directive.next_action).toContain(
+      `DEC-002: revisar ${PLAN_DOC} — /w:plan-refine ${PLAN_DOC}`,
+    );
+    expect(result.directive.next_action).not.toContain("DEC-001");
+    expect(result.directive.next_action).not.toContain("AC-02");
+    expect(result.directive.next_action).not.toContain("aw amend");
+    expect(await readFile(join(root, PLAN_DOC), "utf8")).toBe(plan);
+    expect(await readFile(join(root, specPath), "utf8")).toBe(spec);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function rowOf(journey: readonly FlowDecision[], id: string): FlowDecision {
   const row = journey.find((decision) => decision.id === id);

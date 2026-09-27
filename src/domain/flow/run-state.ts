@@ -63,7 +63,7 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 13;
+export const FLOW_RUN_STATE_VERSION = 14;
 
 /**
  * The versions this CLI CONTINUES without adoption, newest first.
@@ -82,7 +82,8 @@ export const FLOW_RUN_STATE_VERSION = 13;
  * and the `route-refused` trace kind. A v12 run has none of them either, and a
  * batch without `base` is read as the one that was in flight when the CLI updated.
  */
-export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 12, 11];
+// v14 adds signal retractions; older observations and events remain unchanged.
+export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 13, 12, 11];
 
 /**
  * The versions this CLI READS, newest first.
@@ -109,6 +110,7 @@ export const FLOW_RUN_STATE_READABLE: readonly number[] = [
 const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => FlowRunState>> = {
   11: (state) => ({ ...state, version: 12, journey_base: [...V11_JOURNEY_BASE[state.flow]] }),
   12: (state) => ({ ...state, version: 13 }),
+  13: (state) => ({ ...state, version: 14 }),
 };
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
@@ -633,8 +635,11 @@ export type RecoveryBlocker =
   | { reason: "materialized"; event: FlowRunEvent }
   | { reason: "unverified" };
 
-export function recoveryBlockedAt(state: FlowRunState, transition: string): RecoveryBlocker | null {
-  const iteration = iterationOf(state, transition);
+export function recoveryBlockedAt(
+  state: FlowRunState,
+  transition: string,
+  iteration = iterationOf(state, transition),
+): RecoveryBlocker | null {
   const trace = state.events.filter(
     (event) => event.transition === transition && sameIteration(event, iteration),
   );
@@ -663,6 +668,7 @@ function declaresMaterialEffect(event: FlowRunEvent): boolean {
     event.kind === "aligned" ||
     event.kind === "route-refused" ||
     event.kind === "restarted" ||
+    event.kind === "retracted" ||
     event.kind === "annulled"
   ) {
     return false;
@@ -764,6 +770,15 @@ export interface FlowObservation {
  * cannot quietly become a different one.
  */
 export type FlowRunEvent =
+  | {
+      kind: "retracted";
+      transition: string;
+      batch_iteration?: number;
+      reentry_iteration?: number;
+      operation: string;
+      signal: string;
+      observations: FlowObservation[];
+    }
   | {
       kind: "executed";
       transition: string;
@@ -1050,6 +1065,8 @@ export type FlowDecisionPreparation =
  * could not be shown again after a compaction or a resume.
  */
 export interface FlowFixPreview {
+  /** Source content at declaration; absent on legacy previews, null if unobservable. */
+  checkouts?: Record<string, string> | null;
   /** Paths the fix will touch. Empty is legitimate: an analysis touches none. */
   files: string[];
   intent: string;
@@ -1284,6 +1301,8 @@ export interface FlowRunState {
    * "no preview was promised".
    */
   fix_preview?: FlowFixPreview | null;
+  /** Most recent observation used to compare an empty preview with live sources. */
+  quick_checkouts?: Record<string, string> | null;
   /**
    * Where a registered decision sent the work back to, still unsettled.
    *
@@ -1866,6 +1885,92 @@ export function withDecisionPreparation(
  */
 export function withFixPreview(state: FlowRunState, preview: FlowFixPreview): FlowRunState {
   return sealRunState({ ...withoutSeal(state), fix_preview: preview });
+}
+
+export function withQuickCheckouts(
+  state: FlowRunState,
+  checkouts: Record<string, string> | null,
+): FlowRunState {
+  if (checkouts === null && state.quick_checkouts === undefined) return state;
+  return state.flow === "quick"
+    ? sealRunState({ ...withoutSeal(state), quick_checkouts: checkouts })
+    : state;
+}
+
+/** Remove a mistaken signal only before any of its consumers has used it. */
+export function retractSignal(
+  state: FlowRunState,
+  journey: readonly FlowDecision[],
+  signal: string,
+): { ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure } {
+  const producers = journey.filter((row) => row.signals?.includes(signal)).map((row) => row.id);
+  const consumers = journey.filter((row) => {
+    const rule = row.condition?.threshold;
+    return (
+      rule !== undefined &&
+      producers.includes(rule.observed) &&
+      (rule.of === undefined || rule.of.includes(signal))
+    );
+  });
+  if (producers.length === 0 || consumers.length === 0) {
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_RETRACT_SIGNAL_UNKNOWN",
+        message: `la señal '${signal}' no tiene un consumidor retirable en este recorrido`,
+        action: "usá una señal declarada por el recorrido y consumida por una condición pendiente",
+      },
+    };
+  }
+  const removed = state.observations.filter(
+    (item) =>
+      item.signals.includes(signal) && sameIteration(item, iterationOf(state, item.transition)),
+  );
+  if (removed.length === 0) return { ok: true, state };
+  const consumed = consumers.find((row) =>
+    removed.some((observation) => signalWasConsumed(state, row, observation)),
+  );
+  if (consumed !== undefined) {
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_RETRACT_ALREADY_CONSUMED",
+        message: `'${consumed.id}' ya aplicó o dejó una ejecución sin resolver; no se retira '${signal}'`,
+        action: "conservá la señal: retirar no revierte decisiones ni efectos ya ejercidos",
+      },
+    };
+  }
+  const updated = sealRunState({
+    ...withoutSeal(state),
+    observations: state.observations.map((item) =>
+      removed.includes(item)
+        ? { ...item, signals: item.signals.filter((value) => value !== signal) }
+        : item,
+    ),
+  });
+  return {
+    ok: true,
+    state: withEvent(updated, {
+      kind: "retracted",
+      transition: state.boundary ?? producers[0] ?? "",
+      ...iterationOf(state, state.boundary ?? producers[0] ?? ""),
+      operation: "flow.retract",
+      signal,
+      observations: removed,
+    }),
+  };
+}
+
+function signalWasConsumed(
+  state: FlowRunState,
+  consumer: FlowDecision,
+  observation: FlowObservation,
+): boolean {
+  if (consumer.condition?.threshold.observed !== observation.transition) return false;
+  // Only a consumer after THIS producer occurrence can have consumed its signal.
+  const producer = state.applied.lastIndexOf(observation.transition);
+  const consumed = state.applied.slice(producer + 1).includes(consumer.id);
+  return consumed || recoveryBlockedAt(state, consumer.id, observation) !== null;
 }
 
 /**
@@ -2517,7 +2622,7 @@ function checkV10RecordShape(
   if (!isDecisionPreparation(parsed.decision_preparation)) {
     return invalid("declara una vista de decisión sin nota, preview o linaje sellados");
   }
-  if (!isFixPreview(parsed.fix_preview)) {
+  if (!isFixPreview(parsed.fix_preview) || !isQuickCheckouts(parsed.quick_checkouts)) {
     return invalid("declara un preview de arreglo sin archivos, intención o forma del diff");
   }
   if (!isSettlement(parsed.settlement)) {
@@ -2949,7 +3054,16 @@ function isFixPreview(value: unknown): value is FlowFixPreview | null | undefine
     typeof value.intent === "string" &&
     value.intent.trim().length > 0 &&
     typeof value.diff === "string" &&
-    value.diff.trim().length > 0
+    value.diff.trim().length > 0 &&
+    isQuickCheckouts(value.checkouts)
+  );
+}
+
+function isQuickCheckouts(value: unknown): value is Record<string, string> | null | undefined {
+  return (
+    value === null ||
+    value === undefined ||
+    (isRecord(value) && Object.values(value).every(nonEmpty))
   );
 }
 
@@ -3111,6 +3225,10 @@ const EVENT_BODIES: ReadonlyMap<string, (entry: Record<string, unknown>) => bool
       isEffectClassArray(entry.effects) &&
       isStringArray(entry.evidence),
     reconciled: (entry) => isRepairArray(entry.repairs),
+    retracted: (entry) =>
+      nonEmpty(entry.signal) &&
+      isObservationArray(entry.observations) &&
+      entry.observations.length > 0,
     restarted: (entry) => nonEmpty(entry.archive) && nonEmpty(entry.cause),
     annulled: (entry) =>
       isStringArray(entry.batches) &&
