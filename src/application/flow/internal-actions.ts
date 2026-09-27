@@ -251,7 +251,7 @@ async function ensureUnits(
     // The tree IS there, however it got there — the same reading `proposal.publish`
     // makes of a re-entry that finds the bytes already written. Crediting nothing
     // when `created` is false would refuse the resumption this row is idempotent for.
-    effects: ["local_additive"],
+    effects: ["local_additive", "mutate_overwrite"],
     ...(based.state === null ? {} : { state: based.state }),
   };
 }

@@ -214,6 +214,10 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
     for (let attempt = 0; attempt < 160; attempt += 1) {
       const { state, resolved } = await current(run.folder);
       if (resolved.stopped === null || resolved.stopped.id === id) return;
+      if (resolved.kind === "authorization") {
+        last = await step(run);
+        continue;
+      }
       // The driver runs an internal row after every answer, so standing on one
       // means its operation refused: answering it would only be rejected, and the
       // cause worth reporting is the refusal the run traced.

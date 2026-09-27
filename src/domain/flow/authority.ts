@@ -500,7 +500,7 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   // it replaces nothing and it destroys nothing. That the CLI reaches git to make
   // it is not what the class measures — `workspace.board` already reads git the
   // same way and is `read_only`.
-  "worktree.ensure": ["local_additive"],
+  "worktree.ensure": ["local_additive", "mutate_overwrite"],
   // Creating and replacing, both real — and which of the two happens is decided
   // by the proposal, not by the row: what the row declares here is the ceiling.
   "proposal.publish": ["local_additive", "mutate_overwrite"],
@@ -2807,7 +2807,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
-    effects: ["local_additive"],
+    effects: ["local_additive", "mutate_overwrite"],
     // BEFORE `plan-exec.implementation`, and the position is the whole rule: the
     // policy says a loop that edits code edits inside its unit, and a unit obtained
     // after the first write would be an isolation nobody was ever isolated by.

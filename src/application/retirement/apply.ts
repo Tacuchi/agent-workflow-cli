@@ -33,6 +33,7 @@ import { appendClaimEvent, claimKey, openClaimsOf, readClaimEvents } from "../cl
 import { localDateIso } from "../dates.js";
 import { withCwdLock } from "../lock-service.js";
 import { invalidateBindingsTo } from "../session-binding-service.js";
+import { removeUnitSafely } from "../unit-dependencies.js";
 import { appendEvent, eventOf, hasEvent } from "./history-events.js";
 import {
   type RetirementJournal,
@@ -538,7 +539,7 @@ async function reconcileUnits(
       continue;
     }
     try {
-      await deps.git.worktreeRemove(unit.repo, unit.path);
+      await removeUnitSafely(deps.fs, deps.git, unit.repo, unit.path);
       await deps.git.worktreePrune(unit.repo);
       released.push(name);
     } catch {

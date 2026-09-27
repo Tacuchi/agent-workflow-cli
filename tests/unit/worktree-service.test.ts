@@ -436,9 +436,10 @@ describe("runWorktree — the isolation unit of a flow", () => {
 
       expect(swept.reclaimed).toEqual([]);
       expect(swept.retained[0]).toMatchObject({ reason: "commits_outside_work_branch" });
-      // La salida del huérfano de una sesión CERRADA nombra el único camino que
-      // recupera su trabajo, y no el integrate que se le negaría.
-      expect(swept.retained[0]?.next).toContain("aw session-resume --code 104-dos-plan-exec");
+      // La sesión cerrada ya admite integración directa, sin reapertura.
+      expect(swept.retained[0]?.next).toContain(
+        "aw worktree integrate --source acme --code 104-dos-plan-exec",
+      );
       expect(readFileSync(join(unit.path, "trabajo.txt"), "utf-8")).toBe("lo unico que existe\n");
     });
 

@@ -530,7 +530,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     });
   });
 
-  it("el cierre a mano sigue cerrando, y su recibo conserva el remedio de reapertura", async () => {
+  it("el cierre a mano conserva la unidad y ofrece integración directa sin reapertura", async () => {
     const dos = await unitOf(DOS);
     commitIn(dos, PROPIO_DOS, "export const dos = 2;\n", "beta");
 
@@ -545,19 +545,13 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     expect(closed.sessionClose.pending_integration?.[0]?.command).toBe(
       `aw worktree integrate --source ${ALIAS} --code ${DOS.folder}`,
     );
-    // Y acá el remedio que antes faltaba: cerrada la sesión, ese comando ya no
-    // resuelve, así que el recibo tiene que decir cómo volver.
-    expect(closed.sessionClose.reopen).toBe(`aw session-resume --code ${DOS.folder} --reopen`);
+    expect(closed.sessionClose.integrate).toBe(`aw worktree integrate --code ${DOS.folder}`);
 
-    // La prueba de que hacía falta: sin reabrir, la integración se niega — y lo
-    // dice con el motivo del resolver, no con un "pasá --code" que ya se pasó.
-    const negada = await runWorktree(deps, {
+    const integrated = await runWorktree(deps, {
       action: "integrate",
       alias: ALIAS,
       sessionCode: DOS.code,
     });
-    if (!("error" in negada)) throw new Error("una sesión cerrada no puede integrar");
-    expect(negada.error).toBe("session_unresolved");
-    expect(negada.hint).toContain("--reopen");
+    expect(integrated).toMatchObject({ integrated: true, released: true });
   });
 });

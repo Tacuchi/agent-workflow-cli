@@ -131,6 +131,8 @@ export interface CustodyEffect {
   before: string | null;
   /** Commit SHA the effect produced. */
   after: string | null;
+  /** Tip of the released unit before its aw/* ref was removed; proves retirement after release. */
+  unit_tip?: string;
   /** Parents of `after`, so a revert knows which side of a merge it undoes. */
   parents: string[];
   /** Ref the effect moved (`refs/heads/aw/119-…`), when it moved one. */

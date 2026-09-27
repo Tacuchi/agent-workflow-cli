@@ -416,7 +416,7 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
 
     const acquire = rowOf(EXEC, "plan-exec.unit-acquisition");
     expect(acquire.authority).toBe("cli");
-    expect(effectsOf(acquire)).toEqual(["local_additive"]);
+    expect(effectsOf(acquire)).toEqual(["local_additive", "mutate_overwrite"]);
     // Interna: el CLI tiene el servicio de worktrees y pedirle a otro que lo corra
     // sería devolverle trabajo que este proceso hace. Idempotente, que es lo que
     // hace que reanudar reutilice la misma unidad en vez de cortar otra.

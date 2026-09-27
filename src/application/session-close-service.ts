@@ -77,6 +77,8 @@ export interface SessionCloseOutput {
    * what keeps the remedy usable after the act that made it necessary.
    */
   reopen?: string;
+  /** A held unit can be integrated directly, even after the session closed. */
+  integrate?: string;
   /** Pending work preserved by the owning flow before closing at a boundary. */
   pending_work?: string[];
   /** Read-only guidance from the run's effective decision notes. */
@@ -289,7 +291,7 @@ function reportHeld(output: SessionCloseOutput, folder: string, units: HeldUnits
   if (units.unverifiable.length > 0) output.unverifiable_sources = units.unverifiable;
   if (units.held.length === 0) return;
   output.pending_integration = units.held;
-  output.reopen = `aw session-resume --code ${folder} --reopen`;
+  output.integrate = `aw worktree integrate --code ${folder}`;
 }
 
 function reportReservations(

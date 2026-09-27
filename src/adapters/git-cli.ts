@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, readlink } from "node:fs/promises";
+import { appendFile, lstat, readFile, readlink } from "node:fs/promises";
 import { resolve } from "node:path";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type {
@@ -15,6 +15,7 @@ import type {
   MergeResult,
   NumstatCounts,
   RevertRehearsal,
+  TreeEntry,
   WorktreeEntry,
 } from "../ports/git.js";
 import type { ProcessPort, RunBinaryResult, RunOptions, RunResult } from "../ports/process.js";
@@ -107,6 +108,10 @@ export class GitCliAdapter implements GitPort {
     if (result.code === 1) return null;
     if (result.code !== 0) throw this.failed(`config --get ${key}`, repoPath, result.stderr);
     return result.stdout.trim();
+  }
+
+  async writeLocalConfig(repoPath: string, key: string, value: string): Promise<void> {
+    await this.mustRun(`config --local ${key}`, ["config", "--local", key, value], repoPath);
   }
 
   async currentBranch(repoPath: string): Promise<string | undefined> {
@@ -829,6 +834,99 @@ export class GitCliAdapter implements GitPort {
     return result.stdout.split("\0").filter((p) => p.length > 0);
   }
 
+  async treeEntries(repoPath: string, rev: string): Promise<TreeEntry[]> {
+    const result = await this.mustRun("ls-tree", ["ls-tree", "-r", "-z", rev], repoPath);
+    return result.stdout
+      .split("\0")
+      .filter(Boolean)
+      .map((item) => {
+        const match = /^(\d+) blob ([0-9a-f]+)\t(.+)$/s.exec(item);
+        if (!match?.[1] || !match[2] || !match[3])
+          throw new Error(`entrada ls-tree ilegible en ${repoPath}`);
+        return { mode: match[1], hash: match[2], path: match[3] };
+      });
+  }
+
+  async hashWorktreePath(repoPath: string, path: string, symlink: boolean): Promise<string> {
+    if (symlink) {
+      const target = await readlink(path);
+      return (
+        await this.mustRun("hash-object", ["hash-object", "--stdin"], repoPath, { stdin: target })
+      ).stdout.trim();
+    }
+    return (
+      await this.mustRun("hash-object", ["hash-object", "--no-filters", path], repoPath)
+    ).stdout.trim();
+  }
+
+  async worktreeFileMode(path: string): Promise<string> {
+    const stat = await lstat(path);
+    if (stat.isSymbolicLink()) return "120000";
+    if (!stat.isFile()) throw new Error(`no es un archivo recuperable: ${path}`);
+    return stat.mode & 0o111 ? "100755" : "100644";
+  }
+
+  async ignoredOutsideIndex(
+    repoPath: string,
+    treePath: string,
+    relativePath: string,
+  ): Promise<boolean> {
+    const gitDir = (
+      await this.mustRun(
+        "rev-parse --absolute-git-dir",
+        ["rev-parse", "--absolute-git-dir"],
+        repoPath,
+      )
+    ).stdout.trim();
+    const result = await this.process.run(
+      "git",
+      [
+        `--git-dir=${gitDir}`,
+        `--work-tree=${treePath}`,
+        "check-ignore",
+        "--no-index",
+        "-q",
+        "--",
+        relativePath,
+      ],
+      this.opts(repoPath),
+    );
+    if (result.code !== 0 && result.code !== 1)
+      throw this.failed("check-ignore", repoPath, result.stderr);
+    return result.code === 0;
+  }
+
+  async ignoredInSource(repoPath: string, relativePath: string): Promise<boolean> {
+    const result = await this.process.run(
+      "git",
+      ["check-ignore", "--no-index", "-q", "--", relativePath],
+      this.opts(repoPath),
+    );
+    if (result.code !== 0 && result.code !== 1)
+      throw this.failed("check-ignore", repoPath, result.stderr);
+    return result.code === 0;
+  }
+
+  async excludePattern(repoPath: string, pattern: string): Promise<void> {
+    const exclude = (
+      await this.mustRun(
+        "rev-parse --git-path",
+        ["rev-parse", "--git-path", "info/exclude"],
+        repoPath,
+      )
+    ).stdout.trim();
+    const path = resolve(repoPath, exclude);
+    const existing = await readFile(path, "utf8").catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return "";
+      throw err;
+    });
+    if (!existing.split(/\r?\n/).includes(pattern))
+      await appendFile(
+        path,
+        `${existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""}${pattern}\n`,
+      );
+  }
+
   async operationState(repoPath: string): Promise<GitOperationState> {
     // git's own pseudo-refs are the record of an interrupted operation, and asking
     // git for them keeps this adapter needing only one binary: a `test -d` on
@@ -904,8 +1002,12 @@ export class GitCliAdapter implements GitPort {
     return this.attempt("update-ref", ["update-ref", ref, sha], repoPath);
   }
 
-  async deleteRef(repoPath: string, ref: string): Promise<GitAttempt> {
-    return this.attempt("update-ref -d", ["update-ref", "-d", ref], repoPath);
+  async deleteRef(repoPath: string, ref: string, expectedOld?: string): Promise<GitAttempt> {
+    return this.attempt(
+      "update-ref -d",
+      ["update-ref", "-d", ref, ...(expectedOld ? [expectedOld] : [])],
+      repoPath,
+    );
   }
 
   /** Run git and report whether it agreed, with its own words when it did not. */

@@ -26,9 +26,11 @@ import { prepareRetirement } from "../../src/application/retirement/prepare.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { recordPublication } from "../../src/application/session-custody-recorder.js";
 import { recordCommit, recordUnitTaken } from "../../src/application/session-custody-recorder.js";
+import { readCustody, writeCustody } from "../../src/application/session-custody-service.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { runWorktree } from "../../src/application/worktree-service.js";
 import type { RetirementProposal } from "../../src/domain/retirement/proposal.js";
+import { sealCustody } from "../../src/domain/session/custody.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -446,12 +448,20 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // La unidad se toma por el camino real (`aw worktree ensure`), porque sólo las
     // que viven en la ruta canónica son las que el tablero —y por lo tanto la
     // propuesta— reconocen como unidades de una sesión.
+    writeFileSync(join(source, ".gitignore"), "node_modules/\n");
+    writeFileSync(join(source, "package.json"), '{"name":"test","version":"1.0.0"}\n');
+    writeFileSync(join(source, "package-lock.json"), '{"lockfileVersion":3}\n');
+    git(source, "add", "-A");
+    git(source, "commit", "-qm", "dependencias declaradas");
+    mkdirSync(join(source, "node_modules"));
+    writeFileSync(join(source, "node_modules", "sentinel"), "intacto");
     const folder = await session("algo-plan-exec", [planPath]);
     const ensured = await runWorktree(
       { fs, env: deps.env, git: deps.git, paths },
       { action: "ensure", alias: "acme", sessionCode: folder },
     );
     if ("error" in ensured) throw new Error(`no se pudo tomar la unidad: ${ensured.message}`);
+    expect(ensured.dependencies.status).toBe("linked");
     expect(existsSync(ensured.path)).toBe(true);
 
     const proposal = await proposalFor("discard", "plan:024");
@@ -476,6 +486,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(outcome.result.units_released).toEqual([`acme:${movedBranch(workspace, folder)}`]);
     expect(outcome.result.pending_reconciliation).toEqual([]);
     expect(existsSync(ensured.path)).toBe(false);
+    expect(readFileSync(join(source, "node_modules", "sentinel"), "utf8")).toBe("intacto");
     expect(git(source, "worktree", "list", "--porcelain")).not.toContain(folder);
     // La rama sobrevive: es la única alcanzabilidad de los commits de la sesión, y
     // borrarla los volvería inalcanzables. Retirar la unidad no es borrar historia.
@@ -566,7 +577,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       expect(outcome.result.pending_reconciliation).toEqual([]);
       expect(git(source, "rev-parse", "HEAD^{tree}")).toBe(baseline);
       expect(git(source, "merge-base", "--is-ancestor", receipt.after, "main")).toBe("");
-      expect(git(source, "rev-parse", ensured.branch)).toBe(unitHead);
+      expect(git(source, "branch", "--list", ensured.branch)).toBe("");
       expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
       expect(existsSync(join(workspace, planPath))).toBe(mode === "reset");
       expect(rowsFor(proposal.digest)).toBe(1);
@@ -628,16 +639,38 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
   it.each([
     ["destino sucio", "cambios locales"],
     ["otra rama", "no está en el checkout"],
-    ["rama ausente", "todo el trabajo"],
+    ["punta registrada ilegible", "todo el trabajo"],
     ["unidad reaparecida", "no se pudo verificar su liberación"],
     ["fuente ilegible", "no se pudo verificar"],
   ])("rechaza sin efectos un retiro integrado no verificable: %s", async (fault, reason) => {
     const { folder, ensured, after } = await integratedMerge(false);
     if (fault === "destino sucio") writeFileSync(join(source, "ajeno.txt"), "otro trabajo local\n");
     if (fault === "otra rama") git(source, "checkout", "-qb", "otra");
-    if (fault === "rama ausente") git(source, "branch", "-d", ensured.branch);
-    if (fault === "unidad reaparecida")
+    if (fault === "punta registrada ilegible") {
+      const sessionPath = join(workspace, ".workflow", "sessions", folder);
+      const read = await readCustody(deps.fs, sessionPath);
+      if (read.status !== "present") throw new Error("custodia ausente");
+      const record = read.custody;
+      await writeCustody(
+        deps.fs,
+        sessionPath,
+        sealCustody({
+          subject: record.subject,
+          subjectPath: record.subject_path,
+          parents: record.parents,
+          created: record.created,
+          artifacts: record.artifacts,
+          sources: record.sources,
+          effects: record.effects.map((effect) =>
+            effect.kind === "unit_integrated" ? { ...effect, unit_tip: "f".repeat(40) } : effect,
+          ),
+        }),
+      );
+    }
+    if (fault === "unidad reaparecida") {
+      git(source, "branch", ensured.branch, after);
       git(source, "worktree", "add", ensured.path, ensured.branch);
+    }
     if (fault === "fuente ilegible") rmSync(source, { recursive: true });
     const outcome = await applyRetirement(deps, {
       mode: "discard",
