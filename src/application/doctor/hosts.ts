@@ -34,7 +34,7 @@ export interface DoctorHostSelection {
   unknownOnly: string[];
 }
 
-const PARTICIPATING = new Set(["ready", "installable", "residual-config"]);
+const PARTICIPATING = new Set(["ready", "residual-config"]);
 
 export async function selectDoctorHosts(
   ctx: CliContext,
@@ -56,7 +56,12 @@ export async function selectDoctorHosts(
     // on" and "which hosts do I care about" are different questions, and folding
     // them made the invoking host silently hide every other one.
     if (only.size > 0 && !only.has(state.host)) continue;
-    if (!PARTICIPATING.has(state.status)) {
+    if (
+      !PARTICIPATING.has(state.status) &&
+      !state.workline.installed &&
+      !only.has(state.host) &&
+      state.host !== options.currentHost
+    ) {
       absent.push(state.host);
       continue;
     }

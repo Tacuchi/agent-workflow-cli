@@ -218,9 +218,8 @@ describe("ruta adaptativa — la validación de fase de plan-exec", () => {
     expect(routeControlOf(phase)?.consequences.omit).toBeUndefined();
     expect(routeControlOf(phase)?.consequences.apply).toBeDefined();
     expect(routeControlOf(phase)?.consequences.substitute).toBeDefined();
-    for (const id of ["plan-refine.executability-gate", "plan-exec.final-validation"]) {
-      expect(routeControlOf(byId(id))?.consequences.omit, id).toBeDefined();
-    }
+    expect(routeControlOf(byId("plan-refine.executability-gate"))?.consequences.omit).toBeDefined();
+    expect(routeControlOf(byId("plan-exec.final-validation"))).toBeNull();
   });
 
   it("una propuesta con su control sin `omit` se persiste y se sigue leyendo", () => {
@@ -272,5 +271,26 @@ describe("ruta adaptativa — la validación de fase de plan-exec", () => {
     if (!again.ok) throw new Error(again.failure.code);
     expect(again.state.events.filter((event) => event.kind === "route-refused")).toHaveLength(1);
     expect(parseRunState(serializeRunState(again.state)).ok).toBe(true);
+  });
+
+  it("una omisión histórica de la validación final se rehúsa con traza y el gate vuelve a pedirse", () => {
+    const final = byId("plan-exec.final-validation");
+    const journey = [routeGate, final, hardGate];
+    const state = withBoundary(
+      applyTransition(
+        withRouteDecisions(newRunState("plan-exec", "052-validacion-plan-exec"), [
+          { transition: final.id, disposition: "omit", substitution: null },
+        ]),
+        routeGate.id,
+      ),
+      final.id,
+    );
+    const advanced = advanceFlowRun({ state, journey });
+    if (!advanced.ok) throw new Error(advanced.failure.code);
+    expect(advanced.directive.boundary.transition).toBe(final.id);
+    expect(advanced.state.skipped).not.toContain(final.id);
+    expect(advanced.state.events).toContainEqual(
+      expect.objectContaining({ kind: "route-refused", transition: final.id, disposition: "omit" }),
+    );
   });
 });

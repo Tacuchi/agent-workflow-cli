@@ -50,6 +50,9 @@ function planText(): string {
       `- [ ] T${n}.1 — tarea ${n} _(fuentes: workspace)_`,
       "",
     ]),
+    "## Execution batches",
+    ...PHASES.map((n) => `- B${n} · isolated · F${n}`),
+    "",
   ].join("\n");
 }
 

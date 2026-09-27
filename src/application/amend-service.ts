@@ -40,6 +40,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { applyLocalProposal } from "./local-proposal.js";
 import { scanMarkdown } from "./markdown.js";
+import { parseExecutionBatches } from "./parsers/execution-batches.js";
 import { parsePhases } from "./parsers/phases.js";
 import { parsePlanStatus } from "./parsers/plan-status.js";
 import { functionalSpecDigest } from "./parsers/spec-functional.js";
@@ -106,6 +107,8 @@ export interface AmendmentEvent {
 }
 
 export interface AmendInput {
+  /** Classify the proposed replacement without publishing or recording it. */
+  check?: boolean;
   /** Path inside the workspace, or a correlative the canon can resolve. */
   target: string;
   /** The exact text to replace — it must appear exactly once. */
@@ -117,7 +120,18 @@ export interface AmendInput {
 
 export type AmendResult =
   | { status: "applied"; amendment: Amendment; written: string[] }
+  | AmendCheck
   | { status: "failed"; failure: AmendFailure };
+
+export interface AmendCheck {
+  status: "checked";
+  document: string;
+  line: number;
+  classification: "wording" | "contract" | "open";
+  action: string;
+  reason: string;
+  written: [];
+}
 
 export type AmendRevertResult =
   | { status: "reverted"; amendment: Amendment; written: string[] }
@@ -138,7 +152,7 @@ export async function amendDocument(
   paths: PathsService,
   input: AmendInput,
 ): Promise<AmendResult> {
-  if (input.declaration.trim().length === 0) {
+  if (!input.check && input.declaration.trim().length === 0) {
     return fail(
       "AMEND_DECLARATION_MISSING",
       "una corrección directa se registra con su declaración, y no llegó ninguna",
@@ -148,6 +162,7 @@ export async function amendDocument(
   const resolved = await resolveTarget(fs, env, paths, input.target);
   if ("failure" in resolved) return { status: "failed", failure: resolved.failure };
   const { document, absolute, text, kind } = resolved;
+  if (input.check) return checkAmendment(resolved, input);
 
   const closed = closureOf(kind, text);
   const openFailure = () =>
@@ -191,6 +206,27 @@ export async function amendDocument(
   if ("failure" in written) return { status: "failed", failure: written.failure };
   await appendAmendmentEvent(fs, paths, { event: "amended", amendment });
   return { status: "applied", amendment, written: written.written };
+}
+
+function checkAmendment(target: ResolvedTarget, input: AmendInput): AmendResult {
+  const located = locate(target.text, input.from, input.to);
+  if ("failure" in located) return { status: "failed", failure: located.failure };
+  const open = closureOf(target.kind, target.text);
+  const contract = contractGuard(target.kind, target.text, located.after);
+  const classification = open !== null ? "open" : contract !== null ? "contract" : "wording";
+  const route = classification === "wording" ? "aw amend apply" : `/w:${target.kind}-refine`;
+  return {
+    status: "checked",
+    document: target.document,
+    line: target.text.slice(0, target.text.indexOf(input.from)).split("\n").length,
+    classification,
+    action: `${route} ${target.document}`,
+    reason:
+      open ??
+      contract ??
+      "la guarda no detecta cambios de contrato; proponer la corrección de redacción",
+    written: [],
+  };
 }
 
 /** Undo one recorded correction, re-applying its exact pre-image. */
@@ -515,17 +551,7 @@ function clausesOf(text: string): string {
 
 /** The declared `## Execution batches` rows, as written. */
 function batchesOf(text: string): string {
-  const { lines, headings } = scanMarkdown(text);
-  const heading = headings.find(
-    (entry) => entry.level === 2 && /execution batches|lotes de ejecuci[oó]n/i.test(entry.title),
-  );
-  if (heading === undefined) return "";
-  const next = headings.find((entry) => entry.level <= 2 && entry.line > heading.line);
-  return lines
-    .slice(heading.line + 1, next?.line ?? lines.length)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .join("\n");
+  return parseExecutionBatches(text).raw;
 }
 
 /** One document, one write: the lock, the compare-and-swap and the all-or-nothing. */

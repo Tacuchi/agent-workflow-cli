@@ -72,6 +72,21 @@ describe("reutilización determinista de correlativos liberados", () => {
     expect(plans()).toEqual(["001-plan-uno.md", "002-plan-cuatro.md", "003-plan-tres.md"]);
   });
 
+  it("el cierre libera una carpeta de scripts reservada con su marcador adentro", async () => {
+    session(OWNER);
+    const claimed = await runNextNumber(fs, env, paths, {
+      directory: "docs/scripts",
+      claim: { name: "export-scripts-2026-09-27", owner: OWNER, folder: true },
+    });
+    expect(claimed.claimed_path).not.toBeNull();
+    const closed = await runSessionClose(fs, paths, { code: "201" });
+    if (!("sessionClose" in closed)) throw new Error("expected close");
+    expect(closed.sessionClose.reservations_released).toEqual([
+      "docs/scripts/001-export-scripts-2026-09-27",
+    ]);
+    expect(readdirSync(join(workspace, "docs", "scripts"))).toEqual([]);
+  });
+
   it("un correlativo PUBLICADO nunca entra al conjunto elegible", async () => {
     const claimIdentity = {
       category: "plans",
@@ -92,6 +107,25 @@ describe("reutilización determinista de correlativos liberados", () => {
 
     const events = (await readClaimEvents(fs, paths)).events;
     expect(eligibleCorrelatives(events, "plans")).toEqual([]);
+  });
+
+  it("el número publicado y luego borrado no vuelve ni en dry-run ni al reclamar", async () => {
+    mkdirSync(join(workspace, "docs", "scripts"), { recursive: true });
+    writeFileSync(
+      join(workspace, ".workflow", "HISTORY.md"),
+      "## Publicaciones\n\n| Documento | Fecha | Comando |\n|-----------|-------|---------|\n| docs/scripts/008-export-scripts-2026-01-01/README.md | 2026-01-01 | export-scripts |\n",
+    );
+    const consulted = await runNextNumber(fs, env, paths, {
+      directory: "docs/scripts",
+      dryRun: true,
+    });
+    expect(consulted.next).toBe("009");
+    session(OWNER);
+    const claimed = await runNextNumber(fs, env, paths, {
+      directory: "docs/scripts",
+      claim: { name: "export-scripts-2026-02-01", owner: OWNER },
+    });
+    expect(claimed.next).toBe("009");
   });
 
   it("liberar, reclamar de nuevo y publicar deja el correlativo gastado, no elegible", async () => {

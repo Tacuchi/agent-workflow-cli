@@ -76,6 +76,23 @@ describe("DatabaseToolCatalog", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("lookupColumns resuelve la conexión y consulta information_schema con parámetro en el puerto read-only", async () => {
+    postgres.queryResult = {
+      rows: [{ table_schema: "esq", table_name: "usuarios", column_name: "id" }],
+      truncated: false,
+    };
+    const outcome = await catalog.lookupColumns("alpha", ["esq", "esq"]);
+    expect(outcome).toEqual({
+      ok: true,
+      columns: [{ schema: "esq", table: "usuarios", column: "id" }],
+    });
+    expect(postgres.queryCalls).toHaveLength(1);
+    expect(postgres.queryCalls[0]).toMatchObject({ values: [["esq"]], dsn: DSN });
+    expect(postgres.queryCalls[0]?.sql).toContain("information_schema.columns");
+    expect(postgres.queryCalls[0]?.sql).toContain("$1::text[]");
+    expect(postgres.executeCalls).toEqual([]);
+  });
+
   it("normaliza los defaults de search_objects y rechaza sus combinaciones inválidas", () => {
     const executeWithForeignField = parseDatabaseToolInput("execute_sql", {
       sql: "SELECT 1",

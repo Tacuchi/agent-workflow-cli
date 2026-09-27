@@ -216,6 +216,11 @@ beforeEach(() => {
   home = join(root, "home");
   mkdirSync(workspace, { recursive: true });
   mkdirSync(home, { recursive: true });
+  mkdirSync(join(workspace, ".workflow"), { recursive: true });
+  writeFileSync(
+    join(workspace, ".workflow", "workline.json"),
+    '{"workline":1,"namespace":"workflow"}',
+  );
   // Ruta absoluta que nunca se crea: el proveedor la resuelve como ruta, no por PATH.
   ghostBinary = join(root, "no-instalado", "ghost-mcp");
   fsAnswers = new Map<string, boolean>();
@@ -224,6 +229,7 @@ beforeEach(() => {
     paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
     process: new FakeProcess({ which: (cmd) => (cmd === "npx" ? "/usr/bin/npx" : undefined) }),
     fs: new ContextFs(fsAnswers),
+    namespace: { namespace: normalizeNamespace("workflow"), source: "default" },
   } as unknown as CliContext;
 });
 
@@ -808,7 +814,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     );
   });
 
-  it("un host cuyo binario no está deja la cobertura unavailable con la razón y el informe en pie", async () => {
+  it("un host con Workline cuyo binario no está deja cobertura skipped con razón y sin exit 1", async () => {
     writeClaudeWorkspaceConfig({
       [FOREIGN_BROKEN_BINARY]: { command: ghostBinary, args: [], env: {} },
     });
@@ -818,15 +824,14 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
       inputFor([targetHost(CLAUDE_HOST), targetHost(CODEX_HOST)]),
     );
 
-    expect(coverageAt(output, CODEX_HOST).state).toBe("unavailable");
-    expect(coverageAt(output, CODEX_HOST).reason ?? "").toContain("no está en el PATH");
+    expect(coverageAt(output, CODEX_HOST).state).toBe("skipped");
+    expect(coverageAt(output, CODEX_HOST).reason ?? "").toContain("falta el binario");
     expect(coverageAt(output, CLAUDE_HOST).state).toBe("checked");
     // El lector caído no se lleva puesto lo que sí se pudo leer del archivo.
     expect(findingAt(output, entryId(CLAUDE_HOST, "workspace", FOREIGN_BROKEN_BINARY)).state).toBe(
       "warning",
     );
-    // Y una cobertura que no se pudo comprobar no puede terminar en "entorno sano".
-    expect(doctorVerdict(output.findings, output.coverage).exit_code).toBe(1);
+    expect(doctorVerdict(output.findings, output.coverage).exit_code).toBe(0);
   });
 
   it("un host que no toma MCP por archivo queda not-applicable, no ausente ni sano", async () => {
@@ -1115,12 +1120,27 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
 });
 
 describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", () => {
+  it("fuera de workspace no inventa conexiones workspace faltantes, pero lee archivos existentes", async () => {
+    registerConnections([OWN_CONNECTIONS[0]]);
+    rmSync(join(workspace, ".workflow", "workline.json"));
+    writeClaudeWorkspaceConfig({ ajeno: { command: "npx", args: [], env: {} } });
+    const native = nativeRunner({ claude: "" });
+    const output = await createMcpsProvider({ native: { run: native.run } }).run(
+      inputFor([targetHost(CLAUDE_HOST)]),
+    );
+    expect(
+      output.findings.find((finding) => finding.id === connectionId("workspace", "qtc-cert")),
+    ).toBeUndefined();
+    expect(findingAt(output, entryId(CLAUDE_HOST, "workspace", "ajeno")).state).toBe("healthy");
+  });
+
   /** Un host cuyo directorio de configuración quedó sin runtime que lo use. */
   function residualHost(id: HarnessId): DoctorTargetHost {
     return {
       ...targetHost(id),
       status: "residual-config",
       runtime: { state: "missing", version: null },
+      workline_installed: false,
     };
   }
 
@@ -1138,6 +1158,16 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     expect(coverageAt(output, CODEX_HOST).state).toBe("skipped");
     // Y no se calla el porqué: la cobertura sigue diciendo qué no se pudo mirar.
     expect(coverageAt(output, CODEX_HOST).reason ?? "").toContain("no está en el PATH");
+    expect(doctorVerdict(output.findings, output.coverage).exit_code).toBe(0);
+  });
+
+  it("un host ready con Workline pero sin binario queda skipped y no vuelve roja la corrida", async () => {
+    const native = nativeRunner({ claude: { errorCode: "ENOENT" } });
+    const output = await createMcpsProvider({ native: { run: native.run } }).run(
+      inputFor([targetHost(CLAUDE_HOST)]),
+    );
+    expect(coverageAt(output, CLAUDE_HOST).state).toBe("skipped");
+    expect(coverageAt(output, CLAUDE_HOST).reason).toContain("falta el binario");
     expect(doctorVerdict(output.findings, output.coverage).exit_code).toBe(0);
   });
 

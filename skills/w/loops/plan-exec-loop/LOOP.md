@@ -222,20 +222,22 @@ adds nothing of its own beyond running on a verified branch and never
   1. **phase proof** — component interaction, endpoint smoke test, vertical run down to the stub, persistence integration, or the main path end to end;
   2. **focused tests** — added when the layer carries its own rules, a relevant transformation, error handling, persistence, transactions, temporal logic or external integration;
   3. **risk tests** — security, concurrency, idempotency, retries, known regressions.
-- **One vertical proof per operation while wiring** (request → controller → use case → repository → fake or stub → expected response): it demonstrates the path once instead of re-asserting the same happy path at every layer. Trivial mappers, plain DTOs and framework behavior get no dedicated test.
+- **One vertical proof per operation** (request → controller → use case → repository → stub → response); do not repeat the happy path at every layer or test trivial mappers/DTOs.
 - `isolated` remains compatible with literal TDD. A continuous batch may author evidence before
   code, but first runs it at batch close. No phase becomes `validada` before its exit is demonstrated.
 - **Continuous means all checks at batch close.** Do not run its phase proofs, focused/risk tests,
   build, typecheck, lint or review while implementing internal phases. At close run proofs in phase
   order, then the justified checks and cross-cutting validations. `isolated` runs the same stack for
   its single phase.
-- Each added test is re-weighed at the closing review gate ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate* → *Test-value lens*, tag `overtest`): over-testing is a **finding to fix or justify**, never an automatic rejection.
-- Also run the plan's `## Validations` (cross-cutting rules and constraints) + the Final behavior block of `## Solution` (legacy plans: the `## Final behavior` section). **What execution runs is the PLAN's evidence, never the spec's prose:** `plan-new` already derived those validations from the spec's acceptance criteria and its `## Scenarios`, so the spec is confirmed functionally **through** them. A criterion no validation covers is a gap of the plan, not a test to improvise here.
+- Review each test's value at close (`CODE-POLICIES.md`, `overtest`); over-testing is a finding to fix or justify, never an automatic rejection.
+- Run the plan's `## Validations` and `## Solution` Final behavior (legacy: `## Final behavior`). The PLAN's evidence, derived from spec criteria and scenarios, decides closure; a criterion without evidence is a plan gap.
 - A validation that **runs and fails** → back into the phase (gap): no advancing, no `validada`.
 
 - **SQL delivery**: validate the migration's behavior against a fixture or ephemeral database in the acquired checkout. The forward/rollback script is delivered through `SCRIPTS.sql` and `export-scripts`; a real application is an optional handoff and never keeps a phase or the plan open.
 
-> The **final validation** is PLAN-exec's **convergence gate** = **`Success criteria` green** (*verification-first*; analogous to SPEC's *analyze gate* and plan-new's *coherence gate*): the plan is not marked *done* until local proof passes. For code and persistence these are checkout commands/tests; a script's real-world application is never a closing criterion.
+> **Final validation** is the convergence gate: `Success criteria` green on local checkout proof before `done`. A script's real-world application is never a closing criterion.
+
+For each code source, the final-validation directive names its required build and tests and whether each came from the plan's `## Validations` override or the source's versioned pipeline. A missing command leaves the gate open with the action to declare it in either place. Run both commands in the acquired checkout and return each command's real output as its own evidence; a test suite that did not run never counts. The final gate cannot be omitted by the adaptive route.
 
 ## Delta 5 — Closing review gate (conventions, pre-commit)
 
@@ -250,9 +252,8 @@ without subagents runs a clean re-read instead, and the closing report declares 
 
 ## Delta 6 — Completion / close
 
-- A phase closes when its `> Estado:` reads `validada`: work done, exit condition true and proof
-  passed. In a continuous batch every phase waits for the batch review; an operative handoff leaves
-  the affected phase `bloqueada` and the unit uncommitted.
+- A phase closes as `validada` only after its exit, proof and batch review pass. An operative handoff leaves it `bloqueada` and uncommitted.
+- Check each known outdated spec/plan line with `aw amend apply … --check` before closing; propose its path, edit only with approval.
 - **The plan's own state is the third axis, and it stays `open` during the whole run.** Every phase `validada` is **not** the plan closed: the final validation still has to run. Keep `> Estado: open` under the title while executing — stamping it on the first write if the plan carries none — and never write `done` from the counters — a legacy plan with every box ticked is not closed by that fact (§ *Legacy plans degrade safely*).
 - **Every phase `validada` + final validation passed** unlocks completion, and the mark is written
   **after Git**: commit each unit, integrate it, and only then seal `done`. A run that isolates its
@@ -267,7 +268,7 @@ without subagents runs a clean re-read instead, and the closing report declares 
   is not `done` and the session does not close while a unit is still alive.
 - **Marking done = ONE status line in the plan-doc**, under the title's blockquote: `> Estado: done`, updated in place on a re-run. The machine value **stands alone** — the date and session go on their own `> Cierre: YYYY-MM-DD · sesión NNN` line right under it, for the same reason a blocker never rides on a phase's state line. It never replaces the per-phase lines inside the `### Fn` blocks — position tells the two apart. No per-phase result tables, no ✅ suffixes — that record lives in the session (`DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
-- **No automatic export**: the artifacts (`SCRIPTS.sql`, `DECISION`, …) stay in the session. Promoting them to `docs/` (scripts, manuals, …) is a separate step via `export-*`.
+- **No automatic export**: session artifacts stay there; only a later explicit `export-*` promotes them to `docs/`.
 
 ## Sequence
 

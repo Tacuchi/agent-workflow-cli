@@ -501,9 +501,9 @@ describe("la ruta package deriva y sella como la simple", () => {
     }
   }
 
-  /** Nothing under `docs/` — the lock the mechanism writes is not the package. */
+  /** A create reserves a marker; normative files only land on apply. */
   const docWrites = (fs: MemFs): string[] =>
-    [...fs.writes.keys()].filter((p) => p.includes("/docs/"));
+    [...fs.writes.keys()].filter((p) => p.includes("/docs/") && !p.endsWith("/.aw-reservation"));
 
   it("create prepare → validate → apply deja un package íntegro, sellado por el CLI", async () => {
     const fs = new MemFs();
@@ -529,7 +529,8 @@ describe("la ruta package deriva y sella como la simple", () => {
     expect(validated.ok).toBe(true);
     if (!validated.ok) return;
     expect(validated.attempt.plan).not.toBeNull();
-    // Nada escrito todavía: el manifest y el baseline llegan con el apply.
+    expect(await fs.exists(`${WS}/${FOLDER}/.aw-reservation`)).toBe(true);
+    // The marker only reserves the number; the manifest and baseline arrive on apply.
     expect(docWrites(fs)).toEqual([]);
     expect(validated.attempt.output?.completeness).toBe("partial");
     const fields = (
@@ -545,6 +546,7 @@ describe("la ruta package deriva y sella como la simple", () => {
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
     expect(applied.attempt.receipt.outcome).toBe("completed");
+    expect(await fs.exists(`${WS}/${FOLDER}/.aw-reservation`)).toBe(false);
 
     // El índice lo lee íntegro — la ruta verbatim dejaba el árbol sin sellar.
     const index = await readDesignIndex(fs, WS);

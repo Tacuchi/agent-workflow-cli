@@ -59,6 +59,7 @@ export interface SimpleTarget {
   manifest: DesignManifest | null;
   /** The exact manifest snapshot {@link manifest} was resolved from. */
   manifest_base: ProposalBase | null;
+  reservation?: { marker: string; owner: string; material: string };
 }
 
 export type SimpleResolution =
@@ -84,6 +85,7 @@ export function resolveSimpleTarget(
      * the design somewhere other than the allowlist the request published.
      */
     root?: string;
+    reserved?: { packageId: string; path: string; marker: string; owner: string; material: string };
   },
 ): SimpleResolution {
   const root = inputs.root ?? index.root;
@@ -100,12 +102,22 @@ export function resolveSimpleTarget(
         },
       };
     }
-    const packageId = nextPackageId(index.packages.map((p) => p.id ?? p.declared_id));
+    const packageId =
+      inputs.reserved?.packageId ?? nextPackageId(index.packages.map((p) => p.id ?? p.declared_id));
     return {
       ok: true,
       value: {
         packageId,
-        path: designFolder(root, packageId, designSlug(title)),
+        path: inputs.reserved?.path ?? designFolder(root, packageId, designSlug(title)),
+        ...(inputs.reserved === undefined
+          ? {}
+          : {
+              reservation: {
+                marker: inputs.reserved.marker,
+                owner: inputs.reserved.owner,
+                material: inputs.reserved.material,
+              },
+            }),
         revision: 1,
         supersedes: null,
         manifest: null,

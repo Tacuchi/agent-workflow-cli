@@ -1,6 +1,8 @@
-import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { dirname, isAbsolute, join } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives } from "../domain/correlative.js";
 import { withSpecBaseline } from "../domain/lineage.js";
+import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { runNextNumber } from "./dev-only-services.js";
@@ -53,6 +55,7 @@ const CONTRACT = [
   "decisions { category: 'research'|'spec'|'plan', slug: kebab-case, mode: 'new'|'update',",
   "target?: ruta existente cuando mode='update', target_digest?: su digest del inventario },",
   "y artifacts: exactamente UN { path, content }. El path va dentro del destino de la categoría",
+  "Adjuntos binarios opcionales en decisions.attachments: [{source: archivo local, path: destino numerado junto al .md}]. El CLI lee sus bytes, sella sha256 y escribe en modo exclusivo.",
   "y su NNN es consultivo: el CLI reasigna el número dentro del lock.",
   "Si el contenido ya existe como documento, respondé state='ambiguous' con reason.",
 ].join(" ");
@@ -87,6 +90,7 @@ export interface PersistPreview {
   target: string | null;
   /** A plan's lineage: `derived-from` is sealed at apply, `standalone` is not. */
   lineage?: "derived-from" | "standalone";
+  attachments?: Array<{ source: string; path: string; bytes: number; digest: string }>;
 }
 
 export interface PersistValidation {
@@ -230,6 +234,83 @@ export function validatePersist(
   };
 }
 
+/** Validate binary inputs against the same document proposal, sealing their raw bytes. */
+export async function validatePersistWithAttachments(
+  fs: FileSystemPort,
+  paths: PathsService,
+  raw: string,
+  request: SemanticRequest,
+): Promise<SemanticParse<PersistValidation>> {
+  const validated = validatePersist(raw, request);
+  if (!validated.ok) return validated;
+  const parsed = parseSemanticResponse(raw, request);
+  if (!parsed.ok) return parsed;
+  const rawAttachments = parsed.value.decisions?.attachments;
+  if (rawAttachments === undefined) return validated;
+  if (!Array.isArray(rawAttachments))
+    return { ok: false, failure: reject("decisions.attachments debe ser una lista") };
+  const doc = parsed.value.artifacts?.[0]?.path;
+  if (doc === undefined) return { ok: false, failure: reject("falta el documento del adjunto") };
+  const prefix = doc.replace(/\.md$/, "");
+  const dir = validated.value.preview.destination;
+  const attachments: NonNullable<PersistPreview["attachments"]> = [];
+  for (const item of rawAttachments) {
+    if (
+      typeof item !== "object" ||
+      item === null ||
+      typeof item.source !== "string" ||
+      typeof item.path !== "string"
+    ) {
+      return { ok: false, failure: reject("cada adjunto exige source y path de texto") };
+    }
+    const destination = checkSafeRelativePath(item.path);
+    if (
+      !destination.ok ||
+      dirname(item.path) !== dir ||
+      !item.path.startsWith(prefix) ||
+      item.path === doc ||
+      !/\.[a-z0-9]+$/i.test(item.path)
+    ) {
+      return {
+        ok: false,
+        failure: reject(`adjunto '${item.path}' fuera del destino del documento`),
+      };
+    }
+    const source = isAbsolute(item.source)
+      ? item.source
+      : (() => {
+          const checked = checkSafeRelativePath(item.source);
+          return checked.ok ? join(paths.workspaceDir(), checked.path) : null;
+        })();
+    if (source === null)
+      return { ok: false, failure: reject(`source '${item.source}' no es una ruta local segura`) };
+    let bytes: Uint8Array;
+    try {
+      bytes = await fs.readBytes(source);
+    } catch {
+      return { ok: false, failure: reject(`no se pudo leer el adjunto local '${item.source}'`) };
+    }
+    if (attachments.some((entry) => entry.path === item.path))
+      return { ok: false, failure: reject(`adjunto repetido: ${item.path}`) };
+    attachments.push({
+      source: item.source,
+      path: destination.path,
+      bytes: bytes.length,
+      digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+    });
+  }
+  return {
+    ok: true,
+    value: {
+      preview: { ...validated.value.preview, attachments },
+      approval_digest: semanticDigest({
+        document: validated.value.approval_digest,
+        attachments: attachments.map(({ path, digest }) => ({ path, digest })),
+      }),
+    },
+  };
+}
+
 /**
  * A plan's lineage, read the way the flow's publication reads it: sealed from
  * its header label, standalone by its marker, or refused. Other categories
@@ -351,7 +432,7 @@ export async function applyPersist(
   paths: PathsService,
   input: PersistApplyInput,
 ): Promise<SemanticParse<PersistApplied>> {
-  const validated = validatePersist(input.raw, input.request);
+  const validated = await validatePersistWithAttachments(fs, paths, input.raw, input.request);
   if (!validated.ok) return validated;
   if (validated.value.approval_digest !== input.approval) {
     return {
@@ -403,6 +484,8 @@ export async function applyPersist(
       input.request,
     );
     if ("failure" in content) return { ok: false as const, failure: content.failure };
+    const previous =
+      preview.mode === "update" ? await fs.readText(join(paths.workspaceDir(), path)) : null;
     const published = await publishArtifacts(
       fs,
       paths.workspaceDir(),
@@ -413,11 +496,41 @@ export async function applyPersist(
     // chore after it. Outside the lock two concurrent publications would
     // read-modify-write the same record and one row would simply be lost.
     if (published.ok) {
-      await appendPublications(
-        fs,
-        paths.cwdHistoryFile(),
-        publicationRows(published.value.written, OPERATION),
-      );
+      const written = [...published.value.written];
+      for (const attachment of preview.attachments ?? []) {
+        const destination =
+          preview.mode === "new"
+            ? `${category.dir}/${path.slice(category.dir.length + 1).replace(/\.md$/, "")}${attachment.path.slice(artifact.path.replace(/\.md$/, "").length)}`
+            : attachment.path;
+        const source = isAbsolute(attachment.source)
+          ? attachment.source
+          : join(paths.workspaceDir(), attachment.source);
+        try {
+          const bytes = await fs.readBytes(source);
+          if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== attachment.digest)
+            throw new Error("digest cambió");
+          const created = await fs.publishBytesExclusive(
+            join(paths.workspaceDir(), destination),
+            bytes,
+          );
+          if (!created.created) throw new Error("el destino ya existe");
+          written.push(destination);
+        } catch (error) {
+          for (const name of written.slice(1)) await fs.remove(join(paths.workspaceDir(), name));
+          if (previous === null) await fs.remove(join(paths.workspaceDir(), path));
+          else await fs.writeText(join(paths.workspaceDir(), path), previous);
+          return {
+            ok: false as const,
+            failure: {
+              code: "PUBLISH_FAILED",
+              message: `no se pudo publicar '${destination}': ${error instanceof Error ? error.message : String(error)}`,
+              action: "corregí el adjunto o destino y repetí validate",
+            },
+          };
+        }
+      }
+      await appendPublications(fs, paths.cwdHistoryFile(), publicationRows(written, OPERATION));
+      return { ok: true as const, value: { written } };
     }
     return published;
   });

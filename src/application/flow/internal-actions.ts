@@ -61,17 +61,17 @@ import {
 import { applyLocalProposal } from "../local-proposal.js";
 import { parseMdSectionBilingual } from "../markdown.js";
 import { parsePhases } from "../parsers/phases.js";
-import { parseTasks } from "../parsers/tasks.js";
 import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
 import {
   type BatchPhaseUpdate,
-  inferPlanExecBatch,
+  inferNextPlanExecBatch,
   preparePlanExecDoneSeal,
   publishPlanExecBatch,
 } from "../plan-exec-batch-service.js";
 import { settlePlanExecObligations } from "../plan-exec-decision-service.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
+import { canonicalArtifactPath } from "../session-artifacts.js";
 import { runSessionClose } from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
 import { readCustody } from "../session-custody-service.js";
@@ -80,6 +80,7 @@ import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
 import { observeScopedFingerprints } from "./checkout-observation.js";
 import { preserveBoundaryClose } from "./close-artifacts.js";
+import { closeDocumentGuidance } from "./close-document-guidance.js";
 import { projectRun } from "./run-projection.js";
 import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
@@ -539,6 +540,9 @@ async function artifacts(
   // The presence report, without the narrative: this operation checks that the
   // artifacts are THERE, and projecting the session's whole reading to answer
   // that would be work nobody asked for on every advance.
+  if (dump?.includes("objetivo") && dump.includes("checkpoint")) {
+    await seedMissingCheckpoint(deps, run);
+  }
   const report = await runArtifactsCommand(deps.fs, deps.env, deps.paths, {
     code: run.code,
     noNarrative: true,
@@ -572,13 +576,20 @@ async function artifacts(
   }
 
   const dumped = await readSessionArtifacts(deps.fs, deps.paths, run.code, [...dump], deps.runtime);
-  const output = canonicalJson({ report, dump: dumped });
+  const script = dump.includes("scripts") ? await rootScript(deps, run) : null;
+  const output = canonicalJson({ report, dump: dumped, root_script: script });
   if (dumped.error !== undefined) {
     return refusal("session.artifacts", String(dumped.hint ?? dumped.error), output);
   }
-  const empty = dump.filter((kind) => !hasContent(dumped[kind]));
+  const empty = dump.filter(
+    (kind) => !hasContent(dumped[kind]) && !(kind === "scripts" && hasContent(script)),
+  );
   if (empty.length > 0) {
-    return refusal("session.artifacts", `sin contenido: ${empty.join(", ")}`, output);
+    return refusal(
+      "session.artifacts",
+      `sin contenido: ${empty.join(", ")}${empty.includes("scripts") ? " (SCRIPTS.sql o scripts/*.sql)" : ""}`,
+      output,
+    );
   }
   // `objetivo` is the artifact that carries the success criteria, so demanding it
   // is demanding them: a SESSION.md with a criteria heading and nothing under it
@@ -598,6 +609,29 @@ async function artifacts(
     output,
     effects: SEEDED_EFFECTS,
   };
+}
+
+async function seedMissingCheckpoint(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<void> {
+  const folder = join(deps.paths.cwdSessionsDir(), run.session);
+  const checkpoint = canonicalArtifactPath(folder, "checkpoint");
+  if (await deps.fs.exists(checkpoint)) return;
+  const session = canonicalArtifactPath(folder, "session");
+  if (!(await deps.fs.exists(session))) return;
+  const objective = parseMdSectionBilingual(await deps.fs.readText(session), "Objective")?.trim();
+  if (!objective || objective.includes("_[AI:")) return;
+  await deps.fs.publishTextExclusive(
+    checkpoint,
+    `# CHECKPOINT\n\n## Completed\n\n## Pending / Next\n\n${objective}\n`,
+  );
+}
+
+/** Only this evidence reader accepts the root script; exports keep their dump. */
+async function rootScript(deps: InternalActionDeps, run: InternalActionRun) {
+  const path = canonicalArtifactPath(join(deps.paths.cwdSessionsDir(), run.session), "scripts_sql");
+  return (await deps.fs.exists(path)) ? { path, content: await deps.fs.readText(path) } : null;
 }
 
 /** A new refine must be bound to an existing plan; only pre-custody sessions degrade. */
@@ -740,7 +774,7 @@ async function inferBatch(
           },
         };
       }
-      const next = inferNextBatch(text, current);
+      const next = inferNextPlanExecBatch(text, current);
       if (!next.ok) {
         if (next.failure.code !== "PLAN_EXEC_BATCH_NONE_OPEN") {
           return { ok: false, failure: next.failure };
@@ -780,7 +814,7 @@ async function inferBatch(
     summary: inferred.value.no_work
       ? "el plan ya no tiene tareas abiertas: se omite el batch vacío y se expone la validación final"
       : inferred.value.created
-        ? `batch ${inferred.value.batch?.id ?? "nuevo"} inferido y sellado antes de implementar`
+        ? `batch ${inferred.value.batch?.id ?? "nuevo"} inferido y sellado antes de implementar; partición ${canonicalJson(inferred.value.batch?.partition ?? null)}`
         : `batch ${inferred.value.batch?.id ?? "actual"} ya estaba inferido; se conserva su snapshot sellado`,
     output: canonicalJson({ batch: inferred.value.batch, created: inferred.value.created }),
     effects: [],
@@ -1142,6 +1176,14 @@ async function sealPlanDone(
     );
   }
   const missing = PLAN_DONE_REQUIRED_TRANSITIONS.filter((transition) => {
+    if (transition === "plan-exec.final-validation") {
+      return (
+        !live.state.applied.includes(transition) ||
+        live.state.skipped.includes(transition) ||
+        (live.state.degraded ?? []).some((item) => item.transition === transition) ||
+        dispositionOf(live.state.route_decisions, transition)?.disposition === "substitute"
+      );
+    }
     if (live.state.applied.includes(transition)) return false;
     const disposition = dispositionOf(live.state.route_decisions, transition)?.disposition;
     return disposition !== "omit" && disposition !== "substitute";
@@ -1386,82 +1428,6 @@ function phaseUpdatesForClosedBatch(
   };
 }
 
-function inferNextBatch(text: string, state: FlowRunState): ReturnType<typeof inferPlanExecBatch> {
-  const first = parsePhases(text).items.find((phase) => phase.state !== "validada");
-  if (
-    first !== undefined &&
-    !parseTasks(text).items.some((task) => task.status === "open" && task.phase === first.n)
-  ) {
-    return inferValidationOnly(text, state, first.n);
-  }
-  // `inferPlanExecBatch` itself validates that the phase has real, uniquely
-  // labelled Tn.m tasks. We only choose the first still-open phase from the
-  // document, which is a deterministic batch boundary rather than a claimed one.
-  const openPhase = parseTasks(text).items.find(
-    (task) => task.status === "open" && task.phase !== undefined,
-  )?.phase;
-  if (openPhase === undefined) {
-    const unresolved = parsePhases(text).items.find((phase) => phase.state !== "validada");
-    if (unresolved !== undefined) {
-      return {
-        ok: false,
-        failure: {
-          code: "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
-          message: `F${unresolved.n} sigue '${unresolved.state}' pero no tiene tareas abiertas acreditables`,
-          action:
-            "normalizá la fase con plan-refine; no se salta a la validación final sobre una fase no validada",
-        },
-      };
-    }
-    return {
-      ok: false,
-      failure: {
-        code: "PLAN_EXEC_BATCH_NONE_OPEN",
-        message: "el plan no tiene una fase con tareas abiertas que este batch pueda acreditar",
-        action: "el batch ya está cerrado: reanudá la corrida para que exponga la validación final",
-      },
-    };
-  }
-  const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
-  return inferPlanExecBatch(text, {
-    id: `batch-${iteration}`,
-    iteration,
-    mode: "continuous",
-    phases: [openPhase],
-  });
-}
-
-function inferValidationOnly(
-  text: string,
-  state: FlowRunState,
-  phase: number,
-): ReturnType<typeof inferPlanExecBatch> {
-  const entry = state.plan_exec_entry;
-  if (
-    entry?.plan !== state.scope?.plan ||
-    !entry?.phases_without_open_tasks?.includes(phase) ||
-    !entry.approved_without_changes?.includes(phase)
-  ) {
-    return {
-      ok: false,
-      failure: {
-        code: "PLAN_EXEC_BATCH_PHASE_UNRESOLVED",
-        message: `F${phase} no tiene tareas abiertas ni aprobación de validación sin cambios al entrar`,
-        action:
-          "reanudá el consentimiento de entrada; si la corrida ya lo pasó sin observar esta fase, reinicializá con aw flow restart para observarla y aprobarla antes de validar",
-      },
-    };
-  }
-  const iteration = Math.max(0, ...(state.batches ?? []).map((batch) => batch.iteration)) + 1;
-  return inferPlanExecBatch(text, {
-    id: `batch-${iteration}`,
-    iteration,
-    mode: "isolated",
-    phases: [phase],
-    validation_only: true,
-  });
-}
-
 /**
  * Close the run's session — and refuse to, while it still holds a unit.
  *
@@ -1502,6 +1468,7 @@ async function close(
         listed.unreadable ?? [],
       )
     : [];
+  const documents = read.ok ? await closeDocumentGuidance(deps.fs, deps.paths, read.state) : [];
   const result = await runSessionClose(
     deps.fs,
     deps.paths,
@@ -1527,13 +1494,14 @@ async function close(
     return refusal("session.close", `la sesión no cerró: ${why}`, canonicalJson(result));
   }
   const closed = result.sessionClose;
+  if (documents.length > 0) closed.outdated_documents = documents;
   if (boundaryClose) {
     closed.pending_work = pending;
     closed.reopen = `aw session-resume --code ${run.session} --reopen`;
   }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.

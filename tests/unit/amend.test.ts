@@ -124,6 +124,91 @@ describe("aw amend — la corrección directa de una redacción cerrada", () => 
 
   const read = (relative: string): Promise<string> => readFile(join(workdir, relative), "utf8");
 
+  it.each([
+    {
+      target: PLAN,
+      from: "conserba",
+      to: "conserva",
+      classification: "wording",
+      route: "aw amend apply",
+      line: 9,
+    },
+    {
+      target: SPEC,
+      from: "se acepta",
+      to: "se rechaza",
+      classification: "contract",
+      route: "/w:spec-refine",
+      line: 15,
+    },
+    {
+      target: PLAN,
+      from: "ninguna cláusula",
+      to: "casi ninguna cláusula",
+      classification: "contract",
+      route: "/w:plan-refine",
+      line: 20,
+    },
+  ])("--check clasifica $classification sin escribir", async (change) => {
+    const { target, from, to, classification, route, line } = change;
+    class ReadOnlyFs extends NodeFileSystem {
+      override async writeText(): Promise<void> {
+        throw new Error("check intentó escribir");
+      }
+      override async appendText(): Promise<void> {
+        throw new Error("check intentó registrar");
+      }
+      override async mkdirp(): Promise<void> {
+        throw new Error("check intentó materializar");
+      }
+      override async writeTextExclusive(): Promise<{ created: boolean }> {
+        throw new Error("check intentó tomar candado");
+      }
+      override async publishTextExclusive(): Promise<{ created: boolean }> {
+        throw new Error("check intentó publicar");
+      }
+    }
+    const result = await amendCommand.execute(
+      parseArgv(["amend", "apply", "--check", target, "--de", from, "--a", to]),
+      { fs: new ReadOnlyFs(), env, paths } as Parameters<typeof amendCommand.execute>[1],
+    );
+    expect(result.ok).toBe(true);
+    expect(result.data).toMatchObject({
+      status: "checked",
+      classification,
+      line,
+      written: [],
+      next: `${route} ${target}`,
+    });
+    expect(await read(PLAN)).toBe(planText);
+    expect(await read(SPEC)).toBe(specText);
+    expect(await fs.exists(amendmentLedgerPath(paths))).toBe(false);
+    expect(await fs.exists(paths.cwdRoot())).toBe(false);
+  });
+
+  it.each(["spec", "plan"])("--check envía %s abierto a su refine", async (kind) => {
+    const target = kind === "spec" ? SPEC : PLAN;
+    const text =
+      kind === "spec"
+        ? specText.replace("ready-for-plan", "draft")
+        : planText.replace("Estado: done", "Estado: open");
+    await writeFile(join(workdir, target), text);
+    const result = await amendDocument(fs, env, paths, {
+      target,
+      from: kind === "spec" ? "juzge" : "conserba",
+      to: "texto revisado",
+      declaration: "",
+      check: true,
+    });
+    expect(result).toMatchObject({
+      status: "checked",
+      classification: "open",
+      action: `/w:${kind}-refine ${target}`,
+    });
+    expect(await read(target)).toBe(text);
+    expect(await fs.exists(amendmentLedgerPath(paths))).toBe(false);
+  });
+
   it("corrige una frase de la prosa y deja constancia con su preimagen exacta", async () => {
     const applied = await amendDocument(fs, env, paths, {
       target: PLAN,
@@ -272,6 +357,23 @@ describe("aw amend — la corrección directa de una redacción cerrada", () => 
     expect(refused.failure.code).toBe("AMEND_TARGET_OPEN");
     expect(refused.failure.action).toContain("el recorrido que lo tiene");
   });
+
+  it.each(["- B1 · isolated · F1", "lote ilegible"])(
+    "protege las filas declaradas aunque no formen una partición legible: %s",
+    async (row) => {
+      const text = planText.replace("- B1 · isolated · F1", row);
+      await writeFile(join(workdir, PLAN), text, "utf8");
+      const refused = await amendDocument(fs, env, paths, {
+        target: PLAN,
+        from: row,
+        to: `${row} modificado`,
+        declaration: "corrección editorial",
+      });
+      expect(refused.status).toBe("failed");
+      if (refused.status === "failed") expect(refused.failure.code).toBe("AMEND_CONTRACT_TOUCHED");
+      expect(await read(PLAN)).toBe(text);
+    },
+  );
 
   it("la reversión devuelve los bytes exactos y queda como su propio evento", async () => {
     const original = await read(PLAN);

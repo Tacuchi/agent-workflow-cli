@@ -66,6 +66,10 @@ Convergencia de unidades.
 |---|---|---|
 | ${ALIAS} | ${sourcePath} | main |
 
+## Pipeline
+
+- ${ALIAS}: build \`npm run build\` · test \`npm test\`
+
 ## Status
 
 - Ramas de trabajo actuales:

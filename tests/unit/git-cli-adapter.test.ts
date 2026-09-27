@@ -108,6 +108,21 @@ describe("GitCliAdapter — new git-flow ops", () => {
     expect("pull" in new GitCliAdapter(new ScriptedProcess([]))).toBe(false);
   });
 
+  it("lee el upstream completo de una rama local sin cambiarla", async () => {
+    const process = new ScriptedProcess([
+      {
+        match: (_cmd, args) => args[0] === "for-each-ref",
+        result: { code: 0, stdout: "refs/remotes/origin/main\n", stderr: "" },
+      },
+    ]);
+    expect(await new GitCliAdapter(process).upstreamBranch("/repo", "feature/w")).toBe(
+      "refs/remotes/origin/main",
+    );
+    expect(process.invocations.map((call) => call.args)).toEqual([
+      ["for-each-ref", "--format=%(upstream)", "refs/heads/feature/w"],
+    ]);
+  });
+
   it("createBranch crea sin cambiar de rama, con o sin rastreo", async () => {
     const p = new ScriptedProcess([]);
     const git = new GitCliAdapter(p);

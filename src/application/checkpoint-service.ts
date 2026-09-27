@@ -323,6 +323,8 @@ export interface ResumeSummaryOutput {
   needs_ai_action: boolean;
   /** `degraded` = no state is restored until the target is resolved. */
   continuity: "ok" | "degraded";
+  /** PostCompact's actionable instruction, on the same output channel as the summary. */
+  instruction: string;
   candidates?: SessionCandidate[];
   action?: string;
   /**
@@ -419,6 +421,7 @@ async function summarizeResolved(
     unfilled_placeholders: cpStatus.unfilled_placeholders,
     needs_ai_action: cpStatus.needs_ai_action,
     continuity: "ok",
+    instruction: `Contexto compactado. Reanudá el loop de ${session.folder} desde su CHECKPOINT.md y presentá un resumen.`,
   };
 
   if (cp) {
@@ -444,6 +447,11 @@ async function degradedSummary(
   target: LifecycleDegraded,
   contextId?: string,
 ): Promise<ResumeSummaryOutput> {
+  const refuge = await findRefugeForContext(fs, paths, contextId);
+  const instruction =
+    activeFolders.length === 0
+      ? "Contexto compactado. No hay sesiones activas; terminá."
+      : "Contexto compactado. NO reanudes ninguna sesión: active_sessions es un listado, no una identidad. Mostrá candidates con su action y pedí al usuario que elija; después reintentá con --code <NNN>.";
   return {
     active_sessions: activeFolders,
     primary_session: null,
@@ -455,9 +463,12 @@ async function degradedSummary(
     // resolving the target IS the pending action.
     needs_ai_action: activeFolders.length > 0,
     continuity: "degraded",
+    instruction: refuge
+      ? `${instruction} Hay un CHECKPOINT de refugio en ${refuge.path}; mostralo y avisá que se adopta al resolver la sesión (aw checkpoint-write --code <NNN>).`
+      : instruction,
     candidates: target.candidates,
     action: target.action,
-    refuge: await findRefugeForContext(fs, paths, contextId),
+    refuge,
   };
 }
 

@@ -25,7 +25,7 @@ import { redactSensitiveValue } from "../../domain/redaction.js";
 import { readPackageVersion } from "../../runtime/version.js";
 import { annotateRepairs } from "./actions.js";
 import { DOCTOR_HOST_ORDER, type DoctorHostSelection, selectDoctorHosts } from "./hosts.js";
-import { installationProvider } from "./provider-installation.js";
+import { createInstallationProvider } from "./provider-installation.js";
 import { type McpsProviderDeps, createMcpsProvider } from "./provider-mcps.js";
 import { pluginsHooksProvider } from "./provider-plugins-hooks.js";
 import { skillsProvider } from "./provider-skills.js";
@@ -54,11 +54,15 @@ export interface DoctorRunOptions {
 export interface DoctorRunDeps {
   providers?: readonly DoctorProvider[];
   mcps?: McpsProviderDeps;
+  distRoot?: string;
 }
 
-export function defaultDoctorProviders(deps: McpsProviderDeps = {}): DoctorProvider[] {
+export function defaultDoctorProviders(
+  deps: McpsProviderDeps = {},
+  distRoot?: string,
+): DoctorProvider[] {
   return [
-    installationProvider,
+    createInstallationProvider(distRoot),
     createMcpsProvider(deps),
     skillsProvider,
     toolsAuthProvider,
@@ -91,8 +95,26 @@ export async function runDoctor(
   // Un `--only` mal escrito se denuncia ANTES de mirar nada: es lo único que
   // explica por qué la corrida no cubrió lo que la persona creía haber pedido.
   const findings: DoctorFinding[] = selection.unknownOnly.map(unknownOnlyFinding);
+  if (!selection.states.some((state) => state.workline.installed)) {
+    findings.push({
+      id: doctorFindingId("workspace", "installation-hosts", "sin-workline"),
+      host: "workspace",
+      category: "installation-hosts",
+      resource: { kind: "instalación", name: "Workline en hosts", locator: null },
+      state: "blocking",
+      summary: "Workline no está instalado en ningún host",
+      impact: "ningún host de esta máquina puede iniciar los recorridos de Workline",
+      evidence: ["el catálogo no encontró ninguna instalación de Workline"],
+      ownership: "ours",
+      remediation: {
+        kind: "manual",
+        action: null,
+        guidance: ["aw self install-skill --target <host>"],
+      },
+    });
+  }
   const coverages: DoctorCoverage[] = [];
-  for (const provider of deps.providers ?? defaultDoctorProviders(deps.mcps)) {
+  for (const provider of deps.providers ?? defaultDoctorProviders(deps.mcps, deps.distRoot)) {
     try {
       const output = await provider.run(input);
       findings.push(...output.findings);

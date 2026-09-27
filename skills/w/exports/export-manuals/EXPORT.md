@@ -1,6 +1,6 @@
 ---
 name: export-manuals
-description: "Operations / onboarding manuals (operator/support audience). Synthesizes the workspace's technical manuals into `docs/manuals/` consolidating N sessions (`exec`/`quick`) + `docs/`. Reads each session's `DECISION` and the plan-doc (`Solution` — including its Final behavior block —, `Validations`) + the touched code in the sources (how what was built operates/works). Two modes: `complement` (default, overwrites `INDEX.md` pointing at the detected manuals) and `regenerate` (produces a `NNN-export-manuals-YYYY-MM-DD/` dossier with 1 manual per topic). Audience: operators / support / onboarding. Read-only/report: it never commits nor mutates sessions. The prose follows the ambient writing conventions (the host auto-applies an installed writing skill when present). Use for 'operations manual', 'how what we shipped works', 'technical onboarding pack', 'manuals index'. User-invoked via `/w:export-manuals`."
+description: "Operations/onboarding manuals from N sessions and docs into `docs/manuals` or `[docs] manuals`. The response chooses index-only complement, flat `<slug>.md` manuals or a numbered dossier. The CLI previews every replacement, publishes on approval, never commits or mutates sessions. Uses ambient writing conventions when installed; works without them. User-invoked via `/w:export-manuals`."
 ---
 
 # export-manuals — technical manuals from sessions + `docs/`
@@ -11,11 +11,11 @@ Generates or refreshes **operations / how-it-works / onboarding** manuals in `do
 
 ## Category
 
-`docs/manuals` — the **only** `docs/` folder this export writes.
+`docs/manuals` or its `[docs] manuals` override — the **only** `docs/` folder this export writes.
 
 ## Writing (ambient convention, not a role)
 
-The manual's prose follows the **ambient** writing conventions: the host auto-applies an installed writing skill (when present) by its `description` — short sentences, lists over prose, no filler, technical lexicon for the operator/support audience. This export does **not** compose or bind a `writing` role; it is **indifferent** to which writing skill exists. A useful family lives in the `dev-conventions` marketplace plugin, but the export does **not depend** on it. Manuals are user-facing deliverables → write them in the user's language.
+The manual's prose follows **ambient** writing conventions when the host has one installed — short sentences, lists over prose, no filler, technical lexicon for operators and support. This export does not bind a writing role and works without any installed convention. Manuals are user-facing → write them in the user's language.
 
 ## When to use
 
@@ -29,9 +29,9 @@ The manual's prose follows the **ambient** writing conventions: the host auto-ap
 1. Reads the session corpus (`exec`/`quick`): per session, `DECISION` + the plan-doc (`Solution` — including its Final behavior block; legacy plans: a separate `## Final behavior` section —, `Validations`).
 2. Inspects the touched code in the sources (how what was built operates/works) — read-only.
 3. Detects topics (declared in `SESSION` — its `## Objective` —, or inferred by operational keywords).
-4. Resolves the mode (`complement` or `regenerate`).
+4. Infers mode from the response (`complement`, flat or `regenerate`).
 5. Synthesizes the content applying the ambient writing conventions (host).
-6. Writes: `complement` → overwrites `docs/manuals/INDEX.md`; `regenerate` → a `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` dossier with 1 manual per topic.
+6. Publishes: index only → `INDEX.md`; direct `<slug>.md` → flat canon; dossier → numbered pack. Existing files require `--overwrite`.
 
 ## What it does NOT do
 
@@ -44,7 +44,7 @@ The manual's prose follows the **ambient** writing conventions: the host auto-ap
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved mode, the detected topics (with origin sessions), the manuals already present in `docs/manuals/`, and — per mode — the `INDEX.md` structure it would overwrite or the count of manuals the dossier would generate. It does **not** run `Write`; numbering queries use `aw next-number --dry-run` (pure).
+In plan mode it **describes**, never writes: the inferred mode, topics and destination. It does **not** run `Write`; numbering queries use `aw next-number --dry-run` (pure).
 
 ## Inputs
 
@@ -64,7 +64,6 @@ In plan mode it **describes**, never writes: the resolved mode, the detected top
 
 ```
 /w:export-manuals [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
-                  [--mode complement|regenerate] [--topics slug1,slug2] [--dry-run]
 ```
 
 | Flag | Behavior |
@@ -72,17 +71,15 @@ In plan mode it **describes**, never writes: the resolved mode, the detected top
 | `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
 | `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
 | `--source <alias>` | Limits to one source (multi-source workspace) |
-| `--mode complement\|regenerate` | Default `complement` |
-| `--topics slug1,slug2` | Limits to the declared topics |
-| `--dry-run` | Propositional report, no files written |
 
-No args: `--mode complement` over the whole corpus.
+No args: the response determines the mode over the whole corpus.
 
-### `--mode` resolution
+### Response shape determines the mode
 
 | Mode | Output | When to use |
 |---|---|---|
 | `complement` (default) | `docs/manuals/INDEX.md` (overwrites) | Refresh the index after new sessions/manuals |
+| Flat canon | Direct `docs/manuals/<slug>.md` files | One manual per topic without a dossier; replacements need `--overwrite` |
 | `regenerate` | `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` (next-number) | Consolidated manual pack (e.g. onboarding) |
 
 ## Flow
@@ -97,7 +94,7 @@ List `docs/manuals/*.md` (excluding `INDEX.md` and `NNN-export-manuals-*/` subdi
 
 ### Step 3 — Detect topics
 
-For every filtered corpus session (`aw session-artifacts --code <NNN> --dump objetivo,decisiones`): take the dump's `DECISION` + the plan-doc (`Solution` with its Final behavior block/`Validations`) + the touched code. **Primary** topic: the topic in `SESSION` (its `## Objective`). **Secondary**: inference by operational keywords ("configure", "install", "step by step", "how to …" — in the user's language). Filter by `--topics` when present. List (slug, confidence, origin sessions).
+For every filtered corpus session (`aw session-artifacts --code <NNN> --dump objetivo,decisiones`): take the dump's `DECISION` + the plan-doc (`Solution` with its Final behavior block/`Validations`) + the touched code. **Primary** topic: the topic in `SESSION` (its `## Objective`). **Secondary**: inference by operational keywords ("configure", "install", "step by step", "how to …" — in the user's language). List (slug, confidence, origin sessions).
 
 ### Step 4 — Synthesize (prose: ambient conventions)
 
@@ -107,11 +104,12 @@ For every filtered corpus session (`aw session-artifacts --code <NNN> --dump obj
 
 ### Step 5 — Write or report
 
-With `--dry-run`: print the report; write nothing. Otherwise: `complement` → `Write` over `docs/manuals/INDEX.md`; `regenerate` → `aw next-number docs/manuals` + create the dossier. **NEVER commit**. Summary to the user: mode + written paths + counts; if there are detectable topics without a manual, suggest covering them.
+Publish via `aw export-manuals` prepare → validate → apply: index-only response → `complement`; dossier → `regenerate`. **NEVER commit**. Summarize mode and written paths.
 
 ## Output location
 
-- `complement`: `docs/manuals/INDEX.md` (overwrites).
+- `complement`: `docs/manuals/INDEX.md` (overwrites if already present).
+- Flat: `docs/manuals/<slug>.md` (each existing file requires `--overwrite`).
 - `regenerate`: `docs/manuals/NNN-export-manuals-YYYY-MM-DD/` with `README.md` + 1 `.md` per topic.
 
 ## Re-run

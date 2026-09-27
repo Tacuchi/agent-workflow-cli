@@ -145,7 +145,7 @@ export function advanceFlowRun(input: AdvanceInput): AdvanceResult {
   // rows after the gate. Letting `advance` walk those rows would build the
   // escalation package and then continue toward commits, which is exactly the
   // contradictory route the typed choice closes.
-  if (reconciled.handoff !== null && reconciled.handoff !== undefined) {
+  if (reconciled.handoff != null && !closingHandoff(reconciled, input.journey)) {
     const stopped = input.journey[reconciled.applied.length] ?? null;
     let state = withBoundary(reconciled, stopped?.id ?? null);
     state = withPendingAction(state, null);
@@ -282,7 +282,8 @@ function passOver(
     routeSkipReason(state, decision) ??
     skipReason(decision, journey, state.observations, iterationOf(state, observed)) ??
     nothingToPublish(state, decision) ??
-    nothingToSettle(state, decision);
+    nothingToSettle(state, decision) ??
+    noQuickCode(state, decision);
   const degraded = conditional === null ? exhaustionSkip(state, decision) : null;
   const reason = conditional ?? degraded;
   if (reason === null) return null;
@@ -293,6 +294,29 @@ function passOver(
         : degradeTransition(state, decision.id, degraded),
     step: skippedStepOf(decision, reason),
   };
+}
+
+function noQuickCode(state: FlowRunState, decision: FlowDecision): string | null {
+  if (decision.id === "quick.branch-precondition") {
+    const ratification = "quick.success-criteria-ratification";
+    const analysis = state.observations.some((item) =>
+      item.signals.includes("quick.deliverable-is-analysis"),
+    );
+    return analysis && state.applied.includes(ratification) && !state.skipped.includes(ratification)
+      ? "el entregable es un análisis ratificado: no hay edición cuya rama verificar"
+      : null;
+  }
+  if (decision.id !== "quick.commit-authorization" || state.fix_preview?.files.length !== 0)
+    return null;
+  const before = state.fix_preview.checkouts;
+  const now = state.quick_checkouts;
+  if (before == null || now == null || Object.keys(before).length === 0) return null;
+  const unchanged =
+    Object.keys(before).length === Object.keys(now).length &&
+    Object.entries(before).every(([alias, digest]) => now[alias] === digest);
+  return unchanged
+    ? "el preview no declara archivos y las fuentes siguen sin cambios: no hay commit que aprobar"
+    : null;
 }
 
 /** A route can alter only a transition that opted in through the registry. */
@@ -369,6 +393,8 @@ export function actionDigest(action: DelegatedAction): string {
     target: action.invocation.target,
     input: action.invocation.input,
     evidence: [...action.evidence],
+    ...(action.requirements === undefined ? {} : { requirements: [...action.requirements] }),
+    ...(action.final_validation === undefined ? {} : { final_validation: action.final_validation }),
   });
 }
 
@@ -439,12 +465,44 @@ function emittedAction(
   if (declared === null) return { action: null, unbound: null, outside: null };
   const bound = bindAction(declared, runBinding(state));
   if (!bound.ok) return { action: null, unbound: bound.unbound, outside: null };
+  const action =
+    stopped?.id === "plan-exec.final-validation"
+      ? finalValidationAction(bound.action, state)
+      : bound.action;
   // Checked on the BOUND form: a placeholder could resolve into a path, so
   // validating the template would be validating something nobody runs.
-  const outside = docsBoundaryBreach(bound.action, state.flow);
+  const outside = docsBoundaryBreach(action, state.flow);
   return outside === null
-    ? { action: bound.action, unbound: null, outside: null }
+    ? { action, unbound: null, outside: null }
     : { action: null, unbound: null, outside };
+}
+
+function finalValidationAction(action: DelegatedAction, state: FlowRunState): DelegatedAction {
+  const sources = state.scope?.final_validation ?? [];
+  if (sources.length === 0 && state.scope?.sources.every((alias) => alias === "workspace"))
+    return action;
+  const requirements = sources.flatMap((source) =>
+    (["build", "test"] as const).map((field) => {
+      const value = source[field];
+      return `${source.alias} · ${field === "test" ? "tests" : "build"}: ${value.command === null ? `faltante — ${value.action}` : `\`${value.command}\` (${value.origin === "plan" ? "plan" : "fuente"})`}`;
+    }),
+  );
+  if (requirements.length === 0)
+    requirements.push(
+      "faltan declaraciones: declará build y tests por fuente en su pipeline versionado o en ## Validations del plan",
+    );
+  return {
+    ...action,
+    requirements,
+    final_validation: sources,
+    evidence:
+      sources.length === 0
+        ? ["plan.final-validation.missing"]
+        : sources.flatMap((source) => [
+            `plan.final-validation.${source.alias}.build`,
+            `plan.final-validation.${source.alias}.tests`,
+          ]),
+  };
 }
 
 /**
@@ -813,8 +871,20 @@ function describeAllowance(flow: FlowRunState["flow"]): string {
  * pointer goes into the session's BACKLOG, the close persists the CHECKPOINT, and
  * only then does the work continue at the destination.
  */
-function handoffAction(session: string, command: string): string {
-  return `anotá el puntero de escalación en el BACKLOG de la sesión y cerrala con 'aw session-close --code ${session}' —que persiste el CHECKPOINT—; después seguí con ${command}`;
+function handoffAction(state: FlowRunState, command: string): string {
+  if (state.flow === "quick" && state.applied.at(-1) === "chassis.finalize") {
+    return `${finalAction(state)}; el puntero quedó en BACKLOG y el pedido en el paquete: seguí con ${command}`;
+  }
+  return `anotá el puntero de escalación en el BACKLOG de la sesión y cerrala con 'aw session-close --code ${state.session}' —que persiste el CHECKPOINT—; después seguí con ${command}`;
+}
+
+/** A QUICK handoff must finish its close before becoming terminal. */
+function closingHandoff(state: FlowRunState, journey: readonly FlowDecision[]): boolean {
+  return (
+    state.flow === "quick" &&
+    state.reentries?.at(-1)?.kind === "close" &&
+    journey[state.applied.length]?.id === "chassis.finalize"
+  );
 }
 
 export function resolveBoundary(
@@ -837,7 +907,7 @@ export function resolveBoundary(
       error: null,
     };
   }
-  if (state.handoff !== null && state.handoff !== undefined) {
+  if (state.handoff != null && !closingHandoff(state, journey)) {
     return {
       stopped,
       kind: "blocked",
@@ -851,7 +921,7 @@ export function resolveBoundary(
       error: {
         code: "FLOW_HANDOFF",
         message: `la corrida entregó '${state.handoff.destination}' desde '${state.selected_choice?.label ?? "la desviación"}' y no puede continuar hacia '${stopped.id}'`,
-        action: handoffAction(state.session, state.handoff.command),
+        action: handoffAction(state, state.handoff.command),
       },
     };
   }
@@ -1019,7 +1089,7 @@ export function directiveFor(
               ? "human"
               : resolved.stopped.authority,
           ownership: resolved.stopped.ownership,
-          title: boundaryTitle(state, resolved.stopped),
+          title: validationTitle(state, resolved.stopped),
           document: resolved.stopped.document,
         };
   const planned = resolved.authorization?.planned ?? [];
@@ -1067,6 +1137,14 @@ export function directiveFor(
   });
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state, directive: built.directive };
+}
+
+/** The proof covers this entire range; no new field is required in the answer envelope. */
+function validationTitle(state: FlowRunState, stopped: FlowDecision): string {
+  if (stopped.id !== "plan-exec.validation-execution") return boundaryTitle(state, stopped);
+  const batch = state.batches?.find((item) => item.iteration === state.batch_loop?.iteration);
+  if (batch === undefined) return stopped.title;
+  return `${stopped.title}: ${batch.phases.map((phase) => `F${phase}`).join(", ")}${batch.kind === "validation-only" ? " (sólo validación)" : ""}`;
 }
 
 /**
@@ -1360,6 +1438,11 @@ function choicesFor(
  * are in the state either way; this is what makes them impossible to miss.
  */
 function finalAction(state: FlowRunState): string {
+  const lastClose = state.events?.at(-1);
+  const detail =
+    lastClose?.kind === "executed" && lastClose.operation === "session.close"
+      ? ` · ${lastClose.summary}`
+      : "";
   if (state.reentries?.at(-1)?.kind === "close") {
     const closed = [...(state.events ?? [])]
       .reverse()
@@ -1369,11 +1452,11 @@ function finalAction(state: FlowRunState): string {
   const degraded = state.degraded ?? [];
   if (degraded.length === 0) {
     return state.assurance === "verified"
-      ? "recorrido terminado · verified"
-      : `recorrido terminado · ${state.assurance}: la evidencia omitida o sustituida no se presenta como verde`;
+      ? `recorrido terminado · verified${detail}`
+      : `recorrido terminado · ${state.assurance}: la evidencia omitida o sustituida no se presenta como verde${detail}`;
   }
   const names = degraded.map((one) => `'${one.transition}'`).join(", ");
-  return `el recorrido terminó dejando degradadas ${names}: nadie las resolvió y el estado declara la causa de cada una — ${DEGRADE_ACTION}`;
+  return `el recorrido terminó dejando degradadas ${names}: nadie las resolvió y el estado declara la causa de cada una — ${DEGRADE_ACTION}${detail}`;
 }
 
 function nextActionFor(
@@ -1381,8 +1464,8 @@ function nextActionFor(
   boundary: FlowBoundary,
   resolved: ResolvedBoundary,
 ): string {
-  if (state.handoff !== null && state.handoff !== undefined) {
-    return handoffAction(state.session, state.handoff.command);
+  if (state.handoff != null && resolved.stopped?.id !== "chassis.finalize") {
+    return handoffAction(state, state.handoff.command);
   }
   const stopped = resolved.stopped;
   if (stopped === null) return finalAction(state);

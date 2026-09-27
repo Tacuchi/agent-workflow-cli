@@ -2,14 +2,20 @@ import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
 import {
+  compareCorrelatives,
   formatCorrelative,
+  isCorrelative,
   leadingCorrelative,
   maxCorrelative,
   nextCorrelative,
   sameCorrelative,
 } from "../domain/correlative.js";
 import { HARNESSES, type Harness, type HarnessId, harnessById } from "../domain/harnesses.js";
-import { reservationMarker } from "../domain/reservation.js";
+import {
+  FOLDER_RESERVATION_MARKER,
+  reservationMarker,
+  reservationOwnerOf,
+} from "../domain/reservation.js";
 import {
   type HostExecutionCapability,
   type ResourcePlan,
@@ -24,9 +30,11 @@ import {
   isRevoked,
   readClaimEvents,
 } from "./claims-ledger.js";
+import { publishedCorrelatives } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
 import { parseMdSection, parseMdValue } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
+import { readReleasePasses } from "./release-pass-ledger.js";
 
 // ─── harness ────────────────────────────────────────────────────────────────
 
@@ -339,6 +347,8 @@ export interface NextNumberOutput {
 
 export interface NextNumberInput {
   directory: string;
+  /** Lower bound supplied by an index whose published identity moved folders. */
+  minimum?: string;
   /** Pure query: never creates the directory (plan/dry-run mode). */
   dryRun?: boolean;
   /**
@@ -355,7 +365,7 @@ export interface NextNumberInput {
    * and no recovery. Pairing the two in one object makes the anonymous claim
    * unrepresentable rather than merely discouraged.
    */
-  claim?: { name: string; owner: string };
+  claim?: { name: string; owner: string; folder?: boolean; material?: string };
   /**
    * Publish `<NNN>-<name>` with its FINAL bytes in one operation.
    *
@@ -384,7 +394,7 @@ const MAX_CLAIM_PROBES = 50;
 
 /** What this call is going to write, or `null` for a pure query. */
 type Mint =
-  | { kind: "claim"; name: string; bytes: string; owner: string }
+  | { kind: "claim"; name: string; bytes: string; owner: string; folder: boolean }
   | { kind: "publish"; name: string; bytes: string };
 
 /**
@@ -407,8 +417,9 @@ function mintOf(
     return {
       kind: "claim",
       name: claim.name,
-      bytes: reservationMarker(claim.owner),
+      bytes: reservationMarker(claim.owner, claim.material),
       owner: claim.owner,
+      folder: claim.folder === true,
     };
   }
   return null;
@@ -426,14 +437,49 @@ async function mintUnderLock(
   paths: PathsService,
   target: string,
   mint: Mint,
+  minimum?: string,
 ): Promise<NextNumberOutput> {
-  const state = await scan(fs, target, false);
+  let state = await scan(fs, target, false, paths);
+  if (minimum !== undefined && compareCorrelatives(state.next, minimum) < 0)
+    state = { ...state, next: minimum };
+  const published = await publishedNumbers(fs, paths, target);
+  if (mint.kind === "publish") {
+    const matched = await matchingPublication(fs, target, state.files, mint.name, mint.bytes);
+    if (matched !== null) {
+      const { published_path: _previous, ...rest } = state;
+      return { published_path: normalize(matched.path), ...rest, next: matched.number };
+    }
+  }
   // Re-entry, before minting anything: a run that already holds this exact slot
   // gets it back. Handing it a second number instead would abandon the first
   // one, and an abandoned reservation is the empty document nobody is coming
   // back for. A publication has no slot to re-enter — it never left one open.
   if (mint.kind === "claim") {
-    const held = await heldReservation(fs, target, state.files, mint.name, mint.bytes);
+    if (mint.folder) {
+      for (const file of state.files) {
+        const number = leadingCorrelative(file);
+        if (number === null || file.slice(number.length + 1) !== mint.name) continue;
+        const directory = join(target, file);
+        const markerPath = join(directory, FOLDER_RESERVATION_MARKER);
+        if (!(await fs.exists(markerPath)) || (await fs.list(directory)).length !== 1) continue;
+        const held = await fs.readText(markerPath);
+        if (held === mint.bytes || reservationOwnerOf(held) !== mint.owner) continue;
+        await appendClaimEvent(fs, paths, {
+          at: new Date().toISOString(),
+          event: "released",
+          claim: {
+            category: basename(target),
+            correlative: number,
+            name: mint.name,
+            owner: mint.owner,
+          },
+          cause: "aw next-number: nuevo material de la misma sesión liberó la reserva anterior",
+        });
+        await fs.remove(directory);
+        state = await scan(fs, target, false, paths);
+      }
+    }
+    const held = await heldReservation(fs, target, state.files, mint.name, mint.bytes, mint.folder);
     if (held !== null) {
       return {
         ...state,
@@ -455,11 +501,20 @@ async function mintUnderLock(
   const reusable = eligibleCorrelatives(ledger.events, basename(target));
   // Each reusable correlative gets ONE attempt — it is a specific number, not a
   // starting point — and then `max + 1` gets the forward probe it always had.
-  for (const candidate of [...reusable, null]) {
+  for (const candidate of [
+    ...reusable.filter(
+      (number) =>
+        !published.has(number) &&
+        (minimum === undefined || compareCorrelatives(number, minimum) >= 0),
+    ),
+    null,
+  ]) {
     let nnn = candidate ?? state.next;
     const probes = candidate === null ? MAX_CLAIM_PROBES : 1;
     for (let probe = 0; probe < probes; probe++, nnn = nextCorrelative(nnn)) {
-      const taken = await attemptAt(fs, paths, target, mint, state, nnn, ledger.events);
+      const taken = published.has(nnn)
+        ? null
+        : await attemptAt(fs, paths, target, mint, state, nnn, ledger.events);
       if (taken !== null) return taken;
     }
   }
@@ -514,13 +569,32 @@ async function attemptAt(
   // document on purpose: a half-written marker IS the anonymous zero-byte
   // placeholder this mechanism exists to retire, and there is no reason to keep a
   // way of producing one.
-  const { created } = await fs.publishTextExclusive(path, mint.bytes);
+  let created: boolean;
+  if (mint.kind === "claim" && mint.folder) {
+    if (await fs.exists(path)) return null;
+    await fs.mkdirp(path);
+    try {
+      ({ created } = await fs.publishTextExclusive(
+        join(path, FOLDER_RESERVATION_MARKER),
+        mint.bytes,
+      ));
+    } catch (error) {
+      await fs.remove(path);
+      throw error;
+    }
+  } else {
+    ({ created } = await fs.publishTextExclusive(
+      path,
+      mint.kind === "publish" ? stampPublishedTitle(mint.bytes, nnn) : mint.bytes,
+    ));
+  }
   if (!created) return null;
   if (mint.kind === "publish") {
     // A publication leaves no reservation, so it has no lifecycle to record: the
     // document on disk IS the whole story, and `scan` already reads its
     // correlative as spent straight from the file.
-    return { ...state, next: nnn, published_path: normalize(path) };
+    const { published_path: _previous, ...rest } = state;
+    return { published_path: normalize(path), ...rest, next: nnn };
   }
   await appendClaimEvent(fs, paths, {
     at: new Date().toISOString(),
@@ -552,16 +626,35 @@ export async function runNextNumber(
   // invocation still numbers the workspace's docs tree; it must not quietly
   // create a second docs/ under the raw process cwd.
   const cwd = paths.workspaceDir();
-  const { directory, dryRun = false, claim, publish } = input;
+  const { directory, dryRun = false, claim, publish, minimum } = input;
   const target = isAbsolute(directory) ? directory : join(cwd, directory);
   if (claim !== undefined && publish !== undefined) {
     throw new Error(
       "reclamar y publicar se excluyen: un reclamo reserva el número para escribirlo después, una publicación lo asigna y escribe el documento en el mismo acto",
     );
   }
+  if (minimum !== undefined && !isCorrelative(minimum))
+    throw new Error(`correlativo mínimo inválido: ${minimum}`);
 
   const mint = mintOf(claim, publish, dryRun);
-  if (mint === null) return scan(fs, target, dryRun);
+  if (mint === null) {
+    const state = await scan(fs, target, dryRun, paths);
+    const next =
+      minimum !== undefined && compareCorrelatives(state.next, minimum) < 0 ? minimum : state.next;
+    if (dryRun && publish !== undefined) {
+      const matched = await matchingPublication(
+        fs,
+        target,
+        state.files,
+        publish.name,
+        publish.content,
+      );
+      const path = matched?.path ?? `${normalize(target)}/${next}-${publish.name}`;
+      const { published_path: _previous, ...rest } = state;
+      return { published_path: normalize(path), ...rest, next: matched?.number ?? next };
+    }
+    return { ...state, next };
+  }
   // The mint becomes a real filesystem write, so it is a name and never a path:
   // a separator would let `../…` land outside the directory the caller named —
   // and every caller of this is a command-line argument.
@@ -571,14 +664,44 @@ export async function runNextNumber(
     );
   }
 
-  const minted = await withCwdLock(fs, paths, () => mintUnderLock(fs, paths, target, mint), {
-    waitMs: CLAIM_LOCK_WAIT_MS,
-  });
+  const minted = await withCwdLock(
+    fs,
+    paths,
+    () => mintUnderLock(fs, paths, target, mint, minimum),
+    {
+      waitMs: CLAIM_LOCK_WAIT_MS,
+    },
+  );
 
   if ("error" in minted) {
     throw new Error(`no se pudo tomar el correlativo: ${minted.error}`);
   }
   return minted;
+}
+
+function stampPublishedTitle(content: string, number: string): string {
+  return content.replace(/^#\s+(?:\d{3,}\s+[—–-]\s*)?/m, `# ${number} — `);
+}
+
+async function matchingPublication(
+  fs: FileSystemPort,
+  target: string,
+  files: readonly string[],
+  name: string,
+  content: string,
+): Promise<{ path: string; number: string } | null> {
+  for (const file of files) {
+    const number = leadingCorrelative(file);
+    if (number === null || file.slice(number.length + 1) !== name) continue;
+    const path = join(target, file);
+    try {
+      if ((await fs.readText(path)) === stampPublishedTitle(content, number))
+        return { path, number };
+    } catch {
+      /* Unreadable is taken, never a match. */
+    }
+  }
+  return null;
 }
 
 /**
@@ -595,13 +718,19 @@ async function heldReservation(
   files: readonly string[],
   claim: string,
   marker: string,
+  folder: boolean,
 ): Promise<{ nnn: string; path: string } | null> {
   for (const name of files) {
     const nnn = leadingCorrelative(name);
     if (nnn === null || name.slice(nnn.length) !== `-${claim}`) continue;
     const path = join(target, name);
     try {
-      if ((await fs.readText(path)) === marker) return { nnn, path };
+      const candidate = folder ? join(path, FOLDER_RESERVATION_MARKER) : path;
+      if (
+        (await fs.readText(candidate)) === marker &&
+        (!folder || (await fs.list(path)).length === 1)
+      )
+        return { nnn, path };
     } catch {
       // Unreadable is not "mine": it stays taken by number and the mint moves on.
     }
@@ -613,6 +742,7 @@ async function scan(
   fs: FileSystemPort,
   target: string,
   dryRun: boolean,
+  paths: PathsService,
 ): Promise<NextNumberOutput> {
   const exists = await fs.exists(target);
   let created = false;
@@ -633,7 +763,8 @@ async function scan(
       if (correlative !== null) correlatives.push(correlative);
     }
   }
-  const maximum = maxCorrelative(correlatives);
+  const published = await publishedNumbers(fs, paths, target);
+  const maximum = maxCorrelative([...correlatives, ...published]);
   // `current_max` is a legacy JSON number kept for callers that display it.
   // All minting itself uses `next`, which remains lossless for any digit width.
   const currentMax = maximum === null ? 0 : Number.parseInt(maximum, 10);
@@ -649,6 +780,26 @@ async function scan(
     published_path: null,
     claim_reused: false,
   };
+}
+
+async function publishedNumbers(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: string,
+): Promise<Set<string>> {
+  const relative = target.startsWith(`${paths.workspaceDir()}/`)
+    ? target.slice(paths.workspaceDir().length + 1).replace(/\\/g, "/")
+    : target.replace(/\\/g, "/");
+  const numbers = await publishedCorrelatives(fs, paths.cwdHistoryFile(), relative);
+  const passes = await readReleasePasses(fs, paths);
+  for (const event of passes.events) {
+    if (event.event !== "linked") continue;
+    const artifact = event.artifact.replace(/\\/g, "/");
+    if (!artifact.startsWith(`${relative}/`)) continue;
+    const number = leadingCorrelative(artifact.slice(relative.length + 1).split("/")[0] ?? "");
+    if (number !== null) numbers.add(number);
+  }
+  return numbers;
 }
 
 function hasCorrelative(name: string, wanted: string): boolean {

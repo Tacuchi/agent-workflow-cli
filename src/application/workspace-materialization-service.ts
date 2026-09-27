@@ -114,6 +114,10 @@ export class MaterializingWorkspaceFileSystem implements FileSystemPort {
     await this.beforeWorkspaceMutation(path);
     return await this.delegate.publishTextExclusive(path, content);
   }
+  async publishBytesExclusive(path: string, content: Uint8Array): Promise<{ created: boolean }> {
+    await this.beforeWorkspaceMutation(path);
+    return await this.delegate.publishBytesExclusive(path, content);
+  }
 
   async remove(path: string): Promise<void> {
     await this.beforeWorkspaceMutation(path);

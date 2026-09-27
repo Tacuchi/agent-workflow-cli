@@ -83,6 +83,8 @@ export const FLOW_RUN_STATE_VERSION = 14;
  * and the `route-refused` trace kind. A v12 run has none of them either, and a
  * batch without `base` is read as the one that was in flight when the CLI updated.
  */
+// v14 adds batch reviews, signal retractions and QUICK checkout observations.
+// Older observations and events remain unchanged.
 export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [FLOW_RUN_STATE_VERSION, 13, 12, 11];
 
 /**
@@ -636,8 +638,11 @@ export type RecoveryBlocker =
   | { reason: "materialized"; event: FlowRunEvent }
   | { reason: "unverified" };
 
-export function recoveryBlockedAt(state: FlowRunState, transition: string): RecoveryBlocker | null {
-  const iteration = iterationOf(state, transition);
+export function recoveryBlockedAt(
+  state: FlowRunState,
+  transition: string,
+  iteration = iterationOf(state, transition),
+): RecoveryBlocker | null {
   const trace = state.events.filter(
     (event) => event.transition === transition && sameIteration(event, iteration),
   );
@@ -666,6 +671,7 @@ function declaresMaterialEffect(event: FlowRunEvent): boolean {
     event.kind === "aligned" ||
     event.kind === "route-refused" ||
     event.kind === "restarted" ||
+    event.kind === "retracted" ||
     event.kind === "annulled"
   ) {
     return false;
@@ -767,6 +773,15 @@ export interface FlowObservation {
  * cannot quietly become a different one.
  */
 export type FlowRunEvent =
+  | {
+      kind: "retracted";
+      transition: string;
+      batch_iteration?: number;
+      reentry_iteration?: number;
+      operation: string;
+      signal: string;
+      observations: FlowObservation[];
+    }
   | {
       kind: "executed";
       transition: string;
@@ -923,6 +938,20 @@ export interface FlowRunScope {
   plan: string;
   /** `workspace` plus declared aliases this run may touch — non-empty, no repeats. */
   sources: string[];
+  /** Commands resolved from the scoped plan and versioned source declarations. */
+  final_validation?: FinalValidationSource[];
+}
+
+export interface FinalValidationCommand {
+  command: string | null;
+  origin: "plan" | "source" | null;
+  action?: string;
+}
+
+export interface FinalValidationSource {
+  alias: string;
+  build: FinalValidationCommand;
+  test: FinalValidationCommand;
 }
 
 /** The bounded lifecycle of one repeatable plan-execution batch. */
@@ -965,6 +994,12 @@ export interface PlanExecBatchPublication {
  * before publication. The plan digest makes a moved document stale rather than
  * letting a previously inferred batch mark a different task.
  */
+export interface PlanExecBatchRange {
+  id: string;
+  mode: "continuous" | "isolated";
+  phases: number[];
+}
+
 export interface PlanExecBatch {
   id: string;
   /** Only validates an approved entry phase; its task set must be empty. */
@@ -991,6 +1026,16 @@ export interface PlanExecBatch {
   base?: Record<string, string | null>;
   /** Per source, the checkout digest of the proof that credited this batch. */
   credit?: Record<string, string>;
+  /** Phases demonstrated by that credit; absent on legacy credits. */
+  credit_phases?: number[];
+  /** True only for a range with no open tasks, whose proof is supplied by validation. */
+  validation_only?: boolean;
+  /** Declared partition and the effective range sealed for this iteration. */
+  partition?: {
+    declared: PlanExecBatchRange[] | null;
+    effective: Omit<PlanExecBatchRange, "id">;
+    reason: string;
+  };
   review?: BatchReview;
 }
 
@@ -1056,6 +1101,8 @@ export type FlowDecisionPreparation =
  * could not be shown again after a compaction or a resume.
  */
 export interface FlowFixPreview {
+  /** Source content at declaration; absent on legacy previews, null if unobservable. */
+  checkouts?: Record<string, string> | null;
   /** Paths the fix will touch. Empty is legitimate: an analysis touches none. */
   files: string[];
   intent: string;
@@ -1299,6 +1346,8 @@ export interface FlowRunState {
    * "no preview was promised".
    */
   fix_preview?: FlowFixPreview | null;
+  /** Most recent observation used to compare an empty preview with live sources. */
+  quick_checkouts?: Record<string, string> | null;
   /**
    * Where a registered decision sent the work back to, still unsettled.
    *
@@ -1647,7 +1696,9 @@ export function withPlanExecBatchCredit(
   if (!batches.some((batch) => batch.id === batchId)) return state;
   return sealRunState({
     ...withoutSeal(state),
-    batches: batches.map((batch) => (batch.id === batchId ? { ...batch, credit } : batch)),
+    batches: batches.map((batch) =>
+      batch.id === batchId ? { ...batch, credit, credit_phases: [...batch.phases] } : batch,
+    ),
   });
 }
 
@@ -1940,6 +1991,92 @@ export function withDecisionPreparation(
  */
 export function withFixPreview(state: FlowRunState, preview: FlowFixPreview): FlowRunState {
   return sealRunState({ ...withoutSeal(state), fix_preview: preview });
+}
+
+export function withQuickCheckouts(
+  state: FlowRunState,
+  checkouts: Record<string, string> | null,
+): FlowRunState {
+  if (checkouts === null && state.quick_checkouts === undefined) return state;
+  return state.flow === "quick"
+    ? sealRunState({ ...withoutSeal(state), quick_checkouts: checkouts })
+    : state;
+}
+
+/** Remove a mistaken signal only before any of its consumers has used it. */
+export function retractSignal(
+  state: FlowRunState,
+  journey: readonly FlowDecision[],
+  signal: string,
+): { ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure } {
+  const producers = journey.filter((row) => row.signals?.includes(signal)).map((row) => row.id);
+  const consumers = journey.filter((row) => {
+    const rule = row.condition?.threshold;
+    return (
+      rule !== undefined &&
+      producers.includes(rule.observed) &&
+      (rule.of === undefined || rule.of.includes(signal))
+    );
+  });
+  if (producers.length === 0 || consumers.length === 0) {
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_RETRACT_SIGNAL_UNKNOWN",
+        message: `la señal '${signal}' no tiene un consumidor retirable en este recorrido`,
+        action: "usá una señal declarada por el recorrido y consumida por una condición pendiente",
+      },
+    };
+  }
+  const removed = state.observations.filter(
+    (item) =>
+      item.signals.includes(signal) && sameIteration(item, iterationOf(state, item.transition)),
+  );
+  if (removed.length === 0) return { ok: true, state };
+  const consumed = consumers.find((row) =>
+    removed.some((observation) => signalWasConsumed(state, row, observation)),
+  );
+  if (consumed !== undefined) {
+    return {
+      ok: false,
+      failure: {
+        code: "FLOW_RETRACT_ALREADY_CONSUMED",
+        message: `'${consumed.id}' ya aplicó o dejó una ejecución sin resolver; no se retira '${signal}'`,
+        action: "conservá la señal: retirar no revierte decisiones ni efectos ya ejercidos",
+      },
+    };
+  }
+  const updated = sealRunState({
+    ...withoutSeal(state),
+    observations: state.observations.map((item) =>
+      removed.includes(item)
+        ? { ...item, signals: item.signals.filter((value) => value !== signal) }
+        : item,
+    ),
+  });
+  return {
+    ok: true,
+    state: withEvent(updated, {
+      kind: "retracted",
+      transition: state.boundary ?? producers[0] ?? "",
+      ...iterationOf(state, state.boundary ?? producers[0] ?? ""),
+      operation: "flow.retract",
+      signal,
+      observations: removed,
+    }),
+  };
+}
+
+function signalWasConsumed(
+  state: FlowRunState,
+  consumer: FlowDecision,
+  observation: FlowObservation,
+): boolean {
+  if (consumer.condition?.threshold.observed !== observation.transition) return false;
+  // Only a consumer after THIS producer occurrence can have consumed its signal.
+  const producer = state.applied.lastIndexOf(observation.transition);
+  const consumed = state.applied.slice(producer + 1).includes(consumer.id);
+  return consumed || recoveryBlockedAt(state, consumer.id, observation) !== null;
 }
 
 /**
@@ -2617,7 +2754,7 @@ function checkV10RecordShape(
   if (!isDecisionPreparation(parsed.decision_preparation)) {
     return invalid("declara una vista de decisión sin nota, preview o linaje sellados");
   }
-  if (!isFixPreview(parsed.fix_preview)) {
+  if (!isFixPreview(parsed.fix_preview) || !isQuickCheckouts(parsed.quick_checkouts)) {
     return invalid("declara un preview de arreglo sin archivos, intención o forma del diff");
   }
   if (!isSettlement(parsed.settlement)) {
@@ -2772,6 +2909,23 @@ function isScope(value: unknown): value is FlowRunScope | null {
   if (!isRecord(value)) return false;
   if (typeof value.plan !== "string" || value.plan.trim().length === 0) return false;
   if (!isStringArray(value.sources) || value.sources.length === 0) return false;
+  if (
+    value.final_validation !== undefined &&
+    (!Array.isArray(value.final_validation) ||
+      !value.final_validation.every(
+        (entry: unknown) =>
+          isRecord(entry) &&
+          typeof entry.alias === "string" &&
+          [entry.build, entry.test].every(
+            (item) =>
+              isRecord(item) &&
+              (item.command === null || typeof item.command === "string") &&
+              (item.origin === null || item.origin === "plan" || item.origin === "source") &&
+              (item.action === undefined || typeof item.action === "string"),
+          ),
+      ))
+  )
+    return false;
   return value.sources.every((alias) => alias.trim().length > 0);
 }
 
@@ -2796,6 +2950,9 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
         (phase) => typeof phase === "number" && Number.isInteger(phase) && phase > 0,
       ) ||
       !isStringArray(entry.tasks) ||
+      (entry.validation_only !== undefined && typeof entry.validation_only !== "boolean") ||
+      (entry.validation_only === true && entry.tasks.length !== 0) ||
+      (entry.validation_only === false && entry.kind === "validation-only") ||
       (entry.kind === "validation-only" ? entry.tasks.length !== 0 : entry.tasks.length === 0) ||
       (entry.kind !== undefined && entry.kind !== "validation-only") ||
       new Set(entry.tasks).size !== entry.tasks.length ||
@@ -2811,6 +2968,9 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
       !(PLAN_EXEC_BATCH_STAGES as readonly string[]).includes(entry.stage as string) ||
       !isSourceMap(entry.base, true) ||
       !isSourceMap(entry.credit, false) ||
+      !isBatchPartition(entry.partition, entry.phases, entry.mode) ||
+      (entry.credit_phases !== undefined &&
+        (entry.credit === undefined || !samePhaseRange(entry.credit_phases, entry.phases))) ||
       (entry.review !== undefined && !isBatchReview(entry.review))
     ) {
       return false;
@@ -2819,6 +2979,40 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
     iterations.add(entry.iteration);
     return true;
   });
+}
+
+function samePhaseRange(value: unknown, phases: unknown[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === phases.length &&
+    value.every((phase, index) => phase === phases[index])
+  );
+}
+
+function isBatchPartition(value: unknown, phases: unknown[], mode: unknown): boolean {
+  if (value === undefined) return true;
+  if (
+    !isRecord(value) ||
+    !isNonEmptyString(value.reason) ||
+    !isRecord(value.effective) ||
+    value.effective.mode !== mode ||
+    !samePhaseRange(value.effective.phases, phases)
+  )
+    return false;
+  return (
+    value.declared === null ||
+    (Array.isArray(value.declared) &&
+      value.declared.length > 0 &&
+      value.declared.every(
+        (row) =>
+          isRecord(row) &&
+          isNonEmptyString(row.id) &&
+          (row.mode === "continuous" || row.mode === "isolated") &&
+          Array.isArray(row.phases) &&
+          row.phases.length > 0 &&
+          row.phases.every((phase) => Number.isSafeInteger(phase) && phase > 0),
+      ))
+  );
 }
 
 /** Absent, or a non-empty alias → digest map; `nullable` admits an unobserved source. */
@@ -3051,7 +3245,16 @@ function isFixPreview(value: unknown): value is FlowFixPreview | null | undefine
     typeof value.intent === "string" &&
     value.intent.trim().length > 0 &&
     typeof value.diff === "string" &&
-    value.diff.trim().length > 0
+    value.diff.trim().length > 0 &&
+    isQuickCheckouts(value.checkouts)
+  );
+}
+
+function isQuickCheckouts(value: unknown): value is Record<string, string> | null | undefined {
+  return (
+    value === null ||
+    value === undefined ||
+    (isRecord(value) && Object.values(value).every(nonEmpty))
   );
 }
 
@@ -3213,6 +3416,10 @@ const EVENT_BODIES: ReadonlyMap<string, (entry: Record<string, unknown>) => bool
       isEffectClassArray(entry.effects) &&
       isStringArray(entry.evidence),
     reconciled: (entry) => isRepairArray(entry.repairs),
+    retracted: (entry) =>
+      nonEmpty(entry.signal) &&
+      isObservationArray(entry.observations) &&
+      entry.observations.length > 0,
     restarted: (entry) => nonEmpty(entry.archive) && nonEmpty(entry.cause),
     annulled: (entry) =>
       isStringArray(entry.batches) &&

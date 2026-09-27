@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { DesignMaturity, ScreenArtifact } from "../../domain/design/artifact.js";
 import { validateDesignArtifact } from "../../domain/design/artifact.js";
@@ -37,6 +36,7 @@ import {
   checkConsumerShape,
   withConsumerRelation,
 } from "./consumer-document.js";
+import { digestOf } from "./digest.js";
 
 /**
  * The candidate of a package revision: all of it, or none of it.
@@ -834,10 +834,6 @@ function missingFile(path: string, packagePath: string): DesignFailure {
     message: `el catálogo declara '${path}' y el archivo no está`,
     action: "restauralo o quitalo del catálogo: un baseline sella bytes que existen",
   };
-}
-
-function digestOf(bytes: Uint8Array): string {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
 function sealBaseline(

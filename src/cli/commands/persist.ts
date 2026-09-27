@@ -3,7 +3,7 @@ import {
   type PersistValidation,
   applyPersist,
   preparePersist,
-  validatePersist,
+  validatePersistWithAttachments,
 } from "../../application/persist-service.js";
 import type { SemanticRequest } from "../../application/semantic-operation/protocol.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -24,7 +24,7 @@ export const persistCommand: CliCommand<PersistData> = {
   describe:
     "Adopta trabajo terminado de la conversación en docs/ (research | spec | plan) en una sola operación. " +
     "El CLI resuelve inventario, duplicados, numeración, destino y escritura; la IA solo clasifica y redacta. " +
-    "Usage: aw persist prepare | validate | apply --approval <digest>  (validate/apply leen la respuesta por stdin).",
+    "Adjuntos binarios: decisions.attachments [{source, path}], digest sha256 de bytes incluido en la aprobación. Usage: aw persist prepare | validate | apply --approval <digest> (validate/apply leen la respuesta por stdin).",
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<PersistData>> {
     const stage = args.rest[0];
@@ -41,7 +41,7 @@ export const persistCommand: CliCommand<PersistData> = {
     }
 
     const raw = await readRequiredStdin();
-    if (stage === "validate") return validateStage(raw, prepared.value);
+    if (stage === "validate") return await validateStage(ctx, raw, prepared.value);
     return await applyStage(args, ctx, raw, prepared.value);
   },
 
@@ -65,6 +65,9 @@ export const persistCommand: CliCommand<PersistData> = {
         `  Categoría  ${data.preview.category} (${data.preview.mode})`,
         `  Destino    ${data.preview.target ?? `${data.preview.destination}/ (número nuevo)`}`,
         `  Tamaño     ${data.preview.bytes} B`,
+        ...(data.preview.attachments ?? []).map(
+          (item) => `  Adjunto    ${item.path} (${item.bytes} B · ${item.digest})`,
+        ),
         ...(data.preview.lineage === undefined
           ? []
           : [
@@ -78,8 +81,12 @@ export const persistCommand: CliCommand<PersistData> = {
   },
 };
 
-function validateStage(raw: string, request: SemanticRequest): CommandResult<PersistData> {
-  const result = validatePersist(raw, request);
+async function validateStage(
+  ctx: CliContext,
+  raw: string,
+  request: SemanticRequest,
+): Promise<CommandResult<PersistData>> {
+  const result = await validatePersistWithAttachments(ctx.fs, ctx.paths, raw, request);
   if (!result.ok) return failSemantic(result.failure);
   return { ok: true, data: { stage: "validate", ...result.value }, exitCode: 0 };
 }

@@ -4,10 +4,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { readScriptsArtifacts } from "../../src/application/release-data/artifacts.js";
 import { sessionArtifactsCommand } from "../../src/cli/commands/session-artifacts.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { MemFs } from "../helpers/mem-fs.js";
 
 // Regression: the 4 export-* commands delegate artifact READING to
 // session-artifacts, but the command only returned counts and the real dump
@@ -35,6 +37,8 @@ describe("session-artifacts --dump", () => {
     await writeFile(join(sessionDir, "DECISION.md"), "- se decidió X\n");
     await writeFile(join(sessionDir, "CONCLUSIONS.md"), "hallazgo Y\n");
     await writeFile(join(sessionDir, "scripts", "SCRIPTS.sql"), "-- read-only\n");
+    await writeFile(join(sessionDir, "SCRIPTS.sql"), "CREATE TABLE x (id integer);\n");
+    await writeFile(join(sessionDir, "SCRIPTS.rollback.sql"), "DROP TABLE x;\n");
     const fs = new NodeFileSystem();
     const paths = new PathsService(normalizeNamespace("workflow"), workdir, workdir);
     ctx = {
@@ -59,7 +63,11 @@ describe("session-artifacts --dump", () => {
     expect((data.objetivo as { content: string }).content).toContain("hacer foo");
     expect((data.decisiones as { content: string }).content).toContain("se decidió X");
     expect((data.conclusiones as { content: string }).content).toContain("hallazgo Y");
-    expect((data.scripts as { name: string }[])[0]?.name).toBe("SCRIPTS.sql");
+    expect((data.scripts as { name: string }[]).map((script) => script.name)).toEqual([
+      "SCRIPTS.rollback.sql",
+      "SCRIPTS.sql",
+      "scripts/SCRIPTS.sql",
+    ]);
   });
 
   it("--dump sin CSV devuelve todos los kinds", async () => {
@@ -77,6 +85,19 @@ describe("session-artifacts --dump", () => {
     ]) {
       expect(kind in data, kind).toBe(true);
     }
+  });
+
+  it("los nombres de scripts usan / también para rutas Windows", async () => {
+    const fs = new MemFs();
+    const root = "C:\\repo\\session";
+    const dir = join(root, "scripts");
+    const file = "C:\\repo\\session\\scripts\\migracion\\01-tabla.sql";
+    fs.dir(dir);
+    fs.file(file, "CREATE TABLE t (id int);");
+    fs.list = async (path) =>
+      path === dir ? [{ name: "01-tabla.sql", path: file, type: "file" }] : [];
+    const scripts = await readScriptsArtifacts(fs, root);
+    expect(scripts.map((script) => script.name)).toEqual(["scripts/migracion/01-tabla.sql"]);
   });
 
   it("kinds inválidos → INVALID_INPUT; session inexistente → SESSION_NOT_FOUND exit 1", async () => {

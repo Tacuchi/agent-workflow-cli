@@ -2,10 +2,13 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NOTE_INDEX_SCHEMA, sealNote } from "../../src/application/decision-note-service.js";
+import type { DecisionIndex } from "../../src/application/decision-note-service.js";
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
+import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { lintPlan } from "../../src/application/plan-lint-service.js";
 import {
@@ -14,6 +17,7 @@ import {
   writeCustody,
 } from "../../src/application/session-custody-service.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
+import { NOTE_SCHEMA } from "../../src/domain/decision-note.js";
 import {
   FLOW_DECISIONS,
   type FlowDecision,
@@ -28,10 +32,16 @@ import {
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
-import { attemptAccountingAt } from "../../src/domain/flow/run-state.js";
+import {
+  FLOW_RUN_STATE_VERSION,
+  attemptAccountingAt,
+  serializeRunState,
+} from "../../src/domain/flow/run-state.js";
+import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
 import { batchReview } from "../helpers/batch-review.js";
+import { stateWrittenAt } from "../helpers/journey-fixtures.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 import { testExecutor } from "../helpers/test-executor.js";
 
@@ -78,6 +88,10 @@ Tramo plan.
 |---|---|---|
 | ${ALIAS} | /tmp/acme | main |
 
+## Pipeline
+
+- ${ALIAS}: build \`npm run build\` · test \`npm test\`
+
 ## Status
 
 - Ramas de trabajo actuales:
@@ -88,6 +102,94 @@ Tramo plan.
 const EXEC = journeyOfFlow("plan-exec");
 const NEW = journeyOfFlow("plan-new");
 const REFINE = journeyOfFlow("plan-refine");
+
+it("el cierre señala las notas efectivas propias, la línea del criterio y el refine sin editar", async () => {
+  const root = await mkdtemp(join(tmpdir(), "aw-close-guidance-"));
+  const paths = new PathsService(normalizeNamespace("agent-workflow"), root, root);
+  const specPath = "docs/specs/031-spec-tramo.md";
+  const spec =
+    "---\nstatus: ready-for-plan\n---\n# Spec 031\n\n## Origin\nReferencia a S031/AC-01.\n\n## Acceptance criteria\n- [ ] AC-02: depende de S031/AC-01.\n- [ ] AC-01: requisito primero.\n";
+  const plan = `# Plan 031\n\n> Derived from ${specPath}\n> Estado: done\n`;
+  try {
+    for (const dir of ["docs/specs", "docs/plans", "docs/decisions"])
+      await mkdir(join(root, dir), { recursive: true });
+    await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
+    await writeFile(
+      join(paths.cwdSessionsDir(), SESSION, "SESSION.md"),
+      "# SESSION\n\n## Objective\nCerrar el plan.\n",
+    );
+    await writeFile(join(root, specPath), spec);
+    await writeFile(join(root, PLAN_DOC), plan);
+    const index: DecisionIndex = {
+      schema: NOTE_INDEX_SCHEMA,
+      spec: { path: specPath, number: "031" },
+      notes: [],
+    };
+    const add = (
+      scope: "functional" | "plan-only",
+      owner: string,
+      assertions: string[],
+      replaces: string | null = null,
+    ) => {
+      index.notes.push(
+        sealNote(index, {
+          schema: NOTE_SCHEMA,
+          lineage: {
+            spec: { path: specPath, number: "031", digest: functionalSpecDigest(spec) },
+            plan: { path: PLAN_DOC, number: "031", digest: `sha256:${baseDigest(plan)}` },
+            execution: { session: owner, phase: "F1" },
+          },
+          decision: "ajustar la realización",
+          reason: "evidencia del checkout",
+          supersedes_assertions: assertions,
+          supersedes_note: replaces,
+          scope,
+          consumers: [PLAN_DOC],
+          evidence_preserved: ["prueba local"],
+          evidence_invalidated: [],
+          obligations: [],
+          resume_point: "F1",
+          date: "2026-09-27",
+        }),
+      );
+    };
+    add("functional", SESSION, ["S031/AC-01"]);
+    add("plan-only", SESSION, []);
+    add("functional", "099-otra-plan-exec", ["S031/AC-02"]);
+    add("functional", SESSION, ["S031/AC-01"], "DEC-001");
+    await writeFile(join(root, "docs/decisions/031-decisions-tramo.json"), JSON.stringify(index));
+    const ids = EXEC.map((row) => row.id);
+    const state = stateWrittenAt(
+      FLOW_RUN_STATE_VERSION,
+      "plan-exec",
+      SESSION,
+      ids.slice(0, ids.indexOf("chassis.finalize")),
+      "chassis.finalize",
+      { scope: { plan: PLAN_DOC, sources: ["workspace"] } },
+    );
+    await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state));
+    const result = await advanceFlow(fs, paths, {
+      code: CODE,
+      flow: "plan-exec",
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    if (!result.ok) throw new Error(JSON.stringify(result));
+    expect(result.directive.error).toBeNull();
+    expect(result.directive.next_action).toContain(`DEC-004: S031/AC-01 amended · ${specPath}:11`);
+    expect(result.directive.next_action).toContain(`/w:spec-refine ${specPath}`);
+    expect(result.directive.next_action).toContain(
+      `DEC-002: revisar ${PLAN_DOC} — /w:plan-refine ${PLAN_DOC}`,
+    );
+    expect(result.directive.next_action).not.toContain("DEC-001");
+    expect(result.directive.next_action).not.toContain("AC-02");
+    expect(result.directive.next_action).not.toContain("aw amend");
+    expect(await readFile(join(root, PLAN_DOC), "utf8")).toBe(plan);
+    expect(await readFile(join(root, specPath), "utf8")).toBe(spec);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 function rowOf(journey: readonly FlowDecision[], id: string): FlowDecision {
   const row = journey.find((decision) => decision.id === id);
@@ -725,6 +827,130 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     const { state } = await current();
     expect(state.skipped).not.toContain("plan-exec.batch-isolation");
     expect(state.applied).toContain("plan-exec.batch-isolation");
+  });
+
+  const fourPhases = (batches = "") =>
+    `# Plan\n> Límite de ejecución: checkout\n## Tasks\n${[1, 2, 3, 4]
+      .map(
+        (n) =>
+          `### F${n} — fase\n> Estado: pendiente\n> Fuentes: ${ALIAS}\n- [ ] T${n}.1 — trabajo _(fuentes: ${ALIAS})_\n`,
+      )
+      .join("\n")}\n${batches}`;
+
+  it.each(["sin estados", "fuera de orden"])(
+    "una fase ilegible (%s) no sale del tramo de trabajo ni corrompe la corrida",
+    async (kind) => {
+      const text =
+        kind === "sin estados"
+          ? fourPhases().replaceAll("> Estado: pendiente\n", "")
+          : fourPhases()
+              .replace("### F2", "### TEMP")
+              .replace("### F3", "### F2")
+              .replace("### TEMP", "### F3");
+      await writeFile(join(workdir, PLAN_DOC), text);
+      await walkTo("plan-exec.batch-eligibility-signal", []);
+      const result = await answer(bodyFor((await current()).resolved, []));
+      expect(result.error?.code).toBe("FLOW_INTERNAL_ACTION_REFUSED");
+      const { state } = await current();
+      expect(state.batches).toEqual([]);
+      expect(state.batch_loop?.pending).toBe(true);
+      expect(state.applied).not.toContain("plan-exec.unit-acquisition");
+      expect(state.applied).not.toContain("plan-exec.final-validation");
+    },
+  );
+
+  async function validateAndReviewRange(expected: number[]) {
+    const before = await current();
+    expect(before.state.batches?.at(-1)?.phases).toEqual(expected);
+    const directive = await advanceFlow(fs, paths, {
+      code: CODE,
+      adopt: false,
+      executor: testExecutor(fs, paths),
+    });
+    for (const phase of expected)
+      expect(directive.ok && directive.directive.boundary.title).toContain(`F${phase}`);
+    await answer(resultFor(before.resolved));
+    expect((await current()).state.batches?.at(-1)?.credit_phases).toEqual(expected);
+    // Validation alone cannot publish a subset before the combined review.
+    const validatedOnly = await readFile(join(workdir, PLAN_DOC), "utf8");
+    for (const phase of expected) expect(validatedOnly).toContain(`- [ ] T${phase}.1`);
+    await answer(bodyFor((await current()).resolved, []));
+    const closed = await readFile(join(workdir, PLAN_DOC), "utf8");
+    for (const phase of expected) expect(closed).toContain(`- [x] T${phase}.1`);
+  }
+
+  it("ejecuta dos lotes declarados y cada evidencia acredita juntas sus dos fases", async () => {
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      fourPhases("## Execution batches\n- B1 · continuous · F1-F2\n- B2 · continuous · F3-F4\n"),
+    );
+    await walkTo("plan-exec.validation-execution", []);
+    await validateAndReviewRange([1, 2]);
+    for (let step = 0; step < 15; step += 1) {
+      const { resolved } = await current();
+      if (resolved.stopped?.id === "plan-exec.validation-execution") break;
+      await answer(bodyFor(resolved, []));
+    }
+    await validateAndReviewRange([3, 4]);
+    expect((await current()).state.batches).toHaveLength(2);
+    expect((await current()).state.batch_loop?.pending).toBe(false);
+  });
+
+  it.each(["", "## Execution batches\n- B1 · continuous · F1-F4\n"])(
+    "todas las fases elegibles se infieren juntas (%s)",
+    async (batches) => {
+      await writeFile(join(workdir, PLAN_DOC), fourPhases(batches));
+      await walkTo("plan-exec.implementation", []);
+      expect((await current()).state.batches?.[0]).toMatchObject({
+        mode: "continuous",
+        phases: [1, 2, 3, 4],
+      });
+    },
+  );
+
+  it("la señal parte la fila y deja la partición declarada y efectiva en la traza", async () => {
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      fourPhases("## Execution batches\n- B1 · continuous · F1-F4\n"),
+    );
+    await walkTo("plan-exec.implementation", ["plan.recovery-boundary"]);
+    const { state } = await current();
+    expect(state.batches?.[0]?.partition).toEqual({
+      declared: [{ id: "B1", mode: "continuous", phases: [1, 2, 3, 4] }],
+      effective: { mode: "isolated", phases: [1] },
+      reason: expect.stringContaining("plan.recovery-boundary"),
+    });
+    expect(
+      state.events.find(
+        (event) => event.kind === "executed" && event.transition === "plan-exec.batch-inference",
+      ),
+    ).toMatchObject({ summary: expect.stringContaining("partición") });
+  });
+
+  it("una sección ilegible limita el lote a la fase abierta y dice por qué", async () => {
+    await writeFile(
+      join(workdir, PLAN_DOC),
+      fourPhases("## Execution batches\n- B1 · continuous · F1-F2\n"),
+    );
+    await walkTo("plan-exec.implementation", []);
+    expect((await current()).state.batches?.[0]).toMatchObject({
+      mode: "isolated",
+      phases: [1],
+      partition: { reason: expect.stringContaining("sección ilegible") },
+    });
+  });
+
+  it("la primera fase sin tareas abiertas llega a su validación sin saltearse", async () => {
+    await writeFile(join(workdir, PLAN_DOC), fourPhases().replace("- [ ] T1.1", "- [x] T1.1"));
+    await sealPlanInput();
+    await walkTo("plan-exec.validation-execution", []);
+    expect((await current()).state.batches?.[0]).toMatchObject({
+      phases: [1],
+      tasks: [],
+      validation_only: true,
+    });
+    // 051 owns the human authorization and unchanged credit, not this inference.
+    expect((await current()).state.batches?.[0]?.credit).toBeUndefined();
   });
 
   it("un batch se cierra después de validar y revisar, antes del resto del cierre", () => {

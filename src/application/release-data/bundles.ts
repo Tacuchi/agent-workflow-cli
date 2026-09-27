@@ -1,12 +1,14 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import {
   CORRELATIVE_SOURCE,
   compareCorrelatives,
   sameCorrelative,
 } from "../../domain/correlative.js";
+import { FOLDER_RESERVATION_MARKER } from "../../domain/reservation.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { PathsService } from "../paths-service.js";
 import { collectFilesByExt, getDocsDir, sessionCorrelative } from "./common.js";
+import { isRollbackSql } from "./rollback.js";
 
 export interface GraduatedBundle {
   nnn: string;
@@ -14,10 +16,15 @@ export interface GraduatedBundle {
   session_code: string | null;
   slug: string;
   /** `export` = modern NNN-export-scripts-YYYY-MM-DD · `legacy` = old NNN-sessionNNN-slug. */
-  kind: "export" | "legacy";
+  kind: "export" | "legacy" | "named";
   path: string;
   forward_count: number;
   rollback_count: number;
+  metadata?: "present" | "absent";
+  supersedes?: string[];
+  requires?: string[];
+  superseded_by?: string[];
+  origin_standalone_sql?: string[];
 }
 
 /** Modern export-scripts bundle naming (see exports/export-scripts SKILL). */
@@ -51,6 +58,7 @@ export async function listGraduatedBundles(
 
   const bundles: GraduatedBundle[] = [];
   for (const entry of dirEntries) {
+    if (await fs.exists(join(entry.path, FOLDER_RESERVATION_MARKER))) continue;
     const parsed = parseBundleName(entry.name);
     if (!parsed) continue;
     // The session filter only applies to legacy bundles (modern ones are cross-session).
@@ -61,18 +69,63 @@ export async function listGraduatedBundles(
       continue;
     }
     const sqlFiles = await collectFilesByExt(fs, entry.path, ".sql");
-    // Legacy rollbacks: *.rollback.sql · modern export-scripts bundles: 00-ROLLBACK.sql.
-    const isRollback = (f: string) => f.endsWith(".rollback.sql") || f.endsWith("00-ROLLBACK.sql");
-    const rollback = sqlFiles.filter(isRollback);
-    const forward = sqlFiles.filter((f) => !isRollback(f));
+    if (sqlFiles.length === 0) continue; // a reserved folder with just a marker is not a bundle
+    const rollback = sqlFiles.filter(isRollbackSql);
+    const forward = sqlFiles.filter((f) => !isRollbackSql(f));
+    const manifest = await readBundleManifest(fs, join(entry.path, "bundle.json"));
     bundles.push({
       ...parsed,
       path: entry.path,
       forward_count: forward.length,
       rollback_count: rollback.length,
+      metadata: manifest === null ? "absent" : "present",
+      ...(manifest === null
+        ? {}
+        : {
+            supersedes: manifest.supersedes,
+            requires: manifest.requires,
+            origin_standalone_sql: manifest.standalone,
+          }),
+      superseded_by: [],
     });
   }
+  for (const bundle of bundles) {
+    for (const name of bundle.supersedes ?? []) {
+      const older = bundles.find((other) => other !== bundle && basename(other.path) === name);
+      older?.superseded_by?.push(basename(bundle.path));
+    }
+  }
   return bundles;
+}
+
+async function readBundleManifest(
+  fs: FileSystemPort,
+  path: string,
+): Promise<{ supersedes: string[]; requires: string[]; standalone: string[] } | null> {
+  if (!(await fs.exists(path))) return null;
+  try {
+    const value: unknown = JSON.parse(await fs.readText(path));
+    if (typeof value !== "object" || value === null) return null;
+    const candidate = value as Record<string, unknown>;
+    if (
+      ![candidate.supersedes, candidate.requires].every(
+        (items) => Array.isArray(items) && items.every((item) => typeof item === "string"),
+      )
+    )
+      return null;
+    const origin = candidate.origin as { standalone_sql?: Array<{ path?: string }> } | undefined;
+    return {
+      supersedes: candidate.supersedes as string[],
+      requires: candidate.requires as string[],
+      standalone: Array.isArray(origin?.standalone_sql)
+        ? origin.standalone_sql.flatMap((file) =>
+            typeof file.path === "string" ? [file.path] : [],
+          )
+        : [],
+    };
+  } catch {
+    return null;
+  }
 }
 
 function compareBundleEntries(
@@ -98,6 +151,9 @@ function parseBundleName(
   if (legacy?.[1] && legacy[2] && legacy[3]) {
     return { nnn: legacy[1], session_code: legacy[2], slug: legacy[3], kind: "legacy" };
   }
+  const named = name.match(new RegExp(`^(${CORRELATIVE_SOURCE})-(.+)$`));
+  if (named?.[1] && named[2])
+    return { nnn: named[1], session_code: null, slug: named[2], kind: "named" };
   return null;
 }
 
@@ -145,7 +201,7 @@ export async function listStandaloneSql(
       path: f.path,
       size,
       // Case-insensitive: covers both x.rollback.sql and the house 00-ROLLBACK.sql.
-      is_rollback: /rollback/i.test(f.name),
+      is_rollback: isRollbackSql(f.path),
     });
   }
   return items;

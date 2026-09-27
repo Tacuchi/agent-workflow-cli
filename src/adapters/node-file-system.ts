@@ -153,6 +153,47 @@ export class NodeFileSystem implements FileSystemPort {
     }
   }
 
+  async publishBytesExclusive(path: string, content: Uint8Array): Promise<{ created: boolean }> {
+    const tmpPath = join(
+      dirname(path),
+      `.aw-publish-${process.pid}-${++NodeFileSystem.writeCounter}.tmp`,
+    );
+    try {
+      await writeFile(tmpPath, content);
+      await link(tmpPath, path);
+      return { created: true };
+    } catch (err) {
+      const code = (err as NodeError).code;
+      if (code === "EEXIST") return { created: false };
+      if (code === "EPERM" || code === "ENOTSUP" || code === "EXDEV") {
+        let handle: Awaited<ReturnType<typeof open>>;
+        try {
+          handle = await open(path, "wx");
+        } catch (fallbackError) {
+          if ((fallbackError as NodeError).code === "EEXIST") return { created: false };
+          throw fallbackError;
+        }
+        try {
+          await handle.writeFile(content);
+        } catch (writeError) {
+          await handle.close();
+          await unlink(path).catch(() => undefined);
+          throw writeError;
+        } finally {
+          await handle.close().catch(() => undefined);
+        }
+        return { created: true };
+      }
+      throw err;
+    } finally {
+      try {
+        await unlink(tmpPath);
+      } catch {
+        /* staging may never have been created */
+      }
+    }
+  }
+
   /**
    * Atomic create-or-fail via O_CREAT|O_EXCL. Returns { created: false } if
    * the file already exists; other I/O errors propagate.

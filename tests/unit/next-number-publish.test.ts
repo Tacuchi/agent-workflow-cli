@@ -5,6 +5,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { nextNumberCommand } from "../../src/cli/commands/dev-only.js";
+import { parseArgv } from "../../src/cli/parser.js";
+import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -54,7 +57,10 @@ describe("runNextNumber --publish", () => {
     expect(out.claimed_path).toBeNull();
     expect(out.claimed_owner).toBeNull();
     expect(out.claim_reused).toBe(false);
-    expect(readFileSync(join(workspace, "docs", "specs", "001-spec-algo.md"), "utf8")).toBe(DRAFT);
+    expect(readFileSync(join(workspace, "docs", "specs", "001-spec-algo.md"), "utf8")).toContain(
+      "# 001 — Spec — algo",
+    );
+    expect(Object.keys(out)[0]).toBe("published_path");
   });
 
   it("el documento nace con todos sus bytes, nunca con cero", async () => {
@@ -111,9 +117,7 @@ describe("runNextNumber --publish", () => {
     expect(readFileSync(join(workspace, "docs", "specs", "001-spec-vieja.md"), "utf8")).toBe("x");
   });
 
-  it("publicar dos veces el mismo nombre da dos documentos, no una reentrada", async () => {
-    // Una reserva se reentra porque su dueño sigue vivo; una publicación no dejó
-    // nada abierto que reentrar, así que la segunda es un documento nuevo.
+  it("repetir nombre y contenido es idempotente; cambiar contenido publica otro número", async () => {
     const first = await runNextNumber(fs, env, paths, {
       directory: "docs/specs",
       publish: { name: "spec-dos-veces.md", content: DRAFT },
@@ -123,8 +127,34 @@ describe("runNextNumber --publish", () => {
       publish: { name: "spec-dos-veces.md", content: DRAFT },
     });
 
-    expect(second.published_path).not.toBe(first.published_path);
+    expect(second.published_path).toBe(first.published_path);
+    expect(specs()).toHaveLength(1);
+    const changed = await runNextNumber(fs, env, paths, {
+      directory: "docs/specs",
+      publish: { name: "spec-dos-veces.md", content: `${DRAFT}\nMás detalle.\n` },
+    });
+    expect(changed.published_path).not.toBe(first.published_path);
     expect(specs()).toHaveLength(2);
+  });
+
+  it("--dry-run --publish muestra título y destino sin escribir", async () => {
+    const preview = await runNextNumber(fs, env, paths, {
+      directory: "docs/specs",
+      dryRun: true,
+      publish: { name: "spec-previa.md", content: DRAFT },
+    });
+    expect(preview.published_path).toContain("001-spec-previa.md");
+    expect(preview.created).toBe(false);
+    expect(() => readdirSync(join(workspace, "docs"))).toThrow();
+  });
+
+  it("el comando --publish se niega fuera de un workspace sin materializarlo", async () => {
+    const result = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/specs", "--publish", "spec-nueva.md"]),
+      { fs, env, paths } as CliContext,
+    );
+    expect(result.error?.code).toBe("WORKSPACE_ABSENT");
+    expect(() => readdirSync(join(workspace, ".workflow"))).toThrow();
   });
 
   it("rechaza un nombre que es una ruta en lugar de un nombre", async () => {

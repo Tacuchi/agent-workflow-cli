@@ -41,6 +41,16 @@ describe("NodeFileSystem.writeTextExclusive — atomic claim primitive", () => {
     expect(created).toBe(1);
     expect(notCreated).toBe(4);
   });
+
+  it("publica bytes PDF/PPTX sin decodificar y no sobrescribe el destino", async () => {
+    const path = join(dir, "archivo.pdf");
+    const bytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0xff, 0x00]);
+    expect(await fs.publishBytesExclusive(path, bytes)).toEqual({ created: true });
+    expect(await fs.publishBytesExclusive(path, new Uint8Array([0x50, 0x4b, 0xfe]))).toEqual({
+      created: false,
+    });
+    expect(new Uint8Array(await readFile(path))).toEqual(bytes);
+  });
 });
 
 describe("NodeFileSystem.remove — idempotent unlink", () => {
