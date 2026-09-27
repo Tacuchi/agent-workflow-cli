@@ -73,6 +73,7 @@ import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { runSessionClose } from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
+import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
 import { type IsolationUnit, runWorktree } from "../worktree-service.js";
@@ -147,9 +148,9 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
   return async (plan, run) => {
     switch (plan.operation) {
       case "workspace.board":
-        return board(deps);
+        return board(deps, run);
       case "session.artifacts":
-        return artifacts(deps, run, plan.dump ?? null);
+        return artifacts(deps, run, plan.dump ?? null, run.session.endsWith("-plan-refine"));
       case "session.close":
         return close(deps, run);
       case "worktree.ensure":
@@ -486,13 +487,33 @@ async function recordCompletedClaims(
   }
 }
 
-async function board(deps: InternalActionDeps): Promise<InternalActionOutcome> {
+async function board(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+): Promise<InternalActionOutcome> {
   const data = await runStatusCommand(deps.fs, deps.env, deps.paths, { git: deps.git });
   const counts = data.counts;
+  const custody = run.session.endsWith("-plan-new")
+    ? await readCustody(deps.fs, locateRun(deps.paths, run.session).dir)
+    : null;
+  const superseded =
+    custody?.status === "present"
+      ? data.specs.find(
+          (spec) =>
+            spec.status === "superseded" &&
+            custody.custody.artifacts.some(
+              (artifact) => artifact.role === "input" && artifact.path === spec.file,
+            ),
+        )
+      : undefined;
+  const warning =
+    superseded === undefined
+      ? null
+      : `la spec ${superseded.number} fue reemplazada${superseded.superseded_by ? ` por ${superseded.superseded_by}` : ""}: plan-new debe usar el reemplazo`;
   return {
     ok: true,
-    summary: `tablero: ${counts.specs} specs, ${counts.plans} planes, ${counts.sessions_active} sesiones activas, ${counts.pending} pendientes`,
-    output: canonicalJson(data),
+    summary: `tablero: ${counts.specs} specs, ${counts.plans} planes, ${counts.sessions_active} sesiones activas, ${counts.pending} pendientes${warning ? `; aviso: ${warning}` : ""}`,
+    output: canonicalJson(warning ? { ...data, spec_readiness_warning: warning } : data),
     effects: ["read_only"],
   };
 }
@@ -511,6 +532,7 @@ async function artifacts(
   deps: InternalActionDeps,
   run: InternalActionRun,
   dump: readonly string[] | null,
+  planRefine = false,
 ): Promise<InternalActionOutcome> {
   // The presence report, without the narrative: this operation checks that the
   // artifacts are THERE, and projecting the session's whole reading to answer
@@ -534,10 +556,14 @@ async function artifacts(
     );
   }
 
+  const destination = planRefine ? await refineDestination(deps, run, canonicalJson(report)) : "";
+  if (typeof destination !== "string") return destination;
+  const legacyWarning = destination;
+
   if (dump === null) {
     return {
       ok: true,
-      summary: `sesión ${report.session}: SESSION.md presente, ${report.artifacts.session.criterios_count} criterios, ${report.artifacts.decisiones_count} decisiones`,
+      summary: `sesión ${report.session}: SESSION.md presente, ${report.artifacts.session.criterios_count} criterios, ${report.artifacts.decisiones_count} decisiones${legacyWarning}`,
       output: canonicalJson(report),
       effects: SEEDED_EFFECTS,
     };
@@ -566,10 +592,35 @@ async function artifacts(
   }
   return {
     ok: true,
-    summary: `sesión ${report.session}: ${dump.join(", ")} con contenido, ${report.artifacts.session.criterios_count} criterios`,
+    summary: `sesión ${report.session}: ${dump.join(", ")} con contenido, ${report.artifacts.session.criterios_count} criterios${legacyWarning}`,
     output,
     effects: SEEDED_EFFECTS,
   };
+}
+
+/** A new refine must be bound to an existing plan; only pre-custody sessions degrade. */
+async function refineDestination(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  report: string,
+): Promise<string | InternalActionOutcome> {
+  const custody = await readCustody(deps.fs, locateRun(deps.paths, run.session).dir);
+  if (custody.status === "unreadable") {
+    return refusal("session.artifacts", `custodia ilegible: ${custody.reason}`, report);
+  }
+  if (custody.status === "absent") {
+    return "; sesión legada sin custodia: no se puede verificar su plan destino";
+  }
+  for (const artifact of custody.custody.artifacts) {
+    if (artifact.role !== "input" || !/^docs\/plans\/\d{3,}-plan-[^/]+\.md$/.test(artifact.path))
+      continue;
+    if (await deps.fs.exists(join(deps.paths.workspaceDir(), artifact.path))) return "";
+  }
+  return refusal(
+    "session.artifacts",
+    "plan-refine exige un plan destino existente: creá la sesión con --input docs/plans/PPP-plan-<slug>.md o el descriptor <slug>-plan-refine, del que session-create deriva el plan",
+    canonicalJson({ report, custody: custody.custody.artifacts.map((artifact) => artifact.path) }),
+  );
 }
 
 /**
