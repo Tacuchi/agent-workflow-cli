@@ -52,7 +52,8 @@
     "@types/react": "^18.3.28",
     "ink-testing-library": "^4.0.0",
     "typescript": "^5.7.3",
-    "vitest": "^2.1.8"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   },
   "publishConfig": {
     "access": "public"
@@ -64,6 +65,6 @@
     "pg": "^8.23.0",
     "pg-cursor": "^2.22.0",
     "react": "^18.3.1",
-    "smol-toml": "^1.6.1"
+    "smol-toml": "^1.9.0"
   }
 }

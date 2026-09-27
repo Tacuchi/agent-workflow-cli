@@ -22,7 +22,7 @@ vi.mock("../../src/application/mcp-launch-probe-service.js", () => ({
   probePersistedMcpSetupEntries: async (
     _paths: unknown,
     _setup: unknown,
-    targets: readonly Array<{ host: string; instance: string }>,
+    targets: ReadonlyArray<{ host: string; instance: string }>,
   ) => ({
     probes: targets.map((target) => ({
       host: target.host,
@@ -37,7 +37,7 @@ vi.mock("../../src/application/mcp-launch-probe-service.js", () => ({
 vi.mock("../../src/application/mcp-native-host-check-service.js", () => ({
   // Native host binaries are verified by their dedicated unit tests. The
   // user-scope config suite must never invoke the developer's Claude/Codex.
-  checkNativeMcpHosts: async (targets: readonly Array<{ host: string; instance: string }>) => ({
+  checkNativeMcpHosts: async (targets: ReadonlyArray<{ host: string; instance: string }>) => ({
     checks: targets.flatMap((target) =>
       target.host === "claude" || target.host === "codex"
         ? [{ host: target.host, instance: target.instance, outcome: "passed" as const }]

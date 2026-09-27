@@ -1,7 +1,7 @@
-import { parse as parseToml } from "smol-toml";
 import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { parseToml } from "./parsers/toml.js";
 import type { PathsService } from "./paths-service.js";
 
 /**
