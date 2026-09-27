@@ -266,6 +266,9 @@ describe("runWorktree — the isolation unit of a flow", () => {
     });
     expect(refused).toMatchObject({ error: "unit_not_clean" });
     expect(readFileSync(join(unit.path, "nuevo.txt"), "utf-8")).toBe("sin commitear\n");
+    expect(readFileSync(join(workspace, ".claude", "settings.local.json"), "utf8")).toContain(
+      unit.path,
+    );
 
     git(unit.path, "add", "-A");
     git(unit.path, "commit", "-m", "trabajo del flujo");
@@ -299,6 +302,70 @@ describe("runWorktree — the isolation unit of a flow", () => {
     })) as WorktreeReleaseOutput;
     expect(released.visibility).toBe("detached");
     expect(readFileSync(settings, "utf-8")).not.toContain(unit.path);
+  });
+
+  it("el prune implícito de ensure desvincula la ruta de una carpeta desaparecida", async () => {
+    const first = (await runWorktree(deps, {
+      action: "ensure",
+      alias: "acme",
+      sessionCode: "103",
+    })) as WorktreeEnsureOutput;
+    rmSync(first.path, { recursive: true, force: true });
+    session("104-dos-plan-exec");
+    const second = await runWorktree(deps, {
+      action: "ensure",
+      alias: "acme",
+      sessionCode: "104",
+    });
+    expect(second).toMatchObject({ created: true });
+    const settings = readFileSync(join(workspace, ".claude", "settings.local.json"), "utf8");
+    expect(settings).not.toContain(first.path);
+    if ("path" in second) expect(settings).toContain(second.path);
+  });
+
+  it("release de carpeta desaparecida poda la entrada y desvincula su ruta", async () => {
+    const unit = (await runWorktree(deps, {
+      action: "ensure",
+      alias: "acme",
+      sessionCode: "103",
+    })) as WorktreeEnsureOutput;
+    rmSync(unit.path, { recursive: true, force: true });
+    expect(
+      await runWorktree(deps, {
+        action: "release",
+        alias: "acme",
+        sessionCode: "103",
+      }),
+    ).toMatchObject({ visibility: "detached" });
+    expect(readFileSync(join(workspace, ".claude", "settings.local.json"), "utf8")).not.toContain(
+      unit.path,
+    );
+  });
+
+  it("informa el fallo del host en ensure y release sin ocultar el estado de la unidad", async () => {
+    const settings = join(workspace, ".claude", "settings.local.json");
+    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    writeFileSync(settings, "{invalid");
+    const unit = await runWorktree(deps, {
+      action: "ensure",
+      alias: "acme",
+      sessionCode: "103",
+    });
+    expect(unit).toMatchObject({
+      created: true,
+      visibility: "unavailable",
+      visibility_error: expect.stringContaining("claude: invalid_json"),
+    });
+    const released = await runWorktree(deps, {
+      action: "release",
+      alias: "acme",
+      sessionCode: "103",
+    });
+    expect(released).toMatchObject({
+      released: true,
+      visibility: "unavailable",
+      visibility_error: expect.stringContaining("claude: invalid_json"),
+    });
   });
 
   it("returns to the flow's own branch when it asks again after releasing", async () => {

@@ -36,7 +36,7 @@ export interface ScopeInput {
 // writers; an external host can still race, so every caller must read back.
 const MAX_ATOMIC_TEMP_ATTEMPTS = 64;
 
-function atomicWriteFileSync(path: string, content: string): void {
+export function atomicWriteFileSync(path: string, content: string): void {
   let descriptor: number | undefined;
   let tmp: string | undefined;
   try {
@@ -310,20 +310,25 @@ function hostConfigTarget(host: McpHost, scope: ScopeInput): string {
  * entry. A stale lock is intentionally not guessed away: removing it requires
  * an operator decision because it may belong to another live process.
  */
-function withHostConfigLock<T>(target: string, work: () => T): T {
+export function withHostConfigLock<T>(target: string, work: () => T): T {
   const lock = `${target}.agent-workflow.lock`;
   mkdirSync(dirname(lock), { recursive: true });
   let descriptor: number;
-  try {
-    descriptor = openSync(lock, "wx", 0o600);
-  } catch (error) {
-    if (filesystemErrorCode(error) === "EEXIST") {
-      throw new McpWriterError(
-        "otro proceso está actualizando esta configuración MCP; reintentá cuando termine",
-        target,
-      );
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    try {
+      descriptor = openSync(lock, "wx", 0o600);
+      break;
+    } catch (error) {
+      if (filesystemErrorCode(error) !== "EEXIST") throw error;
+      if (Date.now() >= deadline) {
+        throw new McpWriterError(
+          "otro proceso está actualizando esta configuración; reintentá cuando termine",
+          target,
+        );
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15);
     }
-    throw error;
   }
   try {
     return work();

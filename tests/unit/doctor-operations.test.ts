@@ -177,8 +177,8 @@ const CATALOG: readonly CatalogRow[] = [
     delegates: "runMultiroot",
     effects: ["mutate_overwrite"],
     expected: "healthy",
-    args: { scope: "user" },
-    verb: "aw detach-multiroot --from-sources",
+    args: { scope: "user", paths: '["/tmp/extra"]' },
+    verb: "aw detach-multiroot --path '/tmp/extra'",
   },
   {
     op: "workspace.remove-retired-section",

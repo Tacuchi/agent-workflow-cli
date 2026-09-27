@@ -189,6 +189,11 @@ describe("proveedor de visibilidad del workspace", () => {
     expect(findings[1]?.evidence).toEqual([`sobra: ${intrusa}`]);
     expect(findings[0]?.remediation.guidance).toEqual(["aw attach-multiroot"]);
     expect(findings[1]?.remediation.guidance).toEqual(["aw detach-multiroot"]);
+    expect(findings[1]?.proposal?.args).toEqual({
+      scope: "workspace",
+      host: "claude",
+      paths: JSON.stringify([intrusa]),
+    });
     // El host se traduce al id de catálogo: `claude` (McpHost) no existe como host.
     expect([...new Set(output.coverage.map((entry) => entry.host))]).toEqual(["claude-code"]);
   });

@@ -68,31 +68,49 @@ export async function runMultiroot(
     };
   }
 
-  const result: MultirootResult = {
-    scope,
-    scope_dir: scopeDir,
-    paths_input: paths,
-    claude: input.skipClaude
-      ? { skipped: true }
-      : mode === "attach"
-        ? attachClaude(paths, scopeDir, { dryRun: input.dryRun === true })
-        : detachClaude(paths, scopeDir, { dryRun: input.dryRun === true }),
-    codex: input.skipCodex
-      ? { skipped: true }
-      : mode === "attach"
-        ? attachCodex(paths, scopeDir, { dryRun: input.dryRun === true })
-        : detachCodex(paths, scopeDir, { dryRun: input.dryRun === true }),
-    warp: input.skipWarp
-      ? { skipped: true }
-      : mode === "attach"
-        ? attachWarp(paths, scopeDir)
-        : detachWarp(paths, scopeDir),
-    oz: input.skipOz
-      ? { skipped: true }
-      : mode === "attach"
-        ? attachOz(paths, scopeDir)
-        : detachOz(paths, scopeDir),
-  };
+  let result: MultirootResult;
+  try {
+    result = {
+      scope,
+      scope_dir: scopeDir,
+      paths_input: paths,
+      claude: input.skipClaude
+        ? { skipped: true }
+        : mode === "attach"
+          ? attachClaude(paths, scopeDir, { dryRun: input.dryRun === true })
+          : detachClaude(paths, scopeDir, { dryRun: input.dryRun === true }),
+      codex: input.skipCodex
+        ? { skipped: true }
+        : mode === "attach"
+          ? attachCodex(paths, scopeDir, { dryRun: input.dryRun === true })
+          : detachCodex(paths, scopeDir, { dryRun: input.dryRun === true }),
+      warp: input.skipWarp
+        ? { skipped: true }
+        : mode === "attach"
+          ? attachWarp(paths, scopeDir)
+          : detachWarp(paths, scopeDir),
+      oz: input.skipOz
+        ? { skipped: true }
+        : mode === "attach"
+          ? attachOz(paths, scopeDir)
+          : detachOz(paths, scopeDir),
+    };
+  } catch (err) {
+    const target = String(
+      (err as { target?: string; path?: string }).target ?? (err as { path?: string }).path ?? "",
+    );
+    const host = target.includes(".codex")
+      ? "codex"
+      : target.includes(".claude")
+        ? "claude"
+        : "host";
+    return { error: `${host}: host_write_failed`, hint: (err as Error).message };
+  }
+  if ("error" in result.claude)
+    return {
+      error: `claude: ${result.claude.error}`,
+      ...(result.claude.detail ? { hint: result.claude.detail } : {}),
+    };
   return result;
 }
 

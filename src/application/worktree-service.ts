@@ -98,6 +98,7 @@ export interface WorktreeError {
 
 export type WorktreeEnsureOutput = IsolationUnit & {
   visibility: "attached" | "unavailable";
+  visibility_error?: string;
   base: string | null;
   dependencies: UnitDependencyState;
   longpaths_enabled: boolean;
@@ -136,6 +137,7 @@ export interface WorktreeReleaseOutput {
   branch: string;
   released: boolean;
   visibility: "detached" | "unavailable";
+  visibility_error?: string;
   branch_kept?: string;
   residue_completed?: boolean;
 }
@@ -164,6 +166,7 @@ export interface WorktreeIntegrateOutput {
   /** What to run next: resolve the conflict, or nothing. */
   next: string | null;
   branch_kept?: string;
+  visibility_error?: string;
 }
 
 /**
@@ -228,6 +231,7 @@ export interface ReclaimedUnit {
   branch: string | null;
   reason: ReclaimReason;
   branch_kept?: string;
+  visibility_error?: string;
 }
 
 /**
@@ -545,6 +549,12 @@ async function integrateUnit(
     ...("branch_kept" in release && release.branch_kept
       ? { branch_kept: release.branch_kept }
       : {}),
+    ...("visibility_error" in release && release.visibility_error
+      ? { visibility_error: release.visibility_error }
+      : {}),
+    ...("visibility_error" in release && release.visibility_error
+      ? { visibility_error: release.visibility_error }
+      : {}),
     next:
       "released" in release && release.released
         ? null
@@ -847,6 +857,14 @@ async function ensureUnit(
   // root, so materialize explicitly before this first Git mutation rather than
   // relying on a workspace-path filesystem write to notice it.
   await ensureWorklineMaterialized(deps.fs, deps.paths);
+  const unitsRoot = await canonicalUnitsRootForRead(deps);
+  const owns = await hubUnitPaths(deps.fs, deps.paths, unitsRoot);
+  const staleErrors: string[] = [];
+  for (const tree of await deps.git.worktreeList(source.path)) {
+    if (!tree.prunable || !owns(tree.path) || (await deps.fs.lstat(tree.path)) !== null) continue;
+    const result = await detach(deps, tree.path);
+    if (result.error) staleErrors.push(`${tree.path}: ${result.error}`);
+  }
   await deps.git.worktreePrune(source.path);
   const existing = await deps.git.worktreeList(source.path);
 
@@ -874,10 +892,13 @@ async function ensureUnit(
     // second `ensure` can never overwrite it with a state the session produced.
     const sealed = base === null ? null : await sealBaseline(deps, { ...target, base });
     if (sealed !== null) return sealed;
+    const visible = await attach(deps, path);
+    const visibilityError = [...staleErrors, visible.error].filter(Boolean).join("; ");
     return {
       ...unitOf(target, false),
       base,
-      visibility: await attach(deps, path),
+      visibility: visible.state,
+      ...(visibilityError ? { visibility_error: visibilityError } : {}),
       longpaths_enabled: longpathsEnabled,
       dependencies: await linkUnitDependencies(deps.fs, deps.git, source.path, path),
     };
@@ -935,10 +956,13 @@ async function ensureUnit(
   }
   const sealed = base === null ? null : await sealBaseline(deps, { ...target, base });
   if (sealed !== null) return sealed;
+  const visible = await attach(deps, path);
+  const visibilityError = [...staleErrors, visible.error].filter(Boolean).join("; ");
   return {
     ...unitOf(target, true),
     base,
-    visibility: await attach(deps, path),
+    visibility: visible.state,
+    ...(visibilityError ? { visibility_error: visibilityError } : {}),
     longpaths_enabled: longpathsEnabled,
     dependencies: await linkUnitDependencies(deps.fs, deps.git, source.path, path),
   };
@@ -996,6 +1020,12 @@ async function releaseUnit(
   }
   const existing = await deps.git.worktreeList(source.path);
   const registered = existing.find((w) => samePath(w.path, path));
+  if (registered && (await deps.fs.lstat(path)) === null) {
+    await deps.git.worktreePrune(source.path);
+    if ((await deps.git.worktreeList(source.path)).some((w) => samePath(w.path, path)))
+      return { error: "remove_blocked", message: `git aún registra la unidad sin carpeta ${path}` };
+    return releaseUnit(deps, target);
+  }
   if (registered === undefined) {
     await ensureWorklineMaterialized(deps.fs, deps.paths);
     await deps.git.worktreePrune(source.path);
@@ -1018,6 +1048,7 @@ async function releaseUnit(
       }
     }
     const branchKept = await deleteContainedUnitBranch(deps, target);
+    const visible = await detach(deps, path);
     return {
       alias: source.alias,
       session: identity.session,
@@ -1026,7 +1057,8 @@ async function releaseUnit(
       released: completed,
       residue_completed: completed,
       ...(branchKept ? { branch_kept: branchKept } : {}),
-      visibility: await detach(deps, path),
+      visibility: visible.state,
+      ...(visible.error ? { visibility_error: visible.error } : {}),
     };
   }
   if (registered.branch !== branch)
@@ -1052,6 +1084,7 @@ async function releaseUnit(
       return { error: "remove_blocked", message: `quedó ${path}: ${blockers.join(", ")}` };
   }
   const branchKept = await deleteContainedUnitBranch(deps, target);
+  const visible = await detach(deps, path);
   return {
     alias: source.alias,
     session: identity.session,
@@ -1059,7 +1092,8 @@ async function releaseUnit(
     branch,
     released: true,
     ...(branchKept ? { branch_kept: branchKept } : {}),
-    visibility: await detach(deps, path),
+    visibility: visible.state,
+    ...(visible.error ? { visibility_error: visible.error } : {}),
   };
 }
 
@@ -1273,10 +1307,12 @@ async function sweepSource(
           branch: branch ?? "",
           base,
         });
+        const visible = await detach(deps, sessionEntry.path);
         reclaimed.push({
           ...where,
           reason: orphan ?? "already_on_work_branch",
           ...(kept ? { branch_kept: kept } : {}),
+          ...(visible.error ? { visibility_error: visible.error } : {}),
         });
       } catch (err) {
         retained.push({
@@ -1348,8 +1384,12 @@ async function prune(
         branch: unit.branch ?? "",
         base,
       });
-      await detach(deps, unit.path);
-      reclaimed.push({ ...unit, ...(kept ? { branch_kept: kept } : {}) });
+      const visible = await detach(deps, unit.path);
+      reclaimed.push({
+        ...unit,
+        ...(kept ? { branch_kept: kept } : {}),
+        ...(visible.error ? { visibility_error: visible.error } : {}),
+      });
     }
     return { reclaimed, retained: [] };
   } catch (err) {
@@ -1472,12 +1512,13 @@ async function sweepOne(
     branch: tree.branch ?? "",
     base: work,
   });
-  await detach(deps, tree.path);
+  const visible = await detach(deps, tree.path);
   return {
     reclaimed: {
       ...where,
       reason: candidate.orphan ?? "already_on_work_branch",
       ...(branchKept ? { branch_kept: branchKept } : {}),
+      ...(visible.error ? { visibility_error: visible.error } : {}),
     },
     prune: false,
   };
@@ -1804,14 +1845,24 @@ function unitOf(target: ResolvedTarget, created: boolean): IsolationUnit {
  * failure is reported, never swallowed: a unit nobody can see is not a usable
  * unit, and the caller has to know which of the two it got.
  */
-async function attach(deps: WorktreeDeps, path: string): Promise<"attached" | "unavailable"> {
+async function attach(
+  deps: WorktreeDeps,
+  path: string,
+): Promise<{ state: "attached" | "unavailable"; error?: string }> {
   const result = await runMultiroot(deps.fs, deps.env, deps.paths, "attach", { paths: [path] });
-  return "error" in result ? "unavailable" : "attached";
+  return "error" in result
+    ? { state: "unavailable", error: `${result.error}: ${result.hint ?? "sin detalle"}` }
+    : { state: "attached" };
 }
 
-async function detach(deps: WorktreeDeps, path: string): Promise<"detached" | "unavailable"> {
+async function detach(
+  deps: WorktreeDeps,
+  path: string,
+): Promise<{ state: "detached" | "unavailable"; error?: string }> {
   const result = await runMultiroot(deps.fs, deps.env, deps.paths, "detach", { paths: [path] });
-  return "error" in result ? "unavailable" : "detached";
+  return "error" in result
+    ? { state: "unavailable", error: `${result.error}: ${result.hint ?? "sin detalle"}` }
+    : { state: "detached" };
 }
 
 function samePath(a: string, b: string): boolean {

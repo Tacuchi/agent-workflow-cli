@@ -145,8 +145,17 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     delegates: "runMultiroot",
     effects: ["mutate_overwrite"],
     expected: "healthy",
-    summary: "quita del host rutas registradas que el workspace no declara",
-    verb: () => "aw detach-multiroot --from-sources",
+    summary: "quita del host sólo las rutas sobrantes nombradas en la propuesta sellada",
+    verb: (args) => {
+      try {
+        const exact: unknown = JSON.parse(args.paths ?? "null");
+        if (Array.isArray(exact) && exact.every((path) => typeof path === "string"))
+          return `aw detach-multiroot ${exact.map((path: string) => `--path '${path.replaceAll("'", "'\\''")}'`).join(" ")}`;
+      } catch {
+        /* una propuesta sin rutas legibles se rechaza al aplicar */
+      }
+      return "aw detach-multiroot --path <rutas selladas>";
+    },
   },
   {
     op: "workspace.remove-retired-section",
