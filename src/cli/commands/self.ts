@@ -36,8 +36,42 @@ const SELF_SUBCOMMANDS = [
   "bootstrap",
 ] as const;
 
+const INSTALL_SKILL_FLAGS = [
+  "target",
+  "from",
+  "force",
+  "dry-run",
+  "confirm-all",
+  "keep-cache",
+  "keep-legacy",
+  "no-commands",
+  "no-hooks",
+  "skill-only",
+];
+
 export const selfCommand: CliCommand = {
   name: "self",
+  flags: {
+    known: [],
+    actions: {
+      // SessionStart runs `self namespace --pin`: a hook, so it warns and runs.
+      namespace: { known: ["pin"], mode: "warn" },
+      update: { known: ["dry-run", "yes", "y"] },
+      install: { known: INSTALL_SKILL_FLAGS },
+      "install-skill": { known: INSTALL_SKILL_FLAGS },
+      "install-hooks": { known: ["target", "template", "dry-run"] },
+      "install-plugin-skills": { known: ["target", "from", "force", "dry-run"] },
+      "install-plugin-skills-git": { known: ["url", "ref", "target", "force", "dry-run"] },
+      uninstall: {
+        known: ["target", "legacy", "no-commands", "skill-only", "with-hooks", "dry-run"],
+      },
+      "uninstall-skill": { known: ["target", "legacy", "dry-run"] },
+      "clean-cache": { known: ["plugin", "target", "dry-run"] },
+      "clean-legacy": { known: ["target", "prefix", "dry-run"] },
+      mcp: { known: ["action", "name", "instance", "var", "dsn-var", "dry-run"] },
+      bootstrap: { known: ["dry-run"] },
+    },
+  },
   describe:
     "Manage the agent-workflow CLI itself (namespace, doctor, detect-hosts, update, install-skill, install-hooks, install-plugin-skills, install-plugin-skills-git, uninstall-skill, mcp, bootstrap). 'self namespace' prints the active namespace; 'self namespace --pin <name>' persists it to ~/.config/agent-workflow/namespace (cross-platform).",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

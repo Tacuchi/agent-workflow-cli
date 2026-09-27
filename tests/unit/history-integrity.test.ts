@@ -15,6 +15,7 @@ import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { dispatch } from "../helpers/dispatch.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
@@ -338,7 +339,8 @@ describe("un flag que el comando no conoce no se ejecuta como si nada", () => {
 
   it("`session-close --name x` falla en vez de cerrar ignorando la mitad de la invocación", async () => {
     const fs = hub(["001-uno-quick"], SLIM_TABLE);
-    const result = await sessionCloseCommand.execute(
+    const result = await dispatch(
+      sessionCloseCommand,
       parseArgv(["session-close", "--code", "001", "--name", "x"]),
       context(fs),
     );
@@ -351,7 +353,8 @@ describe("un flag que el comando no conoce no se ejecuta como si nada", () => {
 
   it("`history-update --nombre` mal tipeado falla nombrando lo que sí acepta", async () => {
     const fs = hub(["001-uno-quick"], SLIM_TABLE);
-    const result = await historyUpdateCommand.execute(
+    const result = await dispatch(
+      historyUpdateCommand,
       parseArgv(["history-update", "--code", "001", "--state", "closed", "--nombre", "x"]),
       context(fs),
     );
@@ -363,7 +366,8 @@ describe("un flag que el comando no conoce no se ejecuta como si nada", () => {
 
   it("un flag retirado que este CLI documentó se acepta y se declara, nunca en silencio", async () => {
     const fs = hub(["001-uno-quick"], SLIM_TABLE);
-    const result = await historyUpdateCommand.execute(
+    const result = await dispatch(
+      historyUpdateCommand,
       parseArgv(["history-update", "--code", "001", "--state", "closed", "--summary", "x"]),
       context(fs),
     );

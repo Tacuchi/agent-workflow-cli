@@ -17,7 +17,7 @@ import type { SemanticFailure } from "../../application/semantic-operation/proto
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
-import type { CliCommand, HumanRenderContext } from "../registry.js";
+import type { CliCommand, CommandFlags, HumanRenderContext } from "../registry.js";
 import { fail, failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -72,9 +72,23 @@ const ENVELOPE = [
  * same validation, same authorization. Only the category changes, which is why
  * they are built here instead of copied four times.
  */
+/**
+ * The scope flags travel on every stage (a later stage refuses one that
+ * contradicts the envelope); the approval and the overwrite only mean something
+ * where the publication happens.
+ */
+function exportFlags(category: ExportCategory): CommandFlags {
+  const scope = ["sessions", "since", "source", "date"];
+  return {
+    known: category === "scripts" ? [...scope, "from", "exclude", "environment"] : scope,
+    actions: { apply: { known: ["approval", "overwrite"] } },
+  };
+}
+
 function exportCommand(category: ExportCategory): CliCommand<ExportData> {
   return {
     name: `export-${category}`,
+    flags: exportFlags(category),
     describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest> [--overwrite] [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>]${category === "scripts" ? " [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>]" : ""}.
 
 ${ENVELOPE}`,

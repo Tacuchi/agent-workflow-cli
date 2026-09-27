@@ -11,6 +11,7 @@ import { type ParsedArgs, parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { DATABASE_TOOL_DESCRIPTORS } from "../../src/domain/database-tools.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { dispatch } from "../helpers/dispatch.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 const postgres = vi.hoisted(() => ({
@@ -229,14 +230,15 @@ describe("CLI tool", () => {
   });
 
   it("rechaza opciones desconocidas antes de invocar una tool y sale con 2", async () => {
-    const result = await toolCommand.execute(
+    const result = await dispatch(
+      toolCommand,
       parsed(["tool", "list", "--connection", "alpha", "--unexpected"]),
       ctx,
     );
 
     expect(result.exitCode).toBe(2);
     expect(raw(result)).toBe(
-      '{"success":false,"error":"tool recibió una opción no permitida.","code":"INVALID_INPUT"}',
+      '{"success":false,"error":"--unexpected no es un flag de este comando; acepta --connection, --input-json","code":"UNKNOWN_FLAG"}',
     );
     expect(postgres.execute).not.toHaveBeenCalled();
   });

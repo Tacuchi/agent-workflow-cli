@@ -6,6 +6,7 @@ import type { CliContext } from "../types.js";
 
 export const hostDoctorCommand: CliCommand = {
   name: "host-doctor",
+  flags: { known: [] },
   describe:
     "Host-level health check: detecta dependencias externas faltantes (jq, etc.) requeridas por plugins instalados.",
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

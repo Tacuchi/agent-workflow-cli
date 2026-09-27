@@ -167,10 +167,11 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   // migration.
   "apply",
   // Output projection (see output-mode.ts). `--format` takes a value and stays
-  // out; these two are presence-only and MUST be here or `aw status --json` and
+  // out; these three are presence-only and MUST be here or `aw status --json` and
   // `aw resume --detail 009` would swallow the following positional.
   "json",
   "detail",
+  "ascii",
   "include-docs",
   "from-sources",
   "exported-only",
@@ -250,10 +251,11 @@ function consumeToken(state: ParseState): void {
   if (consumeCommandIfFirst(state, token)) return;
   if (consumeOptionFlag(state, token)) return;
 
-  // Single-dash help: only `--` tokens become flags, so alias `-h` here or it
-  // would fall into `rest` and the command would run instead of showing help.
-  if (token === "-h") {
-    state.flags.add("-h");
+  // Single-dash tokens (`-h`, `-y`) are flags too: in `rest` they would read as
+  // a positional nobody expects, and an unknown one would escape the flag
+  // contract. A bare `-` is the stdin marker, a positional.
+  if (token.length > 1 && token.startsWith("-")) {
+    state.flags.add(token);
     state.index += 1;
     return;
   }
@@ -298,6 +300,13 @@ function consumeOptionFlag(state: ParseState, token: string): boolean {
   }
   const name = token.slice(2);
   const next = state.argv[state.index + 1];
+  // A bare `--` is the end-of-options marker: it never takes the next token as
+  // its value, or `-- foo` would read as a flag named "" set to `foo`.
+  if (name.length === 0) {
+    state.flags.add(token);
+    state.index += 1;
+    return true;
+  }
   // `tool call --input-json -` is an explicit stdin marker, not another flag.
   // Keep this exception narrow: accepting arbitrary dash-prefixed values would
   // make a missing flag value silently consume the next option.

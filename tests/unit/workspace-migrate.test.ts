@@ -11,6 +11,7 @@ import { workspaceMigrateCommand } from "../../src/cli/commands/workspace-migrat
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { dispatch } from "../helpers/dispatch.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
@@ -387,7 +388,8 @@ describe("aw workspace-migrate", () => {
 
   it("un flag que no conoce lo rechaza en vez de ejecutarse como si nada", async () => {
     const fs = hub({ claude: `${RICH_BLOCK}\n` });
-    const result = await workspaceMigrateCommand.execute(
+    const result = await dispatch(
+      workspaceMigrateCommand,
       parseArgv(["workspace-migrate", "--force"]),
       context(fs),
     );

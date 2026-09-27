@@ -18,11 +18,14 @@ type ToolCliPayload = { tools: readonly DatabaseToolDescriptor[] } | ToolRespons
 /** Direct, transport-free access to the same catalog served over MCP. */
 export const toolCommand: CliCommand<ToolCliPayload> = {
   name: "tool",
+  flags: {
+    known: ["connection", "input-json"],
+    // The tool protocol keeps its own envelope and exit code for a refusal.
+    refuse: (message) => toolCommandFailure("UNKNOWN_FLAG", message, 2),
+  },
   describe:
     "Invoca una tool PostgreSQL de Workline sin crear un servidor MCP. Uso: tool list --connection <nombre> | tool call <tool> --connection <nombre> --input-json <json|->.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ToolCliPayload>> {
-    const argumentsError = validateToolArguments(args);
-    if (argumentsError !== undefined) return toolCommandFailure("INVALID_INPUT", argumentsError, 2);
     const subcommand = args.rest[0];
     const connection = args.values.get("connection");
     if (connection === undefined || connection.length === 0) {
@@ -100,25 +103,6 @@ function toolCommandFailure(
   exitCode: ExitCode,
 ): CommandResult<ToolCliPayload> {
   return toolResponseFailure(toolFailure(code, message), exitCode);
-}
-
-function validateToolArguments(args: ParsedArgs): string | undefined {
-  const allowedValues = new Set(["connection", "input-json", "namespace", "format"]);
-  const allowedFlags = new Set([
-    "--connection",
-    "--input-json",
-    "--namespace",
-    "--format",
-    "--json",
-    "--detail",
-  ]);
-  if ([...args.values.keys()].some((key) => !allowedValues.has(key))) {
-    return "tool recibió una opción no permitida.";
-  }
-  if ([...args.flags].some((flag) => !allowedFlags.has(flag))) {
-    return "tool recibió una opción no permitida.";
-  }
-  return undefined;
 }
 
 function toolResponseFailure(

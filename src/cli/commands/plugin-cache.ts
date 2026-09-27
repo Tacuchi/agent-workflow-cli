@@ -8,6 +8,10 @@ import type { CliContext } from "../types.js";
 
 export const pluginCacheCommand: CliCommand = {
   name: "plugin-cache",
+  flags: {
+    known: ["plugin", "target", "dry-run"],
+    actions: { reload: { known: ["from"] } },
+  },
   describe:
     "Limpia o recarga el cache de un plugin instalado en un host. Subcomandos: clear, reload. Flags: --plugin <ns> --target <claude|codex|warp|agents> [--from <path>] [--dry-run].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

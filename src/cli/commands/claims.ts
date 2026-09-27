@@ -25,6 +25,7 @@ const USAGE =
  */
 export const claimsCommand: CliCommand = {
   name: "claims",
+  flags: { known: ["approval", "confirm-no-producer"] },
   describe:
     "Reservations of numbered documents and legacy placeholders, plus the authorized recovery of one. 'claims' or 'claims list' shows every recoverable slot with its correlative, destination, owner and state — a published document is never one. 'claims recover <ruta>' previews the recovery and returns its digest; adding --approval <digest> seals an IRREVOCABLE revocation scoped to that claim and only then releases the slot, so a late sealed publication against it is rejected instead of colliding. A legacy placeholder names nobody, so freeing it also needs --confirm-no-producer: an explicit statement that nothing is still going to write there. Never expires anything on a timer. Usage: aw claims [list] | aw claims recover <ruta> [--approval <digest>] [--confirm-no-producer].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

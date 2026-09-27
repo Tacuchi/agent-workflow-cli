@@ -1,6 +1,9 @@
 import type { SessionResolutionError } from "../application/session-resolver.js";
 import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
 import type { CliError, CommandResult } from "../domain/types.js";
+import { toAscii } from "./ascii.js";
+import type { OutputMode } from "./output-mode.js";
+import type { CliCommand } from "./registry.js";
 
 export interface ErrorEnvelope {
   code: string;
@@ -87,6 +90,30 @@ export function renderHumanError(error: CliError | undefined, data?: unknown): s
   return `${lines.join("\n")}\n`;
 }
 
+/**
+ * Human projection, or `undefined` when the command declares none — in which
+ * case the runtime keeps JSON. Success and failure are kept together on
+ * purpose: a command that renders prose on error but JSON on success would be
+ * incoherent to read and to script against. The ASCII mark applies here, to
+ * text already rendered for a person, and nowhere on the JSON path.
+ */
+export function renderHumanProjection(
+  result: CommandResult,
+  command: CliCommand,
+  mode: OutputMode,
+): string | undefined {
+  if (command.renderHuman === undefined) return undefined;
+  const text = result.ok
+    ? command.renderHuman(result, { detail: mode.detail })
+    : renderHumanError(result.error, result.data);
+  return forPerson(text, mode);
+}
+
+/** Text a person reads, in ASCII when the invocation asked for it. */
+export function forPerson(text: string, mode: Pick<OutputMode, "ascii">): string {
+  return mode.ascii ? toAscii(text) : text;
+}
+
 function readNextAction(data: unknown): string | undefined {
   if (typeof data !== "object" || data === null) return undefined;
   const action = (data as { action?: unknown }).action;
@@ -106,8 +133,19 @@ export function writeStdout(text: string): void {
 // compaction (a blocking PreCompact shows a person stderr, never stdout). Do
 // NOT use it for CLI-formatted errors: those go through `emitError`, which
 // writes a JSON envelope to stdout (post session012, Propuesta 002 G3).
+//
+// Its callers are the notices of what the host launches — hook targets, the
+// stdio MCP servers and the flag gate's warning for both — so it is also where
+// the ASCII mark reaches them: the dispatcher sets it once, before the command
+// runs, instead of threading the mode into every one of them.
+let stderrAscii = false;
+
+export function useAsciiStderr(enabled: boolean): void {
+  stderrAscii = enabled;
+}
+
 export function writeStderr(text: string): void {
-  process.stderr.write(text);
+  process.stderr.write(stderrAscii ? toAscii(text) : text);
 }
 
 export function emitError(error: ErrorEnvelope): void {

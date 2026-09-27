@@ -11,6 +11,7 @@ import type { CliContext } from "../types.js";
 
 export const sessionResumeCommand: CliCommand = {
   name: "session-resume",
+  flags: { known: ["code", "reopen"] },
   describe:
     "Load resume payload for a session (objetivo + checkpoint). With --reopen, reactivate it if closed (inter-turn continuity). " +
     "Usage: aw session-resume [--code <session>] [--reopen].",

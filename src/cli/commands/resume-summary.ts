@@ -11,6 +11,11 @@ import type { CliContext } from "../types.js";
 
 export const resumeSummaryCommand: CliCommand = {
   name: "resume-summary",
+  flags: {
+    known: ["code", "include-recent-closed", "recent-days"],
+    retired: ["can-pause"],
+    mode: "warn",
+  },
   describe:
     "Compact resume payload for the PostCompact hook: the session named by --code or " +
     "associated with the conversation; otherwise degraded continuity with the candidates " +

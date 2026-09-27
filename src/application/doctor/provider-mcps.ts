@@ -579,7 +579,7 @@ function worklineEntryFinding(
       remediation: {
         kind: "manual",
         action: null,
-        guidance: [`aw mcp migrate --host ${mcpHost} --scope ${scope}`],
+        guidance: [`aw mcp migrate --host ${mcpHost}${scope === "global" ? " --global" : ""}`],
       },
       proposal: {
         op: "mcp.migrate",

@@ -7,6 +7,7 @@ import type { CliContext } from "../types.js";
 
 export const contextPlanCommand: CliCommand<ContextPlanOutput> = {
   name: "context-plan",
+  flags: { known: ["command", "signal", "capability", "root"] },
   describe:
     "Devuelve el read-set ordenado de un comando —qué documentos leer, en qué orden y a qué costo— más el recibo de lo cargado. " +
     "Usage: aw context-plan --command <cmd> [--signal <s>]… [--root <bundle>] [--format human|json] [--detail].",

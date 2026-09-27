@@ -33,6 +33,7 @@ const USAGE =
  */
 export const cutIntentCommand: CliCommand = {
   name: "cut-intent",
+  flags: { known: ["spec", "order", "plan", "deferred", "cause"] },
   describe:
     "The intent with which a cut of plans born from one spec was meant to be executed: which plans go together, in what order inside the group, and which are held back for a later pass. 'cut-intent' or 'cut-intent show' reads it back — with --plan it answers for one plan, and a plan nobody declared gets an explicit answer, never an empty list. 'cut-intent declare --spec <NNN> --order <NNN,NNN>' records it; declaring again is how you correct it, and the superseded record is kept, never rewritten. The book is append-only under the workspace namespace, next to HISTORY.md. It constrains nothing: executing out of the declared order is allowed and only warned about. Usage: aw cut-intent [show] [--plan <NNN|ruta>] | aw cut-intent declare --spec <NNN> --order <NNN,NNN> [--deferred <NNN,…>] [--cause <texto>].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

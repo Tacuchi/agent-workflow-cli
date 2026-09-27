@@ -40,6 +40,16 @@ const USAGE = [
  */
 export const releasePassCommand: CliCommand = {
   name: "release-pass",
+  flags: {
+    known: ["version"],
+    actions: {
+      declare: { known: ["sources", "plans", "cause"] },
+      arrived: { known: ["source", "kind", "detail", "date"] },
+      applied: { known: ["environment", "detail", "date"] },
+      revert: { known: ["cause"] },
+      link: { known: ["artifact"] },
+    },
+  },
   describe:
     "Passes to production as first-class objects: which plans travelled together, over which sources, and whether each source actually arrived. 'release-pass declare --version <v> --sources <a,b>' opens one — the version NAMES it and is not any source's arrival fact, and the order between passes is the book's sequence, never a comparison of names. 'release-pass arrived --source <alias> --kind <…> --detail <hecho>' registers one source's arrival; with a second source still missing the pass reads partially released, naming both, and the missing source's work never reads as released. 'release-pass applied --environment <ambiente> --detail <hecho>' registers that the SQL this pass carries RAN there — its own axis, never a fourth arrival kind, so the release axis does not move and a pass with no such record reads as NO RECORD rather than as nothing applied. 'release-pass revert' adds a reversion that never erases the arrivals it follows. 'release-pass link --artifact <ruta>' attaches a document by workspace-relative path, checking only that it exists — never opening, moving, renumbering or executing it. The book is append-only under the workspace namespace. Usage: aw release-pass [list] | declare | arrived | applied | revert | link.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

@@ -27,6 +27,7 @@ import {
   summarizeDoctorFindings,
 } from "../../src/domain/doctor/model.js";
 import { HARNESSES, type HarnessId } from "../../src/domain/harnesses.js";
+import { dispatch } from "../helpers/dispatch.js";
 
 /**
  * La SUPERFICIE de `aw doctor`: lo que se escribe en una terminal y lo que sale.
@@ -244,11 +245,8 @@ describe("aw doctor · --doctor no es un flag de runtime", () => {
   // comando delante. Si estuviera ahí, cualquier comando lo toleraría en
   // silencio y `aw session-close --doctor` cerraría la sesión como si nada.
   it("un comando que no lo declara lo devuelve en unknown, y tolera los de runtime", () => {
-    // LIMITACIÓN CONOCIDA, preexistente y de todo el CLI: esto fija lo que
-    // `reviewFlags` responde, no lo que cada comando hace con la respuesta.
-    // `status.ts` no llama a `reviewFlags` (sólo lo hacen session-close,
-    // history-update y workspace-migrate), así que hoy `aw status --doctor`
-    // ignora el flag EN SILENCIO. No lo introdujo el alias y no se arregla acá.
+    // El despachador revisa el contrato de TODO comando antes de ejecutarlo, así
+    // que `aw status --doctor` también se rechaza: sólo `doctor` lo declara.
     const parsed = parseArgv(["session-close", "--code", "001", "--doctor", "--json"]);
     const review = reviewFlags(parsed, { known: ["code", "refs"] });
     expect(review.unknown).toEqual(["--doctor"]);
@@ -257,7 +255,7 @@ describe("aw doctor · --doctor no es un flag de runtime", () => {
 
   it("la superficie real lo rechaza: session-close responde UNKNOWN_FLAG", async () => {
     const parsed = parseArgv(["session-close", "--code", "001", "--doctor"]);
-    const result = await sessionCloseCommand.execute(parsed, emptyCtx);
+    const result = await dispatch(sessionCloseCommand, parsed, emptyCtx);
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("UNKNOWN_FLAG");
     expect(result.error?.message).toContain("--doctor");

@@ -14,6 +14,21 @@ import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
+const MULTIROOT_FLAGS = {
+  known: [
+    "path",
+    "paths",
+    "from-sources",
+    "global",
+    "dry-run",
+    "workspace",
+    "skip-claude",
+    "skip-codex",
+    "skip-warp",
+    "skip-oz",
+  ],
+};
+
 function buildInput(args: ParsedArgs): MultirootInput {
   const input: MultirootInput = {};
   // Repeated --path (routed to valuesMulti by the parser).
@@ -35,6 +50,7 @@ function buildInput(args: ParsedArgs): MultirootInput {
 
 export const attachMultirootCommand: CliCommand = {
   name: "attach-multiroot",
+  flags: MULTIROOT_FLAGS,
   describe:
     "Configura visibilidad multi-root en Claude Code y Codex CLI. " +
     "Usage: aw attach-multiroot [--path <dir> ...] [--paths <csv>] [--workspace <dir>] " +
@@ -46,6 +62,7 @@ export const attachMultirootCommand: CliCommand = {
 
 export const detachMultirootCommand: CliCommand = {
   name: "detach-multiroot",
+  flags: MULTIROOT_FLAGS,
   describe:
     "Quita visibilidad multi-root previamente configurada. " +
     "Usage: aw detach-multiroot [--path <dir> ...] [--paths <csv>] [--workspace <dir>] " +

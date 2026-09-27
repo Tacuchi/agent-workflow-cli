@@ -8,6 +8,7 @@ import type { CliContext } from "../types.js";
 
 export const checkBranchCommand: CliCommand = {
   name: "check-branch",
+  flags: { known: ["code", "session", "source", "path", "file", "strict"] },
   describe:
     "Verify a source branch vs expected work branch — or, when the source has isolation units, whether the file falls in THIS flow's unit. " +
     "Usage: aw check-branch [--source <alias>|--file <path>] [--code <NNN>] [--strict].",

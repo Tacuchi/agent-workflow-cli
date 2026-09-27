@@ -13,6 +13,9 @@ import type { CliContext } from "../types.js";
 
 export const projectMdUpsertCommand: CliCommand = {
   name: "project-md-upsert",
+  flags: {
+    known: ["init", "read", "proyecto", "fuente", "main-branch", "working-branch", "verbose"],
+  },
   describe:
     "Read or update the <NS>-PROJECT block in CLAUDE.md/AGENTS.md. " +
     "Usage: aw project-md-upsert [--read] [--init] [--proyecto <name>] " +

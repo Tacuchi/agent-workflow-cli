@@ -224,3 +224,43 @@ export function commandHelpText(command: { name: string; describe?: string }): s
     "\n",
   );
 }
+
+/**
+ * The global `aw --help` body, pure so the output flags it documents can be
+ * tested. `main.ts` only writes it.
+ */
+export function globalHelpText(
+  commands: string[],
+  describes: ReadonlyMap<string, string>,
+  defaultNamespace: string,
+): string {
+  const lines = [
+    "agent-workflow — Workline runtime CLI (session lifecycle)",
+    "",
+    "Usage:",
+    "  agent-workflow [--namespace <name>]",
+    "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
+    "                 <command> [args...]",
+    "",
+    "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
+    "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
+    `default '${defaultNamespace}'. Without a marker, the invoked directory is the`,
+    "implicit root; new workspaces materialize .<namespace>/sessions/ on first write.",
+    "",
+    "Output (any command):",
+    "  --format human|json  projection of the result; default human in a terminal, json in a pipe",
+    "  --json               same as --format json",
+    "  --detail             wider human projection (implies human)",
+    "  --ascii              human output, help and hook notices in ASCII only; AW_ASCII=1 sets",
+    "                       it for every invocation. Refused with an explicit --json/--format json",
+    "",
+    "Commands:",
+    "",
+    ...renderGroupedCommandLines(commands, describes),
+    "",
+    "Aliases:",
+    "  aw                  short alias of `agent-workflow`",
+    "",
+  ];
+  return `${lines.join("\n")}\n`;
+}

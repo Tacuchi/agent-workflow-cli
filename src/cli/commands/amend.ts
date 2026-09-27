@@ -61,6 +61,7 @@ function refuse(code: string, message: string, action: string): CommandResult<Am
 
 export const amendCommand: CliCommand<AmendOutput> = {
   name: "amend",
+  flags: { known: ["de", "a", "declaracion", "declaration"] },
   describe:
     "Correct the WORDING of an already closed spec or plan, in one act, without opening a refinement. " +
     "Cross-cutting: it opens no flow and creates no session. It demands an explicit declaration that the correction changes no scope, criteria or rules, " +

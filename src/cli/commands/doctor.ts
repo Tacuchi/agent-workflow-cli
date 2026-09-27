@@ -81,6 +81,11 @@ function isSubverb(data: DoctorCommandData): data is Exclude<DoctorCommandData, 
 
 export const doctorCommand: CliCommand<DoctorCommandData> = {
   name: "doctor",
+  flags: {
+    // `doctor`: `aw --doctor` dispatches here with the alias flag still set.
+    known: ["doctor", "host", "only", "skip-native", "verify-connection"],
+    actions: { prepare: { known: ["select"] }, apply: { known: ["select", "approval"] } },
+  },
   describe:
     "aw doctor: diagnóstico contextual de la instalación y los recursos de Workline en los hosts detectados, con cobertura por categoría y veredicto en el código de salida. Con --verify-connection autorizás verificar las credenciales contra su servicio.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DoctorCommandData>> {

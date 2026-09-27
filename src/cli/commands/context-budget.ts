@@ -11,6 +11,7 @@ import type { CliContext } from "../types.js";
 
 export const contextBudgetCommand: CliCommand<ContextBudgetOutput> = {
   name: "context-budget",
+  flags: { known: ["root", "baseline"] },
   describe:
     "Mide el costo de contexto del bundle w en sus tres tramos (discovery, activación, ejecución) y lo compara contra un baseline congelado. " +
     "Usage: aw context-budget [--root <bundle>] [--baseline <archivo>] [--format human|json] [--detail].",

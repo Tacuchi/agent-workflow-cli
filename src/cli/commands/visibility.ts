@@ -12,6 +12,7 @@ import type { CliContext } from "../types.js";
 
 export const visibilityCommand: CliCommand<VisibilityDoctorResult> = {
   name: "visibility",
+  flags: { known: ["workspace", "global"] },
   describe:
     "Inspector de visibilidad multi-root del hub. Subcomandos: doctor [--workspace dir] [--global] " +
     "[--format human|json] [--detail].",

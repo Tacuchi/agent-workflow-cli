@@ -13,6 +13,18 @@ import type { CliContext } from "../types.js";
 
 export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
   name: "workspace-init",
+  flags: {
+    known: [
+      "workspace",
+      "proyecto",
+      "source",
+      "fuente",
+      "main-branch",
+      "working-branch",
+      "qa-branch",
+      "dry-run",
+    ],
+  },
   describe:
     "Materialize the minimal Workline runtime in the resolved directory, or configure sources when --source is supplied. Without sources it creates only the sessions marker and the Git runtime ignore block when applicable. With sources it reconciles the WORKSPACE block, branches and multi-root visibility. Usage: aw workspace-init [--source alias:path[:rama] (repeatable, 1+)] [--working-branch alias:rama] [--qa-branch alias:rama] [--proyecto <name>] [--main-branch <branch>] [--workspace <dir>] [--dry-run] [--format human|json] [--detail].",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceInitResult>> {

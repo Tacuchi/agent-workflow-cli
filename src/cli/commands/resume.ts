@@ -13,6 +13,7 @@ import type { CliContext } from "../types.js";
 
 export const resumeCommand: CliCommand<ResumeOutcome> = {
   name: "resume",
+  flags: { known: ["code"] },
   describe: `Qué retomar y con qué comando exacto, derivado del pipeline documental. Read-only: propone la ruta, nunca la ejecuta. Usage: aw resume [<${DEFAULT_CORE_DOCS_CANON.spec}|${DEFAULT_CORE_DOCS_CANON.plan} path | número>] [--code <sesión>] [--format human|json] [--detail].`,
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ResumeOutcome>> {
