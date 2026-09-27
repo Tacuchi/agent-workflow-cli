@@ -1019,7 +1019,7 @@ export function directiveFor(
               ? "human"
               : resolved.stopped.authority,
           ownership: resolved.stopped.ownership,
-          title: boundaryTitle(state, resolved.stopped),
+          title: validationTitle(state, resolved.stopped),
           document: resolved.stopped.document,
         };
   const planned = resolved.authorization?.planned ?? [];
@@ -1067,6 +1067,14 @@ export function directiveFor(
   });
   if (!built.ok) return { ok: false, failure: built.failure };
   return { ok: true, state, directive: built.directive };
+}
+
+/** The proof covers this entire range; no new field is required in the answer envelope. */
+function validationTitle(state: FlowRunState, stopped: FlowDecision): string {
+  if (stopped.id !== "plan-exec.validation-execution") return boundaryTitle(state, stopped);
+  const batch = state.batches?.find((item) => item.iteration === state.batch_loop?.iteration);
+  if (batch === undefined) return stopped.title;
+  return `${stopped.title}: ${batch.phases.map((phase) => `F${phase}`).join(", ")}${batch.kind === "validation-only" ? " (sólo validación)" : ""}`;
 }
 
 /**
