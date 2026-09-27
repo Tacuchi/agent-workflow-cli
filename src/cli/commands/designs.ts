@@ -9,6 +9,7 @@ import {
   readDesignIndex,
   resolveDesignPackage,
 } from "../../application/design/design-index-service.js";
+import { HANDOFF_RULES } from "../../domain/design/maturity.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-canon.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
@@ -24,7 +25,7 @@ type DesignsOutput =
 export const designsCommand: CliCommand<DesignsOutput> = {
   name: "designs",
   flags: { known: ["plan", "id", "deep", "require-approval"] },
-  describe: `List the UI Design Packages under docs/designs/, resolve one by identity, or run the plan-exec precondition gate over a plan. Resolution goes through the manifest id, never the folder: a renamed or moved package still resolves. \`--id\` always runs the content gate over the package's current revisions; the listing stays structural unless \`--deep\` runs it on every package. Usage: aw designs [--id DES-NNN] [--deep] [--plan ${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md] [--require-approval].`,
+  describe: `List the UI Design Packages under docs/designs/, resolve one by identity, or run the plan-exec precondition gate over a plan. Resolution goes through the manifest id, never the folder: a renamed or moved package still resolves. \`--id\` always runs the content gate over the package's current revisions; the listing stays structural unless \`--deep\` runs it on every package. Usage: aw designs [--id DES-NNN] [--deep] [--plan ${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md] [--require-approval]. Handoff: ${HANDOFF_RULES.map((rule) => `${rule.code}: ${rule.description}`).join("; ")}.`,
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DesignsOutput>> {
     const plan = args.values.get("plan");
     if (plan !== undefined) return gate(plan, args, ctx);

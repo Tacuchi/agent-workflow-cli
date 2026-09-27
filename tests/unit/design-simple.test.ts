@@ -78,6 +78,7 @@ const DOCUMENT = [
 ].join("\n");
 
 const NO_FACTS = {
+  mode: null,
   sensitiveSources: false,
   externalTransmission: false,
   sources: [],
@@ -128,13 +129,17 @@ describe("T4.1 · el vocabulario de expansión es cerrado y su umbral es del CLI
     expect(judgeExpansion([], fired).mode).toBe("package");
   });
 
-  it("el CLI deriva gobierno o reutilización de un package con decisiones selladas", () => {
-    expect(deriveStructuralSignals({ ...NO_FACTS, governanceRecords: 1 })).toEqual([
-      "design.governance-or-system-reuse",
-    ]);
-    expect(deriveStructuralSignals({ ...NO_FACTS, publishedRevisions: 2 })).toEqual([
-      "design.governance-or-system-reuse",
-    ]);
+  it("el CLI deriva gobierno o reutilización sólo para un package", () => {
+    expect(deriveStructuralSignals({ ...NO_FACTS, governanceRecords: 1 })).toEqual([]);
+    expect(deriveStructuralSignals({ ...NO_FACTS, mode: "simple", publishedRevisions: 2 })).toEqual(
+      [],
+    );
+    expect(deriveStructuralSignals({ ...NO_FACTS, mode: "package", governanceRecords: 1 })).toEqual(
+      ["design.governance-or-system-reuse"],
+    );
+    expect(
+      deriveStructuralSignals({ ...NO_FACTS, mode: "package", publishedRevisions: 2 }),
+    ).toEqual(["design.governance-or-system-reuse"]);
   });
 
   it("cada señal declara su origen y ninguna repite id", () => {
@@ -516,6 +521,121 @@ describe("T4.3 · el índice, los resolvers y el gate consumen el diseño simple
 });
 
 describe("T4.4 · el recorrido visible es comprender → redactar → vista previa → decidir", () => {
+  it("create muestra las dos secciones núcleo que faltan en un solo fallo", async () => {
+    const fs = new MemFs({ lenient: true });
+    const inputs = [text("title", "Alta de miembro"), text("sources", ["docs/requisitos.md"])];
+    const invalid = DOCUMENT.replace("## Objetivo", "## Otro").replace("## Validación", "## Otro");
+    const validated = await dispatchCapability(
+      {
+        verb: "validate",
+        capability: "design",
+        operation: "create",
+        route: "direct",
+        inputs,
+        answer: JSON.stringify({
+          version: 1,
+          operation: "design.create",
+          input_digest: digestOfInputs(inputs),
+          state: "proposed",
+          artifacts: [
+            { path: "docs/designs/001-design-alta-de-miembro/DESIGN.md", content: invalid },
+          ],
+        }),
+      },
+      context(fs),
+    );
+    expect(validated.ok, JSON.stringify(validated)).toBe(true);
+    if (!validated.ok) return;
+    const message = validated.attempt.receipt.error?.message ?? "";
+    expect(message).toContain("Objetivo");
+    expect(message).toContain("Validación");
+  });
+
+  it("validate y apply de r3 conservan simple y archivan r2", async () => {
+    const fs = await published(new MemFs({ lenient: true }));
+    const folder = "docs/designs/001-design-alta-de-miembro";
+    const r2 = DOCUMENT.replace("sin recargar", "con aviso");
+    const target = resolveSimpleTarget(await readDesignIndex(fs, WS), "update", {
+      title: null,
+      packageId: "DES-001",
+    });
+    if (!target.ok) throw new Error(target.failure.message);
+    const second = await buildSimpleProposal(fs, WS, {
+      target: target.value,
+      document: r2,
+      published: "2026-08-10",
+    });
+    if (!second.ok) throw new Error(second.failures[0]?.message);
+    for (const artifact of second.value.artifacts)
+      fs.file(`${WS}/${artifact.path}`, artifact.content);
+
+    const inputs = [text("package", "DES-001")];
+    const r3 = DOCUMENT.replace("sin recargar", "con confirmación");
+    const validated = await dispatchCapability(
+      {
+        verb: "validate",
+        capability: "design",
+        operation: "update",
+        route: "direct",
+        inputs,
+        answer: JSON.stringify({
+          version: 1,
+          operation: "design.update",
+          input_digest: digestOfInputs(inputs),
+          state: "proposed",
+          artifacts: [{ path: `${folder}/DESIGN.md`, content: r3 }],
+        }),
+      },
+      context(fs),
+    );
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    expect(validated.attempt.receipt.outcome).toBe("needs_input");
+    const plan = validated.attempt.plan;
+    expect(plan?.proposal.preview.map((p) => p.path)).toContain(
+      `${folder}/revisions/DESIGN-r002.md`,
+    );
+    if (plan === null) return;
+    const applied = await dispatchCapability(
+      {
+        verb: "apply",
+        capability: "design",
+        operation: "update",
+        route: "direct",
+        request: validated.attempt.request,
+        plan,
+        approval: { digest: plan.proposal.digest, granted: plan.proposal.requires_approval },
+      },
+      context(fs),
+    );
+    expect(applied.ok).toBe(true);
+    if (!applied.ok) return;
+    expect(applied.attempt.receipt.outcome).toBe("completed");
+    expect(await fs.readText(`${WS}/${folder}/revisions/DESIGN-r002.md`)).toBe(r2);
+    expect(await fs.readText(`${WS}/${folder}/DESIGN.md`)).toBe(r3);
+    const manifest = (await readDesignIndex(fs, WS)).packages[0]?.manifest;
+    expect(manifest?.mode).toBe("simple");
+    expect(manifest?.baselines.map((b) => b.revision)).toEqual([1, 2, 3]);
+  });
+
+  it("un update simple con fuente no usada se rechaza nombrando su señal", async () => {
+    const fs = await published(new MemFs({ lenient: true }));
+    const result = await dispatchCapability(
+      {
+        verb: "prepare",
+        capability: "design",
+        operation: "update",
+        route: "direct",
+        inputs: [text("package", "DES-001"), text("sources", ["archivo.desconocido"])],
+      },
+      context(fs),
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.message).toContain("design.special-source-or-effect");
+  });
+
   it("prepare publica el contrato del documento y su único destino", async () => {
     const result = await dispatchCapability(
       {

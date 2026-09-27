@@ -181,13 +181,25 @@ describe("parseTaskDesignReferences — lo que una tarea de plan fija", () => {
     expect(result.references).toEqual([]);
   });
 
-  it("reporta el package citado sin fijar", () => {
+  it("una mención en prosa sin diseño consumido no crea un fallo", () => {
     const result = parseTaskDesignReferences(
       "- [ ] T1.1 — Tomar el diseño de DES-001 y construirlo.",
       "docs/plans/012-plan.md",
     );
+    expect(result.failures).toEqual([]);
+  });
+
+  it("un id con sufijo alias se reporta aunque no haya referencias consumidas", () => {
+    const result = parseTaskDesignReferences("- [ ] T1.1 — mirar DES-001@latest", "plan.md");
     expect(result.failures[0]?.code).toBe("DESIGN_REFERENCE_APPROXIMATE");
-    expect(result.failures[0]?.message).toContain("no fija la revisión");
+  });
+
+  it("una mención sin revisión se reporta cuando también se fija un diseño", () => {
+    const result = parseTaskDesignReferences(
+      "- [ ] T1.1 — mirar DES-002 y aplicar DES-001@r2",
+      "plan.md",
+    );
+    expect(result.failures[0]?.code).toBe("DESIGN_REFERENCE_APPROXIMATE");
   });
 
   it("no reporta como suelto el package que SÍ está fijado", () => {

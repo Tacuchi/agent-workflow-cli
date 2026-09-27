@@ -161,6 +161,7 @@ export interface ScreenArtifact extends CommonFields {
   default_state: string;
   states: StateEntry[];
   flow_refs: string[];
+  screen_refs: string[];
   dependencies: ScreenDependencies;
   /** Narrowed: a screen's trace also says how each criterion is demonstrated. */
   trace: ScreenTraceEntry[];
@@ -199,7 +200,15 @@ export const FLOW_ALLOWED_KEYS: AllowedKeys = {
 };
 
 export const SCREEN_ALLOWED_KEYS: AllowedKeys = {
-  "": [...COMMON_KEYS, "title", "default_state", "states", "flow_refs", "dependencies"],
+  "": [
+    ...COMMON_KEYS,
+    "title",
+    "default_state",
+    "states",
+    "flow_refs",
+    "screen_refs",
+    "dependencies",
+  ],
   "states[]": ["anchor", "purpose"],
   "trace[]": ["criterion", "source", "classification", "states", "renditions", "reason"],
   "unknowns[]": ["question", "blocking"],
@@ -980,6 +989,7 @@ interface ScreenRead {
   default_state: string;
   states: StateEntry[];
   flow_refs: string[];
+  screen_refs: string[];
   dependencies: ScreenDependencies;
 }
 
@@ -1011,11 +1021,16 @@ function readScreen(r: Reader, front: Record<string, unknown>, artifact: string)
   }
 
   const flowRefs = readRefList(r, front, "flow_refs", artifact, "flow");
+  const screenRefs =
+    r.read(front, "screen_refs") === undefined
+      ? []
+      : readRefList(r, front, "screen_refs", artifact, "screen");
   return {
     title: typeof title === "string" ? title : "",
     default_state: typeof defaultState === "string" ? defaultState : "",
     states,
     flow_refs: flowRefs,
+    screen_refs: screenRefs,
     dependencies: readScreenDependencies(r, front, artifact),
   };
 }
@@ -1255,14 +1270,23 @@ function checkBodyRefs(
       checkOwnAnchor(r, artifact, kind, parsedRef.state, ownAnchors);
       continue;
     }
-    if (declared.has(ref)) continue;
+    // `screen_refs` pins a screen revision; a state anchor in prose addresses
+    // that revision without requiring a separate declaration per state.
+    if (
+      declared.has(ref) ||
+      (kind === "screen" &&
+        parsedRef.state !== undefined &&
+        parsedRef.artifact.startsWith("SCR-") &&
+        declared.has(ref.slice(0, ref.indexOf("#"))))
+    )
+      continue;
     r.fail(
       "DESIGN_BODY_REFERENCE_UNKNOWN",
       artifact,
       `el cuerpo cita ${ref} y el frontmatter no lo declara`,
       kind === "flow"
         ? "agregá esa referencia a 'nodes' o a 'dependencies', o quitala del texto"
-        : "agregá esa referencia a 'flow_refs' o a 'dependencies', o quitala del texto",
+        : "agregá la pantalla a 'screen_refs', el flow a 'flow_refs' o la regla/token a 'dependencies', o quitá la cita",
     );
   }
 }
@@ -1337,6 +1361,7 @@ function declaredReferences(common: CommonRead, specific: FlowRead | ScreenRead)
   }
   for (const ref of [
     ...specific.flow_refs,
+    ...specific.screen_refs,
     ...specific.dependencies.rules,
     ...specific.dependencies.tokens,
   ]) {

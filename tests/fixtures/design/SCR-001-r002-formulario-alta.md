@@ -14,6 +14,7 @@ states:
   - anchor: error
     purpose: El documento ingresado ya pertenece a otro miembro
 flow_refs: [DES-001/FLW-001@r2]
+screen_refs: []
 dependencies:
   rules: [DES-001/RUL-001@r1]
   tokens: [DES-001/TOK-001@r1]
