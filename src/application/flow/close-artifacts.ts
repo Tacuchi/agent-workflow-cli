@@ -8,7 +8,7 @@ import {
   requireSourcePath,
 } from "../parsers/project-block.js";
 import type { PathsService } from "../paths-service.js";
-import type { IsolationReader } from "../session-close-service.js";
+import type { ClassifiedUnit } from "../session-close-service.js";
 
 /** Preserve the run's unfinished work before the session marker makes it closed. */
 export async function preserveBoundaryClose(
@@ -16,7 +16,7 @@ export async function preserveBoundaryClose(
   paths: PathsService,
   git: GitPort,
   state: FlowRunState,
-  units: Extract<Awaited<ReturnType<IsolationReader>>, unknown[]>,
+  units: ClassifiedUnit[],
   unreadable: Array<{ alias: string; error: string; code?: string }> = [],
 ): Promise<string[]> {
   const boundary = state.reentries?.at(-1)?.transition ?? "chassis.finalize";
@@ -30,12 +30,15 @@ export async function preserveBoundaryClose(
   const prefix = batch === undefined ? "" : `lote ${batch.iteration} (${batch.id}): `;
   const own = units.filter((unit) => unit.session === state.session);
   for (const unit of own) {
+    if (unit.classification === "empty" || unit.classification === "preserved") continue;
     const status =
-      unit.dirty === true
-        ? "sin commitear y sin integrar"
-        : unit.dirty === false
-          ? "sin integrar"
-          : "sin integrar; no se pudo determinar si hay cambios sin commitear";
+      unit.classification === "retained"
+        ? `retenida: ${unit.classification_reason ?? "estado no verificable"}`
+        : unit.dirty === true
+          ? "sin commitear y sin integrar"
+          : unit.dirty === false
+            ? "sin integrar"
+            : "sin integrar; no se pudo determinar si hay cambios sin commitear";
     pending.push(`${prefix}${unit.alias}: ${status} en ${unit.path} (${unit.branch}).`);
   }
   for (const source of unreadable.filter((item) => item.code === "SOURCE_PATH_MISSING")) {

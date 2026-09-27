@@ -358,6 +358,25 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(true);
   });
 
+  it("finalize libera una unidad cuyos commits están sólo preservados en origin", async () => {
+    const unit = await unitOf(DOS);
+    commitIn(unit, PROPIO_DOS, "export const dos = 2;\n", "beta preservada");
+    git(
+      source,
+      "update-ref",
+      "refs/remotes/origin/preserved",
+      git(unit, "rev-parse", "HEAD").trim(),
+    );
+    const closed = await walk.executor()(
+      { kind: "internal", operation: "session.close" },
+      { session: DOS.folder, code: DOS.code, scope: null, proposal: null },
+    );
+    expect(closed.ok).toBe(true);
+    expect(closed.summary).toContain("preservadas liberadas: acme");
+    expect(existsSync(unit)).toBe(false);
+    expect(git(source, "branch", "--list", "aw/*")).toContain("aw/");
+  });
+
   it("finalize conserva el gate de la fuente presente y cierra avisando la no verificable", async () => {
     const portable = block(source).replace(
       `| ${ALIAS} | ${source} | main |`,

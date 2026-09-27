@@ -80,7 +80,7 @@ import { recordPublication } from "../session-custody-recorder.js";
 import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
-import { type IsolationUnit, runWorktree } from "../worktree-service.js";
+import { type IsolationUnit, classifyListedUnits, runWorktree } from "../worktree-service.js";
 import { commitBatch, verifyBatchGitState } from "./batch-commit.js";
 import { observeScopedFingerprints, resolveCheckoutCandidates } from "./checkout-observation.js";
 import { preserveBoundaryClose } from "./close-artifacts.js";
@@ -1587,13 +1587,14 @@ async function close(
       canonicalJson(listed),
     );
   }
+  const classified = await classifyListedUnits(deps, listed.units);
   const pending = boundaryClose
     ? await preserveBoundaryClose(
         deps.fs,
         deps.paths,
         deps.git,
         read.state,
-        listed.units,
+        classified,
         listed.unreadable ?? [],
       )
     : [];
@@ -1604,11 +1605,13 @@ async function close(
     {
       code: run.code,
       requireIntegrated: !boundaryClose,
+      final: !boundaryClose,
       preserveReservations: boundaryClose
         ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
         : [],
     },
-    async () => ({ units: listed.units, unreadable: listed.unreadable ?? [] }),
+    async () => ({ units: classified, unreadable: listed.unreadable ?? [] }),
+    (alias, folder) => releaseClassifiedUnit(deps, alias, folder),
   );
   if ("sessionHeld" in result) {
     const held = result.sessionHeld;
@@ -1630,12 +1633,25 @@ async function close(
   }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}`,
+    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}${closed.empty_units?.length ? ` · vacías conservadas: ${closed.empty_units.map((item) => item.alias).join(", ")}` : ""}${closed.preserved_units?.length ? ` · preservadas conservadas: ${closed.preserved_units.map((item) => item.alias).join(", ")}` : ""}${closed.released_empty?.length ? ` · vacías liberadas: ${closed.released_empty.map((item) => item.alias).join(", ")}` : ""}${closed.released_preserved?.length ? ` · preservadas liberadas: ${closed.released_preserved.map((item) => item.alias).join(", ")}` : ""}${closed.released_integrated?.length ? ` · integradas liberadas: ${closed.released_integrated.map((item) => item.alias).join(", ")}` : ""}`,
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.
     effects: closed.closed ? ["local_additive", "mutate_overwrite"] : [],
   };
+}
+
+async function releaseClassifiedUnit(
+  deps: InternalActionDeps,
+  alias: string,
+  folder: string,
+): Promise<{ released: boolean; branch_kept?: string } | { error: string; message: string }> {
+  const result = await runWorktree(
+    { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+    { action: "release", alias, sessionCode: folder },
+  );
+  if ("error" in result || "released" in result) return result;
+  return { error: "unit_unresolved", message: `no se pudo liberar ${alias} de ${folder}` };
 }
 
 function refusal(operation: string, message: string, output: string): InternalActionOutcome {

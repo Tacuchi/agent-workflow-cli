@@ -118,7 +118,86 @@ export type ListedUnit = IsolationUnit & {
   session_active: boolean;
   dirty: boolean | null;
   head: string | null;
+  classification?: "empty" | "preserved" | "retained" | "pending";
+  classification_reason?: string;
+  preserved_in?: string;
+  integrated?: boolean;
 };
+
+/** Read-only close classification: never treats an unreadable tree as empty. */
+export async function classifyListedUnits(
+  deps: WorktreeDeps,
+  units: ListedUnit[],
+): Promise<ListedUnit[]> {
+  const block = await readWorkspaceBlock(
+    deps.fs,
+    deps.paths.workspaceDir(),
+    deps.paths.blockMarkers(),
+  );
+  const declared = new Set<string>();
+  for (const source of block?.fuentes ?? []) {
+    const roles = resolveSourceBranches(source, block);
+    for (const name of [
+      roles.prod,
+      roles.work,
+      block?.qa_branches[source.alias] ?? block?.default_branches.qa,
+    ])
+      if (name) declared.add(`refs/heads/${name}`);
+  }
+  return Promise.all(
+    units.map(async (unit): Promise<ListedUnit> => {
+      const classify = (
+        classification: NonNullable<ListedUnit["classification"]>,
+        reason: string,
+        preservedIn?: string,
+      ): ListedUnit => ({
+        ...unit,
+        classification,
+        classification_reason: reason,
+        ...(preservedIn ? { preserved_in: preservedIn } : {}),
+      });
+      try {
+        if (unit.dirty === null || unit.head === null)
+          return classify("retained", "no se pudo leer HEAD o limpieza de la unidad");
+        if ((await deps.git.operationState(unit.path)) !== "clean")
+          return classify("retained", "operación git a medio resolver");
+        if (unit.dirty) return classify("retained", "cambios sin commitear");
+        const custody = await readCustody(deps.fs, join(deps.paths.cwdSessionsDir(), unit.session));
+        if (custody.status === "unreadable")
+          return classify("retained", `custodia ilegible: ${custody.reason}`);
+        const sealed =
+          custody.status === "present"
+            ? custody.custody.sources.find((entry) => entry.alias === unit.alias)?.base_branch
+            : undefined;
+        const source = block?.fuentes.find((entry) => entry.alias === unit.alias);
+        const work = source ? resolveSourceBranches(source, block).work : null;
+        const base = sealed ?? work;
+        if (base === null || base === undefined)
+          return classify("pending", "sin base sellada ni rama de trabajo declarada");
+        const baseline =
+          sealed !== undefined && custody.status === "present"
+            ? custody.custody.sources.find((entry) => entry.alias === unit.alias)?.baseline_head
+            : null;
+        if (baseline !== null && baseline !== undefined && unit.head === baseline)
+          return classify("empty", `sin commits sobre ${base}`);
+        const refs = await deps.git.refsContaining(unit.source_path, unit.head);
+        const baseRef = `refs/heads/${base}`;
+        const preserved =
+          refs.includes(baseRef) && declared.has(baseRef)
+            ? baseRef
+            : refs.find((ref) => declared.has(ref) || ref.startsWith("refs/remotes/"));
+        if (preserved)
+          return {
+            ...classify("preserved", `commits contenidos en ${preserved}`, preserved),
+            integrated: preserved === baseRef,
+          };
+        return classify("pending", "commits no contenidos en una rama declarada ni remota");
+      } catch (err) {
+        return classify("retained", `no se pudo verificar la unidad: ${(err as Error).message}`);
+      }
+    }),
+  );
+}
 
 export interface WorktreeListOutput {
   workspace_key: string;
