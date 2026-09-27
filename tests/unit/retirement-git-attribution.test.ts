@@ -210,6 +210,20 @@ describe("atribución de efectos Git — fixtures de cada estado, sin reescribir
     expect(gitFails(source, "cat-file", "-e", receipt.after)).toBe(false);
   });
 
+  it("una unidad ausente sin integración es un bloqueo explícito, no un retiro vacío", async () => {
+    const unit = join(root, "unit");
+    git(source, "worktree", "add", "--quiet", "-b", "aw/unit", unit);
+    const folder = await newSession();
+    const custody = await withUnit(folder, unit, "aw/unit");
+    git(source, "worktree", "remove", unit);
+
+    const attribution = await attribute(custody);
+    expect(attribution.blocks).toHaveLength(1);
+    expect(attribution.blocks[0]?.reason).toContain("no se pudo verificar");
+    expect(attribution.blocks[0]?.action).toContain("nada se retiró");
+    expect(attribution.publication).toBeNull();
+  });
+
   it("un merge se revierte con el parent registrado como mainline", async () => {
     const unit = join(root, "unit");
     git(source, "worktree", "add", "--quiet", "-b", "aw/unit", unit);
