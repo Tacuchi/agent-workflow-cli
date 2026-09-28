@@ -136,8 +136,8 @@ async function validate(
   );
 }
 
-async function published(): Promise<DispatchContext> {
-  const ctx = context();
+async function published(fs?: MemFs): Promise<DispatchContext> {
+  const ctx = context(fs);
   const validated = await dispatchCapability(
     {
       verb: "validate",
@@ -219,32 +219,185 @@ async function hostValidation(
     : composeCapability({ ...fields, flow: "plan-exec", ...over }, ctx);
 }
 
+async function pinForValidation(ctx: DispatchContext, route: "direct" | "compose" = "direct") {
+  const fields = {
+    verb: "prepare" as const,
+    capability: "design",
+    operation: "validate",
+    inputs: validateInputs,
+    hostSelection: selectedForValidation(),
+    route,
+  };
+  const result =
+    route === "direct"
+      ? await dispatchCapability(fields, ctx)
+      : await composeCapability({ ...fields, flow: "plan-exec" }, ctx);
+  if (!result.ok) throw new Error(result.failure.message);
+  return result.attempt;
+}
+
 describe("crédito de design por intento sin catálogo ni instalación", () => {
-  it("design.validate acredita la observación real y compatible en directo y compuesto", async () => {
+  it("design.validate no acredita una observación declarada aunque su archivo y digest existan", async () => {
     const ctx = await published();
     for (const route of ["direct", "compose"] as const) {
-      const result = await hostValidation(ctx, route);
+      const early = await pinForValidation(ctx, route);
+      const result = await hostValidation(ctx, route, { pin: early.pin, request: early.request });
       expect(result.ok).toBe(true);
       if (!result.ok) return;
       expect(result.attempt.receipt.outcome).toBe("completed");
-      expect(result.attempt.receipt.selection).toMatchObject([
-        { name: "skill-host-native", order: 1 },
-      ]);
-      expect(result.attempt.receipt.floor).toBe(false);
-      expect(result.attempt.receipt.validations).toContainEqual(
-        expect.objectContaining({ id: "host:contenido-contrastado", passed: true }),
+      expect(result.attempt.receipt.selection).toEqual([]);
+      expect(result.attempt.receipt.floor).toBe(true);
+      expect(result.attempt.receipt.degradations.some((d) => d.loss.includes("observación"))).toBe(
+        true,
       );
+      expect(
+        result.attempt.receipt.validations.every((v) => v.id !== "host:contenido-contrastado"),
+      ).toBe(true);
       expect(result.attempt.receipt.effects).toEqual({
         planned: ["read_only"],
         approved: ["read_only"],
         applied: ["read_only"],
       });
       expect(
-        (result.attempt.output?.value as { host_observations: unknown[] }).host_observations,
-      ).toHaveLength(1);
+        (result.attempt.output?.value as { host_observations: Array<{ passed: boolean }> })
+          .host_observations[0]?.passed,
+      ).toBe(false);
       expect(satisfiesCompletenessGate(result.attempt.receipt)).toBe(true);
       expect(composeGates(result, [], { requireCompleteness: true }).ok).toBe(true);
     }
+  });
+
+  it("el preflight construido en el mismo envío y un pin fabricado no acreditan", async () => {
+    const ctx = await published();
+    const forged = await hostValidation(ctx);
+    expect(forged.ok).toBe(true);
+    if (!forged.ok) return;
+    expect(forged.attempt.receipt.floor).toBe(true);
+    expect(forged.attempt.receipt.degradations[0]?.loss).toContain("intento previo");
+    const invented = await hostValidation(ctx, "direct", {
+      pin: forged.attempt.pin,
+      request: forged.attempt.request,
+    });
+    expect(invented.ok).toBe(true);
+    if (!invented.ok) return;
+    expect(invented.attempt.receipt.selection).toEqual([]);
+    expect(invented.attempt.receipt.degradations[0]?.loss).toContain("intento previo");
+  });
+
+  it("un continue que trae contenido no emite un pin anterior a ese contenido", async () => {
+    const ctx = await published();
+    const base = await dispatchCapability(
+      {
+        verb: "prepare",
+        capability: "design",
+        operation: "validate",
+        route: "direct",
+        inputs: validateInputs,
+      },
+      ctx,
+    );
+    if (!base.ok) throw new Error(base.failure.message);
+    const withContent = await dispatchCapability(
+      {
+        verb: "continue",
+        capability: "design",
+        operation: "validate",
+        route: "direct",
+        inputs: validateInputs,
+        parent: base.attempt.request,
+        hostSelection: selectedForValidation(),
+        answer: JSON.stringify({
+          host_observations: [
+            { id: "x", path, digest: `sha256:${"0".repeat(64)}`, passed: true, detail: "host" },
+          ],
+        }),
+      },
+      ctx,
+    );
+    if (!withContent.ok) throw new Error(withContent.failure.message);
+    const replay = await hostValidation(ctx, "direct", {
+      pin: withContent.attempt.pin,
+      request: withContent.attempt.request,
+    });
+    expect(replay.ok).toBe(true);
+    if (!replay.ok) return;
+    expect(replay.attempt.receipt.degradations.some((d) => d.loss.includes("intento previo"))).toBe(
+      true,
+    );
+  });
+
+  it("un pin que el CLI no pudo persistir se declara degradado", async () => {
+    class UnwritablePinFs extends MemFs {
+      override async publishTextExclusive(file: string, bytes: string) {
+        if (file.includes("capability-selection")) throw new Error("sin permiso");
+        return super.publishTextExclusive(file, bytes);
+      }
+    }
+    const ctx = await published(new UnwritablePinFs({ lenient: true }));
+    const early = await pinForValidation(ctx);
+    expect(early.receipt.selection).toEqual([]);
+    expect(early.receipt.degradations[0]?.loss).toContain("persistir");
+    const result = await hostValidation(ctx, "direct", { pin: early.pin, request: early.request });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.selection).toEqual([]);
+  });
+
+  it("una observación cuyo archivo no se puede leer queda rechazada y el floor completa", async () => {
+    class UnreadableObservationFs extends MemFs {
+      override async readBytes(file: string): Promise<Uint8Array> {
+        if (file.endsWith("/extra.txt")) throw new Error("sin permiso");
+        return super.readBytes(file);
+      }
+    }
+    const ctx = await published(new UnreadableObservationFs({ lenient: true }));
+    const extra = path.replace("DESIGN.md", "extra.txt");
+    await ctx.fs.writeText(`/work/${extra}`, "auxiliar");
+    const result = await hostValidation(ctx, "direct", {
+      answer: JSON.stringify({
+        host_observations: [
+          {
+            id: "ilegible",
+            path: extra,
+            digest: `sha256:${"0".repeat(64)}`,
+            passed: true,
+            detail: "revisión",
+          },
+        ],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("completed");
+    expect(result.attempt.receipt.floor).toBe(true);
+    expect(
+      result.attempt.receipt.degradations.some((d) => d.loss.includes("no se puede leer")),
+    ).toBe(true);
+    expect(composeGates(result, [], { requireCompleteness: true }).ok).toBe(true);
+  });
+
+  it("si tampoco valida el package propio, la observación inválida no hace verde el floor", async () => {
+    const ctx = await published();
+    await ctx.fs.writeText(`/work/${path}`, content.replace("## Validación", "## Otra sección"));
+    const result = await hostValidation(ctx, "direct", {
+      answer: JSON.stringify({
+        host_observations: [
+          {
+            id: "erróneo",
+            path,
+            digest: `sha256:${"0".repeat(64)}`,
+            passed: true,
+            detail: "revisión",
+          },
+        ],
+      }),
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.attempt.receipt.outcome).toBe("blocked");
+    expect(result.attempt.receipt.error?.message).toContain("observación host rechazada");
+    expect(result.attempt.receipt.selection).toEqual([]);
+    expect(composeGates(result, [], { requireCompleteness: true }).ok).toBe(false);
   });
 
   it("una declaración sin check, una versión incompatible o un digest inválido no ganan el gate", async () => {
@@ -275,9 +428,15 @@ describe("crédito de design por intento sin catálogo ni instalación", () => {
     });
     expect(broken.ok).toBe(true);
     if (!broken.ok) return;
-    expect(broken.attempt.receipt.outcome).toBe("blocked");
+    expect(broken.attempt.receipt.outcome).toBe("completed");
     expect(broken.attempt.receipt.selection).toEqual([]);
-    expect(composeGates(broken, [], { requireCompleteness: true }).ok).toBe(false);
+    expect(broken.attempt.receipt.floor).toBe(true);
+    expect(broken.attempt.receipt.degradations.some((d) => d.loss.includes("digest"))).toBe(true);
+    expect(
+      (broken.attempt.output?.value as { host_observations: Array<{ passed: boolean }> })
+        .host_observations[0]?.passed,
+    ).toBe(false);
+    expect(composeGates(broken, [], { requireCompleteness: true }).ok).toBe(true);
     const escaped = await hostValidation(ctx, "direct", {
       answer: JSON.stringify({
         host_observations: [
@@ -293,7 +452,10 @@ describe("crédito de design por intento sin catálogo ni instalación", () => {
     });
     expect(escaped.ok).toBe(true);
     if (!escaped.ok) return;
-    expect(escaped.attempt.receipt.error?.code).toBe("CAPABILITY_HOST_OUTPUT_INVALID");
+    expect(escaped.attempt.receipt.outcome).toBe("completed");
+    expect(
+      escaped.attempt.receipt.degradations.some((d) => d.loss.includes("fuera del package")),
+    ).toBe(true);
   });
 
   it("una política que niega lectura bloquea antes del efecto y no acredita", async () => {

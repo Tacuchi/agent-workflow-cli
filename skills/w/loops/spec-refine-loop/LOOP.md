@@ -75,7 +75,7 @@ The **UI unspecified** gap (when the requirement involves UI; see *Gap taxonomy*
 
 Other transversal capabilities the engine always uses: `research` (**inline** — chassis § *Research*), `sql` (DB rule inside research — chassis). All resolved by config; `off` → the loop continues without the capability and, if it was needed, says so or asks. The spec's **prose** follows the **ambient** writing conventions (the host auto-applies an installed writing skill if present), not a composed role.
 
-> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [../../roles/README.md](../../roles/README.md).
+> **Ambient conventions (not roles):** host help for code/testing/writing or tooling may come from any origin; Workline neither binds nor depends on it. Full doctrine: [../../roles/README.md](../../roles/README.md).
 
 ## Current-behavior baseline (brownfield first)
 

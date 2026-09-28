@@ -19,6 +19,7 @@
  * descriptor and a handler, and nothing in SPEC, PLAN or QUICK changes.
  */
 
+import { join } from "node:path";
 import {
   type CapabilityDescriptor,
   type CapabilityOperation,
@@ -53,6 +54,7 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import { applyLocalProposal, reconcileAfterFailure } from "../local-proposal.js";
 import type { ProposalApproval } from "../local-proposal.js";
 import type { PathsService } from "../paths-service.js";
+import { semanticDigest } from "../semantic-operation/protocol.js";
 import type { PublishableArtifact } from "../semantic-operation/publish.js";
 import { resolveSkills } from "../skills-resolver-service.js";
 import { type DurableEffectPlan, prepareDurableEffect } from "./durable-effect.js";
@@ -88,7 +90,12 @@ export interface HandlerContext extends DispatchContext {
 }
 
 export type HandlerResult =
-  | { kind: "completed"; output: OperationOutput; validations?: ValidationOutcome[] }
+  | {
+      kind: "completed";
+      output: OperationOutput;
+      validations?: ValidationOutcome[];
+      uncredited?: string;
+    }
   | { kind: "needs_input"; gaps: string[] }
   | { kind: "blocked"; failure: CapabilityFailure }
   | {
@@ -247,8 +254,7 @@ async function attemptStage(
   if (
     input.verb === "validate" &&
     resolved.candidates.length > 0 &&
-    input.pin?.instances.length !== resolved.candidates.length &&
-    input.hostSelection?.preflight?.stage !== "before_contribution"
+    !(await hasEarlierPin(ctx, request, input.pin, resolved, descriptor))
   ) {
     resolved = degradeContribution(
       resolved,
@@ -297,6 +303,21 @@ async function attemptStage(
     );
   }
 
+  if (
+    (input.verb === "prepare" || input.verb === "continue") &&
+    input.answer == null &&
+    (input.contributions?.length ?? 0) === 0 &&
+    resolved.candidates.length > 0
+  ) {
+    const persisted = await persistEarlyPin(
+      ctx,
+      request,
+      pinSelection(resolved, descriptor, input.hostSelection ?? null),
+    );
+    if (!persisted)
+      resolved = degradeContribution(resolved, "no se pudo persistir la selección previa del CLI");
+  }
+
   const result = await handler.run({
     ...ctx,
     verb: input.verb,
@@ -311,14 +332,16 @@ async function attemptStage(
         ? validatedReportEvidence(resolved, result, input, authorization.denied.length === 0)
         : null;
     const verdict =
-      resolved.candidates.length === 0 || result.kind === "needs_input"
-        ? resolved
-        : result.kind === "completed" && evidence === null
-          ? { ...resolved, floor: false, selection: resolved.candidates }
-          : degradeContribution(
-              resolved,
-              evidence ?? "la operación no completó un output validado",
-            );
+      result.kind === "completed" && result.uncredited
+        ? degradeContribution(resolved, result.uncredited)
+        : resolved.candidates.length === 0 || result.kind === "needs_input"
+          ? resolved
+          : result.kind === "completed" && evidence === null
+            ? { ...resolved, floor: false, selection: resolved.candidates }
+            : degradeContribution(
+                resolved,
+                evidence ?? "la operación no completó un output validado",
+              );
     return receiptOf(request, descriptor, verdict, result, {
       hostSelection: input.hostSelection ?? null,
       authorization,
@@ -330,7 +353,7 @@ async function attemptStage(
             contributionValidation: {
               id: "host-contribution",
               passed: true,
-              detail: "observación del host contrastada contra el package y validadores propios",
+              detail: "contribución contrastada semánticamente por los validadores propios",
             },
           }
         : {}),
@@ -400,6 +423,7 @@ function validatedReportEvidence(
   authorized: boolean,
 ): string | null {
   if (resolved.candidates.length === 0) return null;
+  if (result.uncredited) return result.uncredited;
   const checks = result.validations ?? [];
   if (
     !authorized ||
@@ -440,7 +464,51 @@ function validatedReportEvidence(
   if (used.size !== checks.filter((item) => item.id.startsWith("host:")).length) {
     return "el output contiene observaciones sin contribuyente identificado";
   }
-  return null;
+  // A host assertion about a file is not a semantic check attributable to its author.
+  return "la observación host no prueba una contribución verificada por Workline";
+}
+
+function earlyPinPath(ctx: DispatchContext, request: CapabilityRequest): string {
+  return join(
+    ctx.paths.userRoot(),
+    "capability-selection",
+    `${semanticDigest({ workspace: ctx.workspace, invocation_id: request.invocation_id, request_digest: request.request_digest })}.json`,
+  );
+}
+
+async function persistEarlyPin(
+  ctx: DispatchContext,
+  request: CapabilityRequest,
+  pin: SelectionPin,
+): Promise<boolean> {
+  const path = earlyPinPath(ctx, request);
+  try {
+    await ctx.fs.mkdirp(join(ctx.paths.userRoot(), "capability-selection"));
+    if ((await ctx.fs.publishTextExclusive(path, JSON.stringify(pin))).created) return true;
+    return (await ctx.fs.readText(path)) === JSON.stringify(pin);
+  } catch {
+    return false;
+  }
+}
+
+async function hasEarlierPin(
+  ctx: DispatchContext,
+  request: CapabilityRequest,
+  supplied: SelectionPin | null | undefined,
+  resolved: CapabilityResolution,
+  descriptor: CapabilityDescriptor,
+): Promise<boolean> {
+  if (supplied == null || supplied.instances.length !== resolved.candidates.length) return false;
+  try {
+    const stored = JSON.parse(await ctx.fs.readText(earlyPinPath(ctx, request))) as SelectionPin;
+    return (
+      stored.capability === descriptor.name &&
+      stored.contract_version === descriptor.contract_version &&
+      semanticDigest(stored) === semanticDigest(supplied)
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function applyStage(
