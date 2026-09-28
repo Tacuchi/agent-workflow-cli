@@ -20,6 +20,7 @@ import type { CapabilityFailure, CapabilityRequest } from "../../domain/capabili
 import type { LocalProposal, ProposalBase } from "../../domain/proposal.js";
 import { sealProposal } from "../../domain/proposal.js";
 import type { PublishableArtifact } from "../semantic-operation/publish.js";
+import type { SelectionPin } from "./resolution.js";
 
 /**
  * A proposal plus the request identity the receipt has to quote back.
@@ -35,6 +36,8 @@ export interface DurableEffectPlan {
   request_digest: string;
   semantic_inputs_digest: string;
   proposal: LocalProposal;
+  /** The pre-content host selection, when a validated candidate used one. */
+  selection_pin?: SelectionPin | null;
 }
 
 export type PreparedEffect =

@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import "../../src/application/capability/design-handler.js";
 import { dispatchCapability } from "../../src/application/capability/dispatcher.js";
-import { buildCapabilityInventory } from "../../src/application/capability/installed-inventory.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { validateCapabilityDescriptor } from "../../src/domain/capability/descriptor.js";
 import { DESIGN_DESCRIPTOR } from "../../src/domain/design/capability.js";
@@ -48,18 +47,46 @@ describe("un nombre retirado falla en toda superficie de entrada, sin fallback",
     expect(result.failure.action).toContain("design");
   });
 
-  it.each(RETIRED)("un directorio instalado llamado '%s' queda misconfigured", async (name) => {
-    const fs = new MemFs().file(
-      join(ROOT, name, "SKILL.md"),
-      `---\nname: ${name}\ndescription: legacy\nmetadata:\n  workline-capability-descriptor: "c.json#sha256=${"a".repeat(64)}"\n---\n`,
-    );
-    const inventory = await buildCapabilityInventory(fs, new FakeEnv("/home/u", "/work"));
-    const instance = inventory.capabilities.find((c) => c.name === name);
-    expect(instance?.state).toBe("misconfigured");
-    expect(instance?.failure?.code).toBe("CAPABILITY_NAME_RETIRED");
-    // Y no resuelve en silencio a otra identidad.
-    expect(instance?.descriptor).toBeNull();
-  });
+  it.each(RETIRED)(
+    "un directorio histórico '%s' no activa design ni satisface el gate",
+    async (name) => {
+      const fs = new MemFs().file(
+        join(ROOT, name, "SKILL.md"),
+        `---\nname: ${name}\ndescription: legacy\nmetadata:\n  workline-capability-descriptor: "c.json#sha256=${"a".repeat(64)}"\n---\n`,
+      );
+      const attempt = await dispatchCapability(
+        {
+          verb: "prepare",
+          capability: "design",
+          operation: "validate",
+          route: "direct",
+          inputs: [
+            {
+              name: "package",
+              value: "DES-001",
+              provenance: {
+                kind: "reference",
+                origin: "caller",
+                seal: null,
+                sensitivity: "public",
+              },
+            },
+          ],
+        },
+        {
+          fs,
+          env: new FakeEnv("/home/u", "/work"),
+          paths: new PathsService(normalizeNamespace("workflow"), "/home/u", "/work"),
+          workspace: "/work",
+          host: "claude-code",
+        },
+      );
+      expect(attempt.ok).toBe(true);
+      if (!attempt.ok) return;
+      expect(attempt.attempt.receipt.floor).toBe(true);
+      expect(attempt.attempt.receipt.selection).toEqual([]);
+    },
+  );
 });
 
 describe("el material legacy es unsupported como fuente y nadie lo lee", () => {

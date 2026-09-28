@@ -541,7 +541,7 @@ export interface OperationOutput {
 /** One instance that actually contributed, in the order it contributed. */
 export interface SelectedInstance {
   name: string;
-  /** Where the instance is installed (`global`, `workspace`, a host root…). */
+  /** Host-native source; no installation root is required for attribution. */
   scope: string;
   locator: string;
   version: string | null;
@@ -840,7 +840,11 @@ function checkReceipt(
  * exists to notice incompleteness.
  */
 export function satisfiesCompletenessGate(receipt: CapabilityReceipt): boolean {
-  return receipt.outcome === "completed" && receipt.output?.completeness === "complete";
+  return (
+    receipt.outcome === "completed" &&
+    receipt.output?.completeness === "complete" &&
+    receipt.validations.every((validation) => validation.passed)
+  );
 }
 
 /** Where this attempt's receipt belongs — proportional to what it did. */

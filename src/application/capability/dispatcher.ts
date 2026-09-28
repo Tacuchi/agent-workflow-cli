@@ -2,7 +2,7 @@
  * The one road into a capability — for the direct wrapper and for a flow alike.
  *
  * Everything a caller can influence goes through here: the envelope is built by
- * the shared builder, the capability is resolved against real instances, the
+ * the shared builder, host-native selection is checked within this attempt, the
  * effects are authorized before anything runs, and the attempt comes back as
  * outcome + output + receipt. Neither route can take a shortcut around it
  * without the difference showing up in a digest, which is what makes
@@ -56,12 +56,12 @@ import type { PathsService } from "../paths-service.js";
 import type { PublishableArtifact } from "../semantic-operation/publish.js";
 import { resolveSkills } from "../skills-resolver-service.js";
 import { type DurableEffectPlan, prepareDurableEffect } from "./durable-effect.js";
-import { buildCapabilityInventory } from "./installed-inventory.js";
 import {
   type CapabilityResolution,
   type HostSelection,
   type SelectionPin,
   checkPin,
+  degradeContribution,
   pinSelection,
   resolveCapability,
 } from "./resolution.js";
@@ -125,8 +125,8 @@ export interface CapabilityAttempt {
   resolution: CapabilityResolution;
   /**
    * What this attempt resolved to, sealed. The caller carries it into the next
-   * attempt so a skill that changes mid-conversation is caught instead of
-   * silently answering the second half of a question the first half never asked.
+   * attempt so a selection that changes mid-conversation is caught instead of
+   * silently answering the second half of a different attempt.
    */
   pin: SelectionPin;
   /** Where this attempt's receipt belongs — `none` for a read-only return. */
@@ -153,6 +153,11 @@ export interface DispatchInput {
   sensitiveSources?: boolean;
   externalTransmission?: boolean;
   hostSelection?: HostSelection | null;
+  /** Host-provided proof of the exact candidate artifacts this attempt validated. */
+  contributions?: Array<{
+    name: string;
+    validation_ids?: string[];
+  }>;
   /** `continue` only: the attempt being answered. */
   parent?: CapabilityRequest | null;
   /** `validate` only: the authored answer. */
@@ -206,7 +211,7 @@ async function attemptStage(
   handler: CapabilityHandler,
 ): Promise<DispatchResult> {
   const { descriptor } = handler;
-  const resolved = await resolveFor(input, ctx, descriptor);
+  let resolved = await resolveFor(input, ctx, descriptor);
 
   const operationName = input.operation ?? input.parent?.operation ?? descriptor.default_operation;
   if (operationName === null || operationName === undefined) {
@@ -226,11 +231,8 @@ async function attemptStage(
 
   // A continuation runs against the selection the FIRST attempt fixed. If those
   // bytes moved, the conversation is answering something that no longer exists.
-  if (input.pin != null) {
-    const stillThere = checkPin(
-      input.pin,
-      await buildCapabilityInventory(ctx.fs, ctx.env, ctx.paths.workspaceDir()),
-    );
+  if (input.pin != null && (input.pin.instances.length > 0 || input.verb !== "continue")) {
+    const stillThere = checkPin(input.pin, input.hostSelection ?? null, descriptor);
     if (!stillThere.ok) {
       return receiptOf(request, descriptor, resolved, {
         kind: "blocked",
@@ -241,6 +243,17 @@ async function attemptStage(
         },
       });
     }
+  }
+  if (
+    input.verb === "validate" &&
+    resolved.candidates.length > 0 &&
+    input.pin?.instances.length !== resolved.candidates.length &&
+    input.hostSelection?.preflight?.stage !== "before_contribution"
+  ) {
+    resolved = degradeContribution(
+      resolved,
+      "la selección no se fijó en un intento previo a la contribución",
+    );
   }
 
   const blocked = blockedByResolution(resolved, operation);
@@ -267,6 +280,22 @@ async function attemptStage(
     },
     ctx.effectPolicy,
   );
+  if (authorization.denied.length > 0) {
+    return receiptOf(
+      request,
+      descriptor,
+      resolved,
+      {
+        kind: "blocked",
+        failure: {
+          code: "CAPABILITY_EFFECT_DENIED",
+          message: `la política del host no admite el efecto '${authorization.denied[0]?.class ?? "desconocido"}'`,
+          action: "quitá la operación o ajustá la política del host, que siempre prevalece",
+        },
+      },
+      { authorization, hostSelection: input.hostSelection ?? null },
+    );
+  }
 
   const result = await handler.run({
     ...ctx,
@@ -276,7 +305,37 @@ async function attemptStage(
     answer: input.answer ?? null,
   });
 
-  if (result.kind !== "durable") return receiptOf(request, descriptor, resolved, result);
+  if (result.kind !== "durable") {
+    const evidence =
+      result.kind === "completed"
+        ? validatedReportEvidence(resolved, result, input, authorization.denied.length === 0)
+        : null;
+    const verdict =
+      resolved.candidates.length === 0 || result.kind === "needs_input"
+        ? resolved
+        : result.kind === "completed" && evidence === null
+          ? { ...resolved, floor: false, selection: resolved.candidates }
+          : degradeContribution(
+              resolved,
+              evidence ?? "la operación no completó un output validado",
+            );
+    return receiptOf(request, descriptor, verdict, result, {
+      hostSelection: input.hostSelection ?? null,
+      authorization,
+      ...(result.kind === "completed" && authorization.planned.includes("read_only")
+        ? { applied: ["read_only"] }
+        : {}),
+      ...(result.kind === "completed" && evidence === null && verdict.selection.length > 0
+        ? {
+            contributionValidation: {
+              id: "host-contribution",
+              passed: true,
+              detail: "observación del host contrastada contra el package y validadores propios",
+            },
+          }
+        : {}),
+    });
+  }
 
   const prepared = prepareDurableEffect({
     request,
@@ -300,10 +359,17 @@ async function attemptStage(
   const preview = prepared.plan.proposal.preview
     .map((e) => `${e.path} (${e.bytes} B${e.overwrite ? ", reemplaza" : ""})`)
     .join(" · ");
+  const credited =
+    resolved.candidates.length === 0
+      ? resolved
+      : degradeContribution(
+          resolved,
+          "la autoría produjo un candidato parcial: no acredita mejora completa",
+        );
   return receiptOf(
     request,
     descriptor,
-    resolved,
+    credited,
     {
       kind: "needs_input",
       gaps: [
@@ -312,8 +378,69 @@ async function attemptStage(
         "Refinar — no se escribe nada y la propuesta se vuelve a redactar",
       ],
     },
-    { plan: prepared.plan, output: result.output, authorization },
+    {
+      plan: {
+        ...prepared.plan,
+        selection_pin:
+          credited.candidates.length > 0
+            ? pinSelection(credited, descriptor, input.hostSelection ?? null)
+            : null,
+      },
+      output: result.output,
+      authorization,
+      hostSelection: input.hostSelection ?? null,
+    },
   );
+}
+
+function validatedReportEvidence(
+  resolved: CapabilityResolution,
+  result: Extract<HandlerResult, { kind: "completed" }>,
+  input: DispatchInput,
+  authorized: boolean,
+): string | null {
+  if (resolved.candidates.length === 0) return null;
+  const checks = result.validations ?? [];
+  if (
+    !authorized ||
+    result.output.completeness !== "complete" ||
+    checks.some((item) => !item.passed)
+  ) {
+    return "el resultado o su política no superó los validadores propios";
+  }
+  if (
+    !input.answer ||
+    !Array.isArray(input.contributions) ||
+    input.contributions.length !== resolved.candidates.length
+  ) {
+    return "no hay una contribución verificable y preseleccionada en este intento";
+  }
+  const used = new Set<string>();
+  for (const candidate of resolved.candidates) {
+    const claim = input.contributions.filter((entry) => entry?.name === candidate.name);
+    if (
+      claim.length !== 1 ||
+      !Array.isArray(claim[0]?.validation_ids) ||
+      claim[0].validation_ids.length === 0
+    ) {
+      return `no hay checks observables de '${candidate.name}'`;
+    }
+    for (const id of claim[0].validation_ids) {
+      if (
+        typeof id !== "string" ||
+        !id.startsWith("host:") ||
+        used.has(id) ||
+        !checks.some((item) => item.id === id && item.passed)
+      ) {
+        return `la observación de '${candidate.name}' no superó el contrato del package`;
+      }
+      used.add(id);
+    }
+  }
+  if (used.size !== checks.filter((item) => item.id.startsWith("host:")).length) {
+    return "el output contiene observaciones sin contribuyente identificado";
+  }
+  return null;
 }
 
 async function applyStage(
@@ -344,6 +471,19 @@ async function applyStage(
   }
 
   const resolved = await resolveFor(input, ctx, descriptor);
+  const sealedPin = input.plan.selection_pin ?? input.pin ?? null;
+  if (sealedPin != null) {
+    const check = checkPin(sealedPin, input.hostSelection ?? null, descriptor);
+    if (!check.ok)
+      return receiptOf(input.request, descriptor, resolved, {
+        kind: "blocked",
+        failure: {
+          code: "CAPABILITY_SELECTION_CHANGED",
+          message: check.degradation.loss,
+          action: check.action,
+        },
+      });
+  }
   const operation = findOperation(descriptor, input.request.operation) as CapabilityOperation;
   const authorization = authorizeEffects(
     operation.effects,
@@ -406,11 +546,9 @@ async function resolveFor(
     slot === undefined
       ? { state: "floor_and_improvements" as const, reason: null, action: null }
       : classifyCapabilityBinding(slot, descriptor.name);
-  const inventory = await buildCapabilityInventory(ctx.fs, ctx.env, ctx.paths.workspaceDir());
   return resolveCapability({
     descriptor,
     binding,
-    inventory,
     hostSelection: input.hostSelection ?? null,
     operation: input.operation ?? input.parent?.operation ?? null,
   });
@@ -465,8 +603,8 @@ function buildFor(
           authorizations: [],
         })
       : buildCapabilityRequest({
-          invocationId: input.parent?.invocation_id ?? newInvocationId(),
-          attempt: 1,
+          invocationId: input.request?.invocation_id ?? newInvocationId(),
+          attempt: input.request?.attempt ?? 1,
           descriptor,
           operation: operationName,
           caller,
@@ -474,10 +612,24 @@ function buildFor(
           inputs: input.inputs ?? [],
           policy,
           authorizations: [],
-          parentRequestDigest: null,
+          parentRequestDigest: input.request?.parent_request_digest ?? null,
         });
 
   if (!built.ok) return { ok: false, failure: built.failure };
+  if (
+    input.request != null &&
+    input.verb === "validate" &&
+    built.request.request_digest !== input.request.request_digest
+  ) {
+    return {
+      ok: false,
+      failure: {
+        code: "CAPABILITY_REQUEST_STALE",
+        message: "el request anterior cambió antes de validar el contenido",
+        action: "repetí los mismos flags e inputs del intento anterior",
+      },
+    };
+  }
   return { ok: true, request: built.request, operation: built.operation };
 }
 
@@ -486,6 +638,8 @@ interface ReceiptExtras {
   output?: OperationOutput;
   applied?: string[];
   authorization?: EffectAuthorizationResult;
+  hostSelection?: HostSelection | null;
+  contributionValidation?: ValidationOutcome;
 }
 
 function receiptOf(
@@ -511,12 +665,18 @@ function receiptOf(
     selection: resolution.selection,
     inputs: dispositions,
     output,
-    validations: result.kind === "completed" ? (result.validations ?? []) : [],
+    validations: [
+      ...(result.kind === "completed" ? (result.validations ?? []) : []),
+      ...(extras.contributionValidation ? [extras.contributionValidation] : []),
+    ],
     effects: {
       planned: [...(extras.authorization?.planned ?? [])],
-      approved: [...(extras.authorization?.needsPreflight ?? [])].filter((c) =>
-        (extras.applied ?? []).includes(c),
-      ),
+      approved: [
+        ...(extras.authorization?.selfAuthorized ?? []),
+        ...[...(extras.authorization?.needsPreflight ?? [])].filter((c) =>
+          (extras.applied ?? []).includes(c),
+        ),
+      ],
       applied: [...(extras.applied ?? [])] as EffectAuthorizationResult["planned"],
     },
     degradations: resolution.degradations,
@@ -533,7 +693,7 @@ function receiptOf(
       receipt: built.receipt,
       output,
       resolution,
-      pin: pinSelection(resolution, descriptor),
+      pin: pinSelection(resolution, descriptor, extras.hostSelection ?? null),
       persistence: receiptPersistence(built.receipt),
       plan: extras.plan ?? null,
     },

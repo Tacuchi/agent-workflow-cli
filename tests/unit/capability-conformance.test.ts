@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,9 +7,7 @@ import { composeCapability } from "../../src/application/capability/compose.js";
 import type { WorklineFlow } from "../../src/application/capability/compose.js";
 import type { DispatchContext } from "../../src/application/capability/dispatcher.js";
 import { dispatchCapability } from "../../src/application/capability/dispatcher.js";
-import { buildCapabilityInventory } from "../../src/application/capability/installed-inventory.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { CAPABILITY_DESCRIPTOR_METADATA_KEY } from "../../src/domain/capability/descriptor.js";
 import type { CapabilityInputValue } from "../../src/domain/capability/protocol.js";
 import { DESIGN_DESCRIPTOR, DESIGN_OPERATIONS } from "../../src/domain/design/capability.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -33,7 +30,6 @@ import { MemFs } from "../helpers/mem-fs.js";
 
 const HOME = "/home/u";
 const WORKSPACE = "/work";
-const ROOT = join(HOME, ".claude", "skills");
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 function context(fs: MemFs = new MemFs()): DispatchContext {
@@ -130,49 +126,19 @@ describe("C2 · una operación por las dos rutas, con el mismo contrato", () => 
   });
 });
 
-describe("C3 · las tres resoluciones: selección exacta, floor, y fallback por opacidad", () => {
-  const improvement = {
-    contract_version: 1,
-    name: "acme-design-lab",
-    purpose: "mejora la autoría",
-    exposure: ["compose"],
-    default_operation: null,
-    operations: [
+describe("C3 · selección pre-efecto por intento, floor y degradación", () => {
+  const selection = {
+    token: "host-selection-1",
+    contributors: [
       {
-        name: "validate",
-        summary: "x",
-        exposure: ["compose"],
-        workspace: "optional",
-        interaction: "single_pass",
-        inputs: [],
-        output: { kind: "value", schema: null, completeness: ["complete"] },
-        effects: [
-          { class: "read_only", idempotent: true, authorization: "invocation", approval: "none" },
-        ],
-        off: "allowed",
+        name: "ayuda-host-native",
+        order: 1,
+        digest: "a".repeat(64),
+        metadata_source: "host" as const,
+        improves: { capability: "design", operations: ["create"], contract_version: 1 },
       },
     ],
-    floor: { builtin: false, kind: "feature", improvements: "none" },
-    degradations: [],
-    compatibility: {
-      status: "active",
-      minimum_contract_version: 1,
-      improves: { capability: "design", operations: ["validate"], contract_version: 1 },
-      retired_names: [],
-      retired_formats: [],
-    },
   };
-
-  function install(fs: MemFs, dir: string, descriptor: unknown, root = ROOT): MemFs {
-    const bytes = JSON.stringify(descriptor);
-    const digest = createHash("sha256").update(bytes, "utf8").digest("hex");
-    return fs
-      .file(
-        join(root, dir, "SKILL.md"),
-        `---\nname: ${dir}\ndescription: x\nmetadata:\n  ${CAPABILITY_DESCRIPTOR_METADATA_KEY}: "c.json#sha256=${digest}"\n---\n`,
-      )
-      .file(join(root, dir, "c.json"), bytes);
-  }
 
   it("floor: sin nada instalado corre el incorporado y el receipt no atribuye a nadie", async () => {
     const result = await dispatchCapability(
@@ -192,35 +158,46 @@ describe("C3 · las tres resoluciones: selección exacta, floor, y fallback por 
     expect(result.attempt.receipt.degradations).toEqual([]);
   });
 
-  it("selección exacta: una mejora conformante queda fijada por instancia y digest", async () => {
-    const fs = install(new MemFs(), "acme-design-lab", improvement);
-    const result = await dispatchCapability(
+  it("el host fija un candidato antes del contenido sin acreditarlo por metadata sola", async () => {
+    const ctx = context();
+    const first = await dispatchCapability(
       {
         verb: "prepare",
         capability: "design",
-        operation: "validate",
+        operation: "create",
         route: "direct",
-        inputs: REQUIRED.validate as CapabilityInputValue[],
-        hostSelection: { contributors: [{ name: "acme-design-lab", order: 1 }] },
+        target: "docs/designs",
+        inputs: REQUIRED.create as CapabilityInputValue[],
       },
-      context(fs),
+      ctx,
     );
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.attempt.receipt.floor).toBe(false);
-    expect(result.attempt.receipt.selection).toHaveLength(1);
-    expect(result.attempt.pin.instances[0]?.digest).toBe(
-      result.attempt.receipt.selection[0]?.digest,
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    const next = await dispatchCapability(
+      {
+        verb: "continue",
+        capability: "design",
+        route: "direct",
+        operation: "create",
+        target: "docs/designs",
+        inputs: REQUIRED.create as CapabilityInputValue[],
+        parent: first.attempt.request,
+        hostSelection: selection,
+      },
+      ctx,
     );
+    expect(next.ok).toBe(true);
+    if (!next.ok) return;
+    expect(next.attempt.receipt.selection).toEqual([]);
+    expect(next.attempt.pin.instances).toMatchObject([{ name: "ayuda-host-native", order: 1 }]);
   });
 
-  it("fallback por opacidad: colisión de bytes → floor, con causa y sin atribución", async () => {
-    let fs = install(new MemFs(), "acme-design-lab", improvement);
-    fs = install(
-      fs,
-      "acme-design-lab",
-      { ...improvement, purpose: "otra" },
-      "/work/.claude/skills",
+  it("selección opaca degrada antes de contribuir incluso con un directorio externo instalado", async () => {
+    const first = selection.contributors[0];
+    if (!first) throw new Error("la fixture necesita un contribuyente");
+    const fs = new MemFs().file(
+      join(HOME, ".claude/skills/ayuda-host-native/SKILL.md"),
+      "external",
     );
     const result = await dispatchCapability(
       {
@@ -229,7 +206,10 @@ describe("C3 · las tres resoluciones: selección exacta, floor, y fallback por 
         operation: "validate",
         route: "direct",
         inputs: REQUIRED.validate as CapabilityInputValue[],
-        hostSelection: { contributors: [{ name: "acme-design-lab", order: 1 }] },
+        hostSelection: {
+          ...selection,
+          contributors: [{ ...first, order: 2 }],
+        },
       },
       context(fs),
     );
@@ -241,44 +221,53 @@ describe("C3 · las tres resoluciones: selección exacta, floor, y fallback por 
     expect(result.attempt.receipt.degradations[0]?.loss.length).toBeGreaterThan(0);
   });
 
-  it("un cambio de digest entre attempts detiene la continuación", async () => {
-    const fs = install(new MemFs(), "acme-design-lab", improvement);
-    const ctx = context(fs);
+  it("un cambio de selección entre intento previo y siguiente impide crédito", async () => {
+    const ctx = context();
     const first = await dispatchCapability(
       {
         verb: "prepare",
         capability: "design",
-        operation: "validate",
+        operation: "create",
         route: "direct",
-        inputs: REQUIRED.validate as CapabilityInputValue[],
-        hostSelection: { contributors: [{ name: "acme-design-lab", order: 1 }] },
+        target: "docs/designs",
+        inputs: REQUIRED.create as CapabilityInputValue[],
       },
       ctx,
     );
     if (!first.ok) throw new Error("prepare falló");
-
-    const moved = install(new MemFs(), "acme-design-lab", { ...improvement, purpose: "cambió" });
-    const second = await dispatchCapability(
+    const preselected = await dispatchCapability(
       {
         verb: "continue",
         capability: "design",
+        operation: "create",
         route: "direct",
-        inputs: REQUIRED.validate as CapabilityInputValue[],
+        target: "docs/designs",
+        inputs: REQUIRED.create as CapabilityInputValue[],
         parent: first.attempt.request,
-        pin: first.attempt.pin,
+        hostSelection: selection,
       },
-      context(moved),
+      ctx,
     );
-    expect(second.ok).toBe(true);
-    if (!second.ok) return;
-    expect(second.attempt.receipt.outcome).toBe("blocked");
-    expect(second.attempt.receipt.error?.code).toBe("CAPABILITY_SELECTION_CHANGED");
-  });
-
-  it("y el inventario que sostiene todo esto no necesita una segunda skill real", async () => {
-    const fs = install(new MemFs(), "acme-design-lab", improvement);
-    const inventory = await buildCapabilityInventory(fs, new FakeEnv(HOME, WORKSPACE));
-    expect(inventory.capabilities.map((c) => c.name)).toEqual(["acme-design-lab"]);
+    if (!preselected.ok) throw new Error("continue falló");
+    expect(preselected.attempt.pin.instances).toHaveLength(1);
+    const changed = await dispatchCapability(
+      {
+        verb: "continue",
+        capability: "design",
+        operation: "create",
+        route: "direct",
+        target: "docs/designs",
+        inputs: REQUIRED.create as CapabilityInputValue[],
+        parent: preselected.attempt.request,
+        pin: preselected.attempt.pin,
+        hostSelection: { ...selection, token: "host-selection-2" },
+      },
+      ctx,
+    );
+    expect(changed.ok).toBe(true);
+    if (!changed.ok) return;
+    expect(changed.attempt.receipt.outcome).toBe("blocked");
+    expect(changed.attempt.receipt.error?.code).toBe("CAPABILITY_SELECTION_CHANGED");
   });
 });
 

@@ -15,6 +15,7 @@
  * contain and waits for one — that is a question, not a failure.
  */
 
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type {
   CapabilityFailure,
@@ -65,6 +66,7 @@ import { type CoreDocsCanon, DEFAULT_CORE_DOCS_CANON } from "../../domain/docs-c
 import { type ProposalBase, baseDigest } from "../../domain/proposal.js";
 import { FOLDER_RESERVATION_MARKER } from "../../domain/reservation.js";
 import { reservationMarker } from "../../domain/reservation.js";
+import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { localDateIso } from "../dates.js";
 import { type ConsumerDocument, readConsumerDocument } from "../design/consumer-document.js";
@@ -166,6 +168,9 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
           : content.failures.map((f) => `${f.code}: ${f.message}`).join("; "),
     },
   ];
+  const hostChecks = await validatedHostChecks(ctx, found.path);
+  if (!hostChecks.ok) return { kind: "blocked", failure: hostChecks.failure };
+  validations.push(...hostChecks.validations);
   const report = reportSources([], `${id}`);
   const simple = found.mode === "simple";
   const gate = ok
@@ -203,6 +208,7 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
         failures,
         warnings: content.warnings,
         gaps: [...gate.reasons, ...maturity.gaps],
+        ...(hostChecks.validations.length > 0 ? { host_observations: hostChecks.validations } : {}),
       },
       reference:
         found.id === null || found.current_baseline === null
@@ -218,6 +224,85 @@ async function validatePackage(ctx: HandlerContext): Promise<HandlerResult> {
       completeness: "complete",
     },
   };
+}
+
+/** Validate a host-produced check against package bytes before reflecting it in output. */
+async function validatedHostChecks(
+  ctx: HandlerContext,
+  packagePath: string,
+): Promise<
+  { ok: true; validations: ValidationOutcome[] } | { ok: false; failure: CapabilityFailure }
+> {
+  if (ctx.answer === null) return { ok: true, validations: [] };
+  const invalid = (message: string) => ({
+    ok: false as const,
+    failure: {
+      code: "CAPABILITY_HOST_OUTPUT_INVALID",
+      message,
+      action: "corregí el reporte del host o validá sólo con el floor",
+    },
+  });
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(ctx.answer);
+  } catch {
+    return invalid("el reporte de validación del host no es JSON");
+  }
+  if (typeof parsed !== "object" || parsed === null || !("host_observations" in parsed)) {
+    return { ok: true, validations: [] };
+  }
+  const observations = parsed.host_observations;
+  if (!Array.isArray(observations) || observations.length === 0) {
+    return invalid("el reporte del host no trae observaciones identificables");
+  }
+  const validations: ValidationOutcome[] = [];
+  const seen = new Set<string>();
+  let root: string;
+  try {
+    root = await ctx.fs.realPath(join(ctx.workspace as string, packagePath));
+  } catch {
+    return invalid("el package observado no se puede leer");
+  }
+  for (const observation of observations) {
+    if (typeof observation !== "object" || observation === null)
+      return invalid("observación ilegible");
+    const { id, path, digest, detail, passed } = observation;
+    if (
+      typeof id !== "string" ||
+      !id.trim() ||
+      seen.has(id) ||
+      typeof detail !== "string" ||
+      !detail.trim() ||
+      typeof path !== "string" ||
+      typeof digest !== "string" ||
+      typeof passed !== "boolean"
+    )
+      return invalid("la observación no identifica check, resultado y evidencia");
+    seen.add(id);
+    const safe = checkSafeRelativePath(path);
+    if (!safe.ok || !safe.path.startsWith(`${packagePath}/`))
+      return invalid("archivo fuera del package validado");
+    const file = join(ctx.workspace as string, safe.path);
+    let actual: string;
+    try {
+      const stat = await ctx.fs.lstat(file);
+      if (
+        stat?.type !== "file" ||
+        stat.isSymlink ||
+        !(await ctx.fs.realPath(file)).startsWith(`${root}/`)
+      )
+        return invalid("archivo del reporte inexistente o enlazado fuera del package");
+      actual = `sha256:${createHash("sha256")
+        .update(await ctx.fs.readBytes(file))
+        .digest("hex")}`;
+    } catch {
+      return invalid("el archivo observado no se puede leer");
+    }
+    if (digest !== actual)
+      return invalid("el digest del archivo observado no coincide con el package");
+    validations.push({ id: `host:${id}`, passed, detail });
+  }
+  return { ok: true, validations };
 }
 
 /**

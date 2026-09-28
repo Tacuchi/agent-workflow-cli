@@ -97,7 +97,6 @@ export async function capabilityReadiness(
     const resolution = resolveCapability({
       descriptor: handler.descriptor,
       binding,
-      inventory: { roots: [], capabilities: [] },
     });
     reports.push(
       await reportFor(input, handler.descriptor, resolution, {

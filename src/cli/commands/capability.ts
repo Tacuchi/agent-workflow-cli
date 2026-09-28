@@ -16,7 +16,7 @@ import {
   composeCapability,
 } from "../../application/capability/compose.js";
 import type { DurableEffectPlan } from "../../application/capability/durable-effect.js";
-import type { SelectionPin } from "../../application/capability/resolution.js";
+import type { HostSelection, SelectionPin } from "../../application/capability/resolution.js";
 import { isHarnessId, runHarness } from "../../application/dev-only-services.js";
 import { resolveCoreDocsCanon } from "../../application/docs-canon-service.js";
 import type { CapabilityInputValue } from "../../domain/capability/protocol.js";
@@ -69,18 +69,20 @@ const PROTOCOL = [
   "",
   "  canal      Lo que no es flag entra por STDIN, como un único objeto JSON. No hay flags de archivo para --answer, --plan ni --request. Un `consumer_document` se adjunta con --consumer-document destino=bytes-finales.",
   "",
-  "  prepare    No lee stdin. Devuelve `needs_input` y en `gaps` el contrato, los destinos permitidos y el `input_digest` que hay que copiar.",
+  "  prepare    No lee stdin. La autoría devuelve `needs_input` con contrato/destinos/digest; design.validate puede completar directamente con el floor.",
   "",
-  '  validate   stdin: {"request": <el request que devolvió prepare>, "answer": {...}}.',
+  '  validate   stdin: {"request": <request anterior>, "answer": {...}, "host_selection": <selección del host>, "contributions": <checks verificables>}.',
   "             `answer` es el sobre semántico y va con 'version': 1 · 'operation' CALIFICADA — 'design.create', no 'create' · 'input_digest' copiado del request · 'state': 'proposed' · 'artifacts': [{path, content}] con rutas dentro de los destinos permitidos.",
+  "             Para design.validate, answer puede traer host_observations:[{id,path,digest:'sha256:<hex>',detail,passed}]: se contrasta el digest con los bytes del package y se conservan los validadores propios. contributions:[{name,validation_ids:['host:<id>']}] atribuye sólo las observaciones verificadas; un output parcial o inválido nunca acredita.",
   "             Devuelve `plan` cuando la operación propone efectos durables; sin plan no hay nada que aplicar.",
   "",
   '  apply      stdin: {"request": <el MISMO request>, "plan": <el plan de validate>, "pin": <el pin del intento>}.',
   "             --approval <digest> es el de `plan.proposal.digest`. NO es `request_digest` ni `input_digest`: mandar cualquiera de esos devuelve PROPOSAL_APPROVAL_MISMATCH.",
-  "             `pin` es opcional y revalida la selección: si la mejora que resolvió el primer intento cambió, el intento se bloquea en vez de contestar la segunda mitad de otra pregunta.",
+  "             `pin` y `host_selection` revalidan la selección exacta fijada en la etapa previa; nunca se escanean instalaciones del host.",
   "             Escribe todo o nada, y vuelve a leer cada base antes del primer byte.",
   "",
-  '  continue   stdin: {"parent": <el request del intento que se contesta>}. Es la etapa de una operación que preguntó, no un reintento de prepare.',
+  '  continue   stdin: {"parent": <request anterior>, "host_selection": {"token":"id estable", "contributors":[{"name":"id","order":1,"digest":"64 hex","metadata_source":"host|contributor","improves":{"capability":"design","operations":["create"],"contract_version":1}}]}}. La selección se declara ANTES del contenido y queda en el pin devuelto.',
+  "             Para acreditar design.validate: reenviá pin y host_selection intactos o el evento host-native preflight:{stage:'before_contribution',selection_digest}; enlazá cada observación verificada mediante contributions.validation_ids. La metadata sola ni un candidato parcial reciben crédito.",
 ].join("\n");
 
 export const capabilityCommand: CliCommand<CapabilityAttempt> = {
@@ -197,6 +199,8 @@ function dispatchInputFrom(
     request: carried.request,
     plan: carried.plan,
     pin: carried.pin,
+    hostSelection: carried.hostSelection,
+    contributions: carried.contributions,
     ...(approval !== undefined
       ? { approval: { digest: approval, granted: carried.plan?.proposal.requires_approval ?? [] } }
       : {}),
@@ -356,6 +360,8 @@ interface Carried {
   plan: DurableEffectPlan | null;
   pin: SelectionPin | null;
   answer: string | null;
+  hostSelection: HostSelection | null;
+  contributions: NonNullable<DispatchInput["contributions"]>;
 }
 
 /**
@@ -374,6 +380,8 @@ function parseCarried(raw: string, verb: CapabilityVerb): Carried | { ok: false;
     plan: null,
     pin: null,
     answer: null,
+    hostSelection: null,
+    contributions: [],
   };
   if (raw.trim().length === 0) {
     if (verb === "prepare") return empty;
@@ -392,5 +400,7 @@ function parseCarried(raw: string, verb: CapabilityVerb): Carried | { ok: false;
     plan: (parsed.plan ?? null) as DurableEffectPlan | null,
     pin: (parsed.pin ?? null) as SelectionPin | null,
     answer: parsed.answer === undefined ? null : JSON.stringify(parsed.answer),
+    hostSelection: (parsed.host_selection ?? null) as HostSelection | null,
+    contributions: (parsed.contributions ?? []) as Carried["contributions"],
   };
 }

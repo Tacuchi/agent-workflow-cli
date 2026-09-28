@@ -1,5 +1,3 @@
-import { join } from "node:path";
-import { HARNESSES } from "../domain/harnesses.js";
 import {
   BUILTIN_DEFAULT_SKILLS,
   RETIRED_SKILL_IDENTITIES,
@@ -7,7 +5,6 @@ import {
   SKILL_ROLES,
   isSkillRole,
 } from "../domain/skills.js";
-import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { parseToml } from "./parsers/toml.js";
 import type { PathsService } from "./paths-service.js";
@@ -79,21 +76,6 @@ async function readSkillsTable(
     warnings.push(`${path}: parse error (${(err as Error).message})`);
     return null;
   }
-}
-
-/**
- * cwd + home crossed with every host's skill directory (deduped).
- *
- * Legacy inventory location; the invocation path stops using it in F3.
- */
-export function skillRoots(env: EnvPort, workspaceRoot: string = env.cwd()): string[] {
-  const dirs = [...new Set(HARNESSES.flatMap((h) => [...h.skillsDirs]))];
-  const roots: string[] = [];
-  for (const d of dirs) {
-    roots.push(join(workspaceRoot, d));
-    roots.push(join(env.homeDir(), d));
-  }
-  return [...new Set(roots)];
 }
 
 /** Merge one cascade level's `[skills]` table onto the resolved bindings. */
