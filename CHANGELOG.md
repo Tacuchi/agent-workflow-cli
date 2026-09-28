@@ -12,6 +12,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [26.0.0] — 2026-09-28
+
+**Workline deja de gestionar skills ajenas: distribuye y diagnostica su bundle y capacidades propios, admite ayuda del host sin exigirla y exige validación final completa al publicar planes.**
+
+### Contrato
+
+- **Deja de valer:** la pestaña Skills, sus accesos y acciones, y `initialScreen=skills` como pantalla inicial. **Lo reemplaza:** las pestañas Status, Workline, Project, MCP y Config; una preferencia anterior abre Status en memoria sin reescribir el archivo. **Qué hacer:** elegí una pantalla existente y gestioná skills ajenas desde el host o marketplace que uses.
+- **Deja de valer:** `aw self install-plugin-skills`, `install-plugin-skills-git`, `clean-cache`, `aw plugin-cache` y `aw skill-index`; los flags de instalación de terceros, `--keep-cache` en `self install`/`install-skill` y `--prefix` en `self clean-legacy`. **Lo reemplaza:** `aw self install-skill`/`uninstall-skill` mantienen sólo el bundle propio; los comandos retirados dejan de despacharse y esos flags no son admitidos por los subcomandos propios. **Qué hacer:** adaptá scripts e instalá, actualizá o retirá skills ajenas desde el host; sus instalaciones previas no se desinstalan automáticamente.
+- **Deja de valer:** el catálogo recomendado, el inventario y readiness de terceros, y los bindings externos de `skills.toml` como selección, requisito o prueba de compatibilidad para `design` y los flows. **Lo reemplaza:** `aw skills --detail` y `aw doctor` diagnostican capacidades, floor e instalación propios; los bindings ajenos históricos se avisan como no aplicables y sus archivos quedan intactos. **Qué hacer:** revisá consumidores de diagnóstico anterior y quitá o gestioná por tu cuenta bindings que ya no aplican; `off` y `[docs]` mantienen su función propia.
+- **Deja de valer:** acreditar una mejora de `design` por metadata, un `preflight` construido al validar o un `passed: true` declarado por el host sobre un archivo con digest correcto. **Lo reemplaza:** la selección se fija con un pin persistido antes de aportar contenido; las observaciones host quedan sin crédito semántico y `validate` usa el floor con degradación cuando el package propio valida. Las propuestas de autoría siguen parciales hasta aprobación y aplicación. **Qué hacer:** iniciá el intento con `prepare` y conservá su pin y request; tratá las observaciones como información, no como gate acreditado.
+- **Deja de valer:** publicar un plan con una fuente de código sin build o tests resolubles, o repartir los comandos de `Validación final` de una fuente entre viñetas. **Lo reemplaza:** `aw plan lint` y el gate de publicación usado por `plan-new` comprueban build y tests por fuente desde el pipeline versionado o el plan, y señalan comandos ausentes y viñetas partidas. **Qué hacer:** declará ambos comandos por fuente con `aw set-pipeline` o en una sola viñeta de `## Validations`, y corré `aw plan lint` antes de publicar.
+
+### Removed
+
+- **Gestión de terceros en CLI/TUI.** Salen la pestaña Skills, su catálogo, los instaladores de plugins, la caché y el índice de skills externas; se retiran los comandos públicos de mantenimiento ajeno.
+
+### Changed
+
+- **Instalación y diagnóstico propios.** `aw self install-skill`, `aw skills --detail` y `aw doctor` se centran en Workline; la doctrina del bundle admite ayuda del host sin prescribir skills ajenas por nombre.
+- **Planes con cierre verificable.** El lint y la publicación comprueban build y tests por fuente de código y rechazan validaciones finales divididas en dos viñetas.
+
+### Fixed
+
+- **Acreditación de design por intento.** Un pin aportado sólo al validar no sustituye la fijación previa persistida; las observaciones autodeclaradas no acreditan una contribución y una observación inválida no bloquea por sí sola un floor válido.
+- **Preferencias TUI anteriores.** `initialScreen=skills` cae a Status al leer, sin alterar el archivo guardado.
+
 ## [25.9.0] — 2026-09-27
 
 La ejecución acredita revisiones, pruebas y commits por lote. Las fuentes tienen rutas locales, pipeline versionado y ramas por documento. Los exports conservan el número aprobado. Las sesiones y unidades se cierran con evidencia; cada comando resuelve el workspace que le corresponde.
