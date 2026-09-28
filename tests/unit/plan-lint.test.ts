@@ -41,6 +41,10 @@ const WORKSPACE_BLOCK = [
   "|---|---|---|",
   "| cli | /tmp/cli | main |",
   "",
+  "## Pipeline",
+  "",
+  "- cli: build `npm run build` · test `npm test`",
+  "",
   "<!-- AGENT-WORKFLOW-PROJECT-END -->",
   "",
 ].join("\n");
@@ -160,6 +164,93 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
     );
   });
 
+  it("rechaza tests sin build en lint y en la publicación, con línea y fuente", async () => {
+    await writeFile(
+      join(root, "CLAUDE.md"),
+      WORKSPACE_BLOCK.replace("build `npm run build`", "build ninguno"),
+    );
+    const text = `${PLAN_TEXT}\n- Validación final · \`cli\` · tests \`npm test\``;
+    await writeFile(join(root, PLAN), text);
+    const line = text.split("\n").length;
+
+    const lint = await lintPlan(fs, paths, PLAN);
+    if (!lint.ok) throw new Error(lint.failure.message);
+    expect(lint.report.violations).toContainEqual(
+      expect.objectContaining({
+        code: "PLAN_FINAL_VALIDATION_INCOMPLETE",
+        line,
+        message: expect.stringContaining("cli"),
+        moment: "publication",
+      }),
+    );
+    const publication = await planGrammarAtPublication(
+      fs,
+      root,
+      text,
+      ["cli"],
+      "docs/specs",
+      paths,
+    );
+    expect(publication.failures).toContainEqual(
+      expect.objectContaining({ code: "PLAN_FINAL_VALIDATION_INCOMPLETE", line }),
+    );
+  });
+
+  it("localiza en la fase la fuente sin pipeline ni viñeta final", async () => {
+    await writeFile(join(root, "CLAUDE.md"), WORKSPACE_BLOCK.replace("## Pipeline", "## Otro"));
+    const report = await lintPlan(fs, paths, PLAN);
+    if (!report.ok) throw new Error(report.failure.message);
+    expect(report.report.violations).toContainEqual(
+      expect.objectContaining({
+        code: "PLAN_FINAL_VALIDATION_INCOMPLETE",
+        line: 9,
+        message: expect.stringContaining("'cli' no resuelve build y tests"),
+      }),
+    );
+  });
+
+  it("rechaza build y tests repartidos entre viñetas, aunque el pipeline sea completo", async () => {
+    const text = `${PLAN_TEXT}\n- Validación final · \`cli\` · build \`npm run build\`\n- Validación final · \`cli\` · tests \`npm test\``;
+    await writeFile(join(root, PLAN), text);
+    const line = text.split("\n").length;
+
+    const lint = await lintPlan(fs, paths, PLAN);
+    if (!lint.ok) throw new Error(lint.failure.message);
+    expect(lint.report.violations).toContainEqual(
+      expect.objectContaining({
+        code: "PLAN_FINAL_VALIDATION_SPLIT",
+        line,
+        message: expect.stringContaining("cli"),
+        moment: "both",
+      }),
+    );
+    const publication = await planGrammarAtPublication(
+      fs,
+      root,
+      text,
+      ["cli"],
+      "docs/specs",
+      paths,
+    );
+    expect(publication.failures).toContainEqual(
+      expect.objectContaining({ code: "PLAN_FINAL_VALIDATION_SPLIT", line }),
+    );
+  });
+
+  it("acepta el pipeline versionado completo sin repetir comandos en el plan", async () => {
+    const text = PLAN_TEXT.replace(
+      "**Validación de fase:** la rúbrica queda verde.",
+      "**Validación de fase:** `npm test` pasa.",
+    ).replace("- AC-04: la spec queda cubierta.", "- AC-04: `npm test` pasa.");
+    await writeFile(join(root, PLAN), text);
+    const lint = await lintPlan(fs, paths, PLAN);
+    if (!lint.ok) throw new Error(lint.failure.message);
+    expect(lint.report.violations).toEqual([]);
+    expect(
+      (await planGrammarAtPublication(fs, root, text, ["cli"], "docs/specs", paths)).failures,
+    ).toEqual([]);
+  });
+
   it("acepta el pase operativo sin tratar su texto remoto como cierre", async () => {
     const clean = PLAN_TEXT.replace(
       "**Validación de fase:** la rúbrica queda verde.",
@@ -195,7 +286,14 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
 
     for (const declared of [["cli"], null] as const) {
       if (declared === null) await rm(join(root, "CLAUDE.md"));
-      const publication = await planGrammarAtPublication(fs, root, drifted, declared, "docs/specs");
+      const publication = await planGrammarAtPublication(
+        fs,
+        root,
+        drifted,
+        declared,
+        "docs/specs",
+        paths,
+      );
       const entry = planGrammarAtEntry(drifted, declared);
       const report = await lintPlan(fs, paths, PLAN);
       if (!report.ok) throw new Error(report.failure.message);

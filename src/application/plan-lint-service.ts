@@ -12,9 +12,13 @@ import {
 import { type PlanLocatorReason, locatePlanDocument } from "./plan-locator.js";
 import {
   type SourceBoundaryFailure,
+  finalValidationOverrides,
+  parsePlanSourceBoundary,
+  sourceAliasesOfPlan,
   validatePlanSourceBoundary,
   validateSourceBoundedSemantics,
 } from "./source-boundary-policy.js";
+import { readSourcePipelines, resolveFinalValidation } from "./source-pipeline.js";
 
 /** A failure the plan grammar can raise over a plan's bytes: sources, closure or lineage. */
 export type PlanGrammarFailure = SourceBoundaryFailure | PlanLineageFailure;
@@ -103,6 +107,10 @@ function actionFor(
       return moment === "proposal"
         ? "nombrá en esa cláusula el comando, el archivo o la ruta que produce la comprobación, y volvé a proponer la vista previa"
         : "es una frase del documento y no su estructura: nombrá en esa cláusula el comando, el archivo o la ruta que produce la comprobación";
+    case "PLAN_FINAL_VALIDATION_INCOMPLETE":
+      return `declará build y tests para esa fuente en su pipeline versionado o juntos en una viñeta de ## Validations — ${then}`;
+    case "PLAN_FINAL_VALIDATION_SPLIT":
+      return `reuní build y tests de esa fuente en una sola viñeta de Validación final — ${then}`;
     default:
       return then;
   }
@@ -163,7 +171,14 @@ export async function lintPlan(
   const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
   const declared = block === null ? null : block.fuentes.map((source) => source.alias);
 
-  const publication = await planGrammarAtPublication(fs, root, text, declared, canon.canon.spec);
+  const publication = await planGrammarAtPublication(
+    fs,
+    root,
+    text,
+    declared,
+    canon.canon.spec,
+    paths,
+  );
   const entry = planGrammarAtEntry(text, declared);
 
   return {
@@ -182,8 +197,10 @@ export async function lintPlan(
  * The source policy runs whole against the declared aliases, or only its
  * semantic half when the WORKSPACE block cannot be read: answering an unreadable
  * block with "that alias does not exist" would reject a plan for something the
- * plan did not do. The lineage seal runs in the same stage, so one refusal
- * carries both. `aw flow`'s publication and the lint call this one function.
+ * plan did not do. Final validation still resolves against versioned pipelines
+ * for the sources the plan names. The lineage seal runs in the same stage, so
+ * one refusal carries both. `aw flow`'s publication and the lint call this one
+ * function.
  */
 export async function planGrammarAtPublication(
   fs: FileSystemPort,
@@ -191,11 +208,34 @@ export async function planGrammarAtPublication(
   text: string,
   declared: readonly string[] | null,
   specDir: string,
+  paths: PathsService,
 ): Promise<{ failures: PlanGrammarFailure[]; seal: PlanLineageSeal }> {
   const failures: PlanGrammarFailure[] =
     declared === null
       ? validateSourceBoundedSemantics(text)
       : validatePlanSourceBoundary(text, declared);
+  const overrides = finalValidationOverrides(text);
+  const phases = parsePlanSourceBoundary(text).phases;
+  for (const source of resolveFinalValidation(
+    text,
+    sourceAliasesOfPlan(text),
+    await readSourcePipelines(fs, paths),
+  )) {
+    const fromPlan = overrides.filter((override) => override.alias === source.alias);
+    if (fromPlan.length > 1) continue;
+    const missing = [
+      ...(source.build.command === null ? ["build"] : []),
+      ...(source.test.command === null ? ["tests"] : []),
+    ];
+    if (missing.length === 0) continue;
+    const line =
+      fromPlan[0]?.line ?? phases.find((phase) => phase.sources?.includes(source.alias))?.line;
+    failures.push({
+      code: "PLAN_FINAL_VALIDATION_INCOMPLETE",
+      ...(line !== undefined ? { line } : {}),
+      message: `la validación final de '${source.alias}' no resuelve ${missing.join(" y ")}: declaralos en el pipeline versionado o en una misma viñeta del plan`,
+    });
+  }
   const seal = await observePlanLineageSeal(fs, root, text, specDir);
   if (seal.status === "refused") failures.push(seal.failure);
   return { failures, seal };

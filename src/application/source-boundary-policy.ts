@@ -25,6 +25,8 @@ export type SourceBoundaryCode =
   | "PLAN_TASK_SOURCE_OUTSIDE_PHASE"
   | "PLAN_SOURCE_EXTERNAL_CLOSURE"
   | "PLAN_SOURCE_LOCAL_PROOF_MISSING"
+  | "PLAN_FINAL_VALIDATION_INCOMPLETE"
+  | "PLAN_FINAL_VALIDATION_SPLIT"
   | "WORKLINE_CHECKOUT_PROOF_MISSING"
   | "WORKLINE_CHECKOUT_PROOF_INVALID"
   | "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID"
@@ -395,6 +397,15 @@ export function validatePlanSourceBoundary(
   const overrides = finalValidationOverrides(text);
   const seen = new Set<string>();
   for (const override of overrides) {
+    const earlier = overrides.find(
+      (item) => item.alias === override.alias && item.line < override.line,
+    );
+    const split =
+      earlier !== undefined &&
+      ((earlier.build !== undefined && earlier.test === undefined && override.test !== undefined) ||
+        (earlier.test !== undefined &&
+          earlier.build === undefined &&
+          override.build !== undefined));
     if (
       !scoped.has(override.alias) ||
       override.alias === "workspace" ||
@@ -402,8 +413,10 @@ export function validatePlanSourceBoundary(
       (!override.build && !override.test)
     ) {
       failures.push({
-        code: "PLAN_SOURCE_UNKNOWN",
-        message: `la validación final de línea ${override.line} debe nombrar una fuente de código del plan una sola vez y declarar build o tests: '${override.alias}'`,
+        code: split ? "PLAN_FINAL_VALIDATION_SPLIT" : "PLAN_SOURCE_UNKNOWN",
+        message: split
+          ? `la validación final de '${override.alias}' está partida entre las líneas ${earlier.line} y ${override.line}: build y tests deben ir en una sola viñeta`
+          : `la validación final de línea ${override.line} debe nombrar una fuente de código del plan una sola vez y declarar build o tests: '${override.alias}'`,
         line: override.line,
       });
     }
