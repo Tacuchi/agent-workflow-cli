@@ -8,6 +8,50 @@ import {
 import { FLOW_DECISIONS, decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
+describe("Doctrina de relevo y precedencia", () => {
+  it("QUICK y PLAN informan prueba, bloqueo y sólo la acción humana pendiente desde CHECKPOINT", async () => {
+    const chassis = await readRel("loops/CHASSIS.md");
+    const policies = await readRel("loops/CODE-POLICIES.md");
+    const quick = await readRel("loops/quick-loop/LOOP.md");
+    const exec = await readRel("loops/plan-exec-loop/LOOP.md");
+    expect(chassis).toMatch(/report.*CHECKPOINT.*evidence.*block.*next.*condition/i);
+    expect(chassis).toMatch(/no pending.*no next action/i);
+    expect(chassis).toMatch(/closed PLAN.*final test run.*integration state/i);
+    expect(chassis).toMatch(/unrun.*validation|validation.*not run/i);
+    expect(chassis).toMatch(/deferred.*separate/i);
+    expect(chassis).toContain("No preamble, redundant recap or farewell");
+    expect(policies).toMatch(
+      /separate line offer an optional parallel\s+follow-up, not a next action/i,
+    );
+    expect(quick).toContain("CHASSIS.md");
+    expect(exec).toContain("CHASSIS.md");
+    const status = await readRel("commands/status.md");
+    const resume = await readRel("commands/resume.md");
+    expect(status).toContain("Relay it verbatim");
+    expect(resume).toContain("every** pending item");
+  });
+
+  it("una spec implementada es antecedente: la nueva sustituye su comportamiento sin conciliación", async () => {
+    const refine = await readRel("loops/spec-refine-loop/LOOP.md");
+    const planNew = await readRel("loops/plan-new-loop/LOOP.md");
+    const keys = await readRel("modules/SPEC-REFINE-KEYS.md");
+    const shape = await readRel("modules/SPEC-CHANGE-SHAPE.md");
+    for (const surface of [refine, planNew]) {
+      expect(surface).toMatch(/implemented spec.*historical/i);
+      expect(surface).toMatch(/no re-refine.*no reconcil/i);
+    }
+    expect(refine).toMatch(
+      /Cite it in `## Origin`.*`## Affected capabilities`.*`## Behavioral changes`/,
+    );
+    expect(keys).toMatch(/Re-refining on demand is a \*\*first-class operation\*\*/);
+    expect(keys).toMatch(/implemented spec.*align.*newer spec/i);
+    expect(keys).not.toContain("only before its plan is implemented");
+    expect(shape).toMatch(/new spec.*contradicts or replaces.*implemented spec/i);
+    expect(shape).not.toContain("For an unimplemented unit offer");
+    expect(planNew).toContain("CLI-sealed functional `> Baseline:`");
+  });
+});
+
 // Doctrine budget & form guards (informe 003 — weak-model clarity round).
 // G1 pins the guaranteed per-flow load: adding doctrine to a hot-path file must
 // either cut elsewhere or consciously raise the budget in this table. G2 stops
@@ -784,7 +828,8 @@ describe("Doctrine guards — G16 · ready-for-plan (SPEC contract) pins", () =>
     const replace = section(loop, "**Replace semantics.**");
     expect(replace).toContain("`Crear una nueva spec`");
     expect(replace).toContain("`Reformular esta spec`");
-    expect(replace).toContain("**never** the split labels");
+    expect(replace).toContain("never split labels");
+    expect(loop).toMatch(/new spec.*contradicts or replaces.*implemented spec/i);
     expect(replace).not.toContain("Dividir en varias specs");
   });
 
@@ -1949,18 +1994,14 @@ describe("Doctrine guards — G23 · subagents admitted per stage (spec 048)", (
     const policies = (await readRel("loops/CODE-POLICIES.md")).replace(/\s+/g, " ");
     expect(policies).toContain("In `quick` a subagent reviewer is optional");
     expect(policies).not.toContain("subagent or clean re-read");
-    expect(policies).toContain(
-      "Before the commit only the validations and this review run; nothing waits on exploration",
-    );
-    expect(policies).toContain(
-      "After commit and integration the report offers a parallel follow-up",
-    );
-    expect(policies).toContain("It runs only if the user asks");
-    expect(policies).toContain("its agents never modify the delivered work nor commit");
-    expect(policies).toContain(
-      "Each finding comes back as a ready `/w:quick`, without reopening the closed document or session",
-    );
-    expect(policies).toContain("A host without subagents runs it inline");
+    expect(policies).toContain("Before the commit run validations and review, not exploration");
+    expect(policies).toContain("report only what the CHECKPOINT actually owes");
+    expect(policies).toContain("optional parallel follow-up");
+    expect(policies).toContain("only if the user asks");
+    expect(policies).toContain("agents never modify the delivered work or commit");
+    expect(policies).toContain("ready `/w:quick`");
+    expect(policies).toContain("without reopening the closed document or session");
+    expect(policies).toContain("without subagents runs it inline");
   });
 });
 

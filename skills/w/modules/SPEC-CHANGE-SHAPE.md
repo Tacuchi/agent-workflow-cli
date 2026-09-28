@@ -15,6 +15,8 @@ Loaded when the investigation may have changed the spec shape (signal `shape`).
 
 The investigation can reveal the draft's shape was wrong. Does the spec still carry **one** functional outcome, did its purpose survive, can the delivery be accepted as a unit? The verdict is **one of three shapes** — `same` | `split` | `replace` — each with its own branch; only the last two ask anything.
 
+When a new spec contradicts or replaces an implemented spec, the old one is historical: never split/reformulate or reconcile it to align with the new one; refine the new spec without a blocker.
+
 > **When it runs, and that it never travels inside the gap loop, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Why it matters: a shape decision parked among the gap questions is erased by the next batch — or never asked at all, because a spec with no blocking gap leaves the loop before a batch is built.
 
 - same outcome — more clarity, or more technical components → **`same`**: no shape question, keep refining this spec;
@@ -27,7 +29,7 @@ The investigation can reveal the draft's shape was wrong. Does the spec still ca
 
 **Split semantics (in place).** The offer enters the batch as a content question. On acceptance: the original **keeps its number/path**, rewritten reduced to its remaining outcome; each extracted outcome is minted with `aw next-number docs/specs` right before its write and is born **`status: draft`**. Siblings are **not** elaborated here — unlike the multi-plan gate, where `plan-exec` would break on a plan with no `## Tasks`; a draft spec is legitimate input to this very loop — so the run keeps refining the **reduced original** and reports `/w:spec-refine` as each sibling's next step. Every `## Origin` records "split from `docs/specs/NNN-spec-<slug>.md`" + the siblings **by path**. Closing action on this branch: `Guardar specs`.
 
-**Replace semantics.** Its offer is its own — `Crear una nueva spec` | `Reformular esta spec`, **never** the split labels: what gets decided is which identity carries the new purpose. Recommend **a new spec** when the main functional outcome or the actor/consumer changed; **reformulating** when the user confirms this file is still the same unit of work and wants to keep its identity.
+**Replace semantics.** Offer `Crear una nueva spec` | `Reformular esta spec`, never split labels: recommend new when the outcome or actor changed; reformulate when the user confirms this file is still the same unit.
 
 - **New spec:** this one is **preserved**, its purpose never silently rewritten; the new one is minted with `aw next-number docs/specs`, born **`status: draft`**, its `## Origin` recording the origin spec, the replaced purpose and the user's decision. Its path goes to the `CHECKPOINT`; the run closes reporting `/w:spec-refine <new path>` as the next step.
 - **Reformulate:** same number/path, the work treated as `refining` while rewritten; baseline, gap classification and the *ready-for-plan gate* run again over the new purpose; `status` is stamped only on the save that follows the passing gate, and the material decision lands in `## Decisions`.

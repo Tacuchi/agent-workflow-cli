@@ -130,8 +130,9 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 ## Convergence / exit
 
-- **No material gaps** → **convergence gate** (read-only) = **`Success criteria` green** (*verification-first*). Whatever fails **comes back as a gap**; if it passes → the loop **flips the green criteria** in `SESSION.md` (`- [ ]` → `- [x]`) and offers its closing action. The checklist must reflect the real final state: a criterion left unchecked at `finalize` needs an explicit reason. Each heir names its own instance of this gate, and those instances are what realize it.
-- Finish sources → approve exact workspace paths/message or skip → `finalize` persists CHECKPOINT, deferred BACKLOG if needed, archive and HISTORY; an approved commit runs last, never push. `Cerrar` at any time uses `finalize` and preserves progress.
+- **No material gaps** → read-only **convergence gate**: failed criteria return as gaps; the loop flips the green criteria in `SESSION.md`. At `finalize` explain unchecked ones. Each heir owns its gate.
+- Finish sources → approve exact paths/message or skip → `finalize` persists CHECKPOINT, deferred BACKLOG if needed, archive and HISTORY; approved commit last, never push. `Cerrar` preserves progress.
+- **Report from `CHECKPOINT`** (QUICK/PLAN close, block, compact, resume): proven state with evidence; block and cause if any; one next human action (command/path + condition) only if pending. No pending → no next action; closed PLAN names final test run and integration state. Unrun validation is no proof or 100% closure; deferred items separate, not another task. No preamble, redundant recap or farewell; keep requested explanation, evidence and format. No invented times or numbered micro-steps. `/w:status` stays literal; `/w:resume` keeps all candidates.
 
 ## docs/ boundary — no auto-export (hard rule)
 

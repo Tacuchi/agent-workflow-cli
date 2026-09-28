@@ -41,10 +41,10 @@ same gate before any pending commit.
 - **Artifact-first + verification-first**: seed `CHECKPOINT.Next = "review <batch/task>"`; Success
   criteria require the whole diff to pass before commits.
 
-**Close first, follow up on demand.** Before the commit only the validations and this review run;
-nothing waits on exploration. After commit and integration the report offers a parallel follow-up
-that probes what was delivered, in one line. It runs only if the user asks; its agents never modify
-the delivered work nor commit. Each finding comes back as a ready `/w:quick`, without reopening the
+**Close first.** Before the commit run validations and review, not exploration. After integration,
+report only what the CHECKPOINT actually owes. On a separate line offer an optional parallel
+follow-up, not a next action or pending item: probe only if the user asks. Its agents never modify
+the delivered work or commit; each finding returns as a ready `/w:quick` without reopening the
 closed document or session. A host without subagents runs it inline.
 
 ## Conditional modules

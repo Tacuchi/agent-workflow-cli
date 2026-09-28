@@ -81,7 +81,7 @@ Other transversal capabilities the engine always uses: `research` (**inline** �
 
 When the project already exists, establish the current behavior the change rests on **before** describing the change: what happens today, which actor starts or receives it, which capabilities take part, which existing rules and observable limits shape the request — each with its source.
 
-**Stop when the baseline is enough to state and accept the functional change** — not when the system is documented. Digging on to pick an architecture, anticipate tasks or map every dependency is `PLAN` work, and gold-plating here. Greenfield has no baseline: skip it — that is what makes `## Behavioral changes` earn its place or not.
+**Stop when the baseline is enough to state and accept the functional change**, not when the system is documented. Architecture and tasks belong to `PLAN`; Greenfield has no baseline. An implemented spec is historical origin, not a competing contract: the new spec prevails. No re-refine, no reconcile or edit of that old spec to align it with the new one, before or after. Cite it in `## Origin`; state the replacement of existing behavior in `## Affected capabilities` and `## Behavioral changes`.
 
 ## Deliverable schema (the spec, edited in place)
 
@@ -144,7 +144,7 @@ technical implementation choices still open go to `## Open questions`, never Sco
 | Business rule undefined | which condition decides an outcome | **research** or **human** | SPEC — blocking |
 | Unverifiable criterion | the outcome is not observable at product level | **human** (make the OUTCOME observable — often as a `### Scenario`) | SPEC — blocking |
 | Test-shaped criterion | the criterion prescribes evidence or test mechanics instead of an outcome (naming the product's OWN command or flag is not test mechanics) | the AI proposes the functional rewrite + **human** confirms | SPEC (the mechanics travel to PLAN) |
-| Internal contradiction | sections contradict each other | **human** | SPEC — blocking |
+| Internal contradiction | sections of this spec contradict each other (not a historical spec) | **human** | SPEC — blocking |
 | Current behavior unknown | the baseline the change rests on is missing | **research** (inline) | SPEC → `Context` / `Behavioral changes` |
 | Incomplete context | systems/components unidentified | **research** | SPEC |
 | Scenario missing | behavioral criterion whose behavior is NOT captured by its WHEN/THEN (needs GIVEN setup or edge semantics; a criterion a scenario would only restate 1:1 is not a gap) | the AI drafts GIVEN/WHEN/THEN + **human** confirms | SPEC |
@@ -229,7 +229,7 @@ finalize:
   - `Scope` separates In from Out; every acceptance criterion traces to the `Requirement`; scenarios trace to ≥1 criterion and add GIVEN setup or edge semantics beyond it, without contradicting `Scope` (a 1:1 restatement is gold-plating: cut it);
   - no criterion prescribes verification mechanics (test names, evidence, the commands that PROVE it) or an internal mechanism: that travels to `PLAN` with its destination declared — the product's own visible surface (a CLI's commands and flags, an API's endpoints, observable messages and formats) is behavior, not mechanics;
   - every criterion carries its `AC-nn` label — what a decision note amends as `S{NNN}/AC-nn`; an unlabeled criterion is one no decision can address;
-  - no material contradictions; the one-vs-many shape was validated at the *Change-shape gate*;
+  - no internal contradictions in this spec; the one-vs-many shape was validated at the *Change-shape gate*;
   - every **blocking** functional decision is resolved, and every remaining question carries its destination;
   - **Minimality** — no gold-plating: every criterion and scope item earns its place (chassis § *Minimality*); speculative scope is cut or deferred, and no technical solution was imposed that the requirement did not ask for;
   - `PLAN` can continue without inventing behavior, scope or product decisions.
