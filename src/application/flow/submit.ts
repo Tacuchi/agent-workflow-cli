@@ -580,6 +580,7 @@ async function observePlanArtifacts(
       artifact.content,
       declared,
       canon.canon.spec,
+      paths,
     );
     if (seal.status === "sealed") baselines.set(artifact.path, seal.baseline);
     evidence.push({ path: artifact.path, failures });
