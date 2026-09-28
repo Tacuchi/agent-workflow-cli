@@ -82,8 +82,7 @@ export async function selfCleanLegacy(
 ): Promise<CommandResult<SelfCleanLegacyData>> {
   const dryRun = args.flags.has("--dry-run");
   const targetArg = (args.values.get("target") ?? "all") as CleanLegacyTargetChoice;
-  const extraPrefixes = args.valuesMulti.get("prefix") ?? [];
-  const prefixes = [...DEFAULT_LEGACY_PREFIXES, ...extraPrefixes];
+  const prefixes = [...DEFAULT_LEGACY_PREFIXES];
 
   if (!TARGET_CHOICES.includes(targetArg)) {
     return {

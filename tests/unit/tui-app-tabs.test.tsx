@@ -1,6 +1,7 @@
 import { render } from "ink-testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "../../src/cli/tui/app.js";
+import { DEFAULT_TUI_PREFS, type TuiPrefs } from "../../src/cli/tui/tui-prefs.js";
 import type { CliContext } from "../../src/cli/types.js";
 
 const ENTER = "\r";
@@ -109,15 +110,28 @@ describe("App (tab-home)", () => {
     expect(lastFrame()).toContain("Flows:");
   });
 
-  it("número 5 desde la Status tab salta a Skills tab (administrador de sueltas)", async () => {
+  it("número 5 abre Config sin acceso a catálogo ni gestor de terceros", async () => {
     const ctx = buildCtx();
     const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
     await new Promise((r) => setTimeout(r, 50));
     stdin.write("5");
-    await new Promise((r) => setTimeout(r, 100));
-    // [Skills] renders the single list with the seed's recommended skills.
-    expect(lastFrame()).toContain("recommended");
-    expect(lastFrame()).toContain("add skill");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lastFrame()).toContain("Config 11 settings");
+    expect(lastFrame()).not.toContain("add skill");
+  });
+
+  it("una preferencia antigua initialScreen=skills abre Status sin reescribirla", async () => {
+    const ctx = buildCtx();
+    const write = vi.fn();
+    ctx.fs.writeText = write;
+    const legacy = { ...DEFAULT_TUI_PREFS, initialScreen: "skills" } as unknown as TuiPrefs;
+    const { lastFrame } = render(
+      <App version="9.9.9" ctx={ctx} initialPrefs={legacy} onResult={() => {}} />,
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lastFrame()).toMatch(/loading status|hosts covered/);
+    expect(lastFrame()).not.toContain("add skill");
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("'q' desde la Status tab resuelve con kind:exit", async () => {

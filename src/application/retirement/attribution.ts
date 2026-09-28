@@ -448,8 +448,7 @@ async function rehearse(
   // a repository that is perfectly fine. Reproduced deterministically by two test
   // files running in parallel.
   //
-  // `mkdtemp` is the repo's existing answer for this (self/skills-manager.ts,
-  // self/install-plugin-skills-git.ts) and it is the OS guaranteeing the name,
+  // `mkdtemp` lets the OS guarantee a unique name,
   // which is what a pid or a timestamp would only approximate. The worktree goes
   // INSIDE it because `git worktree add` wants to create its own directory.
   let scratch: string;

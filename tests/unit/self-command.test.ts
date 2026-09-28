@@ -59,11 +59,8 @@ describe("selfCommand — without subcommand (H-07)", () => {
         "install",
         "install-skill",
         "install-hooks",
-        "install-plugin-skills",
-        "install-plugin-skills-git",
         "uninstall",
         "uninstall-skill",
-        "clean-cache",
         "clean-legacy",
         "mcp",
         "bootstrap",
@@ -81,4 +78,15 @@ describe("selfCommand — without subcommand (H-07)", () => {
       expect(result.error.message).toContain("bogus");
     }
   });
+
+  it.each(["install-plugin-skills", "install-plugin-skills-git", "clean-cache"])(
+    "rechaza %s sin ofrecer una vía alternativa de gestión ajena",
+    async (sub) => {
+      const result = await selfCommand.execute(buildArgs([sub]), buildCtx());
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("INVALID_INPUT");
+      expect(selfCommand.flags?.actions).not.toHaveProperty(sub);
+      expect(selfCommand.describe).not.toContain(sub);
+    },
+  );
 });

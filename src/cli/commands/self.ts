@@ -3,12 +3,9 @@ import { selfCleanLegacy } from "../../application/self/clean-legacy.js";
 import { selfDetectHosts } from "../../application/self/detect-hosts.js";
 import { selfDoctor } from "../../application/self/doctor-self.js";
 import { selfInstallHooks } from "../../application/self/install-hooks.js";
-import { installPluginSkillsFromGit } from "../../application/self/install-plugin-skills-git.js";
-import { selfInstallPluginSkills } from "../../application/self/install-plugin-skills.js";
 import { selfInstallSkill } from "../../application/self/install-skill.js";
 import { selfMcpConfig } from "../../application/self/mcp-config.js";
 import { selfNamespace, selfNamespacePin } from "../../application/self/namespace-info.js";
-import { selfClearPluginCache } from "../../application/self/plugin-cache-clear.js";
 import { selfUninstallSkill } from "../../application/self/uninstall-skill.js";
 import { selfUninstall } from "../../application/self/uninstall.js";
 import { selfUpdate } from "../../application/self/update-self.js";
@@ -26,11 +23,8 @@ const SELF_SUBCOMMANDS = [
   "install",
   "install-skill",
   "install-hooks",
-  "install-plugin-skills",
-  "install-plugin-skills-git",
   "uninstall",
   "uninstall-skill",
-  "clean-cache",
   "clean-legacy",
   "mcp",
   "bootstrap",
@@ -42,7 +36,6 @@ const INSTALL_SKILL_FLAGS = [
   "force",
   "dry-run",
   "confirm-all",
-  "keep-cache",
   "keep-legacy",
   "no-commands",
   "no-hooks",
@@ -62,14 +55,11 @@ export const selfCommand: CliCommand = {
       install: { known: INSTALL_SKILL_FLAGS },
       "install-skill": { known: INSTALL_SKILL_FLAGS },
       "install-hooks": { known: ["target", "template", "dry-run"] },
-      "install-plugin-skills": { known: ["target", "from", "force", "dry-run"] },
-      "install-plugin-skills-git": { known: ["url", "ref", "target", "force", "dry-run"] },
       uninstall: {
         known: ["target", "legacy", "no-commands", "skill-only", "with-hooks", "dry-run"],
       },
       "uninstall-skill": { known: ["target", "legacy", "dry-run"] },
-      "clean-cache": { known: ["plugin", "target", "dry-run"] },
-      "clean-legacy": { known: ["target", "prefix", "dry-run"] },
+      "clean-legacy": { known: ["target", "dry-run"] },
       mcp: {
         known: ["action", "name", "instance", "var", "dsn-var", "dry-run"],
         repeatable: ["var"],
@@ -96,16 +86,10 @@ export const selfCommand: CliCommand = {
         return selfInstallSkill(args, ctx);
       case "install-hooks":
         return selfInstallHooks(args, ctx);
-      case "install-plugin-skills":
-        return selfInstallPluginSkills(args, ctx);
-      case "install-plugin-skills-git":
-        return installPluginSkillsFromGit(args, ctx);
       case "uninstall":
         return selfUninstall(args, ctx);
       case "uninstall-skill":
         return selfUninstallSkill(args, ctx);
-      case "clean-cache":
-        return runCleanCache(args, ctx);
       case "clean-legacy":
         return selfCleanLegacy(args, ctx);
       case "mcp":
@@ -131,8 +115,3 @@ export const selfCommand: CliCommand = {
     }
   },
 };
-
-async function runCleanCache(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-  if (!args.values.has("plugin")) args.values.set("plugin", "agent-workflow");
-  return selfClearPluginCache(args, ctx);
-}

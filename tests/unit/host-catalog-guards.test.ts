@@ -24,7 +24,6 @@ import {
   INSTALL_TARGETS,
   TARGET_ROOTS,
 } from "../../src/application/self/install-targets.js";
-import { REPLICA_HOST_KEYS } from "../../src/application/self/skills-manager.js";
 import { hookRemoverCoverage } from "../../src/application/self/uninstall.js";
 import { HOSTS, SHARED_DESTINATIONS, supportPill } from "../../src/cli/tui/hosts.js";
 import {
@@ -280,8 +279,6 @@ describe("cadenas retiradas: no vuelven por la ventana", () => {
   const RETIRED = [
     // Los hooks no son universales ni exclusivos de claude: se sondean por host.
     "claude only",
-    // Las réplicas se derivan de REPLICA_HOST_KEYS, no se deletrean.
-    "Claude, Gemini",
   ];
 
   async function sourceFiles(dir: string, acc: string[] = []): Promise<string[]> {
@@ -307,12 +304,5 @@ describe("cadenas retiradas: no vuelven por la ventana", () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
-
-  it("las réplicas se enumeran desde el motor", () => {
-    expect(REPLICA_HOST_KEYS.length).toBeGreaterThan(0);
-    for (const key of REPLICA_HOST_KEYS) {
-      expect(HOST_INSTALL_TARGETS, `${key} debe ser un host real`).toContain(key);
-    }
   });
 });

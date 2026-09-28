@@ -3865,8 +3865,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "attach-multiroot", reason: "configuración de multiroot" },
   { command: "detach-multiroot", reason: "configuración de multiroot" },
   { command: "visibility", reason: "configuración de visibilidad de fuentes" },
-  { command: "skills", reason: "inventario de capacidades instaladas y su readiness" },
-  { command: "skill-index", reason: "índice de bindings de capacidades" },
+  { command: "skills", reason: "diagnóstico de capacidades propias y su readiness" },
   {
     command: "export-diagrams",
     reason:
@@ -3896,7 +3895,6 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   },
   { command: "code-scan", reason: "barrido read-only del código" },
   { command: "plugin-doctor", reason: "diagnóstico de instalación" },
-  { command: "plugin-cache", reason: "mantenimiento de caché" },
   { command: "host-doctor", reason: "diagnóstico de hosts" },
   {
     command: "doctor",

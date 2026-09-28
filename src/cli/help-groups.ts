@@ -63,7 +63,7 @@ const GROUPS: readonly CommandGroup[] = [
   {
     name: "Orchestration",
     // next-number is a core helper (the bundle skills call it for NNN
-    // correlatives), not dev-only; skills/skill-index resolve capability bindings.
+    // correlatives), not dev-only; skills diagnoses owned capabilities.
     commands: [
       "status",
       "resume",
@@ -72,7 +72,6 @@ const GROUPS: readonly CommandGroup[] = [
       "host-memory",
       "persist",
       "stack",
-      "skill-index",
       "skills",
       // The durable design taxonomy: which UI Design Packages exist and where
       // they live right now (identity resolves, the path is only a hint).
@@ -144,7 +143,6 @@ const GROUPS: readonly CommandGroup[] = [
       // replacing them: each keeps its own contract and its own place here.
       "doctor",
       "plugin-doctor",
-      "plugin-cache",
       "host-doctor",
       "history",
       "history-update",

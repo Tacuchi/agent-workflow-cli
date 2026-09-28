@@ -62,6 +62,8 @@ export class TuiPrefsService {
         accentColor: isAccent(parsed.accentColor)
           ? parsed.accentColor
           : DEFAULT_TUI_PREFS.accentColor,
+        // A persisted "skills" screen from older versions falls back in memory;
+        // loading never rewrites that file or touches the installed skills.
         initialScreen: isTabId(parsed.initialScreen)
           ? parsed.initialScreen
           : DEFAULT_TUI_PREFS.initialScreen,

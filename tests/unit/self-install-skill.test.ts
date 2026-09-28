@@ -859,31 +859,35 @@ describe("selfInstallSkill", () => {
     }
   });
 
-  it("--target claude without --keep-cache reports cache_cleared", async () => {
+  it("instalar el bundle deja intactos una skill, su registro y el cache ajeno", async () => {
     const fs = new RealFs();
     const proc = new FakeProcess();
     const ctx = buildCtx(home, fs, proc);
+    const foreign = join(home, ".claude", "skills", "ajena", "SKILL.md");
+    const registry = join(home, ".agents", ".skills-registry.json");
+    const cached = join(
+      home,
+      ".claude",
+      "plugins",
+      "cache",
+      "user-market",
+      "ajena",
+      "1.0",
+      "SKILL.md",
+    );
+    await mkdir(join(home, ".claude", "skills", "ajena"), { recursive: true });
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await mkdir(join(home, ".claude", "plugins", "cache", "user-market", "ajena", "1.0"), {
+      recursive: true,
+    });
+    await writeFile(foreign, "skill anterior intacta\n");
+    await writeFile(registry, '{"skills":{"ajena":{}}}\n');
+    await writeFile(cached, "cache anterior intacto\n");
     const result = await selfInstallSkill(buildArgs({ from: source, target: "claude" }, []), ctx);
     expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      const claudeDest = result.data.dests.find((d) => d.target === "claude");
-      expect(claudeDest?.cache_cleared).toBe(true);
-    }
-  });
-
-  it("--keep-cache skips pre-clear (cache_cleared=false)", async () => {
-    const fs = new RealFs();
-    const proc = new FakeProcess();
-    const ctx = buildCtx(home, fs, proc);
-    const result = await selfInstallSkill(
-      buildArgs({ from: source, target: "claude" }, ["--keep-cache"]),
-      ctx,
-    );
-    expect(result.ok).toBe(true);
-    if (result.ok && result.data) {
-      const claudeDest = result.data.dests.find((d) => d.target === "claude");
-      expect(claudeDest?.cache_cleared).toBe(false);
-    }
+    expect(await readFile(foreign, "utf8")).toBe("skill anterior intacta\n");
+    expect(await readFile(registry, "utf8")).toBe('{"skills":{"ajena":{}}}\n');
+    expect(await readFile(cached, "utf8")).toBe("cache anterior intacto\n");
   });
 });
 

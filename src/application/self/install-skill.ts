@@ -25,7 +25,6 @@ import {
   capabilityCoveredBy,
   capabilityPlacement,
 } from "./install-targets.js";
-import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
 import { copyDir, hasValidFrontmatter } from "./skill-files.js";
 
 export const SKILL_DIR_NAME = "w";
@@ -52,8 +51,6 @@ export interface SelfInstallTargetResult {
   status: "installed" | "dry-run" | "skipped";
   overwrote_existing: boolean;
   files_copied?: number;
-  cache_cleared?: boolean;
-  cache_clear_warning?: string;
   user_commands_dest?: string;
   user_commands_files?: number;
   user_commands_warning?: string;
@@ -87,13 +84,6 @@ const TARGET_CHOICES: readonly (InstallTarget | "all")[] = [...INSTALL_TARGETS, 
 // covered under `all` through its host — see TARGET_ROOTS.)
 const ALL_INSTALL_TARGETS: readonly InstallTarget[] = HOST_INSTALL_TARGETS;
 
-const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
-  "claude",
-  "codex",
-  "warp",
-  "agents",
-]);
-
 // Hosts whose user-invocable unit is the SKILL (no file-based commands dir):
 // each `commands/<cmd>.md` is synthesized as a top-level sibling skill
 // `w-<cmd>/SKILL.md` (skill-as-command — harness/HARNESS.md § Command
@@ -110,8 +100,7 @@ const CACHE_CLEAR_HOSTS: ReadonlySet<InstallTarget> = new Set([
 // The set itself lives in install-targets.ts: uninstall.ts consumes the same
 // value so both sides stay symmetric by construction.
 export { COMMAND_SKILLS_HOSTS };
-// Exported: it is the bundle's namespace in the skill roots — the loose-skill
-// scan (skills-manager.listSkills) excludes it so `w-*` never lists as unmanaged.
+// The bundle's namespace in each host skill root.
 export const COMMAND_SKILL_PREFIX = "w-";
 
 // Canonical command docs double as Claude-plugin command content. Claude
@@ -263,7 +252,8 @@ async function cleanLegacyArtifacts(
     try {
       for (const entry of await readdir(skillsRoot, { withFileTypes: true })) {
         if (entry.isDirectory() && entry.name.startsWith("agent-workflow-")) {
-          await tryRemove(join(skillsRoot, entry.name));
+          const candidate = join(skillsRoot, entry.name);
+          if (await isOwnedSynthesizedDir(candidate, "agent-workflow-")) await tryRemove(candidate);
         }
       }
     } catch {
@@ -305,7 +295,6 @@ export async function selfInstallSkill(
 ): Promise<CommandResult<SelfInstallSkillData>> {
   const force = args.flags.has("--force");
   const dryRun = args.flags.has("--dry-run");
-  const keepCache = args.flags.has("--keep-cache");
   const keepLegacy = args.flags.has("--keep-legacy");
   const confirmAll = args.flags.has("--confirm-all");
   const skillOnly = args.flags.has("--skill-only");
@@ -383,7 +372,6 @@ export async function selfInstallSkill(
   for (const t of existingTargets) {
     const entry = await installOneTarget(t, destByTarget[t.target], sourceArg, ctx, {
       force,
-      keepCache,
       skipCommands,
       skipHooks,
       keepLegacy,
@@ -589,7 +577,6 @@ function looksLikeRemoteUrl(value: string): boolean {
 
 interface InstallOneFlags {
   force: boolean;
-  keepCache: boolean;
   skipCommands: boolean;
   skipHooks: boolean;
   keepLegacy: boolean;
@@ -602,7 +589,6 @@ async function installOneTarget(
   ctx: CliContext,
   flags: InstallOneFlags,
 ): Promise<SelfInstallTargetResult> {
-  const cacheOutcome = await preClearCache(t.target, ctx, flags.keepCache);
   if (t.exists && flags.force) {
     await rm(dest, { recursive: true, force: true });
   }
@@ -613,9 +599,7 @@ async function installOneTarget(
     status: "installed",
     overwrote_existing: t.exists,
     files_copied: filesCopied,
-    cache_cleared: cacheOutcome.cleared,
   };
-  if (cacheOutcome.warning !== undefined) entry.cache_clear_warning = cacheOutcome.warning;
   if (!flags.skipCommands) {
     // Synthesized w-* wrappers ARE the command surface on COMMAND_SKILLS_HOSTS,
     // so --skill-only / --no-commands skips them exactly like native wrappers.
@@ -954,42 +938,6 @@ async function installHooksForTarget(
     };
   } catch (err) {
     return { status: "exception", warning: (err as Error).message };
-  }
-}
-
-async function preClearCache(
-  target: InstallTarget,
-  ctx: CliContext,
-  keepCache: boolean,
-): Promise<{ cleared: boolean; warning?: string }> {
-  if (keepCache) return { cleared: false };
-  if (!CACHE_CLEAR_HOSTS.has(target)) return { cleared: false };
-
-  const cacheArgs: ParsedArgs = {
-    rest: ["clear-plugin-cache"],
-    plugin: {},
-    flags: new Set(),
-    values: new Map<string, string>([
-      ["plugin", SKILL_DIR_NAME],
-      ["target", target as CacheTarget],
-    ]),
-    valuesMulti: new Map(),
-  };
-
-  try {
-    const result = await selfClearPluginCache(cacheArgs, ctx);
-    if (!result.ok) {
-      return {
-        cleared: false,
-        warning: `cache_clear_failed: ${result.error?.message ?? "unknown"}`,
-      };
-    }
-    return { cleared: true };
-  } catch (err) {
-    return {
-      cleared: false,
-      warning: `cache_clear_exception: ${(err as Error).message}`,
-    };
   }
 }
 

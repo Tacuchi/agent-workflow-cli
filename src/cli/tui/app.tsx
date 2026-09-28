@@ -22,7 +22,6 @@ import { NotificationCenterProvider, useNotifications } from "./notification-cen
 import { ConfigTab } from "./tabs/config-tab.js";
 import { McpTab } from "./tabs/mcp-tab.js";
 import { ProjectTab } from "./tabs/project-tab.js";
-import { SkillsTab } from "./tabs/skills-tab.js";
 import { StatusTab } from "./tabs/status-tab.js";
 import { WorkflowTab } from "./tabs/workflow-tab.js";
 import { applyAccent, colors } from "./theme.js";
@@ -71,7 +70,9 @@ export function App(props: AppProps) {
 
 function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   const prefs0 = initialPrefs ?? DEFAULT_TUI_PREFS;
-  const [activeTab, setActiveTab] = useState<TabId>(prefs0.initialScreen);
+  const [activeTab, setActiveTab] = useState<TabId>(
+    TABS_LIST.some((tab) => tab.id === prefs0.initialScreen) ? prefs0.initialScreen : "status",
+  );
   const [prefs, setPrefs] = useState<TuiPrefs>(prefs0);
   const prefsSvc = useMemo(() => new TuiPrefsService(ctx.fs, ctx.paths), [ctx]);
 
@@ -387,9 +388,6 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
               onToast={pushToast}
               disabledHosts={prefs.disabledHosts}
             />
-          ) : null}
-          {activeTab === "skills" ? (
-            <SkillsTab ctx={ctx} isActive={true} onToast={pushToast} />
           ) : null}
           {activeTab === "config" ? (
             <ConfigTab

@@ -223,7 +223,7 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
     expect(result).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
   });
 
-  it("no ofrece overwrite en scripts, doctor nombra sus subverbos y self los quince", () => {
+  it("no ofrece overwrite en scripts, doctor nombra sus subverbos y self sólo los propios", () => {
     const byName = (name: string) => {
       const command = ALL_COMMANDS.find((item) => item.name === name);
       if (!command) throw new Error(name);
@@ -238,7 +238,7 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
       expect(commandHelpText(byName("doctor"))).toContain(flag);
     }
     expect(commandHelpText(byName("doctor"), "prepare")).toContain("--select");
-    expect(Object.keys(byName("self").flags.actions ?? {})).toHaveLength(15);
+    expect(Object.keys(byName("self").flags.actions ?? {})).toHaveLength(12);
     expect(commandHelpText(byName("self"), "update")).toContain("--dry-run");
     expect(commandHelpText(byName("flow"), "advance")).toContain("--adopt");
   });

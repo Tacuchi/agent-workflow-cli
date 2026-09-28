@@ -1,5 +1,5 @@
 // Per-host administration of the `w` bundle (list + detail + confirm +
-// composite clean-legacy → clean-cache → install-full). [Workline] mounts it
+// composite clean-legacy → install-full). [Workline] mounts it
 // as its main section; any tab can reuse it via props.
 
 import { Box, Text, useInput, useStdout } from "ink";
@@ -16,7 +16,6 @@ import {
   TARGET_ROOTS,
   selfInstallSkill,
 } from "../../../application/self/install-skill.js";
-import { selfClearPluginCache } from "../../../application/self/plugin-cache-clear.js";
 import { selfUninstall } from "../../../application/self/uninstall.js";
 import type { CommandResult } from "../../../domain/types.js";
 import type { ParsedArgs } from "../../parser.js";
@@ -73,7 +72,7 @@ interface TargetRow {
   path: string;
 }
 
-type SkillAction = "install-full" | "uninstall-full" | "clean-cache" | "clean-legacy";
+type SkillAction = "install-full" | "uninstall-full" | "clean-legacy";
 
 type Mode = { kind: "list" } | { kind: "detail" } | { kind: "confirm-uninstall"; row: TargetRow };
 
@@ -221,9 +220,7 @@ export function HostAdminSection({
       }
       const target = row.id;
       const steps: SkillAction[] =
-        kind === "install"
-          ? ["clean-legacy", "clean-cache", "install-full"]
-          : ["uninstall-full", "clean-cache"];
+        kind === "install" ? ["clean-legacy", "install-full"] : ["uninstall-full"];
       const startLabel =
         kind === "install" ? `installing on ${row.name}…` : `uninstalling from ${row.name}…`;
       setBusy(startLabel);
@@ -531,12 +528,6 @@ const ACTION_DEF: Record<
     ok: (h) => `Uninstall complete OK on ${h}.`,
     run: selfUninstall,
   },
-  "clean-cache": {
-    sub: "clean-cache",
-    busy: (h) => `cleaning cache on ${h}…`,
-    ok: (h) => `Cache cleaned on ${h}.`,
-    run: selfClearPluginCache,
-  },
   "clean-legacy": {
     sub: "clean-legacy",
     busy: (h) => `removing legacy skills from ${h}…`,
@@ -550,7 +541,6 @@ function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {
   const values = new Map<string, string>();
   values.set("target", target);
   if (action === "install-full" || action === "uninstall-full") flags.add("--force");
-  if (action === "clean-cache") values.set("plugin", SKILL_DIR_NAME);
   return {
     rest: [ACTION_DEF[action].sub],
     plugin: {},

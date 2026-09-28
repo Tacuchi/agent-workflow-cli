@@ -20,7 +20,7 @@ export interface StatusTabProps {
   ctx: CliContext;
   version: string;
   isActive: boolean;
-  onActivateTab?: (tab: "workflow" | "mcp" | "skills") => void;
+  onActivateTab?: (tab: "workflow" | "mcp") => void;
   onToast?: (msg: ToastBridgeInput) => void;
   /** Daily operational logs (global user-level). Empty renders the empty-state. */
   logs?: LogEntry[];

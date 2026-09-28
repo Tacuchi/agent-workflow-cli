@@ -40,7 +40,6 @@ import { mergeStateCommand } from "./merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./multiroot.js";
 import { persistCommand } from "./persist.js";
 import { planCommand } from "./plan.js";
-import { pluginCacheCommand } from "./plugin-cache.js";
 import { pluginDoctorCommand } from "./plugin-doctor.js";
 import { projectMdUpsertCommand } from "./project-md-upsert.js";
 import { releaseDataCommand } from "./release-data.js";
@@ -65,7 +64,6 @@ import {
 import { setEditModeCommand } from "./set-edit-mode.js";
 import { setPipelineCommand } from "./set-pipeline.js";
 import { settleCommand } from "./settle.js";
-import { skillIndexCommand } from "./skill-index.js";
 import { skillsCommand } from "./skills.js";
 import { sourcesCommand } from "./sources.js";
 import { stackCommand } from "./stack.js";
@@ -100,7 +98,6 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   workspaceCommitCommand,
   workspaceMoveCommand,
   addSourceCommand,
-  skillIndexCommand,
   contextBudgetCommand,
   contextPlanCommand,
   skillsCommand,
@@ -156,7 +153,6 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   // entry would each refuse, listed at once.
   planCommand,
   codeScanCommand,
-  pluginCacheCommand,
   pluginDoctorCommand,
   hostDoctorCommand,
   doctorCommand,
