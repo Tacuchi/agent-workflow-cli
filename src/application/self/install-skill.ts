@@ -14,7 +14,6 @@ import {
 import { stampForInstallTarget } from "../../domain/structured-choice-stamp.js";
 import type { CommandResult } from "../../domain/types.js";
 import { installCapabilitySkill, uninstallCapabilitySkill } from "../capability/wrapper.js";
-import { copyDir, hasValidFrontmatter } from "./install-plugin-skills.js";
 import {
   COMMAND_SKILLS_HOSTS,
   HOOKS_MANAGED_TARGETS,
@@ -27,6 +26,7 @@ import {
   capabilityPlacement,
 } from "./install-targets.js";
 import { type CacheTarget, selfClearPluginCache } from "./plugin-cache-clear.js";
+import { copyDir, hasValidFrontmatter } from "./skill-files.js";
 
 export const SKILL_DIR_NAME = "w";
 export const BUNDLED_SKILL_REL_PATH = `skills/${SKILL_DIR_NAME}`;

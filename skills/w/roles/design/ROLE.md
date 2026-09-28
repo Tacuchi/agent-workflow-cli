@@ -25,7 +25,9 @@ replaces) and `ui-spec` (the skill that used to fill it) are **not** aliases,
 for one capability is a second contract in disguise, and the day the two
 disagree there is no way to say which one the package obeys.
 
-Rebindable in `.workflow/skills.toml` to a third-party skill or `off`.
+`skills.toml` accepts the canonical name or `off`; legacy external names are
+reported but cannot select a contributor. The host may contribute independently
+in an attempt, subject to Workline's own validation and permissions.
 Resolution: built-in default → `~/.workflow/skills.toml` (global) →
 `.workflow/skills.toml` (workspace). See [`../README.md`](../README.md).
 

@@ -1,31 +1,25 @@
 # roles/ — Capability role catalog
 
-> Built-in default implementations of the **capability roles** that loops and exports compose.
-> A role is a slot in the system; a skill is one concrete implementation of that slot.
-> Changing implementation = changing one line in `skills.toml`.
+> Only Workline-owned capabilities are binding roles. Other skills are host-native help, never Workline dependencies.
 
 ---
 
 ## Capability catalog
 
-All 6 roles, their built-in defaults, their tier, and which loops/exports compose them:
+The owned roles and their built-in defaults:
 
 | Role | Default built-in | Tier | Composed by |
 |---|---|---|---|
 | `design` | [`design`](design/ROLE.md) | must | `spec-refine-loop` (when requirement involves UI) · `plan-new-loop` / `plan-refine-loop` · `plan-exec-loop` (reads, never redesigns) |
-| `sql` | `sql` | must | inline research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
-| `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
-| `research` | [`research`](research/ROLE.md) | should | all loops (on-demand investigation) |
-| `diagrams` | [`diagrams`](diagrams/ROLE.md) | should | `export-diagrams` |
 | `overview` | `w` | should | any loop (orientation about Workline itself) |
 
 **Tiers:**
 - `must` — core to almost every session; built-in always active unless explicitly `off`.
 - `should` — loaded on-demand; active by default but lower priority to override.
 
-> **Ambient conventions (not roles).** Code, testing and writing standards **and tool authoring** (`creating-tools`, which writes `docs/tools`) are **not Workline roles** and are never bound: they are **standalone skills the host auto-discovers by `description`** and applies when relevant. Workline is **indifferent** (it neither reads nor looks for them). Useful families live in marketplace plugins (`dev-conventions`, `tool-builder`), but Workline does **not depend** on them.
+> **Ambient help (not roles).** Code, testing, writing, SQL, Git, research, diagrams and tool authoring are available when the host exposes them. Workline does not bind, inventory, install or require them.
 >
-> **An external skill is a technique, never an authorization.** Installing one adds a technique the host may apply when it is relevant; it moves no boundary this system already fixed. Concretely: a skill recommending a validation library does not override the repo's own decision; a reference to subagents is not delegation authority; one that writes documents of its own still lands where the work's custody says; an interview or a checklist it proposes does not become a step of SPEC, PLAN or QUICK; and none of them authorizes a dependency, an agent, an architecture change or an extra validation. **Absence is not a blocker either:** a flow whose optional skill is missing, refused or incompatible runs its base behavior, and says so instead of reporting a check it never ran — a real dependency of the task is named as such. What Workline controls is its **recommendation** and its **managed installation**; a host that discovers instructions by another route is outside that control, so neither a catalog filter nor a `skills.toml` `off` is ever announced as a universal switch.
+> **An external skill is a technique, never an authorization.** Host help cannot override Workline's gates, permissions, destinations or validated receipts. Its absence never blocks core flows; its mere presence never credits an improvement.
 >
 > **`ui-design` and `ui-spec` are retired names.** The design slot is [`design`](design/ROLE.md), whose only output is the UI Design Package v1. Neither retired name is a role, a binding, an alias or an implementation: they are **rejected**, because two names for one capability are two contracts in disguise. There is no alias, no dual-read, no importer and no migration — a binding that names one is reported as `retired/unsupported`, and a design that is still needed is recreated over the package.
 >
@@ -47,13 +41,11 @@ built-in default
 
 **Resolution rules:**
 
-1. **Role with a binding** (workspace, or global if not workspace) → use that skill name.
-   - If the name exists under `roles/<name>/` → it is a built-in skill.
-   - If not → it is a third-party skill installed by name on the host (e.g. via skills.sh).
+1. **Owned role with a binding** → its canonical Workline skill name or `off` applies. Other names are warned as inapplicable, with the file left untouched.
 2. **Role with no binding at any level** → use the built-in default (table above). No config needed for the common case.
 3. **`off`** → capability disabled. The loop continues without it; if the task required it, the loop reports why it cannot proceed or asks the human.
 
-**A role whose skill declares a capability descriptor is stricter**, because there the binding decides what RUNS and not just which name is written: unset or the canonical name enables the built-in floor plus whatever compatible improvements the host selected; `off` applies the descriptor's per-operation policy and no host, wrapper or legacy name reverts it; anything else is `misconfigured` — a replacement binding does not select an improvement, and the file is never rewritten for you. Existing workspaces are not migrated: `aw skills --detail` explains the reclassification and the owner adopts unset, the canonical name or `off`.
+**`design`** uses its built-in floor for required operations. A legacy replacement binding does not select a contributor or disable the floor; `off` follows the descriptor's per-operation policy. `[docs]` is independent and remains supported.
 
 ---
 
@@ -63,44 +55,20 @@ built-in default
 [skills]
 # Built-in defaults (no entry needed — listed here for reference only)
 # design           = "design"
-# sql              = "sql"
-# git              = "git"
-# research         = "research"
-# diagrams         = "diagrams"
 # overview         = "w"
 
-# Override examples:
-design           = "acme/figma-spec"    # third-party skill installed via skills.sh
-diagrams         = "mermaid-only"       # custom built installed locally
-sql              = "off"                # disable the sql capability
+# Per-operation policy for an owned capability:
+# design           = "off"
 ```
-
-### Override: point to a third-party skill
-
-```toml
-[skills]
-design = "acme/figma-spec"
-```
-
-`acme/figma-spec` must be installed on the host (e.g. via `skills.sh install acme/figma-spec`). The binding is **advisory**: the resolver emits the name as-is — it does **not** verify the skill is installed and does **not** auto-fall-back to the built-in default. A typo'd name silently leaves the role bound to a skill that does not exist. Verify the resolution with `aw skills`, which warns when a bound skill is not found in the standard skill roots.
 
 ### Override: disable a capability
 
 ```toml
 [skills]
-sql = "off"
+design = "off"
 ```
 
-The loop that composes `sql` will skip it. If the task required the capability and the role is `off`, the loop should inform the human and ask how to proceed.
-
-### Override: use a different built-in
-
-```toml
-[skills]
-diagrams = "diagrams-lite"   # if a "diagrams-lite" built-in were registered
-```
-
-Only meaningful if multiple built-ins for the same role are registered. Currently each role has exactly one built-in default.
+The `design` descriptor decides operation by operation: validation retains its own floor while authoring operations are disabled.
 
 ---
 
@@ -118,10 +86,6 @@ Example output:
 Role              Resolved skill          Source
 ----------------- ----------------------- -----------
 design            design                  built-in
-sql               sql                     built-in
-git               git                     built-in
-research          research                built-in
-diagrams          mermaid-only            global      (~/.workflow/skills.toml)
 overview          w                       built-in
 ```
 
@@ -149,4 +113,4 @@ Each `ROLE.md` follows this schema:
 | `## Output` | what it produces and where (if any) |
 | `## Source` | recycled from (if applicable) |
 
-See [`research/ROLE.md`](research/ROLE.md) as a reference implementation.
+See [`design/ROLE.md`](design/ROLE.md) as a reference implementation.

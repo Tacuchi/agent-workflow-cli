@@ -9,8 +9,8 @@ import { DOCTOR_OPERATIONS } from "../../src/domain/doctor/operations.js";
  * catálogo declara un `delegates` por operación, pero eso es una CADENA: nadie
  * en producción la lee. Lo que decide qué se ejecuta es el `switch (action.op)`
  * de `repair-runner.ts`, y una auditoría por mutación demostró que estaba
- * completamente descubierto: reescribir `case "skills.reinstall"` para llamar a
- * `selfUninstall` —que BORRA— dejaba las 4585 pruebas del repositorio en verde.
+ * completamente descubierto: cruzar una reparación con `selfUninstall` —que
+ * BORRA— dejaría las pruebas de otros módulos en verde.
  *
  * El daño de ese defecto no se parece a ningún otro de este plan. Todo lo demás
  * falla del lado seguro: un hallazgo que no se propone, una acción que no se
@@ -50,22 +50,6 @@ vi.mock("../../src/application/self/install-hooks.js", () => ({
 vi.mock("../../src/application/self/clean-legacy.js", () => ({
   selfCleanLegacy: spy("selfCleanLegacy"),
 }));
-// A repair now goes through the ONE mutating door of Spec 043: prepare the
-// proposal, then apply it against its own digest. Both halves are doubled, so
-// the wiring assertion still sees exactly who gets called.
-vi.mock("../../src/application/self/skills-change.js", () => ({
-  prepareSkillChange: spy("prepareSkillChange", {
-    status: "prepared",
-    proposal: { operation: "repair", digest: "sealed", destinations: [] },
-    release: async () => {},
-  }),
-}));
-vi.mock("../../src/application/self/skills-apply.js", () => ({
-  applySkillChange: spy("applySkillChange", {
-    status: "applied",
-    result: { operation: "repair", digest: "sealed", destinations: [] },
-  }),
-}));
 vi.mock("../../src/application/mcp-setup-service.js", () => ({
   runMcpSetup: spy("runMcpSetup", { applied: [{}], conflicts: [], errors: [] }),
 }));
@@ -80,9 +64,6 @@ vi.mock("../../src/application/multiroot-service.js", () => ({
 }));
 vi.mock("../../src/application/doctor/provider-workspace-block.js", () => ({
   applyRetiredSectionRemoval: spy("applyRetiredSectionRemoval", true),
-}));
-vi.mock("../../src/application/doctor/skills-toml-migrate.js", () => ({
-  applySkillsTomlMigration: spy("applySkillsTomlMigration", true),
 }));
 vi.mock("../../src/application/mcp-connections-service.js", () => ({
   readMcpConnections: () => [{ name: "cert", dsnVar: "DB_CERT_DSN", provider: "postgres" }],
@@ -152,12 +133,6 @@ const WIRING: ReadonlyArray<{
   { op: "self.install-hooks", delegate: "selfInstallHooks", args: { target: "claude" } },
   { op: "self.clean-legacy", delegate: "selfCleanLegacy", args: { target: "claude" } },
   {
-    op: "skills.reinstall",
-    delegate: "applySkillChange",
-    delegates: ["prepareSkillChange", "applySkillChange"],
-    args: { name: "w:doctor" },
-  },
-  {
     op: "mcp.setup",
     delegate: "runMcpSetup",
     args: { host: "claude", instance: "cert", scope: "workspace" },
@@ -192,11 +167,6 @@ const WIRING: ReadonlyArray<{
     op: "workspace.remove-retired-section",
     delegate: "applyRetiredSectionRemoval",
     args: { file: "CLAUDE.md" },
-  },
-  {
-    op: "skills.migrate-template",
-    delegate: "applySkillsTomlMigration",
-    args: { path: "/ws/.workflow/skills.toml" },
   },
 ];
 
@@ -351,14 +321,5 @@ describe("el cableado entre una operación y la función que escribe", () => {
     );
     const missing = invocations.find((entry) => entry.name === "runMcpSetup");
     expect(missing?.args[1]).toMatchObject({ connections: [] });
-  });
-
-  it("el nombre de la skill llega tal cual: reinstalar otra no es reinstalar la del hallazgo", async () => {
-    await runDoctorRepair(actionFor("skills.reinstall", { name: "w:doctor" }), ctx);
-    const call = invocations.find((entry) => entry.name === "prepareSkillChange");
-    expect(call?.args[1]).toEqual({ operation: "repair", name: "w:doctor" });
-    // Y la aplicación recibe la propuesta preparada, no otra.
-    const applied = invocations.find((entry) => entry.name === "applySkillChange");
-    expect(applied?.args[2]).toBe("sealed");
   });
 });

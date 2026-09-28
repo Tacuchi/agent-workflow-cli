@@ -136,15 +136,6 @@ const CATALOG: readonly CatalogRow[] = [
     verb: "aw mcp migrate --host claude --instance agent-workflow --scope user",
   },
   {
-    op: "skills.reinstall",
-    module: "../../src/application/self/skills-apply.js",
-    delegates: "applySkillChange",
-    effects: ["mutate_overwrite"],
-    expected: "healthy",
-    args: { name: "w:doctor" },
-    verb: "aw self skills reinstall --name w:doctor",
-  },
-  {
     op: "auth.flow",
     module: "../../src/application/doctor/auth-flow.js",
     delegates: "runDoctorAuthFlow",
@@ -188,15 +179,6 @@ const CATALOG: readonly CatalogRow[] = [
     expected: "healthy",
     args: { file: "CLAUDE.md" },
     verb: "aw doctor prepare --select <hallazgo-archivo>",
-  },
-  {
-    op: "skills.migrate-template",
-    module: "../../src/application/doctor/skills-toml-migrate.js",
-    delegates: "applySkillsTomlMigration",
-    effects: ["mutate_overwrite", "destructive"],
-    expected: "healthy",
-    args: { path: "/cwd/.workflow/skills.toml" },
-    verb: "aw doctor prepare --select <hallazgo-skills.toml>",
   },
 ];
 

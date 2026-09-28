@@ -32,8 +32,6 @@ import type { PathsService } from "../paths-service.js";
 import { homeSkillDirs } from "../self/install-targets.js";
 import { resolveSkills } from "../skills-resolver-service.js";
 import { capabilityHandler, registeredCapabilities } from "./dispatcher.js";
-import { buildCapabilityInventory } from "./installed-inventory.js";
-import type { CapabilityInventory } from "./installed-inventory.js";
 import { type CapabilityReadiness as ResolutionState, resolveCapability } from "./resolution.js";
 import { inspectCapabilityDirVia } from "./wrapper.js";
 
@@ -53,22 +51,6 @@ export interface OperationReadiness extends ReadinessVerdict {
   effects: string[];
 }
 
-export interface ExactInstance {
-  name: string;
-  scope: string;
-  locator: string;
-  version: string | null;
-  digest: string;
-}
-
-export interface EligibleImprovement {
-  name: string;
-  digest: string | null;
-  improves: string | null;
-  eligible: boolean;
-  why: string | null;
-}
-
 export interface InvocationProjection {
   host: string;
   kind: HarnessInvocation["kind"] | "unavailable";
@@ -83,12 +65,9 @@ export interface CapabilityReadinessReport extends ReadinessVerdict {
   purpose: string;
   exposure: readonly CapabilityExposure[];
   floor: { builtin: boolean; kind: string; running: boolean };
-  /** The exact instance an improvement contributed, or null when the floor ran. */
-  instance: ExactInstance | null;
   invocation: InvocationProjection;
   exposures: Record<CapabilityExposure, ReadinessVerdict>;
   operations: OperationReadiness[];
-  improvements: EligibleImprovement[];
 }
 
 export interface ReadinessInput {
@@ -103,7 +82,6 @@ export async function capabilityReadiness(
   input: ReadinessInput,
 ): Promise<CapabilityReadinessReport[]> {
   const skills = await resolveSkills(input.fs, input.paths);
-  const inventory = await buildCapabilityInventory(input.fs, input.env, input.paths.workspaceDir());
   const reports: CapabilityReadinessReport[] = [];
 
   for (const name of registeredCapabilities()) {
@@ -114,9 +92,15 @@ export async function capabilityReadiness(
       slot === undefined
         ? { state: "floor_and_improvements" as const, reason: null, action: null }
         : classifyCapabilityBinding(slot, name);
-    const resolution = resolveCapability({ descriptor: handler.descriptor, binding, inventory });
+    // Readiness is about Workline's own floor and wrappers. An improvement can
+    // only be credited in an actual invocation, never from a future host scan.
+    const resolution = resolveCapability({
+      descriptor: handler.descriptor,
+      binding,
+      inventory: { roots: [], capabilities: [] },
+    });
     reports.push(
-      await reportFor(input, handler.descriptor, resolution, inventory, {
+      await reportFor(input, handler.descriptor, resolution, {
         state: resolution.state,
         reason: resolution.reason,
         action: resolution.action,
@@ -130,7 +114,6 @@ async function reportFor(
   input: ReadinessInput,
   descriptor: CapabilityDescriptor,
   resolution: ReturnType<typeof resolveCapability>,
-  inventory: CapabilityInventory,
   verdict: ReadinessVerdict,
 ): Promise<CapabilityReadinessReport> {
   const direct = await directVerdict(input, descriptor, verdict);
@@ -145,16 +128,6 @@ async function reportFor(
       kind: descriptor.floor.kind,
       running: resolution.floor,
     },
-    instance:
-      resolution.selection[0] === undefined
-        ? null
-        : {
-            name: resolution.selection[0].name,
-            scope: resolution.selection[0].scope,
-            locator: resolution.selection[0].locator,
-            version: resolution.selection[0].version,
-            digest: resolution.selection[0].digest,
-          },
     invocation: invocationFor(input.host, descriptor.name),
     exposures: {
       direct: descriptor.exposure.includes("direct")
@@ -184,9 +157,6 @@ async function reportFor(
         action: blocked ? (resolution.action ?? null) : verdict.action,
       };
     }),
-    improvements: inventory.capabilities
-      .filter((c) => c.name !== descriptor.name)
-      .map((c) => eligibility(c, descriptor)),
   };
 }
 
@@ -268,46 +238,5 @@ function invocationFor(host: string, name: string): InvocationProjection {
     kind: invocation.kind,
     form: invocation.template.replace("<name>", name),
     note: invocation.note,
-  };
-}
-
-function eligibility(
-  installed: CapabilityInventory["capabilities"][number],
-  descriptor: CapabilityDescriptor,
-): EligibleImprovement {
-  const improves = installed.descriptor?.compatibility.improves ?? null;
-  if (installed.state === "misconfigured") {
-    return {
-      name: installed.name,
-      digest: null,
-      improves: null,
-      eligible: false,
-      why: installed.failure?.message ?? "instancia no identificable",
-    };
-  }
-  if (improves === null || improves.capability !== descriptor.name) {
-    return {
-      name: installed.name,
-      digest: installed.digest,
-      improves: improves?.capability ?? null,
-      eligible: false,
-      why: `no declara mejorar '${descriptor.name}'`,
-    };
-  }
-  if (improves.contract_version !== descriptor.contract_version) {
-    return {
-      name: installed.name,
-      digest: installed.digest,
-      improves: improves.capability,
-      eligible: false,
-      why: `habla la versión de contrato ${improves.contract_version}`,
-    };
-  }
-  return {
-    name: installed.name,
-    digest: installed.digest,
-    improves: improves.capability,
-    eligible: true,
-    why: null,
   };
 }

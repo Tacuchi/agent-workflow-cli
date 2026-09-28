@@ -128,14 +128,13 @@ describe("un nombre retirado no es un nombre aceptado (AC-CAP-01)", () => {
     expect(warnings.join(" ")).toContain("retirado");
   });
 
-  it("el aviso NO promete un default: la cascada puede haber bindeado el role", async () => {
-    // Global bindea legítimamente; workspace nombra lo retirado. Se ignora la
-    // LÍNEA, así que lo vigente sigue siendo lo del global — no el built-in.
+  it("el aviso no usa un binding ajeno global ni el nombre retirado del workspace", async () => {
     mkdirSync(join(home, ".workflow"), { recursive: true });
     writeFileSync(paths.userSkillsToml(), '[skills]\ndesign = "acme/figma-spec"\n');
     bind('[skills]\ndesign = "ui-spec"\n');
     const { skills, warnings } = await resolveSkills(fs, paths);
-    expect(skills.design.skill).toBe("acme/figma-spec");
+    expect(skills.design.skill).toBe("design");
+    expect(warnings.join(" ")).toContain("binding externo no aplicable");
     expect(warnings.join(" ")).toContain("Se ignora la línea");
     expect(warnings.join(" ")).not.toContain("Queda en");
   });
@@ -148,11 +147,11 @@ describe("un nombre retirado no es un nombre aceptado (AC-CAP-01)", () => {
     expect(warnings.join(" ")).not.toContain("unknown role");
   });
 
-  it("una mejora externa legítima SÍ se acepta: lo retirado es el nombre, no la extensión", async () => {
+  it("la ayuda externa no se selecciona mediante el binding legacy", async () => {
     bind('[skills]\ndesign = "acme/figma-spec"\n');
     const { skills, warnings } = await resolveSkills(fs, paths);
-    expect(skills.design.skill).toBe("acme/figma-spec");
-    expect(warnings).toEqual([]);
+    expect(skills.design.skill).toBe("design");
+    expect(warnings.join(" ")).toContain("binding externo no aplicable");
   });
 
   it("y 'off' sigue siendo 'off': el rechazo no se come la desactivación", async () => {

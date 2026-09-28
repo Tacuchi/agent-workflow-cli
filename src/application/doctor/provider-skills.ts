@@ -8,80 +8,47 @@ import {
   type ReadinessVerdict,
   capabilityReadiness,
 } from "../capability/readiness.js";
-/**
- * Skills — what is registered, whether its replicas landed, and whether the one
- * capability that has a contract is actually ready.
- *
- * `listSkills` already answers the first two and `capabilityReadiness` the
- * third, with a verdict that separates state, reason and action — the shape this
- * whole model was modelled on. Neither is re-derived: an incomplete replica is
- * read off the booleans the manager publishes, not re-inspected here.
- *
- * The seed list is deliberately empty. It only supplies descriptions and the
- * `recommended` status, and a doctor that turned "you could also install this"
- * into a finding would teach people to skim past the ones that matter.
- *
- * The category answers TWO things with two different scopes, and they are kept
- * apart on purpose (AC-02):
- *
- * - The registered skills and their replicas belong to the PERSON, not to a
- *   host: the registry and the three replica roots hang off `$HOME`
- *   (`~/.agents`, `~/.claude`, `~/.gemini`) and no host governs them. Reporting
- *   the same user-level answer once per participating host would be the same
- *   sentence repeated N times, so it is anchored at the `workspace` pseudo-host
- *   — the same anchor the aggregate uses when no host participates.
- * - A capability's DIRECT route is per host: it resolves against that host's own
- *   skills tree, so it can be installed in one and absent in the next. That half
- *   IS emitted per host, one coverage row each.
- */
-import { listSkills } from "../self/skills-manager.js";
-import { migrateSkillsToml } from "./skills-toml-migrate.js";
+import { resolveSkills } from "../skills-resolver-service.js";
+/** Workline-owned capability readiness and direct wrapper health, per host. */
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
 import { coverage } from "./types.js";
 
 const CATEGORY = "skills" as const;
-/** Where a user-level skill finding lives: the workspace, not a host — replicas are per-user. */
-const SCOPE_HOST = "workspace";
 
 export const skillsProvider: DoctorProvider = {
   category: CATEGORY,
   async run(input: DoctorProviderInput): Promise<DoctorProviderOutput> {
     const findings: DoctorFinding[] = [];
-    const covered: DoctorCoverage[] = [coverage(CATEGORY, SCOPE_HOST, "checked")];
-
-    for (const skill of await listSkills(input.ctx, [])) {
-      if (skill.status === "recommended") continue;
-      findings.push(skillFinding(skill));
-    }
-    for (const path of [input.ctx.paths.userSkillsToml(), input.ctx.paths.cwdSkillsToml()]) {
-      if (!(await input.ctx.fs.exists(path))) continue;
-      const migration = migrateSkillsToml(await input.ctx.fs.readText(path));
-      if (!migration.changed) continue;
+    const covered: DoctorCoverage[] = [];
+    const bindings = await resolveSkills(input.ctx.fs, input.ctx.paths);
+    for (const [index, warning] of bindings.warnings.entries()) {
+      if (!warning.includes("no aplicable")) continue;
       findings.push({
-        id: doctorFindingId(SCOPE_HOST, CATEGORY, `skills.toml:${path}`),
-        host: SCOPE_HOST,
+        id: doctorFindingId("workspace", CATEGORY, `binding:${index}`),
+        host: "workspace",
         category: CATEGORY,
-        resource: { kind: "skills.toml", name: path, locator: path },
+        resource: { kind: "binding", name: `skills.toml:${index}`, locator: null },
         state: "warning",
-        summary: `${path} conserva líneas de una plantilla de skills retirada`,
-        impact: "roles antiguos y [compaction] ya no tienen el significado del bundle vigente",
-        evidence: ["la migración por línea puede preservar bindings y comentarios propios"],
-        ownership: "ours",
+        summary: "binding histórico no aplicable a Workline",
+        impact: "no selecciona mejoras ni modifica el floor propio",
+        evidence: [warning],
+        ownership: "foreign",
         remediation: {
           kind: "manual",
           action: null,
-          guidance: ["aw doctor prepare --select <id> y aw doctor apply --approval <digest>"],
+          guidance: [
+            "gestioná esa skill desde el host o marketplace elegido; el archivo queda intacto",
+          ],
         },
-        proposal: { op: "skills.migrate-template", args: { path } },
       });
     }
+    if (bindings.warnings.some((warning) => warning.includes("no aplicable"))) {
+      covered.push(coverage(CATEGORY, "workspace", "checked"));
+    }
 
-    // One readiness read per participating host. The capability-level verdict is
-    // the same everywhere, but `exposures.direct` is resolved against THIS
-    // host's skills tree — exactly the half that can be missing in one host and
-    // present in the next. And when no host participates (`--only` over a host
-    // that is not on this machine) none is invented: there are no capability
-    // findings and no coverage row claims a host was checked.
+    // The floor is host-independent; the direct wrapper is checked against each
+    // participating host's own tree. With no host, report only applicable
+    // historical binding notices, never invented capability installations.
     for (const host of input.hosts) {
       for (const report of await capabilityReadiness({
         fs: input.ctx.fs,
@@ -97,91 +64,6 @@ export const skillsProvider: DoctorProvider = {
     return { coverage: covered, findings };
   },
 };
-
-/**
- * A registered skill's `source`, with any URL userinfo removed.
- *
- * `source` is the string the person typed at register time, kept verbatim — and
- * without a credential helper the usual way to reach a private repo is
- * `https://<token>@github.com/acme/skills.git`. The global redaction cannot see
- * that: `CONNECTION_URI` only covers `postgres|mysql|mongodb` and
- * `SECRET_ASSIGNMENT` only `key=value` shapes, so the token would reach
- * `evidence` and `resource.locator` intact (AC-11). The whole userinfo goes,
- * never just the password half: a PAT is perfectly valid on its own in the user
- * position, so telling a harmless username apart from a secret is not something
- * this can decide — and the repo, which is what identifies the skill, survives.
- */
-function withoutUrlUserinfo(source: string): string {
-  return source.replace(/([a-z][a-z0-9+.-]*:\/\/)[^/\s]*@/gi, "$1***@");
-}
-
-function skillFinding(skill: {
-  name: string;
-  status: string;
-  source: string;
-  replicas: { agents: boolean; claude: boolean; gemini: boolean };
-}): DoctorFinding {
-  const missing = Object.entries(skill.replicas)
-    .filter(([, present]) => !present)
-    .map(([host]) => host);
-  const source = withoutUrlUserinfo(skill.source);
-  const evidence = [
-    `estado en el registro: ${skill.status}`,
-    `origen: ${source}`,
-    `réplicas presentes: ${
-      Object.entries(skill.replicas)
-        .filter(([, present]) => present)
-        .map(([host]) => host)
-        .join(", ") || "ninguna"
-    }`,
-  ];
-  const base = {
-    id: doctorFindingId(SCOPE_HOST, CATEGORY, skill.name),
-    host: SCOPE_HOST,
-    category: CATEGORY,
-    resource: { kind: "skill" as const, name: skill.name, locator: source },
-    evidence,
-  };
-  // `unmanaged` is a skill living in the canonical root that this CLI never
-  // registered: it is somebody else's, so it is reported and left alone.
-  if (skill.status === "unmanaged") {
-    return {
-      ...base,
-      state: "warning",
-      summary: `'${skill.name}' está en el árbol canónico y Workline no la registró`,
-      impact: "Workline no la actualiza ni la retira: no sabe de dónde vino",
-      ownership: "foreign",
-      remediation: {
-        kind: "manual",
-        action: null,
-        guidance: [`si es tuya, registrala con 'aw self skills register'; si no, dejala como está`],
-      },
-    };
-  }
-  if (missing.length === 0) {
-    return {
-      ...base,
-      state: "healthy",
-      summary: `'${skill.name}' está registrada con todas sus réplicas`,
-      impact: "la skill se ve desde los hosts que leen esas réplicas",
-      ownership: "ours",
-      remediation: { kind: "none", action: null, guidance: [] },
-    };
-  }
-  return {
-    ...base,
-    state: "warning",
-    summary: `'${skill.name}' tiene réplicas faltantes: ${missing.join(", ")}`,
-    impact: "los hosts que leen esas réplicas no ven la skill",
-    ownership: "ours",
-    remediation: {
-      kind: "manual",
-      action: null,
-      guidance: [`aw self skills reinstall --name ${skill.name}`],
-    },
-    proposal: { op: "skills.reinstall", args: { name: skill.name } },
-  };
-}
 
 /** The two states readiness calls usable. Everything else owes a reason. */
 function isReady(state: string): boolean {

@@ -116,7 +116,7 @@ const DIGEST_SHAPE = /^[0-9a-f]{64}$/;
 
 /** Los verbos del catálogo, escritos a mano: son el comando que la persona podría tipear. */
 const VERB_MCP_SETUP = "aw mcp setup --host claude --instance familia --scope global";
-const VERB_SKILLS_REINSTALL = "aw self skills reinstall --name w:plan-exec";
+const VERB_SKILLS_REINSTALL = "aw self install-skill --target claude";
 const VERB_INSTALL_SKILL = "aw self install-skill --target claude-code";
 const VERB_INSTALL_HOOKS = "aw self install-hooks --target claude-code";
 
@@ -291,8 +291,8 @@ function exitConditionProviders(): DoctorProvider[] {
     ]),
     provider("skills", [
       hint("claude-code", "skills", "w:plan-exec", {
-        op: "skills.reinstall",
-        args: { name: "w:plan-exec" },
+        op: "self.install-skill",
+        args: { target: "claude" },
       }),
     ]),
   ];
@@ -487,7 +487,7 @@ describe("prepareDoctorBatch", () => {
     ]);
     expect(proposal.batch.actions.map((action) => action.op)).toEqual([
       "mcp.setup",
-      "skills.reinstall",
+      "self.install-skill",
     ]);
     /*
      * Los `args` de cada acción, contra literales.
@@ -500,10 +500,10 @@ describe("prepareDoctorBatch", () => {
      */
     expect(proposal.batch.actions.map((action) => action.args)).toEqual([
       { host: "claude", instance: "familia", scope: "global" },
-      { name: "w:plan-exec" },
+      { target: "claude" },
     ]);
     // Los efectos del lote son la unión ordenada, y es lo que la aprobación cubre.
-    expect(proposal.batch.effects).toEqual(["mutate_overwrite"]);
+    expect(proposal.batch.effects).toEqual(["local_additive", "mutate_overwrite"]);
 
     expect(proposal.next).toBe(
       `${APPLY_PREFIX}${proposal.digest} --select ${ID_MCP_PROPIO} --select ${ID_SKILL_REPLICA}`,
@@ -659,9 +659,9 @@ describe("prepareDoctorBatch", () => {
     expect(preview).toContain(`comando equivalente: ${VERB_SKILLS_REINSTALL}`);
     expect(preview).toContain(`${doctorOperation("mcp.setup")?.summary} — familia (claude-code)`);
     expect(preview).toContain(
-      `${doctorOperation("skills.reinstall")?.summary} — w:plan-exec (claude-code)`,
+      `${doctorOperation("self.install-skill")?.summary} — w:plan-exec (claude-code)`,
     );
-    expect(preview.match(/efectos: mutate_overwrite$/gm)).toHaveLength(2);
+    expect(preview.match(/efectos: mutate_overwrite$/gm)).toHaveLength(1);
     expect(preview.match(/estado esperado: healthy$/gm)).toHaveLength(2);
 
     // Las dos acciones aparecen en el ORDEN del lote, numeradas.
@@ -1104,8 +1104,8 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
         expected: "healthy",
       }),
       supported("claude-code", "skills", "w:plan-exec", {
-        op: "skills.reinstall",
-        args: { name: "w:plan-exec" },
+        op: "self.install-skill",
+        args: { target: "claude" },
         effects: ["mutate_overwrite"],
         depends_on: [],
         expected: "healthy",

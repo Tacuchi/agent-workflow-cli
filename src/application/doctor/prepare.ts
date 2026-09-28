@@ -307,8 +307,6 @@ function targetsOf(ctx: CliContext, action: DoctorBatchAction): string[] {
         join(scope, ".claude.json"),
         join(scope, ".codex", "config.toml"),
       ];
-    case "skills.reinstall":
-      return [join(home, ".agents", "skills")];
     // Lo que se leyó para decidir que falta autenticar es el archivo que el
     // SUJETO declaró, no una ruta por operación: el proveedor de conexiones —el
     // dueño de `dsn.env`— declara `flow: null`, así que ninguna acción de flujo
@@ -324,7 +322,6 @@ function targetsOf(ctx: CliContext, action: DoctorBatchAction): string[] {
     case "multiroot.detach":
       return [join(scope, ".claude", "settings.local.json"), join(scope, ".codex", "config.toml")];
     case "workspace.remove-retired-section":
-    case "skills.migrate-template":
       return action.locator === null ? [] : [action.locator];
     default:
       return [join(home, ".claude", "settings.json")];

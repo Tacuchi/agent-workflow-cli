@@ -14,7 +14,7 @@ description: >-
 
 ## Role
 
-`git` — built-in default. Rebindable in `.workflow/skills.toml` (third-party skill or `off`). This skill encodes invariant 5: **safe git**.
+Git-safe execution is a Workline invariant, independent of host skills and bindings.
 
 ## Purpose
 

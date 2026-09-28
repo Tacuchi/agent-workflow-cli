@@ -24,12 +24,12 @@
 
 | Export | Composes | Reads (artifacts / sessions + corpus) | Writes (its ONLY category) |
 |---|---|---|---|
-| [`export-scripts`](export-scripts/EXPORT.md) | `sql` | a DECLARED origin: session `SCRIPTS.sql`, loose `docs/scripts/*.sql` and/or published bundles, minus `--exclude` and what already ran in `--environment` | `docs/scripts/NNN-export-scripts-<date>/` (numbered forwards + `00-ROLLBACK.sql`) |
+| [`export-scripts`](export-scripts/EXPORT.md) | optional host SQL help | a DECLARED origin: session `SCRIPTS.sql`, loose `docs/scripts/*.sql` and/or published bundles, minus `--exclude` and what already ran in `--environment` | `docs/scripts/NNN-export-scripts-<date>/` (numbered forwards + `00-ROLLBACK.sql`) |
 | [`export-manuals`](export-manuals/EXPORT.md) | — (prose: ambient conventions) | sessions + `DECISION` + plan-doc (`Solution` incl. Final behavior block, `Validations`) + touched code | `docs/manuals/` |
-| [`export-diagrams`](export-diagrams/EXPORT.md) | `diagrams` | source code of the sources + plan-doc (AS-IS → TO-BE delta in `Solution`, `Impacted`) | `docs/diagrams/` (C4 / mermaid) |
+| [`export-diagrams`](export-diagrams/EXPORT.md) | optional host diagram help | source code of the sources + plan-doc (AS-IS → TO-BE delta in `Solution`, `Impacted`) | `docs/diagrams/` (C4 / mermaid) |
 | [`export-reports`](export-reports/EXPORT.md) | — (prose: ambient conventions) | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
 
-> **Composition over ownership:** an export that owns a derived artifact does **not** own its authoring logic — it **composes a capability role** from [`../roles/`](../roles/) (resolved through `.workflow/skills.toml`): `export-scripts` composes `sql`; `export-diagrams` composes `diagrams`. Swapping the implementation is a one-line config change; it never touches the export. `export-manuals` and `export-reports` produce **prose**, which follows **ambient writing conventions** (the host auto-applies an installed writing skill if present) — they do **not** compose or bind a `writing` role.
+> **Composition over ownership:** exports keep their own destinations, safety rules and validation. SQL, diagrams and prose may use whichever help the host exposes; no external role binding or installed skill is required.
 
 ## Common properties
 
@@ -48,7 +48,7 @@ Mirrors `docs/referencias/workflow-exports/` and the old export SKILLs. Frontmat
 | Section | Purpose |
 |---|---|
 | `## Category` | Destination `docs/` folder (its ONLY category) |
-| `## Composes` | The capability role it loads (resolved via `skills.toml`) |
+| `## Composes` | Optional host assistance and the export's own contract |
 | `## When to use` | Discovery triggers + scenarios |
 | `## What it does` | Step list (the synthesis) |
 | `## What it does NOT do` | Hard exclusions (no commit, no execute, single category) |

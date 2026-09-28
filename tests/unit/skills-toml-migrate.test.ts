@@ -3,8 +3,6 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { applyDoctorBatch } from "../../src/application/doctor/apply.js";
-import { prepareDoctorBatch } from "../../src/application/doctor/prepare.js";
 import { skillsProvider } from "../../src/application/doctor/provider-skills.js";
 import { runDoctor } from "../../src/application/doctor/report.js";
 import { migrateSkillsToml } from "../../src/application/doctor/skills-toml-migrate.js";
@@ -57,7 +55,7 @@ it("un design de otra tabla no borra el binding ui-design que debe migrarse", ()
   );
 });
 
-it("doctor prepara y aplica con digest la migración sin perder el binding de git", async () => {
+it("doctor no propone migrar skills.toml históricos ni altera sus bytes", async () => {
   const root = await mkdtemp(join(tmpdir(), "aw-doctor-skills-toml-"));
   try {
     const fs = new NodeFileSystem();
@@ -80,31 +78,17 @@ it("doctor prepara y aplica con digest la migración sin perder el binding de gi
     } as CliContext;
     const deps = { providers: [skillsProvider] };
     const report = await runDoctor(ctx, {}, deps);
-    const finding = report.findings.find((item) => item.resource.locator === path);
-    expect(finding?.remediation.action?.op).toBe("skills.migrate-template");
-    if (finding === undefined) throw new Error("skills.toml no fue detectado");
-    const globalFinding = report.findings.find((item) => item.resource.locator === global);
-    if (globalFinding === undefined) throw new Error("skills.toml global no fue detectado");
-    const selected = [finding.id, globalFinding.id];
-    const prepared = await prepareDoctorBatch(ctx, { select: selected }, deps);
-    if (!prepared.ok || prepared.kind !== "sealed")
-      throw new Error("prepare no selló la migración");
-    expect(prepared.proposal.read_set.map((item) => item.id)).toContain(path);
-    expect(prepared.proposal.read_set.map((item) => item.id)).toContain(global);
-    const applied = await applyDoctorBatch(
-      ctx,
-      { select: selected, approval: prepared.proposal.digest },
-      deps,
-    );
-    if (!applied.ok) throw new Error(applied.rejection.message);
-    expect(applied.result.actions.map((action) => action.status)).toEqual(["applied", "applied"]);
+    const notices = report.findings.filter((item) => item.category === "skills");
+    expect(notices.length).toBeGreaterThan(0);
+    expect(notices.every((item) => item.resource.kind === "binding")).toBe(true);
+    expect(notices.every((item) => item.remediation.action === null)).toBe(true);
     const text = await readFile(path, "utf8");
-    expect(text).toContain('design = "design"');
-    expect(text).toContain('overview = "w"');
+    expect(text).toContain('ui-design = "ui-spec"');
+    expect(text).toContain('overview = "workflow"');
     expect(text).toContain('git = "mi-skill" # propio');
-    expect(text).not.toContain("[compaction]");
+    expect(text).toContain("[compaction]");
     const user = await readFile(global, "utf8");
-    expect(user).toContain('overview = "w"');
+    expect(user).toContain('overview = "workflow"');
     expect(user).toContain('git = "otro-binding"');
   } finally {
     await rm(root, { recursive: true, force: true });

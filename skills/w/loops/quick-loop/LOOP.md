@@ -42,7 +42,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 ## Composes
 
-`git` · `sql` (DB rule) · `research` (inline). Resolved via `.workflow/skills.toml`.
+Git safety, DB scripts-only and inline research are loop rules. Host-native help is optional and does not override them.
 
 ## QUICK delta — minimal ceremony
 

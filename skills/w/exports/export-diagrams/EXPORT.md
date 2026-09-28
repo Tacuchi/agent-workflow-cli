@@ -15,7 +15,7 @@ Generates a diagram dossier (**architecture and flows**) of the workspace, aggre
 
 ## Composes
 
-The **`diagrams`** capability (built-in default `diagrams`), resolved via `.workflow/skills.toml`. It contributes the render engine (native Mermaid C4 / Structurizr DSL), the C1–C4 levels and the preview-link convention. This export does **not** own that logic: it composes it. Rebindable or `off` by config.
+The export keeps its own output and preview contract. It may use diagram help exposed by the host, with no binding, catalog or installed-skill requirement.
 
 ## When to use
 

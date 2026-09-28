@@ -12,7 +12,7 @@ description: >
 
 ## Role
 
-`diagrams` — built-in default implementation. Rebindable to another skill (third-party or `off`) in `.workflow/skills.toml`.
+Diagram authoring can use host-native help without a Workline binding; the export retains its own destination and validation rules.
 
 ## Purpose
 

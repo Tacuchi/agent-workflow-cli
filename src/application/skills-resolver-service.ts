@@ -1,13 +1,10 @@
 import { join } from "node:path";
 import { HARNESSES } from "../domain/harnesses.js";
-import { parseSkillFrontmatter } from "../domain/skill-frontmatter.js";
 import {
   BUILTIN_DEFAULT_SKILLS,
   RETIRED_SKILL_IDENTITIES,
   type ResolvedSkills,
   SKILL_ROLES,
-  type SkillBindingSource,
-  type SkillRole,
   isSkillRole,
 } from "../domain/skills.js";
 import type { EnvPort } from "../ports/env.js";
@@ -84,70 +81,10 @@ async function readSkillsTable(
   }
 }
 
-/** One bound role checked against the skills actually installed in the host. */
-export interface BindingCheck {
-  role: SkillRole;
-  skill: string;
-  source: SkillBindingSource;
-  installed: boolean;
-}
-
-export interface BindingValidation {
-  checks: BindingCheck[];
-  warnings: string[];
-  rootsScanned: string[];
-}
-
-const BUILTIN_SKILL_NAMES: ReadonlySet<string> = new Set(Object.values(BUILTIN_DEFAULT_SKILLS));
-
-/**
- * Best-effort, ADVISORY check of `skills.toml` bindings against installed skills.
- *
- * The resolver itself never validates that a bound skill exists, and never falls
- * back to the default — a typo'd binding silently leaves the role mute. This scans
- * the standard skill roots (cwd + home × each host's skillsDirs) and warns when a
- * user-set binding names a skill that is neither a built-in default nor found
- * installed. It never blocks: a not-found is a hint, not an error (the skill may
- * live somewhere this scan does not cover).
- */
-export async function checkInstalledBindings(
-  fs: FileSystemPort,
-  env: EnvPort,
-  resolution: SkillsResolution,
-  workspaceRoot?: string,
-): Promise<BindingValidation> {
-  const roots = skillRoots(env, workspaceRoot);
-  const installed = await enumerateInstalledSkills(fs, roots);
-  const checks: BindingCheck[] = [];
-  const warnings: string[] = [];
-
-  for (const role of SKILL_ROLES) {
-    const r = resolution.skills[role];
-    if (!r.enabled || r.skill === null || r.source === "default") continue;
-    const skill = r.skill;
-    if (BUILTIN_SKILL_NAMES.has(skill)) {
-      checks.push({ role, skill, source: r.source, installed: true });
-      continue;
-    }
-    const leaf = skill.includes("/") ? (skill.split("/").pop() ?? skill) : skill;
-    const installedHere = installed.has(skill) || installed.has(leaf);
-    checks.push({ role, skill, source: r.source, installed: installedHere });
-    if (!installedHere) {
-      warnings.push(
-        `role '${role}' is bound to '${skill}' (${r.source}) but no installed skill by that name was found in the standard skill roots (${roots.join(", ")}). The binding is advisory — the CLI does not auto-fallback. Install it (e.g. \`npx skills add <owner/repo>\`) or fix the name; if it lives elsewhere, ignore this.`,
-      );
-    }
-  }
-
-  return { checks, warnings, rootsScanned: roots };
-}
-
 /**
  * cwd + home crossed with every host's skill directory (deduped).
  *
- * Exported because the capability inventory has to scan exactly the same set:
- * two lists of "where skills live" would drift, and the day they did, a skill
- * this check warns about would be one the inventory cannot see at all.
+ * Legacy inventory location; the invocation path stops using it in F3.
  */
 export function skillRoots(env: EnvPort, workspaceRoot: string = env.cwd()): string[] {
   const dirs = [...new Set(HARNESSES.flatMap((h) => [...h.skillsDirs]))];
@@ -157,48 +94,6 @@ export function skillRoots(env: EnvPort, workspaceRoot: string = env.cwd()): str
     roots.push(join(env.homeDir(), d));
   }
   return [...new Set(roots)];
-}
-
-/** Collect the names of skills installed under the given roots (dir name + frontmatter name). */
-async function enumerateInstalledSkills(fs: FileSystemPort, roots: string[]): Promise<Set<string>> {
-  const names = new Set<string>();
-  for (const root of roots) {
-    await collectNamesFromRoot(fs, root, names);
-  }
-  return names;
-}
-
-async function collectNamesFromRoot(
-  fs: FileSystemPort,
-  root: string,
-  names: Set<string>,
-): Promise<void> {
-  if (!(await fs.exists(root))) return;
-  let entries: Awaited<ReturnType<FileSystemPort["list"]>>;
-  try {
-    entries = await fs.list(root);
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (entry.type !== "dir") continue;
-    names.add(entry.name);
-    await addFrontmatterName(fs, join(entry.path, "SKILL.md"), names);
-  }
-}
-
-async function addFrontmatterName(
-  fs: FileSystemPort,
-  skillMd: string,
-  names: Set<string>,
-): Promise<void> {
-  if (!(await fs.exists(skillMd))) return;
-  try {
-    const fm = parseSkillFrontmatter(await fs.readText(skillMd));
-    if (fm?.fields.name) names.add(fm.fields.name);
-  } catch {
-    // ignore unreadable skill files
-  }
 }
 
 /** Merge one cascade level's `[skills]` table onto the resolved bindings. */
@@ -214,7 +109,7 @@ function applyLevel(
       const retired = RETIRED_SKILL_IDENTITIES.get(key);
       warnings.push(
         retired === undefined
-          ? `${path}: unknown role '${key}' ignored`
+          ? `${path}: role '${key}' no aplicable a Workline; el archivo se conserva sin cambios`
           : `${path}: role '${key}' está retirado y se ignora — ${retired}`,
       );
       continue;
@@ -235,6 +130,12 @@ function applyLevel(
       // decirlo sería mentir. Lo que resolvió de verdad va al lado, en `skills`.
       warnings.push(
         `${path}: role '${key}' apunta a '${val}', que está retirado y no se acepta — ${retired}. Se ignora la línea`,
+      );
+      continue;
+    }
+    if (val !== BUILTIN_DEFAULT_SKILLS[key]) {
+      warnings.push(
+        `${path}: role '${key}' apunta a '${val}'; binding externo no aplicable a Workline. Gestioná esa skill desde el host o marketplace elegido; el archivo se conserva sin cambios`,
       );
       continue;
     }

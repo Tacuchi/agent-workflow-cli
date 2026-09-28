@@ -10,19 +10,15 @@
  * roles: they live as standalone skills the host auto-discovers by `description`
  * and applies whenever relevant. The workflow stays indifferent — it never reads
  * or binds a specific convention skill; the host surfaces any useful one that is
- * installed (e.g. from the `dev-conventions` marketplace plugin, or anywhere).
+ * installed, from any origin.
  */
-export const SKILL_ROLES = ["design", "sql", "git", "research", "diagrams", "overview"] as const;
+export const SKILL_ROLES = ["design", "overview"] as const;
 
 export type SkillRole = (typeof SKILL_ROLES)[number];
 
 /** Built-in default skill name for each capability role. */
 export const BUILTIN_DEFAULT_SKILLS: Record<SkillRole, string> = {
   design: "design",
-  sql: "sql",
-  git: "git",
-  research: "research",
-  diagrams: "diagrams",
   overview: "w",
 };
 

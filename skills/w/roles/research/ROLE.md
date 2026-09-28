@@ -14,7 +14,7 @@ description: >
 
 ## Role
 
-`research` — built-in default implementation. Rebindable to another skill (third-party or `off`) in `.workflow/skills.toml`.
+Research uses the loop's own gap-driven method. Any additional host-native help is optional, not a Workline binding.
 
 ## Purpose
 

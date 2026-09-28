@@ -14,7 +14,7 @@ description: >-
 
 ## Role
 
-`overview` — built-in default. The orientation skill for the whole bundle. Rebindable in `.workflow/skills.toml`, but rarely is.
+`overview` — the Workline-owned orientation skill. Its canonical name is `w`; historical external bindings are inapplicable.
 
 ## Purpose
 
@@ -145,34 +145,27 @@ Common: Layer 1, explicit (user-invoked, never by a loop) · single-pass, read-o
 
 ### Capability skills + `.workflow/skills.toml`
 
-A loop does **not** compose a concrete skill; it composes a **capability by its role** (e.g. `design`). Which skill fulfills the role is decided by config, never by the loop. Swapping implementations = one config line.
+A loop keeps its own contract and may use relevant help exposed by its host. `skills.toml` controls only Workline-owned roles; it never selects external contributors.
 
 ```toml
 [skills]
-design           = "design"           # built-in default
-sql              = "sql"
-git              = "git"
-research         = "research"
-# diagrams       = "off"              # ← capability disabled
-# design         = "acme/figma-spec"  # ← third-party skill (via skills.sh)
+design           = "design"           # built-in floor
+# design         = "off"              # disable according to the operation's policy
+overview         = "w"                # Workline orientation
 ```
 
-**Resolution cascade**: built-in default → `~/.workflow/skills.toml` (global, machine) → `.workflow/skills.toml` (workspace). Workspace overrides global; global overrides default. Unbound role → built-in default. `off` → disabled (the loop continues without it; if it was needed, it says so or asks).
+**Resolution cascade**: built-in default → `~/.workflow/skills.toml` (global) → `.workflow/skills.toml` (workspace). Only owned names and `off` apply. Legacy external bindings are reported as inapplicable and left untouched. `[docs]` keeps its own independent cascade. Host-native skills may help without being required or credited by their mere presence.
 
 Role catalog and defaults:
 
 | Role | Default | Tier | Composed by |
 |---|---|---|---|
 | `design` | `design` | must | `spec-refine-loop` (UI) · `plan-new-loop` / `plan-refine-loop` · `plan-exec-loop` (reads, never redesigns) † |
-| `sql` | `sql` | must | research · `plan-exec-loop` · `quick-loop` · `export-scripts` |
-| `git` | `git` | must | `plan-exec-loop` · `quick-loop` |
-| `research` | `research` | should | every loop (inline capability) |
-| `diagrams` | `diagrams` | should | `export-diagrams` |
 | `overview` | `w` | should | anyone (orientation) |
 
 > † **The composing loops land references, not design.** `spec-refine` keeps `## Design references` and the plan loops promote the closure they implement and pin exact roots. The retired names `ui-design` and `ui-spec` resolve to nothing — no alias, no dual-read, no migration. See [roles/README.md](roles/README.md).
 >
-> **Ambient conventions (not roles):** code/testing/writing standards and `creating-tools` are standalone skills the host auto-discovers by `description` — Workline neither binds nor depends on them. Full doctrine: [roles/README.md](roles/README.md).
+> **Ambient help (not roles):** code/testing/writing, research, SQL, Git, diagrams and tool authoring may be supplied by the host. Workline does not bind, require, install or inventory them. Full doctrine: [roles/README.md](roles/README.md).
 
 The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), a referenced doc), not a pluggable capability.
 

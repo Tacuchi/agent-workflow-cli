@@ -15,7 +15,7 @@ description: >-
 
 ## Role
 
-`sql` — built-in default. Rebindable in `.workflow/skills.toml` (third-party skill or `off`). When `off`, the loop continues without DB authoring help and says so if the task needed it.
+DB scripts-only is Workline policy. SQL authoring help is ambient, supplied by the host when available and never required to enforce that policy.
 
 ## Purpose
 

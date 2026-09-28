@@ -17,7 +17,7 @@ Consolidates pending SQL into `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, wit
 
 ## Composes
 
-The **`sql`** capability (built-in default `sql`), resolved via `.workflow/skills.toml`. It contributes the DDL/DML category vocabulary, the application order and the rollback derivation. This export does **not** own that logic: it composes it. Rebindable or `off` by config.
+The export's own DB scripts-only rule governs ordering and rollback. SQL help exposed by the host is optional; no `skills.toml` binding selects it.
 
 ## What it does NOT do
 

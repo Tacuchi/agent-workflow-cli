@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -7,12 +7,11 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { resolveSkills } from "../../src/application/skills-resolver-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
-describe("resolveSkills (skills.toml cascade)", () => {
+describe("cascada de capacidades propias", () => {
   let home: string;
   let cwd: string;
   let paths: PathsService;
   const fs = new NodeFileSystem();
-
   beforeEach(() => {
     home = mkdtempSync(join(tmpdir(), "skills-home-"));
     cwd = mkdtempSync(join(tmpdir(), "skills-cwd-"));
@@ -22,112 +21,51 @@ describe("resolveSkills (skills.toml cascade)", () => {
     rmSync(home, { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   });
-
-  function writeGlobal(toml: string): void {
-    mkdirSync(join(home, ".workflow"), { recursive: true });
-    writeFileSync(paths.userSkillsToml(), toml);
-  }
-  function writeWorkspace(toml: string): void {
-    mkdirSync(join(cwd, ".workflow"), { recursive: true });
-    writeFileSync(paths.cwdSkillsToml(), toml);
+  function write(path: string, text: string): void {
+    mkdirSync(join(path, ".workflow"), { recursive: true });
+    writeFileSync(path === home ? paths.userSkillsToml() : paths.cwdSkillsToml(), text);
   }
 
-  it("sin skills.toml → todos los built-in default", async () => {
-    const { skills, sources, warnings } = await resolveSkills(fs, paths);
-    expect(sources).toEqual({ global: false, workspace: false });
-    expect(warnings).toEqual([]);
-    expect(skills.design).toEqual({
+  it("sin configuración sólo resuelve skills del bundle", async () => {
+    const result = await resolveSkills(fs, paths);
+    expect(result.sources).toEqual({ global: false, workspace: false });
+    expect(result.warnings).toEqual([]);
+    expect(result.skills).toEqual({
+      design: { role: "design", skill: "design", source: "default", enabled: true },
+      overview: { role: "overview", skill: "w", source: "default", enabled: true },
+    });
+  });
+
+  it("mantiene off del workspace sobre global y [docs] históricos byte-idénticos", async () => {
+    const global = '[skills]\ndesign = "design"\n[docs]\nspecs = "docs/specs"\n';
+    const local = '[skills]\ndesign = "off"\n';
+    write(home, global);
+    write(cwd, local);
+    const result = await resolveSkills(fs, paths);
+    expect(result.skills.design).toEqual({
       role: "design",
-      skill: "design",
-      source: "default",
-      enabled: true,
-    });
-    expect(skills.overview.skill).toBe("w");
-    expect(skills.sql).toEqual({ role: "sql", skill: "sql", source: "default", enabled: true });
-    expect(skills.git.skill).toBe("git");
-  });
-
-  it("las convenciones genéricas NO son roles (las auto-descubre el host, no el workflow)", async () => {
-    // coding-standards/testing/writing left the role system: the workflow is
-    // indifferent and the host auto-applies them if installed. Naming them in
-    // skills.toml → unknown role (warning), does not break resolution.
-    writeWorkspace('[skills]\ncoding-standards = "x"\ntesting = "y"\nsql = "ws-sql"\n');
-    const { skills, warnings } = await resolveSkills(fs, paths);
-    expect(warnings.some((w) => w.includes("coding-standards"))).toBe(true);
-    expect(warnings.some((w) => w.includes("testing"))).toBe(true);
-    expect(Object.keys(skills)).not.toContain("coding-standards");
-    expect(skills.sql.skill).toBe("ws-sql");
-  });
-
-  it("workspace bindea un rol a una skill de tercero", async () => {
-    writeWorkspace('[skills]\ndesign = "acme/figma-spec"\n');
-    const { skills, sources } = await resolveSkills(fs, paths);
-    expect(sources.workspace).toBe(true);
-    expect(skills.design).toEqual({
-      role: "design",
-      skill: "acme/figma-spec",
-      source: "workspace",
-      enabled: true,
-    });
-    // the rest stay on default
-    expect(skills.sql.source).toBe("default");
-  });
-
-  it("workspace pisa a global (cascada)", async () => {
-    writeGlobal('[skills]\nsql = "global-sql"\ngit = "global-git"\n');
-    writeWorkspace('[skills]\nsql = "ws-sql"\n');
-    const { skills, sources } = await resolveSkills(fs, paths);
-    expect(sources).toEqual({ global: true, workspace: true });
-    expect(skills.sql).toEqual({
-      role: "sql",
-      skill: "ws-sql",
-      source: "workspace",
-      enabled: true,
-    });
-    // git only in global
-    expect(skills.git).toEqual({
-      role: "git",
-      skill: "global-git",
-      source: "global",
-      enabled: true,
-    });
-  });
-
-  it('"off" desactiva la capacidad', async () => {
-    writeWorkspace('[skills]\nresearch = "off"\n');
-    const { skills } = await resolveSkills(fs, paths);
-    expect(skills.research).toEqual({
-      role: "research",
       skill: null,
       source: "workspace",
       enabled: false,
     });
+    expect(result.sources).toEqual({ global: true, workspace: true });
+    expect(readFileSync(paths.userSkillsToml(), "utf8")).toBe(global);
+    expect(readFileSync(paths.cwdSkillsToml(), "utf8")).toBe(local);
   });
 
-  it("`tools` ya NO es un rol (se removió la capability)", async () => {
-    const { skills } = await resolveSkills(fs, paths);
-    expect(Object.keys(skills)).not.toContain("tools");
-    // Naming it in skills.toml → unknown role (warning), does not break resolution.
-    writeWorkspace('[skills]\ntools = "off"\nsql = "ws-sql"\n');
-    const res = await resolveSkills(fs, paths);
-    expect(res.warnings.some((w) => w.includes("tools"))).toBe(true);
-    expect(Object.keys(res.skills)).not.toContain("tools");
-    expect(res.skills.sql.skill).toBe("ws-sql");
+  it("ignora un binding externo global sin silenciar el default propio", async () => {
+    write(home, '[skills]\ndesign = "acme/figma-spec"\n');
+    const result = await resolveSkills(fs, paths);
+    expect(result.skills.design.skill).toBe("design");
+    expect(result.warnings).toEqual([expect.stringContaining("binding externo no aplicable")]);
   });
 
-  it("rol desconocido → warning e ignorado", async () => {
-    writeWorkspace('[skills]\nfrobnicate = "x"\nsql = "ws-sql"\n');
-    const { skills, warnings } = await resolveSkills(fs, paths);
-    expect(warnings.some((w) => w.includes("frobnicate"))).toBe(true);
-    expect(skills.sql.skill).toBe("ws-sql");
-    // no spurious role appears
-    expect(Object.keys(skills)).not.toContain("frobnicate");
-  });
-
-  it("toml malformado → warning, no crashea, mantiene defaults", async () => {
-    writeWorkspace("[skills]\nthis is not = = valid toml\n");
-    const { skills, warnings } = await resolveSkills(fs, paths);
-    expect(warnings.some((w) => w.includes("parse error"))).toBe(true);
-    expect(skills.sql.source).toBe("default");
+  it("ignora roles históricos y errores de TOML sin romper el floor", async () => {
+    write(home, '[skills]\nsql = "off"\ngit = "someone"\n');
+    write(cwd, "[skills]\nnot valid = =\n");
+    const result = await resolveSkills(fs, paths);
+    expect(result.warnings.join(" ")).toMatch(/sql.*git.*parse error/);
+    expect(result.skills.design.skill).toBe("design");
+    expect(Object.keys(result.skills)).toEqual(["design", "overview"]);
   });
 });

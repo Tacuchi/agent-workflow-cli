@@ -554,8 +554,8 @@ describe("applyDoctorBatch · fallo parcial honesto", () => {
     const b = machine.break({
       category: "skills",
       name: "w:plan-exec",
-      op: "skills.reinstall",
-      args: { name: "w:plan-exec" },
+      op: "self.install-skill",
+      args: { target: "claude" },
     });
     const double = executorDouble(
       { [a]: { kind: "throws", message: "ENOENT: falta el binario" } },
@@ -692,8 +692,8 @@ describe("applyDoctorBatch · nada corre sin la aprobación de su digest exacto"
       machine.break({
         category: "skills",
         name: "w:plan-exec",
-        op: "skills.reinstall",
-        args: { name: "w:plan-exec" },
+        op: "self.install-skill",
+        args: { target: "claude" },
       }),
     ];
   }
@@ -967,8 +967,8 @@ describe("applyDoctorBatch · la recomprobación es el mismo proveedor releyendo
     const b = machine.break({
       category: "skills",
       name: "w:plan-exec",
-      op: "skills.reinstall",
-      args: { name: "w:plan-exec" },
+      op: "self.install-skill",
+      args: { target: "claude" },
     });
     const double = executorDouble({}, machine);
     const ctx = makeCtx(home);

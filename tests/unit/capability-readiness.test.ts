@@ -41,7 +41,7 @@ describe("discovery dice qué se puede invocar y en qué estado", () => {
     const report = await readiness(withWrapper(new MemFs()));
     expect(report.state).toBe("ready");
     expect(report.floor).toMatchObject({ builtin: true, kind: "core", running: true });
-    expect(report.instance).toBeNull();
+    expect(report).not.toHaveProperty("instance");
     expect(report.exposures.direct.state).toBe("ready");
     expect(report.exposures.compose.state).toBe("ready");
     expect(report.operations.map((o) => o.operation)).toEqual([
@@ -89,17 +89,17 @@ describe("discovery dice qué se puede invocar y en qué estado", () => {
     }
   });
 
-  it("un binding de reemplazo se reporta degradado con evidencia y acción", async () => {
+  it("un binding ajeno previo no sustituye el floor ni la ruta propia", async () => {
     const fs = withWrapper(new MemFs()).file(paths.cwdSkillsToml(), skillsToml("acme-design-lab"));
     const report = await readiness(fs);
-    expect(report.state).toBe("degraded");
-    expect(report.reason).toContain("acme-design-lab");
-    expect(report.action).toContain("design");
+    expect(report.state).toBe("ready");
+    expect(report.exposures.compose.state).toBe("ready");
+    expect(JSON.stringify(report)).not.toContain("acme-design-lab");
     expect(report.floor.running).toBe(true);
   });
 
-  it("ningún estado se reporta sin razón ni próxima acción", async () => {
-    const fs = withWrapper(new MemFs()).file(paths.cwdSkillsToml(), skillsToml("acme-design-lab"));
+  it("un off explicita la razón y la acción para las operaciones bloqueadas", async () => {
+    const fs = withWrapper(new MemFs()).file(paths.cwdSkillsToml(), skillsToml("off"));
     const report = await readiness(fs);
     expect(report.reason).not.toBeNull();
     expect(report.action).not.toBeNull();

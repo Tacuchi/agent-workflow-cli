@@ -27,14 +27,11 @@ import { runMultiroot } from "../multiroot-service.js";
 import { selfCleanLegacy } from "../self/clean-legacy.js";
 import { selfInstallHooks } from "../self/install-hooks.js";
 import { selfInstallSkill } from "../self/install-skill.js";
-import { applySkillChange } from "../self/skills-apply.js";
-import { prepareSkillChange } from "../self/skills-change.js";
 import { selfUninstall } from "../self/uninstall.js";
 import type { DoctorActionOutcome } from "./apply.js";
 import { runDoctorAuthFlow } from "./auth-flow.js";
 import type { DoctorBatchAction } from "./prepare.js";
 import { applyRetiredSectionRemoval } from "./provider-workspace-block.js";
-import { applySkillsTomlMigration } from "./skills-toml-migrate.js";
 
 /** Un `ParsedArgs` explícito: sin comando, sin positional y con los flags que la operación pide. */
 function argsOf(values: Record<string, string>, flags: string[] = []): ParsedArgs {
@@ -59,38 +56,6 @@ function fromCommand(result: CommandResult<unknown>, what: string): DoctorAction
     status: blocked ? "blocked" : "failed",
     detail: `${what}: ${code}`,
   };
-}
-
-/**
- * Repairs a registered skill's replicas the ONE way installations change since
- * Spec 043: prepare, then apply against that proposal's own digest.
- *
- * The doctor's own preflight is what authorizes the operation (it declares
- * `mutate_overwrite`); what this adds is the journal and the per-destination
- * backup, so a repair that fails halfway is recoverable instead of leaving
- * the replicas in three different states.
- */
-async function repairSkillReplicas(ctx: CliContext, name: string): Promise<DoctorActionOutcome> {
-  const prepared = await prepareSkillChange(ctx, { operation: "repair", name });
-  if (prepared.status !== "prepared") {
-    const code = prepared.status === "rejected" ? prepared.rejection.code : prepared.status;
-    return { status: "failed", detail: `reinstalar la skill: ${code}` };
-  }
-  try {
-    const applied = await applySkillChange(ctx, prepared.proposal, prepared.proposal.digest);
-    if (applied.status === "refused") {
-      return { status: "failed", detail: `reinstalar la skill: ${applied.refusal.code}` };
-    }
-    const failed = applied.result.destinations.filter((entry) => entry.status === "failed");
-    return failed.length === 0
-      ? { status: "applied", detail: "reinstalar la skill: aplicado" }
-      : {
-          status: "failed",
-          detail: `reinstalar la skill: ${failed.length} destino(s) sin aplicar`,
-        };
-  } finally {
-    await prepared.release();
-  }
 }
 
 export async function runDoctorRepair(
@@ -118,8 +83,6 @@ export async function runDoctorRepair(
         await selfCleanLegacy(argsOf({ target: target(action) }), ctx),
         "limpiar el resto legacy",
       );
-    case "skills.reinstall":
-      return await repairSkillReplicas(ctx, action.args.name ?? "");
     case "mcp.setup":
       return mcpOutcome(runMcpSetup(ctx.env, mcpInput(ctx, action)), "registrar la entrada MCP");
     case "mcp.remove":
@@ -172,16 +135,6 @@ export async function runDoctorRepair(
       return {
         status: removed ? "applied" : "failed",
         detail: removed ? "secciones retiradas quitadas" : "sin secciones retiradas",
-      };
-    }
-    case "skills.migrate-template": {
-      const path = action.locator;
-      if (path === null || ![ctx.paths.cwdSkillsToml(), ctx.paths.userSkillsToml()].includes(path))
-        return { status: "failed", detail: "skills.toml fuera de la cascada" };
-      const migrated = await applySkillsTomlMigration(ctx.fs, path);
-      return {
-        status: migrated ? "applied" : "failed",
-        detail: migrated ? "plantilla migrada" : "sin cambios de plantilla",
       };
     }
     default:

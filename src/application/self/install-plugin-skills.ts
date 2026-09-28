@@ -1,9 +1,12 @@
-import { copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
 import type { CommandResult } from "../../domain/types.js";
 import { INSTALL_TARGETS, type InstallTarget, TARGET_ROOTS } from "./install-targets.js";
+import { copyDir, hasValidFrontmatter } from "./skill-files.js";
+
+export { copyDir, hasValidFrontmatter } from "./skill-files.js";
 
 export interface PluginSkillResult {
   skillName: string;
@@ -181,38 +184,6 @@ async function patchFrontmatterName(skillMdPath: string, newName: string): Promi
   if (patched !== content) {
     await writeFile(skillMdPath, patched, "utf8");
   }
-}
-
-// Exported: shared with skills-manager (materializes canonical copies) and
-// install-skill (bundle copy). Returns the number of files copied.
-export async function copyDir(src: string, dest: string): Promise<number> {
-  await mkdir(dest, { recursive: true });
-  const entries = await readdir(src, { withFileTypes: true });
-  let count = 0;
-  for (const entry of entries) {
-    if (entry.name === ".git") continue;
-    // Never follow symlinks: a hostile repo can commit a link to a user file
-    // (e.g. ~/.ssh) and copyFile would dereference it when materializing.
-    if (entry.isSymbolicLink()) continue;
-    const srcPath = join(src, entry.name);
-    const destPath = join(dest, entry.name);
-    if (entry.isDirectory()) {
-      count += await copyDir(srcPath, destPath);
-    } else {
-      await copyFile(srcPath, destPath);
-      count += 1;
-    }
-  }
-  return count;
-}
-
-// Exported: skills-manager applies the same rule for what counts as a skill
-// (SKILL.md with name+description frontmatter) when registering single-dir sources.
-export function hasValidFrontmatter(content: string): boolean {
-  const match = content.match(/^---[ \t]*\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return false;
-  const block = match[1] ?? "";
-  return /^name:\s*\S/m.test(block) && /^description:\s*\S/m.test(block);
 }
 
 async function dirExists(p: string): Promise<boolean> {

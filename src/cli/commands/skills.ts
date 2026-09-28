@@ -4,10 +4,7 @@ import {
   capabilityReadiness,
 } from "../../application/capability/readiness.js";
 import { isHarnessId, runHarness } from "../../application/dev-only-services.js";
-import {
-  checkInstalledBindings,
-  resolveSkills,
-} from "../../application/skills-resolver-service.js";
+import { resolveSkills } from "../../application/skills-resolver-service.js";
 import type { ResolvedSkills } from "../../domain/skills.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
@@ -17,7 +14,6 @@ import type { CliContext } from "../types.js";
 interface SkillsData {
   skills: ResolvedSkills;
   sources: { global: boolean; workspace: boolean };
-  bindingChecks: Awaited<ReturnType<typeof checkInstalledBindings>>["checks"];
   warnings: string[];
   /**
    * Readiness per capability.
@@ -35,7 +31,7 @@ export const skillsCommand: CliCommand<SkillsData> = {
   name: "skills",
   flags: { known: ["host"] },
   describe:
-    "Show resolved capability→skill bindings (skills.toml cascade). Usage: aw skills [--detail] — " +
+    "Diagnóstico de capacidades y bundle propios (skills.toml). Usage: aw skills [--detail] — " +
     "con --detail agrega readiness por capacidad, exposición y operación, la instancia exacta o el " +
     "floor, y la forma de invocación que el host soporta de verdad.",
 
@@ -52,17 +48,10 @@ export const skillsCommand: CliCommand<SkillsData> = {
       };
     }
     const resolution = await resolveSkills(ctx.fs, ctx.paths);
-    const validation = await checkInstalledBindings(
-      ctx.fs,
-      ctx.env,
-      resolution,
-      ctx.paths.workspaceDir(),
-    );
     const data: SkillsData = {
       skills: resolution.skills,
       sources: resolution.sources,
-      bindingChecks: validation.checks,
-      warnings: [...resolution.warnings, ...validation.warnings],
+      warnings: resolution.warnings,
       capabilities: await capabilityReadiness({
         fs: ctx.fs,
         env: ctx.env,
@@ -101,9 +90,7 @@ function renderReport(report: CapabilityReadinessReport): string[] {
     `  invocación (${report.invocation.host}): ${report.invocation.form ?? "no disponible"} — ${report.invocation.note}`,
   );
   lines.push(
-    report.floor.running
-      ? `  ejecuta el floor incorporado (${report.floor.kind})`
-      : `  instancia: ${report.instance?.name ?? "—"}@${report.instance?.digest ?? "—"}`,
+    `  floor propio (${report.floor.kind}): ${report.floor.running ? "disponible" : "desactivado"}`,
   );
   for (const [route, verdict] of Object.entries(report.exposures)) {
     lines.push(
@@ -113,11 +100,6 @@ function renderReport(report: CapabilityReadinessReport): string[] {
   for (const op of report.operations) {
     lines.push(
       `  · ${op.operation.padEnd(9)} ${op.state.padEnd(13)} ${op.workspace} · efectos: ${op.effects.join(", ")}`,
-    );
-  }
-  for (const improvement of report.improvements) {
-    lines.push(
-      `  mejora ${improvement.name}: ${improvement.eligible ? "elegible" : `descartada — ${improvement.why}`}`,
     );
   }
   return lines;

@@ -102,16 +102,6 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
       `aw mcp migrate${flag(args, "host")}${flag(args, "instance")}${flag(args, "scope")}`,
   },
   {
-    op: "skills.reinstall",
-    // Since Spec 043 a repair goes through the ONE mutating door: prepare the
-    // proposal, then apply it against its own digest.
-    delegates: "applySkillChange",
-    effects: ["mutate_overwrite"],
-    expected: "healthy",
-    summary: "vuelve a materializar las réplicas de una skill registrada",
-    verb: (args) => `aw self skills reinstall${flag(args, "name")}`,
-  },
-  {
     op: "auth.flow",
     delegates: "runDoctorAuthFlow",
     // `execute` y nada más de este lado: correr el flujo es lo que la operación
@@ -164,14 +154,6 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     expected: "healthy",
     summary: "quita las secciones que citan comandos o skills retirados del archivo del proyecto",
     verb: () => "aw doctor prepare --select <hallazgo-archivo>",
-  },
-  {
-    op: "skills.migrate-template",
-    delegates: "applySkillsTomlMigration",
-    effects: ["mutate_overwrite", "destructive"],
-    expected: "healthy",
-    summary: "migra sólo las líneas obsoletas de la plantilla skills.toml",
-    verb: () => "aw doctor prepare --select <hallazgo-skills.toml>",
   },
 ];
 

@@ -47,11 +47,11 @@ The **5 loops** are heirs: they use `## Inherits` (a one-line reference to [`CHA
 
 ## Chassis / heirs
 
-The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skill); the 5 loops — including `spec-refine-loop` — are **heirs** of that engine. The canonical heirs list and their deltas live in the chassis itself (§ *Heirs*). The chassis is **not a bindable capability**: it is the loop engine; what is pluggable are the **capabilities** a loop composes (e.g. `design`, `sql`, `git`), resolved via `.workflow/skills.toml`.
+The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skill); all 5 loops inherit it. It is never a binding. The `design` capability has a Workline-owned floor; other assistance comes from the host when available.
 
 ## Composed capabilities (roles)
 
-Loops compose **capabilities by role**, never concrete skills; the skill fulfilling the role is resolved via `.workflow/skills.toml` (cascade: built-in → global → workspace; `off` = disabled — the loop continues and says so if it was needed). Catalog, defaults and ambient-conventions doctrine: [../roles/README.md](../roles/README.md).
+Only Workline-owned roles resolve through `.workflow/skills.toml`. External help is ambient; it is not a prerequisite, binding or gate proof. See [../roles/README.md](../roles/README.md).
 
 ## Index
 

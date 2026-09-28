@@ -24,7 +24,7 @@ The doctrine (commands + loops + artifacts) describes **what** the AI does, neve
 1. **Capability, not tool.** Loops/commands name an abstract **capability** (e.g. *structured-choice*, *compaction*). A single table — this one — binds it to each harness's mechanism. Switching harness = switching column, never doctrine.
 2. **Progressive enhancement.** Use the **richest** mechanism the harness offers; **degrade** to a universal fallback when it does not exist. That satisfies both "harness-agnostic" **and** "leverage each harness".
 
-> **Symmetry with the skills cascade (`.workflow/skills.toml`):** that category binds **roles → skills** by config; this one binds **capabilities → harness mechanisms** by detection. Same pattern (binding + default), different axis: one is *what knowledge the loop composes*, the other is *which host primitives execute it*.
+> **Independent of `skills.toml`:** this matrix binds harness capabilities to host mechanisms. The skills cascade governs only Workline's own `design` and `overview` roles; host-native help needs no binding here.
 
 ## Capability catalog
 
@@ -140,10 +140,7 @@ Each boundary kind maps to a capability **already catalogued above**; this table
 
 ## Leverage installed skills
 
-"Leverage whatever skills the harness has installed" resolves through the **same** `.workflow/skills.toml` binding: a role can point at a skill **installed on the host** (third-party, via skills.sh) instead of the built-in. Rule:
-
-- If the host has a **better** skill for a role (e.g. a superior diagram generator for `diagrams`, or a specialized investigator for `research`), **bind it** in `.workflow/skills.toml` and the loop composes it unchanged.
-- The built-in default is the **floor**, not the ceiling: it guarantees the role works on any host; the binding **enriches** it where the host can do more.
+Use relevant skills the host exposes, regardless of their source; do not bind, scan or require them through Workline. `design` retains its own floor and credits a compatible contributor only when the current attempt demonstrates an authorized, validated contribution. Without one, the floor still runs.
 
 ## Convention for the rest of the corpus
 
