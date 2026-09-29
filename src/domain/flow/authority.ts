@@ -3640,16 +3640,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     effects: ["local_additive"],
   },
   {
-    id: "generate-launch.detection",
-    scope: cmd("generate-launch"),
-    title: "detectar el stack de cada fuente y generar sus artefactos de arranque",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: "modules/LAUNCH-DETECTION.md",
-    attribution: "Loaded when the CLI's detection is wrong",
-    effects: ["local_additive"],
-  },
-  {
     id: "export.selection",
     scope: cmd("export-reports"),
     title: "seleccionar y sintetizar el material de las sesiones que se promueve",

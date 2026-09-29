@@ -25,7 +25,6 @@ import {
   exportScriptsCommand,
 } from "./export.js";
 import { flowCommand } from "./flow.js";
-import { generateLaunchCommand } from "./generate-launch.js";
 import { gitFlowCommand } from "./git-flow.js";
 import { historyUpdateCommand } from "./history-update.js";
 import { historyCommand } from "./history.js";
@@ -100,7 +99,6 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   flowCommand,
   sourcesCommand,
   docBranchCommand,
-  generateLaunchCommand,
   setWorkingBranchCommand,
   setQaBranchCommand,
   setExceptionBranchCommand,

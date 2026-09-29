@@ -21,7 +21,6 @@ const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
 const SURFACES = [
   { name: "status", kind: "cli-complete", writes: null },
   { name: "resume", kind: "cli-complete", writes: null },
-  { name: "generate-launch", kind: "cli-complete", writes: ".workflow/launch" },
   { name: "workspace-init", kind: "cli-complete", writes: ".workflow" },
   { name: "persist", kind: "hybrid", writes: "docs/research|specs|plans" },
   { name: "export-diagrams", kind: "hybrid", writes: "docs/diagrams" },
@@ -257,6 +256,6 @@ describe("activation cost — recorded, not budgeted", () => {
     // status+resume alone, plus 34 900 B of export manuals).
     const total = Object.values(sizes).reduce((a, b) => a + b, 0);
     expect(total).toBeLessThan(15_434 + 34_900);
-    expect(Object.keys(sizes)).toHaveLength(9);
+    expect(Object.keys(sizes)).toHaveLength(8);
   });
 });

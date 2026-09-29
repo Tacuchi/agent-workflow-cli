@@ -140,19 +140,6 @@ export class PathsService {
   cwdLockFile(): string {
     return join(this.cwdRoot(), ".lock");
   }
-  /** Persistent registry of detached source processes (machine-specific; gitignored). */
-  cwdProcessesFile(): string {
-    return join(this.cwdRoot(), "processes.json");
-  }
-  /** Per-source launch artifacts (descriptor + run scripts); machine-specific, gitignored. */
-  cwdLaunchDir(): string {
-    return join(this.cwdRoot(), "launch");
-  }
-  /** Workspace docs/logs dir — per-process launch logs (gitignored). */
-  cwdDocsLogsDir(): string {
-    return join(this.root, "docs", "logs");
-  }
-
   // skills.toml — capability role → skill bindings (cascade: global then workspace)
   userSkillsToml(): string {
     return join(this.userRoot(), "skills.toml");

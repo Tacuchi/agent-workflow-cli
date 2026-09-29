@@ -73,7 +73,6 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:plan-exec",
     "/w:quick",
     "/w:status",
-    "/w:generate-launch",
     "/w:persist",
     "/w:resume",
     "/w:export-scripts",

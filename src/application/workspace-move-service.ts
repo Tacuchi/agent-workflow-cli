@@ -2,13 +2,11 @@ import { execFile } from "node:child_process";
 import { readdir, rename } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { NodeEnv } from "../adapters/node-env.js";
 import { workspaceKey } from "../domain/isolation-unit.js";
 import { custodyCompleteness, sealCustody } from "../domain/session/custody.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { isWorklineRoot } from "../runtime/workline-marker.js";
 import { repositoryRoot } from "../runtime/workspace-resolution.js";
-import { runGenerateLaunch } from "./generate-launch-service.js";
 import { declaringHubs, registerHub } from "./hub-registry.js";
 import { readWorkspaceBlock } from "./parsers/project-block.js";
 import { PathsService } from "./paths-service.js";
@@ -81,13 +79,6 @@ export async function moveWorkspace(
     } catch (error) {
       if (error instanceof Error && error.message.includes("candado")) throw error;
     }
-  }
-  if (!options.repair && (await fs.exists(paths.cwdProcessesFile()))) {
-    const records = JSON.parse(await fs.readText(paths.cwdProcessesFile())) as Array<{
-      pid?: number;
-    }>;
-    if (records.some((record) => record.pid && processAlive(record.pid)))
-      throw new Error("Hay procesos vivos registrados; detenlos antes de mover.");
   }
   if (
     !options.repair &&
@@ -176,7 +167,6 @@ export async function moveWorkspace(
     for (const file of [
       join(root, ".claude", "settings.local.json"),
       join(root, ".codex", "config.toml"),
-      paths.cwdProcessesFile(),
     ]) {
       if ((await fs.exists(file)) && (await fs.readText(file)).includes(oldRoot))
         changes.push(file);
@@ -254,7 +244,6 @@ export async function moveWorkspace(
   for (const file of [
     join(next, ".claude", "settings.local.json"),
     join(next, ".codex", "config.toml"),
-    newPaths.cwdProcessesFile(),
   ]) {
     if (!(await fs.exists(file))) continue;
     const before = await fs.readText(file);
@@ -285,15 +274,6 @@ export async function moveWorkspace(
     } catch (error) {
       warnings.push(`git worktree repair ${source.alias}: ${String(error)}`);
     }
-  }
-  if (sources?.fuentes.length) {
-    const generated = await runGenerateLaunch(fs, new NodeEnv(), newPaths);
-    if ("sources" in generated) {
-      changes.push("lanzadores regenerados cuando conservaban su marcador");
-      for (const entry of generated.sources)
-        if (JSON.stringify(entry).includes("skipped"))
-          warnings.push(`Revisa el lanzador editado de ${JSON.stringify(entry)}`);
-    } else warnings.push(`No se pudieron regenerar los lanzadores: ${generated.error}`);
   }
   await registerHub(fs, newPaths, next);
   changes.push("registro de hubs");

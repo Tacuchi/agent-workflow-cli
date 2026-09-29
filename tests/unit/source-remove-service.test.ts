@@ -4,41 +4,13 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { ProcessRegistryService } from "../../src/application/process-registry-service.js";
 import { runProjectMdUpsertWrite } from "../../src/application/project-md-upsert-service.js";
 import { removeSource } from "../../src/application/source-remove-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
-import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 const FIXED_TS = "2026-05-07 12:00";
-
-class FakeProc implements ProcessPort {
-  killed: number[] = [];
-  async run() {
-    return { code: 0, stdout: "", stderr: "" };
-  }
-  async runBinary() {
-    const { code, stdout, stderr } = await this.run();
-    return { code, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) };
-  }
-  async which() {
-    return undefined;
-  }
-  async spawnDetached() {
-    return { pid: 0 };
-  }
-  async spawnInTerminal() {
-    return { pid: 0, mode: "background" as const };
-  }
-  async killTree(pid: number) {
-    this.killed.push(pid);
-  }
-  async isAlive() {
-    return true;
-  }
-}
 
 function makePaths(home: string): PathsService {
   return new PathsService(normalizeNamespace("agent-workflow"), home, home);
@@ -70,28 +42,22 @@ describe("removeSource", () => {
     });
   }
 
-  it("prunes the block, stops its processes, and deletes .workflow/launch/<alias>", async () => {
+  it("quita la fuente sin leer ni alterar lanzadores, registro o logs previos", async () => {
     const env = new FakeEnv(cwd);
     const paths = makePaths(cwd);
-    const proc = new FakeProc();
     await seedBlock(env, paths);
 
     const launchDir = join(cwd, ".agent-workflow", "launch", "plugin");
     await mkdir(launchDir, { recursive: true });
-    await writeFile(join(launchDir, "launch.json"), "{}");
+    const launchFile = join(launchDir, "launch.json");
+    const processFile = join(cwd, ".agent-workflow", "processes.json");
+    const logFile = join(cwd, "docs", "logs", "plugin.log");
+    await writeFile(launchFile, "{legacy: edited}\n");
+    await writeFile(processFile, "registro legacy ilegible\n");
+    await mkdir(join(cwd, "docs", "logs"), { recursive: true });
+    await writeFile(logFile, "log anterior\n");
 
-    const registry = new ProcessRegistryService(fs, proc, paths.cwdProcessesFile());
-    await registry.register({
-      sourceAlias: "plugin",
-      profile: null,
-      command: "npm",
-      args: ["start"],
-      pid: 4321,
-      startedAt: FIXED_TS,
-      logPath: join(cwd, "docs", "logs", "plugin.log"),
-    });
-
-    const result = await removeSource({ fs, env, proc, paths }, "plugin");
+    const result = await removeSource({ fs, env, paths }, "plugin");
 
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
@@ -101,24 +67,24 @@ describe("removeSource", () => {
     expect(claude).not.toContain("- plugin: desarrollo");
     expect(claude).not.toContain("- plugin: test `npm test`");
     expect(claude).toContain("- core: build `npm run build`");
-    expect(await fs.exists(launchDir)).toBe(false);
-    expect(proc.killed).toContain(4321);
-    if (!("error" in result)) expect(result.processesStopped).toBe(1);
+    expect(await readFile(launchFile, "utf8")).toBe("{legacy: edited}\n");
+    expect(await readFile(processFile, "utf8")).toBe("registro legacy ilegible\n");
+    expect(await readFile(logFile, "utf8")).toBe("log anterior\n");
   });
 
   it("returns an error for an unknown alias", async () => {
     const env = new FakeEnv(cwd);
     const paths = makePaths(cwd);
     await seedBlock(env, paths);
-    const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "ghost");
+    const result = await removeSource({ fs, env, paths }, "ghost");
     expect("error" in result).toBe(true);
   });
 
-  it("is idempotent: no processes and no tools dir still succeeds", async () => {
+  it("quita una fuente sin artefactos legacy", async () => {
     const env = new FakeEnv(cwd);
     const paths = makePaths(cwd);
     await seedBlock(env, paths);
-    const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "core");
+    const result = await removeSource({ fs, env, paths }, "core");
     expect("error" in result).toBe(false);
     const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
     expect(claude).not.toContain("../repo/core");
@@ -133,7 +99,7 @@ describe("removeSource", () => {
       paths.cwdLocalConfigFile(),
       JSON.stringify({ version: 1, sources: { core: "/ruta/ausente" }, otra_clave: true }),
     );
-    const result = await removeSource({ fs, env, proc: new FakeProc(), paths }, "core");
+    const result = await removeSource({ fs, env, paths }, "core");
     expect("error" in result).toBe(false);
     const local = JSON.parse(await readFile(paths.cwdLocalConfigFile(), "utf8"));
     expect(local.sources.core).toBeUndefined();
@@ -160,7 +126,7 @@ describe("removeSource", () => {
     expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).toContain(
       "- Lenguaje: Java, TypeScript",
     );
-    const removed = await removeSource({ fs, env, proc: new FakeProc(), paths }, "java");
+    const removed = await removeSource({ fs, env, paths }, "java");
     expect("error" in removed).toBe(false);
     const block = await readFile(join(cwd, "CLAUDE.md"), "utf8");
     expect(block).toContain("- Lenguaje: TypeScript");

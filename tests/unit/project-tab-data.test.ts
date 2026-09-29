@@ -59,7 +59,7 @@ interface FakeDepsOptions {
   gitPaths?: string[];
   /** Process cwd values, including Git tile and commit-counter probes. */
   processCwds?: string[];
-  /** Filesystem paths checked by the launchability probe. */
+  /** Filesystem paths checked when resolving the sources. */
   existsPaths?: string[];
   missingPaths?: string[];
   /** Make the counter's subprocess THROW (vs. exit non-zero) to exercise safeRun. */
@@ -221,7 +221,7 @@ describe("buildProjectTabData — workspace view", () => {
     expect(data).not.toHaveProperty("workspaceMode");
   });
 
-  it("interpreta fuentes legacy relativas desde la raíz Workline para Git y launch", async () => {
+  it("interpreta fuentes relativas desde la raíz Workline para Git sin leer launch", async () => {
     const gitPaths: string[] = [];
     const processCwds: string[] = [];
     const existsPaths: string[] = [];
@@ -244,6 +244,9 @@ describe("buildProjectTabData — workspace view", () => {
     expect(gitPaths).toEqual(expect.arrayContaining([first, second]));
     expect(processCwds).toEqual(expect.arrayContaining([first, second]));
     expect(existsPaths).toEqual(expect.arrayContaining([first, second]));
+    expect(existsPaths).not.toContain(
+      "/ws/.workflow/launch/autoservicio-solicitud-spring/launch.json",
+    );
   });
 });
 

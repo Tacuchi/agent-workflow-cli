@@ -125,19 +125,6 @@
         }
       ]
     },
-    "generate-launch": {
-      "core": ["commands/generate-launch.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "modules/LAUNCH-DETECTION.md",
-          "signal": "detection"
-        }
-      ]
-    },
     "persist": {
       "core": ["commands/persist.md"],
       "modules": [

@@ -12,26 +12,12 @@ import {
   formatTuiEvent,
 } from "../../../application/logging/log-events.js";
 import { readWorkspaceBlock } from "../../../application/parsers/project-block.js";
-import type { ProcessRecord } from "../../../application/process-registry-service.js";
 import { attributeTuiKeypress, grantProdConsent } from "../../../application/prod-consent.js";
 import {
   type ProjectSource,
   type ProjectTabData,
   buildProjectTabData,
 } from "../../../application/project-tab-data.js";
-import type { LaunchDescriptor } from "../../../application/source-launch-scripts-service.js";
-import {
-  type LaunchDeps,
-  type LaunchRequest,
-  type LaunchResult,
-  ensureDescriptor,
-  findCollision,
-  launchSource,
-  relaunchProcess,
-  stopFailed,
-  stopProcess,
-  tailLog,
-} from "../../../application/source-launch-service.js";
 import { removeSource } from "../../../application/source-remove-service.js";
 import type { CliContext } from "../../types.js";
 import {
@@ -45,7 +31,6 @@ import { notificationStackRows } from "../components/notification-stack.js";
 import { PageHead } from "../components/page-head.js";
 import { QuickActions } from "../components/quick-actions.js";
 import { SectionHead } from "../components/section-head.js";
-import { type LaunchFormValue, SourceLaunchForm } from "../components/source-launch-form.js";
 import { StatTile } from "../components/stat-tile.js";
 import { WorkspaceInitForm } from "../components/workspace-init-form.js";
 import { useLockWhile } from "../input-lock.js";
@@ -58,38 +43,6 @@ export interface ProjectTabProps {
   ctx: CliContext;
   isActive: boolean;
   onRunAction?: (id: string) => void;
-}
-
-/**
- * Operational-log line for a launch/relaunch: ok · fallback background (warn,
- * carrying WHY the window never opened — the exported log is the
- * remote-diagnosis channel) · error.
- */
-function logLaunchOutcome(logger: CliContext["logger"], action: string, res: LaunchResult): void {
-  if (!res.ok) {
-    void logger?.log("error", formatTuiEvent(action, "error", res.message));
-    return;
-  }
-  if (res.record.launchMode === "terminal") {
-    void logger?.log("info", formatTuiEvent(action, "ok"));
-    return;
-  }
-  void logger?.log(
-    res.terminalError ? "warn" : "info",
-    formatTuiEvent(action, "fallback background", res.terminalError),
-  );
-}
-
-/** Notice lines for a successful launch/relaunch, aware of the terminal-vs-background mode. */
-function launchNoticeLines(head: string, res: Extract<LaunchResult, { ok: true }>): string[] {
-  if (res.record.launchMode === "terminal") {
-    return [`${head} en una terminal (PID ${res.record.pid}).`];
-  }
-  return [
-    `${head} en segundo plano (PID ${res.record.pid}) — sin terminal disponible.`,
-    ...(res.terminalError ? [`Motivo: ${res.terminalError}`] : []),
-    res.record.logPath,
-  ];
 }
 
 export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
@@ -237,12 +190,8 @@ type Mode =
   | { kind: "confirm-prod"; input: GitFlowInput; preview: GitFlowResult }
   // ===== Source removal =====
   | { kind: "confirm-remove"; alias: string }
-  // ===== Source-launch + process management =====
-  | { kind: "launch-form"; alias: string; descriptor: LaunchDescriptor }
   | { kind: "busy"; label: string }
-  | { kind: "collision"; req: LaunchRequest; existing: ProcessRecord }
-  | { kind: "notice"; tone: "ok" | "err"; lines: string[] }
-  | { kind: "log"; record: ProcessRecord; lines: string[] };
+  | { kind: "notice"; tone: "ok" | "err"; lines: string[] };
 
 /** The aliases the WORKSPACE block declares, readable or not. */
 async function declaredAliases(ctx: CliContext): Promise<string[]> {
@@ -268,29 +217,8 @@ function logFlowResult(ctx: CliContext, event: string, result: GitFlowResult): v
   }
 }
 
-/** First per-source detail action: launch the app locally. */
-const LAUNCH_ACTION = { id: "launch", name: "Lanzar en local" } as const;
-
 /** One selectable row of the source detail panel, in render order. */
-type DetailItem =
-  | { kind: "launch" }
-  | { kind: "flow"; action: GitFlowAction }
-  | { kind: "proc"; op: ProcessOp; record: ProcessRecord }
-  | { kind: "remove" };
-
-type ProcessOp = "stop" | "relaunch" | "log";
-
-/**
- * The three operations offered per `running` process of the selected source —
- * the same ones the removed process region carried on x/r/o. No description:
- * the row spells the profile and the PID, and the panel's remaining width
- * would truncate one to a single cell.
- */
-const PROCESS_OPS: Record<ProcessOp, string> = {
-  stop: "Detener",
-  relaunch: "Re-lanzar",
-  log: "Ver log",
-};
+type DetailItem = { kind: "flow"; action: GitFlowAction } | { kind: "remove" };
 
 /**
  * Indentation (marginLeft) of the SOURCES rows container. Passed as `indent`
@@ -352,22 +280,6 @@ function Initialized({
   const [actionCursor, setActionCursor] = useState(0);
   const [mode, setMode] = useState<Mode>({ kind: "list" });
 
-  const processes = data.processes;
-  // Active processes per source alias: the source row's chip and the global
-  // tile both read from here, so "active" has one definition. `stopped` and
-  // `exited` records are history and never counted (SPEC 019).
-  const runningBySource = useMemo(() => {
-    const byAlias = new Map<string, number>();
-    for (const p of processes) {
-      if (p.state === "running") byAlias.set(p.sourceAlias, (byAlias.get(p.sourceAlias) ?? 0) + 1);
-    }
-    return byAlias;
-  }, [processes]);
-  const runningCount = useMemo(
-    () => [...runningBySource.values()].reduce((total, n) => total + n, 0),
-    [runningBySource],
-  );
-
   // Window over the SOURCES list: the shell clips overflow, so only the slice
   // around the cursor renders — the active row can never walk off-screen.
   // `reservedRows` adds the data-driven chrome to the static count: the
@@ -386,163 +298,6 @@ function Initialized({
   // Overflow indicator for the SectionHead hint slot (no extra terminal row).
   const rangeHint = windowRangeHint(win, targets.length);
 
-  // Deps for the source-launch service. `baseEnv` = the real process env so the
-  // child inherits PATH etc.; params/profile are layered on at resolve time.
-  // `resolveSourcePath` enables on-demand descriptor generation (first launch).
-  const launchDeps = useMemo<LaunchDeps>(
-    () => ({
-      fs: ctx.fs,
-      proc: ctx.process,
-      paths: ctx.paths,
-      baseEnv: Object.fromEntries(
-        Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
-      ),
-      resolveSourcePath: async (alias: string) =>
-        data.sources.find((s) => s.alias === alias)?.path ?? null,
-    }),
-    [ctx, data.sources],
-  );
-
-  // Launch a source: collision-check first, then open a terminal (or background fallback) + register.
-  const doLaunch = useCallback(
-    async (req: LaunchRequest) => {
-      const existing = findCollision(processes, req.alias, req.profile);
-      if (existing) return setMode({ kind: "collision", req, existing });
-      setMode({ kind: "busy", label: `Lanzando ${req.alias}…` });
-      const res = await launchSource(launchDeps, req);
-      const target = `${req.alias}${req.profile ? ` · ${req.profile}` : ""}`;
-      logLaunchOutcome(ctx.logger, `launch ${target}`, res);
-      setMode(
-        res.ok
-          ? {
-              kind: "notice",
-              tone: "ok",
-              lines:
-                res.record.launchMode === "terminal"
-                  ? [
-                      `Lanzado ${req.alias} en una terminal (PID ${res.record.pid}).`,
-                      "Monitoreá en esa ventana; cerrala para detener.",
-                    ]
-                  : launchNoticeLines(`Lanzado ${req.alias}`, res),
-            }
-          : { kind: "notice", tone: "err", lines: [res.message] },
-      );
-      await onReload?.();
-    },
-    [processes, launchDeps, onReload, ctx],
-  );
-
-  // Entry from the "Lanzar en local" detail action: ensure the descriptor
-  // (generated on demand at the first launch), then open the form if it has
-  // profiles/params, otherwise launch directly.
-  const beginLaunch = useCallback(
-    async (alias: string) => {
-      const missing = data.sources.find((source) => source.alias === alias)?.error;
-      if (missing) {
-        setMode({ kind: "notice", tone: "err", lines: [missing] });
-        return;
-      }
-      const read = await ensureDescriptor(
-        ctx.fs,
-        ctx.paths.cwdLaunchDir(),
-        alias,
-        launchDeps.resolveSourcePath,
-      );
-      if (read.status === "corrupt") {
-        return setMode({
-          kind: "notice",
-          tone: "err",
-          lines: [
-            `launch.json corrupto para ${alias}.`,
-            "Corregilo o borralo: se regenera en el próximo lanzamiento.",
-          ],
-        });
-      }
-      if (read.status !== "ok" || !read.descriptor.command) {
-        return setMode({
-          kind: "notice",
-          tone: "err",
-          lines: [`${alias}: sin comando de arranque detectable en la fuente.`],
-        });
-      }
-      const descriptor = read.descriptor;
-      if (descriptor.profiles.length === 0 && descriptor.params.length === 0) {
-        return void doLaunch({ alias, profile: null, values: {} });
-      }
-      setMode({ kind: "launch-form", alias, descriptor });
-    },
-    [ctx, doLaunch, launchDeps, data.sources],
-  );
-
-  const doStop = useCallback(
-    async (record: ProcessRecord) => {
-      setMode({ kind: "busy", label: `Deteniendo ${record.sourceAlias}…` });
-      const res = await stopProcess(launchDeps, record);
-      const event = `stop ${record.sourceAlias} (PID ${record.pid})`;
-      // A stop that did not kill anything is a warning, not an "ok": the daily
-      // log is the only trace once the notice is dismissed.
-      void ctx.logger?.log(
-        res.stopped ? "info" : "warn",
-        formatTuiEvent(event, res.stopped ? "ok" : "sigue vivo"),
-      );
-      setMode(
-        res.stopped
-          ? {
-              kind: "notice",
-              tone: "ok",
-              lines: [`Detenido ${record.sourceAlias} (PID ${record.pid}).`],
-            }
-          : {
-              kind: "notice",
-              tone: "err",
-              lines: [
-                `${record.sourceAlias} (PID ${record.pid}) sigue vivo tras la señal.`,
-                "Sigue contando como activo; detenelo desde el sistema y refrescá.",
-              ],
-            },
-      );
-      await onReload?.();
-    },
-    [launchDeps, onReload, ctx],
-  );
-
-  // Shared tail of doRelaunch/confirmRelaunch: daily-log entry + notice + reload.
-  const finishRelaunch = useCallback(
-    async (alias: string, res: LaunchResult) => {
-      // Same mode-aware surfacing as doLaunch: the retry path is exactly where a
-      // silent background fallback would otherwise go unnoticed.
-      logLaunchOutcome(ctx.logger, `relaunch ${alias}`, res);
-      setMode(
-        res.ok
-          ? { kind: "notice", tone: "ok", lines: launchNoticeLines(`Re-lanzado ${alias}`, res) }
-          : { kind: "notice", tone: "err", lines: [res.message] },
-      );
-      await onReload?.();
-    },
-    [ctx, onReload],
-  );
-
-  const doRelaunch = useCallback(
-    async (record: ProcessRecord) => {
-      setMode({ kind: "busy", label: `Re-lanzando ${record.sourceAlias}…` });
-      const res = await relaunchProcess(launchDeps, record);
-      await finishRelaunch(record.sourceAlias, res);
-    },
-    [launchDeps, finishRelaunch],
-  );
-
-  const doViewLog = useCallback(
-    async (record: ProcessRecord) => {
-      const lines = await tailLog(ctx.fs, record.logPath, 20);
-      setMode({
-        kind: "log",
-        record,
-        lines: lines.length > 0 ? lines : ["(log vacío o no encontrado)", record.logPath],
-      });
-    },
-    [ctx.fs],
-  );
-
   // Global keys are locked for every mode except the plain list and the detail
   // panel (its ↑↓ ⏎ esc don't collide with the globals). MCP/Skills policy.
   useLockWhile(mode.kind !== "list" && mode.kind !== "detail");
@@ -554,32 +309,13 @@ function Initialized({
     ? null
     : (data.sources.find((s) => s.alias === currentTarget) ?? null);
 
-  // The selected source's own active processes — what its detail panel can
-  // operate now that no process list exists.
-  const sourceProcesses = useMemo(
-    () =>
-      currentSource
-        ? processes.filter((p) => p.state === "running" && p.sourceAlias === currentSource.alias)
-        : [],
-    [processes, currentSource],
-  );
-
-  // Detail-panel actions for the current target: a per-source "Lanzar en local"
-  // (only for real sources), the git-flow actions, one triplet per active
-  // process, and a destructive "Quitar del workspace" last (only for real
-  // sources, never for "all sources").
+  // Git-flow actions plus source removal, never legacy launcher controls.
   const detailItems = useMemo<DetailItem[]>(
     () => [
-      ...(currentSource ? [{ kind: "launch" as const }] : []),
       ...FLOW_ACTIONS.map((a) => ({ kind: "flow" as const, action: a.id })),
-      ...sourceProcesses.flatMap((record): DetailItem[] => [
-        { kind: "proc", op: "stop", record },
-        { kind: "proc", op: "relaunch", record },
-        { kind: "proc", op: "log", record },
-      ]),
       ...(currentSource ? [{ kind: "remove" as const }] : []),
     ],
-    [currentSource, sourceProcesses],
+    [currentSource],
   );
 
   // Run a git-flow input and show its result. Every source that did not finish
@@ -688,16 +424,11 @@ function Initialized({
     [ctx, executeFlow],
   );
 
-  // Remove a source from the workspace: orchestrates detach + block pruning +
-  // stopping processes + deleting .workflow/launch/<alias> (via the service);
-  // then reloads the view.
+  // Remove a source from the workspace, preserving legacy local artifacts.
   const doRemove = useCallback(
     async (alias: string) => {
       setMode({ kind: "busy", label: `Quitando ${alias}…` });
-      const res = await removeSource(
-        { fs: ctx.fs, env: ctx.env, proc: ctx.process, paths: ctx.paths },
-        alias,
-      );
+      const res = await removeSource({ fs: ctx.fs, env: ctx.env, paths: ctx.paths }, alias);
       setCursor(0);
       void ctx.logger?.log(
         "error" in res ? "error" : "info",
@@ -713,10 +444,7 @@ function Initialized({
           : {
               kind: "notice",
               tone: "ok",
-              lines: [
-                `Quitada ${alias} del workspace.`,
-                res.processesStopped > 0 ? `${res.processesStopped} proceso(s) detenido(s).` : "",
-              ].filter((l) => l.length > 0),
+              lines: [`Quitada ${alias} del workspace.`],
             },
       );
       await onReload?.();
@@ -749,18 +477,6 @@ function Initialized({
       if (key.return) {
         const item = detailItems[actionCursor];
         if (!item) return;
-        if (item.kind === "launch") {
-          // Always route through beginLaunch: it diagnoses precisely (regenerates
-          // on demand, distinguishes corrupt vs not-launchable) — `launchable`
-          // only drives the inline description.
-          if (currentSource) return void beginLaunch(currentSource.alias);
-          return;
-        }
-        if (item.kind === "proc") {
-          if (item.op === "stop") return void doStop(item.record);
-          if (item.op === "relaunch") return void doRelaunch(item.record);
-          return void doViewLog(item.record);
-        }
         if (item.kind === "remove") {
           if (currentSource) return setMode({ kind: "confirm-remove", alias: currentSource.alias });
           return;
@@ -768,19 +484,7 @@ function Initialized({
         void runFlow(item.action);
       }
     },
-    [actionCursor, detailItems, currentSource, runFlow, beginLaunch, doStop, doRelaunch, doViewLog],
-  );
-
-  // Collision: stops the existing process and launches the requested one (with its values).
-  const confirmRelaunch = useCallback(
-    async (req: LaunchRequest, existing: ProcessRecord) => {
-      setMode({ kind: "busy", label: `Re-lanzando ${req.alias}…` });
-      const stop = await stopProcess(launchDeps, existing);
-      // Same rule as relaunchProcess: never launch over a survivor.
-      const res = stop.stopped ? await launchSource(launchDeps, req) : stopFailed(existing.pid);
-      await finishRelaunch(req.alias, res);
-    },
-    [launchDeps, finishRelaunch],
+    [actionCursor, detailItems, currentSource, runFlow],
   );
 
   // input — delegates to the handler of the active mode.
@@ -789,11 +493,6 @@ function Initialized({
       if (!isActive) return;
       if (mode.kind === "list") return handleListKey(input, key);
       if (mode.kind === "detail") return handleDetailKey(key);
-      if (mode.kind === "collision") {
-        if (key.escape) setMode({ kind: "list" });
-        else if (input === "r") void confirmRelaunch(mode.req, mode.existing);
-        return;
-      }
       if (mode.kind === "confirm-remove") {
         // Cancel returns to the detail panel the confirm was launched from
         // (same as the MCP/Skills tabs), not all the way to the list.
@@ -801,7 +500,7 @@ function Initialized({
         else if (input === "y" || input === "Y") void doRemove(mode.alias);
         return;
       }
-      if (mode.kind === "notice" || mode.kind === "log") {
+      if (mode.kind === "notice") {
         if (key.escape || key.return) setMode({ kind: "list" });
         return;
       }
@@ -857,46 +556,14 @@ function Initialized({
     );
   }
 
-  if (mode.kind === "launch-form") {
-    return (
-      <SourceLaunchForm
-        descriptor={mode.descriptor}
-        isActive={isActive}
-        onCancel={() => setMode({ kind: "list" })}
-        onSubmit={(v: LaunchFormValue) =>
-          void doLaunch({ alias: mode.alias, profile: v.profile, values: v.values })
-        }
-      />
-    );
-  }
-
   if (mode.kind === "busy") {
     return (
       <Box flexDirection="column">
-        <SectionHead label="Procesos" hint={mode.label} />
+        <SectionHead label="Workspace" hint={mode.label} />
         <Box marginLeft={2} marginTop={1}>
           <Text color={colors.warn}>
             {icons.spinner} {mode.label}
           </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (mode.kind === "collision") {
-    return (
-      <Box flexDirection="column">
-        <SectionHead label="Ya en ejecución" marginTop={0} />
-        <Box marginLeft={2} marginTop={1} flexDirection="column">
-          <Text color={colors.warn}>
-            Ya corre {mode.existing.sourceAlias}
-            {mode.existing.profile ? ` · ${mode.existing.profile}` : ""} (PID {mode.existing.pid}).
-          </Text>
-          <Box marginTop={1}>
-            <Text color={colors.faint}>
-              r re-lanzar (detiene el actual + lanza de nuevo) · esc cancelar
-            </Text>
-          </Box>
         </Box>
       </Box>
     );
@@ -912,9 +579,7 @@ function Initialized({
             <Text color={colors.dim}>
               Sale del bloque WORKSPACE (Fuentes + ramas), de la visibilidad multi-root,
             </Text>
-            <Text color={colors.dim}>
-              detiene sus procesos y borra .workflow/launch/{mode.alias}.
-            </Text>
+            <Text color={colors.dim}>conserva los artefactos y procesos locales anteriores.</Text>
             <Text color={colors.faint}>El repo en disco NO se borra.</Text>
           </Box>
           <Box marginTop={1}>
@@ -943,41 +608,9 @@ function Initialized({
     );
   }
 
-  if (mode.kind === "log") {
-    return (
-      <Box flexDirection="column">
-        <SectionHead
-          label={`Log · ${mode.record.sourceAlias}${mode.record.profile ? ` · ${mode.record.profile}` : ""}`}
-          hint={mode.record.logPath}
-          marginTop={0}
-        />
-        <Box marginLeft={2} marginTop={1} flexDirection="column">
-          {mode.lines.map((l, i) => (
-            <Text key={`${i}-${l.slice(0, 8)}`} color={colors.dim}>
-              {l}
-            </Text>
-          ))}
-          <Box marginTop={1}>
-            <Text color={colors.faint}>⏎/esc volver</Text>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
-
   const detailActions: DetailAction[] = detailItems.map((it) => {
-    if (it.kind === "launch") {
-      return currentSource?.launchable
-        ? { name: LAUNCH_ACTION.name, description: "abre una terminal" }
-        : { name: LAUNCH_ACTION.name, description: "no lanzable — sin comando detectado" };
-    }
-    if (it.kind === "proc") {
-      return {
-        name: `${PROCESS_OPS[it.op]} · ${it.record.profile ?? "default"} (PID ${it.record.pid})`,
-      };
-    }
     if (it.kind === "remove") {
-      return { name: "Quitar del workspace", description: "detach + poda bloque + scripts" };
+      return { name: "Quitar del workspace", description: "detach + poda bloque" };
     }
     const fa = FLOW_ACTIONS.find((a) => a.id === it.action);
     return { name: fa?.name ?? it.action, description: fa?.description ?? "" };
@@ -1034,16 +667,6 @@ function Initialized({
           sub={workingEntries.length > 0 ? "declared" : "none"}
           tone={workingEntries.length > 0 ? "accent" : "dim"}
         />
-        <StatTile
-          label="procesos"
-          value={`${runningCount}`}
-          sub={
-            processes.length > runningCount
-              ? `${processes.length - runningCount} inactivos`
-              : "running"
-          }
-          tone={runningCount > 0 ? "accent" : "dim"}
-        />
       </Box>
 
       {/* Layout with detail panel: the sources list on the left, actions panel
@@ -1071,7 +694,6 @@ function Initialized({
                     <SourceRow
                       key={source.alias}
                       source={source}
-                      running={runningBySource.get(source.alias) ?? 0}
                       active={i === cursor}
                       widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
                     />
@@ -1120,13 +742,10 @@ function Initialized({
 
 function SourceRow({
   source,
-  running,
   active,
   widthHint,
 }: {
   source: ProjectSource;
-  /** Processes of this source currently `running`; 0 renders no chip. */
-  running: number;
   active: boolean;
   widthHint: number;
 }) {
@@ -1139,16 +758,13 @@ function SourceRow({
     source.commitCount === null
       ? { label: "—", tone: "dim" }
       : { label: `+${source.commitCount}`, tone: "accent" };
-  // Live activity, after the git chips: the dot is textual (never color alone)
-  // and the count is the source's own `running` total (SPEC 019).
-  const activity: MetaChip[] = running > 0 ? [{ label: `● ${running} running`, tone: "ok" }] : [];
   return (
     <ListRow
       icon={icons.diamond}
       iconActive={true}
       title={source.alias}
       subtitle={source.error ?? `main ${source.mainBranch}`}
-      meta={[commits, { label: status, tone: source.dirty ? "warn" : "ok" }, ...activity]}
+      meta={[commits, { label: status, tone: source.dirty ? "warn" : "ok" }]}
       state={{ label: `${icons.branch} ${branch}`, tone: "dim" }}
       chevron
       active={active}

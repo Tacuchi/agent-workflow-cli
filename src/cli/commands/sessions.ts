@@ -19,12 +19,7 @@ export const sessionsCommand: CliCommand<ListSessionsOutput | SessionSweepOutput
     ctx: CliContext,
   ): Promise<CommandResult<ListSessionsOutput | SessionSweepOutput>> {
     if (args.flags.has("--sweep")) {
-      const result = await runSessionsSweep(
-        ctx.fs,
-        ctx.paths,
-        args.flags.has("--apply"),
-        ctx.process,
-      );
+      const result = await runSessionsSweep(ctx.fs, ctx.paths, args.flags.has("--apply"));
       if ("error" in result)
         return { ok: false, error: { code: "SWEEP_BLOCKED", message: result.error }, exitCode: 1 };
       return { ok: true, data: result, exitCode: 0 };

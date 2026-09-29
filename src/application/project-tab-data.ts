@@ -16,9 +16,6 @@ import {
   requireSourcePath,
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
-import { type ProcessRecord, ProcessRegistryService } from "./process-registry-service.js";
-import { detectLaunchDescriptor } from "./source-launch-scripts-service.js";
-import { readDescriptor } from "./source-launch-service.js";
 
 export interface ProjectGitData {
   branch: string;
@@ -44,8 +41,6 @@ export interface ProjectSource {
   commitCount: number | null;
   dirty: boolean;
   changedFiles: number;
-  /** True when a launch descriptor (.workflow/launch/<alias>/launch.json) exists with a command. */
-  launchable: boolean;
 }
 
 export interface ProjectTabData {
@@ -66,8 +61,6 @@ export interface ProjectTabData {
   workingBranches: Record<string, string>;
   /** Current QA branches per source alias (WORKSPACE block > Status > Ramas QA) */
   qaBranches: Record<string, string>;
-  /** Procesos lanzados en segundo plano (registry reconciliado contra liveness). */
-  processes: ProcessRecord[];
   /** Partial fetch failures, if any */
   warnings: string[];
 }
@@ -141,7 +134,6 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
           commitCount: null,
           dirty: false,
           changedFiles: 0,
-          launchable: false,
         });
         continue;
       }
@@ -161,7 +153,6 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
           commitCount: null,
           dirty: false,
           changedFiles: 0,
-          launchable: false,
         });
         continue;
       }
@@ -176,12 +167,6 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
         () => git.changedFiles(repoPath),
         warnings,
         [] as string[],
-      );
-      const launchable = await safeRun(
-        `launchable:${f.alias}`,
-        () => readLaunchable(fs, paths.cwdLaunchDir(), f.alias, repoPath),
-        warnings,
-        false,
       );
       const roles = resolveSourceBranches(f, block);
       const commitCount = await safeRun(
@@ -198,24 +183,9 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
         commitCount,
         dirty: changed.length > 0,
         changedFiles: changed.length,
-        launchable,
       });
     }
   }
-
-  // Background processes — the registry reconciles liveness in list().
-  const registry = new ProcessRegistryService(
-    fs,
-    proc,
-    paths.cwdProcessesFile(),
-    paths.cwdLockFile(),
-  );
-  const processes = await safeRun(
-    "processes",
-    () => registry.list(),
-    warnings,
-    [] as ProcessRecord[],
-  );
 
   return {
     workspaceName,
@@ -225,39 +195,8 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
     sources,
     workingBranches: block?.working_branches ?? {},
     qaBranches: block?.qa_branches ?? {},
-    processes,
     warnings,
   };
-}
-
-/**
- * True when the source can be launched: its descriptor declares a command, or —
- * without one (minimal init defers generation to the first launch; legacy
- * pregenerated descriptors may carry command:null; corrupt files count as
- * missing) — the stack detected from the source path is launchable. Mirrors
- * ensureDescriptor: activating the action regenerates/diagnoses precisely.
- */
-async function readLaunchable(
-  fs: FileSystemPort,
-  launchDir: string,
-  alias: string,
-  sourcePath: string,
-): Promise<boolean> {
-  const read = await readDescriptor(fs, launchDir, alias);
-  // absent/corrupt → fall through to stack detection (beginLaunch will diagnose)
-  if (
-    read.status === "ok" &&
-    typeof read.descriptor.command === "string" &&
-    read.descriptor.command.length > 0
-  ) {
-    return true;
-  }
-  if (!(await fs.exists(sourcePath))) return false;
-  try {
-    return (await detectLaunchDescriptor(fs, sourcePath, alias)).command !== null;
-  } catch {
-    return false;
-  }
 }
 
 // ---------- subfetchers ----------

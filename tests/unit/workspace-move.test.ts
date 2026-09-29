@@ -61,6 +61,50 @@ it("mueve un hub y conserva una fuente relativa externa; dry-run no escribe", as
   });
 });
 
+it("mueve y repara sin interpretar ni reescribir lanzadores, registro y logs legacy", async () => {
+  temp = await mkdtemp(join(tmpdir(), "aw-move-legacy-"));
+  const home = join(temp, "home");
+  const old = join(temp, "anterior");
+  const next = join(temp, "nuevo");
+  await mkdir(home);
+  await mkdir(join(old, ".workflow", "sessions"), { recursive: true });
+  await writeFile(join(old, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
+  const launch = join(".workflow", "launch", "app", "run.sh");
+  const registry = join(".workflow", "processes.json");
+  const log = join("docs", "logs", "app.log");
+  await mkdir(join(old, ".workflow", "launch", "app"), { recursive: true });
+  await mkdir(join(old, "docs", "logs"), { recursive: true });
+  const bytes = new Uint8Array([0, 255, 10, 42]);
+  await writeFile(join(old, launch), bytes);
+  await writeFile(join(old, registry), `registro no JSON; pid vivo ${process.pid}\n`);
+  await writeFile(join(old, log), `log anterior: ${old}\n`);
+  const paths = new PathsService(normalizeNamespace("workflow"), home, old);
+  const preview = await moveWorkspace(fs, paths, {
+    destination: next,
+    repair: false,
+    dryRun: true,
+  });
+  expect(preview.changes.join(" ")).not.toMatch(/processes\.json|launch|docs\/logs/);
+  await moveWorkspace(fs, paths, { destination: next, repair: false, dryRun: false });
+  expect(await readFile(join(next, launch))).toEqual(Buffer.from(bytes));
+  expect(await readFile(join(next, registry), "utf8")).toBe(
+    `registro no JSON; pid vivo ${process.pid}\n`,
+  );
+  expect(await readFile(join(next, log), "utf8")).toBe(`log anterior: ${old}\n`);
+  expect(() => process.kill(process.pid, 0)).not.toThrow();
+  const repair = await moveWorkspace(fs, new PathsService(paths.namespace, home, next), {
+    repair: true,
+    from: old,
+    dryRun: false,
+  });
+  expect(repair.changes.join(" ")).not.toMatch(/processes\.json|launch|docs\/logs/);
+  expect(await readFile(join(next, launch))).toEqual(Buffer.from(bytes));
+  expect(await readFile(join(next, registry), "utf8")).toBe(
+    `registro no JSON; pid vivo ${process.pid}\n`,
+  );
+  expect(await readFile(join(next, log), "utf8")).toBe(`log anterior: ${old}\n`);
+});
+
 it("repara un hub movido a mano con commits retenidos en una unidad de su propia fuente", async () => {
   temp = await mkdtemp(join(tmpdir(), "aw-repair-"));
   const home = join(temp, "home");

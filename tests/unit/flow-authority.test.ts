@@ -347,7 +347,7 @@ describe("registro de autoridad — el universo es el command registry", () => {
     // `discard` and `reset` joined it as transversal retirement (plan 024),
     // `doctor` as the transversal diagnosis (plan 040), and `recall` as the
     // reading of the other hosts' memory (plan 062).
-    expect(slashCommands()).toHaveLength(19);
+    expect(slashCommands()).toHaveLength(18);
   });
 });
 

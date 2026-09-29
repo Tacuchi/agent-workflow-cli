@@ -1,15 +1,15 @@
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { writeRefugeCheckpoint } from "../../src/application/checkpoint-write-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionsSweep } from "../../src/application/sessions-sweep-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-import { FakeProcess } from "../helpers/fake-process.js";
 import { MemFs } from "../helpers/mem-fs.js";
 
 const paths = new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
 
 describe("aw sessions --sweep", () => {
-  it("lista cinco residuos, los barre con apply y respeta los de sesión activa o pausada", async () => {
+  it("barre residuos de sesiones y conserva el registro legacy sin leerlo", async () => {
     const fs = new MemFs({ lenient: true });
     const sessions = paths.cwdSessionsDir();
     fs.file(`${sessions}/001-activa-quick/SESSION.md`, "# SESSION\n");
@@ -30,13 +30,8 @@ describe("aw sessions --sweep", () => {
         bindings: { vigente: "001-activa-quick", colgante: "004-ausente-quick" },
       }),
     );
-    fs.file(
-      paths.cwdProcessesFile(),
-      JSON.stringify([
-        { id: "p-exited", state: "exited" },
-        { id: "p-running", state: "running" },
-      ]),
-    );
+    const legacyProcesses = join(paths.cwdRoot(), "processes.json");
+    fs.file(legacyProcesses, "registro ilegible que sigue inerte");
     await writeRefugeCheckpoint(fs, paths, {
       reason: "sin adoptar",
       action: "barre",
@@ -44,38 +39,25 @@ describe("aw sessions --sweep", () => {
       candidates: [{ folder: "002-cerrada-quick", code: "002", state: "closed" }],
     });
 
-    const process = new FakeProcess();
-    const preview = await runSessionsSweep(fs, paths, false, process);
+    const preview = await runSessionsSweep(fs, paths, false);
     if ("error" in preview) throw new Error(preview.error);
     expect(preview).toMatchObject({
       applied: false,
-      processes: ["p-exited"],
       bindings: ["004-ausente-quick"],
     });
     expect(preview.locks).toEqual([".workflow/sessions/002-cerrada-quick/.flow-run.json.lock"]);
     expect(preview.attempts).toHaveLength(2);
     expect(preview.refuges).toHaveLength(1);
     expect(await fs.exists(`${sessions}/002-cerrada-quick/.flow-run.json.lock`)).toBe(true);
-    expect(await runSessionsSweep(fs, paths, true)).toHaveProperty("error");
-    expect(await fs.exists(`${sessions}/002-cerrada-quick/.flow-run.json.lock`)).toBe(true);
-
-    const swept = await runSessionsSweep(fs, paths, true, process);
+    const swept = await runSessionsSweep(fs, paths, true);
     if ("error" in swept) throw new Error(swept.error);
     expect(swept.applied).toBe(true);
     expect(await fs.exists(`${sessions}/001-activa-quick/.flow-run.json.lock`)).toBe(true);
     expect(await fs.exists(paths.cwdFlowAttemptsFile("003-pausada-quick"))).toBe(true);
     expect(await fs.exists(`${sessions}/002-cerrada-quick/.flow-run.json.lock`)).toBe(false);
-    expect(
-      JSON.parse(await fs.readText(paths.cwdProcessesFile())).map((row: { id: string }) => row.id),
-    ).toEqual(["p-running"]);
-    const again = await runSessionsSweep(fs, paths, false, process);
+    expect(await fs.readText(legacyProcesses)).toBe("registro ilegible que sigue inerte");
+    const again = await runSessionsSweep(fs, paths, false);
     if ("error" in again) throw new Error(again.error);
-    expect([again.locks, again.attempts, again.processes, again.bindings, again.refuges]).toEqual([
-      [],
-      [],
-      [],
-      [],
-      [],
-    ]);
+    expect([again.locks, again.attempts, again.bindings, again.refuges]).toEqual([[], [], [], []]);
   });
 });

@@ -8,7 +8,6 @@ import {
   observeScopedFingerprints,
   resolveCheckoutCandidates,
 } from "../../src/application/flow/checkout-observation.js";
-import { runGenerateLaunch } from "../../src/application/generate-launch-service.js";
 import { runGitFlow } from "../../src/application/git-flow-service.js";
 import { runMergeState } from "../../src/application/merge-state-service.js";
 import { runMultiroot } from "../../src/application/multiroot-service.js";
@@ -168,12 +167,6 @@ it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin inv
 
   await expect(getDocsDir(fs, root, paths, "remoto")).rejects.toMatchObject({
     code: "SOURCE_PATH_MISSING",
-  });
-
-  const launch = await runGenerateLaunch(fs, env, paths, { aliases: ["remoto"], dryRun: true });
-  expect(launch).toMatchObject({
-    ok: false,
-    unreadable_sources: [{ alias: "remoto", code: "SOURCE_PATH_MISSING" }],
   });
 
   const multiroot = await runMultiroot(fs, env, paths, "attach", {

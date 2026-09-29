@@ -1,11 +1,8 @@
-import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import type { ProcessPort } from "../ports/process.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
-import { ProcessRegistryService } from "./process-registry-service.js";
 import { runProjectMdUpsertWrite } from "./project-md-upsert-service.js";
 import { writeWorkspaceLocalConfig } from "./workspace-local-config.js";
 import {
@@ -16,15 +13,12 @@ import {
 export interface RemoveSourceDeps {
   fs: FileSystemPort;
   env: EnvPort;
-  proc: ProcessPort;
   paths: PathsService;
 }
 
 export interface RemoveSourceResult {
   alias: string;
   path: string;
-  /** Processes (launched from this source) that were running and got stopped. */
-  processesStopped: number;
   /** Runtime receipt when this removal materialized an implicit Workline root. */
   materialization?: WorklineMaterialization;
 }
@@ -35,9 +29,9 @@ export interface RemoveSourceError {
 
 /**
  * Removes a source from the workspace entirely, composing existing services in
- * idempotent order: (1) detach multi-root visibility (4 hosts), (2) prune the
- * WORKSPACE block (Fuentes + working/qa branches), (3) stop running processes
- * launched from the source, (4) delete `.workflow/launch/<alias>`.
+ * idempotent order: detach multi-root visibility, then prune the WORKSPACE
+ * block (Fuentes + working/qa branches). Legacy launch files and processes
+ * belong to the operator and remain untouched.
  *
  * Does NOT delete the repo from the filesystem: it only removes it from the
  * workspace. Every step tolerates "already gone", so re-running never fails.
@@ -47,7 +41,7 @@ export async function removeSource(
   deps: RemoveSourceDeps,
   alias: string,
 ): Promise<RemoveSourceResult | RemoveSourceError> {
-  const { fs, env, proc, paths } = deps;
+  const { fs, env, paths } = deps;
 
   if (!alias || alias.trim().length === 0) {
     return { error: "alias_required" };
@@ -82,28 +76,9 @@ export async function removeSource(
     };
   await writeWorkspaceLocalConfig(fs, paths, { [alias]: null });
 
-  // 4. Stop running processes launched from this source.
-  const registry = new ProcessRegistryService(
-    fs,
-    proc,
-    paths.cwdProcessesFile(),
-    paths.cwdLockFile(),
-  );
-  const running = (await registry.list()).filter(
-    (r) => r.sourceAlias === alias && r.state === "running",
-  );
-  for (const record of running) {
-    await proc.killTree(record.pid);
-    await registry.markStopped(record.id);
-  }
-
-  // 5. Delete the generated launch scripts (.workflow/launch/<alias>).
-  await fs.remove(join(paths.cwdLaunchDir(), alias));
-
   return {
     alias,
     path: fuente.path ?? "(local)",
-    processesStopped: running.length,
     ...(materialization.materialized ? { materialization } : {}),
   };
 }

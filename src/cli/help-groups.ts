@@ -40,7 +40,6 @@ const GROUPS: readonly CommandGroup[] = [
       "workspace-move",
       "sources",
       "doc-branch",
-      "generate-launch",
       "set-working-branch",
       "set-qa-branch",
       "set-exception-branch",

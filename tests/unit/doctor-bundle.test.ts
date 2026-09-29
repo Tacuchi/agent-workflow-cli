@@ -177,9 +177,9 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
     const median = result.budget.find((line) => line.metric === "activation.median");
 
     const entries = new Map(result.activation.entries.map((e) => [e.command, e.bytes]));
-    expect(entries.size).toBe(19);
+    expect(entries.size).toBe(18);
     const sorted = [...entries.values()].sort((a, b) => a - b);
-    expect(median?.actual).toBe(sorted[9]);
+    expect(median?.actual).toBe(Math.floor(((sorted[8] ?? 0) + (sorted[9] ?? 0)) / 2));
     expect(median?.actual ?? 0).toBeLessThanOrEqual(DOC_CEILING);
     expect(entries.has("fix-git")).toBe(false);
     expect(entries.get("doctor")).toBe(bytes);

@@ -9,7 +9,7 @@ The first mutation (or `workspace-init` without sources) writes only the runtime
 workspace lock. The sessions marker is created last.
 
 - **Ignored** — `.<namespace>/sessions/` (machine-local live log), `.<namespace>/.lock`,
-  `.<namespace>/processes.json`, `.<namespace>/launch/` and `docs/logs/`. The runtime block is
+  `.<namespace>/processes.json`, `.<namespace>/launch/` and `docs/logs/` (legacy inert artifacts). The runtime block is
   added only when the root belongs to Git.
 - **Not created by materialization** — `docs/**`, `skills.toml`, a WORKSPACE block, launch
   files, HISTORY and Git metadata. Those belong to their owning command.

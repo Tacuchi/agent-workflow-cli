@@ -9,17 +9,14 @@ export const removeSourceCommand: CliCommand = {
   name: "remove-source",
   flags: { known: [] },
   describe:
-    "Remove a source from the workspace: detach multi-root visibility, prune the WORKSPACE block (Fuentes + working/qa branches), stop its processes, and delete .workflow/launch/<alias>. Does NOT delete the repo. Usage: aw remove-source <alias>.",
+    "Remove a source from the workspace: detach multi-root visibility and prune the WORKSPACE block (Fuentes + working/qa branches). Does NOT delete the repo or alter legacy local artifacts. Usage: aw remove-source <alias>.",
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const alias = args.rest[0];
     if (!alias) {
       return fail("INVALID_INPUT", "Usage: aw remove-source <alias>");
     }
 
-    const data = await removeSource(
-      { fs: ctx.fs, env: ctx.env, proc: ctx.process, paths: ctx.paths },
-      alias,
-    );
+    const data = await removeSource({ fs: ctx.fs, env: ctx.env, paths: ctx.paths }, alias);
     if ("error" in data) {
       return fail("INVALID_INPUT", data.error, data);
     }

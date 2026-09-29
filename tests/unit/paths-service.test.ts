@@ -32,7 +32,6 @@ describe("PathsService", () => {
     expect(wfPaths.cwdRoot()).toBe("/cwd/.workflow");
     expect(wfPaths.cwdSessionsDir()).toBe("/cwd/.workflow/sessions");
     expect(wfPaths.cwdHistoryFile()).toBe("/cwd/.workflow/HISTORY.md");
-    expect(wfPaths.cwdDocsLogsDir()).toBe("/cwd/docs/logs");
   });
 
   it("uses different namespace correctly", () => {
