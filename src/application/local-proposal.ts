@@ -244,7 +244,7 @@ async function consumeFolderReservation(
       at: new Date().toISOString(),
       event: "published",
       claim,
-      cause: "aw capability design apply: carpeta reservada publicada",
+      cause: "carpeta reservada publicada",
     });
   }
   await fs.remove(markerPath);

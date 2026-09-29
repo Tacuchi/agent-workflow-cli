@@ -73,12 +73,6 @@ const GROUPS: readonly CommandGroup[] = [
       "persist",
       "stack",
       "skills",
-      // The durable design taxonomy: which UI Design Packages exist and where
-      // they live right now (identity resolves, the path is only a hint).
-      "designs",
-      // The shared entry into a conformant capability: both routes — the direct
-      // wrapper and a composing flow — reach the handlers through here.
-      "capability",
       // The deterministic direction engine: advances a journey to its first
       // non-deterministic boundary and hands back that boundary's directive.
       "flow",

@@ -1,6 +1,5 @@
 import {
   BUILTIN_DEFAULT_SKILLS,
-  RETIRED_SKILL_IDENTITIES,
   type ResolvedSkills,
   SKILL_ROLES,
   isSkillRole,
@@ -88,12 +87,10 @@ function applyLevel(
 ): void {
   for (const [key, value] of Object.entries(table)) {
     if (!isSkillRole(key)) {
-      const retired = RETIRED_SKILL_IDENTITIES.get(key);
-      warnings.push(
-        retired === undefined
-          ? `${path}: role '${key}' no aplicable a Workline; el archivo se conserva sin cambios`
-          : `${path}: role '${key}' está retirado y se ignora — ${retired}`,
-      );
+      if (key !== "design")
+        warnings.push(
+          `${path}: role '${key}' no aplicable a Workline; el archivo se conserva sin cambios`,
+        );
       continue;
     }
     const val = String(value).trim();
@@ -102,19 +99,6 @@ function applyLevel(
       continue;
     }
     if (val.length === 0) continue;
-    // Un nombre retirado se RECHAZA, no se resuelve: honrarlo lo convertiría en
-    // un nombre aceptado. Se compara en minúsculas igual que `off`, tres líneas
-    // arriba: dos reglas distintas en la misma función es una costura.
-    const retired = RETIRED_SKILL_IDENTITIES.get(val.toLowerCase());
-    if (retired !== undefined) {
-      // La línea se IGNORA. No se nombra un destino: si otro nivel de la
-      // cascada ya bindeó el role, el role NO queda en su built-in default y
-      // decirlo sería mentir. Lo que resolvió de verdad va al lado, en `skills`.
-      warnings.push(
-        `${path}: role '${key}' apunta a '${val}', que está retirado y no se acepta — ${retired}. Se ignora la línea`,
-      );
-      continue;
-    }
     if (val !== BUILTIN_DEFAULT_SKILLS[key]) {
       warnings.push(
         `${path}: role '${key}' apunta a '${val}'; binding externo no aplicable a Workline. Gestioná esa skill desde el host o marketplace elegido; el archivo se conserva sin cambios`,

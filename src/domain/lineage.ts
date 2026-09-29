@@ -1,5 +1,5 @@
+import { CRITERION_GLOBAL, isDigest } from "./contract-identity.js";
 import { CORRELATIVE_SOURCE } from "./correlative.js";
-import { CRITERION_GLOBAL, isDigest } from "./design/identity.js";
 import { baseDigest, legacyBaseDigest } from "./proposal.js";
 
 /**
@@ -12,10 +12,8 @@ import { baseDigest, legacyBaseDigest } from "./proposal.js";
  * the plan pointing at a document that no longer says what the plan was built
  * from, and nothing anywhere notices. "Same number" is not "same contract".
  *
- * The seal closes that. It is deliberately the same shape the design subsystem
- * already uses for a baseline — an identity, a path HINT and a digest
- * (`SpecDesignReference`) — because a second convention for "the exact bytes I
- * closed on" is a comparison that fails for a reason nobody can see.
+ * The seal closes that: an identity, a path hint and a digest. A second
+ * convention for "the contract I closed on" would be hard to compare reliably.
  *
  * It is ADDITIVE on purpose. A parser that demanded the line would make every
  * plan written before it unexecutable, so its absence is a diagnostic
@@ -85,8 +83,7 @@ const BASELINE_VALUE = /^(\S+?)@(sha256:[0-9a-fA-F]+)$/;
  * carries this one, and {@link alignSpecBaseline} accepts either, so those plans
  * stay aligned instead of being invalidated by a migration they never chose.
  *
- * `sha256:`-prefixed because that is what `isDigest` accepts and what every
- * design baseline already publishes. A bare-hex second spelling would be a
+ * `sha256:`-prefixed because that is what `isDigest` accepts. A bare-hex second spelling would be a
  * comparison that fails for a reason nobody can see — the exact failure
  * `baseDigest` exists to prevent, one level up.
  */

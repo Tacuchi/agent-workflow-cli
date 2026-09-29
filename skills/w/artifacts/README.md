@@ -29,13 +29,13 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 
 | Session type | Created by | Artifacts | Notes |
 |---|---|---|---|
-| **refine** | `spec-refine-loop` · `plan-new-loop` · `plan-refine-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close, if any) · `NNN-SPEC-<SLUG>.md` (PLAN sessions with UI) | Owns the loop run (spec-refine, plan-new, plan-refine). |
+| **refine** | `spec-refine-loop` · `plan-new-loop` · `plan-refine-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close, if any) | Owns the loop run (spec-refine, plan-new, plan-refine). |
 | **exec** | `plan-exec-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close, if any) · `DECISION` · `SCRIPTS.sql` | A single per-run exec session (**not** one per phase). No `TECHNICAL-NOTE` or own `TASKS` — detail lives in the plan-doc (living). `TASKS` is optional for internal breakdown. |
 | **quick** | `quick-loop` | `SESSION` · `CHECKPOINT` · `BACKLOG` (on close, if any) · `DECISION` · `SCRIPTS.sql` | Single session, single commit. |
 
 > **Inline research (any session):** research is **not** a session type. When any session (`refine`/`exec`/`quick`) needs to investigate, it produces research artifacts **inline**: `ANALYSIS-FILE` (optional scratchpad), `CONCLUSIONS`, and read-only `SCRIPTS.sql` (if DB). These are written into the active session — there is no separate research session.
 
-> **Design is NOT a session artifact.** When a spec or a plan involves UI, the composed [`design`](../roles/design/ROLE.md) capability publishes a **UI Design Package** under `docs/designs/NNN-design-<slug>/` — a durable dossier the spec references by baseline and digest and the plan pins by exact root. Nothing about it lives in a session. The per-screen design SPEC (`NNN-SPEC-<SLUG>.md`) that PLAN sessions used to carry is **retired and unsupported**: no loop produces or reads one, there is no importer or conversion, and presenting one as input or as a gate's evidence is rejected — the result has to be recreated from current sources. Documents already written stay exactly where they are, byte for byte.
+> **UI decisions are functional.** A spec records the choice and reason in `## Decisions`, with observable effects in criteria and scenarios as needed. Previous UI artifacts and references are historical; new flows do not inspect or migrate them.
 
 > **PLAN note (rich plan):** the plan-doc (`docs/plans/PPP-plan.md`) absorbs inline the `TECHNICAL-NOTE` level (`Solution` — summary + AS-IS → TO-BE delta + Final behavior block —, `Impacted`, `Validations`…) **and** the phased `Tasks` (`### Fn` blocks). Therefore exec sessions do **not** carry a `TECHNICAL-NOTE` or own `TASKS` artifact: the technical detail and progress live in the plan-doc (living). `TASKS` remains as an optional artifact for sessions that need their own internal breakdown.
 
@@ -60,6 +60,6 @@ Sessions are created by the loops as needed — **one session per run**. The ses
 ## Invariants (hard rules — canonical list: [`../SKILL.md`](../SKILL.md) § *The 6 hard invariants*)
 
 1. **No auto-export**: only `export-*` promotes to `docs/`, explicitly.
-2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans` · QUICK→none — plus `docs/designs` for whichever loop composes `design`.
-3. **Spec and plan are documents**, never session artifacts. *(Neither is the **UI Design Package** under `docs/designs/`: a durable dossier the spec references, not the requirement-spec.)*
+2. **Each flow touches only its `docs/` folders**: SPEC→`specs` · PLAN→`plans` · QUICK→none.
+3. **Spec and plan are documents**, never session artifacts.
 4. **DB scripts-only**: never execute DML/DDL; migrations (type B) stay in `SCRIPTS.sql` and ship via `export-scripts`; only read-only queries (type A) run via MCP.

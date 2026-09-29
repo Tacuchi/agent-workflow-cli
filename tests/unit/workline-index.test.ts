@@ -577,9 +577,9 @@ async function planItem(fs: MemFs) {
 }
 
 describe("derivePipeline — cada eslabón de la precedencia, en su orden", () => {
-  it("1 · un diseño irresoluble gana a todo lo demás, y es obligación", async () => {
+  it("1 · una referencia histórica design no desplaza el bloqueo funcional", async () => {
     const item = await planItem(detailWorkspace(detailPlan({ design: true, f1: "bloqueada" })));
-    expect(item.detail.next).toContain("DISEÑO IRRESOLUBLE DES-001@r2");
+    expect(item.detail.next).toBe("BLOQUEADA F1 — falta aplicar la migración 014");
     expect(item.detail.obligation).toBe(true);
   });
 

@@ -4,11 +4,8 @@ import { canonicalJson } from "../application/semantic-operation/protocol.js";
 /**
  * A sealed record's own digest, over its canonical JSON WITHOUT `digest`.
  *
- * Extracted so the two kinds of record that need it — a design governance
- * record and a decision note — seal by the SAME code and not merely by the same
- * described rule. Two implementations of "hash this record" drift the day one of
- * them changes, and the failure is silent: both sides keep producing a digest
- * and only their comparison stops matching.
+ * Decision notes use the same canonical JSON as other sealed records. Two
+ * implementations of "hash this record" could drift without an obvious error.
  *
  * Dropping `digest` is not a detail: a value cannot contain its own hash, so a
  * record that included it would be unverifiable by construction.

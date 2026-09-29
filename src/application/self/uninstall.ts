@@ -3,9 +3,7 @@ import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
-import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
 import type { CommandResult } from "../../domain/types.js";
-import { uninstallCapabilitySkill } from "../capability/wrapper.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { parseToml } from "../parsers/toml.js";
 import { CODEX_PLUGIN_DIR, isOurCodexPlugin } from "./codex-plugin.js";
@@ -33,7 +31,6 @@ import {
   INSTALL_TARGETS,
   LEGACY_SKILL_ROOTS_BY_TARGET,
   SHARED_INSTALL_TARGETS,
-  capabilityPlacement,
 } from "./install-targets.js";
 import {
   OPENCODE_PLUGIN_FILE,
@@ -165,33 +162,7 @@ export async function selfUninstall(
     targetArg === "all" ? [...ALL_TARGETS] : [targetArg as InstallTarget];
   const home = ctx.env.homeDir();
 
-  const installed: InstallTarget[] = [];
-  for (const target of INSTALL_TARGETS) {
-    if (await isOwnedBundleDir(join(home, ...TARGET_ROOTS[target], SKILL_DIR_NAME), ctx)) {
-      installed.push(target);
-    }
-  }
-  const placement = await capabilityPlacement(
-    ctx.fs,
-    home,
-    DESIGN_DESCRIPTOR.name,
-    targets,
-    "uninstall",
-    installed,
-  );
   const steps: UninstallStep[] = [];
-  for (const location of placement.remove) {
-    steps.push(...(await removeCapabilitySkill(ctx, location.root, location.target, flags.dryRun)));
-  }
-  for (const location of placement.keep.filter((item) => item.selected)) {
-    steps.push({
-      target: location.target,
-      kind: "skill",
-      path: join(location.root, DESIGN_DESCRIPTOR.name),
-      status: "skipped",
-      reason: "shared wrapper retained for another installed target",
-    });
-  }
   for (const target of targets) {
     steps.push(...(await uninstallOneTarget(ctx, home, target, flags)));
   }
@@ -275,25 +246,6 @@ async function uninstallOneTarget(
     if (hookStep !== null) steps.push(hookStep);
   }
   return steps;
-}
-
-async function removeCapabilitySkill(
-  ctx: CliContext,
-  targetRoot: string,
-  target: InstallTarget,
-  dryRun: boolean,
-): Promise<UninstallStep[]> {
-  const path = join(targetRoot, DESIGN_DESCRIPTOR.name);
-  if (!(await ctx.fs.exists(path))) return [];
-  if (dryRun) return [{ target, kind: "skill", path, status: "dry-run" }];
-
-  const outcome = await uninstallCapabilitySkill(targetRoot, DESIGN_DESCRIPTOR.name);
-  if (!outcome.ok) {
-    // Someone else's skill wearing the name. Preserved, and said out loud: a
-    // silent skip would read as "there was nothing there".
-    return [{ target, kind: "skill", path, status: "skipped", reason: outcome.failure.message }];
-  }
-  return outcome.removed ? [{ target, kind: "skill", path, status: "removed" }] : [];
 }
 
 async function removeSynthesizedCommandSkills(

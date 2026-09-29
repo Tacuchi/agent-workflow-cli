@@ -1,9 +1,3 @@
-import "../../application/capability/design-handler.js";
-import {
-  type CapabilityReadinessReport,
-  capabilityReadiness,
-} from "../../application/capability/readiness.js";
-import { isHarnessId, runHarness } from "../../application/dev-only-services.js";
 import { resolveSkills } from "../../application/skills-resolver-service.js";
 import type { ResolvedSkills } from "../../domain/skills.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -15,49 +9,20 @@ interface SkillsData {
   skills: ResolvedSkills;
   sources: { global: boolean; workspace: boolean };
   warnings: string[];
-  /**
-   * Readiness per capability.
-   *
-   * Always present in the structured form: `--detail` widens the HUMAN
-   * projection and never changes the model, which is this repo's rule and the
-   * reason `--detail --format json` is refused outright. What `AC-DSC-02` asks
-   * for is satisfied by WHERE this lives: `aw skills` is the diagnostic surface,
-   * and `aw status` keeps carrying only the documentary pipeline.
-   */
-  capabilities: CapabilityReadinessReport[];
 }
 
 export const skillsCommand: CliCommand<SkillsData> = {
   name: "skills",
-  flags: { known: ["host"] },
+  flags: { known: [] },
   describe:
-    "Diagnóstico de capacidades y bundle propios (skills.toml). Usage: aw skills [--detail] — " +
-    "con --detail agrega readiness por capacidad, exposición y operación, la instancia exacta o el " +
-    "floor, y la forma de invocación que el host soporta de verdad.",
+    "Diagnóstico de bindings propios del bundle (skills.toml). Usage: aw skills [--detail].",
 
-  async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<SkillsData>> {
-    const requested = args.values.get("host");
-    if (requested !== undefined && !isHarnessId(requested)) {
-      return {
-        ok: false,
-        error: {
-          code: "INVALID_INPUT",
-          message: `--host inválido: '${requested}'. Usá un host del catálogo.`,
-        },
-        exitCode: 1,
-      };
-    }
+  async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult<SkillsData>> {
     const resolution = await resolveSkills(ctx.fs, ctx.paths);
     const data: SkillsData = {
       skills: resolution.skills,
       sources: resolution.sources,
       warnings: resolution.warnings,
-      capabilities: await capabilityReadiness({
-        fs: ctx.fs,
-        env: ctx.env,
-        paths: ctx.paths,
-        host: runHarness((k) => ctx.env.get(k), requested).agent_host,
-      }),
     };
     return { ok: true, data, exitCode: 0 };
   },
@@ -66,7 +31,7 @@ export const skillsCommand: CliCommand<SkillsData> = {
    * The human projection of the SAME data. Nothing is re-derived: every line
    * reads a field the structured form also carries, so the two cannot disagree.
    */
-  renderHuman(result: CommandResult<SkillsData>, context: HumanRenderContext): string {
+  renderHuman(result: CommandResult<SkillsData>, _context: HumanRenderContext): string {
     const data = result.data;
     if (data === undefined) return "";
     const lines: string[] = [];
@@ -74,33 +39,7 @@ export const skillsCommand: CliCommand<SkillsData> = {
       const bound = resolved.enabled ? resolved.skill : "off";
       lines.push(`${role.padEnd(10)} ${String(bound).padEnd(14)} (${resolved.source})`);
     }
-    for (const report of context.detail ? data.capabilities : []) {
-      lines.push("", ...renderReport(report));
-    }
     for (const warning of data.warnings) lines.push(`aviso: ${warning}`);
     return `${lines.join("\n")}\n`;
   },
 };
-
-function renderReport(report: CapabilityReadinessReport): string[] {
-  const lines = [`${report.capability} v${report.contract_version} — ${report.state}`];
-  if (report.reason !== null) lines.push(`  motivo: ${report.reason}`);
-  if (report.action !== null) lines.push(`  siguiente: ${report.action}`);
-  lines.push(
-    `  invocación (${report.invocation.host}): ${report.invocation.form ?? "no disponible"} — ${report.invocation.note}`,
-  );
-  lines.push(
-    `  floor propio (${report.floor.kind}): ${report.floor.running ? "disponible" : "desactivado"}`,
-  );
-  for (const [route, verdict] of Object.entries(report.exposures)) {
-    lines.push(
-      `  ${route}: ${verdict.state}${verdict.reason === null ? "" : ` — ${verdict.reason}`}`,
-    );
-  }
-  for (const op of report.operations) {
-    lines.push(
-      `  · ${op.operation.padEnd(9)} ${op.state.padEnd(13)} ${op.workspace} · efectos: ${op.effects.join(", ")}`,
-    );
-  }
-  return lines;
-}

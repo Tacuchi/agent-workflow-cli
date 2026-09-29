@@ -6,9 +6,6 @@
  * follows `999` and must never be read as `100` just because older readers
  * sliced three characters from a name.
  *
- * Design-package identifiers deliberately do not use this module. They have
- * their own grammar (`DES-…`, revisions, criteria) and are not document or
- * session correlatives.
  */
 export const CORRELATIVE_RE = /^\d{3,}$/;
 

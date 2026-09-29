@@ -35,10 +35,6 @@ export const statusCommand: CliCommand<StatusOutput> = {
     const lines = [header, ""];
     if (data.last_activity !== null) lines.push(`Última actividad: ${data.last_activity}`, "");
     lines.push(...renderPipeline(data.pipeline, context.detail));
-    // A broken design reference is PENDING work, not history: it stays in the
-    // default view for the same reason an open plan does. Valid references and
-    // orphaned packages are inventory and wait for `--detail`.
-    lines.push(...renderDesignAlerts(data, lines.at(-1)));
     lines.push(...renderLooseSessions(data, lines.at(-1)));
     if (data.counts.sessions_paused || data.counts.sessions_abandoned) {
       lines.push(
@@ -231,46 +227,6 @@ function renderAssuranceAlerts(data: StatusOutput, before: string | undefined): 
   return lines;
 }
 
-/**
- * Only what needs a hand: a reference that moved, and one that no longer
- * resolves. `before` keeps the block one blank line away from whatever came
- * before it, without stacking a second one when the pipeline already ended blank.
- */
-function renderDesignAlerts(data: StatusOutput, before: string | undefined): string[] {
-  const broken = data.designs.references.filter((r) => r.state !== "valid");
-  if (broken.length === 0) return [];
-  const lines = before === "" ? [] : [""];
-  lines.push(`Diseño con referencias a reparar (${broken.length})`);
-  for (const reference of broken) {
-    lines.push(`  [${reference.state}] ${reference.from} → ${reference.baseline}`);
-    if (reference.detail !== null) lines.push(`    ${reference.detail}`);
-  }
-  return lines;
-}
-
-function renderDesignGraph(data: StatusOutput): string[] {
-  const graph = data.designs;
-  if (graph.packages.length === 0 && graph.references.length === 0) return [];
-  const { valid, stale, missing, orphaned } = graph.counts;
-  const lines = [
-    `Diseño: ${graph.packages.length} package(s) — ${valid} válida(s), ${stale} stale, ${missing} missing, ${orphaned} huérfano(s)`,
-  ];
-  for (const pkg of graph.packages) {
-    const revision = pkg.current_revision === null ? "sin baseline" : `@r${pkg.current_revision}`;
-    const broken = pkg.ok ? "" : " · manifest inválido";
-    lines.push(
-      `  · ${pkg.id ?? "(sin identidad)"} ${revision} ${pkg.path} [${pkg.state}]${broken}`,
-    );
-  }
-  for (const reference of graph.references) {
-    lines.push(`  · ${reference.from} → ${reference.baseline} [${reference.state}]`);
-    // The roots ARE the graph's last hop: without them the chain stops at the
-    // package and nobody can see which screens a plan actually pinned.
-    for (const root of reference.roots) lines.push(`      ${root}`);
-  }
-  return lines;
-}
-
 function renderDetail(data: StatusOutput): string[] {
   const done = data.plans.filter((p) => p.plan_state === "done");
   const lines = [
@@ -308,6 +264,5 @@ function renderDetail(data: StatusOutput): string[] {
   if (unproven.length > 0) {
     lines.push(`Planes sin spec demostrada: ${unproven.map((p) => p.number).join(", ")}`);
   }
-  lines.push(...renderDesignGraph(data));
   return lines;
 }

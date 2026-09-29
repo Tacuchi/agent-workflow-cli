@@ -3,7 +3,6 @@ import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import type { DesignGraph } from "./design/design-graph-service.js";
 import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
 import { readHistoryRows } from "./history-table.js";
 import type { PathsService } from "./paths-service.js";
@@ -110,8 +109,6 @@ export interface StatusOutput {
    * open plan asked them to do the runtime's bookkeeping.
    */
   loose_sessions: string[];
-  /** the design traceability graph, so a broken reference is visible without opening files */
-  designs: DesignGraph;
   /** Units that outlived their session: pending cleanup, never cleaned on their own. */
   orphan_units: OrphanUnit[];
   unreadable_sources?: WorktreeListOutput["unreadable"];
@@ -229,7 +226,6 @@ export async function runStatusCommand(
       : {}),
     pipeline: index.pipeline,
     loose_sessions: index.loose_sessions,
-    designs: index.designs,
     orphan_units: index.orphan_units,
     ...(index.unreadable_sources !== undefined
       ? { unreadable_sources: index.unreadable_sources }

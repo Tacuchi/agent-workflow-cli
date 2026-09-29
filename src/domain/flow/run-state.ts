@@ -65,7 +65,9 @@ import {
  * turning the cap off in silence while somebody alternates CLI versions over one
  * run. Failing with a cause is the requirement; failing silently is the defect.
  */
-export const FLOW_RUN_STATE_VERSION = 15;
+// v16 retires the UI-specific journey rows. An older reader must not align a
+// v16 run by treating those rows as newly added gates and asking them again.
+export const FLOW_RUN_STATE_VERSION = 16;
 
 /**
  * The versions this CLI CONTINUES without adoption, newest first.
@@ -88,6 +90,7 @@ export const FLOW_RUN_STATE_VERSION = 15;
 // Older observations and events remain unchanged.
 export const FLOW_RUN_STATE_CONTINUABLE: readonly number[] = [
   FLOW_RUN_STATE_VERSION,
+  15,
   14,
   13,
   12,
@@ -126,6 +129,8 @@ const CONTINUABLE_UPGRADES: Readonly<Record<number, (state: FlowRunState) => Flo
     version: 15,
     ...(state.scope ? { scope: { isolation: "unit", ...state.scope } } : {}),
   }),
+  // The shape stays the same; alignment removes only the retired design rows.
+  15: (state) => ({ ...state, version: 16 }),
 };
 
 /** The CLI-owned run state inside the session folder. Machine-local, dotted. */
@@ -1987,7 +1992,6 @@ export const PLAN_EXEC_BATCH_LOOP_TRANSITIONS = new Set<string>([
   "plan-exec.batch-eligibility-signal",
   "plan-exec.batch-inference",
   "plan-exec.batch-isolation",
-  "plan-exec.design-precondition",
   "plan-exec.unit-acquisition",
   "plan-exec.branch-precondition",
   "plan-exec.implementation",
@@ -2582,6 +2586,15 @@ export const JOURNEY_ALIGNMENT_OPERATION = "flow.journey-alignment";
 const ALIGNMENT_REASON =
   "la versión instalada agregó esta frontera en un tramo que la corrida ya había recorrido: entra omitida, sin pedirse";
 
+// The historical v11 base and sealed runs retain these ids as evidence. They
+// are never gates in a new journey; alignment only drops these exact retired
+// transitions, leaving attempts/events as an audit of what already happened.
+const RETIRED_DESIGN_STEPS = new Set([
+  "spec-refine.design-reuse",
+  "spec-refine.design-publication",
+  "plan-exec.design-precondition",
+]);
+
 /**
  * Align a continuable run's cursor with the journey the installed build walks.
  *
@@ -2609,6 +2622,9 @@ export function alignToJourney(
 ): FlowRunState {
   const recorded = state.journey_base;
   if (recorded === undefined || sameIds(recorded, base)) return state;
+  const retired = new Set(
+    recorded.filter((id) => RETIRED_DESIGN_STEPS.has(id) && !base.includes(id)),
+  );
   const addedIds = new Set(base.filter((id) => !recorded.includes(id)));
   const ids = journey.map((decision) => decision.id);
   const applied: string[] = [];
@@ -2630,11 +2646,17 @@ export function alignToJourney(
     return true;
   };
   for (const id of state.applied) {
+    if (retired.has(id)) continue;
     if (ids[cursor] !== id && !insertUntil(id)) return state;
     applied.push(id);
     cursor += 1;
   }
-  if (state.boundary !== null && ids[cursor] !== state.boundary && !insertUntil(state.boundary)) {
+  if (
+    state.boundary !== null &&
+    !retired.has(state.boundary) &&
+    ids[cursor] !== state.boundary &&
+    !insertUntil(state.boundary)
+  ) {
     return state;
   }
   const events: FlowRunEvent[] = added.map((row) => {
@@ -2652,7 +2674,14 @@ export function alignToJourney(
     ...withoutSeal(state),
     journey_base: [...base],
     applied,
-    skipped: [...state.skipped, ...added.map((row) => row.transition)],
+    boundary:
+      state.boundary !== null && retired.has(state.boundary)
+        ? (ids[cursor] ?? null)
+        : state.boundary,
+    skipped: [
+      ...state.skipped.filter((id) => !retired.has(id)),
+      ...added.map((row) => row.transition),
+    ],
     events: [...state.events, ...events],
   });
 }

@@ -3,7 +3,6 @@ import type { FlowRunScope } from "../domain/flow/run-state.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import type { DesignRefState } from "./design/design-graph-service.js";
 import { projectRun } from "./flow/run-projection.js";
 import { parseMdSectionBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
@@ -23,7 +22,6 @@ import {
   planIsPending,
   planPresentation,
   specDetail,
-  unresolvedDesignRefs,
 } from "./workline-index-service.js";
 import type { WorktreeListOutput } from "./worktree-service.js";
 
@@ -75,12 +73,6 @@ export interface ResumeProposal {
    * plan would be explained on one surface and silently demoted on the other.
    */
   postponed?: { reason: string; waiting_on: string[] };
-  /**
-   * Design references of this document that are NOT valid. Absent when the
-   * document pins none or every one resolves — a resume that always carried the
-   * key would say "design: []" about work that has no design at all.
-   */
-  design?: Array<{ state: DesignRefState; baseline: string; detail: string | null }>;
   /**
    * Isolation units this flow edits in. Present only when it took some — which
    * is what tells two concurrent flows apart: without it `resume` proposes the
@@ -204,7 +196,7 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
 
   const matches: ResumeProposal[] = [
     ...specs.map((s) => specProposal(s, index)),
-    ...plans.map((plan) => planProposal(plan, index)),
+    ...plans.map((plan) => planProposal(plan)),
   ];
 
   const [first] = matches;
@@ -284,7 +276,7 @@ function resumePipeline(index: WorklineIndex): ResumeOutcome {
   if (head === undefined) {
     return { status: "idle", action: "no hay trabajo pendiente: el pipeline está vacío" };
   }
-  const candidates = index.pipeline.map((item) => pipelineProposal(index, item));
+  const candidates = index.pipeline.map((item) => pipelineProposal(item));
 
   // A tie is the CLI's rule, read and not re-derived. Two items that reach here
   // are equally next, and picking one for the user is what this replaces — but
@@ -302,7 +294,7 @@ function resumePipeline(index: WorklineIndex): ResumeOutcome {
   return {
     status: "proposal",
     via: "pipeline",
-    proposal: pipelineProposal(index, head),
+    proposal: pipelineProposal(head),
     candidates,
   };
 }
@@ -315,7 +307,7 @@ function resumePipeline(index: WorklineIndex): ResumeOutcome {
  * lists it. It used to re-find the spec or plan behind the row and run the
  * derivation again, which is exactly the seam the two surfaces drifted through.
  */
-function pipelineProposal(index: WorklineIndex, item: PipelineItem): ResumeProposal {
+function pipelineProposal(item: PipelineItem): ResumeProposal {
   return {
     kind: item.kind,
     file: item.file,
@@ -323,7 +315,6 @@ function pipelineProposal(index: WorklineIndex, item: PipelineItem): ResumePropo
     ...told(item.detail),
     action: item.action,
     command: item.command,
-    ...designOf(index, item.file),
   };
 }
 
@@ -342,12 +333,11 @@ function specProposal(spec: IndexedSpec, index: WorklineIndex): ResumeProposal {
       mode: "normal",
     },
     command: refine ? `/w:spec-refine ${spec.file}` : `/w:plan-new ${spec.file}`,
-    ...designOf(index, spec.file),
   };
 }
 
-function planProposal(plan: IndexedPlan, index: WorklineIndex): ResumeProposal {
-  const presentation = planPresentation(plan, index.designs);
+function planProposal(plan: IndexedPlan): ResumeProposal {
+  const presentation = planPresentation(plan);
   return {
     // Del mismo lugar que sale el titular: un plan cerrado con traspaso vigente
     // se nombra como lo que es en las dos superficies, o `resume <plan>` diría
@@ -358,7 +348,6 @@ function planProposal(plan: IndexedPlan, index: WorklineIndex): ResumeProposal {
     ...told(presentation.detail),
     action: presentation.action,
     command: presentation.action.command,
-    ...designOf(index, plan.file),
   };
 }
 
@@ -373,16 +362,6 @@ function told(
     ...(detail.warning === undefined ? {} : { warning: detail.warning }),
     ...(detail.postponed === undefined ? {} : { postponed: detail.postponed }),
   };
-}
-
-/** The document's non-valid references, or nothing at all to say. */
-function designOf(index: WorklineIndex, file: string): Pick<ResumeProposal, "design"> {
-  const design = unresolvedDesignRefs(index.designs, file).map((r) => ({
-    state: r.state,
-    baseline: r.baseline,
-    detail: r.detail,
-  }));
-  return design.length === 0 ? {} : { design };
 }
 
 /**

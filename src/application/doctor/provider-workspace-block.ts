@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
-import { RETIRED_SKILL_IDENTITIES, RETIRED_WORKLINE_SKILLS } from "../../domain/skills.js";
+import { RETIRED_WORKLINE_SKILLS } from "../../domain/skills.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { resolveBundledSkillPath } from "../self/install-skill.js";
 import type { DoctorProvider, DoctorProviderInput } from "./types.js";
@@ -55,7 +55,7 @@ function retiredReference(
   )) {
     if (
       skill !== undefined &&
-      (RETIRED_WORKLINE_SKILLS.has(skill) || RETIRED_SKILL_IDENTITIES.has(skill))
+      (RETIRED_WORKLINE_SKILLS.has(skill) || skill === "ui-design" || skill === "ui-spec")
     )
       return skill;
   }

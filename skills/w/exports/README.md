@@ -57,7 +57,7 @@ Mirrors `docs/referencias/workflow-exports/` and the old export SKILLs. Frontmat
 | `## Flow` | Step-by-step (resolve context → collect → synthesize → number → write → report) |
 | `## Output location` | The exact path/shape it writes |
 | `## Re-run` | Idempotence (next NNN; never overwrites) |
-| `## Resources` | Design references + sibling exports |
+| `## Resources` | Source evidence + sibling exports |
 
 ## Runtime CLI (`agent-workflow`, alias `aw`)
 

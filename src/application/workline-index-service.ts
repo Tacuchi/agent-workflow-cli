@@ -26,7 +26,6 @@ import { type SlotState, sanctionedActionFor, scanSlots } from "./claims-recover
 import { type CutIntentRead, readCutIntents, readingForPlan } from "./cut-intent-ledger.js";
 import { localDateIso } from "./dates.js";
 import { noteIndexPath, readNoteIndex } from "./decision-note-service.js";
-import { type DesignGraph, buildDesignGraph } from "./design/design-graph-service.js";
 import {
   type CoreDocsCanon,
   DEFAULT_DOCS_CANON,
@@ -396,7 +395,7 @@ export interface PipelineItemDetail {
   next: string;
   /**
    * `next` is an obligation that leaves the item neither runnable nor closable:
-   * an unresolvable design reference, a pending reconciliation, a baseline
+   * a pending reconciliation, a baseline
    * nobody can prove. The board owes those BEFORE the percentage, because a
    * plan reading `100%` with its obligation further down is the misleading view
    * this projection exists to prevent.
@@ -470,8 +469,6 @@ export interface WorklineIndex {
    * else — so it is named, counted, and left where it is.
    */
   loose_sessions: string[];
-  /** `spec → package → flow/screen → plan/task`, with its four reference states. */
-  designs: DesignGraph;
   /**
    * Units that outlived the session that took them: reported, never cleaned up
    * on their own. A unit nobody claims is disk and a held branch, and the only
@@ -611,11 +608,6 @@ export async function buildWorklineIndex(
     );
   }
   const discarded = await readDiscarded(fs, sessions, cwd, now);
-  const designs = await buildDesignGraph(fs, cwd, [
-    ...specs.map((s) => ({ file: s.file, kind: "spec" as const })),
-    ...plans.map((p) => ({ file: p.file, kind: "plan" as const })),
-  ]);
-
   return {
     workspace,
     last_activity: lastActivity,
@@ -623,9 +615,8 @@ export async function buildWorklineIndex(
     plans,
     sessions,
     discarded,
-    pipeline: derivePipeline(specs, plans, designs, { cuts, passes, live: livePlans }),
+    pipeline: derivePipeline(specs, plans, { cuts, passes, live: livePlans }),
     loose_sessions: looseSessions(sessions),
-    designs,
     orphan_units: isolation.orphans,
     ...(isolation.unreadable.length > 0 ? { unreadable_sources: isolation.unreadable } : {}),
     ...(isolation.error !== undefined ? { isolation_error: isolation.error } : {}),
@@ -765,7 +756,6 @@ interface CutContext {
 function derivePipeline(
   specs: IndexedSpec[],
   plans: IndexedPlan[],
-  designs: DesignGraph,
   cut: CutContext,
 ): PipelineItem[] {
   const items: PipelineItem[] = [];
@@ -785,7 +775,7 @@ function derivePipeline(
     // and unshipped, and until the pass ledger existed the board could only see
     // the second half of that.
     if (plan.production.axis === "in-production" && !pendingPasses(plan).length) continue;
-    items.push(planItem(plan, designs, cut));
+    items.push(planItem(plan, cut));
   }
   return items.sort(comparePipeline);
 }
@@ -904,8 +894,8 @@ function passesCarrying(
 }
 
 /** One pending plan as a board row, with the place a declared cut gave it. */
-function planItem(plan: IndexedPlan, designs: DesignGraph, cut: CutContext): PipelineItem {
-  const presentation = planPresentation(plan, designs);
+function planItem(plan: IndexedPlan, cut: CutContext): PipelineItem {
+  const presentation = planPresentation(plan);
   const place = placeOf(cut, plan);
   return {
     kind: presentation.kind,
@@ -1029,10 +1019,11 @@ export function specDetail(spec: IndexedSpec, plans: readonly IndexedPlan[]): Pi
 
 /** The one plan projection shared by the pipeline and direct `resume <plan>`. */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one presentation keeps direct resume and status equivalent.
-export function planPresentation(
-  plan: IndexedPlan,
-  designs: DesignGraph,
-): { kind: PipelineKind; detail: PipelineItemDetail; action: PipelineAction } {
+export function planPresentation(plan: IndexedPlan): {
+  kind: PipelineKind;
+  detail: PipelineItemDetail;
+  action: PipelineAction;
+} {
   const phases =
     plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
   const base = {
@@ -1101,19 +1092,6 @@ export function planPresentation(
         command: null,
         code: "WORKLINE_PLAN_HISTORICAL",
         action: "el plan ya está cerrado; consultá su evidencia o elegí trabajo pendiente",
-      },
-    };
-  }
-  const missing = describeMissingDesign(designs, plan.file);
-  if (missing !== null) {
-    return {
-      kind: "plan-open",
-      detail: { ...base, next: missing, obligation: true },
-      action: {
-        kind: "blocked",
-        command: null,
-        code: "WORKLINE_PLAN_DESIGN_UNRESOLVED",
-        action: "resolvé el diseño referido antes de volver a ejecutar el plan",
       },
     };
   }
@@ -1288,14 +1266,6 @@ function exitOf(plan: IndexedPlan) {
     : obligationExit(plan.reconciliation, exitContextOf(plan));
 }
 
-/** The document's design references that are NOT valid, in graph order. */
-export function unresolvedDesignRefs(
-  designs: DesignGraph,
-  file: string,
-): DesignGraph["references"] {
-  return designs.references.filter((r) => r.from === file && r.state !== "valid");
-}
-
 /**
  * The one precedence chain, in the one order — moved here whole, never re-cut.
  *
@@ -1319,12 +1289,6 @@ function normalPlanNext(plan: IndexedPlan): Pick<PipelineItemDetail, "next" | "o
     return { next: "todo ejecutado: falta la validación final y el cierre", obligation: false };
   }
   return { next: "continuar por la primera fase no validada", obligation: false };
-}
-
-function describeMissingDesign(designs: DesignGraph, file: string): string | null {
-  const [first] = unresolvedDesignRefs(designs, file).filter((r) => r.state === "missing");
-  if (first === undefined) return null;
-  return `DISEÑO IRRESOLUBLE ${first.baseline} — ${first.detail ?? "no resuelve"}`;
 }
 
 /**

@@ -243,17 +243,17 @@ describe("la superficie instalada lleva el binding de su host (y el bundle canó
     expect(skill).not.toContain("`AskUserQuestion`");
   });
 
-  it("la skill de capacidad también lleva el binding: sus `needs_input` se preguntan ahí", async () => {
+  it("kimi instala sólo los wrappers del bundle, sin recrear design", async () => {
     const fs = new RealFs();
     const result = await selfInstallSkill(
       buildArgs({ from: source, target: "kimi" }),
       buildCtx(home, fs),
     );
     expect(result.ok).toBe(true);
-    const skill = await readFile(join(home, ".kimi-code/skills/design/SKILL.md"), "utf8");
+    const skill = await readFile(join(home, ".kimi-code/skills/w-quick/SKILL.md"), "utf8");
     expect(skill).toContain("(`kimi`, stamped at install)");
     expect(skill).toContain("`AskUserQuestion`");
-    expect(skill).toContain("aw capability --host kimi prepare");
+    expect(await fs.exists(join(home, ".kimi-code/skills/design"))).toBe(false);
   });
 
   it("el bundle canónico instalado NO lleva stamp: la doctrina se mantiene host-agnóstica", async () => {

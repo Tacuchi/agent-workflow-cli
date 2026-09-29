@@ -137,7 +137,6 @@ describe("la doctrina no reenuncia ninguna regla migrada", () => {
       "spec-refine.split-signal",
       "spec-refine.split-gate",
       "spec-refine.split-choice",
-      "spec-refine.design-reuse",
       "resume.route-choice",
       "persist.shape-classification",
       "context-plan.signal-declaration",
@@ -292,7 +291,7 @@ describe("la corrida real de SPEC llega al final, que antes era imposible", () =
       if (resolved.kind === "final") {
         // Lo que esta fase desbloqueó: el recorrido entero, de punta a punta.
         expect(crossed).toContain("spec-refine.split-signal");
-        expect(crossed).toContain("spec-refine.design-reuse");
+        expect(crossed).not.toContain("spec-refine.design-reuse");
         // El cierre lo cruza el CLI corriendo la operación, no una respuesta: lo
         // que lo acredita es el evento de lo que de verdad ejecutó.
         expect(state.applied).toContain("chassis.finalize");

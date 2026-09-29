@@ -165,7 +165,7 @@ function checkDestination(
       error: `${path}: [${TABLE}].${category} = '${dir}' apunta a un directorio oculto; el canon documental publica documentos, no estado interno de la herramienta`,
     };
   }
-  // Core document routes are read by flow, retirement, custody and design
+  // Core document routes are read by flow, retirement and custody
   // boundaries that have not all adopted DocsCanon yet. Accepting a custom
   // route here would let persist/index see one tree while a later lifecycle
   // write still targets another. Keep the shared defaults centralised now and

@@ -3,8 +3,8 @@ name: plan-new-loop
 description: >-
   Generates an executable plan (docs/plans/PPP-plan-<slug>.md) from a spec, or
   standalone from the conversation. Heir of CHASSIS: phases are verifiable
-  states; research maps impact and gaps; UI design roots are reused or
-  promoted and pinned. Started by /w:plan-new; resumable.
+  states; research maps impact and gaps; functional UI decisions from SPEC are
+   carried into the plan as functional input. Started by /w:plan-new; resumable.
 ---
 
 # plan-new-loop
@@ -24,7 +24,7 @@ PLAN
 `docs/specs/NNN-spec-*.md` (glob or argument path). Readiness comes from frontmatter `status`, never the filename; an unrefined spec only soft-suggests a refine ([`PLAN-INPUT`](../../modules/PLAN-INPUT.md)). Questions routed to `PLAN` remain input to this loop.
 
 ## Writes
-`docs/plans/PPP-plan-<slug>.md` (`generate`; overwrite needs confirmation), or sibling plans after an accepted split (§ *Split gate (multi-plan)*). With UI it also publishes the scoped design revision in `docs/designs/`; it never graduates/exports anything else to `docs/` — that is separate `export-*` work.
+`docs/plans/PPP-plan-<slug>.md` (`generate`; overwrite needs confirmation), or sibling plans after an accepted split (§ *Split gate (multi-plan)*). It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
 
 > **Naming:** [`PLAN-INPUT`](../../modules/PLAN-INPUT.md) § *Numbering* claims `PPP` for its run; only its owner fills it and an unpublished close frees it.
 
@@ -58,7 +58,6 @@ Technical detail and roadmap stay inline:
 ## Solution            AS-IS → TO-BE + "Final behavior" block (core)
 ## Impacted            sources (core)
 ## Dependencies        docs · sources · order (opt.)
-## Design references   the baselines this plan's roots pin (opt. — UI)
 ## Tasks               `### Fn` blocks: the ONLY source of phases (core)
 ## Execution batches   complete phase partition (core)
 ## Validations         proof (core)
@@ -135,7 +134,7 @@ Replaces the spec taxonomy with a planning one:
 | Missing deps | order unclear | research / human |
 | Spec criteria uncovered | no task or evidence traces to a criterion | the AI derives + human confirms |
 | Unaddressed risks | technical risks unmitigated/undeclared | human / **probe** (Delta 5) |
-| UI without design *(if it applies)* | the plan includes UI (FE/screens in `Impacted`, `## Design references` in the spec, or UI tasks) and pins no exact root, or its roots are not `handoff` | **`design`** (promote the closure, pin the roots — reusing a valid compact handoff instead of re-promoting it) |
+| UI decision unaccounted for *(if it applies)* | an observable UI outcome is not traceable to the spec's decisions and criteria | **research** or **human**; never invent the choice in PLAN |
 
 > **Author the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what the codebase/stdlib/platform already provides before adding abstractions, layers or dependencies — the gate then *confirms* minimality instead of repairing over-engineering.
 
@@ -161,7 +160,7 @@ plan-new-loop(spec):
     gaps = detect_gaps(work)  (Delta 2 taxonomy)  minus the exhausted ones
     if gaps == ∅: break
     batch ≤3 → seed CHECKPOINT.Pending/Next → resolve each gap:
-      research · human (structured-choice) · probe · design (reuse a valid handoff, or promote + pin roots)
+      research · human (structured-choice) · probe
     integrate + update CHECKPOINT
   coherence gate (read-only) = Success criteria green:
     - every spec criterion traces to a phase/task + evidence (`## Validations`/`Validación de fase`) (split: exactly one sibling)
@@ -173,7 +172,7 @@ plan-new-loop(spec):
     - Execution batches partitions every phase once and crosses only eligible boundaries
     - resumable between units and within one through states/checkboxes
     - minimality: no solution/phase/task heavier than Final behavior requires
-    - (UI) every screen/UI task pins an exact root against a declared baseline · that closure is handoff · nothing outside it was promoted
+    - (UI) every observable UI task follows the functional decision and criteria in the spec
     whatever fails → comes back as a gap
   hand the CLI the exact bytes of the plan — and of the siblings, if the split was accepted
   the CLI seals them into ONE proposal and previews it: destination, weight, what it replaces
@@ -199,5 +198,4 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 
 - `split` — the canonical multi-plan gate → `../../modules/PLAN-SPLIT-GATE.md`
 - `split` — the incremental journey shape → `../../modules/INCREMENTAL-STRATEGY.md`
-- `ui` — the design closure to promote and the roots to pin → `../../modules/DESIGN-REFERENCES.md`
 - `probe` — probe (PoC) tasks → `../../modules/PLAN-PROBE-TASKS.md`

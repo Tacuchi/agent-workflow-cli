@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { readPackageVersion } from "../../runtime/version.js";
-import { digestOf } from "../design/digest.js";
+import { digestOf } from "../byte-digest.js";
 
 export const DIST_MANIFEST = "dist-manifest.json";
 const CATEGORY = "installation-hosts" as const;

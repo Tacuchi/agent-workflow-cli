@@ -112,9 +112,8 @@ export function semanticDigest(value: unknown): string {
 /**
  * Canonical JSON: object keys sorted BY CODE UNIT, `undefined` dropped.
  *
- * Exported because a design baseline seals its revision with a digest over
- * exactly this form — one canonicalization for the whole system, or two digests
- * of the same bytes.
+ * Shared by sealed run state, proposals and decision notes; a second
+ * canonicalization would make equal state hash to different digests.
  */
 export function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";

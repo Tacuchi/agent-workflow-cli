@@ -171,8 +171,7 @@ export function parseLineageDeclaration(
  *
  * Two harvests of the same closed grammar, united:
  *
- * 1. every literal `S{NNN}/AC-nn` the document mentions, anywhere — what the
- *    design subsystem already read, unchanged;
+ * 1. every literal `S{NNN}/AC-nn` the document mentions, anywhere;
  * 2. when `specNumber` is given, the LABELS inside `## Acceptance criteria` —
  *    every appearance of it, located by the same function the SEAL uses:
  *    `- [ ] AC-01: …` states criterion `S{NNN}/AC-01` of that spec.

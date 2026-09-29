@@ -30,7 +30,7 @@ Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + res
 
 ## Two things this command never does
 
-- **It never writes `docs/`** and it exports nothing. It may READ a design package; changing one escalates.
+- **It never writes `docs/`** and it exports nothing. UI work uses the task's ordinary validation; a changed product promise escalates.
 - **It never re-derives what the conversation already settled** — that analysis is *input* (`## Origin` = adopted).
 
 ## More context

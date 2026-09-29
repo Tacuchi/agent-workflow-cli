@@ -246,7 +246,7 @@ describe("la entrada pública queda en su familia y ninguna guarda se rompe", ()
     const groups = groupCommands(ALL_COMMANDS.map((command) => command.name));
     const orchestration = groups.find((group) => group.name === "Orchestration");
     expect(orchestration?.commands).toContain("flow");
-    expect(orchestration?.commands).toContain("capability");
+    expect(orchestration?.commands).not.toContain("capability");
   });
 
   it("ningún comando cae en el cajón de sastre del help", () => {

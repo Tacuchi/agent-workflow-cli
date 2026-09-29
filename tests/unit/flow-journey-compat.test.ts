@@ -35,13 +35,18 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
 
 const fixtures = loadJourneyFixtures();
 const newest = fixtures.at(-1);
+const retired = new Set([
+  "spec-refine.design-reuse",
+  "spec-refine.design-publication",
+  "plan-exec.design-precondition",
+]);
 
 function expectPersistedPrefix(
   before: FlowRunState,
   disk: FlowRunState,
   ids: readonly string[],
 ): void {
-  const expected = [...before.applied];
+  const expected = before.applied.filter((id) => !retired.has(id));
   const consent = "plan-exec.unchanged-phase-consent";
   const scope = expected.indexOf("plan-exec.source-scope");
   if (!ids.includes(consent) && scope >= 0) {
@@ -76,8 +81,10 @@ describe("recorridos congelados — el instalado es el de la última release", (
   });
 
   for (const flow of WORKLINE_FLOWS) {
-    it(`${flow}: el recorrido instalado es idéntico al del último fixture`, () => {
-      expect(journeyOfFlow(flow).map((decision) => decision.id)).toEqual(newest?.journeys[flow]);
+    it(`${flow}: el recorrido conserva el orden salvo las fronteras retiradas`, () => {
+      expect(journeyOfFlow(flow).map((decision) => decision.id)).toEqual(
+        newest?.journeys[flow].filter((id) => !retired.has(id)),
+      );
     });
   }
 
@@ -132,11 +139,13 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
           const after = read.state;
           expect(after.version).toBe(FLOW_RUN_STATE_VERSION);
           expect(checkAgainstJourney(after, journeyForRun(after))).toBeNull();
-          // Standing on the same boundary is what "not asked again" means: every
-          // step behind it stays behind it.
-          expect(after.boundary).toBe(before.boundary);
+          // An obsolete UI gate cannot ask again; every other boundary stays put.
+          if (before.boundary !== null && retired.has(before.boundary)) {
+            expect(after.boundary).not.toBe(before.boundary);
+            expect(after.boundary).toBe(journeyForRun(after)[after.applied.length]?.id ?? null);
+          } else expect(after.boundary).toBe(before.boundary);
           const kept = after.applied.filter((id) => before.applied.includes(id));
-          expect(kept).toEqual(before.applied);
+          expect(kept).toEqual(before.applied.filter((id) => !retired.has(id)));
           const inserted = after.applied.filter((id) => !before.applied.includes(id));
           expect(inserted.every((id) => after.skipped.includes(id))).toBe(true);
         }
@@ -167,7 +176,11 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
         if (!disk.ok) throw new Error(`${flow}: ${disk.failure.code}`);
         expect(disk.state.version).toBe(FLOW_RUN_STATE_VERSION);
         expectPersistedPrefix(before, disk.state, ids);
-        expect(disk.state.boundary).toBe(before.boundary);
+        if (before.boundary !== null && retired.has(before.boundary)) {
+          expect(disk.state.boundary).toBe(
+            journeyForRun(disk.state)[disk.state.applied.length]?.id ?? null,
+          );
+        } else expect(disk.state.boundary).toBe(before.boundary);
         expect(disk.state.journey_base).toEqual(journeyOfFlow(flow).map((decision) => decision.id));
       });
     }

@@ -23,7 +23,7 @@ PLAN
 `/w:plan-exec` — **resumable** (same chassis mechanism; here resume keys off the plan-doc phase states + checkboxes + CHECKPOINT, see Delta 1).
 
 ## Reads
-`docs/plans/PPP-plan-<slug>.md` (the `docs/plans/PPP-plan-*.md` glob, or the given path) **and its source spec** (from its `> Derived from`, else one in `## Origin`; none if `> Standalone:`) — the entry gate reads both. It runs any plan whose source contract is executable: `> Límite de ejecución: checkout`, explicit phase/task sources and aliases from `AGENTS.md > Fuentes`. A legacy or v21 plan that lacks it fails closed to [`plan-refine-loop`](../plan-refine-loop/LOOP.md); plan-refine remains auxiliary only after that contract exists. If the plan pins design, it also reads the **UI Design Package** revisions its `## Design references` and its tasks name — **read-only**, at the exact revision each one fixed (§ *Design precondition gate*).
+`docs/plans/PPP-plan-<slug>.md` (the `docs/plans/PPP-plan-*.md` glob, or the given path) **and its source spec** (from its `> Derived from`, else one in `## Origin`; none if `> Standalone:`) — the entry gate reads both. It runs any plan whose source contract is executable: `> Límite de ejecución: checkout`, explicit phase/task sources and aliases from `AGENTS.md > Fuentes`. A legacy or v21 plan that lacks it fails closed to [`plan-refine-loop`](../plan-refine-loop/LOOP.md); plan-refine remains auxiliary only after that contract exists. Historical UI references are not new execution preconditions.
 
 ## Writes
 - `docs/plans/PPP-plan-<slug>.md` (**read/update**, living doc: phase/task state, `Open questions`).
@@ -78,36 +78,6 @@ Execution **no longer accepts in silence** a plan that would force it to invent 
 After this gate and before editing, infer the effective batches over pending phases. The live
 checkout may merge or split the plan's declaration without consent; record the result and drift in
 `CHECKPOINT`. A missing `## Execution batches` is legacy compatibility, not an entry gap.
-
-## Design precondition gate (fail-closed, per task)
-
-Applies **only** to a task that pins design (`DES-001@r4 / SCR-002@r2#empty`). Run
-`aw designs --plan <plan-doc>` before implementing the batch; it answers per task
-and the verdict is the command's, not the implementer's.
-
-**Four causes block, and each names the artifact and the corrective action:** the
-reference does not resolve · its digest no longer matches the bytes · the revision
-is **revoked** · the applicable **closure** does not reach `handoff`. A blocked
-task is not implemented, its phase stays `en ejecución` or `bloqueada`, and the
-correction goes to `/w:plan-refine` — or to `/w:spec-refine` when it changes
-behavior or acceptance.
-
-**One cause only warns:** a revision **superseded** by a newer one but intact
-stays executable. Publishing `@r5` never invalidates the `@r4` a task pinned on
-purpose; only an explicit, audited revocation does. A **stale path hint** warns
-the same way — identity resolved, the recorded path moved.
-
-> **`plan-exec` never redesigns.** Completing an `outline` artifact, inventing a
-> missing state or promoting a revision to `handoff` are design decisions and
-> belong to the refine that owns them. Full contract in
-> [`DESIGN-REFERENCES.md`](../../modules/DESIGN-REFERENCES.md) (signal `ui`).
-
-**Publishing a document together with a package revision is one transition.** A
-spec or plan whose reference moves is written in the **same** all-or-nothing batch
-as the revision it points at, so no reader ever sees a document citing a baseline
-that is not there, or a revision no document reached. An effect the batch cannot
-cover — anything outside the workspace files — is recorded as **pending
-reconciliation** in `CHECKPOINT`, never reported as published.
 
 ## Delta 1 — One session per run; execution-unit cycle in the plan-doc
 

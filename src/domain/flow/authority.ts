@@ -851,9 +851,7 @@ const CHANGE_SHAPE = "modules/SPEC-CHANGE-SHAPE.md";
  * its own. Three documents used to be absent from this list because a tranche that
  * had not been cut over still read them; the closing tranche resolved each on its
  * own terms. `SPEC-CHANGE-SHAPE.md` gained the split branch's steps, which were
- * carrying `spec-new`'s document by mistake. `DESIGN-REFERENCES.md` attributes its
- * one remaining row to `aw designs` rather than to this marker, because the CLI
- * puts the inventory in front of the judgment instead of deciding the step.
+ * carrying `spec-new`'s document by mistake.
  * `SPLIT-GATE.md` keeps its rule and gets no marker at all: it belongs to
  * `/w:spec-new`, which starts no loop, and the registry declares that exclusion.
  */
@@ -956,16 +954,6 @@ const ROUTE_SPLIT: RouteControlConfiguration = {
     substitute: "se documenta una partición o límite alternativo verificable",
   },
   risk: "una unidad demasiado amplia puede ocultar dependencias o prioridades distintas",
-};
-
-const ROUTE_DESIGN: RouteControlConfiguration = {
-  recommendation: "apply",
-  consequences: {
-    apply: "se compone o reutiliza el diseño que el cambio requiere",
-    omit: "no se abre una revisión de diseño para este trabajo",
-    substitute: "se usa la evidencia de diseño sustituta declarada",
-  },
-  risk: "omitir diseño puede dejar una experiencia visible sin una decisión trazable",
 };
 
 const ROUTE_CONVENTIONS: RouteControlConfiguration = {
@@ -1993,30 +1981,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     },
   },
   {
-    id: "spec-refine.design-reuse",
-    scope: "spec-refine",
-    title: "juzgar si un baseline de diseño compatible sirve o hace falta una revisión nueva",
-    authority: "agent",
-    ownership: "cli-owned",
-    document: "modules/DESIGN-REFERENCES.md",
-    // The judgment is the agent's and the criterion stays in the module. What the
-    // CLI owns is the step: `aw designs` is what puts the existing baselines in
-    // front of whoever judges, so the question is asked over a real inventory
-    // instead of a recollection.
-    attribution: "`aw designs` lists what the workspace already has",
-    route_control: ROUTE_DESIGN,
-  },
-  {
-    id: "spec-refine.design-publication",
-    scope: "spec-refine",
-    title: "validar y publicar la revisión del package de diseño",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: "modules/DESIGN-REFERENCES.md",
-    attribution: "capability over the **UI Design Package v1**",
-    effects: ["local_additive"],
-  },
-  {
     id: "spec-refine.ready-gate",
     scope: "spec-refine",
     title: "evaluar el gate ready-for-plan sobre los criterios declarados",
@@ -2829,15 +2793,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       otherwise:
         "ningún hecho del checkout vivo rompe la elegibilidad: el rango máximo entra entero como un batch continuo",
     },
-  },
-  {
-    id: "plan-exec.design-precondition",
-    scope: "plan-exec",
-    title: "resolver el veredicto de diseño de una tarea que pinea una referencia",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: "modules/DESIGN-REFERENCES.md",
-    attribution: "`aw designs --plan`",
   },
   {
     id: "plan-exec.unit-acquisition",
@@ -3675,24 +3630,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     effects: ["mutate_overwrite"],
   },
   {
-    id: "capability.routing",
-    scope: cmd("capability"),
-    title: "resolver ruta, autorización de efectos y receipt de un intento",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: "roles/design/CONTRACT.md",
-    attribution: "aw capability prepare",
-  },
-  {
-    id: "designs.reference-verdict",
-    scope: cmd("designs"),
-    title: "decidir si una referencia de diseño resuelve, cambió, fue revocada o no cierra",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: "modules/DESIGN-REFERENCES.md",
-    attribution: "`aw designs`",
-  },
-  {
     id: "workspace-init.materialize-or-configure",
     scope: cmd("workspace-init"),
     title: "materializar el runtime mínimo o configurar fuentes explícitas del workspace",
@@ -4243,21 +4180,17 @@ function reopen(
  * The `docs/` folders a flow may write, as the chassis' boundary states them.
  *
  * A table rather than a rule with exceptions: the boundary is "its own flow's
- * doc, plus the category of a capability it composes", and both halves are facts
- * about the flow. `quick` writes none at all — it has no document — and that
+ * doc. `quick` writes none at all — it has no document — and that
  * empty list is a real answer, not a missing entry, which is why the map is
  * exhaustive over the five flows instead of falling back to a default.
  *
- * The `design` category is here rather than derived from the composition because
- * whether a flow MAY publish a package revision is a property of the flow, not of
- * whichever run happens to compose the capability.
  */
 export const DOCS_BOUNDARY: Readonly<Record<WorklineFlow, readonly string[]>> = {
   quick: [],
-  "spec-refine": [SPEC_DOCS_DIR, "docs/designs"],
+  "spec-refine": [SPEC_DOCS_DIR],
   "plan-new": [PLAN_DOCS_DIR],
   "plan-refine": [PLAN_DOCS_DIR],
-  "plan-exec": [PLAN_DOCS_DIR, "docs/designs"],
+  "plan-exec": [PLAN_DOCS_DIR],
 };
 
 /** The flow a scope names, or null for the chassis and for command scopes. */

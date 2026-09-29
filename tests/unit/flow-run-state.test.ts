@@ -1047,7 +1047,7 @@ describe("alineación del cursor con el recorrido instalado", () => {
         const read = await readRun(new NodeFileSystem(), location);
         if (!read.ok) throw new Error(`esperaba continuar la corrida v11: ${read.failure.code}`);
         expect(read.state.version).toBe(FLOW_RUN_STATE_VERSION);
-        const expected = [...before.applied];
+        const expected = before.applied.filter((id) => id !== "plan-exec.design-precondition");
         expected.splice(
           expected.indexOf("plan-exec.source-scope"),
           0,

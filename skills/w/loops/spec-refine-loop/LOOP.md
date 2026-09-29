@@ -5,7 +5,7 @@ description: >-
   until PLAN can design without inventing behavior, scope or product
   decisions. Heir of the chassis (loops/CHASSIS.md). Deltas: current-behavior
   baseline, change-shape gate, gap taxonomy classified by destination,
-  conditional ideation gate, ## Design references via the design capability, and
+  conditional ideation gate, functional UI decisions, and
   the ready-for-plan gate that stamps the status frontmatter plan-new reads.
   Started by /w:spec-refine (or the live escalation from quick-loop);
   resumable via CHECKPOINT and re-runnable on demand.
@@ -50,7 +50,7 @@ Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Aprob
 
 > **Not every shape decision creates a file** (§ *Change-shape gate*). An accepted **split** writes the reduced original **and** the extracted sibling specs; a replacement by **`Crear una nueva spec`** writes one new file and leaves this one untouched; **`Reformular esta spec`** creates nothing — it edits this same file, same number, same path. Every write, new or overwriting, is confirmed first.
 
-> **Boundary invariant:** this loop writes **only** into `docs/specs` and, when the requirement involves UI, the **design package** it composes under `docs/designs` (chassis § *docs/ boundary* — the package is the capability's own deliverable, not a graduated artifact). It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
+> **Boundary invariant:** this loop writes **only** into `docs/specs`. It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
 
 ## Internal sessions — SPEC instance
 
@@ -64,16 +64,11 @@ Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's
 
 > **Compat (legacy):** old workspaces may hold `NNN-spec.md` / `NNN-spec-refined.md` and separate `*-research-*` sessions — historical, left as-is. The `NNN-spec*.md` glob still finds the base spec, and re-running spec-refine edits it in place from then on.
 
-## Composes
+## Functional UI decisions
 
-The **UI unspecified** gap (when the requirement involves UI; see *Gap taxonomy*) is resolved by the composed **`design`** capability ([`../../roles/design/ROLE.md`](../../roles/design/ROLE.md)) over the **UI Design Package v1**: reuse a compatible baseline or open an `outline` revision when expanded; a compact delta publishes its `handoff` in one pass. Publish it through the CLI, and leave in the spec **only** its `## Design references` — package, baseline hint and digest. The loop contributes iteration/Q&A (design system, theme, variants, disambiguation) **via the same structured-choice**; the capability contributes what a correct package looks like. Full rule: [`DESIGN-REFERENCES.md`](../../modules/DESIGN-REFERENCES.md).
+When the requirement affects a UI, use available host help or ask the person for any functional choice that cannot be established from the sources. Record the chosen behavior and its reason in `## Decisions`; put observable effects in acceptance criteria and scenarios where relevant. Neither installed help nor an old reference replaces the spec's ordinary approval and validation.
 
-> **Two levels of the same capability:** a compact SPEC may already close its exact roots at `handoff`; otherwise SPEC keeps an `outline` reference and PLAN promotes exactly the closure it implements. A valid handoff is reused, never re-authored. One package, two questions — never two formats.
-
-> **Compound publication:** a new baseline carries this final spec as `consumer_document`
-> (path + base digest); package, manifest and spec publish or roll back together.
-
-Other transversal capabilities the engine always uses: `research` (**inline** — chassis § *Research*), `sql` (DB rule inside research — chassis). All resolved by config; `off` → the loop continues without the capability and, if it was needed, says so or asks. The spec's **prose** follows the **ambient** writing conventions (the host auto-applies an installed writing skill if present), not a composed role.
+Research remains inline (chassis § *Research*) and the DB rule applies inside research. The spec's prose can use ambient writing help from any origin without making that help a requirement.
 
 > **Ambient conventions (not roles):** host help for code/testing/writing or tooling may come from any origin; Workline neither binds nor depends on it. Full doctrine: [../../roles/README.md](../../roles/README.md).
 
@@ -109,9 +104,6 @@ status: ready-for-plan    ← stamped on Guardar (vocabulary: draft | refining |
                            Only when it adds GIVEN setup or edge semantics the criterion
                            does not capture — NEVER a 1:1 restatement of a criterion)
 ## Assumptions            (declared)
-
-## Design references      (opt. — if UI is involved; via the composed design capability)
-The exact package, baseline hint and digest — never the design itself. See [`design`](../../roles/design/ROLE.md).
 
 ## Decisions              ← ADDED — the material decisions, NOT the run's history
 The choices a reader needs in order to interpret the contract, each with its why.
@@ -151,7 +143,7 @@ technical implementation choices still open go to `## Open questions`, never Sco
 | Hidden assumptions | the spec assumes unstated things | **research** validates / **human** confirms | SPEC |
 | Over-specified requirement | scope/criteria gold-plated — beyond the actual need (chassis § *Minimality*) | **human** (AI proposes the cut, human ratifies) | SPEC |
 | Unexplored solution space *(conditional)* | the spec settles on the first conceivable approach **and** a trigger fires (see *Ideation gate*) | **human consents** → **ideation** | SPEC — only on a trigger |
-| UI unspecified *(if it applies)* | the requirement involves UI but `## Design references` is missing | composed **`design`** capability | SPEC |
+| UI behavior undecided *(if it applies)* | an observable UI outcome has more than one plausible reading | **human** (host help may inform the proposal) | SPEC — blocking |
 | Architecture | how to distribute technical responsibilities | — | **`PLAN`** — declare, never close here |
 | Implementation | library, class, method, pattern, folder layout | — | **`PLAN`** / `EXEC` — outside the spec |
 | Executable technical risk | whether an integration really works | — | **`PLAN`** (probe), unless the answer changes the contract |
@@ -186,11 +178,7 @@ spec-refine-loop(spec):
     batch = top ≤3 blocking ; pending_human = []   # gap questions ONLY — the shape was resolved above
     seed CHECKPOINT.Pending/Next = batch (refine_session) # BEFORE: seed the intent (artifact-first)
     for each gap in batch:
-      if gap = UI (requirement involves UI, ## Design references missing):
-        compose design → reuse a compatible baseline OR publish an `outline` revision
-                                                 # design-system/theme via structured-choice (counts in the batch)
-        work = integrate(work, design)           # → ## Design references (package + hint + digest)
-      else if gap = Unexplored solution space:
+      if gap = Unexplored solution space:
         declare the trigger signal               # the CLI decides whether the offer appears
       else if factual(gap) and attempts[gap] < MAX:
         if it needs DB and >1 MCP without default → queue "MCP choice" in pending_human
@@ -243,13 +231,12 @@ finalize:
 - **Inline research** → the fact lands in `## Context` / `## Behavioral changes`; if it settles a choice, the choice goes to `## Decisions` (+ ref to the session's `CONCLUSIONS`).
 - **Ideation** → per verdict (§ *Ideation gate*): `Adoptar` → the spec's sections + `## Decisions` · `Descartar` → `CONCLUSIONS` · `Aparcar` → `## Open questions`.
 - **Human** → `## Decisions`, as the decision plus its why. **Not** a `Q:` transcript: the question-by-question trace stays in the session.
-- **Composed `design`** (UI gap) → the package under `docs/designs/` (published through the CLI) + the spec's `## Design references` section, and nothing else in the spec.
+- **UI decision** → the choice and its reason in `## Decisions`, with observable effects in criteria/scenarios where applicable.
 - **Owned by `PLAN` or deferred** → `## Open questions` with its destination, and nothing else in the spec.
 - **Inconclusive or unresolved research** → `## Open questions` (deferred) + the refine session's `BACKLOG.md` (only if something is deferred).
 
 ## Conditional modules
 
 - `shape` — the change-shape gate and its split / replace branches → `../../modules/SPEC-CHANGE-SHAPE.md`
-- `ui` — what the spec keeps when the requirement involves UI → `../../modules/DESIGN-REFERENCES.md`
 - `web` — the conditional ideation gate, its triggers and verdicts → `../../modules/IDEATION-GATE.md`
 - `resume` — the SPEC keys of compact / resume → `../../modules/SPEC-REFINE-KEYS.md`

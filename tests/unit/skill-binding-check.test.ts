@@ -17,7 +17,7 @@ afterEach(() => {
   if (root) rmSync(root, { recursive: true, force: true });
 });
 
-it("un binding legacy avisa sin escanear, reescribir ni dar crédito a una instalación ajena", async () => {
+it("un binding legacy se ignora sin escanear, reescribir ni dar crédito a una instalación ajena", async () => {
   root = mkdtempSync(join(tmpdir(), "binding-legacy-"));
   const home = join(root, "home");
   const cwd = join(root, "workspace");
@@ -33,14 +33,12 @@ it("un binding legacy avisa sin escanear, reescribir ni dar crédito a una insta
   writeFileSync(join(foreign, "SKILL.md"), "---\nname: figma-spec\ndescription: foreign\n---\n");
   const withForeign = await resolveSkills(new NodeFileSystem(), paths);
   expect(withForeign).toEqual(without);
-  expect(withForeign.skills.design.enabled).toBe(false);
-  expect(withForeign.warnings).toEqual(
-    expect.arrayContaining([expect.stringContaining("binding externo no aplicable")]),
-  );
+  expect(Object.keys(withForeign.skills)).toEqual(["overview"]);
+  expect(withForeign.warnings).toEqual(expect.arrayContaining([expect.stringContaining("sql")]));
   expect(readFileSync(paths.userSkillsToml(), "utf8")).toBe(old);
 });
 
-it("aw skills --detail muestra sólo floor y operaciones propios con HOME sin terceros", async () => {
+it("aw skills --detail muestra sólo bindings propios con HOME sin terceros", async () => {
   root = mkdtempSync(join(tmpdir(), "skills-detail-own-"));
   const home = join(root, "home");
   const cwd = join(root, "workspace");
@@ -50,20 +48,13 @@ it("aw skills --detail muestra sólo floor y operaciones propios con HOME sin te
   const args = { flags: new Set(), values: new Map() } as unknown as ParsedArgs;
   const result = await skillsCommand.execute(args, ctx);
   expect(result.ok).toBe(true);
-  expect(result.data?.capabilities[0]).toMatchObject({
-    capability: "design",
-    floor: { builtin: true, running: true },
-    state: "ready",
+  expect(result.data?.skills).toEqual({
+    overview: { role: "overview", skill: "w", source: "default", enabled: true },
   });
-  expect(result.data?.capabilities[0]?.operations.map((op) => op.operation)).toEqual([
-    "create",
-    "update",
-    "validate",
-    "render",
-    "record",
-  ]);
-  expect(JSON.stringify(result.data)).not.toMatch(/improvements|bindingChecks|installed-inventory/);
+  expect(JSON.stringify(result.data)).not.toMatch(
+    /design|improvements|bindingChecks|installed-inventory/,
+  );
   const human = skillsCommand.renderHuman?.(result, { detail: true } as HumanRenderContext);
-  expect(human).toContain("floor propio");
-  expect(human).toContain("validate");
+  expect(human).toContain("overview");
+  expect(human).not.toContain("design");
 });

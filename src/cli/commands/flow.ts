@@ -48,8 +48,8 @@ import type { CliContext } from "../types.js";
 /**
  * The deterministic direction engine, as a public command.
  *
- * Sibling of `aw capability`, and for the same reason: one entry both the agent
- * and a host adapter reach, so neither can re-derive a transition on its own.
+ * One entry both the agent and a host adapter reach, so neither can re-derive
+ * a transition on its own.
  * `advance` applies every consecutive transition the CLI owns and returns the
  * first boundary it does not; `submit` (the second verb) brings an answer, a
  * choice or an approval back and is delivered by the phases that own the

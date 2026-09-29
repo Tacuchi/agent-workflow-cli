@@ -22,12 +22,13 @@ import type {
   SemanticRequest,
 } from "../../application/semantic-operation/protocol.js";
 import { parseSemanticArtifacts } from "../../application/semantic-operation/protocol.js";
-import { COMPLETENESS_VALUES, type Completeness } from "../capability/descriptor.js";
 import { EFFECT_CLASSES, type EffectClass, isEffectClass } from "../capability/effects.js";
 import {
   CAPABILITY_OUTCOMES,
+  COMPLETENESS_VALUES,
   type CapabilityFailure,
   type CapabilityOutcome,
+  type Completeness,
   type DurableReference,
   type EffectLedger,
   type OperationOutput,

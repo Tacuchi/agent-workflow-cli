@@ -7,7 +7,6 @@
 import type { CliCommand } from "../registry.js";
 import { addSourceCommand } from "./add-source.js";
 import { amendCommand } from "./amend.js";
-import { capabilityCommand } from "./capability.js";
 import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
 import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
@@ -16,7 +15,6 @@ import { codeScanCommand } from "./code-scan.js";
 import { contextBudgetCommand } from "./context-budget.js";
 import { contextPlanCommand } from "./context-plan.js";
 import { cutIntentCommand } from "./cut-intent.js";
-import { designsCommand } from "./designs.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
 import { docBranchCommand } from "./doc-branch.js";
 import { doctorCommand } from "./doctor.js";
@@ -101,9 +99,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   contextBudgetCommand,
   contextPlanCommand,
   skillsCommand,
-  capabilityCommand,
   flowCommand,
-  designsCommand,
   sourcesCommand,
   docBranchCommand,
   generateLaunchCommand,

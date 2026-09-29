@@ -478,13 +478,7 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
       decisionsOfScope(scope),
     );
     expect(planned.map((row) => row.document)).not.toContain("modules/SPLIT-GATE.md");
-    // PLAN cites `DESIGN-REFERENCES` exactly once, and NOT as part of the tranche:
-    // `plan-exec.design-precondition` was already owned by a shipped command
-    // before any of this, and it is attributed to that capability rather than to
-    // the marker this tranche put in PLAN's nine documents.
-    const design = planned.filter((row) => row.document === "modules/DESIGN-REFERENCES.md");
-    expect(design.map((row) => row.id)).toEqual(["plan-exec.design-precondition"]);
-    expect(design[0]?.attribution).toBe("`aw designs --plan`");
+    expect(planned.map((row) => row.document)).not.toContain("modules/DESIGN-REFERENCES.md");
   });
 });
 

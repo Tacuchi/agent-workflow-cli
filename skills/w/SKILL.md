@@ -47,7 +47,7 @@ USER invokes
         │ the export-* read the artifacts
         ▼
   docs/ ZONE — permanent, user-facing documents
-    specs · plans (flows) · designs (UI Design Packages) · research (persist / no-flow) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
+    specs · plans (flows) · research (persist / no-flow) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
 ```
 
 - **Layer 1** — high level. Single-pass or starts a loop. No iteration logic.
@@ -138,19 +138,17 @@ The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply t
 |---|---|---|
 | `export-scripts` | `SCRIPTS.sql` (migrations) from N sessions | `docs/scripts/` (numbered forwards + `00-ROLLBACK.sql`) |
 | `export-manuals` | sessions + decisions + plan + code | `docs/manuals/` |
-| `export-diagrams` | source code + plan (Solution's AS-IS → TO-BE delta) | `docs/diagrams/` (C4 / mermaid) |
+| `export-diagrams` | source code + plan (Solution's AS-IS → TO-BE delta) | `docs/diagrams/` |
 | `export-reports` | session corpus + plan + `docs/` | `docs/reports/` (executive/functional report) |
 
 Common: Layer 1, explicit (user-invoked, never by a loop) · single-pass, read-only over sessions · cross-session (consolidate N sessions + `docs/`) · no loop, no internal sessions (options via args).
 
-### Capability skills + `.workflow/skills.toml`
+### Host help + `.workflow/skills.toml`
 
 A loop keeps its own contract and may use relevant help exposed by its host. `skills.toml` controls only Workline-owned roles; it never selects external contributors.
 
 ```toml
 [skills]
-design           = "design"           # built-in floor
-# design         = "off"              # disable according to the operation's policy
 overview         = "w"                # Workline orientation
 ```
 
@@ -160,11 +158,8 @@ Role catalog and defaults:
 
 | Role | Default | Tier | Composed by |
 |---|---|---|---|
-| `design` | `design` | must | `spec-refine-loop` (UI) · `plan-new-loop` / `plan-refine-loop` · `plan-exec-loop` (reads, never redesigns) † |
 | `overview` | `w` | should | anyone (orientation) |
 
-> † **The composing loops land references, not design.** `spec-refine` keeps `## Design references` and the plan loops promote the closure they implement and pin exact roots. The retired names `ui-design` and `ui-spec` resolve to nothing — no alias, no dual-read, no migration. See [roles/README.md](roles/README.md).
->
 > **Ambient help (not roles):** code/testing/writing, research, SQL, Git, diagrams and tool authoring may be supplied by the host. Workline does not bind, require, install or inventory them. Full doctrine: [roles/README.md](roles/README.md).
 
 The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), a referenced doc), not a pluggable capability.
@@ -196,8 +191,8 @@ One language per plane — never mix them:
 ### The 6 hard invariants
 
 1. **No auto-export** — loops never graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`, **plus `docs/designs` for whichever loop composes the `design` capability** (spec-refine and the plan loops publish the package; `plan-exec` only reads it). (`docs/tools` holds reusable tooling under its own contract; `docs/research` belongs to `/w:persist` or direct no-flow authoring.)
-3. **The spec and the plan are documents** (`docs/`), not session artifacts. *(Not to be confused with the **UI Design Package** the `design` capability produces under `docs/designs/NNN-design-<slug>/`: a durable dossier a spec **references** by baseline and digest — see [`roles/design/ROLE.md`](roles/design/ROLE.md) — it is not the requirement-spec.)*
+2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` holds reusable tooling under its own contract; `docs/research` belongs to `/w:persist` or direct no-flow authoring.)
+3. **The spec and the plan are documents** (`docs/`), not session artifacts.
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations stay in `SCRIPTS.sql` and the user applies them. Only read-only reads via MCP.
 5. **Safe git** — expected branch verified before editing; proposed commits per source; never `push`/`--amend`/`--no-verify`.
 6. **Loop chassis** — the 5 loops run the same **common engine**; each loop is an heir adding only its deltas, nothing of the engine is re-declared. Detail: `loops/CHASSIS.md`.

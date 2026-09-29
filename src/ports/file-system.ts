@@ -21,7 +21,7 @@ export interface LinkStat {
 export interface FileSystemPort {
   readText(path: string): Promise<string>;
   /**
-   * Raw bytes. A design baseline seals the SHA-256 of a file's bytes, and an
+   * Raw bytes. A sealed artifact records the SHA-256 of a file's bytes, and an
    * asset is binary: hashing `readText` output would hash a lossy decoding.
    */
   readBytes(path: string): Promise<Uint8Array>;

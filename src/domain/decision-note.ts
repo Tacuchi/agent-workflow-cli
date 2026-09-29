@@ -1,16 +1,14 @@
-import { CRITERION_GLOBAL, isDigest } from "./design/identity.js";
+import { CRITERION_GLOBAL, isDigest } from "./contract-identity.js";
 import { sealedRecordDigest } from "./sealed-record.js";
 
 /**
  * A DECISION NOTE: the durable record of a divergence that was reconciled
  * forward instead of sent back to `plan-refine` or `spec-refine`.
  *
- * The form is deliberately the one design governance already uses: a sealed
- * record that lives OUTSIDE the thing it decides on, naming that thing by
- * identity AND by the digest it had. A note stored inside its spec or plan would
+ * A sealed record lives OUTSIDE the thing it decides on, naming that thing by
+ * identity AND by its digest. A note stored inside its spec or plan would
  * change that document's digest, so the contract being amended would no longer
- * be the contract that was amended — the same trap `DesignReview` was shaped to
- * avoid, one level up.
+ * be the contract that was amended.
  *
  * Two rules give the chain its meaning:
  *

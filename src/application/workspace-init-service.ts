@@ -34,7 +34,6 @@ export { runtimeGitignoreEntries } from "./workspace-materialization-service.js"
 export const DOCS_FOLDERS = [
   "specs",
   "plans",
-  "designs",
   "manuals",
   "scripts",
   "diagrams",

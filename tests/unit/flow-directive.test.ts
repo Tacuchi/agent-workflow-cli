@@ -885,7 +885,7 @@ describe("sin tercer protocolo paralelo (AC-COMP-01)", () => {
       "quick",
     ]);
     const names = ALL_COMMANDS.map((command) => command.name);
-    expect(names).toContain("capability");
+    expect(names).not.toContain("capability");
     expect(names).toContain("flow");
     expect(new Set(names).size).toBe(names.length);
   });

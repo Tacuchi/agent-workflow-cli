@@ -4,7 +4,6 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ParsedArgs } from "../../cli/parser.js";
 import type { CliContext } from "../../cli/types.js";
-import { DESIGN_DESCRIPTOR } from "../../domain/design/capability.js";
 import {
   type InstallTarget,
   harnessByInstallTarget,
@@ -13,7 +12,6 @@ import {
 } from "../../domain/harnesses.js";
 import { stampForInstallTarget } from "../../domain/structured-choice-stamp.js";
 import type { CommandResult } from "../../domain/types.js";
-import { installCapabilitySkill, uninstallCapabilitySkill } from "../capability/wrapper.js";
 import {
   COMMAND_SKILLS_HOSTS,
   HOOKS_MANAGED_TARGETS,
@@ -22,9 +20,8 @@ import {
   LEGACY_SKILL_ROOTS_BY_TARGET,
   SHARED_INSTALL_TARGETS,
   TARGET_ROOTS,
-  capabilityCoveredBy,
-  capabilityPlacement,
 } from "./install-targets.js";
+import { removeRetiredDesignWrapper } from "./retired-design-wrapper.js";
 import { copyDir, hasValidFrontmatter } from "./skill-files.js";
 
 export const SKILL_DIR_NAME = "w";
@@ -61,10 +58,8 @@ export interface SelfInstallTargetResult {
   /** Synthesized `w-<command>` skill-as-command wrappers (COMMAND_SKILLS_HOSTS). */
   command_skills?: number;
   command_skills_warnings?: string[];
-  /** Top-level capability skill installed here (the direct entrypoint). */
-  capability_skill?: string;
-  /** A foreign skill occupies the name: preserved, never overwritten. */
-  capability_skill_conflict?: string;
+  /** Outcome of retiring the formerly installed top-level wrapper. */
+  retired_design?: { status: "absent" | "removed" | "preserved"; path: string; reason?: string }[];
   error?: string;
 }
 
@@ -367,7 +362,7 @@ export async function selfInstallSkill(
   const validation = await validateSourceContents(sourceArg, ctx);
   if (validation) return validation;
 
-  const capabilities = await installCapabilityLocations(ctx, targets);
+  const retired = new Map<string, Awaited<ReturnType<typeof removeRetiredDesignWrapper>>>();
   const results: SelfInstallTargetResult[] = [];
   for (const t of existingTargets) {
     const entry = await installOneTarget(t, destByTarget[t.target], sourceArg, ctx, {
@@ -376,7 +371,17 @@ export async function selfInstallSkill(
       skipHooks,
       keepLegacy,
     });
-    Object.assign(entry, capabilities.get(t.target));
+    const roots = [TARGET_ROOTS[t.target], ...LEGACY_SKILL_ROOTS_BY_TARGET[t.target]];
+    entry.retired_design = [];
+    for (const parts of roots) {
+      const root = join(ctx.env.homeDir(), ...parts);
+      let outcome = retired.get(root);
+      if (!outcome) {
+        outcome = await removeRetiredDesignWrapper(root);
+        retired.set(root, outcome);
+      }
+      entry.retired_design.push(outcome);
+    }
     results.push(entry);
   }
 
@@ -386,57 +391,6 @@ export async function selfInstallSkill(
     sourceKind,
     dests: results,
   });
-}
-
-async function installCapabilityLocations(
-  ctx: CliContext,
-  targets: readonly InstallTarget[],
-): Promise<Map<InstallTarget, Partial<SelfInstallTargetResult>>> {
-  const placement = await capabilityPlacement(
-    ctx.fs,
-    ctx.env.homeDir(),
-    DESIGN_DESCRIPTOR.name,
-    targets,
-    "install",
-  );
-  const capabilityResults = new Map<string, Awaited<ReturnType<typeof installCapabilitySkill>>>();
-  for (const location of placement.keep) {
-    capabilityResults.set(
-      location.root,
-      await installCapabilitySkill(
-        location.root,
-        DESIGN_DESCRIPTOR,
-        stampForInstallTarget(location.target === "oz" ? "agents" : location.target),
-        location.boundHost,
-      ),
-    );
-  }
-  // A conflict elsewhere must not preserve an obsolete binding for these readers.
-  const published = placement.keep.filter((location) => capabilityResults.get(location.root)?.ok);
-  for (const location of placement.remove) {
-    if (capabilityCoveredBy(location, published)) {
-      await uninstallCapabilitySkill(location.root, DESIGN_DESCRIPTOR.name);
-    }
-  }
-  return new Map<InstallTarget, Partial<SelfInstallTargetResult>>(
-    targets.map((target) => {
-      const host = harnessByInstallTarget(target);
-      const nativeRoot = join(ctx.env.homeDir(), ...TARGET_ROOTS[target]);
-      const location =
-        placement.keep.find((item) => item.root === nativeRoot) ??
-        placement.keep.find((item) => host !== null && item.readers.includes(host.id));
-      const capability = location === undefined ? undefined : capabilityResults.get(location.root);
-      if (capability?.ok) return [target, { capability_skill: DESIGN_DESCRIPTOR.name }];
-      return [
-        target,
-        capability === undefined
-          ? {}
-          : {
-              capability_skill_conflict: `${capability.failure.message} — ${capability.failure.action}`,
-            },
-      ];
-    }),
-  );
 }
 
 interface InstallResultInput {
@@ -828,7 +782,7 @@ function renderCommandWrapper(
  * the agent runtime selected by the installed surface. Shared `agents` skills
  * deliberately stay unbound because several hosts read them.
  *
- * `doctor` joins `flow` and `capability` for the same reason and one more of its
+ * `doctor` joins `flow` for the same reason and one more of its
  * own: it walks EVERY host and highlights the one the run came from. Left
  * unbound, the wrapper installed for one host would hand that role to whatever
  * the terminal's markers happened to say — so the report would point at a
@@ -843,7 +797,7 @@ export function bindHostInvocations(body: string, target: InstallTarget): string
   if (host === undefined) return body;
   // `aw doctor prepare` y `aw doctor apply` reciben el flag igual: el subverbo
   // viene después, así que insertarlo tras `doctor` no lo desplaza.
-  return body.replace(/\baw (flow|capability|doctor|host-memory)\b/g, `aw $1 --host ${host}`);
+  return body.replace(/\baw (flow|doctor|host-memory)\b/g, `aw $1 --host ${host}`);
 }
 
 /**

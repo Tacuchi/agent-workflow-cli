@@ -44,9 +44,8 @@ interface Restore {
 
 /**
  * Directories this publication created. Restoring only file CONTENT leaves an
- * empty tree behind — and an empty folder is visible state: under
- * `docs/designs/` a stray one reads as a package with no manifest, so a failed
- * publication would invent a broken package that nobody wrote.
+ * empty tree behind — and an empty folder is visible state. A failed publication
+ * must not invent an artifact directory nobody wrote.
  */
 type CreatedDirs = string[];
 

@@ -47,7 +47,7 @@ The **5 loops** are heirs: they use `## Inherits` (a one-line reference to [`CHA
 
 ## Chassis / heirs
 
-The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skill); all 5 loops inherit it. It is never a binding. The `design` capability has a Workline-owned floor; other assistance comes from the host when available.
+The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skill); all 5 loops inherit it. It is never a binding. Additional assistance comes from the host when available.
 
 ## Composed capabilities (roles)
 

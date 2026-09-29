@@ -31,33 +31,29 @@ describe("cascada de capacidades propias", () => {
     expect(result.sources).toEqual({ global: false, workspace: false });
     expect(result.warnings).toEqual([]);
     expect(result.skills).toEqual({
-      design: { role: "design", skill: "design", source: "default", enabled: true },
       overview: { role: "overview", skill: "w", source: "default", enabled: true },
     });
   });
 
-  it("mantiene off del workspace sobre global y [docs] históricos byte-idénticos", async () => {
+  it("ignora el binding design retirado y conserva [docs] históricos byte-idénticos", async () => {
     const global = '[skills]\ndesign = "design"\n[docs]\nspecs = "docs/specs"\n';
     const local = '[skills]\ndesign = "off"\n';
     write(home, global);
     write(cwd, local);
     const result = await resolveSkills(fs, paths);
-    expect(result.skills.design).toEqual({
-      role: "design",
-      skill: null,
-      source: "workspace",
-      enabled: false,
+    expect(result.skills).toEqual({
+      overview: { role: "overview", skill: "w", source: "default", enabled: true },
     });
     expect(result.sources).toEqual({ global: true, workspace: true });
     expect(readFileSync(paths.userSkillsToml(), "utf8")).toBe(global);
     expect(readFileSync(paths.cwdSkillsToml(), "utf8")).toBe(local);
   });
 
-  it("ignora un binding externo global sin silenciar el default propio", async () => {
+  it("ignora un binding design externo sin ofrecer una capacidad retirada", async () => {
     write(home, '[skills]\ndesign = "acme/figma-spec"\n');
     const result = await resolveSkills(fs, paths);
-    expect(result.skills.design.skill).toBe("design");
-    expect(result.warnings).toEqual([expect.stringContaining("binding externo no aplicable")]);
+    expect(Object.keys(result.skills)).toEqual(["overview"]);
+    expect(result.warnings).toEqual([]);
   });
 
   it("ignora roles históricos y errores de TOML sin romper el floor", async () => {
@@ -65,7 +61,6 @@ describe("cascada de capacidades propias", () => {
     write(cwd, "[skills]\nnot valid = =\n");
     const result = await resolveSkills(fs, paths);
     expect(result.warnings.join(" ")).toMatch(/sql.*git.*parse error/);
-    expect(result.skills.design.skill).toBe("design");
-    expect(Object.keys(result.skills)).toEqual(["design", "overview"]);
+    expect(Object.keys(result.skills)).toEqual(["overview"]);
   });
 });

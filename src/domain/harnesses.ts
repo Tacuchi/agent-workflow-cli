@@ -187,11 +187,11 @@ export interface HarnessGlobalMcpPaths {
 }
 
 /**
- * How a person reaches a top-level capability skill ON THIS HOST.
+ * How a person reaches a top-level skill ON THIS HOST.
  *
- * Discovery renders this and nothing else. Announcing `/design` on a host that
+ * Discovery renders this and nothing else. Announcing a slash command on a host that
  * has no slash form is worse than saying nothing: the person types it, gets
- * silence, and concludes the capability is broken. So the form is DATA, verified
+ * silence, and concludes the skill is broken. So the form is DATA, verified
  * per host, and a host that cannot load a top-level skill declares `null` rather
  * than borrowing another host's syntax.
  *

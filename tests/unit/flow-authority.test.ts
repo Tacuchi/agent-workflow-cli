@@ -108,7 +108,6 @@ describe("registro de autoridad — forma y unicidad", () => {
       "spec-refine.ideation-consent",
       "spec-refine.content-authoring",
       "spec-refine.functional-ambiguity",
-      "spec-refine.design-reuse",
       // Los bytes exactos los redacta el agente; el CLI los sella, los muestra y
       // los escribe. Autoría y publicación quedan de lados distintos de la línea.
       "spec-refine.save-proposal",
@@ -402,16 +401,7 @@ describe("registro de autoridad — la migración cerró observable", () => {
       "loops/CODE-POLICIES.md",
       "modules/DB-SCRIPTS-ONLY.md",
     ]);
-    // The four a shipped command owns rather than a tranche. Three predate the
-    // tranches; `design-reuse` joined them in the closing one, attributed to
-    // `aw designs` because what the CLI owns there is putting the inventory in
-    // front of the judgment, not deciding it.
-    const commandOwned = new Set([
-      "spec-refine.design-publication",
-      "spec-refine.design-reuse",
-      "plan-new.numbering",
-      "plan-exec.design-precondition",
-    ]);
+    const commandOwned = new Set(["plan-new.numbering"]);
 
     const early = inFlows.filter(
       (decision) =>
@@ -489,18 +479,16 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // flow. Las tres se saltan solas cuando el plan no debe compensación, así que
     // un cierre sin obligaciones sigue teniendo exactamente las fronteras que
     // tenía. Edición consciente: el orden de estas filas ES la doctrina.
-    expect(plan).toHaveLength(63);
+    expect(plan).toHaveLength(62);
     expect(plan.filter((decision) => decision.ownership !== "cli-owned")).toEqual([]);
     expect(counted("quick", "loops/CODE-POLICIES.md")).toBe(4);
     // Dos: la regla de scripts-only y la frontera que declara si hay base de datos
     // que gobernar. La segunda es la que permite que la primera se aplique sólo
     // donde tiene algo que hacer.
     expect(counted("quick", "modules/DB-SCRIPTS-ONLY.md")).toBe(2);
-    // The four that used to be listed here as "still doctrine's" — three of the
-    // split gate plus design reuse — are the ones the closing tranche took, and
-    // they moved to the documents `spec-refine` actually reads.
+    // The split-gate decisions remain in the live SPEC module.
     expect(counted("spec-refine", "modules/SPEC-CHANGE-SHAPE.md")).toBe(4);
-    expect(counted("spec-refine", "modules/DESIGN-REFERENCES.md")).toBe(2);
+    expect(FLOW_DECISIONS.map((row) => row.document)).not.toContain("modules/DESIGN-REFERENCES.md");
   });
 });
 
