@@ -31,6 +31,27 @@ async function ownWrapper(root: string) {
 }
 
 describe("retirada de wrapper propio sin tocar skills ajenas", () => {
+  it.each([
+    ["claude", "56769335d32ce180198da6d7a605cbe89af817efdfadd16bc1712f9d0deb498b"],
+    ["gemini", "2e18d683d853d08058c320e0684ae232bb450c0a32140388b616fd92e9848a70"],
+    ["agents", "7502ae99912196a4fe7533471791223b5d83d032eaf493c8f3e67bb8b0e0db78"],
+  ])("retira los bytes instalados por 26.0.0 en %s", async (host, fingerprint) => {
+    const root = await fixture();
+    const path = join(root, "design");
+    const [wrapper, capability] = await Promise.all([
+      readFile(new URL(`../fixtures/design-26-${host}-skill.md`, import.meta.url)),
+      readFile(new URL("../fixtures/design-26-capability.txt", import.meta.url)),
+    ]);
+    expect(sha256(wrapper.toString())).toBe(fingerprint);
+    expect(sha256(capability.toString())).toBe(
+      "1b0334bfe8d1600dcccc0791e4bdafc8c746e580b55a3ac7892d3ad808d94244",
+    );
+    await mkdir(path);
+    await writeFile(join(path, "SKILL.md"), wrapper);
+    await writeFile(join(path, "workline-capability.json"), capability);
+    expect(await removeRetiredDesignWrapper(root)).toEqual({ path, status: "removed" });
+  });
+
   it("retira sólo los dos archivos exactos; repetir la limpieza no cambia nada", async () => {
     const root = await fixture();
     const path = await ownWrapper(root);

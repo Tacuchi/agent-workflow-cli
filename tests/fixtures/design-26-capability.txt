@@ -1,0 +1,402 @@
+{
+  "contract_version": 1,
+  "name": "design",
+  "purpose": "producir, actualizar, juzgar, proyectar y sellar un diseño sobre un contrato único: un DESIGN.md legible por defecto, el UI Design Package v1 cuando una señal observable lo pide",
+  "exposure": [
+    "direct",
+    "compose"
+  ],
+  "default_operation": null,
+  "operations": [
+    {
+      "name": "create",
+      "summary": "primera revisión de un package a partir de fuentes declaradas",
+      "exposure": [
+        "direct",
+        "compose"
+      ],
+      "workspace": "optional",
+      "interaction": "needs_input",
+      "inputs": [
+        {
+          "name": "title",
+          "kind": "text",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "code",
+          "kind": "text",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "sources",
+          "kind": "reference",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "target",
+          "kind": "text",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "profile",
+          "kind": "selection",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "context",
+          "kind": "text",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "maturity",
+          "kind": "selection",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "expansion",
+          "kind": "selection",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "consumer_document",
+          "kind": "attachment",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        }
+      ],
+      "output": {
+        "kind": "value_and_reference",
+        "schema": "workline.design-baseline/v1",
+        "completeness": [
+          "complete",
+          "partial"
+        ]
+      },
+      "effects": [
+        {
+          "class": "read_only",
+          "idempotent": true,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "local_additive",
+          "idempotent": false,
+          "authorization": "invocation",
+          "approval": "none"
+        }
+      ],
+      "off": "blocked"
+    },
+    {
+      "name": "update",
+      "summary": "revisión siguiente de un package existente, con base de compare-and-swap",
+      "exposure": [
+        "direct",
+        "compose"
+      ],
+      "workspace": "optional",
+      "interaction": "needs_input",
+      "inputs": [
+        {
+          "name": "package",
+          "kind": "reference",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "base",
+          "kind": "reference",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "sources",
+          "kind": "reference",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "context",
+          "kind": "text",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "maturity",
+          "kind": "selection",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "expansion",
+          "kind": "selection",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "consumer_document",
+          "kind": "attachment",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        }
+      ],
+      "output": {
+        "kind": "value_and_reference",
+        "schema": "workline.design-baseline/v1",
+        "completeness": [
+          "complete",
+          "partial"
+        ]
+      },
+      "effects": [
+        {
+          "class": "read_only",
+          "idempotent": true,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "local_additive",
+          "idempotent": false,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "mutate_overwrite",
+          "idempotent": false,
+          "authorization": "preflight",
+          "approval": "visible"
+        }
+      ],
+      "off": "blocked"
+    },
+    {
+      "name": "validate",
+      "summary": "juzgar un package sin escribir: schemas, naming, referencias y madurez",
+      "exposure": [
+        "direct",
+        "compose"
+      ],
+      "workspace": "optional",
+      "interaction": "single_pass",
+      "inputs": [
+        {
+          "name": "package",
+          "kind": "reference",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "profile",
+          "kind": "selection",
+          "required": false,
+          "sensitivity": "public",
+          "schema": null
+        }
+      ],
+      "output": {
+        "kind": "value",
+        "schema": null,
+        "completeness": [
+          "complete"
+        ]
+      },
+      "effects": [
+        {
+          "class": "read_only",
+          "idempotent": true,
+          "authorization": "invocation",
+          "approval": "none"
+        }
+      ],
+      "off": "allowed"
+    },
+    {
+      "name": "render",
+      "summary": "regenerar las proyecciones de una revisión y preparar el handoff a un proveedor",
+      "exposure": [
+        "direct",
+        "compose"
+      ],
+      "workspace": "optional",
+      "interaction": "needs_input",
+      "inputs": [
+        {
+          "name": "package",
+          "kind": "reference",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "profile",
+          "kind": "selection",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        }
+      ],
+      "output": {
+        "kind": "reference",
+        "schema": "workline.design-render-bundle/v1",
+        "completeness": [
+          "complete",
+          "partial"
+        ]
+      },
+      "effects": [
+        {
+          "class": "read_only",
+          "idempotent": true,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "local_additive",
+          "idempotent": true,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "mutate_overwrite",
+          "idempotent": true,
+          "authorization": "preflight",
+          "approval": "visible"
+        },
+        {
+          "class": "network_external",
+          "idempotent": false,
+          "authorization": "preflight",
+          "approval": "visible"
+        }
+      ],
+      "off": "blocked"
+    },
+    {
+      "name": "record",
+      "summary": "sellar una decisión de gobierno sobre una revisión existente",
+      "exposure": [
+        "direct",
+        "compose"
+      ],
+      "workspace": "optional",
+      "interaction": "needs_input",
+      "inputs": [
+        {
+          "name": "package",
+          "kind": "reference",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "revision",
+          "kind": "reference",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        },
+        {
+          "name": "decision",
+          "kind": "text",
+          "required": true,
+          "sensitivity": "public",
+          "schema": null
+        }
+      ],
+      "output": {
+        "kind": "reference",
+        "schema": "workline.design-review/v1",
+        "completeness": [
+          "complete",
+          "partial"
+        ]
+      },
+      "effects": [
+        {
+          "class": "read_only",
+          "idempotent": true,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "local_additive",
+          "idempotent": false,
+          "authorization": "invocation",
+          "approval": "none"
+        },
+        {
+          "class": "mutate_overwrite",
+          "idempotent": false,
+          "authorization": "preflight",
+          "approval": "visible"
+        }
+      ],
+      "off": "blocked"
+    }
+  ],
+  "floor": {
+    "builtin": true,
+    "kind": "core",
+    "improvements": "host_selected"
+  },
+  "degradations": [
+    {
+      "cause": "opaque_selection",
+      "action": "floor"
+    },
+    {
+      "cause": "incompatible_improvement",
+      "action": "floor"
+    },
+    {
+      "cause": "invalid_binding",
+      "action": "floor"
+    },
+    {
+      "cause": "digest_changed",
+      "action": "floor"
+    }
+  ],
+  "compatibility": {
+    "status": "active",
+    "minimum_contract_version": 1,
+    "improves": null,
+    "retired_names": [
+      "ui-design",
+      "ui-spec"
+    ],
+    "retired_formats": [
+      "spec-section:## UI spec",
+      "session-design-spec:NNN-SPEC-<SLUG>.md",
+      "ui-spec-generator:output"
+    ]
+  }
+}
