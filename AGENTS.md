@@ -38,6 +38,7 @@ This file provides guidance to AI coding agents working with code in this reposi
 
 - Manual schema validation — NO Zod (DEC-001). Throw `Error` with a `code` string + `message`; the CLI layer catches and emits `{ ok: false, error: { code, message } }`.
 - Commits: Conventional Commits `type(scope): subject`. Subject prose in **Spanish**; `type`/`scope` tokens in English. Append a trailing ` sessionNNN` tag (e.g. `fix(cli): corrige parser session104`). Releases: `chore: release vX.Y.Z sessionNNN`.
+- Host run: when a release touches a host (catalog, installers, hooks, MCP writers or a host's doctrine), suggest the person repeat the host run (`node scripts/host-run/run.mjs`, see README § «Support levels and how long a verification is worth») and compare it with `node scripts/host-run/compare.mjs`. It is a suggestion, never a gate: no suite test depends on the latest run, so it does not block `prepublishOnly`. An agent never launches it — it refuses to start inside an agent host.
 - Branches: `feature/<name>`, integrated into `main`. Code/comments in English; commit messages and `CHANGELOG.md` in Spanish (Keep a Changelog + SemVer).
 
 ## Tooling note

@@ -15,6 +15,7 @@
       "tests/fixtures/golden/**",
       "tests/fixtures/golden-write/**",
       "tests/fixtures/doctor/**",
+      "tests/fixtures/host-runs/**/extracts/**",
       ".warp/**",
       ".workflow/**"
     ]

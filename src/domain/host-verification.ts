@@ -1,4 +1,4 @@
-// VERIFICATION LEDGER — written by `npm run smoke:hosts`, never by hand.
+// VERIFICATION LEDGER — written by `npm run smoke:hosts` and `scripts/host-run/`, never by hand.
 //
 // It is deliberately a separate module from the catalog: `harnesses.ts` is
 // hand-authored (ids, dirs, tiers — what we DECIDE), this file records what a
@@ -9,6 +9,36 @@
 // A host absent from this record has simply never been verified by a run.
 
 import type { HarnessId } from "./harnesses.js";
+
+/** The six surfaces a host run observes, in the doctor's order. */
+export type RunSurface =
+  | "commands"
+  | "structured-choice"
+  | "hooks"
+  | "mcp"
+  | "host-memory"
+  | "compaction";
+
+/** A cell as the last host run left it (plan 085, catalog → cell). */
+export type RunCellState =
+  | "works"
+  | "degraded-declared"
+  | "broken"
+  | "not-reached"
+  | "catalog-outdated";
+
+export interface HarnessRunVerification {
+  /** Id of the run under `tests/fixtures/host-runs/<id>/` whose matrix backs this block. */
+  id: string;
+  /** ISO date (YYYY-MM-DD) of that run. */
+  at: string;
+  /** Host version the run launched; null when the host exposes none. */
+  version: string | null;
+  /** The checkout the run exercised. */
+  cli: { version: string; revision: string };
+  /** Last observation of each surface, across the runs merged into this block. */
+  cells: Record<RunSurface, RunCellState>;
+}
 
 export interface HarnessVerification {
   /** Host version the run probed. null = the host exposes no CLI version (Warp is an app). */
@@ -21,6 +51,8 @@ export interface HarnessVerification {
    * - `install`    — the above PLUS the installed artifacts matched what the catalog promises.
    */
   depth: "invocation" | "install";
+  /** What a host run inside the host observed; the smoke keeps it when it regenerates. */
+  run?: HarnessRunVerification;
 }
 
 export const HOST_VERIFICATIONS: Partial<Record<HarnessId, HarnessVerification>> = {

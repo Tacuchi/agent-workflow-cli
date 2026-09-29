@@ -9,7 +9,8 @@
 //
 // The result is written to `src/domain/host-verification.ts`. That file is the
 // ONLY place a "verified on <date> against <version>" claim comes from, and only
-// this script writes it: no surface can assert a verification that no run backs.
+// this script and the host run (`scripts/host-run/`) write it, through the same
+// renderer: no surface can assert a verification that no run backs.
 //
 // Usage:  npm run smoke:hosts            (verify + write the ledger)
 //         npm run smoke:hosts -- --check (verify only; fail on drift, write nothing)
@@ -23,6 +24,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { mergeSmoke, renderLedger } from "./host-run/ledger.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = join(ROOT, "dist", "cli", "main.js");
@@ -265,43 +267,16 @@ if (CHECK_ONLY) {
   process.exit(failures > 0 ? 1 : 0);
 }
 
-const body = `// VERIFICATION LEDGER — written by \`npm run smoke:hosts\`, never by hand.
-//
-// It is deliberately a separate module from the catalog: \`harnesses.ts\` is
-// hand-authored (ids, dirs, tiers — what we DECIDE), this file records what a
-// run actually PROVED. Keeping the two apart is what lets every projection say
-// "verified against X on date Y" without a surface ever claiming a verification
-// that no run backs (spec 010, criterion 10).
-//
-// A host absent from this record has simply never been verified by a run.
-
-import type { HarnessId } from "./harnesses.js";
-
-export interface HarnessVerification {
-  /** Host version the run probed. null = the host exposes no CLI version (Warp is an app). */
-  version: string | null;
-  /** ISO date (YYYY-MM-DD) of the run that produced this entry. */
-  at: string;
-  /**
-   * How far that run went:
-   * - \`invocation\` — runtime present and its version read;
-   * - \`install\`    — the above PLUS the installed artifacts matched what the catalog promises.
-   */
-  depth: "invocation" | "install";
-}
-
-export const HOST_VERIFICATIONS: Partial<Record<HarnessId, HarnessVerification>> = {
-${results
-  .map((r) => {
-    // Quote only ids that are not valid identifiers, so the generated file is
-    // already formatter-clean and `npm run lint` never fails on a smoke run.
-    const key = /^[A-Za-z_$][\w$]*$/.test(r.id) ? r.id : `"${r.id}"`;
-    const version = r.version === null ? "null" : `"${r.version}"`;
-    return `  ${key}: { version: ${version}, at: "${r.at}", depth: "${r.depth}" },`;
-  })
-  .join("\n")}
-};
-`;
+// The shared renderer keeps each host's `run` block: the smoke proves install,
+// never what a host run observed inside the host.
+const { HOST_VERIFICATIONS } = await import(join(ROOT, "dist", "domain", "host-verification.js"));
+const body = renderLedger(
+  mergeSmoke(
+    results,
+    HOST_VERIFICATIONS,
+    HARNESSES.map((h) => h.id),
+  ),
+);
 
 writeFileSync(LEDGER, body, "utf8");
 console.log(`ledger written: ${LEDGER}`);

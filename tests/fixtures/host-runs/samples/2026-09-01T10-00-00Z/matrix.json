@@ -1,0 +1,668 @@
+{
+  "schema": 1,
+  "run_id": "2026-09-01T10-00-00Z",
+  "date": "2026-09-01",
+  "partial": false,
+  "cli": {
+    "version": "28.0.0",
+    "revision": "0000000"
+  },
+  "scenario_digest": "sample000001",
+  "hosts": {
+    "claude-code": {
+      "covered": true,
+      "launched": true,
+      "version": "2.1.284",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "2.1.284",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/claude-code/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "2.1.284",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/claude-code/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "2.1.284",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/claude-code/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "2.1.284",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/claude-code/mcp.json"
+        },
+        "host-memory": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "2.1.284",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/claude-code/host-memory.json"
+        },
+        "compaction": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "2.1.284",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/claude-code/compaction.json"
+        }
+      }
+    },
+    "codex": {
+      "covered": true,
+      "launched": true,
+      "version": "0.157.1",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/commands.json"
+        },
+        "structured-choice": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/mcp.json"
+        },
+        "host-memory": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/host-memory.json"
+        },
+        "compaction": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/compaction.json"
+        }
+      }
+    },
+    "oz": {
+      "covered": false,
+      "reason": "oz is Warp's cloud agent orchestrator (a launcher shim inside Warp.app); it runs remotely and has no local interactive session to observe",
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        }
+      }
+    },
+    "warp": {
+      "covered": false,
+      "reason": "Warp ships no CLI a pane can launch: it is a desktop terminal app, so no run can drive it",
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        }
+      }
+    },
+    "gemini": {
+      "covered": true,
+      "launched": true,
+      "version": "1.2.11",
+      "model": null,
+      "effort": null,
+      "agy_without_profile": false,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.2.11",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/gemini/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.2.11",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/gemini/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.2.11",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/gemini/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.2.11",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/gemini/mcp.json"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.2.11",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/gemini/host-memory.json"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.2.11",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/gemini/compaction.json"
+        }
+      }
+    },
+    "opencode": {
+      "covered": true,
+      "launched": true,
+      "version": "1.18.30",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/opencode/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/opencode/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/opencode/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/opencode/mcp.json"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/opencode/host-memory.json"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/opencode/compaction.json"
+        }
+      }
+    },
+    "crush": {
+      "covered": true,
+      "launched": true,
+      "version": "0.96.1",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.96.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/crush/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.96.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/crush/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.96.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/crush/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.96.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/crush/mcp.json"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.96.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/crush/host-memory.json"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.96.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/crush/compaction.json"
+        }
+      }
+    },
+    "kimi": {
+      "covered": true,
+      "launched": true,
+      "version": "0.39.1",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.39.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/kimi/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.39.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/kimi/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.39.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/kimi/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.39.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/kimi/mcp.json"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.39.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/kimi/host-memory.json"
+        },
+        "compaction": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-01T10-00-00Z",
+          "date": "2026-09-01",
+          "host_version": "0.39.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/kimi/compaction.json"
+        }
+      }
+    }
+  }
+}
