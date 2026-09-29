@@ -1,4 +1,9 @@
 import type { CliContext } from "../../cli/types.js";
+import {
+  DOCTOR_HOST_SURFACES,
+  type DoctorHostDegradation,
+  type DoctorHostSurface,
+} from "../../domain/doctor/model.js";
 import { HARNESSES, type HarnessId } from "../../domain/harnesses.js";
 /**
  * Which hosts the run looks at — read off the catalog's own state report.
@@ -80,6 +85,26 @@ function viewOf(state: HostStateReport, currentHost: HarnessId | null): DoctorTa
     current: state.host === currentHost,
     runtime: { state: state.runtime.state, version: state.runtime.version },
     workline_installed: state.workline.installed,
+    degradations: degradationsOf(state),
     mcp_host: spec?.mcpHostId ?? null,
   };
+}
+
+function isDoctorSurface(id: string): id is DoctorHostSurface {
+  return (DOCTOR_HOST_SURFACES as readonly string[]).includes(id);
+}
+
+/** Exactly the catalog's non-native cells among the six surfaces, in the order it reports them. */
+function degradationsOf(state: HostStateReport): DoctorHostDegradation[] {
+  const degradations: DoctorHostDegradation[] = [];
+  for (const capability of state.capabilities) {
+    const surface = capability.id;
+    if (!isDoctorSurface(surface) || capability.status === "native") continue;
+    degradations.push({
+      surface,
+      status: capability.status,
+      detail: capability.detail,
+    });
+  }
+  return degradations;
 }

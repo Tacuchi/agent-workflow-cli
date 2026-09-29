@@ -104,8 +104,8 @@ export type HookArtifact =
  * What ONE template event does on this host.
  *
  * `degraded` exists because "carried" and "omitted" cannot describe an event
- * that arrives with a piece missing. Keep this state for future template
- * handlers a host cannot carry, not for the command-only PostCompact of today.
+ * that arrives with a piece missing — kimi's SessionStart installs without its
+ * matcher. A guard ties each `degraded` event to the loss its adapter reports.
  */
 export type HookEventSupport =
   | { state: "carried"; native: string }
@@ -147,7 +147,7 @@ export function hookMechanism(hooks: HarnessHooks): string {
  * Which template events travel to this host and which do not, in one line.
  *
  * Printed next to the hook state because a reader who is only told "supports
- * hooks" assumes parity — and on crush, gemini and opencode what travels is the
+ * hooks" assumes parity — and on crush and gemini what travels is the
  * enforcement, never the resumability.
  */
 export function hookCoverage(hooks: HarnessHooks): string {
@@ -226,6 +226,29 @@ export interface HarnessInvocation {
  * - `unsupported` — no mechanism at all; markdown, always.
  */
 export type StructuredChoiceState = "native" | "degraded" | "unsupported";
+
+/** The same three states, for a surface that is not a human boundary. */
+export type SurfaceState = StructuredChoiceState;
+
+/**
+ * Whether the host keeps a curated memory of its own that `aw host-memory` can read.
+ *
+ * Declared here and not derived from the reader registry: that module imports the
+ * host-state report, so deriving it back would be an import cycle. A guard ties
+ * every non-`unsupported` state to a registered reader instead.
+ */
+export interface HarnessHostMemory {
+  /** `native` = always readable · `degraded` = behind a host switch · `unsupported` = none. */
+  state: SurfaceState;
+  /** Where it lives and what it depends on, or why there is none. */
+  detail: string;
+}
+
+const NO_CURATED_MEMORY: HarnessHostMemory = {
+  state: "unsupported",
+  detail:
+    "the host keeps no curated memory of its own; AGENTS.md and the workspace docs are the fallback",
+};
 
 /**
  * La vía MCP: un servidor propio que rinde el selector NATIVO del host pidiéndole
@@ -344,6 +367,8 @@ export interface HarnessSpec {
   structuredChoice: HarnessStructuredChoice;
   /** Native worker-dispatch capacity. The CLI decides whether it may be used. */
   execution: HostExecutionCapability;
+  /** The host's own curated memory, the one `aw host-memory` reads. */
+  hostMemory: HarnessHostMemory;
 }
 
 export const HARNESSES: readonly HarnessSpec[] = [
@@ -393,6 +418,10 @@ export const HARNESSES: readonly HarnessSpec[] = [
       mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "Task" },
+    hostMemory: {
+      state: "native",
+      detail: "one note per fact in ~/.claude/projects/<key>/memory/, always on",
+    },
   },
   {
     id: "codex",
@@ -469,6 +498,11 @@ export const HARNESSES: readonly HarnessSpec[] = [
       },
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
+    hostMemory: {
+      state: "degraded",
+      detail:
+        "~/.codex/memories/, live only with [features] memories = true in ~/.codex/config.toml",
+    },
   },
   {
     // Detection: OZ_RUN_ID takes priority over warp markers to handle overlap.
@@ -507,6 +541,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
+    hostMemory: NO_CURATED_MEMORY,
   },
   {
     id: "warp",
@@ -551,6 +586,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
+    hostMemory: NO_CURATED_MEMORY,
   },
   {
     // Gemini CLI (deprecated mid-2026) + Antigravity CLI (`agy`, successor;
@@ -635,6 +671,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
+    hostMemory: NO_CURATED_MEMORY,
   },
   {
     // OpenCode (sst/opencode). Config `opencode.json` ($schema); MCP under `mcp`
@@ -698,6 +735,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
+    hostMemory: NO_CURATED_MEMORY,
   },
   {
     // Crush (charmbracelet/crush). Config `crush.json` ($schema charm.land/crush.json);
@@ -776,6 +814,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
+    hostMemory: NO_CURATED_MEMORY,
   },
   {
     // Kimi Code (MoonshotAI) — successor of the Python `kimi-cli`, shipped as a
@@ -812,7 +851,11 @@ export const HARNESSES: readonly HarnessSpec[] = [
       },
       caveat: "user-global only: kimi has no project-level config",
       events: {
-        SessionStart: { state: "carried", native: "SessionStart" },
+        SessionStart: {
+          state: "degraded",
+          native: "SessionStart",
+          loss: "its matcher is not carried, so the hook fires on every session start",
+        },
         PreToolUse: { state: "carried", native: "PreToolUse" },
         SessionEnd: { state: "carried", native: "SessionEnd" },
         PreCompact: { state: "carried", native: "PreCompact" },
@@ -854,6 +897,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "SubagentStart" },
+    hostMemory: NO_CURATED_MEMORY,
   },
 ] as const satisfies readonly HarnessSpec[];
 

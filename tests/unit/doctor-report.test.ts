@@ -8,6 +8,7 @@ import { runDoctor } from "../../src/application/doctor/report.js";
 import type { DoctorProvider, DoctorProviderInput } from "../../src/application/doctor/types.js";
 import { coverage } from "../../src/application/doctor/types.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { capabilitiesFor, resolveHostConfigDir } from "../../src/application/self/host-states.js";
 import type { CliContext } from "../../src/cli/types.js";
 import {
   DOCTOR_CATEGORIES,
@@ -16,7 +17,7 @@ import {
   type DoctorFinding,
   doctorFindingId,
 } from "../../src/domain/doctor/model.js";
-import { HARNESSES } from "../../src/domain/harnesses.js";
+import { HARNESSES, type HarnessId } from "../../src/domain/harnesses.js";
 import type { DirEntry, FileStat, FileSystemPort, LinkStat } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
@@ -443,6 +444,110 @@ describe("runDoctor", () => {
   });
 
   /**
+   * Las degradaciones de cada host son exactamente sus celdas no nativas del
+   * catálogo en las seis superficies, warp y oz incluidos, y no son hallazgos.
+   */
+  it("lista bajo cada host sus superficies no nativas, sin sumar hallazgos", async () => {
+    const report = await runDoctor(
+      makeCtx(new RecordingFs(hostStateFs(home)), home, home),
+      { only: [...CATALOG_ORDER] },
+      { providers: [perHostProvider("mcps")] },
+    );
+
+    const listed = Object.fromEntries(
+      report.hosts.map((host) => [
+        host.host,
+        host.degradations.map((one) => `${one.surface}=${one.status}`),
+      ]),
+    );
+    // Literal: las reglas del plan 083 aplicadas a mano, no el código otra vez.
+    expect(listed).toEqual({
+      "claude-code": [],
+      codex: [
+        "commands=degraded",
+        "structured-choice=degraded",
+        "hooks=degraded",
+        "host-memory=degraded",
+        "compaction=degraded",
+      ],
+      oz: [
+        "commands=degraded",
+        "structured-choice=unsupported",
+        "hooks=unsupported",
+        "mcp=degraded",
+        "host-memory=unsupported",
+        "compaction=unsupported",
+      ],
+      warp: [
+        "commands=degraded",
+        "structured-choice=unsupported",
+        "hooks=unsupported",
+        "host-memory=unsupported",
+        "compaction=unsupported",
+      ],
+      gemini: ["hooks=degraded", "host-memory=unsupported", "compaction=unsupported"],
+      opencode: ["hooks=degraded", "host-memory=unsupported", "compaction=unsupported"],
+      crush: ["hooks=degraded", "host-memory=unsupported", "compaction=unsupported"],
+      kimi: ["commands=degraded", "hooks=degraded", "host-memory=unsupported"],
+    });
+    // Con la tabla literal arriba, esto agrega lo que ella no fija: que el
+    // detalle de cada degradación es el del catálogo, sin reescribir.
+    for (const spec of HARNESSES) {
+      const view = report.hosts.find((host) => host.host === spec.id);
+      const catalog = capabilitiesFor(spec).filter(
+        (one) => !["skills", "subagent-dispatch"].includes(one.id) && one.status !== "native",
+      );
+      expect(view?.degradations, spec.id).toEqual(
+        catalog.map((one) => ({ surface: one.id, status: one.status, detail: one.detail })),
+      );
+    }
+    // Informativas: el proveedor dio un hallazgo sano por host y eso es todo.
+    expect(report.findings).toHaveLength(CATALOG_ORDER.length);
+    expect(report.summary.warning + report.summary.blocking).toBe(0);
+    expect(report.verdict.exit_code).toBe(0);
+  });
+
+  it("warp y oz detectados como ready llevan sus degradaciones sin --only", async () => {
+    const warp = HARNESSES.find((spec) => spec.id === "warp");
+    const warpConfig = warp === undefined ? null : resolveHostConfigDir(warp, home).path;
+    if (warpConfig === null) throw new Error("warp necesita un dir de config en esta plataforma");
+    const fs = hostStateFs(home)
+      .dir(warpConfig)
+      .dir(join(home, ".warp", "skills", "w"))
+      .dir(join(home, ".agents", "skills", "w"));
+    const process = new FakeProcess({
+      which: (cmd) => ({ ...HOST_BINS, oz: "/usr/local/bin/oz" })[cmd],
+      run: () => ({ code: 0, stdout: "9.9.9", stderr: "" }),
+    });
+    const report = await runDoctor(
+      makeCtx(new RecordingFs(fs), home, home, process),
+      {},
+      { providers: [perHostProvider("mcps")] },
+    );
+
+    const byHost = new Map(report.hosts.map((host) => [host.host, host]));
+    expect(byHost.get("warp")?.status).toBe("ready");
+    expect(byHost.get("oz")?.status).toBe("ready");
+    const listed = (id: HarnessId) =>
+      byHost.get(id)?.degradations.map((one) => `${one.surface}=${one.status}`);
+    expect(listed("warp")).toEqual([
+      "commands=degraded",
+      "structured-choice=unsupported",
+      "hooks=unsupported",
+      "host-memory=unsupported",
+      "compaction=unsupported",
+    ]);
+    expect(listed("oz")).toEqual([
+      "commands=degraded",
+      "structured-choice=unsupported",
+      "hooks=unsupported",
+      "mcp=degraded",
+      "host-memory=unsupported",
+      "compaction=unsupported",
+    ]);
+  });
+
+  /**
    * Un id legítimo que no está en esta máquina participa si --only lo pidió:
    * la inspección explícita no se descarta por su ausencia.
    */
@@ -621,14 +726,14 @@ describe("runDoctor", () => {
   });
 
   /** Un consumidor tiene que poder versionar el esquema y atribuir el informe a un CLI. */
-  it("sella schema_version 1, la versión del CLI publicada y un veredicto 0 sin hallazgos", async () => {
+  it("sella schema_version 2, la versión del CLI publicada y un veredicto 0 sin hallazgos", async () => {
     const report = await runDoctor(
       makeCtx(new RecordingFs(hostStateFs(home)), home, home),
       {},
       { providers: [] },
     );
 
-    expect(report.schema_version).toBe(1);
+    expect(report.schema_version).toBe(2);
     expect(report.schema_version).toBe(DOCTOR_SCHEMA_VERSION);
     expect(report.cli_version).toBe(PACKAGE_VERSION);
     // Sin esto, un veredicto cableado a 1 sobreviviría el archivo entero: un

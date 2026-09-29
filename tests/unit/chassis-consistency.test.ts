@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { capabilitiesFor } from "../../src/application/self/host-states.js";
 import { HARNESSES, type HarnessId } from "../../src/domain/harnesses.js";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 
@@ -348,5 +349,82 @@ describe("Structured-choice — opciones funcionales y bindings multi-host", () 
       expect(body, command).toContain("../loops/CHASSIS.md#structured-choice-design--batching");
       expect(body, command).toContain("../harness/HARNESS.md#harness-binding-matrix");
     }
+  });
+});
+
+describe("Tabla de estado por superficie — HARNESS.md ↔ catálogo", () => {
+  const HARNESS_PATH = resolve(__dirname, "..", "..", "skills", "w", "harness", "HARNESS.md");
+  const SURFACES = [
+    "commands",
+    "structured-choice",
+    "hooks",
+    "mcp",
+    "host-memory",
+    "compaction",
+  ] as const;
+  const COLUMN_BY_HOST = {
+    "claude-code": "Claude Code",
+    codex: "Codex",
+    kimi: "Kimi Code",
+    gemini: "Gemini / Antigravity",
+    opencode: "OpenCode",
+    crush: "Crush",
+    warp: "Warp",
+    oz: "Oz",
+  } satisfies Record<HarnessId, string>;
+
+  async function statusTable(): Promise<Map<string, Map<string, string>>> {
+    const lines = (await readFile(HARNESS_PATH, "utf8")).split(/\r?\n/);
+    const cells = (line: string): string[] =>
+      line
+        .slice(1, -1)
+        .split("|")
+        .map((cell) => cell.trim());
+    const start = lines.findIndex((line) => line.startsWith("| Surface |"));
+    expect(start, "falta la tabla de estado por superficie").toBeGreaterThan(-1);
+    const header = cells(lines[start] ?? "");
+    const table = new Map<string, Map<string, string>>();
+    for (const line of lines.slice(start + 2)) {
+      if (!line.startsWith("|")) break;
+      const row = cells(line);
+      expect(row, line).toHaveLength(header.length);
+      table.set(
+        row[0] ?? "",
+        new Map(header.slice(1).map((column, i) => [column, row[i + 1] ?? ""])),
+      );
+    }
+    return table;
+  }
+
+  it("tiene una fila por superficie y una columna por host, warp y oz separados", async () => {
+    const table = await statusTable();
+    expect([...table.keys()]).toEqual([...SURFACES]);
+    expect(Object.keys(COLUMN_BY_HOST).sort()).toEqual(HARNESSES.map((spec) => spec.id).sort());
+    for (const row of table.values()) {
+      expect([...row.keys()].sort()).toEqual(Object.values(COLUMN_BY_HOST).sort());
+    }
+  });
+
+  it("cada celda abre con el estado que el catálogo le da a ese host", async () => {
+    const table = await statusTable();
+    let compared = 0;
+    for (const spec of HARNESSES) {
+      const capabilities = capabilitiesFor(spec);
+      for (const surface of SURFACES) {
+        const cell = table.get(surface)?.get(COLUMN_BY_HOST[spec.id]) ?? "";
+        const declared = /^(native|degraded|unsupported)\b/.exec(cell)?.[1];
+        const catalog = capabilities.find((capability) => capability.id === surface)?.status;
+        expect(declared, `${spec.id}/${surface}: «${cell}»`).toBe(catalog);
+        compared += 1;
+      }
+    }
+    expect(compared).toBe(48);
+  });
+
+  it("la prosa ya no contradice al catálogo en compactación ni en el plugin retirado", async () => {
+    const harness = await readFile(HARNESS_PATH, "utf8");
+    expect(harness).not.toContain("`session.compacted`");
+    expect(harness).not.toMatch(/`PostCompact` \*\*partial\*\*/);
+    expect(harness).not.toContain("That module is now **generated**");
   });
 });

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DoctorRunOptions } from "../../src/application/doctor/report.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import type { DoctorReport } from "../../src/domain/doctor/model.js";
+import { DOCTOR_SCHEMA_VERSION, type DoctorReport } from "../../src/domain/doctor/model.js";
 
 /**
  * El cableado entre el flag que la persona tipea y la autorización que llega
@@ -28,7 +28,7 @@ vi.mock("../../src/application/doctor/report.js", async (importOriginal) => {
     runDoctor: async (_ctx: CliContext, options: DoctorRunOptions = {}): Promise<DoctorReport> => {
       seen.options.push(options);
       return {
-        schema_version: 1,
+        schema_version: DOCTOR_SCHEMA_VERSION,
         cli_version: "0.0.0-test",
         scope: { workspace_dir: "/ws", current_host: null, only: [] },
         hosts: [],

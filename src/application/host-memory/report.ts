@@ -32,6 +32,11 @@ const HOST_MEMORY_READERS: Partial<Record<HarnessId, HostMemoryReader>> = {
   codex: readCodexMemory,
 };
 
+/** Hosts with a registered reader; a guard ties it to each host's declared `hostMemory`. */
+export function hostMemoryReaderHosts(): HarnessId[] {
+  return Object.keys(HOST_MEMORY_READERS) as HarnessId[];
+}
+
 export interface HostMemoryOptions {
   /** The host the invocation is bound to (`--host`); detected from the environment when absent. */
   host?: HarnessId;

@@ -81,7 +81,12 @@ function hostLabel(id: HarnessId): string {
  * nunca, así que invertir `workline_installed` en producción no cambiaría una
  * sola letra del texto y ninguna prueba podría notarlo.
  */
-function hostView(id: HarnessId, current: boolean, installed: boolean): DoctorHostView {
+function hostView(
+  id: HarnessId,
+  current: boolean,
+  installed: boolean,
+  degradations: DoctorHostView["degradations"] = [],
+): DoctorHostView {
   const spec = HARNESSES.find((candidate) => candidate.id === id);
   if (spec === undefined) throw new Error(`el catálogo no declara el host ${id}`);
   return {
@@ -94,6 +99,7 @@ function hostView(id: HarnessId, current: boolean, installed: boolean): DoctorHo
       ? { state: "available", version: "1.2.3" }
       : { state: "missing", version: null },
     workline_installed: installed,
+    degradations,
   };
 }
 
@@ -394,6 +400,43 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
     ]);
     // Y la equivalencia con el JSON: un host de más o de menos rompe acá.
     expect(rendered.filter((line) => / · runtime /.test(line)).length).toBe(report.hosts.length);
+  });
+
+  it("lista bajo cada host sus degradaciones, warp y oz incluidos, igual que el JSON", () => {
+    const report: DoctorReport = {
+      ...healthyReport(),
+      hosts: [
+        hostView("warp", false, true, [
+          { surface: "hooks", status: "unsupported", detail: "this host has no hook system" },
+        ]),
+        hostView("oz", true, true, [
+          {
+            surface: "mcp",
+            status: "degraded",
+            detail: "no MCP config file: this host takes servers\nthrough a launch flag",
+          },
+          { surface: "compaction", status: "unsupported", detail: "CHECKPOINT + resume" },
+        ]),
+      ],
+      hosts_absent: [],
+    };
+    expect(block(human(report), "Hosts")).toEqual([
+      "Hosts",
+      `  ${hostLabel("warp")} · ready · runtime available 1.2.3 · Workline instalado`,
+      "    hooks unsupported — this host has no hook system",
+      `→ ${hostLabel("oz")} · ready · runtime available 1.2.3 · Workline instalado`,
+      "    mcp degraded — no MCP config file: this host takes servers through a launch flag",
+      "    compaction unsupported — CHECKPOINT + resume",
+    ]);
+  });
+
+  it("aw doctor --help declara las degradaciones y el esquema 2", async () => {
+    const help = doctorCommand.help;
+    expect(help?.output).toContain(
+      "degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}",
+    );
+    expect(help?.notes?.join("\n")).toContain("schema_version 2");
+    expect(help?.notes?.join("\n")).toMatch(/adds no finding and does not change the verdict/);
   });
 
   it("imprime cada fila de cobertura con SU estado, en orden, y ninguna de más", () => {

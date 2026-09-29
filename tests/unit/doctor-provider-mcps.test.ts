@@ -249,6 +249,7 @@ function targetHost(id: HarnessId): DoctorTargetHost {
     current: false,
     runtime: { state: "present", version: null },
     workline_installed: true,
+    degradations: [],
     mcp_host: spec.mcpHostId,
   };
 }

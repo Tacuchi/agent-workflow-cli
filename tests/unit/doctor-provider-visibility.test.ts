@@ -118,6 +118,7 @@ function hostView(id: HarnessId): DoctorTargetHost {
     current: false,
     runtime: { state: "installed", version: null },
     workline_installed: true,
+    degradations: [],
     mcp_host: spec.mcpHostId,
   };
 }

@@ -11,7 +11,7 @@ import type { HarnessId, InstallTarget } from "../harnesses.js";
 import type { DoctorAuthFlow } from "./auth.js";
 
 /** A new field raises this; a field is never renamed inside one version. */
-export const DOCTOR_SCHEMA_VERSION = 1;
+export const DOCTOR_SCHEMA_VERSION = 2;
 
 /**
  * The six categories, in the order the report presents them.
@@ -154,6 +154,31 @@ export interface DoctorCoverage {
   reason: string | null;
 }
 
+/**
+ * The host surfaces whose degradations the report lists, in catalog order.
+ *
+ * `skills` and `subagent-dispatch` stay out: they are listed by
+ * `aw self detect-hosts`, and neither changes what a flow can promise the person.
+ */
+export const DOCTOR_HOST_SURFACES = [
+  "commands",
+  "structured-choice",
+  "hooks",
+  "mcp",
+  "host-memory",
+  "compaction",
+] as const;
+
+export type DoctorHostSurface = (typeof DOCTOR_HOST_SURFACES)[number];
+
+/** A surface this host does not reach natively. Informative: never a finding, never the verdict. */
+export interface DoctorHostDegradation {
+  surface: DoctorHostSurface;
+  status: "degraded" | "unsupported";
+  /** The fallback when degraded, the reason when unsupported. */
+  detail: string;
+}
+
 export interface DoctorHostView {
   host: HarnessId;
   target: InstallTarget;
@@ -163,6 +188,8 @@ export interface DoctorHostView {
   current: boolean;
   runtime: { state: string; version: string | null };
   workline_installed: boolean;
+  /** The host's non-native surfaces, from the catalog. Empty when every surface is native. */
+  degradations: DoctorHostDegradation[];
 }
 
 export interface DoctorSummary {

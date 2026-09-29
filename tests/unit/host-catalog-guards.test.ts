@@ -13,7 +13,9 @@ import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { hostMemoryReaderHosts } from "../../src/application/host-memory/report.js";
 import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
+import { hooksTemplateToToml } from "../../src/application/self/hooks-toml.js";
 import {
   capabilitiesFor,
   hooksArmedProbeCoverage,
@@ -210,6 +212,20 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
     );
   });
 
+  it("el SessionStart degradado de kimi es exactamente la pérdida que reporta su conversión a TOML", async () => {
+    const raw = await readFile(join(process.cwd(), "skills/w/hooks/hooks.template.json"), "utf8");
+    const { degraded, skipped } = hooksTemplateToToml(JSON.parse(raw));
+    const hooks = HARNESSES.find((h) => h.id === "kimi")?.hooks;
+    if (hooks === null || hooks === undefined) throw new Error("kimi debe tener hooks");
+    const declared = TEMPLATE_HOOK_EVENTS.filter(
+      (event) => hooks.events[event].state === "degraded",
+    );
+    expect(declared).toEqual(degraded.map((loss) => loss.event));
+    expect(declared).toEqual(["SessionStart"]);
+    expect(skipped).toEqual([]);
+    expect(hookCoverage(hooks)).toContain("partial: SessionStart");
+  });
+
   it("kimi lleva PostCompact completo y sin pérdida de prompt", () => {
     const hooks = HARNESSES.find((h) => h.id === "kimi")?.hooks;
     expect(hooks?.events.PostCompact).toEqual({ state: "carried", native: "PostCompact" });
@@ -227,6 +243,46 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
       const omits = TEMPLATE_HOOK_EVENTS.some((e) => hooks.events[e].state === "omitted");
       if (omits) expect(detail, spec.id).toContain("omits");
     }
+  });
+});
+
+describe("reglas de estado de hooks, compactación y memoria del host", () => {
+  // Literales a propósito: son las reglas del plan 083 aplicadas a mano. Derivar
+  // lo esperado del mismo código sería compararlo consigo mismo.
+  const EXPECTED = {
+    "claude-code": { hooks: "native", compaction: "native", "host-memory": "native" },
+    codex: { hooks: "degraded", compaction: "degraded", "host-memory": "degraded" },
+    oz: { hooks: "unsupported", compaction: "unsupported", "host-memory": "unsupported" },
+    warp: { hooks: "unsupported", compaction: "unsupported", "host-memory": "unsupported" },
+    gemini: { hooks: "degraded", compaction: "unsupported", "host-memory": "unsupported" },
+    opencode: { hooks: "degraded", compaction: "unsupported", "host-memory": "unsupported" },
+    crush: { hooks: "degraded", compaction: "unsupported", "host-memory": "unsupported" },
+    kimi: { hooks: "degraded", compaction: "native", "host-memory": "unsupported" },
+  } as const;
+
+  it("cada host da el estado que fijan las reglas, con un detalle que se puede leer", () => {
+    expect(Object.keys(EXPECTED).sort()).toEqual(HARNESSES.map((h) => h.id).sort());
+    for (const spec of HARNESSES) {
+      const capabilities = capabilitiesFor(spec);
+      for (const [surface, status] of Object.entries(EXPECTED[spec.id])) {
+        const capability = capabilities.find((c) => c.id === surface);
+        expect(capability?.status, `${spec.id}/${surface}`).toBe(status);
+        expect(capability?.detail.length, `${spec.id}/${surface}`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("sin la pareja PreCompact/PostCompact la compactación nombra el respaldo", () => {
+    for (const spec of HARNESSES) {
+      const compaction = capabilitiesFor(spec).find((c) => c.id === "compaction");
+      if (compaction?.status === "native") continue;
+      expect(compaction?.detail, spec.id).toContain("CHECKPOINT + resume");
+    }
+  });
+
+  it("la memoria declarada es exactamente la de los hosts con lector en aw host-memory", () => {
+    const declared = HARNESSES.filter((h) => h.hostMemory.state !== "unsupported").map((h) => h.id);
+    expect(declared.sort()).toEqual([...hostMemoryReaderHosts()].sort());
   });
 });
 

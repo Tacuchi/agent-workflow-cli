@@ -149,7 +149,9 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
       const ids = host.capabilities.map((c) => c.id).sort();
       expect(ids, host.target).toEqual([
         "commands",
+        "compaction",
         "hooks",
+        "host-memory",
         "mcp",
         "skills",
         "structured-choice",

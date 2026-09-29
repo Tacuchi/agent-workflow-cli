@@ -188,5 +188,9 @@ describe("proyección de estado", () => {
     // Nombrar `trusted_hash` acá es correcto —es la RAZÓN por la que no se
     // administra—; lo prohibido es afirmar que quedó instalado.
     expect(hooks?.detail).not.toContain("installed into");
+    // La compactación cuelga de los mismos hooks: existe la pareja, pero sin armar.
+    const compaction = capabilitiesFor(codex).find((c) => c.id === "compaction");
+    expect(compaction?.status).toBe("degraded");
+    expect(compaction?.detail).toContain("does not arm");
   });
 });

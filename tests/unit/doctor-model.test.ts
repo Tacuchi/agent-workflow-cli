@@ -90,11 +90,12 @@ const slotsOf = (coverage: readonly DoctorCoverage[]): string[] =>
   coverage.map((one) => `${one.category}/${one.host}`);
 
 describe("contrato del esquema del doctor", () => {
-  it("la versión del esquema es 1", () => {
+  it("la versión del esquema es 2", () => {
     // Un consumidor que lee el JSON discrimina por este número antes de leer
     // nada más. Subirlo sin querer (o renombrar un campo dentro de la misma
-    // versión) rompe en silencio a quien ya parsea la versión 1.
-    expect(DOCTOR_SCHEMA_VERSION).toBe(1);
+    // versión) rompe en silencio a quien ya parsea la versión 2, la que suma
+    // `hosts[].degradations`.
+    expect(DOCTOR_SCHEMA_VERSION).toBe(2);
   });
 
   it("las seis categorías están en el orden exacto que exige AC-02", () => {

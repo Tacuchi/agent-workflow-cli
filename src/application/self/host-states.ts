@@ -19,11 +19,13 @@ import { dirname, join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import {
   HARNESSES,
+  type HarnessHooks,
   type HarnessId,
   type HarnessSpec,
   type InstallTarget,
   SHARED_SKILL_DESTINATIONS,
   type SupportTier,
+  TEMPLATE_HOOK_EVENTS,
   hookCoverage,
   hookMechanism,
   verificationFor,
@@ -74,7 +76,15 @@ export type CapabilityStatus =
   | "unsupported";
 
 export interface HostCapability {
-  id: "skills" | "commands" | "structured-choice" | "subagent-dispatch" | "hooks" | "mcp";
+  id:
+    | "skills"
+    | "commands"
+    | "structured-choice"
+    | "subagent-dispatch"
+    | "hooks"
+    | "mcp"
+    | "host-memory"
+    | "compaction";
   status: CapabilityStatus;
   /** How it works here — the fallback when degraded, the reason when unsupported. */
   detail: string;
@@ -269,22 +279,7 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
           detail:
             "no native worker dispatch; deterministic steps stay in the CLI and semantic work stays inline",
         },
-    spec.hooks === null
-      ? { id: "hooks", status: "unsupported", detail: "this host has no hook system" }
-      : spec.hooks.managed
-        ? {
-            id: "hooks",
-            status: "native",
-            // The coverage rides along even here: claude carries all five, kimi
-            // carries PostCompact and still loses the SessionStart matcher;
-            // "installed" alone would hide that difference.
-            detail: `installed into ${hookMechanism(spec.hooks)} — ${hookCoverage(spec.hooks)}`,
-          }
-        : {
-            id: "hooks",
-            status: "degraded",
-            detail: `host supports hooks (${hookMechanism(spec.hooks)}) — ${hookCoverage(spec.hooks)}; ${notManagedHere(spec)}`,
-          },
+    hooksCapability(spec),
     spec.mcpHostId === null
       ? {
           id: "mcp",
@@ -292,7 +287,65 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
           detail: "no MCP config file: this host takes servers through a launch flag",
         }
       : { id: "mcp", status: "native", detail: `written to its ${spec.mcpHostId} MCP config` },
+    { id: "host-memory", status: spec.hostMemory.state, detail: spec.hostMemory.detail },
+    compactionCapability(spec.hooks),
   ];
+}
+
+/**
+ * `native` only when Workline arms the hooks AND every template event travels
+ * whole: kimi installs all five yet loses the SessionStart matcher, and crush and
+ * gemini carry only PreToolUse — "installed" alone would hide both.
+ */
+function hooksCapability(spec: HarnessSpec): HostCapability {
+  const hooks = spec.hooks;
+  if (hooks === null)
+    return { id: "hooks", status: "unsupported", detail: "this host has no hook system" };
+  if (!hooks.managed) {
+    return {
+      id: "hooks",
+      status: "degraded",
+      detail: `host supports hooks (${hookMechanism(hooks)}) — ${hookCoverage(hooks)}; ${notManagedHere(spec)}`,
+    };
+  }
+  const whole = TEMPLATE_HOOK_EVENTS.every((event) => hooks.events[event].state === "carried");
+  return {
+    id: "hooks",
+    status: whole ? "native" : "degraded",
+    detail: `installed into ${hookMechanism(hooks)} — ${hookCoverage(hooks)}`,
+  };
+}
+
+/**
+ * Compaction rides on the PreCompact/PostCompact pair: the checkpoint is written
+ * before and the resume summary injected after. With neither, the universal
+ * fallback is CHECKPOINT + resume, run by hand.
+ */
+function compactionCapability(hooks: HarnessHooks | null): HostCapability {
+  const fallback = "CHECKPOINT + resume is the fallback";
+  if (hooks === null) {
+    return { id: "compaction", status: "unsupported", detail: `no compaction hooks; ${fallback}` };
+  }
+  const pair = [hooks.events.PreCompact, hooks.events.PostCompact];
+  const carried = pair.filter((support) => support.state === "carried").length;
+  const omitted = pair.filter((support) => support.state === "omitted").length;
+  if (omitted === pair.length) {
+    return { id: "compaction", status: "unsupported", detail: `no compaction event; ${fallback}` };
+  }
+  if (hooks.managed && carried === pair.length) {
+    return {
+      id: "compaction",
+      status: "native",
+      detail: "PreCompact writes the checkpoint and PostCompact injects the resume summary",
+    };
+  }
+  return {
+    id: "compaction",
+    status: "degraded",
+    detail: hooks.managed
+      ? `only part of the PreCompact/PostCompact pair travels; ${fallback}`
+      : `the host has compaction events but Workline does not arm them here; ${fallback}`,
+  };
 }
 
 /**

@@ -63,7 +63,7 @@ const REMEDIATION_LABEL: Record<string, string> = {
  * Lo que el comando devuelve, y por qué es una unión y no un sobre.
  *
  * `aw doctor` a secas emite el informe COMO `data`, sin envolverlo: es el
- * contrato que el esquema `schema_version: 1` publica y que un consumidor ya
+ * contrato que el esquema `schema_version: 2` publica y que un consumidor ya
  * puede leer. Los subverbos traen otra cosa —un listado o una propuesta
  * sellada—, así que se distinguen por su propio `kind`. El informe no lo lleva
  * justamente para no cambiar la forma que ya estaba publicada.
@@ -106,13 +106,14 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
       },
     },
     output:
-      "{schema_version, cli_version, scope {workspace_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, workline_installed}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
+      "{schema_version, cli_version, scope {workspace_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, workline_installed, degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
     exit_codes: {
       "1": "The verdict is not healthy: a blocking finding or an unavailable coverage. ok is still true and data is the full report.",
     },
     notes: [
       "Without an action it runs the read-only diagnosis and returns the report; the action is optional.",
-      `Categories: ${DOCTOR_CATEGORIES.join(", ")}. schema_version 1 is the published shape of the report.`,
+      `Categories: ${DOCTOR_CATEGORIES.join(", ")}. schema_version 2 is the published shape of the report.`,
+      "hosts[].degradations lists the host's non-native surfaces from the catalog; it adds no finding and does not change the verdict.",
       "Repairs go in two steps: prepare lists the actionable findings or, with --select, seals a batch and returns its digest; apply runs that batch only with the approval digest the person approved.",
     ],
     actions: {
@@ -323,6 +324,9 @@ function hostLines(report: DoctorReport): string[] {
     lines.push(
       `${mark} ${host.label} · ${host.status} · runtime ${host.runtime.state}${version} · Workline ${host.workline_installed ? "instalado" : "ausente"}`,
     );
+    for (const degradation of host.degradations) {
+      lines.push(`    ${degradation.surface} ${degradation.status} — ${flat(degradation.detail)}`);
+    }
   }
   if (report.hosts_absent.length > 0) {
     lines.push(`  sin rastro en esta máquina: ${report.hosts_absent.join(", ")}`);
