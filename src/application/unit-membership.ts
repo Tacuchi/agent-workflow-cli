@@ -1,8 +1,26 @@
 import { parseUnitPath, workspaceKey } from "../domain/isolation-unit.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import type { ProjectFuente } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { readCustody } from "./session-custody-service.js";
 import { listSessionFolders } from "./session-resolver.js";
+
+/** Source of a file in its declared checkout or in one of this hub's flow units. */
+export function findOwningSource(
+  sources: readonly ProjectFuente[],
+  filePath: string,
+  unitsRoot?: string,
+): ProjectFuente | null {
+  for (const source of sources) {
+    if (source.path === null) continue;
+    const root = source.path.endsWith("/") ? source.path : `${source.path}/`;
+    if (filePath === source.path || filePath.startsWith(root)) return source;
+  }
+  if (unitsRoot === undefined) return null;
+  const identity = parseUnitPath(unitsRoot, filePath);
+  if (identity === null) return null;
+  return sources.find((source) => source.alias === identity.alias) ?? null;
+}
 
 /** Every known historical key and every sealed unit of this hub. */
 export async function hubUnitPaths(

@@ -6,7 +6,7 @@ import {
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
-import { expectedWorkBranch, findOwningSource, resolveSourceBranches } from "./branch-resolver.js";
+import { expectedWorkBranch, resolveSourceBranches } from "./branch-resolver.js";
 import { documentOfSession, readDocBranches, resolveDocBranch } from "./doc-branch-ledger.js";
 import { normalizePath } from "./multiroot/paths.js";
 import {
@@ -16,7 +16,7 @@ import {
 } from "./parsers/project-block.js";
 import type { PathsService } from "./paths-service.js";
 import { resolveSessionTarget } from "./session-resolver.js";
-import { hubUnitPaths } from "./unit-membership.js";
+import { findOwningSource, hubUnitPaths } from "./unit-membership.js";
 
 export interface CheckBranchInput {
   alias?: string;

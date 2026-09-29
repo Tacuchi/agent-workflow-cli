@@ -15,7 +15,6 @@ import {
 import type { PathsService } from "./paths-service.js";
 import { type ProdConsent, spendProdConsent } from "./prod-consent.js";
 import { semanticDigest } from "./semantic-operation/protocol.js";
-import { ensureWorklineMaterialized } from "./workspace-materialization-service.js";
 
 /** The per-source git-flow actions (see docs/design/git-flow-per-source.md). */
 export type GitFlowAction = "sync" | "to-dev" | "to-qa" | "to-prod";
@@ -163,7 +162,6 @@ export async function runGitFlow(
 
   const results: GitFlowSourceResult[] = [];
   let overall: GitFlowResult["status"] = "ok";
-  let materialized = false;
 
   for (const entry of entries) {
     if (entry.ops === null || dryRun) {
@@ -171,14 +169,6 @@ export async function runGitFlow(
       results.push(result);
       overall = worst(overall, result.status);
       continue;
-    }
-
-    // Git is a mutation too, even though it goes through the Git port rather
-    // than FileSystemPort. Materialize at the last point before it can alter a
-    // source checkout, after every selection/no-op check has passed.
-    if (!materialized) {
-      await ensureWorklineMaterialized(fs, paths);
-      materialized = true;
     }
 
     // Any throw belongs to THIS source, never to the batch: the precondition

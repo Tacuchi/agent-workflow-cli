@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -138,6 +138,15 @@ describe("git-flow sobre git real: cada rama sólo desde su homónima, PROD sól
     const consent = grantProdConsent(attributeTuiKeypress(new FakeEnv()), need.sources, need.plan);
     return flow({ ...input, consent: consent ?? undefined });
   }
+
+  it("git-flow directo funciona sin marcador, sesión ni plan y no materializa Workline", async () => {
+    const result = await flow({ action: "sync", source: "core" });
+    expect(result.status).toBe("ok");
+    expect(result.results[0]?.steps.length).toBeGreaterThan(0);
+    expect(git(source, "branch", "--show-current")).toBe(WORK);
+    expect(existsSync(join(workspace, ".agent-workflow"))).toBe(false);
+    expect(existsSync(join(workspace, ".workflow"))).toBe(false);
+  });
 
   it("con varios heads en el fetch, PROD queda igual a su remoto y sin merge nuevo", async () => {
     // GIT-01: la configuración de rastreo de PROD mezcla dos heads; `git pull`

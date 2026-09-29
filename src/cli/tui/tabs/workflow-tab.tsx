@@ -3,17 +3,18 @@
 // strip. Doctrinal detail lives in the bundle itself, not in the TUI.
 
 import { Box, Text } from "ink";
-import { FLOW_DECISIONS } from "../../../domain/flow/authority.js";
 import type { CliContext } from "../../types.js";
 import { HostAdminSection } from "../components/host-admin-section.js";
 import { PageHead } from "../components/page-head.js";
 import { WORKFLOW_CONTENT } from "../data/workflow-content.js";
 import type { ToastBridgeInput } from "../notification-center.js";
+import type { PublicStatusSummary } from "../public-status.js";
 import { colors } from "../theme.js";
 
 export interface WorkflowTabProps {
   ctx: CliContext;
   isActive: boolean;
+  summary?: PublicStatusSummary | null;
   onToast?: (msg: ToastBridgeInput) => void;
   /** Hosts [Config] turned off — they leave this tab's host list. */
   disabledHosts?: readonly string[];
@@ -22,14 +23,11 @@ export interface WorkflowTabProps {
 // Ids of the 3 flows inside WORKFLOW_CONTENT.phases (excludes bootstrap/export).
 const FLOW_IDS: ReadonlySet<string> = new Set(["spec", "plan", "quick"]);
 
-export function WorkflowTab({ ctx, isActive, onToast, disabledHosts }: WorkflowTabProps) {
+export function WorkflowTab({ ctx, isActive, summary, onToast, disabledHosts }: WorkflowTabProps) {
   const w = WORKFLOW_CONTENT;
   const flowNames = w.phases
     .filter((p) => FLOW_IDS.has(p.id))
     .map((p) => p.title.split(" — ")[0] ?? p.title);
-  // Derived from the registry, never hardcoded: the row has to follow the
-  // migration, and a stale count would misreport who decides what.
-  const owned = FLOW_DECISIONS.filter((d) => d.ownership === "cli-owned").length;
 
   return (
     <Box flexDirection="column">
@@ -51,6 +49,12 @@ export function WorkflowTab({ ctx, isActive, onToast, disabledHosts }: WorkflowT
         </Text>
       </Box>
       <Box>
+        <Text color={colors.mute}>Next: </Text>
+        <Text color={colors.dim} wrap="truncate-end">
+          {summary?.next ?? "no disponible"}
+        </Text>
+      </Box>
+      <Box>
         <Text color={colors.mute}>Flows: </Text>
         <Text color={colors.bright} bold>
           {flowNames.join(" · ")}
@@ -66,7 +70,9 @@ export function WorkflowTab({ ctx, isActive, onToast, disabledHosts }: WorkflowT
           <Text color={colors.bright} bold>
             {w.engine.command}
           </Text>
-          <Text color={colors.dim}>{` — ${owned}/${FLOW_DECISIONS.length} CLI-owned · `}</Text>
+          <Text
+            color={colors.dim}
+          >{` — ${summary?.state === "available" ? `${summary.pending} pendientes` : "estado no disponible"} · `}</Text>
         </Box>
         <Text color={colors.dim} wrap="truncate-end">
           {w.engine.summary}

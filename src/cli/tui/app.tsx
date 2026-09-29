@@ -5,7 +5,6 @@ import { formatTuiEvent } from "../../application/logging/log-events.js";
 import type { DefaultBranches } from "../../application/parsers/project-block.js";
 import { runProjectMdUpsertWrite } from "../../application/project-md-upsert-service.js";
 import { writeNamespacePin } from "../../application/self/namespace-info.js";
-import { SessionsService } from "../../application/sessions-service.js";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
@@ -19,6 +18,7 @@ import type { LogEntry } from "./data/logs.js";
 import { loadLogs } from "./data/logs.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { NotificationCenterProvider, useNotifications } from "./notification-center.js";
+import { type PublicStatusSummary, readPublicStatus } from "./public-status.js";
 import { ConfigTab } from "./tabs/config-tab.js";
 import { McpTab } from "./tabs/mcp-tab.js";
 import { ProjectTab } from "./tabs/project-tab.js";
@@ -102,6 +102,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     branchLabel: "— · loading",
     sessionsLabel: "— sessions",
   });
+  const [workflowSummary, setWorkflowSummary] = useState<PublicStatusSummary | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   // Bumped by `r`: remounts the active tab (its effects re-fetch) and reloads
   // the shell data (header + the Status tab's log history).
@@ -143,8 +144,9 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   const loadShellData = useCallback(async () => {
     const name = await resolveProjectName(ctx);
     setProjectName(name);
-    const wctx = await loadWorkspaceContext(ctx);
-    setWorkspaceCtx(wctx);
+    const [wctx, summary] = await Promise.all([loadWorkspaceContext(ctx), readPublicStatus(ctx)]);
+    setWorkspaceCtx({ ...wctx, sessionsLabel: summary.sessionsLabel });
+    setWorkflowSummary(summary);
     const dailyLogs = await loadLogs(ctx);
     setLogs(dailyLogs);
   }, [ctx]);
@@ -374,6 +376,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
             <WorkflowTab
               ctx={ctx}
               isActive={true}
+              summary={workflowSummary}
               onToast={pushToast}
               disabledHosts={prefs.disabledHosts}
             />
@@ -459,14 +462,5 @@ async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> 
     // keep default
   }
 
-  // Sessions count — in-process, same service `aw sessions` wraps.
-  let sessionsLabel = "— sessions";
-  try {
-    const data = await new SessionsService(ctx.fs, ctx.env, ctx.paths).list();
-    sessionsLabel = `${data.total_count} sessions · ${data.active_count} active`;
-  } catch {
-    // keep default
-  }
-
-  return { branchLabel, sessionsLabel };
+  return { branchLabel, sessionsLabel: "— sessions" };
 }

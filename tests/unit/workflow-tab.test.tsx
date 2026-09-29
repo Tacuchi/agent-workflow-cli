@@ -7,9 +7,9 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { SKILL_DIR_NAME, TARGET_ROOTS } from "../../src/application/self/install-skill.js";
 import { WORKFLOW_CONTENT } from "../../src/cli/tui/data/workflow-content.js";
 import { HOSTS, SHARED_DESTINATIONS } from "../../src/cli/tui/hosts.js";
+import type { PublicStatusSummary } from "../../src/cli/tui/public-status.js";
 import { WorkflowTab } from "../../src/cli/tui/tabs/workflow-tab.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { FLOW_DECISIONS } from "../../src/domain/flow/authority.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -51,9 +51,17 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  async function renderFlat(disabledHosts?: readonly string[]): Promise<string> {
+  async function renderFlat(
+    disabledHosts?: readonly string[],
+    summary?: PublicStatusSummary,
+  ): Promise<string> {
     const { lastFrame, unmount } = render(
-      <WorkflowTab ctx={buildCtx(home)} isActive {...(disabledHosts ? { disabledHosts } : {})} />,
+      <WorkflowTab
+        ctx={buildCtx(home)}
+        isActive
+        {...(disabledHosts ? { disabledHosts } : {})}
+        {...(summary ? { summary } : {})}
+      />,
     );
     await new Promise((r) => setTimeout(r, 80));
     const frame = (lastFrame() ?? "").replace(/\s+/g, " ");
@@ -80,15 +88,23 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
     expect(frame).not.toContain("Workspace init");
   });
 
-  // El motor de dirección tiene su propia fila, y su cifra sale del registro de
-  // autoridad — nunca de un número escrito a mano, que se quedaría viejo en el
-  // primer tramo migrado y haría que la pestaña reporte mal la migración.
-  it("fila del motor: `aw flow` con su propiedad derivada del registro de autoridad", async () => {
+  it("fila del motor: `aw flow` sin inventar estado al faltar el status público", async () => {
     const frame = await renderFlat();
     expect(frame).toContain("Engine:");
     expect(frame).toContain(WORKFLOW_CONTENT.engine.command);
-    const owned = FLOW_DECISIONS.filter((d) => d.ownership === "cli-owned").length;
-    expect(frame).toContain(`${owned}/${FLOW_DECISIONS.length} CLI-owned`);
+    expect(frame).toContain("estado no disponible");
+    expect(frame).not.toContain("CLI-owned");
+  });
+
+  it("la fila proyecta pendiente y siguiente desde el status público", async () => {
+    const frame = await renderFlat(undefined, {
+      state: "available",
+      sessionsLabel: "2 sessions · 1 active",
+      pending: 2,
+      next: "revisar F3",
+    });
+    expect(frame).toContain("2 pendientes");
+    expect(frame).toContain("Next: revisar F3");
   });
 
   it("administración por host montada: sección Hosts con TODOS los targets del registro", async () => {

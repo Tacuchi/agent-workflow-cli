@@ -1,4 +1,3 @@
-import { parseUnitPath } from "../domain/isolation-unit.js";
 import type {
   DefaultBranches,
   ParsedProjectBlock,
@@ -99,31 +98,4 @@ export function expectedWorkBranch(
 ): string | null {
   const branch = workingBranches[source.alias];
   return branch && branch.length > 0 ? branch : null;
-}
-
-/**
- * Find the Fuentes source that owns `filePath`.
- *
- * Two ways to own a file, and the second is what keeps isolation units from
- * escaping every check: the declared path prefix, and — when `unitsRoot` is
- * given — a path inside one of the flow isolation units, whose own location
- * names the alias it was cut from. Without that second reading a worktree lives
- * outside every declared source path, so it belongs to nobody and every branch
- * verification lets it through in silence.
- */
-export function findOwningSource(
-  sources: readonly ProjectFuente[],
-  filePath: string,
-  unitsRoot?: string,
-): ProjectFuente | null {
-  for (const s of sources) {
-    if (s.path === null) continue;
-    // A path boundary, not a string prefix: `/src/core2` is not inside `/src/core`.
-    const root = s.path.endsWith("/") ? s.path : `${s.path}/`;
-    if (filePath === s.path || filePath.startsWith(root)) return s;
-  }
-  if (unitsRoot === undefined) return null;
-  const identity = parseUnitPath(unitsRoot, filePath);
-  if (identity === null) return null;
-  return sources.find((s) => s.alias === identity.alias) ?? null;
 }

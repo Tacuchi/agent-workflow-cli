@@ -17,6 +17,7 @@ interface CtxOpts {
   };
   /** When true, `npm view` (the boot update-check) rejects as if offline. */
   npmThrows?: boolean;
+  statusJson?: string;
 }
 
 function buildCtx(opts: CtxOpts = {}): CliContext {
@@ -38,6 +39,9 @@ function buildCtx(opts: CtxOpts = {}): CliContext {
         if (opts.npmThrows && cmd === "npm") {
           throw new Error("getaddrinfo ENOTFOUND registry.npmjs.org");
         }
+        if (cmd === "agent-workflow") {
+          return { code: 0, stdout: opts.statusJson ?? "", stderr: "" };
+        }
         return { code: 0, stdout: "", stderr: "" };
       },
       which: async () => undefined,
@@ -54,6 +58,7 @@ function buildCtx(opts: CtxOpts = {}): CliContext {
       source: "default" as const,
     },
     paths: {
+      workspaceDir: () => "/home/test/project",
       userMcpConnectionsFile: () => "/tmp/non-existent-conns.json",
       userDsnFile: () => "/tmp/non-existent-dsn.env",
       userRoot: () => "/home/test/.workflow",
@@ -63,6 +68,8 @@ function buildCtx(opts: CtxOpts = {}): CliContext {
       cwdHistoryFile: () => "/home/test/project/.workflow/HISTORY.md",
       cwdSessionsDir: () => "/home/test/project/.workflow/sessions",
       cwdMarkerFile: () => "/home/test/project/.workflow/workline.json",
+      cwdProcessesFile: () => "/home/test/project/.workflow/processes.json",
+      cwdLockFile: () => "/home/test/project/.workflow/lock",
       blockMarkers: () => ({ start: "<!-- AW-PROJECT-START -->", end: "<!-- AW-PROJECT-END -->" }),
     } as never,
   } as unknown as CliContext;
@@ -108,6 +115,42 @@ describe("App (tab-home)", () => {
     // the compact flows summary.
     expect(lastFrame()).toContain("HOSTS");
     expect(lastFrame()).toContain("Flows:");
+  });
+
+  it("proyecta el próximo paso del status público sin importar decisiones del motor", async () => {
+    const ctx = buildCtx({
+      statusJson: JSON.stringify({
+        counts: {
+          sessions_active: 1,
+          sessions_closed: 2,
+          sessions_paused: 0,
+          sessions_abandoned: 0,
+          pending: 1,
+        },
+        pipeline: [{ file: "docs/plans/021-plan.md", detail: { next: "revisar F3" } }],
+      }),
+    });
+    const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lastFrame()).toContain("3 sessions · 1 active");
+    stdin.write("2");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lastFrame()).toContain("1 pendientes");
+    expect(lastFrame()).toContain("docs/plans/021-plan.md: revisar F3");
+  });
+
+  it("un status ilegible deja la navegación y la pestaña Git disponibles", async () => {
+    const ctx = buildCtx({ statusJson: "not json" });
+    const { stdin, lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
+    await new Promise((r) => setTimeout(r, 50));
+    stdin.write("2");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lastFrame()).toContain("estado no disponible");
+    expect(lastFrame()).toContain("Next: no disponible");
+    stdin.write("3");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(lastFrame()).toContain("Project");
+    expect(lastFrame()).toContain("git");
   });
 
   it("número 5 abre Config sin acceso a catálogo ni gestor de terceros", async () => {

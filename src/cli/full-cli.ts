@@ -52,7 +52,6 @@ import {
   writeStderr,
   writeStdout,
 } from "./render.js";
-import { runTui } from "./tui/run.js";
 import type { CliContext } from "./types.js";
 
 async function run(argv: string[]): Promise<ExitCode> {
@@ -378,6 +377,7 @@ async function runInteractiveMenu(
   output: OutputMode,
 ): Promise<ExitCode> {
   await ctx.logger?.info(formatTuiEvent("open"));
+  const { runTui } = await import("./tui/run.js");
   const tuiResult = await runTui(readPackageVersion(), ctx);
   return tuiResult.kind === "menu-action"
     ? await dispatchMenuAction(tuiResult.action, registry, output)
