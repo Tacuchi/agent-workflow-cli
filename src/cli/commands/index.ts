@@ -158,8 +158,3 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   sessionResumeCommand,
   selfCommand,
 ];
-
-/** name → purpose map for the global `aw --help` command list. */
-export function commandDescribes(): ReadonlyMap<string, string> {
-  return new Map(ALL_COMMANDS.map((c) => [c.name, c.help.purpose]));
-}

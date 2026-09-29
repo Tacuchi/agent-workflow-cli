@@ -39,10 +39,10 @@ type ExportData =
 
 const PURPOSES: Record<ExportCategory, string> = {
   diagrams:
-    "Publish a diagram dossier (README plus textual sources in any notation) to docs/diagrams.",
+    "Export a diagram dossier (README plus textual sources in any notation) to docs/diagrams.",
   manuals:
-    "Publish manuals to docs/manuals or [docs] manuals: an INDEX.md alone (complement), flat <slug>.md files or a numbered dossier.",
-  reports: "Publish one bounded report to docs/reports.",
+    "Export manuals to docs/manuals or [docs] manuals: an INDEX.md alone (complement), flat <slug>.md files or a numbered dossier.",
+  reports: "Export one bounded report to docs/reports.",
   scripts:
     "Consolidate SQL into a docs/scripts bundle: five forward categories plus rollbacks under rollback/; it NEVER executes SQL.",
 };

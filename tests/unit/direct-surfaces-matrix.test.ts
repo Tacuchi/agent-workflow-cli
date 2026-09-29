@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js";
+import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { commandHelpText, groupCommands } from "../../src/cli/help-groups.js";
 import { resolveOutputMode } from "../../src/cli/output-mode.js";
 import { parseArgv } from "../../src/cli/parser.js";
@@ -29,6 +29,10 @@ const SURFACES = [
   { name: "export-scripts", kind: "hybrid", writes: "docs/scripts" },
 ] as const;
 
+function purposes(): ReadonlyMap<string, string> {
+  return new Map(ALL_COMMANDS.map((command) => [command.name, command.help.purpose]));
+}
+
 function registry(): CommandRegistry {
   const reg = new CommandRegistry();
   for (const command of ALL_COMMANDS) reg.register(command);
@@ -43,7 +47,9 @@ describe("C1 · every declared surface is a real, registered command", () => {
   });
 
   it("no command falls into the help catch-all", () => {
-    const groups = groupCommands(registry().list());
+    // Hook targets are listed apart, by their attribute: they have no family.
+    const agentFacing = ALL_COMMANDS.filter((command) => command.hook !== true);
+    const groups = groupCommands(agentFacing.map((command) => command.name));
     expect(groups.find((g) => g.name === "Other")).toBeUndefined();
   });
 
@@ -51,7 +57,7 @@ describe("C1 · every declared surface is a real, registered command", () => {
     expect(
       groupCommands(registry().list()).find((g) => g.name === "Sources / Branches")?.commands,
     ).toContain("set-pipeline");
-    expect(commandDescribes().get("set-pipeline")).toMatch(/build or test/);
+    expect(purposes().get("set-pipeline")).toMatch(/build or test/);
   });
 
   it("every surface carries a help whose usage names it", () => {
@@ -65,7 +71,7 @@ describe("C1 · every declared surface is a real, registered command", () => {
 
   // Three commands share the `resume` stem and three different audiences.
   it("the three resume-shaped commands stay distinguishable", () => {
-    const describes = commandDescribes();
+    const describes = purposes();
     expect(describes.get("resume")).toMatch(/what to resume/i);
     expect(describes.get("resume-summary")).toContain("PostCompact");
     expect(describes.get("session-resume")).toContain("session");

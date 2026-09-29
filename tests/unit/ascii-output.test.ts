@@ -5,7 +5,7 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
 import { toAscii } from "../../src/cli/ascii.js";
 import { exportDiagramsCommand } from "../../src/cli/commands/export.js";
-import { commandDescribes } from "../../src/cli/commands/index.js";
+import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { sessionArtifactsCommand } from "../../src/cli/commands/session-artifacts.js";
 import { statusCommand } from "../../src/cli/commands/status.js";
 import { visibilityCommand } from "../../src/cli/commands/visibility.js";
@@ -158,8 +158,7 @@ describe("--ascii · the human projection stays inside ASCII", () => {
   });
 
   it("the help and the per-command help follow the same mark", () => {
-    const names = [...commandDescribes().keys()];
-    const help = globalHelpText(names, commandDescribes(), "workflow");
+    const help = globalHelpText(ALL_COMMANDS, "workflow");
     expect(aboveAscii(help).length).toBeGreaterThan(0);
     expect(aboveAscii(forPerson(help, ASCII))).toEqual([]);
     // Per-command help is English (plan 082 F2), so it is ASCII already and the
@@ -171,7 +170,7 @@ describe("--ascii · the human projection stays inside ASCII", () => {
   });
 
   it("the global help documents the output flags", () => {
-    const help = globalHelpText([], new Map(), "workflow");
+    const help = globalHelpText([], "workflow");
     for (const flag of ["--format human|json", "--json", "--detail", "--ascii", "AW_ASCII=1"]) {
       expect(help).toContain(flag);
     }

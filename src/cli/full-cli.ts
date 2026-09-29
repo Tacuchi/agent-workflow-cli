@@ -31,7 +31,7 @@ import {
   registerResolvedWorkspace,
   resolveWorkspaceDirectory,
 } from "../runtime/workspace-resolution.js";
-import { ALL_COMMANDS, commandDescribes } from "./commands/index.js";
+import { ALL_COMMANDS } from "./commands/index.js";
 import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
 import { commandHelpText, globalHelpText } from "./help-groups.js";
@@ -644,7 +644,9 @@ async function dispatchMenuAction(
 }
 
 function printHelp(commands: string[], mode: Pick<OutputMode, "ascii">): void {
-  writeStdout(forPerson(globalHelpText(commands, commandDescribes(), DEFAULT_NAMESPACE), mode));
+  const registered = new Set(commands);
+  const entries = ALL_COMMANDS.filter((command) => registered.has(command.name));
+  writeStdout(forPerson(globalHelpText(entries, DEFAULT_NAMESPACE), mode));
 }
 
 function printCommandHelp(

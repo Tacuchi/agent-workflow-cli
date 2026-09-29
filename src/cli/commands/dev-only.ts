@@ -134,7 +134,7 @@ export const nextNumberCommand: CliCommand = {
   flags: { known: ["claim", "publish", "code", "dry-run", "folder"] },
   help: {
     purpose:
-      "Number a new document: compute the next NNN of a directory, reserve it for a session, or publish the document under it.",
+      "Number a new document: compute the next NNN of a directory, reserve it for a session, or write a reserved document under it; to publish conversation work use aw persist.",
     args: "<dir>",
     flags: {
       claim: {

@@ -4,8 +4,8 @@ import { describe, expect, it } from "vitest";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { projectMdUpsertCommand } from "../../src/cli/commands/project-md-upsert.js";
 import {
+  INTENTS,
   commandHelpText,
-  commandSummary,
   globalHelpText,
   groupCommands,
   renderGroupedCommandLines,
@@ -73,15 +73,15 @@ describe("groupCommands", () => {
 
 describe("renderGroupedCommandLines", () => {
   it("emits a header for each group with two-space indented commands", () => {
-    const lines = renderGroupedCommandLines(["self", "hook"]);
+    const lines = renderGroupedCommandLines(["self", "status"]);
     expect(lines).toContain("Self:");
-    expect(lines).toContain("Hooks:");
+    expect(lines).toContain("Orchestration:");
     expect(lines).toContain("  self");
-    expect(lines).toContain("  hook");
+    expect(lines).toContain("  status");
   });
 
   it("inserts a blank line between groups but not after the last one", () => {
-    const lines = renderGroupedCommandLines(["self", "hook"]);
+    const lines = renderGroupedCommandLines(["self", "status"]);
     const blanks = lines.filter((l) => l === "");
     expect(blanks.length).toBe(1);
     expect(lines[lines.length - 1]).not.toBe("");
@@ -95,45 +95,25 @@ describe("renderGroupedCommandLines", () => {
 
 describe("guard: every registered command has a real group (no 'Other')", () => {
   it("groups all commands from the canonical registry with none left in Other", () => {
-    const groups = groupCommands(ALL_COMMANDS.map((c) => c.name));
+    const agentFacing = ALL_COMMANDS.filter((c) => c.hook !== true);
+    const groups = groupCommands(agentFacing.map((c) => c.name));
     const other = groups.find((g) => g.name === "Other");
     expect(other, `these commands fell into Other: ${other?.commands.join(", ")}`).toBeUndefined();
   });
 });
 
-describe("commandSummary (global help one-liner)", () => {
-  it("takes the first sentence and drops the appended Usage clause", () => {
-    expect(commandSummary("Do a thing. Usage: aw x [--flag].")).toBe("Do a thing.");
-  });
-
-  it("cuts at a real sentence boundary (period + space + capital)", () => {
-    expect(commandSummary("First sentence. Second one here.")).toBe("First sentence.");
-  });
-
-  it("does not truncate at an ellipsis or a non-boundary period", () => {
-    expect(commandSummary("Scan files (localhost, secrets, ...). Usage: aw code-scan.")).toBe(
-      "Scan files (localhost, secrets, ...).",
+describe("renderGroupedCommandLines with purposes", () => {
+  it("renders `name  <purpose>` aligned and whole, never cut mid-sentence", () => {
+    const long = `Manage it ${"really ".repeat(20)}well. Then more.`;
+    const lines = renderGroupedCommandLines(
+      ["self", "status"],
+      new Map([
+        ["self", long],
+        ["status", "Show what is pending."],
+      ]),
     );
-  });
-
-  it("elides overly long summaries with an ellipsis", () => {
-    const out = commandSummary(`${"palabra ".repeat(20)}fin.`);
-    expect(out.length).toBeLessThanOrEqual(72);
-    expect(out.endsWith("…")).toBe(true);
-  });
-});
-
-describe("renderGroupedCommandLines with describes", () => {
-  it("renders `name  <first sentence>` aligned when a describe map is given", () => {
-    const describes = new Map([
-      ["self", "Self-management umbrella. Usage: aw self <sub>."],
-      ["hook", "Run a workflow hook."],
-    ]);
-    const lines = renderGroupedCommandLines(["self", "hook"], describes);
-    expect(lines.some((l) => /self\s+Self-management umbrella\./.test(l))).toBe(true);
-    expect(lines.some((l) => /hook\s+Run a workflow hook\./.test(l))).toBe(true);
-    // The Usage clause is NOT spilled into the global list.
-    expect(lines.every((l) => !l.includes("Usage:"))).toBe(true);
+    expect(lines).toContain(`  self    ${long}`);
+    expect(lines).toContain("  status  Show what is pending.");
   });
 
   it("falls back to name-only for commands missing from the describe map", () => {
@@ -162,7 +142,7 @@ describe("commandHelpText", () => {
   });
 
   it("la ayuda global anuncia --workspace sin prometer una raíz implícita en un checkout", () => {
-    const help = globalHelpText([], new Map(), "workflow");
+    const help = globalHelpText([], "workflow");
     expect(help).toContain("[--workspace <path>]");
     expect(help).toContain("inside\nan unclaimed checkout, specify --workspace");
     expect(help).not.toContain("the invoked directory is the\nimplicit root");
@@ -257,5 +237,75 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
       expect(result.status, args.join(" ")).toBe(0);
       expect(result.stdout, args.join(" ")).toContain(expected);
     }
+  });
+});
+
+describe("aw --help — contract once, one command per intent, hook targets apart", () => {
+  const help = globalHelpText(ALL_COMMANDS, "workflow");
+
+  it("declares the common contract exactly once", () => {
+    for (const line of [
+      "Common contract (every command",
+      "Error    {ok: false, error: {code, message, details?}, data?}",
+      "Exit 0   success.",
+      "Exit 1   error",
+      "Exit 2   a condition the command declares in its own help",
+      "Format   --format human|json",
+    ]) {
+      expect(help.split(line).length - 1, line).toBe(1);
+    }
+  });
+
+  it("no command help restates the common envelope or the success exit", () => {
+    // An exit 1 of its own (an unhealthy verdict with ok: true) differs from the
+    // contract, so a command declares it; the shared meanings stay here only.
+    for (const command of ALL_COMMANDS) {
+      for (const action of [undefined, ...Object.keys(command.flags.actions ?? {})]) {
+        const own = commandHelpText(command, action);
+        expect(own, `${command.name} ${action ?? ""}`).not.toMatch(
+          /\{ok: false|^Exit 0:|^Exit 1: error/m,
+        );
+      }
+    }
+  });
+
+  it("leads with six intents, each answered by exactly one registered command", () => {
+    expect(INTENTS.map((row) => row.intent)).toEqual([
+      "what to resume",
+      "what is pending",
+      "publish a document in docs/",
+      "number a new document",
+      "diagnose the installation",
+      "consolidate SQL",
+    ]);
+    const commands = INTENTS.map((row) => row.command);
+    expect(new Set(commands).size).toBe(commands.length);
+    for (const { intent, command } of INTENTS) {
+      expect(
+        ALL_COMMANDS.some((c) => c.name === command),
+        command,
+      ).toBe(true);
+      expect(help, intent).toMatch(new RegExp(`^ {2}${intent} +aw ${command}$`, "m"));
+    }
+    expect(help.indexOf("By intent:")).toBeLessThan(help.indexOf("Commands:"));
+  });
+
+  it("groups exactly the four hook targets apart, by their attribute", () => {
+    expect(
+      ALL_COMMANDS.filter((c) => c.hook === true)
+        .map((c) => c.name)
+        .sort(),
+    ).toEqual(["auto-compact-on-close", "checkpoint-write", "hook", "resume-summary"]);
+    const section = help.slice(help.indexOf("Hook targets"), help.indexOf("Aliases:"));
+    const listed = [...section.matchAll(/^ {2}([\w-]+) {2,}/gm)].map((m) => m[1]).sort();
+    expect(listed).toEqual(["auto-compact-on-close", "checkpoint-write", "hook", "resume-summary"]);
+    const commandsSection = help.slice(help.indexOf("Commands:"), help.indexOf("Hook targets"));
+    for (const name of listed)
+      expect(commandsSection).not.toMatch(new RegExp(`^ {2}${name} `, "m"));
+  });
+
+  it("prints every purpose whole", () => {
+    expect(help).not.toContain("…");
+    for (const command of ALL_COMMANDS) expect(help).toContain(command.help.purpose);
   });
 });

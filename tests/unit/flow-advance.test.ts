@@ -8,7 +8,7 @@ import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { projectRun } from "../../src/application/flow/run-projection.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
-import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js";
+import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   commandHelpText,
   groupCommands,
@@ -254,14 +254,16 @@ describe("la entrada pública queda en su familia y ninguna guarda se rompe", ()
   });
 
   it("ningún comando cae en el cajón de sastre del help", () => {
-    const groups = groupCommands(ALL_COMMANDS.map((command) => command.name));
+    // Los destinos de hook no tienen familia: `aw --help` los agrupa por su atributo.
+    const agentFacing = ALL_COMMANDS.filter((command) => command.hook !== true);
+    const groups = groupCommands(agentFacing.map((command) => command.name));
     expect(groups.find((group) => group.name === "Other")).toBeUndefined();
   });
 
   it("el listado agrupado muestra `flow` con su resumen", () => {
     const lines = renderGroupedCommandLines(
       ALL_COMMANDS.map((command) => command.name),
-      commandDescribes(),
+      new Map(ALL_COMMANDS.map((command) => [command.name, command.help.purpose])),
     );
     const row = lines.find((line) => line.trim().startsWith("flow "));
     expect(row).toBeDefined();

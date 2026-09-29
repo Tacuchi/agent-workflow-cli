@@ -8,8 +8,8 @@ import type { CliCommand, FlagHelp, HelpContract } from "./registry.js";
 // Adding a new command? Decide which family it belongs to and append it to the
 // matching group below. Any registered command NOT listed here falls into the
 // catch-all "Other" section — the `help-groups` guard test fails if that happens,
-// so every command must have a real home. Keep this in sync with
-// `src/cli/tui/data/workflow-content.ts` (the TUI Workflow tab) too.
+// so every command must have a real home. Hook targets are not listed here:
+// they carry `hook: true` and `aw --help` groups them apart.
 
 export interface CommandGroup {
   name: string;
@@ -31,7 +31,7 @@ const GROUPS: readonly CommandGroup[] = [
   },
   {
     name: "Checkpoint",
-    commands: ["checkpoint-read", "checkpoint-write", "auto-compact-on-close"],
+    commands: ["checkpoint-read"],
   },
   {
     name: "Sources / Branches",
@@ -74,7 +74,6 @@ const GROUPS: readonly CommandGroup[] = [
       // The deterministic direction engine: advances a journey to its first
       // non-deterministic boundary and hands back that boundary's directive.
       "flow",
-      "resume-summary",
       "next-number",
       // The reservations of numbered documents nobody is finishing, and the one
       // authorized way to give a correlative back: it revokes the claim durably
@@ -147,7 +146,6 @@ const GROUPS: readonly CommandGroup[] = [
       "workspace-migrate",
     ],
   },
-  { name: "Hooks", commands: ["hook"] },
   { name: "MCP", commands: ["mcp", "tool"] },
   { name: "Dev-only", commands: ["harness", "profiles", "logs"] },
   { name: "Self", commands: ["self"] },
@@ -168,53 +166,61 @@ export function groupCommands(allCommands: string[]): CommandGroup[] {
   return out;
 }
 
-// Max width of the one-line summary in the global command list; longer first
-// sentences are elided with an ellipsis so the help never wraps awkwardly.
-const MAX_SUMMARY_WIDTH = 72;
-
 /**
- * One-line gloss for the global command list: the first sentence of a command's
- * `describe`, minus any appended `Usage: …` clause (that belongs to
- * `<cmd> --help`). Elided to {@link MAX_SUMMARY_WIDTH}.
- */
-export function commandSummary(describe: string): string {
-  const head = describe.split(/\s+Usage:/i)[0]?.trim() ?? describe.trim();
-  // First sentence = up to a `.`/`!`/`?` that is followed by whitespace + an
-  // uppercase letter (a real sentence boundary). This skips ellipses ("...")
-  // and abbreviations that are not followed by a capitalized word.
-  const match = head.match(/^[\s\S]*?[.!?](?=\s+[A-ZÁÉÍÓÚÑ])/);
-  let sentence = (match ? match[0] : head).trim();
-  if (sentence.length > MAX_SUMMARY_WIDTH) {
-    sentence = `${sentence.slice(0, MAX_SUMMARY_WIDTH - 1).trimEnd()}…`;
-  }
-  return sentence;
-}
-
-/**
- * Renders the grouped command list for `aw --help`. When `describes` is provided
- * (a name→describe map), each line becomes `name — <first sentence>` with the
- * names column-aligned; without it, names are listed alone (back-compat).
+ * Renders the grouped command list for `aw --help`. With a name→purpose map each
+ * line is `name  <purpose>`, whole and column-aligned; without it, names alone.
  */
 export function renderGroupedCommandLines(
   allCommands: string[],
-  describes?: ReadonlyMap<string, string>,
+  purposes?: ReadonlyMap<string, string>,
 ): string[] {
   const groups = groupCommands(allCommands);
-  const nameWidth = describes ? Math.max(0, ...allCommands.map((c) => c.length)) : 0;
+  const nameWidth = purposes ? Math.max(0, ...allCommands.map((c) => c.length)) : 0;
   const lines: string[] = [];
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];
     if (!g) continue;
     lines.push(`${g.name}:`);
     for (const c of g.commands) {
-      const describe = describes?.get(c);
-      const summary = describe ? commandSummary(describe) : "";
-      lines.push(summary ? `  ${c.padEnd(nameWidth)}  ${summary}` : `  ${c}`);
+      const purpose = purposes?.get(c);
+      lines.push(purpose ? `  ${c.padEnd(nameWidth)}  ${purpose}` : `  ${c}`);
     }
     if (i < groups.length - 1) lines.push("");
   }
   return lines;
 }
+
+/**
+ * One command per intent an agent arrives with: the first thing `aw --help`
+ * answers. Each command is the one whose purpose declares that intent; the
+ * others that look alike are its variants, not a second answer.
+ */
+export const INTENTS: readonly { intent: string; command: string }[] = [
+  { intent: "what to resume", command: "resume" },
+  { intent: "what is pending", command: "status" },
+  { intent: "publish a document in docs/", command: "persist" },
+  { intent: "number a new document", command: "next-number" },
+  { intent: "diagnose the installation", command: "doctor" },
+  { intent: "consolidate SQL", command: "export-scripts" },
+];
+
+/**
+ * The contract every command shares, declared once here and never repeated in a
+ * command's own help, which only states where it differs.
+ */
+const COMMON_CONTRACT = [
+  "Common contract (every command; its own --help says only where it differs):",
+  "  Success  in JSON, stdout is the command's data itself, with no ok wrapper; its shape is in",
+  "           aw <command> --help.",
+  "  Error    {ok: false, error: {code, message, details?}, data?}; data.action names the",
+  "           next step when the CLI knows one.",
+  "  Exit 0   success.",
+  "  Exit 1   error; in JSON the error envelope is on stdout.",
+  "  Exit 2   a condition the command declares in its own help (a merge conflict, a blocked",
+  "           hook call, a stdio transport failure).",
+  "  Format   --format human|json: human by default in a terminal, JSON in a pipe; --json is",
+  "           --format json. A command without a human projection prints JSON in every mode.",
+];
 
 /** What a help renderer reads of a command: its name, contracts and projections. */
 export type HelpSubject = Pick<CliCommand, "name" | "help" | "flags" | "hook"> &
@@ -345,23 +351,42 @@ export function commandHelpText(command: HelpSubject, action?: string): string {
   return `${lines.join("\n")}\n`;
 }
 
+/** What the global help reads of a command. */
+export type GlobalHelpEntry = { name: string; help: { purpose: string }; hook?: true };
+
+function aligned(rows: readonly [string, string][]): string[] {
+  const width = Math.max(0, ...rows.map(([left]) => left.length));
+  return rows.map(([left, right]) => `  ${left.padEnd(width)}  ${right}`);
+}
+
 /**
  * The global `aw --help` body, pure so the output flags it documents can be
  * tested. `main.ts` only writes it.
  */
 export function globalHelpText(
-  commands: string[],
-  describes: ReadonlyMap<string, string>,
+  commands: readonly GlobalHelpEntry[],
   defaultNamespace: string,
 ): string {
+  const purposes = new Map(commands.map((command) => [command.name, command.help.purpose]));
+  const agentFacing = commands.filter((command) => command.hook !== true).map((c) => c.name);
+  const hooks = commands.filter((command) => command.hook === true);
   const lines = [
-    "agent-workflow — Workline runtime CLI (session lifecycle)",
+    "aw — Workline runtime CLI",
     "",
     "Usage:",
-    "  agent-workflow [--namespace <name>]",
-    "                 [--workspace <path>]",
-    "                 [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
-    "                 <command> [args...]",
+    "  aw [--namespace <name>] [--workspace <path>] <command> [<action>] [args...]",
+    "     [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
+    "  aw <command> [<action>] --help   its purpose, flags, output shape and exit codes",
+    "",
+    "By intent:",
+    ...aligned(INTENTS.map(({ intent, command }) => [intent, `aw ${command}`])),
+    "",
+    ...COMMON_CONTRACT,
+    "",
+    "Output flags (any command):",
+    "  --detail             wider human projection (implies human)",
+    "  --ascii              human output, help and hook notices in ASCII only; AW_ASCII=1 sets",
+    "                       it for every invocation. Refused with an explicit --json/--format json",
     "",
     "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
     "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
@@ -369,19 +394,19 @@ export function globalHelpText(
     "a marker, a directory outside a git checkout is an implicit root; inside",
     "an unclaimed checkout, specify --workspace or initialize a workspace.",
     "",
-    "Output (any command):",
-    "  --format human|json  projection of the result; default human in a terminal, json in a pipe",
-    "  --json               same as --format json",
-    "  --detail             wider human projection (implies human)",
-    "  --ascii              human output, help and hook notices in ASCII only; AW_ASCII=1 sets",
-    "                       it for every invocation. Refused with an explicit --json/--format json",
-    "",
     "Commands:",
     "",
-    ...renderGroupedCommandLines(commands, describes),
+    ...renderGroupedCommandLines(agentFacing, purposes),
+    ...(hooks.length === 0
+      ? []
+      : [
+          "",
+          "Hook targets (the host runs them; an agent does not call them):",
+          ...aligned(hooks.map((command) => [command.name, command.help.purpose])),
+        ]),
     "",
     "Aliases:",
-    "  aw                  short alias of `agent-workflow`",
+    "  agent-workflow      long name of `aw`",
     "",
   ];
   return `${lines.join("\n")}\n`;
