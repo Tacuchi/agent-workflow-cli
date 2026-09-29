@@ -18,7 +18,7 @@ Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + res
 >
 > 1. **Size gate BEFORE any session** — if the objective exceeds a quick (≥2 clear signals: needs architecture · ≥2 sources · several deliverables · large feature/refactor · ambiguous requirements), ask first with these verbatim options: `Cambiar a SPEC` *(recommended)* · `Seguir en quick` · `Recortar alcance`. If it escalates, create **no** quick session.
 > 2. **Session first** — otherwise, before touching code, create/resume the run's session: `aw session-create --type quick --name <slug>-quick --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
-> 3. **Git/DB** — commits are **proposed**, never executed without approval; **never** `push`/`--amend`/`--no-verify`; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
+> 3. **Git/DB** — commits are **proposed** for exact paths and never executed without approval; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
 
 ## Run the loop

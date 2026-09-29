@@ -23,7 +23,6 @@ Every invoked directory is a usable implicit workspace. The closest ancestor wit
 | [`quick`](quick.md) | Lightweight shortcut for scoped work; never touches `docs/` | starts `quick-loop` |
 | [`doctor`](doctor.md) | Read-only diagnosis across every host + repair of what Workline owns | single-pass (transversal) |
 | [`status`](status.md) | Read-only workspace dashboard | single-pass (transversal) |
-| [`fix-git`](fix-git.md) | Resolves an in-progress merge, git-safe | single-pass (transversal) |
 | [`generate-launch`](generate-launch.md) | (Re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) | single-pass (transversal) |
 | [`persist`](persist.md) | Persists in-conversation work into `docs/` (classify → `research` · spec draft · plan adoption) | single-pass (transversal) |
 | [`resume`](resume.md) | Summary (composes `/status`) + proposes how to resume pending work | single-pass (transversal) |
@@ -35,7 +34,7 @@ Every invoked directory is a usable implicit workspace. The closest ancestor wit
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.
 >
-> **Transversal (no flow):** `status`, `doctor`, `fix-git`, `generate-launch`, `persist`, `resume` and `recall` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. In the design they are their own category (`workflow-skills/`); here they are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
+> **Transversal (no flow):** `status`, `doctor`, `generate-launch`, `persist`, `resume` and `recall` belong to no SPEC/PLAN/QUICK flow and do not count in 6/5. They are packaged under `commands/` so `/w:` can invoke them — see [`../harness/HARNESS.md`](../harness/HARNESS.md) § *Command packaging*.
 
 ## Schema of each command file
 

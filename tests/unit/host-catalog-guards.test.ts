@@ -40,12 +40,11 @@ import {
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 describe("catálogo único de hosts", () => {
-  it("UserPromptSubmit se instala sólo en Claude y Kimi", () => {
+  it("la plantilla y el catálogo ya no publican el aviso Git de UserPromptSubmit", () => {
+    expect(TEMPLATE_HOOK_EVENTS).not.toContain("UserPromptSubmit");
     for (const host of HARNESSES) {
       if (host.hooks === null) continue;
-      expect(host.hooks.events.UserPromptSubmit.state, host.id).toBe(
-        host.id === "claude-code" || host.id === "kimi" ? "carried" : "omitted",
-      );
+      expect(host.hooks.events, host.id).not.toHaveProperty("UserPromptSubmit");
     }
   });
   it("la TUI proyecta exactamente los hosts del dominio, en su orden", () => {
@@ -192,20 +191,23 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
     const opencode = HARNESSES.find((h) => h.id === "opencode")?.hooks;
     expect(opencode?.artifact.kind).toBe("plugin-module");
     expect(opencode?.artifact.path).toBe(".opencode/plugin/");
-    expect(opencode?.events.PreToolUse).toEqual({
-      state: "carried",
-      native: "tool.execute.before",
+    expect(opencode?.events.PreToolUse).toMatchObject({
+      state: "omitted",
+      reason: expect.stringContaining("SQL MCP matcher"),
     });
   });
 
-  it("en crush, gemini y opencode viaja el enforcement y NO la resumabilidad", () => {
-    for (const id of ["crush", "gemini", "opencode"] as const) {
+  it("en crush y gemini viaja la guarda SQL sin los hooks de sesión", () => {
+    for (const id of ["crush", "gemini"] as const) {
       const hooks = HARNESSES.find((h) => h.id === id)?.hooks;
       expect(hooks?.events.PreToolUse.state, id).toBe("carried");
       for (const event of ["SessionStart", "SessionEnd", "PreCompact", "PostCompact"] as const) {
         expect(hooks?.events[event].state, `${id}/${event}`).toBe("omitted");
       }
     }
+    expect(HARNESSES.find((h) => h.id === "opencode")?.hooks?.events.PreToolUse.state).toBe(
+      "omitted",
+    );
   });
 
   it("kimi lleva PostCompact completo y sin pérdida de prompt", () => {

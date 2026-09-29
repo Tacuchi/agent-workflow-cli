@@ -20,9 +20,9 @@ checkboxes and `> Estado:` line in the living plan.
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
 > 1. **Session first** — create/resume the run's session before touching code: `aw session-create --type exec --name <slug>-plan-exec --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
-> 2. **Git/DB** — branch-check before a batch; the CLI commits exact changed paths once per source
+> 2. **Git/DB** — verify declared branches at each batch's local precondition; the CLI commits exact changed paths once per source
 >    after batch checks/review and that batch's approval.
->    Never `push`/`--amend`/`--no-verify`; DML/DDL stays in `SCRIPTS.sql`.
+>    DML/DDL stays in `SCRIPTS.sql`.
 > 3. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
 

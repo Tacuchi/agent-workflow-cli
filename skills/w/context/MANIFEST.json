@@ -125,15 +125,6 @@
         }
       ]
     },
-    "fix-git": {
-      "core": ["commands/fix-git.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        }
-      ]
-    },
     "generate-launch": {
       "core": ["commands/generate-launch.md"],
       "modules": [

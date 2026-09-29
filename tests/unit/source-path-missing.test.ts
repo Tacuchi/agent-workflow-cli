@@ -10,7 +10,6 @@ import {
 } from "../../src/application/flow/checkout-observation.js";
 import { runGenerateLaunch } from "../../src/application/generate-launch-service.js";
 import { runGitFlow } from "../../src/application/git-flow-service.js";
-import { runBranchCheckHook } from "../../src/application/hook-branch-check.js";
 import { runMergeState } from "../../src/application/merge-state-service.js";
 import { runMultiroot } from "../../src/application/multiroot-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
@@ -21,7 +20,6 @@ import { runSources } from "../../src/application/sources-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
 import { runVisibilityDoctor } from "../../src/application/visibility-doctor-service.js";
 import { runWorktree } from "../../src/application/worktree-service.js";
-import { fixGitCommand } from "../../src/cli/commands/fix-git.js";
 import { resumeCommand } from "../../src/cli/commands/resume.js";
 import { setWorkingBranchCommand } from "../../src/cli/commands/set-branch.js";
 import { statusCommand } from "../../src/cli/commands/status.js";
@@ -123,26 +121,6 @@ it("sources y worktree list consultan la ruta local de una celda (local)", async
   expect(calls).toEqual([repo, repo, repo, repo, repo]);
 });
 
-it("fix-git --source rehúsa la fuente ausente antes de consultar git", async () => {
-  const { fs, env, git, paths } = await missingHub();
-  const args: ParsedArgs = {
-    rest: ["prepare"],
-    plugin: {},
-    flags: new Set(),
-    values: new Map(),
-    valuesMulti: new Map([["source", ["remoto"]]]),
-  };
-  const result = await fixGitCommand.execute(args, { fs, env, git, paths } as CliContext);
-  expect(result.error?.code).toBe("SOURCE_PATH_MISSING");
-  expect(result.error?.message).toContain("la ruta de la fuente remoto no existe en este host");
-  const explicitPath: ParsedArgs = {
-    ...args,
-    valuesMulti: new Map([["path", ["C:/Source/no-presente"]]]),
-  };
-  const byPath = await fixGitCommand.execute(explicitPath, { fs, env, git, paths } as CliContext);
-  expect(byPath.error?.code).toBe("SOURCE_PATH_MISSING");
-});
-
 it("set-working-branch no inicia git ni guarda una rama si falta la ruta", async () => {
   const { fs, env, git, paths } = await missingHub();
   const args: ParsedArgs = {
@@ -170,37 +148,6 @@ it("la observación del checkout no acredita una unidad si su fuente ya no resue
   expect(candidates.map((candidate) => candidate.source)).not.toContain("remoto");
   const result = await observeScopedFingerprints(fs, git, paths, session, ["remoto"]);
   expect(result).toMatchObject({ ok: false, failure: { code: "SOURCE_PATH_MISSING" } });
-});
-
-it("el hook avisa sin bloquear la edición de la unidad de una fuente ausente", async () => {
-  const { root, fs, env, git, paths } = await missingHub();
-  const session = "103-una-plan-exec";
-  await mkdir(paths.userUnitsDir(), { recursive: true });
-  const unit = unitPath(await fs.realPath(paths.userUnitsDir()), {
-    workspaceKey: workspaceKey(root),
-    alias: "remoto",
-    session,
-  });
-  await mkdir(unit, { recursive: true });
-  const input = (path: string) =>
-    JSON.stringify({ tool_name: "Edit", tool_input: { file_path: path } });
-  const notice = await runBranchCheckHook({
-    stdin: input(join(unit, "src", "file.ts")),
-    fs,
-    env,
-    git,
-    paths,
-  });
-  expect(notice.exitCode).toBe(0);
-  expect(notice.stderr).toContain("la ruta de la fuente remoto no existe en este host");
-  const unrelated = await runBranchCheckHook({
-    stdin: input(join(root, "docs", "note.md")),
-    fs,
-    env,
-    git,
-    paths,
-  });
-  expect(unrelated.exitCode).toBe(0);
 });
 
 it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin invocar git", async () => {

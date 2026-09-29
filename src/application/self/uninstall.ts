@@ -7,8 +7,7 @@ import type { CommandResult } from "../../domain/types.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { parseToml } from "../parsers/toml.js";
 import { CODEX_PLUGIN_DIR, isOurCodexPlugin } from "./codex-plugin.js";
-import { isOurCommand } from "./hooks-dialect.js";
-import { stripOurAgyHooks, stripOurCrushHooks } from "./hooks-json.js";
+import { isOurClaudeHookGroup, stripOurAgyHooks, stripOurCrushHooks } from "./hooks-json.js";
 import {
   countOurHookEntries,
   stripOurHookEntries as stripOurKimiHookEntries,
@@ -723,19 +722,7 @@ function isOurHookEntry(entry: unknown, templateEntries: unknown): boolean {
   if (Array.isArray(templateEntries) && templateEntries.some((t) => isDeepStrictEqual(t, entry))) {
     return true;
   }
-  return entryInvokesOurCli(entry);
-}
-
-/** True when the entry carries commands and EVERY one of them runs this CLI. */
-function entryInvokesOurCli(entry: unknown): boolean {
-  if (typeof entry !== "object" || entry === null) return false;
-  const hooks = (entry as { hooks?: unknown }).hooks;
-  if (!Array.isArray(hooks) || hooks.length === 0) return false;
-  const commands = hooks
-    .map((h) => (typeof h === "object" && h !== null ? (h as { command?: unknown }).command : null))
-    .filter((c): c is string => typeof c === "string");
-  if (commands.length === 0) return false;
-  return commands.every(isOurCommand);
+  return isOurClaudeHookGroup(entry);
 }
 
 async function persistSettings(

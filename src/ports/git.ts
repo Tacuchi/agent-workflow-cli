@@ -199,14 +199,6 @@ export interface GitPort {
   push(repoPath: string, branch: string): Promise<void>;
   /** True when the repo is mid-merge (MERGE_HEAD present). */
   isMerging(repoPath: string): Promise<boolean>;
-  /**
-   * Every head being merged in: each line of `MERGE_HEAD`. An octopus merge has
-   * several, and `rev-parse MERGE_HEAD` answers only the first. Empty when no
-   * merge is in progress.
-   */
-  mergeHeads(repoPath: string): Promise<string[]>;
-  /** Every common ancestor of HEAD and MERGE_HEAD; several imply a virtual base. */
-  mergeBases(repoPath: string): Promise<string[]>;
   /** Unmerged paths: `git diff --name-only --diff-filter=U`. */
   conflictedFiles(repoPath: string): Promise<string[]>;
   /**
@@ -214,28 +206,6 @@ export interface GitPort {
    * Undefined when not mid-merge or the commit can't be named to a ref.
    */
   mergeOrigin(repoPath: string): Promise<string | undefined>;
-  /**
-   * The three index stages of one conflicted path. Read-only.
-   *
-   * The blob hashes are what makes a resolution verifiable later: they identify
-   * the exact conflict a proposal was written against, so `fix-git apply` can
-   * refuse one whose stages moved underneath it.
-   */
-  conflictStages(repoPath: string, path: string): Promise<ConflictStages>;
-  /** Stage-zero index entry of an adapted tracked file (null when untracked). */
-  indexEntry(repoPath: string, path: string): Promise<{ mode: string; hash: string } | null>;
-  /** True when the working file equals its stage-zero blob, even if the merge staged it. */
-  isWorktreeCleanPath(repoPath: string, path: string): Promise<boolean>;
-  /** Read the index blob of a clean adapted path for size and EOL policy. */
-  readBlob(repoPath: string, hash: string): Promise<{ content: string | null; bytes: number }>;
-  /** Store exactly these blob bytes, without applying worktree filters. */
-  hashBlob(repoPath: string, content: string): Promise<string>;
-  /** Resolve a path to one stage-zero blob, then materialize it under the repo's attributes. */
-  setIndexEntry(repoPath: string, path: string, mode: string, hash: string): Promise<void>;
-  /** Stage deletion without `git add` and without reviving a deleted conflict. */
-  removeIndexEntry(repoPath: string, path: string): Promise<void>;
-  /** `git add -- <path>`. Throws on failure. Never `git add -A`. */
-  stagePath(repoPath: string, path: string): Promise<void>;
   /**
    * `git commit -m <message>` on the staged content. Never `--no-verify`,
    * never `--amend`, never a push — those stay outside this port on purpose.
@@ -394,26 +364,4 @@ export interface GitPort {
   setRef(repoPath: string, ref: string, sha: string): Promise<GitAttempt>;
   /** Drop a ref this operation created. Never used on a ref it did not create. */
   deleteRef(repoPath: string, ref: string, expectedOld?: string): Promise<GitAttempt>;
-}
-
-export interface ConflictStage {
-  /** Index blob hash, `null` when the stage is absent (add/add, delete/modify). */
-  hash: string | null;
-  /** Decoded text, `null` when the stage is absent or is not UTF-8 text. */
-  content: string | null;
-  bytes: number;
-  /** Octal file mode from `ls-files -u` (null for an absent stage). */
-  mode?: string | null;
-}
-
-export interface ConflictStages {
-  path: string;
-  /** stage 1 — the common ancestor */
-  base: ConflictStage;
-  /** stage 2 — HEAD */
-  ours: ConflictStage;
-  /** stage 3 — the branch being merged in */
-  theirs: ConflictStage;
-  /** Any present stage is not decodable text: never resolved automatically. */
-  binary: boolean;
 }

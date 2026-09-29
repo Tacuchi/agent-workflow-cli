@@ -5,7 +5,7 @@ description: >-
   doc: re-infers isolated or continuous phase batches, edits real code, then
   validates/reviews/commits each effective batch. Heir of CHASSIS.md and
   CODE-POLICIES.md. Keeps the executability and deviation gates, one resumable
-  session, safe git, DB scripts-only and no auto-export. Composes git and sql.
+  session, Git units, DB scripts-only and no auto-export.
   Started by /w:plan-exec. Invoke to implement an already generated plan.
 ---
 
@@ -183,11 +183,9 @@ erases an earlier one.
 | Add a functional rule · move the outcome a criterion promises | stops | — | — | yes |
 | Does not compose against this lineage at all | stops | — | — | a spec of its own |
 
-## Delta 2 — Git policy: **safe branch + proposed commits**
+## Delta 2 — Git in this flow: **verified branch + approved commits**
 
-Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md), and its gating is the CLI's: this loop
-adds nothing of its own beyond running on a verified branch and never
-`push`/`--amend`/`--no-verify`.
+Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md), and its gating is the CLI's: the branch, isolation unit and exact-path commit are checked at the relevant boundaries.
 
 ## Delta 4 — Validation: phase proof + progressive tests
 
@@ -233,11 +231,9 @@ without subagents runs a clean re-read instead, and the closing report declares 
   writing holds commits that live on `aw/<session>` and nowhere else, so a `done` stamped before the
   merge would be true of no branch anybody reads.
 - **Integrating is part of closing, not a chore after it.** `aw worktree integrate --code <NNN>`
-  merges each unit into its sealed base, in alias order, over the live branch — never a rebase,
-  force, push or silent branch switch. A **conflict is a
+  merges each unit into its sealed base, in alias order, over the live branch without rewriting its commits. A **conflict is a
   live state, not a failure**: the unit, its commits and the merge are kept, the receipt names the
-  plan, the source and the files, and `aw fix-git --path <reported merge path>` (`prepare` → `apply` →
-  `commit --confirm`) resolves it; then integrate again to confirm and give the unit back. The plan
+  plan, source, unit, merge path and files. Resolve the merge externally, then run the same integration again to confirm and give the unit back. The plan
   is not `done` and the session does not close while a unit is still alive.
 - **Marking done = ONE status line in the plan-doc** under the title: `> Estado: done`. The CLI seals `> Cierre:` with evidence of the run and `> Assurance: verified|partially_verified|unverified_accepted` on separate lines. Position distinguishes title from phase states; no per-phase result tables or suffixes (use session `DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
@@ -283,8 +279,8 @@ plan-exec-loop(PPP-plan-<slug>.md):
       Cerrar → persist the pending batch and its uncommitted changes
     if last Batch + final validation green:
       integrate: aw worktree integrate --code NNN            # every unit, alias order, live branch
-        conflict → keep unit + merge; report plan/source/files; aw fix-git --path <reported merge path>
-                   (prepare → apply → commit --confirm) → integrate again → release
+        conflict → keep unit + merge; report plan/source/unit/merge path/files
+                   resolve externally → integrate again → release
         refused (dirty checkout / off branch / uncommitted unit) → fix what it names; retry
       then CLI seals plan: > Estado: done + > Cierre: run evidence + > Assurance: verdict (Delta 6)
     next-batch precondition: working trees clean or acknowledged

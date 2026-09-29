@@ -65,32 +65,6 @@ it("persist apply desde el checkout resuelve el único hub incluso con marcador 
   expect(readdirSync(join(hub, "docs", "research"))).toContain("001-research-desde-fuente.md");
   expect(readdirSync(source)).not.toContain(".workflow");
   expect(readdirSync(source)).not.toContain(".gitignore");
-
-  const second = join(root, "other-hub");
-  mkdirSync(join(second, ".workflow", "sessions"), { recursive: true });
-  writeFileSync(
-    join(second, ".workflow", "workline.json"),
-    '{"workline":1,"namespace":"workflow"}',
-  );
-  writeFileSync(
-    join(second, "AGENTS.md"),
-    `<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n<!-- WORKFLOW-PROJECT-END -->`,
-  );
-  expect(run(second, ["status"]).status).toBe(0);
-  rmSync(join(home, ".workflow", "workline.json"));
-  const hook = spawnSync(process.execPath, [cli, "hook", "branch-check"], {
-    cwd: source,
-    env: { ...process.env, HOME: home, AW_NAMESPACE: "workflow" },
-    encoding: "utf8",
-    input: JSON.stringify({
-      tool_name: "Write",
-      tool_input: { file_path: join(source, "README.md") },
-    }),
-  });
-  expect(hook.status).toBe(0);
-  expect(hook.stderr).toContain("--workspace");
-  expect(hook.stderr).toContain(hub);
-  expect(hook.stderr).toContain(second);
 });
 
 it("un repo sin hub con marcador en HOME no funda runtime ni edita .gitignore", () => {

@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
-import { prepareFixGit } from "../../src/application/fix-git-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { readWorkspaceBlock } from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
@@ -216,13 +215,16 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     const unidad = chocada.results[0];
     if (unidad === undefined || "error" in unidad) throw new Error("esperaba un merge conflictivo");
     expect(unidad.conflicted).toContain(COMPARTIDO);
-    // Los tres datos que el recibo tiene que traer para que alguien pueda actuar:
-    // qué trabajo es, en qué repositorio quedó, y con qué comando se sigue. El plan
+    // El recibo nombra trabajo, unidad, repositorio, conflicto y reintento. El plan
     // es el único que no se puede deducir mirando Git, y es justo el que distingue
     // dos flujos concurrentes.
     expect(chocada.plan).toBe(DOS.plan);
     expect(unidad.source_path).toBe(source);
-    expect(unidad.next).toBe(`aw fix-git --path ${source}`);
+    expect(unidad.unit_path).toBe(dos);
+    expect(unidad.merge_path).toBe(source);
+    expect(unidad.branch).toContain(DOS.folder);
+    expect(unidad.next).toContain(`aw worktree integrate --source ${ALIAS} --code ${DOS.folder}`);
+    expect(unidad.next).not.toMatch(/fix-git|merge --abort/);
     expect(chocada.next).toBe(unidad.next);
 
     // Nada se tiró para dejar el árbol prolijo: el merge sigue en curso y la unidad
@@ -232,11 +234,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     expect((await liveUnits()).units.map((u) => u.session)).toEqual([DOS.folder]);
     expect(git(dos, "rev-parse", "HEAD").trim()).toBe(shaDos);
 
-    // Y el comando al que enruta el recibo ve el mismo conflicto: el traspaso entre
-    // los dos comandos es real, no una sugerencia.
-    const prepared = await prepareFixGit(deps.git, source, ALIAS);
-    expect(prepared.ok).toBe(true);
-    if (prepared.ok) expect(JSON.stringify(prepared.value.context)).toContain(COMPARTIDO);
+    expect(await deps.git.conflictedFiles(source)).toContain(COMPARTIDO);
   });
 
   it("resuelto el conflicto, el segundo integrate confirma, libera y deja Git limpio", async () => {
@@ -247,9 +245,8 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     await integrate(UNO);
     await integrate(DOS);
 
-    // Lo que hacen `fix-git apply` + `commit --confirm`: los bytes resueltos y el
-    // commit del merge. Se hace acá con Git para no atar la fase al protocolo
-    // semántico de ese comando, que tiene su propia prueba.
+    // La resolución y el commit se realizan externamente en el fixture: el
+    // motor sólo observa el estado y reintenta su integración.
     writeFileSync(join(source, COMPARTIDO), "export const version = 3;\n");
     git(source, "add", "-A");
     git(source, "commit", "--no-edit");
@@ -303,7 +300,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     // rechaza con el remedio de la fila: el conflicto es un estado activo.
     const rechazo = await walk.step(DOS, { outcome: "needs_input" });
     expect(rechazo.error?.code).toBe("FLOW_EXECUTION_NOT_COMPLETED");
-    expect(rechazo.error?.action).toContain("fix-git");
+    expect(rechazo.error?.action).toContain("resolvé externamente");
     const pendiente = await walk.current(DOS.folder);
     expect(pendiente.state.applied).not.toContain("plan-exec.unit-integration");
     expect(pendiente.resolved.stopped?.id).toBe("plan-exec.unit-integration");

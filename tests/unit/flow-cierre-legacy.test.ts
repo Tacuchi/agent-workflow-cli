@@ -140,7 +140,6 @@ describe("la doctrina no reenuncia ninguna regla migrada", () => {
       "resume.route-choice",
       "persist.shape-classification",
       "context-plan.signal-declaration",
-      "fix-git.intent",
       "export.selection",
     ]) {
       const row = FLOW_DECISIONS.find((decision) => decision.id === id);

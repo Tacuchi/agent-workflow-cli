@@ -160,14 +160,28 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
 
     expect(conflicted.integrated).toBe(false);
     expect(conflicted.conflicted).toContain("choque.txt");
-    expect(conflicted.next).toContain("aw fix-git --path");
+    expect(conflicted).toMatchObject({
+      alias: "acme",
+      unit_path: second.path,
+      merge_path: source,
+      into: "main",
+      branch: branchOf(workspace, "104-dos-plan-exec"),
+      integrated: false,
+      released: false,
+    });
+    expect(conflicted.next).toContain(
+      "aw worktree integrate --source acme --code 104-dos-plan-exec",
+    );
+    expect(conflicted.next).toContain(source);
+    expect(conflicted.next).not.toMatch(/fix-git|merge --abort/);
     // La unidad SOBREVIVE: sus commits son la única copia de un lado del merge.
     expect(conflicted.released).toBe(false);
     expect(git(source, "worktree", "list", "--porcelain")).toContain(
       branchOf(workspace, "104-dos-plan-exec"),
     );
-    // Y el merge queda en curso, para que `aw fix-git` lo encuentre.
+    // El merge queda en curso para resolución externa; no hay abort automático.
     expect(git(source, "status", "--porcelain")).toContain("choque.txt");
+    expect(git(source, "rev-parse", "--verify", "MERGE_HEAD").trim()).not.toBe("");
     expect(readFileSync(join(second.path, "choque.txt"), "utf-8")).toBe("version dos\n");
   });
 
@@ -357,7 +371,7 @@ ${work}
     expect(result.results).toHaveLength(3);
     expect(result.integrated).toEqual(["alfa", "gamma"]);
     expect(result.pending).toEqual(["beta"]);
-    expect(result.next).toContain("aw fix-git --path");
+    expect(result.next).toContain("aw worktree integrate --source beta --code 103-uno-plan-exec");
     // La unidad que choca SOBREVIVE: sus commits son el único lado suyo del merge.
     expect(git(sources.beta as string, "worktree", "list", "--porcelain")).toContain(
       branchOf(workspace, "103-uno-plan-exec"),

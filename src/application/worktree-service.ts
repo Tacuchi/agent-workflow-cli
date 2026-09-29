@@ -232,8 +232,12 @@ export interface WorktreeDeps {
 
 export interface WorktreeIntegrateOutput {
   alias: string;
-  /** The repository the merge landed in — what `aw fix-git --path` needs. */
+  /** The declared source checkout, whether or not the merge happens there. */
   source_path: string;
+  /** On conflict, the unit whose commits must remain available. */
+  unit_path?: string;
+  /** On conflict, the checkout where the unresolved merge actually stands. */
+  merge_path?: string;
   session: string;
   /** Branch the unit's work was merged INTO. */
   into: string;
@@ -510,9 +514,8 @@ async function planOf(deps: WorktreeDeps, session: string): Promise<string | nul
 /**
  * Merge the flow's branch into the source's declared working branch.
  *
- * **Merge and never rebase**, and the reason is not taste: the git port already
- * carries merge plus the three-stage conflict machinery `aw fix-git` reads, so a
- * conflict has somewhere to go. A rebase would need new primitives AND would
+ * **Merge and never rebase**: a conflict stays in its checkout for external
+ * resolution, with both sides' commits and the unit preserved. Rebase would
  * rewrite commits the flow already treated as done.
  *
  * The ORDER is whoever closes last, and that is what makes the second
@@ -544,7 +547,7 @@ async function integrateUnit(
     return {
       error: "unit_operation_in_progress",
       message: `la unidad ${path} tiene una operación git pendiente`,
-      hint: `resolvé el merge con aw fix-git --path ${path} antes de integrar otra vez`,
+      hint: `resolvé externamente la operación git en ${path} antes de volver a integrar`,
     };
   }
   if (await deps.git.isDirty(path)) {
@@ -585,6 +588,8 @@ async function integrateUnit(
     return {
       alias: source.alias,
       source_path: source.path,
+      unit_path: path,
+      merge_path: merged.path,
       session: identity.session,
       into: base,
       branch,
@@ -593,7 +598,7 @@ async function integrateUnit(
       // The unit SURVIVES a conflict: its commits are the only copy of one side
       // of the merge, and releasing it here would delete them to tidy up.
       released: false,
-      next: `aw fix-git --path ${merged.path}`,
+      next: `resolvé externamente el merge en ${merged.path}, conservá la unidad ${path} y volvé a ejecutar aw worktree integrate --source ${source.alias} --code ${identity.session}`,
     };
   }
   if (merged.before !== null && merged.after !== null && merged.before !== merged.after) {
@@ -1648,7 +1653,7 @@ async function reclaimability(
     return held(
       "operation_in_progress",
       `git dejó un ${operation} a medio resolver en la unidad`,
-      `aw fix-git --path ${tree.path}`,
+      `resolvé externamente la operación git en ${tree.path} y volvé a intentar la integración`,
     );
   }
   let dirty: boolean;

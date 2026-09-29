@@ -8,7 +8,7 @@ import { parseArgv } from "../../src/cli/parser.js";
 import { CommandRegistry } from "../../src/cli/registry.js";
 
 /**
- * The cross-cutting matrix of spec 012 (C1–C18): the ten direct surfaces, their
+ * The cross-cutting matrix of spec 012 (C1–C18): the surviving direct surfaces, their
  * output projections, their write boundary and their distribution.
  *
  * Per-command behavior is proven by each service's own suite. What only shows up
@@ -17,14 +17,13 @@ import { CommandRegistry } from "../../src/cli/registry.js";
 
 const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
 
-/** The ten commands spec 012 declares direct, with their classification. */
+/** The direct commands still available, with their classification. */
 const SURFACES = [
   { name: "status", kind: "cli-complete", writes: null },
   { name: "resume", kind: "cli-complete", writes: null },
   { name: "generate-launch", kind: "cli-complete", writes: ".workflow/launch" },
   { name: "workspace-init", kind: "cli-complete", writes: ".workflow" },
   { name: "persist", kind: "hybrid", writes: "docs/research|specs|plans" },
-  { name: "fix-git", kind: "hybrid", writes: "the repo's conflicted files" },
   { name: "export-diagrams", kind: "hybrid", writes: "docs/diagrams" },
   { name: "export-manuals", kind: "hybrid", writes: "docs/manuals" },
   { name: "export-reports", kind: "hybrid", writes: "docs/reports" },
@@ -37,7 +36,7 @@ function registry(): CommandRegistry {
   return reg;
 }
 
-// ── C1 · the ten surfaces exist and are reachable ────────────────────────────
+// ── C1 · the surviving surfaces exist and are reachable ─────────────────────
 
 describe("C1 · every declared surface is a real, registered command", () => {
   it.each(SURFACES.map((s) => s.name))("`aw %s` resolves", (name) => {
@@ -119,8 +118,6 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
   const LATER_ADOPTERS: readonly string[] = [
     "context-budget", // plan 010 — the context budget report
     "context-plan", // plan 010 — the read-set an invocation must load
-    "designs", // plan 012 — the UI Design Packages and where they live right now
-    "capability", // plan 014 — the attempt's receipt, projected from the same data
     "skills", // plan 014 — capability readiness, widened only under --detail
     "flow", // plan 015 — the boundary directive, derived from the same directive
     "session-artifacts", // plan 022 — el recorrido de la sesión, bajo --format human
@@ -260,6 +257,6 @@ describe("activation cost — recorded, not budgeted", () => {
     // status+resume alone, plus 34 900 B of export manuals).
     const total = Object.values(sizes).reduce((a, b) => a + b, 0);
     expect(total).toBeLessThan(15_434 + 34_900);
-    expect(Object.keys(sizes)).toHaveLength(10);
+    expect(Object.keys(sizes)).toHaveLength(9);
   });
 });

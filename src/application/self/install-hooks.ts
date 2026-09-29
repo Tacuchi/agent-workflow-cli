@@ -1,4 +1,4 @@
-import { copyFile } from "node:fs/promises";
+import { copyFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
@@ -14,6 +14,7 @@ import {
   hooksTemplateToAgy,
   hooksTemplateToCrush,
   isOurHookEntry,
+  stripOurClaudeHookCommands,
 } from "./hooks-json.js";
 import { auditHooksSection, hooksTemplateToToml, upsertManagedHooksBlock } from "./hooks-toml.js";
 import {
@@ -25,8 +26,8 @@ import {
 import { HOOKS_MANAGED_TARGETS } from "./install-targets.js";
 import {
   OPENCODE_PLUGIN_FILE,
-  buildOpencodePlugin,
-  declareOpencodePlugin,
+  isOurOpencodePlugin,
+  undeclareOpencodePlugin,
 } from "./opencode-plugin.js";
 
 export interface HookEntry {
@@ -58,7 +59,7 @@ export interface SelfInstallHooksData {
    * every state here is kept apart: reporting a bundle nobody installed as
    * installed is the one thing these surfaces must never do.
    */
-  status: "installed" | "dry-run" | "noop" | "unsupported" | "blocked" | "generated";
+  status: "installed" | "dry-run" | "noop" | "unsupported" | "blocked" | "generated" | "retired";
   target: InstallTarget;
   config_path: string | null;
   events_installed: string[];
@@ -105,15 +106,14 @@ export async function selfInstallHooks(
 
   const target = targetArg as InstallTarget;
 
-  // Codex is not a managed host and is not an unsupported one either: its plugin
-  // route produces a real artifact that only the PERSON can install. Placed
-  // before the managed check so it is not swallowed by the "unsupported" answer.
-  if (target === "codex" || target === "opencode") {
+  // No remaining Workline tool guard maps to OpenCode's plugin bridge. An old
+  // generated module is removed only when its bytes prove Workline ownership.
+  if (target === "opencode") return retireOpencodePlugin(ctx, target, dryRun);
+  // Codex's plugin route produces an artifact only the person can install.
+  if (target === "codex") {
     const loaded = await loadTemplate(args, ctx, resolveTemplate);
     if ("error" in loaded) return loaded.error;
-    return target === "codex"
-      ? generateCodexPlugin(ctx, target, loaded.template, dryRun)
-      : installOpencodePlugin(ctx, target, loaded.template, dryRun);
+    return generateCodexPlugin(ctx, target, loaded.template, dryRun);
   }
 
   if (!HOOKS_MANAGED_TARGETS.has(target)) {
@@ -442,15 +442,33 @@ async function installClaudeHooks(
 
   const eventsInstalled: string[] = [];
   const eventsAlreadyPresent: string[] = [];
-  const merged: Record<string, unknown> = { ...existingHooks };
+  const merged: Record<string, unknown> = {};
+  // Reconcile every event, including ones removed from the new template. An old
+  // Git guard must not survive merely because the template no longer names it.
+  for (const [event, value] of Object.entries(existingHooks)) {
+    if (!Array.isArray(value)) {
+      merged[event] = value;
+      continue;
+    }
+    const foreign = value.flatMap((entry) => {
+      const kept = stripOurClaudeHookCommands(entry);
+      return kept === null ? [] : [kept];
+    });
+    if (foreign.length > 0) merged[event] = foreign;
+    if (foreign.length !== value.length && template.hooks[event] === undefined) {
+      eventsInstalled.push(event);
+    }
+  }
   for (const [event, entries] of Object.entries(template.hooks)) {
     const existing = existingHooks[event];
-    if (isDeepStrictEqual(existing, entries)) {
+    const foreign = Array.isArray(merged[event]) ? (merged[event] as unknown[]) : [];
+    const next = [...foreign, ...entries];
+    if (isDeepStrictEqual(existing, next)) {
       eventsAlreadyPresent.push(event);
     } else {
       eventsInstalled.push(event);
-      merged[event] = entries;
     }
+    merged[event] = next;
   }
 
   if (eventsInstalled.length === 0) {
@@ -698,17 +716,13 @@ async function writeMergedConfig(
 }
 
 /**
- * opencode: write the plugin module and declare it in `opencode.json`.
- *
- * Unlike codex's bundle this one IS armed — opencode loads what sits in its
- * plugin dir — so the status is `installed`. What it does NOT carry is the whole
- * template: only `tool.execute.before` exists here, and the guard whose matcher
- * cannot be bridged to a Claude-shaped payload is reported rather than written.
+ * The former OpenCode plugin only carried Git guards. The remaining SQL matcher
+ * cannot be bridged to its tool names, so do not install a no-op module. Retire
+ * the previous generated one only when its ownership marker proves it ours.
  */
-async function installOpencodePlugin(
+async function retireOpencodePlugin(
   ctx: CliContext,
   target: InstallTarget,
-  template: HooksTemplate,
   dryRun: boolean,
 ): Promise<CommandResult<SelfInstallHooksData>> {
   const configPath = opencodeGlobalMcpFile(ctx.env.homeDir());
@@ -716,49 +730,30 @@ async function installOpencodePlugin(
   const read = await readJsonConfig(ctx, configPath, "opencode.json");
   if ("error" in read) return read.error;
 
-  const plugin = buildOpencodePlugin(template);
   const existing = (await ctx.fs.exists(pluginPath)) ? await ctx.fs.readText(pluginPath) : null;
-  const config = declareOpencodePlugin(read.data, pluginPath);
-  const changed = existing !== plugin.source || config !== read.data;
-
-  const warning = [
-    skipNotice(plugin.skipped, "the opencode plugin API"),
-    `The module was written to ${pluginPath}; the user-global plugin dir is derived from opencode's global config dir, and its documented one is the workspace's .opencode/plugin/.`,
-  ]
-    .filter((n) => n !== undefined)
-    .join(" ");
-
-  if (!changed) {
-    return {
-      ok: true,
-      data: {
-        status: "noop",
-        target,
-        config_path: pluginPath,
-        events_installed: [],
-        events_already_present: ["PreToolUse"],
-        backup_path: null,
-        warning,
-      },
-      exitCode: 0,
-    };
-  }
-  if (!dryRun) {
-    await ctx.fs.mkdirp(dirname(pluginPath));
-    await ctx.fs.writeText(pluginPath, plugin.source);
-    await ctx.fs.mkdirp(dirname(configPath));
-    await ctx.fs.writeText(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  const owned = existing !== null && isOurOpencodePlugin(existing);
+  if (owned && !dryRun) {
+    const declared = undeclareOpencodePlugin(read.data, pluginPath);
+    await rm(pluginPath, { force: true });
+    if (declared.removed)
+      await ctx.fs.writeText(configPath, `${JSON.stringify(declared.value, null, 2)}\n`);
   }
   return {
     ok: true,
     data: {
-      status: dryRun ? "dry-run" : "installed",
+      status: owned ? (dryRun ? "dry-run" : "retired") : existing === null ? "unsupported" : "noop",
       target,
       config_path: pluginPath,
-      events_installed: ["PreToolUse"],
+      events_installed: [],
       events_already_present: [],
       backup_path: null,
-      warning,
+      warning: owned
+        ? dryRun
+          ? "No compatible Workline tool guard remains in OpenCode. An install would retire the generated module and its own config entry."
+          : "No compatible Workline tool guard remains in OpenCode. The generated module and its config entry were retired."
+        : existing === null
+          ? "The SQL MCP matcher cannot be bridged to OpenCode tools; no plugin is installed."
+          : "A foreign plugin at that path is preserved; no Workline hook is installed.",
     },
     exitCode: 0,
   };

@@ -1,10 +1,9 @@
 /**
  * Applying a sealed local proposal — the one path, for whoever proposed it.
  *
- * The capability dispatcher and the flow engine both reach here, and that is the
- * point: two implementations of "check the approval, re-read the base, publish
- * all-or-nothing" would be two answers to whether a publication was legitimate,
- * and the weaker of the two would be the one that decides.
+ * Flows and direct document operations share this path. Two implementations of
+ * "check the approval, re-read the base, publish all-or-nothing" could disagree
+ * about whether a publication was legitimate.
  *
  * What has to be true together before the first byte lands:
  *

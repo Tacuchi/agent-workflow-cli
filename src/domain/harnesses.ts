@@ -76,7 +76,6 @@ export interface HarnessRuntime {
  * host silently under-declared.
  */
 export const TEMPLATE_HOOK_EVENTS = [
-  "UserPromptSubmit",
   "SessionStart",
   "PreToolUse",
   "SessionEnd",
@@ -359,7 +358,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       managed: true,
       artifact: { kind: "config-merge", path: "~/.claude/settings.json", entry: "hooks{}" },
       events: {
-        UserPromptSubmit: { state: "carried", native: "UserPromptSubmit" },
         SessionStart: { state: "carried", native: "SessionStart" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
         SessionEnd: { state: "carried", native: "SessionEnd" },
@@ -421,10 +419,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       caveat:
         "each hook needs an interactive trust review in codex, recorded as trusted_hash in [hooks.state]",
       events: {
-        UserPromptSubmit: {
-          state: "omitted",
-          reason: "Codex prompt event not verified; branch-check enforces edits",
-        },
         SessionStart: { state: "carried", native: "SessionStart" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
         SessionEnd: { state: "carried", native: "SessionEnd" },
@@ -589,7 +583,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       caveat:
         'handlers are type: "command" only and run synchronously, blocking the loop; the host documents its customization root as the workspace\'s .agents/, so whether a user-global one is read was NOT verified',
       events: {
-        UserPromptSubmit: { state: "omitted", reason: "agy has no verified prompt event" },
         SessionStart: { state: "omitted", reason: "agy declares no session-start event" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
         SessionEnd: {
@@ -646,7 +639,8 @@ export const HARNESSES: readonly HarnessSpec[] = [
   {
     // OpenCode (sst/opencode). Config `opencode.json` ($schema); MCP under `mcp`
     // (type "local", command as array, `environment`). Reads .claude/skills and
-    // .agents/skills directly. Enforcement via JS plugins (tool.execute.before) — Phase 2.
+    // .agents/skills directly. Its plugin API has tool.execute.before, but no
+    // current Workline SQL guard maps safely to its MCP tool names.
     id: "opencode",
     label: "OpenCode",
     glyph: "O",
@@ -661,12 +655,11 @@ export const HARNESSES: readonly HarnessSpec[] = [
         entry: 'a JS/TS module, declared in opencode.json under "plugin": []',
       },
       events: {
-        UserPromptSubmit: {
-          state: "omitted",
-          reason: "the plugin API fires no prompt-submit event",
-        },
         SessionStart: { state: "omitted", reason: "the plugin API fires no session-start event" },
-        PreToolUse: { state: "carried", native: "tool.execute.before" },
+        PreToolUse: {
+          state: "omitted",
+          reason: "the SQL MCP matcher has no OpenCode tool counterpart; no Git guard is installed",
+        },
         SessionEnd: { state: "omitted", reason: "the plugin API fires no session-end event" },
         PreCompact: {
           state: "omitted",
@@ -730,7 +723,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       caveat:
         "matching hooks run in parallel, deduplicated by command; a project crush.json takes precedence over the global one",
       events: {
-        UserPromptSubmit: { state: "omitted", reason: "crush supports only PreToolUse" },
         SessionStart: { state: "omitted", reason: "crush supports only PreToolUse" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
         SessionEnd: { state: "omitted", reason: "crush supports only PreToolUse" },
@@ -820,7 +812,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       },
       caveat: "user-global only: kimi has no project-level config",
       events: {
-        UserPromptSubmit: { state: "carried", native: "UserPromptSubmit" },
         SessionStart: { state: "carried", native: "SessionStart" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
         SessionEnd: { state: "carried", native: "SessionEnd" },

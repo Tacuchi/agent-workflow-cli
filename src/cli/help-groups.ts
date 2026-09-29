@@ -50,7 +50,6 @@ const GROUPS: readonly CommandGroup[] = [
       "add-source",
       "git-flow",
       "merge-state",
-      "fix-git",
       "attach-multiroot",
       "detach-multiroot",
       "visibility",

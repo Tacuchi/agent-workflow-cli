@@ -7,18 +7,13 @@ import { afterEach, describe, expect, it } from "vitest";
 const entry = resolve("dist/cli/main.js");
 const roots: string[] = [];
 
-function fixture(marker = false): { cwd: string; home: string } {
+function fixture(): { cwd: string; home: string } {
   const root = mkdtempSync(join(tmpdir(), "aw-hook-entry-"));
   roots.push(root);
   const cwd = join(root, "project", "nested");
   const home = join(root, "home");
   mkdirSync(cwd, { recursive: true });
   mkdirSync(home);
-  if (marker) {
-    const workspace = join(root, "project", ".workflow");
-    mkdirSync(join(workspace, "sessions", "001-active"), { recursive: true });
-    writeFileSync(join(workspace, "workline.json"), '{"workline":1,"namespace":"workflow"}\n');
-  }
   return { cwd, home };
 }
 
@@ -36,21 +31,19 @@ afterEach(() => {
 });
 
 describe("entrada delgada del dist construido", () => {
-  it("no arranca el advisor ni abre el log para un Bash que no hace commit", () => {
-    const { cwd, home } = fixture(true);
-    const result = run(cwd, home, ["hook", "git-commit-advisor"], {
-      tool_name: "Bash",
-      tool_input: { command: "git status" },
-    });
-    expect([result.status, result.stdout, result.stderr]).toEqual([0, "", ""]);
+  it("los hooks Git retirados no tienen alias ejecutable ni materializan un host", () => {
+    const { cwd, home } = fixture();
+    for (const hook of ["git-commit-advisor", "branch-check", "turn-start"]) {
+      const result = run(cwd, home, ["hook", hook]);
+      expect(result.status, hook).toBe(1);
+      expect(result.stdout, hook).toContain("unknown subcommand");
+    }
     expect(readdirSync(home)).toEqual([]);
   });
 
   it("no materializa un proyecto ni crea configuración de usuario sin marcador", () => {
     const { cwd, home } = fixture();
     for (const args of [
-      ["hook", "branch-check"],
-      ["hook", "turn-start"],
       ["checkpoint-write"],
       ["resume-summary"],
       ["auto-compact-on-close"],
@@ -84,16 +77,5 @@ describe("entrada delgada del dist construido", () => {
     });
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("DELETE");
-  });
-
-  it("entrega al advisor el stdin original de un git commit con marcador", () => {
-    const { cwd, home } = fixture(true);
-    const result = run(cwd, home, ["hook", "git-commit-advisor"], {
-      tool_name: "Bash",
-      tool_input: { command: "git commit -m 'cambio sin tag'" },
-    });
-    expect(result.status).toBe(0);
-    expect(result.stderr).toContain("git-commit-advisor");
-    expect(result.stderr).toContain("session001");
   });
 });

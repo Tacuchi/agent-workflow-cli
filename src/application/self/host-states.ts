@@ -43,7 +43,6 @@ import { type HooksTemplate, resolveBundledHookTemplate } from "./install-hooks.
 import { SKILL_DIR_NAME, USER_COMMANDS_BY_TARGET } from "./install-skill.js";
 import { COMMAND_SKILLS_HOSTS, TARGET_ROOTS } from "./install-targets.js";
 import { type McpViaState, readMcpViaState } from "./mcp-via-state.js";
-import { buildOpencodePlugin } from "./opencode-plugin.js";
 
 /** Upper bound for a single `--version` call. Probes run in parallel across hosts. */
 const RUNTIME_PROBE_TIMEOUT_MS = 2500;
@@ -309,7 +308,7 @@ function notManagedHere(spec: HarnessSpec): string {
     return "Workline generates its plugin bundle instead ('aw self install-hooks --target codex'), which is NOT armed: installing a codex plugin goes through a marketplace and is yours to run";
   }
   if (spec.id === "opencode") {
-    return "Workline generates its plugin module instead ('aw self install-hooks --target opencode'), declared in opencode.json: the tool guards travel, the session and compaction hooks do not";
+    return "No Workline hook can be bridged to its tools: the SQL MCP matcher has no equivalent. 'aw self install-hooks --target opencode' retires a previous generated plugin only when its ownership is proven";
   }
   return "Workline does not install them here — the CLI commands stay callable";
 }
@@ -532,7 +531,6 @@ const HOOK_TEMPLATE_LOSSES: Partial<Record<InstallTarget, (template: HooksTempla
     },
     crush: (template) => skipLines(hooksTemplateToCrush(template).skipped),
     gemini: (template) => skipLines(hooksTemplateToAgy(template).skipped),
-    opencode: (template) => skipLines(buildOpencodePlugin(template).skipped),
   };
 
 /** The four events neither JSON dialect carries, one line each. */

@@ -1,0 +1,98 @@
+// agent-workflow (Workline) — generated plugin
+// Rewritten by `agent-workflow self install-hooks --target opencode`. Do not edit.
+/*
+ * Carried: PreToolUse → tool.execute.before (2 guards).
+ * Omitted, with its reason:
+ *   · UserPromptSubmit: the opencode plugin API fires no session or compaction event, so this hook has nowhere to run
+ *   · SessionStart: the opencode plugin API fires no session or compaction event, so this hook has nowhere to run
+ *   · PreToolUse: matcher 'mcp__.*__execute_sql' names no opencode tool this plugin can bridge to a Claude-shaped payload, so the guard would run and never guard
+ *   · SessionEnd: the opencode plugin API fires no session or compaction event, so this hook has nowhere to run
+ *   · PreCompact: the opencode plugin API fires no session or compaction event, so this hook has nowhere to run
+ *   · PostCompact: the opencode plugin API fires no session or compaction event, so this hook has nowhere to run
+ */
+import { spawn } from "node:child_process";
+
+const GUARDS = [
+  {
+    "tools": [
+      "edit",
+      "write",
+      "apply_patch"
+    ],
+    "command": "agent-workflow hook branch-check",
+    "timeout": 15
+  },
+  {
+    "tools": [
+      "bash"
+    ],
+    "command": "agent-workflow hook git-commit-advisor",
+    "timeout": 10
+  }
+];
+
+const BRIDGE = {
+  "edit": {
+    "as": "Edit",
+    "from": "filePath",
+    "into": "file_path"
+  },
+  "write": {
+    "as": "Write",
+    "from": "filePath",
+    "into": "file_path"
+  },
+  "apply_patch": {
+    "as": "Edit",
+    "from": "filePath",
+    "into": "file_path"
+  },
+  "bash": {
+    "as": "Bash",
+    "from": "command",
+    "into": "command"
+  }
+};
+
+// The CLI answers in Claude's hook protocol: exit 2 means "blocked", and its
+// stderr is the message the person needs. Anything else is a pass — a guard that
+// could not run must never look like a refusal.
+function ask(guard, payload) {
+  return new Promise((resolve) => {
+    const child = spawn("sh", ["-c", guard.command], { stdio: ["pipe", "ignore", "pipe"] });
+    let stderr = "";
+    const timer = setTimeout(() => child.kill(), guard.timeout * 1000);
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    child.on("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      resolve(code === 2 ? stderr.trim() : null);
+    });
+    child.stdin.end(JSON.stringify(payload));
+  });
+}
+
+export default async () => ({
+  "tool.execute.before": async (input, output) => {
+    const bridge = BRIDGE[input.tool];
+    if (bridge === undefined) return;
+    const subject = (output?.args ?? {})[bridge.from];
+    if (typeof subject !== "string") return;
+    const payload = {
+      tool_name: bridge.as,
+      tool_input: { [bridge.into]: subject },
+      session_id: input.sessionID,
+    };
+    for (const guard of GUARDS) {
+      if (!guard.tools.includes(input.tool)) continue;
+      if (guard.command.includes("hook git-commit-advisor") && !/\bgit\s+commit\b/.test(subject)) continue;
+      const blocked = await ask(guard, payload);
+      if (blocked !== null) throw new Error(blocked);
+    }
+  },
+});

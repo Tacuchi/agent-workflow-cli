@@ -471,7 +471,6 @@ const WORKSPACE_SEALED_COMMANDS = new Set([
   "discard",
   "reset",
   "doctor",
-  "fix-git",
 ]);
 
 /** Services whose public output already declares the exact first-write effects. */

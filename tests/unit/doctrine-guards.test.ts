@@ -121,14 +121,7 @@ describe("DOC-01 — doctrina y binario integrados", () => {
 describe("Reglas de host y verbos vigentes", () => {
   it("las cinco reglas son comunes y los verbos de recuperación están disponibles", async () => {
     const chassis = await readRel("loops/CHASSIS.md");
-    for (const rule of [
-      "file tool",
-      "heredoc",
-      "CLI verb",
-      "approvable effect",
-      "force-push",
-      "PYTHONUTF8=1",
-    ]) {
+    for (const rule of ["file tool", "heredoc", "CLI verb", "approvable effect", "PYTHONUTF8=1"]) {
       expect(chassis, rule).toContain(rule);
     }
     for (const verb of [
@@ -140,7 +133,9 @@ describe("Reglas de host y verbos vigentes", () => {
     ]) {
       expect(chassis, verb).toContain(verb);
     }
-    expect(await readRel("roles/git/ROLE.md")).toContain("aw git-flow");
+    const policy = await readRel("loops/CODE-POLICIES.md");
+    expect(policy).toContain("aw worktree integrate");
+    expect(policy).toContain("approved paths once per source");
   });
 
   it("los comandos escriben sobres con herramienta de archivos, no con echo o heredoc", async () => {
@@ -155,7 +150,6 @@ describe("Reglas de host y verbos vigentes", () => {
       "export-reports",
       "export-scripts",
       "persist",
-      "fix-git",
     ]) {
       const guide = await readRel(`commands/${name}.md`);
       expect(guide, name).toMatch(/file.tool JSON|JSON with the file tool/);
@@ -173,12 +167,10 @@ describe("Reglas de host y verbos vigentes", () => {
 });
 
 it("la doctrina nombra el cambio de rama del documento y la copia desde quick", async () => {
-  const git = await readRel("roles/git/ROLE.md");
   const specNew = await readRel("commands/spec-new.md");
-  expect(git).toContain("### Branch verification");
-  expect(git).toContain("aw doc-branch set --doc <tipo:NNN>");
-  expect(git).toContain("preserves the document branch and its base");
-  expect(git).toContain("may remove only an `aw/*` unit branch already contained in that base");
+  const codePolicy = await readRel("loops/CODE-POLICIES.md");
+  expect(codePolicy).toContain("aw check-branch");
+  expect(await readSrc("worktree-service.ts")).toContain("isAncestor");
   expect(specNew).toContain(
     "aw doc-branch set --doc spec:<NNN> --source <alias> --from quick:<NNN>",
   );
@@ -315,7 +307,7 @@ describe("Doctrine guards — G1 · context budget derived from a frozen baselin
   it("every command WITH a baseline is at least 20% under it, and the exempt set is named", async () => {
     const result = await measure();
     const perCommand = result.budget.filter((line) => line.metric.startsWith("activation."));
-    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(20);
+    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(19);
     // Y qué se juzga de verdad: `deriveBudget` no le pone `target` a un comando
     // que el baseline congelado no tiene, así que el filtro de `offenders` no lo
     // mira NUNCA. Enumerar los exentos es lo que hace visible esa exención en vez
@@ -337,10 +329,10 @@ describe("Doctrine guards — G1 · context budget derived from a frozen baselin
     expect(offenders).toEqual([]);
   });
 
-  it("covers all 20 commands, not the 6 flows the retired table listed", async () => {
+  it("covers all 19 live commands, not the 6 flows the retired table listed", async () => {
     const result = await measure();
-    expect(result.guaranteed).toHaveLength(20);
-    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(20);
+    expect(result.guaranteed).toHaveLength(19);
+    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(19);
   });
 
   it("every journey the manifest declares is actually measured", async () => {

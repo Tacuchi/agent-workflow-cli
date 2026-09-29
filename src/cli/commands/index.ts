@@ -24,7 +24,6 @@ import {
   exportReportsCommand,
   exportScriptsCommand,
 } from "./export.js";
-import { fixGitCommand } from "./fix-git.js";
 import { flowCommand } from "./flow.js";
 import { generateLaunchCommand } from "./generate-launch.js";
 import { gitFlowCommand } from "./git-flow.js";
@@ -80,7 +79,6 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   resumeCommand,
   hostMemoryCommand,
   persistCommand,
-  fixGitCommand,
   exportDiagramsCommand,
   exportManualsCommand,
   exportReportsCommand,

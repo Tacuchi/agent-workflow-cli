@@ -112,13 +112,12 @@ The flows are **composable with host-native work, never exclusive**. The host is
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
 
-### Transversal skills (no flow) — `/w:status` · `/w:doctor` · `/w:fix-git` · `/w:generate-launch` · `/w:persist` · `/w:resume` · `/w:recall`
+### Transversal skills (no flow) — `/w:status` · `/w:doctor` · `/w:generate-launch` · `/w:persist` · `/w:resume` · `/w:recall`
 
 **Flow-independent invocable** skills: triggered with `/w:` like any command, but they do **not** belong to SPEC/PLAN/QUICK, do **not** manage `docs/`, and do **not** count in **6 flow commands / 5 loops**. *(In the bundle they are packaged under `commands/` so `/w:` can invoke them; in the design they are the `workflow-skills/` category.)*
 
 - `/w:doctor` — read-only diagnosis of the Workline install, MCPs, skills, auth, hooks and workspace visibility across every detected host, with coverage per category and the verdict in the exit code; repairs only what is attributable to Workline, over a sealed batch the person approves by digest. Backed by `aw doctor`.
 - `/w:status` — read-only workspace dashboard (Done/Missing/Discarded, dates humanized in the user's language), opportunistically enriched with host context when the host exposes cheap memory. Writes nothing; backed by `aw status`.
-- `/w:fix-git` — resolves an in-progress merge's conflicts in any repo (identifies origin↔destination, analyzes intent, *structured-choice* on ambiguity). No session, never touches `docs/`; git-safe; backed by `aw merge-state`.
 - `/w:generate-launch` — (re)generates the per-source launch scripts (`.workflow/launch/<alias>/`) by detecting each source's stack; idempotent (preserves hand-edited scripts, `--force` overwrites). Complements the launch flow's on-demand generation. No session, never touches `docs/`; backed by `aw generate-launch`.
 - `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Never creates sessions; the host→`docs/` counterpart of `export-*` (which stays the only session→`docs/` path).
 - `/w:recall` — reports what the other hosts' curated memory learned about Workline (backed by `aw host-memory`, which only reads), contrasts each learning against the installed CLI and doctrine, applies what still holds in the session and offers to save it in the current host's own memory, with its origin mark, only after confirmation. Never writes another host's memory.
@@ -194,7 +193,7 @@ One language per plane — never mix them:
 2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` holds reusable tooling under its own contract; `docs/research` belongs to `/w:persist` or direct no-flow authoring.)
 3. **The spec and the plan are documents** (`docs/`), not session artifacts.
 4. **DB scripts-only** — the AI never executes DML/DDL; migrations stay in `SCRIPTS.sql` and the user applies them. Only read-only reads via MCP.
-5. **Safe git** — expected branch verified before editing; proposed commits per source; never `push`/`--amend`/`--no-verify`.
+5. **Git within the flow** — verify each source's declared branch and unit; commit only the approved paths per source and integrate without discarding conflicted units.
 6. **Loop chassis** — the 5 loops run the same **common engine**; each loop is an heir adding only its deltas, nothing of the engine is re-declared. Detail: `loops/CHASSIS.md`.
 
 > **Scope of #1/#2:** they govern the **session → `docs/`** plane (only `export-*` crosses it). *Direct no-flow authoring* (see § *Operating context*) is **another plane**: with no active session, `docs/` is the only managed surface → the AI writes there by convention + numbering. It is not auto-export (there is no session to graduate from).

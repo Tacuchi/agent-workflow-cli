@@ -62,12 +62,6 @@ export interface SemanticRequest {
   /** Workspace-relative directories an artifact may land in. */
   allowed_destinations: string[];
   limits: SemanticLimits;
-  /** Fix-git only: paths accepting an entire index stage or a deletion, with per-file text caps. */
-  resolutions?: Array<{
-    path: string;
-    allowed: Array<"ours" | "theirs" | "delete">;
-    max_bytes: number;
-  }>;
   /** Everything the CLI read to build this — visible, so the cost is auditable. */
   read_set: string[];
   metrics: { request_bytes: number; read_set_bytes: number };
@@ -90,8 +84,6 @@ export interface SemanticResponse {
   scope?: unknown;
   decisions?: Record<string, unknown>;
   artifacts?: SemanticArtifact[];
-  /** Fix-git only; unlike text artifacts these reuse an existing blob or remove an index entry. */
-  resolutions?: Array<{ path: string; choice: "ours" | "theirs" | "delete" }>;
   reason?: string;
 }
 
@@ -136,7 +128,6 @@ export interface BuildRequestInput {
   inventory: unknown;
   allowedDestinations: string[];
   limits: SemanticLimits;
-  resolutions?: SemanticRequest["resolutions"];
   readSet: string[];
   readSetBytes: number;
   /** See {@link SemanticRequest.scope}. Operations with no scope omit it. */
@@ -159,7 +150,6 @@ export function buildSemanticRequest(input: BuildRequestInput): SemanticRequest 
     inventory: input.inventory,
     allowed_destinations: input.allowedDestinations,
     limits: input.limits,
-    ...(input.resolutions !== undefined ? { resolutions: input.resolutions } : {}),
     read_set: input.readSet,
     metrics: { request_bytes: 0, read_set_bytes: input.readSetBytes },
   };
@@ -199,34 +189,8 @@ export function parseSemanticResponse(
     };
   }
 
-  const isFixGit = request.operation === "fix-git" && request.resolutions !== undefined;
-  const resolutions = isFixGit
-    ? parseFixGitResolutions(envelope.resolutions, request)
-    : { ok: true as const, value: [] };
-  if (!resolutions.ok) return resolutions;
-  const artifacts = parseSemanticArtifacts(
-    envelope.artifacts,
-    request,
-    isFixGit && resolutions.value.length > 0,
-  );
+  const artifacts = parseSemanticArtifacts(envelope.artifacts, request);
   if (!artifacts.ok) return artifacts;
-  if (isFixGit) {
-    if (artifacts.value.length + resolutions.value.length > request.limits.max_artifacts) {
-      return {
-        ok: false,
-        failure: invalid(
-          `el máximo por respuesta es ${request.limits.max_artifacts} archivos; aplicá un subconjunto y repetí prepare para el resto`,
-        ),
-      };
-    }
-    const artifactPaths = new Set(artifacts.value.map((a) => a.path));
-    if (resolutions.value.some((r) => artifactPaths.has(r.path))) {
-      return {
-        ok: false,
-        failure: invalid("una ruta no puede venir a la vez como artifact y resolution"),
-      };
-    }
-  }
 
   return {
     ok: true,
@@ -237,7 +201,6 @@ export function parseSemanticResponse(
       state: "proposed",
       ...(isRecord(envelope.decisions) ? { decisions: envelope.decisions } : {}),
       artifacts: artifacts.value,
-      ...(isFixGit ? { resolutions: resolutions.value } : {}),
     },
   };
 }
@@ -322,8 +285,8 @@ function checkHeader(
     return {
       code: "SEMANTIC_STALE",
       message: `${request.sealed ?? "el estado que el request selló"} cambió entre preparar y responder: la respuesta trae 'input_digest' ${String(envelope.input_digest)} y este request selló ${request.input_digest}`,
-      // Conditioned like the message above: this module is shared by persist,
-      // fix-git, the flow and the design capability, and none of them carries a
+      // Conditioned like the message above: this module is shared by persist
+      // and the flow, and not every operation carries a
       // `scope`. Promising an envelope that will bring the scope back would send
       // those callers looking for something that does not exist there.
       action:
@@ -353,10 +316,7 @@ function checkHeader(
 export function parseSemanticArtifacts(
   raw: unknown,
   request: SemanticRequest,
-  allowEmpty = false,
 ): SemanticParse<SemanticArtifact[]> {
-  if (allowEmpty && (raw === undefined || (Array.isArray(raw) && raw.length === 0)))
-    return { ok: true, value: [] };
   if (!Array.isArray(raw) || raw.length === 0) {
     return { ok: false, failure: invalid("una respuesta 'proposed' debe traer artifacts") };
   }
@@ -364,9 +324,7 @@ export function parseSemanticArtifacts(
     return {
       ok: false,
       failure: invalid(
-        request.operation === "fix-git"
-          ? `${raw.length} archivos exceden el máximo de ${request.limits.max_artifacts}; aplicá un subconjunto y repetí prepare para el resto`
-          : `${raw.length} artefactos exceden el máximo de ${request.limits.max_artifacts}`,
+        `${raw.length} artefactos exceden el máximo de ${request.limits.max_artifacts}`,
       ),
     };
   }
@@ -383,9 +341,7 @@ export function parseSemanticArtifacts(
       return { ok: false, failure: invalid(`el artefacto '${path.value}' viene repetido`) };
     }
     const bytes = Buffer.byteLength(entry.content, "utf8");
-    const maxBytes =
-      request.resolutions?.find((item) => item.path === path.value)?.max_bytes ??
-      request.limits.max_artifact_bytes;
+    const maxBytes = request.limits.max_artifact_bytes;
     if (bytes > maxBytes) {
       return {
         ok: false,
@@ -393,44 +349,13 @@ export function parseSemanticArtifacts(
           code: "SEMANTIC_RESPONSE_INVALID",
           action: request.operation.startsWith("export-")
             ? `reducí '${path.value}' por debajo de ${maxBytes} B y volvé a validar; si es divisible, separalo en más archivos del dossier`
-            : request.operation === "fix-git"
-              ? "aplicá un archivo más chico o elegí la etapa ours|theirs y repetí prepare"
-              : "corregí la respuesta según el 'contract' del request y reenviala",
-          message:
-            request.operation === "fix-git"
-              ? `'${path.value}' pesa ${bytes} B y el máximo es ${maxBytes} B; aplicá un contenido menor o elegí una versión entera con ours|theirs`
-              : `'${path.value}' pesa ${bytes} B y el máximo es ${maxBytes} B`,
+            : "corregí la respuesta según el 'contract' del request y reenviala",
+          message: `'${path.value}' pesa ${bytes} B y el máximo es ${maxBytes} B`,
         },
       };
     }
     seen.add(path.value);
     out.push({ path: path.value, content: entry.content });
-  }
-  return { ok: true, value: out };
-}
-
-function parseFixGitResolutions(
-  raw: unknown,
-  request: SemanticRequest,
-): SemanticParse<Array<{ path: string; choice: "ours" | "theirs" | "delete" }>> {
-  if (raw === undefined) return { ok: true, value: [] };
-  if (!Array.isArray(raw)) return { ok: false, failure: invalid("resolutions debe ser una lista") };
-  const out: Array<{ path: string; choice: "ours" | "theirs" | "delete" }> = [];
-  for (const entry of raw) {
-    if (!isRecord(entry) || typeof entry.path !== "string")
-      return { ok: false, failure: invalid("cada resolution lleva path y choice") };
-    const allowed = request.resolutions?.find((item) => item.path === entry.path);
-    if (!allowed || !allowed.allowed.includes(entry.choice as "ours" | "theirs" | "delete")) {
-      return {
-        ok: false,
-        failure: invalid(
-          `resolución ${entry.path}: '${String(entry.choice)}' no es posible; usá delete cuando falta esa etapa`,
-        ),
-      };
-    }
-    if (out.some((item) => item.path === entry.path))
-      return { ok: false, failure: invalid(`resolución repetida: ${entry.path}`) };
-    out.push({ path: entry.path, choice: entry.choice as "ours" | "theirs" | "delete" });
   }
   return { ok: true, value: out };
 }
@@ -456,8 +381,7 @@ function checkPath(raw: string, allowed: string[]): SemanticParse<string> {
   const safe = checkSafeRelativePath(path);
   if (!safe.ok) return reject(safe.why);
   const segments = safe.segments;
-  // A destination is either a directory to write INSIDE (persist, exports) or an
-  // exact file already identified as writable (fix-git's conflict set). Both are
+  // A destination is either a directory to write INSIDE or an exact file. Both are
   // compared on segments, so `docs/research-evil` never passes as `docs/research`.
   const inside = allowed.some((dest) => {
     const destSegments = dest.split("/").filter((s) => s.length > 0);

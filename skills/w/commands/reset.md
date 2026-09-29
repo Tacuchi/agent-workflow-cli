@@ -20,8 +20,7 @@ takes it back to the bytes it had before the session started.
    candidates, and then you name the session.
 4. **One approval, over the exact digest.** `apply` recomputes under the lock and
    refuses if the document moved since the preview.
-5. **Reverts are commits, never rewrites** — no `reset --hard`, rebase, amend, force
-   or push, whatever this command's name suggests.
+5. **Git history** — revert by commit when needed; this command never rewrites it.
 
 ## Run
 

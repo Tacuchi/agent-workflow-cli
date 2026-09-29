@@ -377,9 +377,9 @@ async function recordBatchBase(
 /**
  * Write the run's approved proposal — all of it, or none of it.
  *
- * It goes through the SAME `applyLocalProposal` the capability's `apply` stage
- * uses, so the approval seal, the compare-and-swap and the all-or-nothing
- * publication are one implementation and not two that could disagree about when a
+ * It goes through the SAME `applyLocalProposal` used by direct document writes,
+ * so the approval seal, compare-and-swap and all-or-nothing publication share
+ * one implementation rather than two that could disagree about when a
  * write is legitimate. The approval it hands over is the proposal's own seal:
  * reaching this row at all means `authorizeTransition` found a grant given over
  * exactly that seal, and a grant over anything else never gets here.

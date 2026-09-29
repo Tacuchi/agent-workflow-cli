@@ -13,7 +13,7 @@ it would do and what it would touch, and stops:
   describe the loop actions they would run — the gaps they would close, the questions they would
   ask, the phases they would execute, the files they would touch and the commits they would
   propose. No session is created, no loop is started, no document is written.
-- **Direct surfaces** (`status`, `resume`, `persist`, `fix-git`, `generate-launch`,
+- **Direct surfaces** (`status`, `resume`, `persist`, `generate-launch`,
   `workspace-init`, `export-*`): run their read-only `prepare` step if they have one and report
   what it returned. Never `validate`, never `apply`.
 

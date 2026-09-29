@@ -27,11 +27,9 @@ import { NoScanFs as RealFs } from "../helpers/real-fs.js";
  * activación sobre todos los comandos y el total de `discovery` sobre sus
  * `description`, y las dos bandas estaban al borde.
  *
- * La regla exacta, porque es la que hace auditable la constante: con 19 comandos
- * la mediana es el DÉCIMO valor ordenado, y los otros 18 dejan el hueco 2519
- * (`fix-git`) → 2537 (`reset`). Así que cualquier `doctor.md` que caiga en ese
- * hueco PASA A SER la mediana, y el objetivo es 2532: a 2533 el gate ya se
- * rompe. `discovery`, por su lado, tenía 145 bytes libres en TODO el bundle.
+ * Con 19 comandos la mediana es el décimo valor ordenado. El objetivo derivado
+ * de la baseline sigue siendo exigible aun después de retirar comandos; la
+ * desaparición de `fix-git` no amplía ese techo.
  *
  * Se fijan acá, sobre el archivo real y con las cifras escritas a mano, porque
  * derivarlas del propio presupuesto haría que un techo movido y un documento
@@ -173,41 +171,18 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
   });
 
   it("la mediana MEDIDA queda bajo su objetivo, y se dice quién la fija", async () => {
-    // El defecto que atrapa: el techo de este archivo custodia el documento que
-    // SOBRA. Con 2524 bytes `doctor.md` pasó a ser la mediana, pero el margen es
-    // de la banda entera: `reset.md` (2537) ya está por encima del objetivo y
-    // sólo lo salva ser el 11.º valor, y `fix-git.md` (2520) es el 9.º. Fijar la
-    // mediana medida es lo que hace que crecer CUALQUIER comando rompa una
-    // prueba en vez de romper el gate en la próxima corrida de otra persona.
     const { runContextBudget } = await import("../../src/application/context/budget-service.js");
     const { NodeFileSystem } = await import("../helpers/real-fs.js");
     const result = await runContextBudget(new NodeFileSystem(), { root: BUNDLE });
     const median = result.budget.find((line) => line.metric === "activation.median");
 
-    // Con 20 comandos (plan 062 sumó `recall`) la mediana es el promedio del 10.º
-    // y el 11.º valor: `doctor.md` y `reset.md`. Así `doctor.md` sigue fijándola,
-    // ahora a medias con su vecino de arriba.
     const entries = new Map(result.activation.entries.map((e) => [e.command, e.bytes]));
-    expect(entries.size).toBe(20);
-    expect(median?.actual).toBe(Math.floor((bytes + 2537) / 2));
+    expect(entries.size).toBe(19);
+    const sorted = [...entries.values()].sort((a, b) => a - b);
+    expect(median?.actual).toBe(sorted[9]);
     expect(median?.actual ?? 0).toBeLessThanOrEqual(DOC_CEILING);
-    // Y los dos vecinos que definen el hueco, con sus bytes: si alguno se mueve,
-    // esta prueba lo dice antes que el gate.
-    expect(entries.get("fix-git")).toBe(2520);
-    expect(entries.get("reset")).toBe(2537);
-  });
-
-  it("fix-git enseña el camino parcial con build y sin pasos de índice manuales", () => {
-    const guide = readFileSync(join(BUNDLE, "commands", "fix-git.md"), "utf8");
-    const role = readFileSync(join(BUNDLE, "roles", "git", "ROLE.md"), "utf8");
-    for (const flag of ["--show", "--adapt", "--skip-build"]) {
-      expect(guide, flag).toContain(flag);
-      expect(role, flag).toContain(flag);
-    }
-    expect(guide).toContain("left_out");
-    expect(role).toContain("left_out");
-    expect(guide).not.toContain("git checkout --ours");
-    expect(role).not.toContain("git checkout --ours");
+    expect(entries.has("fix-git")).toBe(false);
+    expect(entries.get("doctor")).toBe(bytes);
   });
 
   it("el MANIFEST lo declara con su core y sólo módulos ya contabilizados", () => {

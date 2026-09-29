@@ -595,7 +595,7 @@ async function heldUnits(
         kind === "retained" && unit.dirty === true
           ? `commiteá el trabajo en ${unit.path} y después aw worktree integrate --source ${unit.alias} --code ${folder}`
           : kind === "retained" && unit.classification_reason?.includes("operación git")
-            ? `aw fix-git --path ${unit.path}`
+            ? `resolvé externamente la operación git en ${unit.path} y después aw worktree integrate --source ${unit.alias} --code ${folder}`
             : `aw worktree integrate --source ${unit.alias} --code ${folder}`,
     });
   }

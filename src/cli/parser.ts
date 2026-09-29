@@ -74,8 +74,6 @@ const COMMAND_VALUE_FLAGS: ReadonlyMap<string, ReadonlySet<string>> = new Map([
 // `values.get()`, or it silently sees `undefined`.
 const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   "source",
-  "show",
-  "adapt",
   "fuente",
   "working-branch",
   "qa-branch",
@@ -96,9 +94,6 @@ const MULTI_VALUE_FLAGS: ReadonlySet<string> = new Set([
   // many signals as it carries, and a host declares as many capabilities as it has.
   "signal",
   "capability",
-  // Repeated `--input` (capability): an operation takes as many inputs as its
-  // descriptor declares, and a single-value routing would keep only the last.
-  "input",
   // Repeated `--only` (doctor): the flag names the SET of hosts a run is
   // restricted to. Without this, `aw doctor --only claude-code --only codex`
   // kept the last one and produced a report over ONE host that looks exactly

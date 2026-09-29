@@ -3331,7 +3331,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     //
     // Delegated, not internal, although this CLI owns the service: a merge into
     // the source's working branch writes on somebody else's books, and its failure
-    // mode — a conflict — opens a journey (`aw fix-git`) that is a person's, not
+    // mode — a conflict — needs external resolution before the same integration
     // this executor's. What comes back is the command's own per-unit report.
     action: {
       invocation: {
@@ -3350,7 +3350,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       // thing, which is what lets the recovery end where it started.
       idempotent: true,
       recovery:
-        "una unidad en conflicto conserva su merge y sus commits: resolvé con 'aw fix-git --path <ruta que reportó la integración>' (prepare → apply → commit --confirm) y volvé a correr la integración; la transición sigue pendiente mientras la sesión conserve una unidad",
+        "una unidad en conflicto conserva su merge y sus commits: resolvé externamente el merge en la ruta reportada y volvé a correr la integración de esa fuente; la transición sigue pendiente mientras la sesión conserve una unidad",
     },
   },
   {
@@ -3648,29 +3648,6 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: "modules/LAUNCH-DETECTION.md",
     attribution: "Loaded when the CLI's detection is wrong",
     effects: ["local_additive"],
-  },
-  {
-    id: "fix-git.intent",
-    scope: cmd("fix-git"),
-    title: "interpretar la intención de cada conflicto de la fusión en curso",
-    authority: "agent",
-    ownership: "cli-owned",
-    document: "commands/fix-git.md",
-    // Reading base/ours/theirs for intent is judgment. What is not: which files
-    // may be answered for, that the blob hashes still hold, and that a leftover
-    // marker is a rejection. The interpretation is supplied; nothing lands on it
-    // alone.
-    attribution: "the CLI owns the effects",
-  },
-  {
-    id: "fix-git.resolution-write",
-    scope: cmd("fix-git"),
-    title: "escribir la resolución validada en los archivos en conflicto",
-    authority: "cli",
-    ownership: "cli-owned",
-    document: "commands/fix-git.md",
-    attribution: "`aw fix-git`",
-    effects: ["mutate_overwrite"],
   },
   {
     id: "export.selection",

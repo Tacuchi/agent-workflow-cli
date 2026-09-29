@@ -313,7 +313,7 @@ describe("el tramo PLAN migró como dato, y el orden de sus filas es la doctrina
     ]);
     // Re-entrante: es la transición a la que VUELVE un conflicto resuelto.
     expect(actionOf(integration)?.idempotent).toBe(true);
-    expect(actionOf(integration)?.recovery).toContain("fix-git");
+    expect(actionOf(integration)?.recovery).toContain("resolvé externamente");
   });
 
   it("autorizar no es ejecutar: el commit es un efecto propio con su evidencia", () => {

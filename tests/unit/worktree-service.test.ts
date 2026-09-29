@@ -465,7 +465,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
       expect(readFileSync(join(unit.path, "suelto.txt"), "utf-8")).toBe("sin commitear\n");
     });
 
-    it("conserva la unidad que quedó a mitad de un merge y la manda a fix-git", async () => {
+    it("conserva la unidad a mitad de un merge para resolución externa", async () => {
       writeFileSync(join(source, "choque.txt"), "base\n");
       git(source, "add", "-A");
       git(source, "commit", "-m", "choque base");
@@ -485,7 +485,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
 
       expect(swept.reclaimed).toEqual([]);
       expect(swept.retained[0]).toMatchObject({ reason: "operation_in_progress" });
-      expect(swept.retained[0]?.next).toContain("aw fix-git --path");
+      expect(swept.retained[0]?.next).toContain("resolvé externamente");
       expect(git(source, "worktree", "list", "--porcelain")).toContain(
         `aw/${workspaceKey(workspace).slice(-8)}/104-dos-plan-exec`,
       );

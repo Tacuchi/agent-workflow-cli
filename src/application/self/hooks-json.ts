@@ -298,6 +298,32 @@ export function isOurHookEntry(entry: unknown): boolean {
   return typeof command === "string" && isOurCommand(command);
 }
 
+/** A Claude-shaped group is ours only when every command it carries invokes this CLI. */
+export function isOurClaudeHookGroup(entry: unknown): boolean {
+  const hooks = asRecord(entry)?.hooks;
+  return (
+    Array.isArray(hooks) &&
+    hooks.length > 0 &&
+    hooks.every((hook) => {
+      const command = asRecord(hook)?.command;
+      return typeof command === "string" && isOurCommand(command);
+    })
+  );
+}
+
+/** During upgrade a group may also carry someone else's hook: remove only ours. */
+export function stripOurClaudeHookCommands(entry: unknown): unknown | null {
+  const group = asRecord(entry);
+  const hooks = group?.hooks;
+  if (!Array.isArray(hooks)) return entry;
+  const kept = hooks.filter((hook) => {
+    const command = asRecord(hook)?.command;
+    return typeof command !== "string" || !isOurCommand(command);
+  });
+  if (kept.length === hooks.length) return entry;
+  return kept.length > 0 ? { ...group, hooks: kept } : null;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)

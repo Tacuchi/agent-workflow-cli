@@ -73,7 +73,6 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:plan-exec",
     "/w:quick",
     "/w:status",
-    "/w:fix-git",
     "/w:generate-launch",
     "/w:persist",
     "/w:resume",
@@ -93,19 +92,14 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
   // template's own events so a hardcoded copy cannot drift from it.
   hooks: [
     {
-      name: "UserPromptSubmit",
-      matcher: "(any)",
-      fires: "turn-start — advises on checkout branch before editing",
-    },
-    {
       name: "SessionStart",
       matcher: "startup|resume|clear",
       fires: "Inject namespace into ~/.config/agent-workflow/namespace",
     },
     {
       name: "PreToolUse",
-      matcher: "Edit|Write|MultiEdit · mcp__*__execute_sql · Bash",
-      fires: "branch-check · sql-mutation-guard · git-commit-advisor",
+      matcher: "mcp__*__execute_sql",
+      fires: "sql-mutation-guard",
     },
     {
       name: "SessionEnd",

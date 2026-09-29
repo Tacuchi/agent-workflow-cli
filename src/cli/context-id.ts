@@ -2,7 +2,6 @@ import type { Readable } from "node:stream";
 import { text } from "node:stream/consumers";
 import { parseHookPayload } from "../application/hook-common.js";
 import type { EnvPort } from "../ports/env.js";
-import { takeHookStdin } from "./hook-stdin-cache.js";
 
 /**
  * Neutral conversation-identity boundary.
@@ -87,10 +86,6 @@ export async function readHookStdin(
   stdin: Readable = process.stdin,
   windowMs: number = HOOK_STDIN_WINDOW_MS,
 ): Promise<string | undefined> {
-  if (stdin === process.stdin) {
-    const cached = takeHookStdin();
-    if (cached !== undefined) return cached;
-  }
   if ((stdin as NodeJS.ReadStream).isTTY === true) return undefined;
   if (!(await waitForFirstByte(stdin, windowMs))) {
     // Release the handle so an abandoned read never holds the process open.

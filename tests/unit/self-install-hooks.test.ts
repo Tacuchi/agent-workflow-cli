@@ -1,13 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { opencodeGlobalMcpFile } from "../../src/application/mcp-host-paths.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   resolveBundledHookTemplate,
   selfInstallHooks,
 } from "../../src/application/self/install-hooks.js";
+import { OPENCODE_PLUGIN_FILE } from "../../src/application/self/opencode-plugin.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -38,6 +41,9 @@ const VALID_TEMPLATE = {
     ],
   },
 };
+const BUNDLED_TEMPLATE = fileURLToPath(
+  new URL("../../skills/w/hooks/hooks.template.json", import.meta.url),
+);
 
 function buildArgs(values: Record<string, string>, flags: string[] = []): ParsedArgs {
   return {
@@ -206,6 +212,120 @@ describe("selfInstallHooks", () => {
     }
   });
 
+  it("actualizar desde el template antiguo retira sólo los hooks Git propios y conserva los ajenos", async () => {
+    const foreign = { matcher: "Bash", hooks: [{ type: "command", command: "my-own-hook" }] };
+    const mixed = {
+      matcher: "Bash",
+      hooks: [
+        { type: "command", command: "agent-workflow hook git-commit-advisor" },
+        { type: "prompt", prompt: "regla propia" },
+      ],
+    };
+    const old = {
+      UserPromptSubmit: [
+        { matcher: "", hooks: [{ type: "command", command: "agent-workflow hook turn-start" }] },
+        foreign,
+      ],
+      PreToolUse: [
+        {
+          matcher: "Edit|Write|MultiEdit|NotebookEdit",
+          hooks: [{ type: "command", command: "agent-workflow hook branch-check" }],
+        },
+        {
+          matcher: "Bash",
+          hooks: [{ type: "command", command: "agent-workflow hook git-commit-advisor" }],
+        },
+        mixed,
+        foreign,
+      ],
+    };
+    await mkdir(join(home, ".claude"), { recursive: true });
+    const settings = join(home, ".claude", "settings.json");
+    await writeFile(settings, JSON.stringify({ hooks: old, permissions: { allow: ["Read"] } }));
+    const args = buildArgs({ target: "claude", template: BUNDLED_TEMPLATE });
+    expect((await selfInstallHooks(args, buildCtx(home))).ok).toBe(true);
+    const config = JSON.parse(await readFile(settings, "utf8"));
+    expect(config.hooks.UserPromptSubmit).toEqual([foreign]);
+    expect(config.hooks.PreToolUse).toEqual([
+      { matcher: "Bash", hooks: [{ type: "prompt", prompt: "regla propia" }] },
+      foreign,
+      {
+        matcher: "mcp__.*__execute_sql",
+        hooks: [
+          { type: "command", command: "agent-workflow hook sql-mutation-guard", timeout: 10 },
+        ],
+      },
+    ]);
+    expect(config.permissions).toEqual({ allow: ["Read"] });
+    expect((await selfInstallHooks(args, buildCtx(home))).data?.status).toBe("noop");
+  });
+
+  it("OpenCode retira su plugin antiguo probado y preserva las entradas ajenas", async () => {
+    const configPath = opencodeGlobalMcpFile(home);
+    const pluginPath = join(dirname(configPath), "plugin", OPENCODE_PLUGIN_FILE);
+    await mkdir(dirname(pluginPath), { recursive: true });
+    await writeFile(
+      pluginPath,
+      await readFile(new URL("../fixtures/opencode-plugin-26.txt", import.meta.url)),
+    );
+    await writeFile(configPath, JSON.stringify({ plugin: ["my-plugin", pluginPath] }));
+    const args = buildArgs({ target: "opencode", template: BUNDLED_TEMPLATE });
+    const retired = await selfInstallHooks(args, buildCtx(home));
+    expect(retired.data?.status).toBe("retired");
+    await expect(stat(pluginPath)).rejects.toThrow();
+    expect(JSON.parse(await readFile(configPath, "utf8")).plugin).toEqual(["my-plugin"]);
+    expect((await selfInstallHooks(args, buildCtx(home))).data?.status).toBe("unsupported");
+  });
+
+  it("OpenCode dry-run anticipa el retiro sin alterar bytes ni declararlo ya aplicado", async () => {
+    const configPath = opencodeGlobalMcpFile(home);
+    const pluginPath = join(dirname(configPath), "plugin", OPENCODE_PLUGIN_FILE);
+    await mkdir(dirname(pluginPath), { recursive: true });
+    const bytes = await readFile(new URL("../fixtures/opencode-plugin-26.txt", import.meta.url));
+    await writeFile(pluginPath, bytes);
+    await writeFile(configPath, JSON.stringify({ plugin: ["foreign", pluginPath] }));
+    const preview = await selfInstallHooks(
+      buildArgs({ target: "opencode" }, ["--dry-run"]),
+      buildCtx(home),
+    );
+    expect(preview.data?.status).toBe("dry-run");
+    expect(preview.data?.warning).toContain("would retire");
+    expect(await readFile(pluginPath)).toEqual(bytes);
+    expect(JSON.parse(await readFile(configPath, "utf8")).plugin).toEqual(["foreign", pluginPath]);
+  });
+
+  it("OpenCode no retira un plugin ajeno que ocupa el antiguo path", async () => {
+    const configPath = opencodeGlobalMcpFile(home);
+    const pluginPath = join(dirname(configPath), "plugin", OPENCODE_PLUGIN_FILE);
+    await mkdir(dirname(pluginPath), { recursive: true });
+    await writeFile(pluginPath, "// plugin ajeno\n");
+    await writeFile(configPath, JSON.stringify({ plugin: [pluginPath] }));
+    const outcome = await selfInstallHooks(
+      buildArgs({ target: "opencode", template: BUNDLED_TEMPLATE }),
+      buildCtx(home),
+    );
+    expect(outcome.data?.status).toBe("noop");
+    expect(await readFile(pluginPath, "utf8")).toBe("// plugin ajeno\n");
+    expect(JSON.parse(await readFile(configPath, "utf8")).plugin).toEqual([pluginPath]);
+  });
+
+  it("OpenCode conserva un plugin editado aunque mantenga el marker histórico", async () => {
+    const configPath = opencodeGlobalMcpFile(home);
+    const pluginPath = join(dirname(configPath), "plugin", OPENCODE_PLUGIN_FILE);
+    await mkdir(dirname(pluginPath), { recursive: true });
+    const old = await readFile(
+      new URL("../fixtures/opencode-plugin-26.txt", import.meta.url),
+      "utf8",
+    );
+    const edited = `${old}\n// edición propia\n`;
+    await writeFile(pluginPath, edited);
+    await writeFile(configPath, JSON.stringify({ plugin: [pluginPath] }));
+    const outcome = await selfInstallHooks(buildArgs({ target: "opencode" }), buildCtx(home));
+    expect(outcome.data?.status).toBe("noop");
+    expect(await readFile(pluginPath, "utf8")).toBe(edited);
+    expect(JSON.parse(await readFile(configPath, "utf8")).plugin).toEqual([pluginPath]);
+  });
+
   it("--target claude --dry-run reports plan, does not write", async () => {
     const result = await selfInstallHooks(
       buildArgs({ target: "claude", template: templatePath }, ["--dry-run"]),
@@ -263,13 +383,12 @@ describe("selfInstallHooks", () => {
   // mergeados en settings.json tal cual, sin transformación y sin pérdidas. Los
   // demás tests de claude usan una plantilla de 3 eventos; este cierra la
   // distancia entre "el merge funciona" y "el merge funciona con lo que enviamos".
-  it("claude: la plantilla REAL del bundle mergea sus 6 eventos sin transformar ni degradar", async () => {
+  it("claude: la plantilla REAL del bundle mergea sus 5 eventos sin guardas Git", async () => {
     const bundled = await resolveBundledHookTemplate();
     expect(bundled, "la plantilla del bundle tiene que resolverse").not.toBeNull();
     const template = JSON.parse(await readFile(bundled as string, "utf8"));
     const events = Object.keys(template.hooks);
     expect(events).toEqual([
-      "UserPromptSubmit",
       "SessionStart",
       "PreToolUse",
       "SessionEnd",
@@ -290,13 +409,34 @@ describe("selfInstallHooks", () => {
     const written = JSON.parse(await readFile(join(home, ".claude", "settings.json"), "utf8")) as {
       hooks: Record<string, unknown>;
     };
-    // Byte a byte lo que la plantilla declara, incluidos los 3 grupos de
-    // PreToolUse y sólo el command de PostCompact.
+    // Byte a byte lo que la plantilla declara: sólo SQL en PreToolUse.
     expect(written.hooks).toEqual(template.hooks);
-    expect((written.hooks.PreToolUse as unknown[]).length).toBe(3);
+    expect((written.hooks.PreToolUse as unknown[]).length).toBe(1);
+    expect(JSON.stringify(written.hooks)).not.toMatch(/branch-check|git-commit-advisor|turn-start/);
     const postCompact = written.hooks.PostCompact as { hooks: { type: string }[] }[];
     expect(postCompact[0]?.hooks.map((h) => h.type)).toEqual(["command"]);
   });
+
+  it.each(["claude", "codex", "kimi", "crush", "gemini", "opencode"])(
+    "%s no distribuye guardas Git generales en HOME efímero",
+    async (target) => {
+      const result = await selfInstallHooks(
+        buildArgs({ target, template: BUNDLED_TEMPLATE }),
+        buildCtx(home),
+      );
+      expect(result.ok, target).toBe(true);
+      const contents: string[] = [];
+      for (const name of await readdir(home, { recursive: true })) {
+        const path = join(home, name);
+        if ((await stat(path)).isFile()) contents.push(await readFile(path, "utf8"));
+      }
+      expect(contents.join("\n"), target).not.toMatch(
+        /hook branch-check|hook git-commit-advisor|hook turn-start/,
+      );
+      if (target === "opencode") expect(result.data?.status).toBe("unsupported");
+      else expect(contents.join("\n"), target).toContain("sql-mutation-guard");
+    },
+  );
 
   it("template missing 'hooks' key → TEMPLATE_INVALID_SCHEMA", async () => {
     const bad = join(workdir, "bad-schema.json");

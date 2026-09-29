@@ -8,7 +8,7 @@ The **common engine** of Workline loops: heirs read it before their deltas and o
 
 - Write JSON envelopes with the file tool, never heredoc or shell-built JSON; redirect the file to stdin.
 - Use a CLI verb before editing the runtime; make one call per approvable effect.
-- The user executes force-push; on Windows set `PYTHONUTF8=1` for Python consumers.
+- On Windows set `PYTHONUTF8=1` for Python consumers.
 
 ## Heirs (canonical list)
 
@@ -131,7 +131,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 ## Convergence / exit
 
 - **No material gaps** → read-only **convergence gate**: failed criteria return as gaps; the loop flips the green criteria in `SESSION.md`. At `finalize` explain unchecked ones. Each heir owns its gate.
-- Finish sources → approve exact paths/message or skip → `finalize` persists CHECKPOINT, deferred BACKLOG if needed, archive and HISTORY; approved commit last, never push. `Cerrar` preserves progress.
+- Finish sources → approve exact paths/message or skip → `finalize` persists CHECKPOINT, deferred BACKLOG if needed, archive and HISTORY; approved commit last. `Cerrar` preserves progress.
 - **Report from `CHECKPOINT`** (QUICK/PLAN close, block, compact, resume): proven state with evidence; block and cause if any; one next human action (command/path + condition) only if pending. No pending → no next action; closed PLAN names final test run and integration state. Unrun validation is no proof or 100% closure; deferred items separate, not another task. No preamble, redundant recap or farewell; keep requested explanation, evidence and format. No invented times or numbered micro-steps. `/w:status` stays literal; `/w:resume` keeps all candidates.
 
 ## docs/ boundary — no auto-export (hard rule)

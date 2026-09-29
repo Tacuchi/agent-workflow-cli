@@ -5,8 +5,6 @@ import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type {
   AheadBehind,
   CommitReceipt,
-  ConflictStage,
-  ConflictStages,
   DirtyPath,
   GitAttempt,
   GitOperationState,
@@ -486,38 +484,6 @@ export class GitCliAdapter implements GitPort {
     return result.code === 0;
   }
 
-  async mergeHeads(repoPath: string): Promise<string[]> {
-    const where = await this.mustRun(
-      "rev-parse --git-path MERGE_HEAD",
-      ["rev-parse", "--git-path", "MERGE_HEAD"],
-      repoPath,
-    );
-    try {
-      const text = await readFile(resolve(repoPath, where.stdout.trim()), "utf8");
-      return text
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw err;
-    }
-  }
-
-  async mergeBases(repoPath: string): Promise<string[]> {
-    const result = await this.process.run(
-      "git",
-      ["merge-base", "--all", "HEAD", "MERGE_HEAD"],
-      this.opts(repoPath),
-    );
-    if (result.code === 1) return [];
-    if (result.code !== 0) throw this.failed("merge-base --all", repoPath, result.stderr);
-    return result.stdout
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-
   async conflictedFiles(repoPath: string): Promise<string[]> {
     const result = await this.process.run(
       "git",
@@ -543,120 +509,6 @@ export class GitCliAdapter implements GitPort {
     const raw = result.stdout.trim();
     if (raw.length === 0 || raw === "undefined") return undefined;
     return cleanRefName(raw);
-  }
-
-  async conflictStages(repoPath: string, path: string): Promise<ConflictStages> {
-    // `ls-files -u` is the only source that gives BOTH the stage number and the
-    // blob hash. Reading the worktree file instead would show the conflict
-    // markers git already wrote, not the three sides that produced them.
-    const listed = await this.process.run(
-      "git",
-      ["ls-files", "-u", "--", path],
-      this.opts(repoPath),
-    );
-    const hashes = new Map<string, { hash: string; mode: string }>();
-    if (listed.code === 0) {
-      for (const line of listed.stdout.split("\n")) {
-        const match = /^(\d{6}) ([0-9a-f]{40}|[0-9a-f]{64}) ([123])\t/.exec(line);
-        if (match?.[1] && match[2] && match[3])
-          hashes.set(match[3], { mode: match[1], hash: match[2] });
-      }
-    }
-
-    const base = await this.readStage(repoPath, hashes.get("1"));
-    const ours = await this.readStage(repoPath, hashes.get("2"));
-    const theirs = await this.readStage(repoPath, hashes.get("3"));
-    const present = [base, ours, theirs].filter((s) => s.hash !== null);
-    return {
-      path,
-      base,
-      ours,
-      theirs,
-      binary: present.some((s) => s.content === null),
-    };
-  }
-
-  async indexEntry(repoPath: string, path: string): Promise<{ mode: string; hash: string } | null> {
-    const listed = await this.mustRun(
-      `ls-files -s ${path}`,
-      ["ls-files", "-s", "--", path],
-      repoPath,
-    );
-    const match = /^(\d{6}) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t/.exec(listed.stdout);
-    return match?.[1] && match[2] ? { mode: match[1], hash: match[2] } : null;
-  }
-
-  async isWorktreeCleanPath(repoPath: string, path: string): Promise<boolean> {
-    const result = await this.process.run(
-      "git",
-      ["diff", "--quiet", "--", path],
-      this.opts(repoPath),
-    );
-    if (result.code === 0) return true;
-    if (result.code === 1) return false;
-    throw this.failed(`diff --quiet ${path}`, repoPath, result.stderr);
-  }
-
-  async readBlob(
-    repoPath: string,
-    hash: string,
-  ): Promise<{ content: string | null; bytes: number }> {
-    const stage = await this.readStage(repoPath, { hash, mode: "100644" });
-    return { content: stage.content, bytes: stage.bytes };
-  }
-
-  async hashBlob(repoPath: string, content: string): Promise<string> {
-    const result = await this.mustRun(
-      "hash-object",
-      ["hash-object", "-w", "--no-filters", "--stdin"],
-      repoPath,
-      { stdin: content },
-    );
-    return result.stdout.trim();
-  }
-
-  async setIndexEntry(repoPath: string, path: string, mode: string, hash: string): Promise<void> {
-    await this.mustRun(
-      `update-index ${path}`,
-      ["update-index", "--add", "--cacheinfo", `${mode},${hash},${path}`],
-      repoPath,
-    );
-    await this.mustRun(`checkout-index ${path}`, ["checkout-index", "-f", "--", path], repoPath);
-  }
-
-  async removeIndexEntry(repoPath: string, path: string): Promise<void> {
-    await this.mustRun(
-      `update-index --force-remove ${path}`,
-      ["update-index", "--force-remove", "--", path],
-      repoPath,
-    );
-  }
-
-  private async readStage(
-    repoPath: string,
-    entry: { hash: string; mode: string } | undefined,
-  ): Promise<ConflictStage> {
-    if (entry === undefined) return { hash: null, content: null, bytes: 0, mode: null };
-    const { hash, mode } = entry;
-    const result = await this.process.runBinary(
-      "git",
-      ["cat-file", "-p", hash],
-      this.opts(repoPath),
-    );
-    if (result.code !== 0) return { hash, content: null, bytes: 0, mode };
-    // A NUL byte is the same heuristic git itself uses to call a blob binary.
-    const binary = result.stdout.includes(0);
-    // The size is the bytes git stored, which a decoded blob no longer measures.
-    return {
-      hash,
-      content: binary ? null : result.stdout.toString("utf8"),
-      bytes: result.stdout.length,
-      mode,
-    };
-  }
-
-  async stagePath(repoPath: string, path: string): Promise<void> {
-    await this.mustRun(`add ${path}`, ["add", "--", path], repoPath);
   }
 
   async commit(repoPath: string, message: string): Promise<CommitReceipt> {

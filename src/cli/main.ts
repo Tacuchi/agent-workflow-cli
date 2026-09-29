@@ -1,14 +1,7 @@
 #!/usr/bin/env node
 import { hasWorklineMarker } from "../runtime/workline-marker.js";
-import { cacheHookStdin } from "./hook-stdin-cache.js";
-
-const GIT_COMMIT_RE = /\bgit\s+commit\b/;
 const argv = process.argv.slice(2);
-const hook = argv[0] === "hook" ? argv[1] : undefined;
 const scoped =
-  hook === "branch-check" ||
-  hook === "turn-start" ||
-  hook === "git-commit-advisor" ||
   argv[0] === "checkpoint-write" ||
   argv[0] === "resume-summary" ||
   argv[0] === "auto-compact-on-close" ||
@@ -33,27 +26,16 @@ async function scopedWorkspaceVisible(): Promise<boolean> {
   }
 }
 
-if (hook === "git-commit-advisor") {
-  // Only the advisor needs stdin to decide whether the expensive CLI is needed.
-  // A payload meant for another tool cannot be a git commit either.
-  const { readHookStdin } = await import("./context-id.js");
-  const stdin = await readHookStdin();
-  let payload: { tool_name?: unknown; tool_input?: { command?: unknown } } | null = null;
-  try {
-    payload = JSON.parse(stdin ?? "");
-  } catch {
-    // The advisor itself treats an invalid payload as a pass.
-  }
-  if (
-    payload?.tool_name !== "Bash" ||
-    typeof payload.tool_input?.command !== "string" ||
-    !GIT_COMMIT_RE.test(payload.tool_input.command)
-  ) {
-    process.exitCode = 0;
-  } else {
-    cacheHookStdin(stdin);
-    if (await scopedWorkspaceVisible()) await import("./full-cli.js");
-  }
+if (argv[0] === "hook" && argv[1] !== "sql-mutation-guard" && argv[1] !== "--help") {
+  // A retired hook invoked by an old host config must not materialize runtime
+  // or block an edit. Refuse it directly, without loading the full CLI.
+  process.stdout.write(
+    `${JSON.stringify({
+      ok: false,
+      error: { code: "INVALID_INPUT", message: `hook: unknown subcommand '${argv[1] ?? ""}'` },
+    })}\n`,
+  );
+  process.exitCode = 1;
 } else if (scoped) {
   if (await scopedWorkspaceVisible()) await import("./full-cli.js");
 } else {

@@ -1,15 +1,14 @@
 # CODE-POLICIES — policies for code-editing loops
 
 They apply to **`plan-exec-loop`** (per effective batch) and **`quick-loop`** (the single task;
-**proportional** gate), read with the chassis. They own the DB scripts-only, safe Git and
+**proportional** gate), read with the chassis. They own the DB scripts-only, Git unit and
 closing-review invariants.
 
-## Safe git — verified branch + proposed commits
+## Git within a flow — verified branch + approved exact-path commits
 
 Sources are edited on a **verified** branch (`aw check-branch`), and commits are
 **proposed**: in plan-exec the CLI commits only the batch's approved paths once per source; in quick
-the task closes with one proposed commit. Never `push`/`--amend`/`--no-verify`, a destructive clean or a branch
-switch without confirmation. A **rejected** commit leaves the changes in the tree and the unit
+the task closes with one proposed commit. Branch switches need consent. A **rejected** commit leaves the changes in the tree and the unit
 recorded as uncommitted in `CHECKPOINT` and `BACKLOG`. Between units each working tree is clean or
 explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles
 its internal phases in one reviewed commit, and no batch may co-mingle with another.
@@ -18,7 +17,7 @@ Concurrent flows declare sources. By default a run takes an **isolation
 unit** in each before writing — a worktree on its own branch
 (`aw worktree ensure | list | release`). An edit outside is
 blocked naming the command that gets one, and at close `aw worktree integrate` merges each into
-the source's work branch; a conflict is reported, routed to `aw fix-git --path`, never alone.
+the source's work branch; a conflict is reported with the unit, merge path and files, remains pending for external resolution and is retried without an automatic abort.
 An in-place workspace declares `Modo de edición: in-place`; a plan may override it with `> Aislamiento: unidad`. In-place declares and approves only its own paths against the acquisition snapshot, without integration.
 
 For frontend sources, install dependencies (`npm ci` if the lockfile changes) inside each acquired unit: `node_modules` belongs to that worktree, never to a sibling checkout.

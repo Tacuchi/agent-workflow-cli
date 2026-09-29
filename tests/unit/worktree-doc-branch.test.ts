@@ -180,8 +180,12 @@ _Stack sin detectar._
       released: false,
       into: "feature/plan",
       conflicted: ["plan.txt"],
-      next: `aw fix-git --path ${unit.path}`,
+      unit_path: unit.path,
+      merge_path: unit.path,
     });
+    if (!("next" in result)) throw new Error("sin reintento");
+    expect(result.next).toContain("resolvé externamente");
+    expect(result.next).toContain("aw worktree integrate --source acme");
     expect(git(repo, "rev-parse", "feature/plan")).toBe(base);
     expect(existsSync(unit.path)).toBe(true);
   });
