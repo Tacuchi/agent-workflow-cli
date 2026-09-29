@@ -1,11 +1,11 @@
 ---
 name: export-scripts
-description: "Consolidates pending SQL into a numbered `docs/scripts/` bundle: five forward categories and paired rollbacks. Publishes the net final state; never executes SQL. After publication the CLI offers a commit of explicit paths, only with approval. Composes `sql`. User-invoked via `/w:export-scripts`."
+description: "Consolidates pending SQL into a numbered `docs/scripts/` bundle: five forward categories and paired rollbacks. Publishes the net final state; never executes DML/DDL. The CLI offers an exact-path commit only with approval. User-invoked via `/w:export-scripts`."
 ---
 
 # export-scripts — consolidated SQL bundle, simple and direct
 
-Consolidates pending SQL into `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with category folders and rollback files under `rollback/`. The AI **never executes** SQL; application is a handoff.
+Consolidates pending SQL into `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with category folders and rollback files under `rollback/`. The AI **never executes DML/DDL**; application is a handoff. Optional catalog checks are read-only.
 
 **The material is declared, not assumed:** a base brings it, `--exclude` subtracts pieces and `--environment` what the book records as applied. With no flag: the session corpus, bundles out.
 
@@ -21,8 +21,8 @@ The export's own DB scripts-only rule governs ordering and rollback. SQL help ex
 
 ## What it does NOT do
 
-- **Execute SQL** (DB scripts-only). The bundle is a deliverable; a human/DBA applies it.
-- Commit, merge or push; touch `.workflow/sessions/` or the loose `*.sql` (read-only).
+- **Execute DML/DDL** by any channel (DB scripts-only). The bundle is a deliverable; a human/DBA applies it.
+- Commit as part of publication, merge or push; touch `.workflow/sessions/` or the loose `*.sql` (read-only). An optional exact-path commit is offered separately, only with approval.
 - Write any `docs/` folder other than `docs/scripts/` (invariant: one category).
 - Rewrite, renumber or delete a previous bundle: one in the origin is **read**, its directory left as it was.
 - Include read-only type-A (diagnostic queries) or invent SQL.
@@ -68,7 +68,7 @@ No args: every corpus session, bundles and loose SQL out — the behavior that a
 
 `prepare` already resolved WHICH pieces are in: its inventory lists them per origin with every exclusion and its reason. Read only that.
 
-**Sessions**: read every `.sql` named by `aw session-artifacts --code <NNN> --dump scripts`, including root `SCRIPTS.sql` and `SCRIPTS.rollback.sql`. Take only type-B migrations; skip type-A research. Markers: `-- @category: <01-05>` and `-- @stmt: NNN-verb-target` (from the `sql` capability).
+**Sessions**: read every `.sql` named by `aw session-artifacts --code <NNN> --dump scripts`, including root `SCRIPTS.sql` and `SCRIPTS.rollback.sql`. Take only type-B migrations; skip type-A research. Markers: `-- @category: <01-05>` and `-- @stmt: NNN-verb-target` from session artifacts.
 
 **Loose SQL**: per file, honor `@category` markers when present; otherwise infer it from content (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). If the filename contains `rollback` → skip (it never enters a forward).
 
@@ -93,7 +93,7 @@ omit explicitly retired objects even when their deletion is absent from the inpu
 | Created, untouched | The original statement |
 | Retired by session context without an explicit `DROP` | Omit it |
 
-**Synthesize, never invent:** folding `CREATE` + `ALTER` into a final `CREATE` is required;
+**Synthesize, never invent:** folding changes into their final form is required;
 adding a migration no session performed is forbidden. Session context outranks script chronology:
 a retired object stays out even when no file dropped it. Check actual state **read-only** before
 deciding what remains; reconcile code (including entity mappings and native queries) with it.
@@ -120,7 +120,7 @@ Keep the five fixed category numbers. Omit empty folders; within each populated 
 
 ### Step 5 — Write the forwards
 
-Write each forward in its category folder with a concise header and useful origin. Reconcile to the net final state; keep idempotency, intent and transaction boundaries. Never invent verification SELECTs.
+Place each selected forward in its category folder with its origin and the resulting net final state. Preserve relevant transaction boundaries. Do not invent SQL or verification SELECTs.
 
 ### Step 6 — Derive `00-ROLLBACK.sql` (at the end)
 
@@ -153,6 +153,6 @@ Each invocation publishes a new `NNN`: never delete or overwrite a published bun
 ## Resources
 
 - Design: `docs/referencias/workflow-exports/export-scripts.md` · family: [`../README.md`](../README.md).
-- Composed capability: `sql` (built-in default; see `docs/referencias/workflow-roles/`).
+- Optional SQL help from the host remains subject to this export's corpus, destination, rollback and approval checks.
 - Source artifact: `SCRIPTS.sql` (see `docs/referencias/workflow-artifacts/artifacts-core/`).
 - Siblings: [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md) · [`../export-diagrams/EXPORT.md`](../export-diagrams/EXPORT.md) · [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).

@@ -26,7 +26,7 @@
 |---|---|---|---|
 | [`export-scripts`](export-scripts/EXPORT.md) | optional host SQL help | a DECLARED origin: session `SCRIPTS.sql`, loose `docs/scripts/*.sql` and/or published bundles, minus `--exclude` and what already ran in `--environment` | `docs/scripts/NNN-export-scripts-<date>/` (numbered forwards + `00-ROLLBACK.sql`) |
 | [`export-manuals`](export-manuals/EXPORT.md) | — (prose: ambient conventions) | sessions + `DECISION` + plan-doc (`Solution` incl. Final behavior block, `Validations`) + touched code | `docs/manuals/` |
-| [`export-diagrams`](export-diagrams/EXPORT.md) | optional host diagram help | source code of the sources + plan-doc (AS-IS → TO-BE delta in `Solution`, `Impacted`) | `docs/diagrams/` (C4 / mermaid) |
+| [`export-diagrams`](export-diagrams/EXPORT.md) | optional host diagram help | source code of the sources + plan-doc (`Solution`, `Impacted`) | `docs/diagrams/` (notation chosen for the evidence) |
 | [`export-reports`](export-reports/EXPORT.md) | — (prose: ambient conventions) | corpus of sessions (spec, `CONCLUSIONS`, `DECISION`) + plan-doc state + `docs/` | `docs/reports/` (executive / functional report) |
 
 > **Composition over ownership:** exports keep their own destinations, safety rules and validation. SQL, diagrams and prose may use whichever help the host exposes; no external role binding or installed skill is required.
@@ -37,7 +37,7 @@
 2. **Single-pass, read-only over sessions** — they read artifacts/sessions and `docs/`, **synthesize**, and write **only** their own `docs/<category>/` folder. They do **not** mutate sessions and do **not** open/close loops.
 3. **Cross-session** — they consolidate **N** sessions + the `docs/` corpus (dedup, roadmap, continuous numbering).
 4. **No loop, no internal sessions** — options come from **args** (no lifecycle *structured-choice*; harness capability — see [`../harness/HARNESS.md`](../harness/HARNESS.md)).
-5. **Git-safe** — they **never** commit, merge, push, `--amend`, or `--no-verify`. The output is a written document the user reviews and commits when ready.
+5. **Git-safe** — publication itself does not commit. Any subsequent exact-path commit goes through the CLI preview and explicit approval; no merge or push.
 6. **DB scripts-only** — `export-scripts` ships migration SCRIPTS as a bundle; it **never executes** DDL/DML (a human/DBA applies them).
 7. **Spec and plan are documents** — written by the SPEC/PLAN flows directly, never exported.
 
@@ -63,7 +63,7 @@ Mirrors `docs/referencias/workflow-exports/` and the old export SKILLs. Frontmat
 
 Exports read the corpus through the CLI — **never hard-coded paths**:
 
-- `aw sessions` — list sessions (counts + next correlative) to enumerate the corpus.
+- `aw sessions` — lists active sessions only; do not use it to enumerate the cross-session corpus.
 - `aw release-data [--since sessionNNN] [--source alias] [--include-graduated] [--standalone-sql]` — consolidated dump of sessions (corpus enumeration); `--include-graduated` adds the previous `docs/scripts` bundles (modern and legacy naming) and `--standalone-sql` the loose top-level `*.sql`.
 - `aw export-scripts prepare [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>]` — composes the origin and declares it: where it started, what stayed in, what stayed out and why. These three flags are this export's alone.
 - `aw release-pass link --artifact <ruta> | applied --environment <ambiente>` — the book `--environment` reads: `link` attaches a bundle to a pass by path, `applied` records that its SQL RAN there. Nothing inspects a database.
@@ -78,14 +78,14 @@ Exports read the corpus through the CLI — **never hard-coded paths**:
 2. **Each export writes ONLY its one `docs/` category** (scripts / manuals / diagrams / reports).
 3. **Spec and plan are documents** (written by SPEC/PLAN flows directly) — they are **not** exported.
 4. **DB scripts-only**: `export-scripts` ships SCRIPTS.sql migrations, **never executes** them.
-5. **Git-safe**: exports are read-only/report — **never** commit/push.
+5. **Git-safe**: exports read sessions without mutating them; only an approved, separate exact-path commit may follow publication, never push.
 6. **Cross-session synthesis**: exports consolidate N sessions, not a single one.
 
 ## Index
 
 | Export | File | Category | Composes |
 |---|---|---|---|
-| `export-scripts` | [`export-scripts/EXPORT.md`](export-scripts/EXPORT.md) | `docs/scripts` | `sql` |
+| `export-scripts` | [`export-scripts/EXPORT.md`](export-scripts/EXPORT.md) | `docs/scripts` | optional host help |
 | `export-manuals` | [`export-manuals/EXPORT.md`](export-manuals/EXPORT.md) | `docs/manuals` | — (prose: ambient conventions) |
-| `export-diagrams` | [`export-diagrams/EXPORT.md`](export-diagrams/EXPORT.md) | `docs/diagrams` | `diagrams` |
+| `export-diagrams` | [`export-diagrams/EXPORT.md`](export-diagrams/EXPORT.md) | `docs/diagrams` | optional host help |
 | `export-reports` | [`export-reports/EXPORT.md`](export-reports/EXPORT.md) | `docs/reports` | — (prose: ambient conventions) |

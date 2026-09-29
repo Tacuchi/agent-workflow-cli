@@ -38,7 +38,7 @@ The report's prose follows the **ambient** writing conventions: the host auto-ap
 - Mutate sessions, the corpus or the plan-doc (read-only).
 - Write any `docs/` folder other than `docs/reports/` (invariant: one category).
 - Invent achievements, metrics or recommendations: conditional sections (e.g. "Improvement opportunities"/Roadmap) appear **only** when the corpus has detectable open items.
-- Generate advanced technical diagrams (extensive C4/erDiagram) — those live in `export-diagrams`; here, at most a simple executive-synthesis `flowchart LR`.
+- Generate technical diagram dossiers — those live in `export-diagrams`; a short explanatory sketch in a report is optional.
 - Overwrite previous reports (always next-number).
 
 ## Read-only sandbox
@@ -91,7 +91,7 @@ Extract the R-items from `CONCLUSIONS`/`DECISION` (pending, deferred, "next step
 
 ### Step 4 — Synthesize (prose: ambient conventions)
 
-Render applying the ambient writing conventions (host): Executive summary · What was done (grouped by business capability, **not** by session) · Impacted components (table) · Key decisions · Results/conclusions · Pending/Roadmap (only with R-items). Technical→executive translation and length cap per `--audience`. Optional: a simple synthesis `flowchart LR` (inline; a `mermaid.ink` link is OPTIONAL — it encodes the diagram source into a public-service URL, omit it for private corpora); the detailed technical diagram belongs to `export-diagrams`.
+Render applying the ambient writing conventions (host): Executive summary · What was done (grouped by business capability, **not** by session) · Impacted components (table) · Key decisions · Results/conclusions · Pending/Roadmap (only with R-items). Technical→executive translation and length cap per `--audience`. A short explanatory sketch is optional; a technical diagram dossier belongs to `export-diagrams`.
 
 ### Step 5 — Write or report
 

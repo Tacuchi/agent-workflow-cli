@@ -30,7 +30,7 @@ Every invoked directory is a usable implicit workspace. The closest ancestor wit
 | [`recall`](recall.md) | What the other hosts learned about Workline: contrasted, applied, offered for saving | single-pass (transversal) |
 | [`export-scripts`](export-scripts.md) | Promotes session SQL migrations to `docs/scripts/` | single-pass, read-only |
 | [`export-manuals`](export-manuals.md) | Generates manuals in `docs/manuals/` | single-pass, read-only |
-| [`export-diagrams`](export-diagrams.md) | Generates C4/mermaid diagrams in `docs/diagrams/` | single-pass, read-only |
+| [`export-diagrams`](export-diagrams.md) | Publishes evidence-backed diagrams in `docs/diagrams/` | single-pass, read-only over sessions |
 | [`export-reports`](export-reports.md) | Generates reports in `docs/reports/` | single-pass, read-only |
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.

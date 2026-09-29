@@ -2,7 +2,7 @@
 
 > **Loops** are the pieces the **AI runs whole** to produce deliverables and orchestrate the work. A `/w:…` command (Layer 1) starts them and, from there, **the AI drives them**, not the user.
 >
-> Siblings: `../commands/` (Layer 1, `/w:…` commands) · `.workflow/sessions/` (Layer 3, sessions + internal artifacts) · the `export-*` family (the only artifact→`docs/` path) · the composable **capabilities** (roles bound in `.workflow/skills.toml`).
+> Siblings: `../commands/` (Layer 1, `/w:…` commands) · `.workflow/sessions/` (Layer 3, sessions + internal artifacts) · the `export-*` family (the only artifact→`docs/` path) · `../roles/` (overview orientation).
 
 ---
 
@@ -49,7 +49,7 @@ The **5 loops** are heirs: they use `## Inherits` (a one-line reference to [`CHA
 
 The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skill); all 5 loops inherit it. It is never a binding. Additional assistance comes from the host when available.
 
-## Composed capabilities (roles)
+## Orientation and ambient help
 
 Only Workline-owned roles resolve through `.workflow/skills.toml`. External help is ambient; it is not a prerequisite, binding or gate proof. See [../roles/README.md](../roles/README.md).
 

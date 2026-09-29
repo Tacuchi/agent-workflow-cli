@@ -12,7 +12,6 @@ const DIRECT_GUIDE = fileURLToPath(
 const AUTHORING_MANUAL = fileURLToPath(
   new URL("../../skills/w/exports/export-scripts/EXPORT.md", import.meta.url),
 );
-const SQL_ROLE = fileURLToPath(new URL("../../skills/w/roles/sql/ROLE.md", import.meta.url));
 const SCRIPTS_FORWARD = fileURLToPath(
   new URL("../../skills/w/artifacts/artifacts-core/SCRIPTS.sql", import.meta.url),
 );
@@ -29,13 +28,13 @@ describe("export-scripts — paridad entre guía directa y contrato generado", (
     expect(manual).toContain("supersede");
   });
 
-  it("doctrina, rol y plantilla comparten cinco categorías y separan forward y rollback", async () => {
-    const [guide, manual, role, forward, reverse] = await Promise.all(
-      [DIRECT_GUIDE, AUTHORING_MANUAL, SQL_ROLE, SCRIPTS_FORWARD, SCRIPTS_REVERSE].map((file) =>
+  it("doctrina y plantilla comparten cinco categorías y separan forward y rollback", async () => {
+    const [guide, manual, forward, reverse] = await Promise.all(
+      [DIRECT_GUIDE, AUTHORING_MANUAL, SCRIPTS_FORWARD, SCRIPTS_REVERSE].map((file) =>
         readFile(file, "utf8"),
       ),
     );
-    for (const text of [guide, manual, role, SCRIPTS_FINAL_STATE_CONTRACT]) {
+    for (const text of [guide, manual, SCRIPTS_FINAL_STATE_CONTRACT]) {
       expect(text).toContain("05-grants");
       expect(text).toContain("rollback/");
     }

@@ -191,6 +191,26 @@ describe("validateExport — each category enforces its own shape", () => {
     expect(missing.failure.message).toContain("README.md");
   });
 
+  it("publica un diagrama Graphviz de un corpus local sin exigir C4 ni Mermaid", async () => {
+    const fs = workspace();
+    const prepared = await prepare(fs, "diagrams");
+    const source = "digraph flujo { Cliente -> API -> BaseDeDatos }\n";
+    const raw = answer(prepared, dossier(prepared, [[`${prepared.unit}/flujo.dot`, source]]));
+    const checked = validateExport(raw, prepared);
+    if (!checked.ok) throw new Error(checked.failure.message);
+    const published = await applyExport(fs, env, paths(), {
+      raw,
+      prepared,
+      approval: checked.value.approval_digest,
+    });
+    if (!published.ok) throw new Error(published.failure.message);
+    expect(await fs.readText(`/cwd/${prepared.unit}/flujo.dot`)).toBe(source);
+    expect(published.value.written).toEqual([
+      `${prepared.unit}/README.md`,
+      `${prepared.unit}/flujo.dot`,
+    ]);
+  });
+
   it("reports publica UN documento, no un dossier", async () => {
     const fs = workspace();
     const prepared = await prepare(fs, "reports");

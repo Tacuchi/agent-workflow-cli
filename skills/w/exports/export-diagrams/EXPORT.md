@@ -1,125 +1,56 @@
 ---
 name: export-diagrams
-description: "Generates architecture and flow diagram source in `docs/diagrams/`, consolidating code and plan context from N sessions. The CLI proposes an optional exact-path commit after publication and executes it only with approval; MCP reads only. Composes `diagrams`. User-invoked via `/w:export-diagrams`."
+description: "Promotes diagram material from a declared session corpus to a numbered docs/diagrams dossier. Uses evidence from source code and plans, requires no notation or diagram skill, and publishes only after validation and approval."
 ---
 
-# export-diagrams — architecture and flow diagrams from code + plan-doc
-
-Generates a diagram dossier (**architecture and flows**) of the workspace, aggregating the sources' structure and the sessions' delta. It emits only diagram **source** (Mermaid / DSL); the reader renders it. The CLI offers an optional approved commit after publication; MCP reads only.
-
-> `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-diagrams.md`.
+# export-diagrams — dossier from source evidence
 
 ## Category
 
-`docs/diagrams` — the **only** `docs/` folder this export writes.
+`docs/diagrams/` is the only destination. Each publication is a new numbered dossier with `README.md`; no prior dossier is overwritten.
 
 ## Composes
 
-The export keeps its own output and preview contract. It may use diagram help exposed by the host, with no binding, catalog or installed-skill requirement.
+Diagram help from the host is optional. It may propose content, but its installation or notation never proves a gate, chooses the corpus, or bypasses preview and approval. Pick a useful notation for the evidence at hand, or use plain Markdown. C4, Mermaid, Structurizr and any external provider are not prerequisites.
 
 ## When to use
 
-- "System diagram", "workspace C4", "architecture map".
-- "Flow diagram" across touched components / integrations.
-- Technical onboarding; before structural changes (validate the current architecture); technical audit.
+Promote architecture, system, integration, data-flow or lifecycle diagrams derived from source code and the declared sessions.
 
 ## What it does
 
-1. Inspects the workspace sources' code (structure, wiring, integrations, technologies).
-2. Reads the plan-doc from the sessions: the AS-IS → TO-BE delta in `## Solution` (legacy plans: separate `Current state (AS-IS)` / `Target state (TO-BE)` sections) and `Impacted` (what changed and where).
-3. (Optional) With read-only MCP available and a data-model request: queries DB schemas (reads only).
-4. Resolves the engine (`--engine`) and consolidates the architecture/flows touched by the N sessions.
-5. Renders the diagrams (composes `diagrams`): context, containers, components, integrations, data model (when it applies).
-6. Writes the dossier to `docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/` with a `README.md` (index + how to read).
+1. `aw export-diagrams prepare` fixes the selected session corpus, destination, output limits and scope seal. `aw release-data` and `aw session-artifacts --code <NNN> --dump objetivo` show the underlying sessions and plan references; inspect only the necessary source code, `## Solution` and `## Impacted` to substantiate the diagram.
+2. Assemble `README.md` (index, evidence, scope and how to read) and one or more diagram files. Markdown, textual DSL, PlantUML, Mermaid or DOT are accepted as content, not mandated as the modeling technique. Mark unknown or omitted parts instead of inventing components.
+3. Return an answer carrying the prepared `version`, `operation`, `input_digest` and `scope` unchanged plus `state: "proposed"` and `{path, content}` artifacts under the prepared destination. `aw export-diagrams validate` checks the complete dossier and produces the approval digest; `apply --approval <digest>` publishes it atomically. On an ambiguous or unsupported corpus, report the reason without writing.
 
 ## What it does NOT do
 
-- Run commits, merges, push, or SQL.
-- Mutate sessions, the plan-doc or the code (read-only). MCP **reads only** (never DML/DDL).
-- Write any `docs/` folder other than `docs/diagrams/` (invariant: one category).
-- **Visually render** the diagram: it emits only the source (Mermaid / DSL); the reader renders with their tools (or the `mermaid.ink` link).
-- Validate that the integrations work (that is doctor work) or invent absent components.
-- Overwrite previous dossiers (always next-number).
+- Does not write outside `docs/diagrams/`, mutate sessions or code, execute DML/DDL, commit, merge or push.
+- Does not treat a host skill as an authorization or send private sources to a remote renderer. Optional database evidence is read-only and never a reason to execute DML/DDL.
+- Does not assume a diagram syntax, mandatory C4 levels, a particular file named `diagrams.md`, or a renderer. Publication validates destination and shape, not the choice of modeling technique.
 
 ## Read-only sandbox
 
-In plan mode it **describes**, never writes: the resolved engine, the levels/sections that would appear (resolved by args), the sources to inspect + detected integrations, and — with a data-model request — the proposed MCP queries with their estimated cost. It does **not** run `Write` or MCP mutations; numbering queries use `aw next-number --dry-run` (pure).
+In plan mode, describe the corpus and proposed diagrams without publishing or reserving a number. `aw next-number --dry-run docs/diagrams` is a pure numbering preview.
 
 ## Inputs
 
-**`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
+`/w:export-diagrams [--sessions NNN[,NNN]] [--since YYYY-MM-DD] [--source <alias>]`
 
-- `aw release-data [--since sessionNNN] [--source <alias>]` — enumerates the corpus (ALL sessions; input for the AS-IS/TO-BE delta). `aw sessions` alone lists only ACTIVE sessions — never use it as the corpus.
-- `aw session-artifacts --code <NNN> --dump objetivo` — locates the session and its plan-doc reference; the AS-IS → TO-BE delta and `Impacted` are read from the plan-doc by its path.
-- `aw next-number docs/diagrams` — deterministic numbering (the CLI handles destination-folder resolution).
-
-**Filesystem / code**:
-
-- The declared sources' code (structure, wiring, technology manifests).
-- Existing `docs/diagrams/` (to complement / avoid collisions).
-
-**Read-only MCP** (optional, only with a data-model request and configuration): `\d <table>`, `SELECT count(*)`, FK relations for the `erDiagram`. With the cost guard.
-
-**Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
-
-```
-/w:export-diagrams [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>]
-                   [--engine mermaid|c4] [--scope c4|integrations|data|todo] [--dry-run]
-```
-
-| Flag | Behavior |
-|---|---|
-| `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`); affects the AS-IS/TO-BE delta |
-| `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
-| `--source <alias>` | Limits to one source (multi-source workspace) |
-| `--engine mermaid\|c4` | Default `mermaid` (renders on GitHub); `c4` = opt-in Structurizr DSL |
-| `--scope` | Which sections appear: `c4` (context/containers/components), `integrations`, `data` (only with MCP), `todo` (default: all) |
-| `--dry-run` | Propositional report, no files written |
-
-No args: `--engine mermaid --scope todo`. The system **snapshot** is always the last known state; `--since`/`--sessions` modulate the delta emphasis (what was touched), not the base snapshot.
+The same scope flags apply to `aw export-diagrams prepare`; validate/apply read the sealed scope from the answer. With no filter the corpus is all eligible sessions; `--sessions` chooses explicit ones, `--since` starts after a date, and `--source` restricts an alias. The snapshot comes from current source evidence; sessions explain what changed, not a replacement for inspection. An optional read-only MCP can inform a requested data model, but an unreachable database is not a publishing dependency unless the chosen content claims its evidence.
 
 ## Flow
 
-### Step 1 — Resolve context and corpus
-
-`aw release-data` applying `--sessions`/`--since`/`--source`. The CLI handles destination-folder resolution.
-
-### Step 2 — Inspect the sources
-
-Per source: basic structure, internal components (modules, services, commands, hooks, configured MCP), technologies per manifest (`package.json`, `pom.xml`, …), external integrations.
-
-### Step 3 — Read the corpus delta
-
-Per filtered session (`aw session-artifacts --code <NNN> --dump objetivo`): follow the plan-doc reference and read the AS-IS → TO-BE delta in `## Solution` (legacy plans: separate AS-IS/TO-BE sections) and `Impacted`. Used to highlight what changed over the current snapshot.
-
-### Step 4 — Inspect MCP (optional)
-
-If `--scope` includes `data` and read-only MCP exists: `\d <table>`, `count(*)`, FK relations (with the cost guard). Not available → omit the "Data model" section with an inline note.
-
-### Step 5 — Render (composes `diagrams`)
-
-Per `--engine`: `mermaid` → native Mermaid C4 blocks (`C4Context`/`C4Container`/`C4Component`) and `flowchart` for flows; `c4` → a separate Structurizr `workspace.dsl` + auxiliary embedded Mermaid for offline reading. Keep block labels ASCII (no accents) for render robustness; prose keeps them. OPTIONALLY add after each closing fence a preview blockquote `> Ver diagrama renderizado: <https://mermaid.ink/img/BASE64>` (URL-safe base64, keep padding) — the link encodes the diagram source into a public-service URL, omit it for private corpora (GitHub renders the blocks natively). Not applicable to `workspace.dsl`.
-
-### Step 6 — Write or report
-
-With `--dry-run`: print the report; write nothing. Otherwise: `aw next-number docs/diagrams` + write the dossier. The CLI proposes `aw workspace-commit prepare --export <ruta>` after publication; `apply --approval <digest>` commits only approved paths, never pushes. Summary to the user: engine, present/omitted sections (e.g. Data omitted without MCP) and the path.
+Read prepared corpus → inspect evidence → author diagram material with or without host help → validate the proposed files → show the preview → publish only with the exact approval digest → report the dossier path and any unsupported/unknown claims.
 
 ## Output location
 
-```
-docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/
-├── README.md          # index + how to read + counts
-├── diagrams.md        # main document with embedded Mermaid (+ mermaid.ink links)
-└── workspace.dsl      # only with --engine c4 (Structurizr)
-```
+`docs/diagrams/NNN-export-diagrams-YYYY-MM-DD/README.md` plus diagram files in Markdown or a supported textual source extension (`.dsl`, `.puml`, `.mmd`, `.dot`).
 
 ## Re-run
 
-Functionally idempotent: each invocation takes the next `NNN`; it never overwrites previous dossiers. To regenerate: delete the directory and re-invoke.
+Each invocation uses the next number; corrections publish a later dossier rather than deleting or silently replacing an earlier one.
 
 ## Resources
 
-- Design: `docs/referencias/workflow-exports/export-diagrams.md` · family: [`../README.md`](../README.md).
-- Composed capability: `diagrams` (built-in default; see `docs/referencias/workflow-roles/`).
-- Input: plan-doc `## Solution` (AS-IS → TO-BE delta) + `Impacted` (see `docs/plans`).
-- Siblings: [`../export-scripts/EXPORT.md`](../export-scripts/EXPORT.md) · [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md) · [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).
+Input: the selected plan's `## Solution`/`## Impacted` and the actual source tree. Siblings: [`../export-scripts/EXPORT.md`](../export-scripts/EXPORT.md), [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md), [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).

@@ -38,7 +38,8 @@ type ExportData =
     } & ExportApplied);
 
 const DESCRIBES: Record<ExportCategory, string> = {
-  diagrams: "Publica un dossier de diagramas (README + Markdown, DSL opcional) en docs/diagrams.",
+  diagrams:
+    "Publica un dossier de diagramas (README + fuente textual sin notación obligatoria) en docs/diagrams.",
   manuals:
     "Publica manuales en docs/manuals o [docs] manuals: sólo INDEX.md (complement), archivos planos <slug>.md o un dossier numerado; reemplazar un archivo exige --overwrite.",
   reports: "Publica un informe acotado en docs/reports.",

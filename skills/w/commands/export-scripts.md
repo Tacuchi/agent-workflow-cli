@@ -1,5 +1,5 @@
 ---
-description: Use to consolidate the workspace's pending SQL into a docs/scripts/ bundle from a declared origin — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes SQL. Never automatic.
+description: Use to consolidate the workspace's pending SQL into a docs/scripts/ bundle from a declared origin — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes DML/DDL. Never automatic.
 argument-hint: "[--code <session>] [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>] [--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
 allowed-tools: ["Bash", "Read"]
 ---
@@ -14,7 +14,7 @@ allowed-tools: ["Bash", "Read"]
 ## What it produces
 
 - Bundle: README; forwards `01-ddl-tablas/`…`05-grants/NN-<nombre>.sql`; reverses in `rollback/<categoría>/`, global in `rollback/00-global/00-ROLLBACK.sql`.
-- Nothing here executes SQL: applying the bundle is a handoff to an authorized operator.
+- Nothing here executes DML/DDL: applying the bundle is a handoff to an authorized operator. Optional catalog checks are read-only.
 - Never write into `docs/` with a file tool: one pass, all or nothing; no session touched.
 
 ## Net final state

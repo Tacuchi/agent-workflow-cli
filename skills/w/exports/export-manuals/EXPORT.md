@@ -40,7 +40,7 @@ The manual's prose follows **ambient** writing conventions when the host has one
 - Write any `docs/` folder other than `docs/manuals/` (invariant: one category).
 - Overwrite a previous `regenerate` dossier (always next-number).
 - Invent manuals: with no detectable topic → in `regenerate` it aborts with a clear message; in `complement` it produces an empty `INDEX.md` with an inline note.
-- Visually render diagrams (visual architecture belongs to `export-diagrams`; embedded Mermaid only when it adds value).
+- Publish technical diagram dossiers (visual architecture belongs to `export-diagrams`; an explanatory sketch in a manual is optional).
 
 ## Read-only sandbox
 

@@ -10,9 +10,8 @@ import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 // Consistency guards for the `w` skill bundle. These catch CROSS-SKILL drift —
 // where two skills that compose each other disagree on a shared contract — which
 // the legacy-ref grep audit (skill-audit-grep.test.ts) does not cover. The
-// motivating case: `roles/diagrams` and `exports/export-diagrams` had drifted
-// apart on the engine flag (`--diagrams` vs `--engine`), the default engine
-// (structurizr vs mermaid) and the output filenames. A composing pair must agree.
+// The export and its command must agree on corpus, destination and approvals;
+// neither assumes a particular diagramming technique or an installed role.
 const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
 
 // Since plan 009 the transversal surfaces (`status`, `resume`) no longer
@@ -114,27 +113,30 @@ describe("bundle shape — internals are manuals, not skills (multi-host ronda 2
 });
 
 describe("SKILL consistency — cross-skill contracts", () => {
-  it("the diagrams engine flag is `--engine` bundle-wide (never the legacy `--diagrams`)", async () => {
-    // `export-diagrams` exposes `--engine mermaid|c4`; the `diagrams` role it
-    // composes must speak the same flag. `--diagrams` is the stale form.
-    const files = await bundleMdFiles();
-    const offenders: string[] = [];
-    for (const relpath of files) {
-      const text = await readFile(join(SKILL_ROOT, relpath), "utf8");
-      if (text.includes("--diagrams")) offenders.push(relpath);
+  it("export-diagrams and its command require evidence and approval, not a notation or a role", async () => {
+    const guide = await readSurface("commands/export-diagrams.md");
+    const exp = await readSurface("exports/export-diagrams/EXPORT.md");
+    const roles = await listMdFiles(join(SKILL_ROOT, "roles"));
+    for (const retired of ["diagrams", "sql", "research"]) {
+      expect(roles).not.toContain(join(SKILL_ROOT, `roles/${retired}/ROLE.md`));
     }
-    expect(offenders).toEqual([]);
+    expect(guide).toContain("aw export-diagrams prepare");
+    expect(guide).toContain("--approval");
+    expect(exp).toContain("README.md");
+    expect(exp).toContain("source code");
+    expect(exp).toContain("no notation");
+    expect(guide + exp).not.toMatch(/--engine|--diagrams|--scope/);
   });
 
-  it("export-diagrams and the diagrams role agree on the engine contract (--engine, default mermaid)", async () => {
-    const role = await readSurface("roles/diagrams/ROLE.md");
-    const exp = await readSurface("exports/export-diagrams/EXPORT.md");
-    // Both must name the shared flag.
-    expect(role).toContain("--engine");
-    expect(exp).toContain("--engine");
-    // Modernized away from a structurizr default; neither may re-assert it.
-    expect(role).not.toMatch(/structurizr.{0,20}(default|por defecto)/i);
-    expect(exp).not.toMatch(/structurizr.{0,20}(default|por defecto)/i);
+  it("research stays inline and DB mutation stays forbidden without the old role", async () => {
+    const chassis = await readSurface("loops/CHASSIS.md");
+    const research = await readSurface("modules/DB-RESEARCH-RULE.md");
+    const scripts = await readSurface("modules/DB-SCRIPTS-ONLY.md");
+    expect(chassis).toContain("CONCLUSIONS");
+    expect(chassis).toContain("inconclusive");
+    expect(research).toContain("read-only");
+    expect(research).toContain("SCRIPTS.sql");
+    expect(scripts).toContain("shell, MCP, driver or any other channel");
   });
 
   it("every bundle skill/manual description respects the Agent Skills cap the doctor enforces on third parties", async () => {

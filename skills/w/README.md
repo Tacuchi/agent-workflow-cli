@@ -15,7 +15,7 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 | [`commands/`](commands/) | 1 | The `/w:` slash commands the user invokes |
 | [`loops/`](loops/) | 2 | [`CHASSIS.md`](loops/CHASSIS.md) (the engine) + the 5 loop heirs the AI runs |
 | [`exports/`](exports/) | 1 | The `export-*` family — the only artifact→`docs/` path |
-| [`roles/`](roles/) | cross-cutting | Pluggable capabilities (built-in defaults; rebindable via `.workflow/skills.toml`) |
+| [`roles/`](roles/) | cross-cutting | Overview binding and remaining Git workflow policy; external techniques are host-native |
 | [`harness/`](harness/HARNESS.md) | cross-cutting | Capability→mechanism binding per harness |
 | [`artifacts/`](artifacts/) | 3 | Session artifact templates the loops manage |
 | [`hooks/`](hooks/) | — | Host hook template (branch-check, sql-mutation-guard, checkpoint, …) |

@@ -95,9 +95,9 @@ const POLICIES: Record<ExportCategory, CategoryPolicy> = {
     dir: "docs/diagrams",
     shape: "dossier",
     required: ["README.md"],
-    extensions: [".md", ".dsl", ".puml", ".mmd"],
+    extensions: [".md", ".dsl", ".puml", ".mmd", ".dot"],
     contract:
-      "Un dossier con README.md obligatorio, los diagramas en Markdown y, opcionalmente, su DSL (.dsl/.puml/.mmd).",
+      "Un dossier con README.md obligatorio y diagramas en Markdown o fuente textual (.dsl/.puml/.mmd/.dot), sin notación obligatoria.",
   },
   manuals: {
     dir: "docs/manuals",
