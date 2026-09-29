@@ -65,6 +65,7 @@ export default {
   paneArgs: [],
   limitations: [
     "every bash call, read and edit asks you in the pane (crush's tools are not path-scoped)",
+    "reads cannot be path-scoped here: this host may read the other hosts' disposable roots (their copied credentials) unasked; a token file there lives only milliseconds, between its write and its wrapper's rm -f before exec",
   ],
   files: ({ home, node }) => [
     { path: GUARD_PATH, kind: "text", mode: 0o700, value: guardSource() },

@@ -17,6 +17,7 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  rmSync,
   statSync,
   symlinkSync,
   writeFileSync,
@@ -112,6 +113,8 @@ export function planIsolation({
   model,
   effort,
   deps = [],
+  tokenPresent = false,
+  siblingRoots = [],
 }) {
   const host = HOSTS[hostId];
   if (host === undefined) throw new Error(`host '${hostId}' is not covered by the run`);
@@ -123,8 +126,23 @@ export function planIsolation({
   const cliDir = join(root, "cli");
   const cliMain = join(cliDir, "dist", "cli", "main.js");
   const rootNode = join(root, "bin", "node");
-  const env = cleanEnv({ root, hostDir: host.ownBinDir ? dirname(hostBin) : null });
+  const env = {
+    ...cleanEnv({ root, hostDir: host.ownBinDir ? dirname(hostBin) : null }),
+    // Host switches that keep a token out of the host's own children (claude).
+    ...(host.childEnv ?? {}),
+  };
   const aw = (...args) => ({ kind: "aw", args, cwd: workspace });
+  // A host whose token travels in a variable gets it ONLY through a wrapper that
+  // reads <root>/secrets/<host>.env: the visible pane command names the wrapper,
+  // never the value. Everything else (setup steps, `mcp list`) runs without it.
+  const secret = host.token
+    ? {
+        var: host.token.env,
+        path: join(root, "secrets", `${hostId}.env`),
+        wrapper: join(root, "bin", `launch-${basename(hostBin)}`),
+      }
+    : null;
+  const launcher = secret ? secret.wrapper : hostBin;
   const paneArgs = [...profile.paneArgs, ...host.modelArgs(model, effort)];
   return {
     host: hostId,
@@ -170,7 +188,18 @@ export function planIsolation({
         "--global",
         "--force",
       ),
-      { kind: "profile", files: profile.files({ home, workspace, node: rootNode, realHome }) },
+      {
+        kind: "profile",
+        files: profile.files({
+          home,
+          workspace,
+          node: rootNode,
+          realHome,
+          tokenPresent,
+          root,
+          siblingRoots,
+        }),
+      },
       {
         kind: "credentials",
         copies: host.credentials.map((rel) => ({ from: join(realHome, rel), to: join(home, rel) })),
@@ -189,19 +218,52 @@ export function planIsolation({
       // No declared source may point outside the root (a real repo would get a
       // branch and worktree metadata from `aw flow`).
       { kind: "sources-guard", root, cwd: workspace },
-      { kind: "auth-probe", bin: hostBin, args: host.authProbe, cwd: workspace },
+      ...(secret
+        ? [{ kind: "secret", var: secret.var, path: secret.path, wrapper: secret.wrapper, hostBin }]
+        : []),
+      {
+        kind: "auth-probe",
+        bin: launcher,
+        args: host.authProbe,
+        cwd: workspace,
+        ...(secret ? { secret: { var: secret.var, path: secret.path } } : {}),
+      },
     ],
-    pane: { cwd: workspace, command: paneCommand(env, hostBin, paneArgs) },
+    secret,
+    pane: { cwd: workspace, command: paneCommand(env, launcher, paneArgs) },
   };
 }
 
-/** Roots a previous run left: recognizable prefix, and a marker whose pid is gone. */
+/**
+ * A root without a marker this young may be another run's, between its mkdtemp
+ * and its marker write: a concurrent sweep leaves it alone.
+ */
+export const ROOT_GRACE_MS = 60_000;
+
+/**
+ * Creates one disposable root (mkdtemp, 0700) and writes its pid marker at
+ * once, so no other terminal's sweep takes it for a dead run's leftovers.
+ * `fs` = {mkdtemp(prefix) → path, chmod(path, mode), writeFile(path, text, mode)}.
+ */
+export function makeRoot(fs, tmpRoot, runId, hostId, pid = process.pid) {
+  const root = fs.mkdtemp(rootTemplate(tmpRoot, runId, hostId));
+  fs.chmod(root, 0o700);
+  fs.writeFile(join(root, MARKER_FILE), JSON.stringify({ pid, host: hostId }), 0o600);
+  return root;
+}
+
+/**
+ * Roots a previous run left: recognizable prefix, and a marker whose pid is
+ * gone — or no marker at all on a root older than ROOT_GRACE_MS (`ageMs`
+ * unknown counts as old).
+ */
 export function staleRoots(entries, readMarker, isAlive) {
   return entries
     .filter((e) => e.name.startsWith(ROOT_PREFIX))
     .filter((e) => {
       const marker = readMarker(e.path);
-      return marker === null || !isAlive(marker.pid);
+      if (marker !== null) return !isAlive(marker.pid);
+      return !(typeof e.ageMs === "number" && e.ageMs < ROOT_GRACE_MS);
     })
     .map((e) => e.path);
 }
@@ -381,11 +443,24 @@ const STEP_RUNNERS = {
     return { ok: true, detail: `${copied.length}/${step.copies.length} copied` };
   },
   // The probe runs as the pane will: same clean env, same binary.
-  "auth-probe": (step, { run, env }) => {
+  // The token file (0600, in a 0700 dir inside the root) and its wrapper (0700).
+  // The value comes from deps.secrets, never from the plan: the plan is what
+  // --dry-run prints and the digest seals.
+  // Only the wrapper (0700) and the secrets dir (0700) are written here. The
+  // token file itself is written just before each use — the auth probe, the
+  // pane — and the wrapper deletes it right after reading it.
+  secret: (step, { fs }) => {
+    fs.mkdir(dirname(step.path));
+    fs.writeFile(step.wrapper, wrapperSource(step), 0o700);
+    return { ok: true, detail: "wrapper written; the token file is written just before each use" };
+  },
+  "auth-probe": (step, { run, env, fs, secrets = {} }) => {
+    const handoff = step.secret ? handTokenOver(fs, step.secret, secrets[step.secret.var]) : null;
     const r = run(step.bin, step.args, { env, cwd: step.cwd });
+    const leftover = handoff ? handoff.settle() : null;
     return {
       ok: r.status === 0,
-      detail: r.status === 0 ? "authenticated" : "does not authenticate from the disposable home",
+      detail: `${r.status === 0 ? "authenticated" : "does not authenticate from the disposable home"}${leftover ? `; ${leftover}` : ""}`,
     };
   },
 };
@@ -524,6 +599,9 @@ export function describeStep(step) {
     return `copy credentials: ${step.copies.map((c) => c.to).join(", ") || "(none)"}${keychain}${rotation}`;
   }
   if (step.kind === "auth-probe") return `auth probe: ${step.bin} ${step.args.join(" ")}`;
+  if (step.kind === "secret") {
+    return `write ${step.var} (if given) to ${step.path} (0600) and the wrapper ${step.wrapper} (0700) that execs ${step.hostBin} with it`;
+  }
   return step.kind;
 }
 
@@ -595,6 +673,7 @@ export function nodeFs() {
       symlinkSync(target, path);
     },
     realpath: (p) => realpathSync(p),
+    remove: (p) => rmSync(p, { force: true }),
     // A hard link keeps node's own path inside the root (process.execPath, which
     // `aw mcp setup` writes into the descriptor); a copy when volumes differ.
     linkOrCopy: (from, to) => {
@@ -686,4 +765,87 @@ export function productionDeps(lockText, exists = () => true) {
     .map(([rel]) => rel)
     .filter((rel) => exists(rel))
     .sort();
+}
+
+/**
+ * The wrapper a token host is launched through. It reads the token from its file
+ * with the shell's own `read` (no subprocess, no echo, no trace), exports it only
+ * for the exec'd host, and passes every argument through.
+ */
+export function wrapperSource({ var: name, path, hostBin }) {
+  const q = (v) => `'${String(v).replaceAll("'", "'\\''")}'`;
+  return `#!/bin/sh
+# host-run: launches the host with its token from the disposable root. It
+# writes nothing itself: no output, no log, no trace.
+set +x
+if [ -r ${q(path)} ]; then
+  IFS= read -r HOST_RUN_SECRET < ${q(path)} || true
+  rm -f ${q(path)}
+  ${name}="$HOST_RUN_SECRET"
+  export ${name}
+  unset HOST_RUN_SECRET
+fi
+exec ${q(hostBin)} "$@"
+`;
+}
+
+/** An env with every host token variable removed (for anything but a wrapper). */
+export function withoutTokens(env, vars) {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => !vars.includes(k)));
+}
+
+/**
+ * Writes a host's token file (0600) just before its wrapper runs, and returns a
+ * `settle()` that checks the wrapper deleted it: if it did not (the wrapper died
+ * before its `rm -f`), the file is removed here and a notice is returned.
+ */
+export function handTokenOver(fs, secret, value) {
+  if (!value) return null;
+  fs.writeFile(secret.path, `${value}\n`, 0o600);
+  return {
+    settle: () => {
+      if (!fs.exists(secret.path)) return null;
+      fs.remove(secret.path);
+      return "the wrapper left the token file behind: removed by the run";
+    },
+  };
+}
+
+/** How long a pane may take to start its wrapper before the token file is removed. */
+export const PANE_PICKUP_MS = 120_000;
+
+/**
+ * Waits, without blocking the event loop (signals stay handled), for a pane's
+ * wrapper to delete its token file. Polls every `stepMs` up to `boundMs`; on
+ * expiry removes the file and returns the notice for the person, else null.
+ * `sleep(ms)` → Promise.
+ */
+export async function awaitTokenPickup(fs, path, opts = {}) {
+  const { boundMs = PANE_PICKUP_MS, stepMs = 200, sleep } = opts;
+  const wait = sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  for (let waited = 0; waited < boundMs; waited += stepMs) {
+    if (!fs.exists(path)) return null;
+    await wait(stepMs);
+  }
+  if (!fs.exists(path)) return null;
+  fs.remove(path);
+  return `the pane had not started its wrapper after ${Math.round(boundMs / 1000)} s; token file removed, the host may start unauthenticated`;
+}
+
+/**
+ * Opens a host's pane; a token host gets its token file just before. The
+ * wrapper deletes it as it starts and the run waits for that; the file is gone
+ * whatever happens, `openPane` throwing included. Returns {pane, notice}.
+ */
+export async function openPaneWithToken(fs, herdr, plan, value, pickup = {}) {
+  const handoff = plan.secret ? handTokenOver(fs, plan.secret, value) : null;
+  let waited = false;
+  try {
+    const pane = herdr.openPane(plan.workspace, `host-run-${plan.host}`, plan.pane.command);
+    const notice = handoff ? await awaitTokenPickup(fs, plan.secret.path, pickup) : null;
+    waited = true;
+    return { pane, notice };
+  } finally {
+    if (handoff && !waited) handoff.settle();
+  }
 }

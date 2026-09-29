@@ -28,15 +28,25 @@ export default {
   limitations: [
     "every command and edit asks you in the pane",
     "prefix rules cannot match --force anywhere; only its fallback prefixes are denied",
+    "reads cannot be path-scoped here: this host may read the other hosts' disposable roots (their copied credentials) unasked; a token file there lives only milliseconds, between its write and its wrapper's rm -f before exec",
   ],
-  files: () => [
+  // With a GEMINI_API_KEY given, agy is pointed at the Gemini API as its own
+  // changelog says (`modelProvider: "gemini"`); without one it keeps its sign-in.
+  files: ({ tokenPresent = false } = {}) => [
     {
       path: ".gemini/antigravity-cli/settings.json",
       kind: "json",
-      value: { permissions: { deny: denials.map((d) => d.rule) } },
+      value: {
+        ...(tokenPresent ? { modelProvider: "gemini" } : {}),
+        permissions: { deny: denials.map((d) => d.rule) },
+      },
     },
   ],
   deniedIn: (files) => permissionsOf(files).deny ?? [],
   allowedIn: (files) => permissionsOf(files).allow ?? [],
-  effective: () => ({ allow: [], deny: denials.map((d) => d.rule) }),
+  effective: ({ tokenPresent = false } = {}) => ({
+    model_provider: tokenPresent ? "gemini (Gemini API key, not your sign-in)" : "your sign-in",
+    allow: [],
+    deny: denials.map((d) => d.rule),
+  }),
 };

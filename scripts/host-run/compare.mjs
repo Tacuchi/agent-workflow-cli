@@ -170,6 +170,9 @@ export function mergedRunBlocks(matrices) {
             cells: Object.fromEntries(
               SURFACES.map((s) => [s, bySurface[s]?.state ?? "not-reached"]),
             ),
+            ...(source.hosts[host].agy_model_provider
+              ? { model_provider: source.hosts[host].agy_model_provider }
+              : {}),
           },
         ];
       }),

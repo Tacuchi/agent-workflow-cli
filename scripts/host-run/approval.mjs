@@ -126,11 +126,18 @@ export function approves(typed, digest) {
  * flags run.mjs accepts. Unknown flags are an error, never ignored.
  */
 export function parseArgs(argv, hostIds) {
-  const out = { dryRun: false, hosts: [...hostIds], model: {}, effort: {} };
+  const out = {
+    dryRun: false,
+    authCheck: false,
+    hosts: [...hostIds],
+    model: {},
+    effort: {},
+    tokenFiles: {},
+  };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === "--dry-run") {
-      out.dryRun = true;
+    if (arg === "--dry-run" || arg === "--auth-check") {
+      out[arg === "--dry-run" ? "dryRun" : "authCheck"] = true;
       continue;
     }
     const parse = VALUE_FLAGS[arg];
@@ -162,6 +169,15 @@ const VALUE_FLAGS = {
     out.hosts = list;
   },
   // A repeat of some steps only (F4): the matrix keeps the last observation per cell.
+  // A file holding a host's token: read at launch, never printed or sealed.
+  "--claude-token-file": (out, value) => {
+    if (!value) throw new Error("--claude-token-file expects a path");
+    out.tokenFiles["claude-code"] = value;
+  },
+  "--agy-token-file": (out, value) => {
+    if (!value) throw new Error("--agy-token-file expects a path");
+    out.tokenFiles.gemini = value;
+  },
   "--steps": (out, value) => {
     out.steps = commaList(value);
     if (out.steps.length === 0) throw new Error("--steps expects a comma list of surfaces");

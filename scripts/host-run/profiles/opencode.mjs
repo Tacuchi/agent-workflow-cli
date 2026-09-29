@@ -28,7 +28,10 @@ export default {
   allowsExec: true,
   denials,
   paneArgs: [],
-  limitations: ["every shell command and every edit asks you in the pane"],
+  limitations: [
+    "every shell command and every edit asks you in the pane",
+    "reads cannot be path-scoped here: this host may read the other hosts' disposable roots (their copied credentials) unasked; a token file there lives only milliseconds, between its write and its wrapper's rm -f before exec",
+  ],
   files: () => [
     {
       path: ".config/opencode/opencode.json",

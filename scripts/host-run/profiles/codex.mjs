@@ -43,7 +43,7 @@ function rulesWith(files, keep) {
 
 const TOP_LEVEL = 'approval_policy = "on-request"\ndefault_permissions = "hostrun"';
 
-const profileTable = (realHome) =>
+const profileTable = (realHome, siblingRoots = []) =>
   [
     "[permissions.hostrun]",
     'description = "host-run: the workspace writable, the real HOME and /tmp denied"',
@@ -57,6 +57,8 @@ const profileTable = (realHome) =>
     "",
     "[permissions.hostrun.filesystem]",
     ...(realHome ? [`${JSON.stringify(realHome)} = "deny"`] : []),
+    // The other hosts' disposable roots: their copied credentials and token files.
+    ...siblingRoots.map((sib) => `${JSON.stringify(sib)} = "deny"`),
     '":slash_tmp" = "deny"',
   ].join("\n");
 
@@ -69,22 +71,23 @@ export default {
   limitations: [
     "reads and writes of your real HOME are denied through a codex permission profile (default_permissions = hostrun); its config shape loads in codex 0.157.1 (`codex features list`, config-only) but the enforcement is unverified against a live codex run — until then, treat codex as able to read any file your user can",
     "prefix rules cannot match --force anywhere; only its fallback prefixes are denied",
+    "the other hosts' disposable roots (copied credentials, token files) are denied to it",
   ],
-  files: ({ realHome } = {}) => [
+  files: ({ realHome, siblingRoots } = {}) => [
     {
       path: ".codex/rules/default.rules",
       kind: "text",
       value: `# host-run profile (spec 062 AC-04)\n${denials.map((d) => d.rule).join("\n")}\n`,
     },
     { path: ".codex/config.toml", kind: "toml-top", value: TOP_LEVEL },
-    { path: ".codex/config.toml", kind: "toml-table", value: profileTable(realHome) },
+    { path: ".codex/config.toml", kind: "toml-table", value: profileTable(realHome, siblingRoots) },
   ],
   deniedIn: (files) => rulesWith(files, (d) => d === "forbidden"),
   // Anything that is not forbidden or prompt runs without asking: a shell pre-approval.
   allowedIn: (files) =>
     rulesWith(files, (d) => d !== "forbidden" && d !== "prompt").map((r) => `bash:${r}`),
-  effective: ({ realHome } = {}) => ({
-    permissions: `profile hostrun: extends :workspace; network.enabled = false; deny ${realHome ?? "<real HOME>"} and :slash_tmp`,
+  effective: ({ realHome, siblingRoots = [] } = {}) => ({
+    permissions: `profile hostrun: extends :workspace; network.enabled = false; deny ${realHome ?? "<real HOME>"}, ${siblingRoots.length} sibling root(s) and :slash_tmp`,
     approval: "on-request",
     deny: denials.map((d) => d.rule),
   }),

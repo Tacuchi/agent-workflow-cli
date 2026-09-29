@@ -36,19 +36,23 @@ import {
   processChain,
 } from "./approval.mjs";
 import { RUNS_DIR, listRunIds, loadMatrix, mergedRunBlocks, regressions } from "./compare.mjs";
-import { privacyViolations, violationCategory } from "./extract.mjs";
+import { privacyViolations, redactSecrets, violationCategory } from "./extract.mjs";
 import { staleBuildInputs } from "./freshness.mjs";
 import { HerdrClient, herdrArgv } from "./herdr.mjs";
-import { COVERED_HOSTS, HOSTS, NOT_COVERED } from "./hosts.mjs";
+import { COVERED_HOSTS, HOSTS, NOT_COVERED, TOKEN_VARS } from "./hosts.mjs";
 import {
   Cleanup,
   cleanEnv,
   describeStep,
+  makeRoot,
   nodeFs,
+  openPaneWithToken,
   planIsolation,
+  prepareHost,
   productionDeps,
   rootTemplate,
   rotatedCredentials,
+  withoutTokens,
   workspaceGuard,
 } from "./isolation.mjs";
 import { launch } from "./launch.mjs";
@@ -63,8 +67,18 @@ const LEDGER = join(CHECKOUT, "src", "domain", "host-verification.ts");
 /** The placeholder root the digest and --dry-run render plans against. */
 const ROOT_PLACEHOLDER = "<root>";
 
+/**
+ * Every command the run spawns inherits the person's env WITHOUT any host token
+ * (herdr, npm, git, ps, version reads) unless it passes its own env; the only
+ * process that ever sees a token is its host's wrapper.
+ */
 function sh(cmd, args, opts = {}) {
-  return spawnSync(cmd, args, { encoding: "utf8", timeout: 30000, ...opts });
+  return spawnSync(cmd, args, {
+    encoding: "utf8",
+    timeout: 30000,
+    env: withoutTokens(process.env, TOKEN_VARS),
+    ...opts,
+  });
 }
 
 /** `command -v` under a given PATH, read-only. */
@@ -135,10 +149,57 @@ try {
   if (resolved.added.length > 0) {
     console.log(`--steps: added the steps they depend on: ${resolved.added.join(", ")}`);
   }
+  if (args.dryRun && args.authCheck)
+    throw new Error("--dry-run and --auth-check are separate runs");
 } catch (err) {
   console.error(err.message);
   process.exit(2);
 }
+
+/**
+ * A token host's token, trimmed: from --<host>-token-file when given, else from
+ * the person's env. Empty or whitespace-only is absent; a missing file or a
+ * value with a newline is a one-line refusal. The value itself is never
+ * printed, sealed or hashed — only whether it is there.
+ */
+function tokenValue(id) {
+  const t = HOSTS[id].token;
+  if (!t) return null;
+  const file = args.tokenFiles[id];
+  if (file && !existsSync(file)) refuse(`${t.flag}: no such file: ${file}`);
+  const value = (file ? readFileSync(file, "utf8") : (process.env[t.env] ?? "")).trim();
+  if (/[\r\n]/.test(value)) refuse(`${t.label} contains a newline: give one token on one line`);
+  return value.length > 0 ? value : null;
+}
+
+function refuse(message) {
+  console.error(message);
+  process.exit(2);
+}
+
+const tokenPresent = (id) => (HOSTS[id].token ? tokenValue(id) !== null : null);
+
+/** The token values of the selected hosts, keyed by variable (live run or --auth-check only). */
+function readTokens() {
+  const out = {};
+  for (const id of args.hosts) {
+    const value = tokenValue(id);
+    if (value) out[HOSTS[id].token.env] = value;
+  }
+  return out;
+}
+
+if (args.agyWithoutProfile && args.hosts.includes("gemini") && tokenPresent("gemini")) {
+  refuse(
+    "--agy-without-profile cannot be combined with an agy Gemini API key: the key needs the profile's modelProvider setting. Drop one of them.",
+  );
+}
+
+/** What agy runs against, disclosed wherever agy is: its sign-in, or the Gemini API. */
+const agyProvider = () =>
+  tokenPresent("gemini")
+    ? "agy → Gemini API (modelProvider gemini), not your sign-in"
+    : "agy → your own sign-in";
 
 const { HARNESSES } = await import(join(CHECKOUT, "dist", "domain", "harnesses.js"));
 const { capabilitiesFor } = await import(
@@ -174,7 +235,7 @@ const profileFor = (id) =>
       }
     : profiles[id];
 
-const planFor = (id, root) =>
+const planFor = (id, root, siblingRoots = []) =>
   planIsolation({
     hostId: id,
     root,
@@ -186,6 +247,8 @@ const planFor = (id, root) =>
     model: args.model[id],
     effort: args.effort[id],
     deps: PROD_DEPS,
+    tokenPresent: tokenPresent(id) === true,
+    siblingRoots,
   });
 
 /**
@@ -193,12 +256,25 @@ const planFor = (id, root) =>
  * effective rules), and the plan — pane command template with its args,
  * model/effort, every setup step and the credentials it copies.
  */
+/** Every other selected host's root, as the same placeholder form. */
+const siblingsOf = (id, rootOf) => args.hosts.filter((h) => h !== id).map(rootOf);
+
+/** What `effective()` needs to show a profile as it would be written. */
+const effectiveCtx = (id, plan, siblingRoots) => ({
+  workspace: plan.workspace,
+  realHome,
+  root: plan.root,
+  siblingRoots,
+  tokenPresent: tokenPresent(id) === true,
+});
+
 function hostView(id) {
-  const plan = planFor(id, ROOT_PLACEHOLDER);
+  const siblings = siblingsOf(id, (h) => `${ROOT_PLACEHOLDER}:${h}`);
+  const plan = planFor(id, ROOT_PLACEHOLDER, siblings);
   const profile = profileFor(id);
   const files = plan.steps.find((s) => s.kind === "profile").files;
   return {
-    effective: profile.effective({ workspace: plan.workspace, realHome }),
+    effective: profile.effective(effectiveCtx(id, plan, siblings)),
     files: files.map((f) => ({ path: f.path, kind: f.kind })),
     text: renderedText(files),
     pane_command: plan.pane.command,
@@ -206,6 +282,8 @@ function hostView(id) {
     credentials: HOSTS[id].credentials,
     model: args.model[id] ?? null,
     effort: args.effort[id] ?? null,
+    // Only whether a token is there: never its value, never a hash of it.
+    ...(HOSTS[id].token ? { token: tokenPresent(id) ? "present" : "absent" } : {}),
   };
 }
 
@@ -213,6 +291,12 @@ const hostViews = Object.fromEntries(args.hosts.map((id) => [id, hostView(id)]))
 const digest = approvalDigest(scenario, hostViews);
 /** The temp dir by its real path (macOS /var → /private/var), so path rules match. */
 const TMP_ROOT = realpathSync(tmpdir());
+/** What `makeRoot` creates a root with: used only after the person confirmed. */
+const rootFs = {
+  mkdtemp: (prefix) => mkdtempSync(prefix),
+  chmod: (path, mode) => chmodSync(path, mode),
+  writeFile: (path, text, mode) => writeFileSync(path, text, { mode }),
+};
 const runId = new Date()
   .toISOString()
   .replace(/[:.]/g, "-")
@@ -244,9 +328,24 @@ function credentialLine(id) {
   return `  credentials to copy: ${creds.join(", ") || "(none)"}${keychain}`;
 }
 
+/** The dry-run's token lines for a host: presence only, and where it would come from. */
+function tokenLines(id) {
+  const token = HOSTS[id].token;
+  if (!token)
+    return ["  token: this host takes no token through a variable here; the auth probe decides"];
+  const state = tokenPresent(id) ? "present" : "absent";
+  const source = args.tokenFiles[id] ? `from ${token.flag}` : `from ${token.env}`;
+  const absent = state === "absent" ? " — without it the auth probe decides" : "";
+  return [
+    `  ${token.label}: ${state} (${source}; value never shown)${absent}`,
+    ...(id === "gemini" ? [`  ${agyProvider()}`] : []),
+  ];
+}
+
 function showHost(out, id) {
   const root = `${rootTemplate(TMP_ROOT, runId, id)}XXXXXX`;
-  const plan = planFor(id, root);
+  const siblings = siblingsOf(id, (h) => `${rootTemplate(TMP_ROOT, runId, h)}XXXXXX`);
+  const plan = planFor(id, root, siblings);
   const view = hostViews[id];
   const without = cleanEnv({ root: "/nonexistent" }).PATH;
   out(`\n### ${id}  (binary: ${hostBins[id] ?? "NOT FOUND"})`);
@@ -262,11 +361,12 @@ function showHost(out, id) {
   out("  setup (env -i, the same clean env as the pane):");
   for (const s of plan.steps) out(`    - ${describeStep(s)}`);
   out(credentialLine(id));
+  for (const line of tokenLines(id)) out(line);
   out(
     `  profile files: ${view.files.map((f) => `${f.path} [${f.kind}]`).join(", ") || "(none: agy without profile)"}`,
   );
   out(
-    `  effective permissions: ${JSON.stringify(profileFor(id).effective({ workspace: plan.workspace, realHome }))}`,
+    `  effective permissions: ${JSON.stringify(profileFor(id).effective(effectiveCtx(id, plan, siblings)))}`,
   );
   for (const l of profileFor(id).limitations) out(`  limitation: ${l}`);
   out(`  pane command: ${plan.pane.command}`);
@@ -300,6 +400,11 @@ if (args.dryRun) {
   process.exit(0);
 }
 
+if (args.authCheck) {
+  const { authCheck } = await import("./authcheck.mjs");
+  process.exit(await runAuthCheck(authCheck));
+}
+
 const code = await launch({
   stdinIsTTY: process.stdin.isTTY === true,
   stdoutIsTTY: process.stdout.isTTY === true,
@@ -309,17 +414,81 @@ const code = await launch({
   digest,
   show,
   log: (m) => console.error(m),
-  ask: async (q) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-      return await rl.question(q);
-    } finally {
-      rl.close();
-    }
-  },
+  ask: askLine,
   start: () => startLive(),
 });
 process.exit(code);
+
+/** `--auth-check`: prepare each root, run its auth probe only, report, clean up. No Herdr. */
+async function runAuthCheck(authCheck) {
+  const remove = (p) => rmSync(p, { recursive: true, force: true });
+  const cleanup = new Cleanup(remove);
+  cleanup.install();
+  const { sweep } = await import("./live.mjs");
+  // Every root exists before any is prepared, so each profile denies the others.
+  // Nothing is swept or created before the person typed the confirmation word.
+  const roots = {};
+  const makeRoots = () => {
+    sweep(TMP_ROOT, remove, console.log);
+    for (const id of args.hosts) {
+      roots[id] = makeRoot(rootFs, TMP_ROOT, runId, id);
+      cleanup.track(roots[id]);
+    }
+  };
+  const planned = [];
+  let keptDir = null;
+  const keptIn = () => {
+    keptDir ??= mkdtempSync(join(TMP_ROOT, `aw-host-transcripts-${runId}-`));
+    return keptDir;
+  };
+  cleanup.addHook(() => keepRotatedCredentials(planned, keptIn));
+  const run = (cmd, argv, { env, cwd }) => sh(cmd, argv, { env, cwd, timeout: 180000 });
+  return authCheck({
+    stdinIsTTY: process.stdin.isTTY === true,
+    stdoutIsTTY: process.stdout.isTTY === true,
+    env: process.env,
+    markers: agentMarkers(HARNESSES),
+    ancestor: () => agentAncestor(processChain(process.ppid, psInfo)),
+    hosts: args.hosts,
+    notes: args.hosts.includes("gemini") ? [agyProvider()] : [],
+    beforePrepare: makeRoots,
+    tokens: Object.fromEntries(
+      args.hosts
+        .filter((id) => HOSTS[id].token)
+        .map((id) => [id, tokenPresent(id) ? "present" : "absent"]),
+    ),
+    ask: askLine,
+    log: (m) => console.log(m),
+    prepare: (id) => {
+      if (hostBins[id] === null)
+        return [{ step: "resolve the host binary", ok: false, detail: "not found" }];
+      const root = roots[id];
+      const plan = planFor(
+        id,
+        root,
+        Object.values(roots).filter((r) => r !== root),
+      );
+      planned.push(plan);
+      return prepareHost(plan, {
+        fs: nodeFs(),
+        run,
+        cliMain: CLI_MAIN,
+        node,
+        secrets: readTokens(),
+      });
+    },
+    finish: () => cleanup.run(),
+  });
+}
+
+async function askLine(q) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return await rl.question(q);
+  } finally {
+    rl.close();
+  }
+}
 
 /** Names of the person's own Workline MCP connections, so no extract can carry one. */
 function foreignMcpNames() {
@@ -333,14 +502,21 @@ function foreignMcpNames() {
   }
 }
 
-function openHosts(herdr, plans, cleanup) {
-  return plans.map((plan) => {
-    const opened = herdr.openPane(plan.workspace, `host-run-${plan.host}`, plan.pane.command);
+async function openWithToken(herdr, plan, tokens) {
+  const opened = await openPaneWithToken(nodeFs(), herdr, plan, tokens[plan.secret?.var]);
+  if (opened.notice) console.log(`[${plan.host}] ${opened.notice}`);
+  return opened.pane;
+}
+
+async function openHosts(herdr, plans, cleanup, tokens) {
+  const hosts = [];
+  for (const plan of plans) {
+    const opened = await openWithToken(herdr, plan, tokens);
     cleanup.addHook(() => herdr.close(opened.workspace));
     const out =
       sh(hostBins[plan.host], ["--version"], { env: plan.env, cwd: plan.workspace }).stdout ?? "";
     const exposes = HOSTS[plan.host].exposes;
-    return {
+    hosts.push({
       id: plan.host,
       ...opened,
       root: plan.root,
@@ -354,15 +530,18 @@ function openHosts(herdr, plans, cleanup) {
       model: exposes.model ? (args.model[plan.host] ?? null) : null,
       effort: exposes.effort ? (args.effort[plan.host] ?? null) : null,
       agyWithoutProfile: plan.host === "gemini" && args.agyWithoutProfile,
+      agyModelProvider:
+        plan.host === "gemini" ? (tokenPresent("gemini") ? "gemini" : "sign-in") : null,
       phase: "send",
       stepIndex: 0,
       evidence: {},
       screensBySurface: {},
-    };
-  });
+    });
+  }
+  return hosts;
 }
 
-function liveContext(herdr, transcriptsDir, live) {
+function liveContext(herdr, transcriptsDir, live, secretValues = []) {
   return {
     herdr,
     steps,
@@ -371,10 +550,11 @@ function liveContext(herdr, transcriptsDir, live) {
     labels: Object.fromEntries(HARNESSES.map((h) => [h.id, h.label])),
     now: () => Date.now(),
     sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    // The full transcript is local only, and even there no token is written.
     transcript: (id, screen) =>
       writeFileSync(
         join(transcriptsDir, `${id}.log`),
-        `\n--- ${new Date().toISOString()}\n${screen}`,
+        `\n--- ${new Date().toISOString()}\n${redactSecrets(screen, secretValues)}`,
         {
           flag: "a",
           mode: 0o600,
@@ -448,7 +628,8 @@ function writeLedger(privacy) {
 function keepRotatedCredentials(plans, transcriptsDir) {
   for (const plan of plans) {
     for (const { to, rel } of rotatedCredentials(plan, nodeFs().stamp)) {
-      const kept = join(transcriptsDir, "rotated-credentials", plan.host, rel);
+      const dir = typeof transcriptsDir === "function" ? transcriptsDir() : transcriptsDir;
+      const kept = join(dir, "rotated-credentials", plan.host, rel);
       mkdirSync(dirname(kept), { recursive: true, mode: 0o700 });
       cpSync(to, kept, { recursive: true });
       console.log(
@@ -465,16 +646,14 @@ async function startLive() {
     return 1;
   }
   const live = await import("./live.mjs");
+  // Read once, at launch; passed only to the token hosts' secret step, and to
+  // every privacy filter as forbidden strings.
+  const tokens = readTokens();
   const remove = (p) => rmSync(p, { recursive: true, force: true });
   const cleanup = new Cleanup(remove);
   cleanup.install();
   live.sweep(TMP_ROOT, remove, console.log);
   const run = (cmd, argv, { env, cwd }) => sh(cmd, argv, { env, cwd, timeout: 180000 });
-  const makeRoot = (id) => {
-    const root = mkdtempSync(rootTemplate(TMP_ROOT, runId, id));
-    chmodSync(root, 0o700);
-    return root;
-  };
   // Kept on purpose after the run: the full transcript is the person's, outside the repo.
   const transcriptsDir = mkdtempSync(join(TMP_ROOT, `aw-host-transcripts-${runId}-`));
   // Registered BEFORE preparing: an auth probe can already rotate a token, and a
@@ -483,14 +662,14 @@ async function startLive() {
   cleanup.addHook(() => keepRotatedCredentials(planned, transcriptsDir));
   const plans = live.prepareAll({
     hosts: args.hosts,
-    makeRoot,
+    makeRoot: (id) => makeRoot(rootFs, TMP_ROOT, runId, id),
     cleanup,
-    planFor: (id, root) => {
-      const plan = planFor(id, root);
+    planFor: (id, root, siblings) => {
+      const plan = planFor(id, root, siblings);
       planned.push(plan);
       return plan;
     },
-    prepareDeps: { fs: nodeFs(), run, cliMain: CLI_MAIN, node },
+    prepareDeps: { fs: nodeFs(), run, cliMain: CLI_MAIN, node, secrets: tokens },
     log: console.log,
   });
   if (plans === null) {
@@ -506,12 +685,21 @@ async function startLive() {
   if (trees.length !== 1 || !copies[0]?.treeHash)
     throw new Error("the roots do not all run the same copy of the checkout");
   const cliEvidence = { ...cli, tree_sha256: copies[0].treeHash, deps_sha256: copies[0].depsHash };
-  const hosts = openHosts(herdr, plans, cleanup);
-  const ctx = liveContext(herdr, transcriptsDir, live);
+  const hosts = await openHosts(herdr, plans, cleanup, tokens);
+  const ctx = {
+    ...liveContext(herdr, transcriptsDir, live, Object.values(tokens)),
+    secrets: Object.values(tokens),
+  };
+  ctx.notify = live.makeNotifier((line) => process.stdout.write(line), ctx.secrets);
   await live.walk(ctx, hosts);
 
   const date = new Date().toISOString().slice(0, 10);
-  const privacy = { realHome, username: userInfo().username, foreignMcp: foreignMcpNames() };
+  const privacy = {
+    realHome,
+    username: userInfo().username,
+    foreignMcp: foreignMcpNames(),
+    secrets: Object.values(tokens),
+  };
   const { matrix, extracts } = live.evidenceOf(
     { ...ctx, runId, date, cli: cliEvidence, digest, ...privacy },
     hosts,

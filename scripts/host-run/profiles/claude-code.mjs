@@ -39,7 +39,13 @@ const askFor = (workspace) => [
  * Claude's read-only tools run without asking (Read rules also cover Grep/Glob):
  * nothing under the person's real HOME is readable — its credentials live there.
  */
-const readDenials = (realHome) => (realHome ? [`Read(/${realHome}/**)`] : []);
+const readDenials = ({ realHome, root, siblingRoots = [] }) => [
+  ...(realHome ? [`Read(/${realHome}/**)`] : []),
+  // The other hosts' disposable roots (their copied credentials, their token
+  // files) and this root's own token file and launcher.
+  ...siblingRoots.map((sib) => `Read(/${sib}/**)`),
+  ...(root ? [`Read(/${root}/secrets/**)`, `Read(/${root}/bin/launch-*)`] : []),
+];
 
 /** `workspace` must be a real path (macOS: /private/var, not /var); run.mjs resolves it. */
 const allowFor = (workspace) => [
@@ -63,8 +69,10 @@ export default {
     "a Workline call with --workspace, --root or --approval, or `doctor apply`, asks you",
     "editing the workspace's CLAUDE.md/AGENTS.md, Workline marker, .git or host configs asks you",
     "nothing under your real HOME can be read",
+    "the other hosts' disposable roots (copied credentials, token files) are denied to it",
+    "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 is set: per https://code.claude.com/docs/en/env-vars it strips Anthropic and other recognized credentials (the token included) from claude's Bash tool, hooks and stdio MCP servers; their own children inherit the scrubbed environment; whether 2.1.284 strips CLAUDE_CODE_OAUTH_TOKEN is unverified live",
   ],
-  files: ({ workspace, realHome }) => [
+  files: ({ workspace, realHome, root, siblingRoots }) => [
     {
       path: ".claude/settings.json",
       kind: "json",
@@ -72,7 +80,7 @@ export default {
         permissions: {
           allow: allowFor(workspace),
           ask: askFor(workspace),
-          deny: [...denials.map((d) => d.rule), ...readDenials(realHome)],
+          deny: [...denials.map((d) => d.rule), ...readDenials({ realHome, root, siblingRoots })],
         },
       },
     },
@@ -80,9 +88,9 @@ export default {
   deniedIn: (files) => permissionsOf(files).deny ?? [],
   // An `ask` entry is not a pre-approval; only `allow` is.
   allowedIn: (files) => permissionsOf(files).allow ?? [],
-  effective: ({ workspace, realHome }) => ({
+  effective: ({ workspace, realHome, root, siblingRoots }) => ({
     allow: allowFor(workspace),
     ask: askFor(workspace),
-    deny: [...denials.map((d) => d.rule), ...readDenials(realHome)],
+    deny: [...denials.map((d) => d.rule), ...readDenials({ realHome, root, siblingRoots })],
   }),
 };

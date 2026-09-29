@@ -151,7 +151,12 @@ function coveredHost(host, expectedCells, run, launched, { steps, runId, date, c
     version: run?.version ?? null,
     model: run?.model ?? null,
     effort: run?.effort ?? null,
-    ...(host === "gemini" ? { agy_without_profile: run?.agy_without_profile === true } : {}),
+    ...(host === "gemini"
+      ? {
+          agy_without_profile: run?.agy_without_profile === true,
+          agy_model_provider: run?.agy_model_provider ?? null,
+        }
+      : {}),
     cells,
   };
 }

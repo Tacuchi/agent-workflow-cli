@@ -38,6 +38,8 @@ export interface HarnessRunVerification {
   cli: { version: string; revision: string };
   /** Last observation of each surface, across the runs merged into this block. */
   cells: Record<RunSurface, RunCellState>;
+  /** agy only: what it ran against — "gemini" (a Gemini API key) or "sign-in". */
+  model_provider?: string;
 }
 
 export interface HarnessVerification {

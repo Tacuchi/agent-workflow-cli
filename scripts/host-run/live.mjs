@@ -6,7 +6,7 @@
 // trust prompt, or anything the classifier does not recognize) only holds that
 // host. Nothing is ever typed into a pane without a fresh read of it first.
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertSafe,
@@ -18,6 +18,7 @@ import {
 } from "./classifier.mjs";
 import {
   buildExtract,
+  containsSecret,
   hookBinaries,
   hookLines,
   privacyViolations,
@@ -35,10 +36,19 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000;
 const QUIET_DONE_MS = 20000;
 
 /** Removes what a dead run left in the temp dir (SIGKILL cannot be trapped). */
-export function sweep(tmp, remove, log) {
+export function sweep(tmp, remove, log, now = Date.now()) {
+  const ageOf = (path) => {
+    try {
+      const st = statSync(path);
+      // The creation time where the platform has one; else the last change.
+      return now - (st.birthtimeMs > 0 ? st.birthtimeMs : st.mtimeMs);
+    } catch {
+      return undefined;
+    }
+  };
   const entries = readdirSync(tmp, { withFileTypes: true })
     .filter((e) => e.isDirectory())
-    .map((e) => ({ name: e.name, path: join(tmp, e.name) }));
+    .map((e) => ({ name: e.name, path: join(tmp, e.name), ageMs: ageOf(join(tmp, e.name)) }));
   const readMarker = (path) => {
     try {
       return JSON.parse(readFileSync(join(path, MARKER_FILE), "utf8"));
@@ -56,10 +66,14 @@ export function sweep(tmp, remove, log) {
 export function prepareAll(ctx) {
   const prepared = [];
   const unauthenticated = [];
+  // Every root exists before any is prepared, so each profile can deny the
+  // others by their exact paths (their copied credentials, their token files).
+  const roots = Object.fromEntries(ctx.hosts.map((host) => [host, ctx.makeRoot(host)]));
+  for (const root of Object.values(roots)) ctx.cleanup.track(root);
   for (const host of ctx.hosts) {
-    const root = ctx.makeRoot(host);
-    ctx.cleanup.track(root);
-    const plan = ctx.planFor(host, root);
+    const root = roots[host];
+    const siblings = Object.values(roots).filter((r) => r !== root);
+    const plan = ctx.planFor(host, root, siblings);
     const steps = prepareHost(plan, ctx.prepareDeps);
     for (const s of steps) ctx.log(`  [${host}] ${s.ok ? "ok  " : "FAIL"} ${s.step} — ${s.detail}`);
     const failed = steps.find((s) => !s.ok);
@@ -406,6 +420,7 @@ function hostRunOf(ctx, h) {
     model: h.model,
     effort: h.effort,
     agy_without_profile: h.agyWithoutProfile,
+    ...(h.agyModelProvider ? { agy_model_provider: h.agyModelProvider } : {}),
     // Only the category reaches the committed matrix, never the paths found.
     ...(broken.length > 0
       ? { evidence_broken: "the workspace pointed outside the disposable root" }
@@ -447,6 +462,7 @@ export function evidenceOf(ctx, hosts) {
         realHome: ctx.realHome,
         username: ctx.username,
         foreignMcp: ctx.foreignMcp ?? [],
+        secrets: ctx.secrets ?? [],
       });
       if (problems.length > 0) {
         cell.extract = undefined;
@@ -471,12 +487,16 @@ export function evidenceOf(ctx, hosts) {
  * The notifier the run uses: one line per host and reason, never the same
  * reason twice in a row for a host (a pane re-read every tick would spam).
  */
-export function makeNotifier(write) {
+export function makeNotifier(write, secrets = []) {
   const last = new Map();
   return (id, reason) => {
     if (last.get(id) === reason) return false;
     last.set(id, reason);
-    write(`\u0007[${id}] waiting for you: ${reason}\n`);
+    // A reason carrying a token is withheld, never printed.
+    const shown = containsSecret(reason, secrets)
+      ? "(a message was withheld: it contained a token)"
+      : reason;
+    write(`\u0007[${id}] waiting for you: ${shown}\n`);
     return true;
   };
 }

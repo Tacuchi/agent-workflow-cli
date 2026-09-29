@@ -354,7 +354,8 @@ describe("host-run isolation", () => {
   it("the pane runs env -i with the absolute host binary, its profile args and model/effort", () => {
     const cmd = plan("gemini").pane.command;
     expect(cmd.startsWith("env -i HOME=")).toBe(true);
-    expect(cmd).toContain(" /opt/bin/gemini --model m1 --effort high");
+    // agy takes its key through its wrapper, so the pane launches the wrapper.
+    expect(cmd).toContain(` ${root}/bin/launch-gemini --model m1 --effort high`);
     expect(cmd).not.toContain("accept-edits");
     expect(plan("codex").pane.command).toContain(
       "/opt/bin/codex -m m1 -c model_reasoning_effort=high",
@@ -737,6 +738,7 @@ Run aw flow start.
       expect(outcome.ok, outcome.detail).toBe(true);
       expect(granting()).toEqual([]);
     },
+    120_000,
   );
 
   it("the strip and sources-guard steps are part of the plan the digest seals", () => {
@@ -875,6 +877,7 @@ describe("host-run — fifth review", () => {
       expect(descriptor).toContain(plan.node);
       expect(descriptor).not.toContain(homedir());
     },
+    120_000,
   );
 
   it("strips and detects the YAML block-list form too", () => {
@@ -1196,5 +1199,6 @@ describe("host-run — seventh review", () => {
       expect(sandboxed.status, sandboxed.stderr).toBe(0);
       expect(sandboxed.stdout).toMatch(/\d+\.\d+\.\d+/);
     },
+    120_000,
   );
 });

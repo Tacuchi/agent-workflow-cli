@@ -45,6 +45,8 @@ export interface HarnessRunVerification {
   cli: { version: string; revision: string };
   /** Last observation of each surface, across the runs merged into this block. */
   cells: Record<RunSurface, RunCellState>;
+  /** agy only: what it ran against — "gemini" (a Gemini API key) or "sign-in". */
+  model_provider?: string;
 }
 
 export interface HarnessVerification {
@@ -80,6 +82,7 @@ function renderRun(run) {
     "      cells: {",
     cells,
     "      },",
+    ...(run.model_provider ? [`      model_provider: ${str(run.model_provider)},`] : []),
     "    },",
   ].join("\n");
 }
@@ -157,7 +160,7 @@ export function ledgerRunDrift(ledger, blocks) {
   for (const host of hosts) {
     const a = ledger[host]?.run ?? null;
     const b = blocks[host] ?? null;
-    for (const field of ["id", "at", "version", "cli", "cells"]) {
+    for (const field of ["id", "at", "version", "cli", "cells", "model_provider"]) {
       if (JSON.stringify(a?.[field] ?? null) !== JSON.stringify(b?.[field] ?? null)) {
         drift.push({ host, field, ledger: a?.[field] ?? null, matrix: b?.[field] ?? null });
       }

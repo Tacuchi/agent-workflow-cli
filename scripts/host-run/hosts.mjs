@@ -50,6 +50,14 @@ export const NOT_COVERED = {
 export const HOSTS = {
   "claude-code": {
     commandsVia: "commands-dir",
+    // `claude setup-token` prints a long-lived OAuth token meant for this variable
+    // (claude 2.1.284 binary strings: CLAUDE_CODE_OAUTH_TOKEN; the alternatives it
+    // also reads — ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN — are never used here).
+    token: { env: "CLAUDE_CODE_OAUTH_TOKEN", flag: "--claude-token-file", label: "claude token" },
+    // https://code.claude.com/docs/en/env-vars: `1` strips Anthropic and other
+    // recognized credentials from the Bash tool, hooks and stdio MCP servers;
+    // the claude process itself keeps them. Direct children only (no _DEEP).
+    childEnv: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1" },
     bin: "claude",
     installTarget: "claude",
     mcpHost: "claude",
@@ -84,7 +92,14 @@ export const HOSTS = {
     exposes: { model: true, effort: true },
   },
   gemini: {
+    probeSpendsPrompt: true,
     commandsVia: "skill",
+    // agy 1.2.11 (binary strings, its embedded changelog): «Added support for
+    // GEMINI_API_KEY, so the CLI can run against the Gemini API directly without
+    // signing in. Set modelProvider: "gemini" in settings.json, export
+    // GEMINI_API_KEY». A Gemini API key, not the person's Google sign-in; when it
+    // is given, the profile also sets modelProvider "gemini".
+    token: { env: "GEMINI_API_KEY", flag: "--agy-token-file", label: "agy Gemini API key" },
     bin: "agy",
     installTarget: "gemini",
     mcpHost: "gemini",
@@ -119,6 +134,7 @@ export const HOSTS = {
     exposes: { model: true, effort: false },
   },
   crush: {
+    probeSpendsPrompt: true,
     commandsVia: "commands-dir",
     bin: "crush",
     installTarget: "crush",
@@ -135,6 +151,7 @@ export const HOSTS = {
     exposes: { model: false, effort: false },
   },
   kimi: {
+    probeSpendsPrompt: true,
     commandsVia: "skill",
     bin: "kimi",
     installTarget: "kimi",
@@ -152,3 +169,13 @@ export const HOSTS = {
 };
 
 export const COVERED_HOSTS = Object.keys(HOSTS);
+
+/** Every variable that carries a host token: never in any env but its own host's wrapper. */
+export const TOKEN_VARS = [
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+];

@@ -70,6 +70,16 @@ export const homeGlobs = (home) => [
   `${home}/**/.*/**/.*/**`,
 ];
 
+/**
+ * The other hosts' disposable roots, and this root's own token file and
+ * launcher: denied to kimi's path tools in the same dot-aware forms.
+ */
+const rootDenials = (root, siblingRoots = []) =>
+  [
+    ...siblingRoots.flatMap((sib) => homeGlobs(sib)),
+    ...(root ? [...homeGlobs(`${root}/secrets`), `${root}/bin/launch-*`] : []),
+  ].flatMap((glob) => ["Read", "ReadMediaFile", "Write", "Edit"].map((tool) => `${tool}(${glob})`));
+
 const homeDenials = (realHome) =>
   realHome
     ? ["Read", "ReadMediaFile", "Write", "Edit"].flatMap((tool) =>
@@ -87,10 +97,14 @@ const steeringAsks = (workspace) =>
 const list = (key, patterns) =>
   patterns.length === 0 ? `${key} = []` : `${key} = [\n${patterns.map(entryToml).join("\n")}\n]`;
 
-const permissionTable = (realHome, workspace) =>
+const permissionTable = (realHome, workspace, root, siblingRoots) =>
   [
     "[permission]",
-    list("deny", [...denials.map((d) => d.rule), ...homeDenials(realHome)]),
+    list("deny", [
+      ...denials.map((d) => d.rule),
+      ...homeDenials(realHome),
+      ...rootDenials(root, siblingRoots),
+    ]),
     list("ask", steeringAsks(workspace)),
     "allow = []",
   ].join("\n");
@@ -157,8 +171,9 @@ export default {
     "Read/Write/Edit under your real HOME are denied (dotfiles included, up to two dotted segments deep); Grep and Glob cannot be path-scoped",
     "editing the workspace's CLAUDE.md/AGENTS.md, .workflow config, .git or .kimi-code/local.toml asks you",
     "kimi's «approve for session» history runs before its ask rules: once you approve a Write/Edit for the session, a later steering-file edit may not ask again",
+    "the other hosts' disposable roots (copied credentials, token files) are denied to it",
   ],
-  files: ({ realHome, workspace } = {}) => [
+  files: ({ realHome, workspace, root, siblingRoots } = {}) => [
     {
       path: ".kimi-code/config.toml",
       kind: "toml-top",
@@ -167,15 +182,19 @@ export default {
     {
       path: ".kimi-code/config.toml",
       kind: "toml-table",
-      value: permissionTable(realHome, workspace),
+      value: permissionTable(realHome, workspace, root, siblingRoots),
     },
   ],
   deniedIn: (files) => permissionEntries(textOf(files), "deny").map((e) => e.pattern ?? e.invalid),
   allowedIn: (files) =>
     permissionEntries(textOf(files), "allow").map((e) => e.pattern ?? e.invalid),
-  effective: ({ realHome, workspace } = {}) => ({
+  effective: ({ realHome, workspace, root, siblingRoots } = {}) => ({
     mode: "manual",
-    deny: [...denials.map((d) => d.rule), ...homeDenials(realHome)],
+    deny: [
+      ...denials.map((d) => d.rule),
+      ...homeDenials(realHome),
+      ...rootDenials(root, siblingRoots),
+    ],
     ask: steeringAsks(workspace),
     allow: [],
   }),

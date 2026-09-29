@@ -144,10 +144,11 @@ const MCP_NAME =
  */
 export function privacyViolations(
   extract,
-  { realHome, username, allowedMcp = [PROBE_MCP.name], foreignMcp = [] },
+  { realHome, username, allowedMcp = [PROBE_MCP.name], foreignMcp = [], secrets = [] },
 ) {
   const text = JSON.stringify(extract);
   const found = [];
+  if (containsSecret(text, secrets)) found.push("contains a token");
   if (realHome && text.includes(realHome)) found.push("contains the real HOME");
   if (username && username.length >= 3 && new RegExp(`\\b${username}\\b`, "i").test(text)) {
     found.push("contains the user name");
@@ -163,6 +164,114 @@ export function privacyViolations(
     }
   }
   return found;
+}
+
+/** How much of a token betrays it: 12 characters of its distinctive part. */
+export const SECRET_PREFIX = 12;
+
+/**
+ * Prefixes every token of a kind shares, which therefore identify nobody:
+ * claude OAuth (`sk-ant-oat01-`) and API keys (`sk-ant-api03-`), Google keys (`AIza`).
+ */
+export const PUBLIC_TOKEN_PREFIXES = ["sk-ant-oat01-", "sk-ant-api03-", "AIza"];
+
+/**
+ * The part of a token that is its own: what follows a known public prefix,
+ * first SECRET_PREFIX characters (or all of a shorter remainder).
+ */
+export function distinctivePart(value) {
+  const prefix = PUBLIC_TOKEN_PREFIXES.find((p) => value.startsWith(p)) ?? "";
+  const rest = value.slice(prefix.length);
+  return rest.length > SECRET_PREFIX ? rest.slice(0, SECRET_PREFIX) : rest;
+}
+
+const usable = (secrets) => secrets.filter((v) => typeof v === "string" && v.length > 0);
+
+/** Characters a token is made of (base64url, and the dashes of its prefix). */
+const TOKEN_CHAR = /[A-Za-z0-9_-]/;
+
+/** The body of a token that is its own: everything after a known public prefix. */
+function distinctiveBody(value) {
+  const prefix = PUBLIC_TOKEN_PREFIXES.find((p) => value.startsWith(p)) ?? "";
+  return value.slice(prefix.length);
+}
+
+/**
+ * `text` without whitespace, and for each kept character its index in `text`:
+ * a token a pane wrapped over several lines (and indented) reads whole again.
+ */
+function compact(text) {
+  let flat = "";
+  const at = [];
+  for (let i = 0; i < text.length; i++) {
+    if (/\s/.test(text[i])) continue;
+    flat += text[i];
+    at.push(i);
+  }
+  return { flat, at };
+}
+
+/**
+ * Grows [a, b) over the token characters next to it on the same line: the
+ * public prefix and any short edge the windows missed. A wrapped token needs no
+ * crossing here — the windows match with whitespace removed, so their spans
+ * already run over the line breaks and the wrap indentation between its parts;
+ * crossing further would only eat the first word of the next line.
+ */
+function widen(text, a, b) {
+  let start = a;
+  while (start > 0 && TOKEN_CHAR.test(text[start - 1])) start -= 1;
+  let end = b;
+  while (end < text.length && TOKEN_CHAR.test(text[end])) end += 1;
+  return [start, end];
+}
+
+/**
+ * Where `text` carries a secret, as merged [start, end) spans of `text`: any
+ * SECRET_PREFIX-long window of a token's distinctive body (or all of a shorter
+ * body), matched with whitespace removed (so across wraps), grown to the whole
+ * contiguous token on its first and last lines.
+ */
+export function secretSpans(text, secrets) {
+  const t = String(text ?? "");
+  const { flat, at } = compact(t);
+  const spans = [];
+  for (const v of usable(secrets)) {
+    const body = distinctiveBody(v);
+    const size = Math.min(SECRET_PREFIX, body.length);
+    if (size === 0) continue;
+    for (let k = 0; k + size <= body.length; k++) {
+      const window = body.slice(k, k + size);
+      for (let i = flat.indexOf(window); i !== -1; i = flat.indexOf(window, i + 1)) {
+        spans.push(widen(t, at[i], at[i + size - 1] + 1));
+      }
+    }
+  }
+  spans.sort((x, y) => x[0] - y[0]);
+  const merged = [];
+  for (const span of spans) {
+    const last = merged.at(-1);
+    if (last && span[0] <= last[1]) last[1] = Math.max(last[1], span[1]);
+    else merged.push([...span]);
+  }
+  return merged;
+}
+
+/** Whether `text` carries any of `secrets`: any SECRET_PREFIX-long piece of one's own body. */
+export function containsSecret(text, secrets) {
+  return secretSpans(text, secrets).length > 0;
+}
+
+/** `text` with every token it carries replaced by `[redacted]`, wrapped lines included. */
+export function redactSecrets(text, secrets) {
+  const t = String(text ?? "");
+  let out = "";
+  let from = 0;
+  for (const [a, b] of secretSpans(t, secrets)) {
+    out += `${t.slice(from, a)}[redacted]`;
+    from = b;
+  }
+  return out + t.slice(from);
 }
 
 /**
