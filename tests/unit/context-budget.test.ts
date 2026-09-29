@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -14,6 +15,7 @@ const REPO_ROOT = resolve(__dirname, "..", "..");
 const BUNDLE_ROOT = join(REPO_ROOT, "skills", "w");
 const BASELINE_PATH = join(REPO_ROOT, "tests", "fixtures", "context-baseline.json");
 const CORPUS_PATH = join(REPO_ROOT, "tests", "fixtures", "context-corpus.json");
+const REFERENCE_PATH = join(REPO_ROOT, "tests", "fixtures", "context-baseline-27.0.1.json");
 
 const fs = new NodeFileSystem();
 
@@ -376,5 +378,70 @@ describe("baseline honesty — two freeze points, two stamps, never mixed", () =
     // passes because there is nothing in it.
     expect(result.modules.count).toBeGreaterThan(20);
     expect(result.modules.bytes).toBeGreaterThan(50_000);
+  });
+});
+
+// Once the bundle moves, the 27.0.1 reproduction has nothing to reproduce: it is
+// reported as skipped, never as a silent pass.
+const sealedTree =
+  JSON.parse(readFileSync(REFERENCE_PATH, "utf8")).revision.content_digest ===
+  (await runContextBudget(fs, { root: BUNDLE_ROOT })).revision.content_digest;
+
+describe("the 27.0.1 reference — no doctrine figure grows past it", () => {
+  // Plan 082, F1 · spec 061 AC-14. The 20.23.0 baseline above budgets ratios;
+  // this one is the ceiling the CLI-determinism work is measured against: the
+  // bytes the 27.0.1 bundle cost, frozen per command and per journey, so trimming
+  // one journey can never pay for growing another.
+  interface Reference {
+    revision: { cli_version: string; git_revision: string; content_digest: string };
+    discovery: { bytes: number };
+    activation: { median: number; entries: { command: string; bytes: number }[] };
+    execution: { median: number; journeys: { id: string; bytes: number }[] };
+  }
+
+  async function reference(): Promise<Reference> {
+    return JSON.parse(await readFile(REFERENCE_PATH, "utf8")) as Reference;
+  }
+
+  it("is sealed with the release and the tree it was measured on", async () => {
+    const ref = await reference();
+    expect(ref.revision.cli_version).toBe("27.0.1");
+    expect(ref.revision.git_revision).toMatch(/^[0-9a-f]{40}$/);
+    expect(ref.revision.content_digest).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it.runIf(sealedTree)("reproduces the measurement byte for byte on the sealed tree", async () => {
+    const [ref, live] = await Promise.all([
+      reference(),
+      runContextBudget(fs, { root: BUNDLE_ROOT }),
+    ]);
+    expect(live.discovery.bytes).toBe(ref.discovery.bytes);
+    expect(live.activation.entries.map(({ command, bytes }) => ({ command, bytes }))).toEqual(
+      ref.activation.entries,
+    );
+    expect(live.execution.journeys.map(({ id, bytes }) => ({ id, bytes }))).toEqual(
+      ref.execution.journeys.map(({ id, bytes }) => ({ id, bytes })),
+    );
+  });
+
+  it("no discovery, activation or journey figure exceeds 27.0.1", async () => {
+    const [ref, live] = await Promise.all([
+      reference(),
+      runContextBudget(fs, { root: BUNDLE_ROOT }),
+    ]);
+    expect(live.discovery.bytes).toBeLessThanOrEqual(ref.discovery.bytes);
+    expect(live.activation.median).toBeLessThanOrEqual(ref.activation.median);
+    expect(live.execution.median).toBeLessThanOrEqual(ref.execution.median);
+    const activation = new Map(ref.activation.entries.map((e) => [e.command, e.bytes]));
+    for (const entry of live.activation.entries) {
+      // A command with no reference is a command nobody priced: fail, never skip.
+      expect(activation.has(entry.command), entry.command).toBe(true);
+      expect(entry.bytes, entry.command).toBeLessThanOrEqual(activation.get(entry.command) ?? 0);
+    }
+    const journeys = new Map(ref.execution.journeys.map((j) => [j.id, j.bytes]));
+    for (const journey of live.execution.journeys) {
+      expect(journeys.has(journey.id), journey.id).toBe(true);
+      expect(journey.bytes, journey.id).toBeLessThanOrEqual(journeys.get(journey.id) ?? 0);
+    }
   });
 });

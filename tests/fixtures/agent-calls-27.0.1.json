@@ -1,0 +1,42 @@
+{
+  "$comment": "REFERENCIA de la 27.0.1 (plan 082, F1): llamadas del agente a `aw` por corrida de cada flujo, contadas por tests/helpers/agent-calls.ts sobre el flujo de directivas. Es el techo del AC-15 de la spec 061. NO se regenera.",
+  "cli_version": "27.0.1",
+  "git_revision": "b8290ecc6cd86e890fb77efafc3039954ac9f487",
+  "flows": {
+    "spec-refine": {
+      "opening": 3,
+      "submits": 11,
+      "commands": 1,
+      "proves": 1,
+      "total": 16
+    },
+    "plan-new": {
+      "opening": 3,
+      "submits": 11,
+      "commands": 2,
+      "proves": 1,
+      "total": 17
+    },
+    "plan-refine": {
+      "opening": 3,
+      "submits": 10,
+      "commands": 1,
+      "proves": 1,
+      "total": 15
+    },
+    "plan-exec": {
+      "opening": 3,
+      "submits": 17,
+      "commands": 5,
+      "proves": 2,
+      "total": 27
+    },
+    "quick": {
+      "opening": 3,
+      "submits": 12,
+      "commands": 2,
+      "proves": 1,
+      "total": 18
+    }
+  }
+}

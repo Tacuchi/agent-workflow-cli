@@ -1,0 +1,124 @@
+{
+  "$comment": "REFERENCIA de la 27.0.1 (plan 082, F1): los bytes de doctrina que mide `aw context-budget` sobre skills/w en la revisión git que declara `revision`. Es el techo del AC-14 de la spec 061: ningún valor vivo lo supera. NO se regenera: una cifra mayor se arregla recortando doctrina, no moviendo la referencia. Reproducible en esa revisión con: node dist/cli/main.js context-budget --root skills/w --format json.",
+  "revision": {
+    "cli_version": "27.0.1",
+    "git_revision": "b8290ecc6cd86e890fb77efafc3039954ac9f487",
+    "content_digest": "eabb92d2a8cdbb38",
+    "file_count": 77
+  },
+  "discovery": {
+    "bytes": 4257
+  },
+  "activation": {
+    "median": 2504,
+    "entries": [
+      {
+        "command": "discard",
+        "bytes": 2451
+      },
+      {
+        "command": "doctor",
+        "bytes": 2524
+      },
+      {
+        "command": "export-diagrams",
+        "bytes": 1615
+      },
+      {
+        "command": "export-manuals",
+        "bytes": 1742
+      },
+      {
+        "command": "export-reports",
+        "bytes": 1615
+      },
+      {
+        "command": "export-scripts",
+        "bytes": 2199
+      },
+      {
+        "command": "persist",
+        "bytes": 3877
+      },
+      {
+        "command": "plan-exec",
+        "bytes": 3834
+      },
+      {
+        "command": "plan-new",
+        "bytes": 3234
+      },
+      {
+        "command": "plan-refine",
+        "bytes": 3148
+      },
+      {
+        "command": "quick",
+        "bytes": 2965
+      },
+      {
+        "command": "recall",
+        "bytes": 2290
+      },
+      {
+        "command": "reset",
+        "bytes": 2484
+      },
+      {
+        "command": "resume",
+        "bytes": 3277
+      },
+      {
+        "command": "spec-new",
+        "bytes": 9910
+      },
+      {
+        "command": "spec-refine",
+        "bytes": 2993
+      },
+      {
+        "command": "status",
+        "bytes": 2078
+      },
+      {
+        "command": "workspace-init",
+        "bytes": 2185
+      }
+    ]
+  },
+  "execution": {
+    "median": 37810,
+    "journeys": [
+      {
+        "id": "spec",
+        "command": "spec-refine",
+        "bytes": 43229
+      },
+      {
+        "id": "plan-doc",
+        "command": "plan-new",
+        "bytes": 37669
+      },
+      {
+        "id": "code-exec",
+        "command": "plan-exec",
+        "bytes": 60499
+      },
+      {
+        "id": "quick",
+        "command": "quick",
+        "bytes": 37951
+      },
+      {
+        "id": "transversal",
+        "command": "persist",
+        "bytes": 3877
+      },
+      {
+        "id": "export",
+        "command": "export-scripts",
+        "bytes": 2199
+      }
+    ]
+  }
+}
