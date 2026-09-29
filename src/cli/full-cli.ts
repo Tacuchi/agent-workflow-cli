@@ -36,6 +36,7 @@ import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
 import { commandHelpText, globalHelpText } from "./help-groups.js";
 import type { MenuAction } from "./interactive-menu.js";
+import { nextStepOfError, nextStepOfRoots } from "./next-step-emit.js";
 import { ASCII_ENV, type OutputMode, resolveOutputMode } from "./output-mode.js";
 import { type ParsedArgs, parseArgv } from "./parser.js";
 import { type CliCommand, CommandRegistry } from "./registry.js";
@@ -248,7 +249,11 @@ async function resolveWorklineDirectory(
         writeStderr(err.message);
         return null;
       }
-      emitError({ code: err.code, message: err.message, details: { roots: err.roots } });
+      const next = nextStepOfRoots(err.roots, process.argv.slice(2));
+      emitError(
+        { code: err.code, message: err.message, details: { roots: err.roots } },
+        next ?? undefined,
+      );
       return null;
     }
     if (!(err instanceof WorklineDirectoryError)) {
@@ -566,12 +571,13 @@ function isStrictReadCommand(parsed: ParsedArgs): boolean {
 }
 
 function emit(
-  result: CommandResult,
+  outcome: CommandResult,
   command: CliCommand,
   mode: OutputMode,
   adopted?: string,
 ): void {
-  if (result.suppressOutput) return;
+  if (outcome.suppressOutput) return;
+  const result = outcome.ok ? outcome : withNextStep(outcome);
   // Before anything the command prints: the adoption is the frame its output
   // happened in, and it reads as an afterthought underneath a JSON blob.
   if (adopted !== undefined && mode.format === "human" && command.renderRawJson === undefined) {
@@ -593,6 +599,13 @@ function emit(
     }
   }
   emitJson(result);
+}
+
+/** A failed result with the typed next step its error knows, in `data.next_step`. */
+function withNextStep(result: CommandResult): CommandResult {
+  const next = nextStepOfError(result.data, process.argv.slice(2));
+  if (next === null) return result;
+  return { ...result, data: { ...(result.data as object | undefined), ...next } };
 }
 
 function emitJson(result: CommandResult): void {

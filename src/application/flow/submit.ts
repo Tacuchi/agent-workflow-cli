@@ -174,6 +174,7 @@ import {
 } from "./checkout-observation.js";
 import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import { closeAtBoundaryState } from "./close-at-boundary.js";
+import { adoptionCommand } from "./flow-descriptor.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
 import { observePlanEntry } from "./plan-entry.js";
@@ -303,7 +304,7 @@ export async function submitFlow(
         failure: {
           code: "FLOW_RUN_ABSENT",
           message: "no hay corrida que responder en esta sesión",
-          action: "adoptala primero con 'aw flow advance --flow <flow> --adopt'",
+          action: `adoptala primero con '${adoptionCommand(resolution.session.folder)}'`,
         },
       };
     }

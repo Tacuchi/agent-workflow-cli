@@ -11,6 +11,7 @@ import type { GitPort } from "../ports/git.js";
 import { WORKLINE_FLOWS, type WorklineFlow } from "./capability/compose.js";
 import { localDateIso } from "./dates.js";
 import { resolveCoreDocsCanon } from "./docs-canon-service.js";
+import { flowOfDescriptor, sessionDescriptor } from "./flow/flow-descriptor.js";
 import { applyUnderLock, locateRun } from "./flow/run-state-service.js";
 import {
   maxHistoryCorrelative,
@@ -264,20 +265,6 @@ async function localRegistryWarning(
 }
 
 /**
- * The flow a descriptor names — `<slug>-<flow>` — or null for any other name.
- *
- * Reading it here is not inference: the doctrine tells every flow to open its
- * session with exactly that descriptor, so the name IS the declaration. Longest
- * suffix first, so `-plan-exec` is never read as some shorter flow.
- */
-function flowOfDescriptor(name: string): WorklineFlow | null {
-  const descriptor = sessionDescriptor(name);
-  const flows = [...WORKLINE_FLOWS].sort((a, b) => b.length - a.length);
-  const flow = flows.find((candidate) => descriptor.endsWith(`-${candidate}`));
-  return flow !== undefined && descriptor.length > flow.length + 1 ? flow : null;
-}
-
-/**
  * Seed the new session's run and record its flow in custody.
  *
  * So the first `aw flow advance` of a session created for a flow starts its run
@@ -438,18 +425,6 @@ async function readBaselines(
     }
   }
   return { artifacts };
-}
-
-/**
- * The `--name` a caller passed, with any leading `NNN-` normalized away.
- *
- * Shared by the folder claim and the input derivation because both read the same
- * descriptor: if only one of them normalized, a `--name 028-x-plan-exec` would
- * land in folder `007-x-plan-exec` while its document was looked up under the
- * slug `028-x`.
- */
-function sessionDescriptor(name: string): string {
-  return name.replace(new RegExp(`^${CORRELATIVE_SOURCE}-`), "");
 }
 
 interface ValidatedInput {

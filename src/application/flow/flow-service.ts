@@ -40,6 +40,7 @@ import { readCustody } from "../session-custody-service.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
 import { advanceFlowRun, directiveFor, resolveBoundary } from "./advance.js";
 import { publishObservedCheckouts } from "./checkout-observation.js";
+import { adoptionCommand } from "./flow-descriptor.js";
 import type { InternalActionExecutor } from "./internal-actions.js";
 import { driveInternalActions } from "./internal-drive.js";
 import { observeQuickCheckouts } from "./quick-checkouts.js";
@@ -516,7 +517,7 @@ export async function recoverFlowBoundary(
         failure: {
           code: "FLOW_RUN_ABSENT",
           message: "no hay corrida que recuperar en esta sesión",
-          action: "adoptala primero con 'aw flow advance --flow <flow> --adopt'",
+          action: `adoptala primero con '${adoptionCommand(resolution.session.folder)}'`,
         },
       };
     }

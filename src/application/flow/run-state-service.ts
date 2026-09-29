@@ -34,6 +34,7 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import { LockBusyError, type LockOptions, acquireLock } from "../lock-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
+import { adoptionCommand } from "./flow-descriptor.js";
 import { journeyForRun } from "./run-journey.js";
 
 /**
@@ -112,7 +113,7 @@ export async function readRun(fs: FileSystemPort, location: FlowRunLocation): Pr
       failure: {
         code: "FLOW_RUN_ABSENT",
         message: `la sesión '${location.session}' no tiene estado de corrida`,
-        action: `arrancala con 'aw flow advance --session ${location.session} --flow <flow> --adopt'`,
+        action: `arrancala con '${adoptionCommand(location.session)}'`,
       },
     };
   }
@@ -433,7 +434,7 @@ export async function restartUnderLock(
         failure: {
           code: "FLOW_RUN_ABSENT",
           message: `la sesión '${location.session}' no tiene una corrida que reiniciar`,
-          action: `arrancala con 'aw flow advance --session ${location.session} --flow <flow> --adopt': no hay nada que archivar`,
+          action: `arrancala con '${adoptionCommand(location.session)}': no hay nada que archivar`,
         },
       };
     }

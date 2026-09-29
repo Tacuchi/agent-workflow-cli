@@ -70,11 +70,11 @@ describe("cada rechazo de estado propone un comando que funciona en su estado", 
   async function runRemedy(action: string): Promise<boolean> {
     const restart = /aw flow restart --session (\S+?)['\s:]/.exec(action);
     if (restart !== null) return (await restartFlow(fs, paths, { code: restart[1] as string })).ok;
-    const adopt = /aw flow advance --session (\S+) --flow <flow> --adopt/.exec(action);
+    // The flow comes from the session's own name, so the command is runnable as written.
+    const adopt = /aw flow advance --session (\S+) --flow ([a-z-]+) --adopt/.exec(action);
     if (adopt !== null) {
-      return (
-        await advanceFlow(fs, paths, { code: adopt[1] as string, flow: "quick", adopt: true })
-      ).ok;
+      const [, code, flow] = adopt as unknown as [string, string, string];
+      return (await advanceFlow(fs, paths, { code, flow, adopt: true })).ok;
     }
     throw new Error(`el rechazo no nombra un comando que esta prueba sepa correr: ${action}`);
   }

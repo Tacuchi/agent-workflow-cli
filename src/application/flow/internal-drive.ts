@@ -71,6 +71,7 @@ import {
   failedExecutionAttempt,
   resolveBoundary,
 } from "./advance.js";
+import { adoptionCommand } from "./flow-descriptor.js";
 import type { InternalActionExecutor, InternalActionOutcome } from "./internal-actions.js";
 import { journeyForRun } from "./run-journey.js";
 import { type FlowRunLocation, type FlowRunMutation, applyUnderLock } from "./run-state-service.js";
@@ -204,7 +205,7 @@ async function markAttempted(
     fs,
     location,
     (live) => {
-      if (live === null) return { ok: false, failure: RUN_VANISHED };
+      if (live === null) return { ok: false, failure: runVanished(location.session) };
       return { ok: true, state: withActionAttempted(live), value: null };
     },
     { expectDigest: current.state.digest },
@@ -234,7 +235,7 @@ async function settle(
     fs,
     location,
     (live) => {
-      if (live === null) return { ok: false, failure: RUN_VANISHED };
+      if (live === null) return { ok: false, failure: runVanished(location.session) };
       return accept(live, pending, outcome, current.state);
     },
     // A stateful internal action (the v10 batch publisher) writes its own
@@ -453,8 +454,10 @@ function resultOf(pending: PendingInternal, outcome: InternalActionOutcome): Flo
   };
 }
 
-const RUN_VANISHED: CapabilityFailure = {
-  code: "FLOW_RUN_ABSENT",
-  message: "el estado de corrida desapareció mientras se ejecutaba su acción interna",
-  action: "re-adoptá la sesión con 'aw flow advance --flow <flow> --adopt' antes de seguir",
-};
+function runVanished(session: string): CapabilityFailure {
+  return {
+    code: "FLOW_RUN_ABSENT",
+    message: "el estado de corrida desapareció mientras se ejecutaba su acción interna",
+    action: `re-adoptá la sesión con '${adoptionCommand(session)}' antes de seguir`,
+  };
+}

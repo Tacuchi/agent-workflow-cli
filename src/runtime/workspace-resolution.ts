@@ -65,14 +65,16 @@ export async function resolveWorkspaceDirectory(
         `La carpeta ${root} no es una raíz de workspace válida.`,
       );
     }
-    if (
-      !marked &&
-      (await repositoryRoot(root)) !== null &&
-      (await declaringHubs(fs, home, namespace, root)).some((hub) => hub.root !== root)
-    ) {
+    const hubs =
+      marked || (await repositoryRoot(root)) === null
+        ? []
+        : await declaringHubs(fs, home, namespace, root);
+    const otherHubs = [...new Set(hubs.map((hub) => hub.root).filter((hub) => hub !== root))];
+    if (otherHubs.length > 0) {
       throw new WorkspaceResolutionError(
         "WORKSPACE_INVALID",
         `${root} es una fuente declarada; indica la raíz del hub, no la fuente.`,
+        otherHubs,
       );
     }
     let parent = dirname(root);
@@ -81,6 +83,7 @@ export async function resolveWorkspaceDirectory(
         throw new WorkspaceResolutionError(
           "WORKSPACE_INVALID",
           `${root} está dentro del workspace ${parent}; --workspace nombra la raíz exacta.`,
+          [parent],
         );
       }
       parent = dirname(parent);

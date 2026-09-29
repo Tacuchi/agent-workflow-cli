@@ -23,9 +23,10 @@ import {
 } from "../../application/workspace-commit-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
+import { usageLine } from "../help-groups.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import type { CliCommand, CommandFlags, CommandHelp, HumanRenderContext } from "../registry.js";
-import { fail, failSemantic } from "../render.js";
+import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
 type ExportData =
@@ -178,6 +179,16 @@ function exportHelp(category: ExportCategory): CommandHelp {
   };
 }
 
+/** The error action of a malformed export invocation: its usage, generated from its contract. */
+function usageAction(category: ExportCategory, stage?: string): { action: string } {
+  const command = {
+    name: `export-${category}`,
+    flags: exportFlags(category),
+    help: exportHelp(category),
+  };
+  return { action: `uso: \`${usageLine(command, stage)}\`` };
+}
+
 function exportCommand(category: ExportCategory): CliCommand<ExportData> {
   return {
     name: `export-${category}`,
@@ -187,10 +198,11 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ExportData>> {
       const stage = args.rest[0];
       if (stage !== "prepare" && stage !== "validate" && stage !== "apply") {
-        return fail(
-          "ARGS_INVALID",
-          `uso: aw export-${category} prepare | validate | apply --approval <digest>`,
-        );
+        return failSemantic({
+          code: "ARGS_INVALID",
+          message: `uso: aw export-${category} prepare | validate | apply --approval <digest>`,
+          ...usageAction(category),
+        });
       }
 
       // stdin FIRST on the later stages: the answer carries the scope its
@@ -399,7 +411,11 @@ async function runApply(
 ): Promise<CommandResult<ExportData>> {
   const approval = args.values.get("approval");
   if (approval === undefined) {
-    return fail("ARGS_INVALID", "apply exige --approval <digest>: el que devolvió validate");
+    return failSemantic({
+      code: "ARGS_INVALID",
+      message: "apply exige --approval <digest>: el que devolvió validate",
+      ...usageAction(prepared.category, "apply"),
+    });
   }
   const result = await applyExport(
     ctx.fs,

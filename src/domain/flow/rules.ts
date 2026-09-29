@@ -138,6 +138,9 @@ export function bindAction(action: DelegatedAction, binding: RunBinding): Action
     }, text);
   const bound: DelegatedAction = {
     ...action,
+    // The recovery a person reads names this session too: `<código>` in a
+    // recovery the run can already fill is a command nobody can run as written.
+    recovery: bindRecovery(bind(action.recovery), binding),
     invocation: {
       ...action.invocation,
       args: action.invocation.args.map(bind),
@@ -147,6 +150,24 @@ export function bindAction(action: DelegatedAction, binding: RunBinding): Action
   };
   const unbound = unboundPlaceholder(bound);
   return unbound === null ? { ok: true, action: bound } : { ok: false, unbound };
+}
+
+/** The session placeholders the registry's recovery texts spell. */
+export const SESSION_SHAPES = ["<código>", "<NNN>", "<code>", "<sesión>"] as const;
+
+/**
+ * A session placeholder in the one position where it can only mean this run's
+ * session: the value of `--code` or `--session`. Anywhere else a `<NNN>` may be
+ * a document's number, and it is left for the reader.
+ */
+const SESSION_SLOT = new RegExp(`(--code|--session) (${SESSION_SHAPES.join("|")})`, "g");
+
+/** A recovery with the coordinates this run already has written in. */
+function bindRecovery(recovery: string, binding: RunBinding): string {
+  const withSession = recovery.replace(SESSION_SLOT, `$1 ${binding.session}`);
+  return binding.slug === null
+    ? withSession
+    : withSession.replace(/--name <slug>/g, `--name ${binding.slug}`);
 }
 
 /**

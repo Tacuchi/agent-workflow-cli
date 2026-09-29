@@ -163,6 +163,12 @@ export interface SessionResolutionError {
   candidates: SessionCandidate[];
   /** One valid next move the caller can surface verbatim. */
   action: string;
+  /**
+   * The candidates are a real choice: naming any one of them with `--code`
+   * resolves. Absent where retrying with a candidate would fail again, as with
+   * two folders sharing a correlative.
+   */
+  choose?: true;
 }
 
 export type SessionResolution =
@@ -491,6 +497,7 @@ async function resolveExplicit(
       // exact folder now ends the search, so each of these resolves to one
       // session and only one.
       `reintentá con el nombre exacto de la carpeta: ${matches.map((m) => m.name).join(", ")}`,
+      true,
     );
   }
   if (only.state !== "active" && !allowClosed) {
@@ -609,6 +616,7 @@ async function resolveSoleActive(
     `hay ${actives.length} sesiones activas y la conversación no tiene una asociación`,
     actives,
     "indicá cuál con --code <NNN>",
+    true,
   );
 }
 
@@ -631,6 +639,7 @@ function refuseUnbound(actives: ScannedFolder[]): SessionResolutionError {
       : `hay ${actives.length} sesiones activas y la conversación no tiene una asociación`,
     actives,
     "indicá la sesión con --code <NNN>",
+    true,
   );
 }
 
@@ -702,6 +711,7 @@ function resolutionError(
   message: string,
   candidates: ScannedFolder[],
   action: string,
+  choose?: true,
 ): SessionResolutionError {
   return {
     outcome: "error",
@@ -709,6 +719,7 @@ function resolutionError(
     message,
     candidates: candidates.map((s) => ({ folder: s.name, code: s.code, state: s.state })),
     action,
+    ...(choose === undefined ? {} : { choose }),
   };
 }
 

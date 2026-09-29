@@ -1,0 +1,323 @@
+{
+  "$comment": "Toda acción del CLI que nombra un 'aw …' con marcador de posición, clasificada (plan 082, F4 · spec 061 AC-05). interpolated: el CLI escribe el valor que ya conoce; not-determinable: el valor es de la persona o no hay uno solo; usage: forma de uso, no una acción. tests/unit/error-actions.test.ts falla ante una acción sin clasificar.",
+  "actions": [
+    {
+      "file": "src/cli/commands/add-source.ts",
+      "text": "aw add-source <alias>",
+      "class": "not-determinable",
+      "reason": "alias, ruta y rama de una fuente nueva son de la persona"
+    },
+    {
+      "file": "src/cli/commands/doc-branch.ts",
+      "text": "aw doc-branch show (--code <NNN>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/doc-branch.ts",
+      "text": "aw doc-branch set (--code <NNN>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/doc-branch.ts",
+      "text": "aw doc-branch set --doc ${formatNodeId(identity.doc)} --source <alias>",
+      "class": "not-determinable",
+      "reason": "la persona confirma o cambia el nombre propuesto; el documento va interpolado"
+    },
+    {
+      "file": "src/cli/commands/doctor.ts",
+      "text": "aw doctor prepare --select <id>",
+      "class": "not-determinable",
+      "reason": "qué hallazgo reparar lo elige la persona y el digest sale de prepare"
+    },
+    {
+      "file": "src/cli/commands/flow.ts",
+      "text": "aw flow prove --source <alias>",
+      "class": "not-determinable",
+      "reason": "vale para cada fuente del scope; no hay una sola"
+    },
+    {
+      "file": "src/cli/commands/flow.ts",
+      "text": "aw flow retract --session <código>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/flow.ts",
+      "text": "aw flow annul --session <código>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/git-flow.ts",
+      "text": "aw git-flow <sync|to-dev|to-qa|to-prod>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/persist.ts",
+      "text": "aw persist prepare | validate | apply --approval <digest>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/remove-source.ts",
+      "text": "aw remove-source <alias>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/retirement.ts",
+      "text": "aw claims recover <ruta>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/self.ts",
+      "text": "aw self <subcommand>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/set-pipeline.ts",
+      "text": "aw set-pipeline <alias>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/cli/commands/visibility.ts",
+      "text": "aw detach-multiroot --path <dir>",
+      "class": "not-determinable",
+      "reason": "qué rutas quitar surge del diagnóstico de cada host"
+    },
+    {
+      "file": "src/cli/commands/visibility.ts",
+      "text": "aw workspace-init --source <alias>",
+      "class": "not-determinable",
+      "reason": "las fuentes a declarar son de la persona"
+    },
+    {
+      "file": "src/application/amend-service.ts",
+      "text": "aw amend list <documento>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/application/checkpoint-service.ts",
+      "text": "aw checkpoint-write --code <NNN>",
+      "class": "not-determinable",
+      "reason": "hay varias sesiones candidatas y elegir es de la persona"
+    },
+    {
+      "file": "src/application/checkpoint-write-service.ts",
+      "text": "aw checkpoint-write --code <NNN>",
+      "class": "not-determinable",
+      "reason": "hay varias sesiones candidatas y elegir es de la persona"
+    },
+    {
+      "file": "src/application/git-flow-service.ts",
+      "text": "aw set-working-branch ${source.alias} <rama>",
+      "class": "not-determinable",
+      "reason": "el nombre de la rama de trabajo lo elige la persona"
+    },
+    {
+      "file": "src/application/mcp-connections-service.ts",
+      "text": "aw self mcp use-env --name <nombre>",
+      "class": "not-determinable",
+      "reason": "el nombre de la variable de entorno es de la persona"
+    },
+    {
+      "file": "src/application/merge-state-service.ts",
+      "text": "aw add-source ${t.alias}:<ruta>",
+      "class": "not-determinable",
+      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
+    },
+    {
+      "file": "src/application/plan-lint-service.ts",
+      "text": "aw plan lint <plan>",
+      "class": "usage",
+      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
+    },
+    {
+      "file": "src/application/project-md-upsert-service.ts",
+      "text": "aw add-source ${source.alias}:<ruta>",
+      "class": "not-determinable",
+      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
+    },
+    {
+      "file": "src/application/source-pipeline.ts",
+      "text": "aw set-pipeline ${alias} ${field} <comando|ninguno>",
+      "class": "not-determinable",
+      "reason": "el comando de build o test lo declara la persona"
+    },
+    {
+      "file": "src/application/source-pipeline.ts",
+      "text": "aw set-pipeline ${alias} ${field} <comando>",
+      "class": "not-determinable",
+      "reason": "el comando de build o test lo declara la persona"
+    },
+    {
+      "file": "src/application/sources-service.ts",
+      "text": "aw set-working-branch ${src.alias} <rama>",
+      "class": "not-determinable",
+      "reason": "el nombre de la rama de trabajo lo elige la persona"
+    },
+    {
+      "file": "src/application/working-branch-service.ts",
+      "text": "aw add-source ${source.alias}:<ruta>",
+      "class": "not-determinable",
+      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
+    },
+    {
+      "file": "src/application/workline-index-service.ts",
+      "text": "aw release-pass applied --version ${pass.version} --environment cert --detail <hecho>",
+      "class": "not-determinable",
+      "reason": "el hecho observado y la fuente los declara la persona; la versión va interpolada"
+    },
+    {
+      "file": "src/application/workline-index-service.ts",
+      "text": "aw release-pass arrived --version ${pass.version} --source <alias>",
+      "class": "not-determinable",
+      "reason": "el hecho observado y la fuente los declara la persona; la versión va interpolada"
+    },
+    {
+      "file": "src/application/workspace-init-service.ts",
+      "text": "aw add-source <alias>",
+      "class": "not-determinable",
+      "reason": "alias, ruta y rama de una fuente nueva son de la persona"
+    },
+    {
+      "file": "src/application/worktree-service.ts",
+      "text": "aw add-source ${unreadable[0].alias}:<ruta>",
+      "class": "not-determinable",
+      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
+    },
+    {
+      "file": "src/application/worktree-service.ts",
+      "text": "aw add-source <alias>",
+      "class": "not-determinable",
+      "reason": "alias, ruta y rama de una fuente nueva son de la persona"
+    },
+    {
+      "file": "src/application/worktree-service.ts",
+      "text": "aw set-working-branch ${alias} <rama>",
+      "class": "not-determinable",
+      "reason": "el nombre de la rama de trabajo lo elige la persona"
+    },
+    {
+      "file": "src/application/worktree-service.ts",
+      "text": "aw set-working-branch ${source.alias} <rama>",
+      "class": "not-determinable",
+      "reason": "el nombre de la rama de trabajo lo elige la persona"
+    },
+    {
+      "file": "src/application/parsers/project-block.ts",
+      "text": "aw add-source ${alias}:<ruta>",
+      "class": "not-determinable",
+      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
+    },
+    {
+      "file": "src/application/parsers/project-block.ts",
+      "text": "aw add-source <alias>",
+      "class": "not-determinable",
+      "reason": "alias, ruta y rama de una fuente nueva son de la persona"
+    },
+    {
+      "file": "src/application/doctor/provider-visibility.ts",
+      "text": "aw add-source <alias>",
+      "class": "not-determinable",
+      "reason": "alias, ruta y rama de una fuente nueva son de la persona"
+    },
+    {
+      "file": "src/application/doctor/provider-workspace-block.ts",
+      "text": "aw doctor prepare --select <id>",
+      "class": "not-determinable",
+      "reason": "qué hallazgo reparar lo elige la persona y el digest sale de prepare"
+    },
+    {
+      "file": "src/application/doctor/provider-workspace-block.ts",
+      "text": "aw doctor apply --approval <digest>",
+      "class": "not-determinable",
+      "reason": "qué hallazgo reparar lo elige la persona y el digest sale de prepare"
+    },
+    {
+      "file": "src/application/doctor/report.ts",
+      "text": "aw self install-skill --target <host>",
+      "class": "not-determinable",
+      "reason": "el host destino lo elige la persona"
+    },
+    {
+      "file": "src/application/flow/checkout-observation.ts",
+      "text": "aw add-source ${source}:<ruta>",
+      "class": "not-determinable",
+      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
+    },
+    {
+      "file": "src/application/flow/prove.ts",
+      "text": "aw worktree ensure --source <alias>",
+      "class": "not-determinable",
+      "reason": "vale para cada fuente del scope; no hay una sola"
+    },
+    {
+      "file": "src/domain/doctor/operations.ts",
+      "text": "aw detach-multiroot --path <rutas selladas>",
+      "class": "not-determinable",
+      "reason": "qué rutas quitar surge del diagnóstico de cada host"
+    },
+    {
+      "file": "src/domain/doctor/operations.ts",
+      "text": "aw doctor prepare --select <hallazgo-archivo>",
+      "class": "not-determinable",
+      "reason": "qué hallazgo reparar lo elige la persona y el digest sale de prepare"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw session-create --type quick --name <slug>",
+      "class": "interpolated",
+      "reason": "bindAction escribe el slug de la corrida en la recuperación; el objetivo sigue siendo de la persona"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw flow advance; si sólo leíste la base, retirá la señal con aw flow retract --session <código>",
+      "class": "interpolated",
+      "reason": "bindAction escribe el código de la sesión de la corrida en la recuperación"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw session-create --type refine --name <slug>",
+      "class": "interpolated",
+      "reason": "bindAction escribe el slug de la corrida en la recuperación; el objetivo sigue siendo de la persona"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw session-resume --code <NNN>",
+      "class": "interpolated",
+      "reason": "en la recuperación, bindAction escribe el código de la sesión de la corrida; la atribución de session-resume.reopen sólo documenta la forma"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw session-create --type exec --name <slug>",
+      "class": "interpolated",
+      "reason": "bindAction escribe el slug de la corrida en la recuperación; el objetivo sigue siendo de la persona"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw flow recover --session <código>",
+      "class": "interpolated",
+      "reason": "bindAction escribe el código de la sesión de la corrida en la recuperación"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw worktree ensure --source <alias>",
+      "class": "not-determinable",
+      "reason": "la recuperación vale para cualquier fuente del scope; cuál falta se ve al leer las unidades"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw flow prove --source <alias>",
+      "class": "not-determinable",
+      "reason": "la recuperación vale para cualquier fuente del scope; cuál falta se ve al leer las unidades"
+    }
+  ]
+}

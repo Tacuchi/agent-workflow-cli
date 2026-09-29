@@ -40,9 +40,10 @@ import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readContextId, readRequiredStdin } from "../context-id.js";
+import { usageLine } from "../help-groups.js";
 import { type ParsedArgs, flagValue, sessionCodeFlag } from "../parser.js";
 import type { CliCommand, HumanRenderContext } from "../registry.js";
-import { fail, failSemantic, failSessionResolution } from "../render.js";
+import { failSemantic, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 
 /**
@@ -142,6 +143,11 @@ const ATTEMPT_NOTES = [
  * validation were part of choosing a verb. Each refusal names the accepted values,
  * so a wrong flag is corrected from the message and not from the source.
  */
+/** The error action of a malformed flow invocation: its usage, generated from its contract. */
+function usageAction(verb: string | undefined): { action: string } {
+  return { action: `uso: \`${usageLine(flowCommand, verb)}\`` };
+}
+
 function readFlowArgs(
   args: ParsedArgs,
   ctx: CliContext,
@@ -155,7 +161,11 @@ function readFlowArgs(
   | { ok: false; failure: CommandResult<FlowResult> } {
   const refuse = (message: string) => ({
     ok: false as const,
-    failure: fail("ARGS_INVALID", message) as CommandResult<FlowResult>,
+    failure: failSemantic<FlowResult>({
+      code: "ARGS_INVALID",
+      message,
+      ...usageAction(args.rest[0]),
+    }),
   });
 
   const requestedHost = args.values.get("host");
@@ -338,11 +348,19 @@ export const flowCommand: CliCommand<FlowResult> = {
     if (verb === "recover") {
       if (args.flags.has("--reinfer-batch")) {
         if (args.values.has("transition"))
-          return fail("ARGS_INVALID", "--reinfer-batch no admite --transition");
+          return failSemantic({
+            code: "ARGS_INVALID",
+            message: "--reinfer-batch no admite --transition",
+            ...usageAction(verb),
+          });
         return reinferVerb(args, ctx, session);
       }
       if (args.values.has("approval"))
-        return fail("ARGS_INVALID", "--approval en recover exige --reinfer-batch");
+        return failSemantic({
+          code: "ARGS_INVALID",
+          message: "--approval en recover exige --reinfer-batch",
+          ...usageAction(verb),
+        });
       const transition = args.values.get("transition");
       return project(
         await recoverFlowBoundary(ctx.fs, ctx.paths, {
@@ -485,7 +503,11 @@ async function retractVerb(
 ): Promise<CommandResult<FlowResult>> {
   const signal = flagValue(args, "signal")?.trim();
   if (!signal)
-    return fail("ARGS_INVALID", "uso: aw flow retract --session <código> --signal <señal>");
+    return failSemantic({
+      code: "ARGS_INVALID",
+      message: "uso: aw flow retract --session <código> --signal <señal>",
+      ...usageAction("retract"),
+    });
   return project(await retractFlowSignal(ctx.fs, ctx.paths, { ...session, signal, git: ctx.git }));
 }
 
@@ -535,10 +557,11 @@ async function annulVerb(
 ): Promise<CommandResult<FlowResult>> {
   const from = args.values.get("from");
   if (from === undefined) {
-    return fail(
-      "ARGS_INVALID",
-      "uso: aw flow annul --session <código> --from <lote> [--approval <digest>]",
-    );
+    return failSemantic({
+      code: "ARGS_INVALID",
+      message: "uso: aw flow annul --session <código> --from <lote> [--approval <digest>]",
+      ...usageAction("annul"),
+    });
   }
   const approval = args.values.get("approval");
   const annul = { ...session, from, env: ctx.env, executor, git: ctx.git };

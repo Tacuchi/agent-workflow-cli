@@ -40,6 +40,7 @@ export function failSessionResolution(error: SessionResolutionError): CommandRes
   return fail(error.code, error.message, {
     candidates: error.candidates,
     action: error.action,
+    ...(error.choose === undefined ? {} : { choose: error.choose }),
   });
 }
 
@@ -120,8 +121,13 @@ function readNextAction(data: unknown): string | undefined {
   return typeof action === "string" && action.length > 0 ? action : undefined;
 }
 
-export function renderError(error: ErrorEnvelope): string {
-  return `${JSON.stringify({ ok: false, error: redactErrorEnvelope(error) }, null, 2)}\n`;
+export function renderError(error: ErrorEnvelope, data?: Record<string, unknown>): string {
+  const payload = {
+    ok: false,
+    error: redactErrorEnvelope(error),
+    ...(data === undefined ? {} : { data: redactSensitiveValue(data) }),
+  };
+  return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
 export function writeStdout(text: string): void {
@@ -148,8 +154,8 @@ export function writeStderr(text: string): void {
   process.stderr.write(stderrAscii ? toAscii(text) : text);
 }
 
-export function emitError(error: ErrorEnvelope): void {
-  writeStdout(renderError(error));
+export function emitError(error: ErrorEnvelope, data?: Record<string, unknown>): void {
+  writeStdout(renderError(error, data));
 }
 
 export function redactErrorEnvelope(error: ErrorEnvelope): ErrorEnvelope {
