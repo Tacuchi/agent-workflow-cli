@@ -1,5 +1,5 @@
 import type { FlagContract } from "./commands/unknown-flags.js";
-import type { CommandFlags } from "./registry.js";
+import type { CliCommand, FlagHelp, HelpContract } from "./registry.js";
 
 // Help grouping for `aw --help` (Propuesta 002 G4 H-06). Commands are organized by
 // family so users can scan by intent (session lifecycle, checkpoint workflow,
@@ -216,74 +216,133 @@ export function renderGroupedCommandLines(
   return lines;
 }
 
-/**
- * The same flag contract used by the dispatcher drives command and action help.
- * The declared usage is authoritative; historical Usage clauses in `describe`
- * may advertise flags belonging to another action or retired flags.
- */
-export function commandHelpText(
-  command: { name: string; describe?: string; flags?: CommandFlags },
-  action?: string,
-): string {
-  const actions = command.flags?.actions;
-  const selected = action !== undefined && actions?.[action] !== undefined ? action : undefined;
-  const description = command.describe ?? "(sin descripción)";
-  const usageAt = description.indexOf("Usage:");
-  const firstLine = usageAt < 0 ? description : description.slice(0, usageAt).trimEnd();
-  const remainder =
-    usageAt < 0 ? "" : description.slice(usageAt).split("\n").slice(1).join("\n").trim();
-  const lines = [`agent-workflow ${command.name}${selected ? ` ${selected}` : ""}`, "", firstLine];
-  if (command.flags?.usage) {
-    lines.push("", `Usage: ${command.flags.usage.replace(/^Usage:\s*/, "")}`);
-  } else if (usageAt >= 0) {
-    lines.push("", description.slice(usageAt).split("\n")[0] ?? "");
-  }
-  if (actions && selected === undefined) {
-    lines.push("", `Subverbos: ${Object.keys(actions).join(", ")}`);
-  }
-  if (command.flags) lines.push(...renderFlagLines(command.flags, selected));
-  if (remainder) lines.push("", remainder);
-  return `${lines.join("\n")}\n`;
+/** What a help renderer reads of a command: its name, contracts and projections. */
+export type HelpSubject = Pick<CliCommand, "name" | "help" | "flags" | "hook"> &
+  Partial<Pick<CliCommand, "renderHuman" | "renderRawJson">>;
+
+interface HelpScope {
+  contract: FlagContract;
+  help: Readonly<Record<string, FlagHelp>>;
 }
 
-function helpScopes(
-  flags: CommandFlags,
-  selected?: string,
-): { contract: FlagContract; label: string }[] {
-  const scopes = [{ contract: flags as FlagContract, label: "común" }];
-  for (const [name, contract] of Object.entries(flags.actions ?? {})) {
-    if (selected === undefined || selected === name) scopes.push({ contract, label: name });
+/** The flag scopes one invocation reads: the command's own, plus its action's. */
+function scopesOf(command: HelpSubject, action?: string): HelpScope[] {
+  const scopes: HelpScope[] = [{ contract: command.flags, help: command.help.flags ?? {} }];
+  const own = action === undefined ? undefined : command.flags.actions?.[action];
+  if (own !== undefined) {
+    scopes.push({ contract: own, help: command.help.actions?.[action as string]?.flags ?? {} });
   }
   return scopes;
 }
 
-function flagLabel(contract: FlagContract, flag: string, scope: string): string {
-  const modifiers = [
-    contract.required?.includes(flag) ? "obligatorio" : "",
-    contract.exclusive?.some((group) => group.includes(flag)) ? "excluyente" : "",
-    contract.repeatable?.includes(flag) ? "repetible" : "",
-  ].filter(Boolean);
-  return [scope, ...modifiers].join(", ");
+function flagToken(name: string, help: FlagHelp | undefined): string {
+  return help?.value === undefined ? `--${name}` : `--${name} ${help.value}`;
 }
 
-function renderFlagLines(flags: CommandFlags, selected?: string): string[] {
-  const scopes = helpScopes(flags, selected);
-  const byName = new Map<string, string[]>();
-  const lines: string[] = [];
-  for (const { contract, label } of scopes) {
-    for (const flag of contract.known) {
-      byName.set(flag, [...(byName.get(flag) ?? []), flagLabel(contract, flag, label)]);
+/**
+ * The usage line, generated from the flag contract: a required flag bare, an
+ * exclusive group in parentheses, anything else in brackets. It names exactly
+ * the flags the dispatcher accepts for that invocation.
+ */
+export function usageLine(command: HelpSubject, action?: string): string {
+  const selected = action !== undefined && command.flags.actions?.[action] !== undefined;
+  const head = [`aw ${command.name}`];
+  if (selected) head.push(action as string);
+  else if (command.flags.actions !== undefined) head.push("<action>");
+  const args = selected ? command.help.actions?.[action as string]?.args : command.help.args;
+  if (args !== undefined) head.push(args);
+  const parts: string[] = [];
+  for (const { contract, help } of scopesOf(command, selected ? action : undefined)) {
+    const grouped = new Set((contract.exclusive ?? []).flat());
+    for (const group of contract.exclusive ?? []) {
+      parts.push(`(${group.map((name) => flagToken(name, help[name])).join(" | ")})`);
+    }
+    for (const name of contract.known) {
+      if (grouped.has(name)) continue;
+      const token = flagToken(name, help[name]);
+      const repeat = contract.repeatable?.includes(name) ? "..." : "";
+      parts.push(contract.required?.includes(name) ? `${token}${repeat}` : `[${token}]${repeat}`);
     }
   }
-  if (byName.size === 0) return [];
-  lines.push("", "Flags:");
-  for (const [flag, labels] of byName) lines.push(`  --${flag} (${labels.join("; ")})`);
-  for (const { contract } of scopes) {
-    for (const names of contract.exclusive ?? []) {
-      lines.push(`  exactamente uno: ${names.map((name) => `--${name}`).join(" | ")}`);
+  return [...head, ...parts].join(" ");
+}
+
+function flagModifiers(contract: FlagContract, name: string): string {
+  const modifiers = [
+    contract.required?.includes(name) ? "required" : "",
+    contract.exclusive?.some((group) => group.includes(name)) ? "exclusive" : "",
+    contract.repeatable?.includes(name) ? "repeatable" : "",
+  ].filter(Boolean);
+  return modifiers.length === 0 ? "" : ` (${modifiers.join(", ")})`;
+}
+
+function flagLines(command: HelpSubject, action?: string): string[] {
+  const rows: [string, string][] = [];
+  const groups: string[] = [];
+  for (const { contract, help } of scopesOf(command, action)) {
+    for (const name of contract.known) {
+      const entry = help[name];
+      rows.push([flagToken(name, entry), `${entry?.effect ?? ""}${flagModifiers(contract, name)}`]);
     }
+    for (const group of contract.exclusive ?? []) {
+      groups.push(`  exactly one of: ${group.map((name) => `--${name}`).join(" | ")}`);
+    }
+  }
+  if (rows.length === 0) return [];
+  const width = Math.max(...rows.map(([token]) => token.length));
+  return [
+    "",
+    "Flags:",
+    ...rows.map(([token, effect]) => `  ${token.padEnd(width)}  ${effect}`),
+    ...groups,
+  ];
+}
+
+function outputLines(command: HelpSubject, contract: HelpContract): string[] {
+  const lines: string[] = [""];
+  if (contract.output !== undefined) lines.push(`Output (JSON data): ${contract.output}`);
+  lines.push(
+    command.renderRawJson !== undefined
+      ? "Output format: this command keeps its own protocol instead of the common envelope."
+      : command.renderHuman !== undefined
+        ? "Human output: yes (--format human, the default in a terminal)."
+        : "Human output: no; the output is JSON in every mode.",
+  );
+  for (const [code, meaning] of Object.entries(contract.exit_codes ?? {})) {
+    lines.push(`Exit ${code}: ${meaning}`);
+  }
+  if (command.hook === true) {
+    lines.push("Hook target: the host runs it; an unknown flag is reported on stderr and ignored.");
   }
   return lines;
+}
+
+/**
+ * The help of `aw <command> [<action>] --help`, derived from the command's help
+ * contract and from the same flag contract the dispatcher enforces.
+ */
+export function commandHelpText(command: HelpSubject, action?: string): string {
+  const actions = command.help.actions ?? {};
+  const selected =
+    action !== undefined && command.flags.actions?.[action] !== undefined ? action : undefined;
+  const contract = selected === undefined ? command.help : (actions[selected] ?? command.help);
+  const lines = [
+    `aw ${command.name}${selected === undefined ? "" : ` ${selected}`}`,
+    "",
+    contract.purpose,
+    "",
+    `Usage: ${usageLine(command, selected)}`,
+  ];
+  if (selected === undefined && Object.keys(actions).length > 0) {
+    const width = Math.max(...Object.keys(actions).map((name) => name.length));
+    lines.push("", "Actions (aw <command> <action> --help for each):");
+    for (const [name, own] of Object.entries(actions)) {
+      lines.push(`  ${name.padEnd(width)}  ${own.purpose}`);
+    }
+  }
+  lines.push(...flagLines(command, selected), ...outputLines(command, contract));
+  for (const note of contract.notes ?? []) lines.push("", note);
+  return `${lines.join("\n")}\n`;
 }
 
 /**

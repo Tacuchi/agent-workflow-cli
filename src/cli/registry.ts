@@ -24,13 +24,45 @@ export interface CommandFlags extends FlagContract {
    * accept a flag only another action reads.
    */
   actions?: Readonly<Record<string, ActionFlags>>;
-  /** The invocation the refusal suggests retrying with. */
-  usage?: string;
   /**
    * The refusal for a command whose public contract is not the CLI-wide
    * `{ ok, error }` envelope, so it keeps its own protocol and exit code.
    */
   refuse?(message: string): CommandResult;
+}
+
+/** What `--help` says about one flag. */
+export interface FlagHelp {
+  /** Placeholder of its value, e.g. `<code>` or `human|json`; absent for a switch. */
+  value?: string;
+  /** What passing it does. */
+  effect: string;
+}
+
+/**
+ * The help of a command or of one of its actions: everything an agent needs to
+ * invoke it and read its output, in English. The usage line is generated from
+ * it and from the flag contract, so it can never name a flag the command
+ * refuses.
+ */
+export interface HelpContract {
+  /** One sentence: what it is for. A command's purpose is also its line in `aw --help`. */
+  purpose: string;
+  /** Positional arguments as the usage line shows them, e.g. `<plan>`. */
+  args?: string;
+  /** One entry per flag this scope declares in its contract. */
+  flags?: Readonly<Record<string, FlagHelp>>;
+  /** Shape of the JSON `data` on success. A command whose actions carry it may omit it. */
+  output?: string;
+  /** Exit codes that differ from the common contract, keyed by code. */
+  exit_codes?: Readonly<Record<string, string>>;
+  /** Protocol details the flags alone do not say, one paragraph each. */
+  notes?: readonly string[];
+}
+
+export interface CommandHelp extends HelpContract {
+  /** One contract per action (the command's first positional). */
+  actions?: Readonly<Record<string, HelpContract>>;
 }
 
 export interface HumanRenderContext {
@@ -40,7 +72,13 @@ export interface HumanRenderContext {
 
 export interface CliCommand<O = unknown> {
   name: string;
-  describe?: string;
+  help: CommandHelp;
+  /**
+   * The host runs it as a hook. `aw --help` lists hook targets apart from the
+   * commands an agent calls; `mode: "warn"` alone does not say it, since stdio
+   * servers warn too.
+   */
+  hook?: true;
   /** Every flag the command reads, checked once by the dispatcher before `execute`. */
   flags: CommandFlags;
   execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<O>>;

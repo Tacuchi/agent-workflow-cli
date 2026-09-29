@@ -27,6 +27,7 @@ const MULTIROOT_FLAGS = {
     "skip-warp",
     "skip-oz",
   ],
+  repeatable: ["path"],
 };
 
 function buildInput(args: ParsedArgs): MultirootInput {
@@ -51,10 +52,24 @@ function buildInput(args: ParsedArgs): MultirootInput {
 export const attachMultirootCommand: CliCommand = {
   name: "attach-multiroot",
   flags: MULTIROOT_FLAGS,
-  describe:
-    "Configura visibilidad multi-root en Claude Code y Codex CLI. " +
-    "Usage: aw attach-multiroot [--path <dir> ...] [--paths <csv>] [--workspace <dir>] " +
-    "[--from-sources] [--global] [--dry-run] [--skip-claude] [--skip-codex] [--skip-warp] [--skip-oz].",
+  help: {
+    purpose:
+      "Register directories as multi-root paths in the hosts' settings so agents can see them.",
+    flags: {
+      path: { value: "<dir>", effect: "Directory to register." },
+      paths: { value: "<csv>", effect: "Directories to register, comma separated." },
+      "from-sources": { effect: "Use the workspace's declared sources as the directories." },
+      global: { effect: "Work on each host's global scope instead of the workspace." },
+      "dry-run": { effect: "Report the change without writing." },
+      workspace: { value: "<dir>", effect: "Workspace whose host settings change." },
+      "skip-claude": { effect: "Leave Claude Code untouched." },
+      "skip-codex": { effect: "Leave Codex CLI untouched." },
+      "skip-warp": { effect: "Leave Warp untouched." },
+      "skip-oz": { effect: "Leave Oz untouched." },
+    },
+    output:
+      "{scope (global|workspace), scope_dir, paths_input[], claude, codex, warp, oz, dry_run?, materialization?}; each host entry is its result or {skipped: true}. An unusable input returns {error, hint?} with ok true.",
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     return await runPublicMultiroot(ctx, "attach", buildInput(args));
   },
@@ -63,10 +78,23 @@ export const attachMultirootCommand: CliCommand = {
 export const detachMultirootCommand: CliCommand = {
   name: "detach-multiroot",
   flags: MULTIROOT_FLAGS,
-  describe:
-    "Quita visibilidad multi-root previamente configurada. " +
-    "Usage: aw detach-multiroot [--path <dir> ...] [--paths <csv>] [--workspace <dir>] " +
-    "[--from-sources] [--global] [--dry-run] [--skip-claude] [--skip-codex] [--skip-warp] [--skip-oz].",
+  help: {
+    purpose: "Remove multi-root paths previously registered in the hosts' settings.",
+    flags: {
+      path: { value: "<dir>", effect: "Directory to remove." },
+      paths: { value: "<csv>", effect: "Directories to remove, comma separated." },
+      "from-sources": { effect: "Use the workspace's declared sources as the directories." },
+      global: { effect: "Work on each host's global scope instead of the workspace." },
+      "dry-run": { effect: "Report the change without writing." },
+      workspace: { value: "<dir>", effect: "Workspace whose host settings change." },
+      "skip-claude": { effect: "Leave Claude Code untouched." },
+      "skip-codex": { effect: "Leave Codex CLI untouched." },
+      "skip-warp": { effect: "Leave Warp untouched." },
+      "skip-oz": { effect: "Leave Oz untouched." },
+    },
+    output:
+      "{scope (global|workspace), scope_dir, paths_input[], claude, codex, warp, oz, dry_run?, materialization?}; each host entry is its result or {skipped: true}. An unusable input returns {error, hint?} with ok true.",
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     return await runPublicMultiroot(ctx, "detach", buildInput(args));
   },

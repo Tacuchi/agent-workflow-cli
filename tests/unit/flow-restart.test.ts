@@ -17,6 +17,7 @@ import { semanticDigest } from "../../src/application/semantic-operation/protoco
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { readCustody } from "../../src/application/session-custody-service.js";
 import { flowCommand } from "../../src/cli/commands/flow.js";
+import { commandHelpText } from "../../src/cli/help-groups.js";
 import {
   FLOW_RUN_STATE_VERSION,
   type FlowRunState,
@@ -230,8 +231,8 @@ describe("aw flow restart — los siete estados trabados salen por el verbo", ()
   });
 
   it("aw flow restart está en la ayuda con su uso", () => {
-    expect(flowCommand.describe).toContain("restart");
-    expect(flowCommand.describe).toContain("aw flow restart --session <código>");
+    expect(commandHelpText(flowCommand)).toContain("restart");
+    expect(commandHelpText(flowCommand, "restart")).toContain("Usage: aw flow restart");
   });
 });
 

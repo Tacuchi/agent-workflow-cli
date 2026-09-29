@@ -4,9 +4,17 @@ import { fail } from "../render.js";
 
 export const historyCommand: CliCommand = {
   name: "history",
-  flags: { known: [], usage: "aw history reconcile" },
-  describe:
-    "Read-only comparison of HISTORY and local session folders. Usage: aw history reconcile.",
+  flags: { known: [], actions: { reconcile: { known: [] } } },
+  help: {
+    purpose: "Check the workspace history file against the local session folders.",
+    actions: {
+      reconcile: {
+        purpose:
+          "List sessions missing from the history file and rows that contradict their folder.",
+        output: "{missing_rows[], contradictory_rows[] ({session, state, reason})}. Read-only.",
+      },
+    },
+  },
   async execute(args, ctx) {
     if (args.rest[0] !== "reconcile" || args.rest.length !== 1) {
       return fail("INVALID_INPUT", "uso: aw history reconcile");

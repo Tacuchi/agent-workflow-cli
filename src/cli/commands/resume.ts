@@ -14,7 +14,18 @@ import type { CliContext } from "../types.js";
 export const resumeCommand: CliCommand<ResumeOutcome> = {
   name: "resume",
   flags: { known: ["code"] },
-  describe: `Qué retomar y con qué comando exacto, derivado del pipeline documental. Read-only: propone la ruta, nunca la ejecuta. Usage: aw resume [<${DEFAULT_CORE_DOCS_CANON.spec}|${DEFAULT_CORE_DOCS_CANON.plan} path | número>] [--code <sesión>] [--format human|json] [--detail].`,
+  help: {
+    purpose: "Say what to resume next and the exact command that re-enters it.",
+    args: `[<${DEFAULT_CORE_DOCS_CANON.spec}|${DEFAULT_CORE_DOCS_CANON.plan} path|number>]`,
+    flags: {
+      code: { value: "<code>", effect: "Resume this session; not with a positional document." },
+    },
+    output:
+      "{status: proposal|candidates|idle, proposal? {kind, file, number, objective, progress, next, action, command, warning?}, candidates[]?, action?, ready_to_close[]?, paused_sessions[]?, abandoned_sessions[]?, unreadable_sources[]?, isolation_error?}.",
+    notes: [
+      "Read-only: it proposes the route and never runs it. Without a target it derives the priority from the document pipeline. An unresolvable target fails with RESUME_TARGET_INVALID.",
+    ],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ResumeOutcome>> {
     const target = args.rest[0];

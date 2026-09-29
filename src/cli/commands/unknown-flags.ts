@@ -1,4 +1,5 @@
 import type { CommandResult } from "../../domain/types.js";
+import { usageLine } from "../help-groups.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand, CommandFlags, FlagMode } from "../registry.js";
 import { fail } from "../render.js";
@@ -138,7 +139,10 @@ export function gateFlags(command: CliCommand, args: ParsedArgs): FlagGate {
   if (command.flags.refuse !== undefined) {
     return { kind: "refuse", result: command.flags.refuse(message) };
   }
-  const usage = command.flags.usage ?? `aw ${command.name} --help`;
+  const usage = usageLine(
+    command,
+    command.flags.actions?.[args.rest[0] ?? ""] ? args.rest[0] : undefined,
+  );
   return {
     kind: "refuse",
     result: fail("UNKNOWN_FLAG", message, {

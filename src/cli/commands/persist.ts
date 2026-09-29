@@ -20,11 +20,42 @@ type PersistData =
 
 export const persistCommand: CliCommand<PersistData> = {
   name: "persist",
-  flags: { known: ["approval"] },
-  describe:
-    "Adopta trabajo terminado de la conversación en docs/ (research | spec | plan) en una sola operación. " +
-    "El CLI resuelve inventario, duplicados, numeración, destino y escritura; la IA solo clasifica y redacta. " +
-    "Adjuntos binarios: decisions.attachments [{source, path}], digest sha256 de bytes incluido en la aprobación. Usage: aw persist prepare | validate | apply --approval <digest> (validate/apply leen la respuesta por stdin).",
+  flags: {
+    known: ["approval"],
+    actions: { prepare: { known: [] }, validate: { known: [] }, apply: { known: [] } },
+  },
+  help: {
+    purpose:
+      "Adopt work from the conversation into docs/ (publish a document) as research, a spec or a plan.",
+    flags: {
+      approval: {
+        value: "<digest>",
+        effect: "apply only, where it is required: the approval_digest validate returned.",
+      },
+    },
+    actions: {
+      prepare: {
+        purpose:
+          "Build the semantic request: inventory, allowed destinations, read set and limits.",
+        output:
+          "{stage: prepare, request {operation, input_digest, contract, inventory, allowed_destinations[], limits, read_set[], metrics}}. Read-only.",
+      },
+      validate: {
+        purpose:
+          "Check the classified and drafted response from stdin and preview what would be written.",
+        output:
+          "{stage: validate, preview {category, mode: new|update, destination, bytes, target, lineage?, attachments[]?}, approval_digest}. Writes nothing.",
+      },
+      apply: {
+        purpose:
+          "Write the approved response from stdin into docs/ under the numbering the CLI assigns.",
+        output: "{stage: apply, written[], category, mode: new|update}.",
+      },
+    },
+    notes: [
+      "The CLI owns inventory, duplicates, numbering, destination and the write; the agent only classifies and drafts. Each stage rebuilds the request from the workspace, so a docs/ that moved changes the digest. validate and apply read the response JSON on stdin; binary attachments go in decisions.attachments [{source, path}] and their byte digest is part of the approval.",
+    ],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<PersistData>> {
     const stage = args.rest[0];

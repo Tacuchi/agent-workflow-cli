@@ -24,7 +24,7 @@ import {
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
-import type { CliCommand, CommandFlags, HumanRenderContext } from "../registry.js";
+import type { CliCommand, CommandFlags, CommandHelp, HumanRenderContext } from "../registry.js";
 import { fail, failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
@@ -37,14 +37,14 @@ type ExportData =
       commit_proposal_error?: string;
     } & ExportApplied);
 
-const DESCRIBES: Record<ExportCategory, string> = {
+const PURPOSES: Record<ExportCategory, string> = {
   diagrams:
-    "Publica un dossier de diagramas (README + fuente textual sin notación obligatoria) en docs/diagrams.",
+    "Publish a diagram dossier (README plus textual sources in any notation) to docs/diagrams.",
   manuals:
-    "Publica manuales en docs/manuals o [docs] manuals: sólo INDEX.md (complement), archivos planos <slug>.md o un dossier numerado; reemplazar un archivo exige --overwrite.",
-  reports: "Publica un informe acotado en docs/reports.",
+    "Publish manuals to docs/manuals or [docs] manuals: an INDEX.md alone (complement), flat <slug>.md files or a numbered dossier.",
+  reports: "Publish one bounded report to docs/reports.",
   scripts:
-    "Consolida SQL en docs/scripts con cinco categorías de forwards y rollbacks en rollback/. NUNCA ejecuta SQL. --catalog <conexión> verifica opcionalmente tablas y columnas en solo lectura; --from sessions|bundles|workspace, --exclude <nombre> y --environment <ambiente> componen el origen. La base por defecto son las sesiones.",
+    "Consolidate SQL into a docs/scripts bundle: five forward categories plus rollbacks under rollback/; it NEVER executes SQL.",
 };
 
 /**
@@ -62,23 +62,15 @@ const DESCRIBES: Record<ExportCategory, string> = {
  * bundle's context budget is a frozen gate and this is reference material: it
  * is read while composing an answer, not on every run.
  */
-const ENVELOPE = [
-  "Sobre de `validate` / `apply` — un único objeto JSON por stdin, con sus campos en el NIVEL SUPERIOR:",
-  "",
-  "  obligatorio     version: el número que el request trae en 'version'.",
-  "                  operation: 'export-<categoría>', copiado del request.",
-  "                  input_digest: el 'input_digest' del request, copiado tal cual.",
-  "                  state: proposed | ambiguous | unsupported.",
-  "",
-  "  proposed        artifacts: [{path, content}] — cada path dentro del destino que el request declara en 'allowed_destinations'.",
-  "                  En scripts: decisions: {supersedes: [nombres], requires: [nombres]}. El CLI genera bundle.json con esos nombres y cada archivo del origen, lo incluye en la vista previa y en el approval. No lo envíes en artifacts.",
-  "                  scope: el 'scope' del request, copiado TAL CUAL, incluido scope.seal por clave. Es el alcance preparado —también catalog cuando se pidió—: validate y apply lo leen en vez de re-derivarlo; no hace falta repetir los flags de alcance. Una clave añadida, quitada o distinta se rechaza nombrándola.",
-  "",
-  "  ambiguous       reason: por qué no se puede decidir. No se escribe nada.",
-  "  unsupported     reason: por qué la operación no aplica. No se escribe nada.",
-  "",
-  "  aprobación      --approval <digest> con el 'approval_digest' que devolvió validate — viaja como flag, no dentro del sobre.",
-].join("\n");
+const ENVELOPE_NOTES = [
+  "Envelope: one JSON object on stdin, fields at the TOP level. Required: version (the request's version), operation ('export-<category>', copied from the request), input_digest (the request's input_digest, verbatim), state (proposed | ambiguous | unsupported).",
+  "proposed: artifacts [{path, content}], each path inside the request's allowed_destinations. scope: the request's scope copied VERBATIM, including scope.seal per key; it is the prepared scope (catalog too when requested), so validate and apply read it instead of re-deriving it and the scope flags need not be repeated. An added, removed or different key is rejected by name.",
+  "ambiguous / unsupported: reason, why it cannot be decided or does not apply. Nothing is written.",
+] as const;
+
+/** export-scripts only: the bundle manifest is the CLI's, never an artifact. */
+const SCRIPTS_ENVELOPE_NOTE =
+  "scripts: decisions {supersedes: [names], requires: [names]}. The CLI generates bundle.json from those names and every source file, and includes it in the preview and the approval; never send it in artifacts.";
 
 /**
  * The four exports are the same command with a different policy: same stages,
@@ -109,13 +101,88 @@ function exportFlags(category: ExportCategory): CommandFlags {
   };
 }
 
+function exportHelp(category: ExportCategory): CommandHelp {
+  const envelope =
+    category === "scripts" ? [...ENVELOPE_NOTES, SCRIPTS_ENVELOPE_NOTE] : ENVELOPE_NOTES;
+  return {
+    purpose: PURPOSES[category],
+    flags: {
+      sessions: { value: "<a,b>", effect: "Only the material of these sessions, comma separated." },
+      since: { value: "<YYYY-MM-DD>", effect: "Only sessions from this date on." },
+      source: { value: "<alias>", effect: "Only the material of this source." },
+      date: {
+        value: "<YYYY-MM-DD>",
+        effect: "Day that names the published unit; defaults to today.",
+      },
+      ...(category === "scripts"
+        ? {
+            from: {
+              value: "<sessions|bundles|workspace>",
+              effect:
+                "Base of the material: session SQL (default), the bundles docs/scripts already published, or everything the workspace holds.",
+            },
+            exclude: {
+              value: "<name>",
+              effect: "Leave this piece out of the material, by its inventory name.",
+            },
+            environment: {
+              value: "<environment>",
+              effect:
+                "Destination environment: bundles the release book records as applied there drop out.",
+            },
+            code: {
+              value: "<code>",
+              effect: "Active session that owns the bundle number reservation.",
+            },
+            catalog: {
+              value: "<connection>",
+              effect: "Check tables and columns read-only against this database connection.",
+            },
+          }
+        : {}),
+    },
+    notes: [
+      "Stages: prepare returns the request; the agent answers it; validate checks the answer and returns the approval digest; apply publishes with that digest. Each stage rebuilds the request from the workspace, so a session that moved meanwhile makes the answer stale. It writes ONLY to its own folder and never creates a session.",
+    ],
+    actions: {
+      prepare: {
+        purpose:
+          "Build the export request: destination, material inventory, contract and input digest; writes nothing.",
+        output:
+          '{stage: "prepare", prepared {category, request (the semantic request: version, operation, input_digest, scope, allowed_destinations, inventory, read_set, contract, metrics), dir, scope, next, unit, ...}}.',
+      },
+      validate: {
+        purpose:
+          "Check the answer envelope from stdin and return its preview and approval digest; writes nothing.",
+        output:
+          '{stage: "validate", preview {category, destination, files[] ({path, bytes}), overwrites, replacements?, mode?, unverified?}, approval_digest}.',
+        notes: envelope,
+      },
+      apply: {
+        purpose:
+          "Publish the validated answer from stdin, approved by the digest validate returned.",
+        flags: {
+          approval: {
+            value: "<digest>",
+            effect: "The approval_digest validate returned; a flag, never inside the envelope.",
+          },
+          ...(category === "manuals"
+            ? { overwrite: { effect: "Allow replacing an existing manual file; never implicit." } }
+            : {}),
+        },
+        output:
+          '{stage: "apply", category, written[], commit_proposal? (the workspace commit offer for the written paths), commit_proposal_error?}.',
+        notes: ["The same envelope validate accepted goes on stdin again."],
+      },
+    },
+  };
+}
+
 function exportCommand(category: ExportCategory): CliCommand<ExportData> {
   return {
     name: `export-${category}`,
     flags: exportFlags(category),
-    describe: `${DESCRIBES[category]} Escribe SOLO en su carpeta y nunca crea una sesión. Usage: aw export-${category} prepare | validate | apply --approval <digest>${category === "manuals" ? " [--overwrite]" : ""} [--sessions <a,b>] [--since <YYYY-MM-DD>] [--source <alias>] [--date <YYYY-MM-DD>]${category === "scripts" ? " [--code <sesión>] [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>] [--catalog <conexión>]" : ""}.
-
-${ENVELOPE}`,
+    help: exportHelp(category),
 
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ExportData>> {
       const stage = args.rest[0];

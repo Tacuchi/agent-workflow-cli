@@ -43,15 +43,100 @@ export const releasePassCommand: CliCommand = {
   flags: {
     known: ["version"],
     actions: {
-      declare: { known: ["sources", "plans", "cause"] },
-      arrived: { known: ["source", "kind", "detail", "date"] },
-      applied: { known: ["environment", "detail", "date"] },
+      list: { known: [] },
+      declare: { known: ["sources", "plans", "cause"], required: ["sources"] },
+      arrived: {
+        known: ["source", "kind", "detail", "date"],
+        required: ["source", "kind", "detail"],
+      },
+      applied: { known: ["environment", "detail", "date"], required: ["environment", "detail"] },
       revert: { known: ["cause"] },
-      link: { known: ["artifact"] },
+      link: { known: ["artifact"], required: ["artifact"] },
     },
   },
-  describe:
-    "Passes to production as first-class objects: which plans travelled together, over which sources, and whether each source actually arrived. 'release-pass declare --version <v> --sources <a,b>' opens one — the version NAMES it and is not any source's arrival fact, and the order between passes is the book's sequence, never a comparison of names. 'release-pass arrived --source <alias> --kind <…> --detail <hecho>' registers one source's arrival; with a second source still missing the pass reads partially released, naming both, and the missing source's work never reads as released. 'release-pass applied --environment <ambiente> --detail <hecho>' registers that the pass ran there (its SQL or deployment) — its own axis, never a fourth arrival kind, so the release axis does not move and a pass with no such record reads as NO RECORD rather than as nothing applied. 'release-pass revert' adds a reversion that never erases the arrivals it follows. 'release-pass link --artifact <ruta>' attaches a document by workspace-relative path, checking only that it exists — never opening, moving, renumbering or executing it. The book is append-only under the workspace namespace. Usage: aw release-pass [list] | declare | arrived | applied | revert | link.",
+  help: {
+    purpose:
+      "Record passes to production: which plans travelled together, over which sources, and whether each source arrived.",
+    flags: {
+      version: {
+        value: "<v>",
+        effect: "Name of the pass; required by every action but list, where it filters.",
+      },
+    },
+    actions: {
+      list: {
+        purpose:
+          "Read the passes back with their derived standing; the default when no action is given.",
+        output:
+          "{path, passes[] ({pass {version, plans[], sources[]}, declared_at, sequence, arrivals[], reverted, artifacts[], standing {state, arrived[], missing[]}, ...}), records, unreadable}.",
+        notes: ["An unknown --version fails with RELEASE_PASS_UNKNOWN."],
+      },
+      declare: {
+        purpose: "Open a pass over a set of sources.",
+        flags: {
+          sources: { value: "<alias,...>", effect: "Sources the pass must arrive at." },
+          plans: { value: "<NNN,...>", effect: "Plans travelling in the pass, by number or path." },
+          cause: { value: "<text>", effect: "Why the pass is declared." },
+        },
+        output: "{declared: true, at, version, pass, path}.",
+        notes: [
+          "The version names the pass and is not any source's arrival fact. The order between passes is the book's sequence, never a comparison of names.",
+        ],
+      },
+      arrived: {
+        purpose: "Register that one source of a declared pass arrived in production.",
+        flags: {
+          source: { value: "<alias>", effect: "Source that arrived." },
+          kind: {
+            value: "<published-version|deployment|production-branch>",
+            effect: "The fact that constitutes the arrival.",
+          },
+          detail: {
+            value: "<fact>",
+            effect: "The concrete fact, e.g. the published version or deploy id.",
+          },
+          date: { value: "<iso>", effect: "When it arrived; defaults to now." },
+        },
+        output: "{arrived, at, version, pass, path}.",
+        notes: [
+          "With another source still missing the pass reads partially-released, and the missing source's work never reads as released.",
+        ],
+      },
+      applied: {
+        purpose: "Register that the pass ran against an environment (its SQL or deployment).",
+        flags: {
+          environment: { value: "<environment>", effect: "Environment the pass ran in." },
+          detail: { value: "<fact>", effect: "What was run there." },
+          date: { value: "<iso>", effect: "When it ran; defaults to now." },
+        },
+        output: "{applied, at, version, pass, path}.",
+        notes: [
+          "Its own axis, never an arrival kind: the release axis does not move, and a pass without such a record reads as no record rather than as nothing applied.",
+        ],
+      },
+      revert: {
+        purpose: "Add a reversion to a pass without erasing the arrivals it follows.",
+        flags: { cause: { value: "<text>", effect: "Why the pass is reverted." } },
+        output: "{reverted: true, at, version, pass, path}.",
+      },
+      link: {
+        purpose: "Attach a workspace document to a pass by its relative path.",
+        flags: {
+          artifact: {
+            value: "<relative-path>",
+            effect: "Document to attach; only its existence is checked.",
+          },
+        },
+        output: "{linked, at, version, pass, path}.",
+        notes: [
+          "The document is never opened, moved, renumbered or executed. A missing one fails with RELEASE_PASS_ARTIFACT_ABSENT.",
+        ],
+      },
+    },
+    notes: [
+      "The book is append-only under the workspace namespace. Nothing checks the world: an arrival is a declared fact. Writing against an undeclared version fails with RELEASE_PASS_UNKNOWN.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verb = args.rest[0] ?? "list";
     try {

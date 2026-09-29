@@ -31,16 +31,36 @@ import type { CliContext } from "../types.js";
 // came back as a clean close.
 const FLAGS: CommandFlags = {
   known: ["code", "refs", "force", "abandon", "with-evidence"],
-  usage: "aw session-close --code <sesión> [--refs <csv>] [--force] [--abandon] [--with-evidence]",
+  required: ["code"],
 };
 
 export const sessionCloseCommand: CliCommand = {
   name: "session-close",
   flags: FLAGS,
-  describe:
-    "Close a session: write the .closed marker, release the conversation bindings pointing at it and upsert its HISTORY.md row. " +
-    "A session whose flow run is still walking closes with the run finished at the boundary it stood on. " +
-    "Usage: aw session-close --code <session> [--refs <csv>].",
+  help: {
+    purpose:
+      "Close a session: write its closed marker, release the conversation bindings on it and record its HISTORY.md row.",
+    flags: {
+      code: { value: "<code>", effect: "Session to close; closing always names its target." },
+      refs: {
+        value: "<csv>",
+        effect: "References for the HISTORY row, as kind:value pairs; free text renders as-is.",
+      },
+      force: {
+        effect: "Close although the session is incomplete (open tasks or checkpoint placeholders).",
+      },
+      abandon: { effect: "Close the session as abandoned instead of closed; implies --force." },
+      "with-evidence": {
+        effect: "Copy the scratchpad files the session cites into its versioned minimum.",
+      },
+    },
+    output:
+      "{code, folder, closed, checkpoint_path, backlog_path, refs?, history?, history_error?, bindings_invalidated, pending_integration[]?, released_*[]?, reservations_released[]?, sql_pending_export?, archive_paths[]?, commit_proposal?, commit_receipt?, scratch_references[]?, evidence_copied[]?, pending_work[]?, reopen?, run? {closed_at, finalize}, ...}.",
+    notes: [
+      "A session whose flow run is still walking closes with the run finished at the boundary it stood on; the output then carries run and reopen.",
+      "Closing never integrates nor discards an isolation unit: pending_integration lists each unit with the command that integrates it.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCloseInput = {};
     const code = args.values.get("code");

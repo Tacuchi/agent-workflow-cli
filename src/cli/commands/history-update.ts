@@ -12,17 +12,30 @@ import { reviewFlags } from "./unknown-flags.js";
 const FLAGS: CommandFlags = {
   known: ["code", "state", "session", "sesion", "date", "refs"],
   retired: ["summary"],
-  usage:
-    "aw history-update --code <sesión> --state <active|closed|abierta|activa|cerrada|pausada|abandonada>",
+  required: ["code", "state"],
 };
 
 export const historyUpdateCommand: CliCommand = {
   name: "history-update",
   flags: FLAGS,
-  describe:
-    "Upsert a row in the workspace history file. " +
-    "Usage: aw history-update [--code <session>] [--session <n>] [--state <estado>] " +
-    "[--refs <csv>] [--date <iso>].",
+  help: {
+    purpose: "Insert or update one session's row in the workspace history file.",
+    flags: {
+      code: { value: "<code>", effect: "Session whose row is written." },
+      state: {
+        value: "<active|closed|paused|abandoned>",
+        effect: "State recorded in the row; legacy localized aliases are also accepted.",
+      },
+      session: { value: "<name>", effect: "Session name recorded in the row." },
+      sesion: { value: "<name>", effect: "Legacy alias of --session." },
+      date: { value: "<iso>", effect: "Date recorded in the row instead of today." },
+      refs: { value: "<csv>", effect: "Comma-separated references recorded in the row." },
+    },
+    output: "{code, flow, action, state, ignored_flags[]?}.",
+    notes: [
+      "--summary is retired: it is accepted, does nothing and is reported in ignored_flags. A code that resolves to no single session is refused with the candidates.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     // The dispatcher already refused an unknown flag; a retired one reaches
     // here and is reported back instead of dropped.

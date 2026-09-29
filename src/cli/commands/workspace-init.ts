@@ -25,9 +25,38 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
       "dry-run",
       "untrack",
     ],
+    repeatable: ["source", "fuente", "working-branch", "qa-branch"],
   },
-  describe:
-    "Materialize the minimal Workline runtime in the resolved directory, or configure sources when --source is supplied. Without sources it creates only the sessions marker and the Git runtime ignore block when applicable. With sources it reconciles the WORKSPACE block, branches and multi-root visibility. Usage: aw workspace-init [--source alias:path[:rama] (repeatable, 1+)] [--working-branch alias:rama] [--qa-branch alias:rama] [--proyecto <name>] [--main-branch <branch>] [--workspace <dir>] [--dry-run] [--format human|json] [--detail].",
+  help: {
+    purpose:
+      "Materialize the minimal Workline runtime in a directory, or configure its sources when --source is given.",
+    flags: {
+      workspace: { value: "<dir>", effect: "Directory to initialize instead of the resolved one." },
+      proyecto: { value: "<name>", effect: "Project name recorded in the WORKSPACE block." },
+      source: {
+        value: "<alias:path[:branch]>",
+        effect: "Declare a source with its path and optional main branch.",
+      },
+      fuente: {
+        value: "<alias:path[:branch]>",
+        effect: "Alias of --source, kept for compatibility.",
+      },
+      "main-branch": { value: "<branch>", effect: "Default main branch for the declared sources." },
+      "working-branch": {
+        value: "<alias:branch>",
+        effect: "Working branch of one source, recorded in the Status block.",
+      },
+      "qa-branch": { value: "<alias:branch>", effect: "QA branch of one source." },
+      "dry-run": { effect: "Preview every effect without writing." },
+      untrack: { effect: "Remove the runtime paths Git still tracks from its index." },
+    },
+    output:
+      "{ok, dry_run, workspace, sources, source_actions[]? {alias, action, error?}, scaffold, materialization, untrack?, skills_toml (created|exists|skipped), project_md, attach_multiroot, detached_removed?}.",
+    notes: [
+      "Without sources it creates only the sessions marker and, in a Git repository, the runtime ignore block. With sources it reconciles the WORKSPACE block, the branches and the multi-root visibility; re-running is idempotent.",
+      "A partial failure returns ok:false with error code WORKSPACE_INIT_FAILED and the full data.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceInitResult>> {
     // Canonical flag is --source; --fuente kept as a back-compat alias.
     const sourcesRaw = [

@@ -28,10 +28,7 @@ import type { CliCommand, CommandFlags } from "../registry.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const FLAGS: CommandFlags = {
-  known: ["apply", "renumber"],
-  usage: "aw workspace-migrate [--renumber] [--apply]",
-};
+const FLAGS: CommandFlags = { known: ["apply", "renumber"] };
 
 export interface MigratePreviewOutput extends WorkspaceMigrationPreview {
   action: "preview";
@@ -61,11 +58,21 @@ export type WorkspaceMigrateOutput =
 export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
   name: "workspace-migrate",
   flags: FLAGS,
-  describe:
-    "Pone al día un workspace con serie legacy: renombra los marcadores del bloque de proyecto al namespace vigente, " +
-    "siembra los centinelas de cierre que el histórico ya declara y reserva los números legacy en el registro durable. " +
-    "Sin --apply no escribe nada: muestra qué va a pasar. Una sesión sobre la que el histórico y el disco se contradicen " +
-    "queda intacta y se reporta. Usage: aw workspace-migrate [--apply].",
+  help: {
+    purpose:
+      "Bring a workspace with a legacy session series up to the current model: markers, closing sentinels and reserved numbers.",
+    flags: {
+      apply: {
+        effect: "Write the migration under the workspace lock; without it nothing is written.",
+      },
+      renumber: { effect: "Instead, renumber colliding session folders (preview unless --apply)." },
+    },
+    output:
+      "{action: preview, workspace, markers[], sentinels[], rows[], conflicts[], legacy[], next_correlative, pending, next} | {action: apply, workspace, markers_renamed[], duplicates_dropped[], sentinels_seeded[], rows_seeded[], rows_without_date[], conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
+    notes: [
+      "Renames the project block markers to the current namespace, seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
+    ],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceMigrateOutput>> {
     if (args.flags.has("--renumber")) {

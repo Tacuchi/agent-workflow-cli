@@ -30,11 +30,29 @@ const defaultConfirm: ConfirmFn = async (message) => {
 export function createGitFlowCommand(confirm: ConfirmFn = defaultConfirm): CliCommand {
   return {
     name: "git-flow",
-    flags: { known: ["source", "all", "target", "dry-run"] },
-    describe:
-      "Run a per-source git flow. Usage: aw git-flow <sync|to-dev|to-qa|to-prod> " +
-      "[--source <alias>]... [--all] [--target <branch>] [--dry-run]. " +
-      "Publishing in PROD asks the person in an interactive terminal.",
+    flags: { known: ["source", "all", "target", "dry-run"], repeatable: ["source"] },
+    help: {
+      purpose:
+        "Run a per-source git flow: sync the working branch, or promote it to dev, QA or PROD.",
+      args: "<sync|to-dev|to-qa|to-prod>",
+      flags: {
+        source: { value: "<alias>", effect: "Source to run the flow on." },
+        all: { effect: "Run the flow on every declared source; not valid for to-prod." },
+        target: {
+          value: "<branch>",
+          effect: "Branch to work on instead of the declared one; only with a single --source.",
+        },
+        "dry-run": { effect: "Plan and report the steps without running them." },
+      },
+      output:
+        "{action, dry_run, status (ok|conflict|error), results[] {source, status, steps[] {step, status, detail?, preview?}, paused_at?, merge_origin?, conflicted_files[]?, error?}, error?, consent_required? {sources[], plan}}.",
+      exit_codes: {
+        "2": "A merge stopped on a conflict: resolve it, commit and re-run the same action.",
+      },
+      notes: [
+        "Publishing in PROD shows the preview and asks the person in an interactive terminal; no flag stands in for that answer, and a non-attributable invocation is refused with GIT_FLOW_NEEDS_PERSON.",
+      ],
+    },
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
       const action = args.rest[0];
       if (!action || !ACTIONS.has(action)) {

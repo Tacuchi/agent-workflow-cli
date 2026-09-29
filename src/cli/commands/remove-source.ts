@@ -8,8 +8,13 @@ import type { CliContext } from "../types.js";
 export const removeSourceCommand: CliCommand = {
   name: "remove-source",
   flags: { known: [] },
-  describe:
-    "Remove a source from the workspace: detach multi-root visibility and prune the WORKSPACE block (Fuentes + working/qa branches). Does NOT delete the repo or alter legacy local artifacts. Usage: aw remove-source <alias>.",
+  help: {
+    purpose:
+      "Remove a source from the workspace: detach its multi-root visibility and prune it from the WORKSPACE block.",
+    args: "<alias>",
+    output: "{alias, path, materialization?}.",
+    notes: ["It never deletes the repository nor alters its local artifacts."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const alias = args.rest[0];
     if (!alias) {

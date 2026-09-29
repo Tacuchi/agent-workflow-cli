@@ -8,13 +8,21 @@ import { fail } from "../render.js";
 
 export const workspaceMoveCommand: CliCommand<WorkspaceMoveResult> = {
   name: "workspace-move",
-  flags: {
-    known: ["repair", "from", "dry-run"],
-    usage:
-      "aw workspace-move <destino> [--dry-run] | aw workspace-move --repair [--from <ruta vieja>] [--dry-run]",
+  flags: { known: ["repair", "from", "dry-run"] },
+  help: {
+    purpose: "Move a workspace and repair its references, or repair one that was moved by hand.",
+    args: "[<destination>]",
+    flags: {
+      repair: { effect: "Repair a workspace already moved by hand; takes no destination." },
+      from: {
+        value: "<old-path>",
+        effect: "With --repair, the path the workspace was moved from.",
+      },
+      "dry-run": { effect: "Report the changes without applying them." },
+    },
+    output: "{from, to, moved, dry_run, changes[], warnings[]}.",
+    notes: ["Pass exactly one of <destination> or --repair."],
   },
-  describe:
-    "Mueve un workspace y repara sus referencias, o repara uno movido a mano. Acepta --dry-run y --repair [--from <ruta vieja>].",
   async execute(args, ctx) {
     const repair = args.flags.has("--repair");
     const from = args.values.get("from");

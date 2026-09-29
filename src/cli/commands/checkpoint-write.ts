@@ -40,13 +40,23 @@ async function lifecycleOptions(
 export const checkpointWriteCommand: CliCommand = {
   name: "checkpoint-write",
   flags: { known: ["code", "force"], retired: ["can-pause"], mode: "warn" },
-  describe:
-    "Write CHECKPOINT.md for the session named by --code, or the conversation's associated " +
-    "one; never the sole active session on its own. PreCompact hook target: it NEVER " +
-    "holds a compaction back. With no resolvable session it exits 0 and, when a session " +
-    "is active, parks a refuge checkpoint naming the active ones. An existing CHECKPOINT " +
-    "with content is preserved; --force overwrites it. " +
-    "Usage: aw checkpoint-write --code <NNN> [--force].",
+  hook: true,
+  help: {
+    purpose:
+      "PreCompact hook target: write CHECKPOINT.md for the named or conversation-bound session, never holding a compaction back.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect: "Session to checkpoint; defaults to the one bound to this conversation.",
+      },
+      force: { effect: "Overwrite an existing CHECKPOINT.md that already has content." },
+    },
+    output:
+      '{session, checkpoint_path, lines_written?, progress_pct?, tasks_open?, tasks_closed?, files_touched_count?, skipped?, preserved?, reason?}; degraded: {skipped: true, reason, continuity: "degraded", primary_session: null, active_sessions[], candidates[], action, refuge_path, refuges_swept?}.',
+    notes: [
+      "Never falls back to the sole active session on its own. With no resolvable session it still exits 0 and, when a session is active, parks a refuge checkpoint naming the active ones; the degradation is reported on stderr. The conversation id comes from the environment or the hook payload session_id on stdin; if they contradict each other it fails.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const base = await lifecycleOptions(args, ctx);
     if ("failure" in base) return base.failure;
@@ -76,9 +86,22 @@ function degradedNotice(
 export const autoCompactOnCloseCommand: CliCommand = {
   name: "auto-compact-on-close",
   flags: { known: ["code"], retired: ["can-pause"], mode: "warn" },
-  describe:
-    "SessionEnd hook target — checkpoint the session named by --code or associated with the " +
-    "conversation, and only that one; unresolved, it parks a refuge and says so on stderr.",
+  hook: true,
+  help: {
+    purpose:
+      "SessionEnd hook target: checkpoint the named or conversation-bound session, and only that one.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect: "Session to checkpoint; defaults to the one bound to this conversation.",
+      },
+    },
+    output:
+      "{checkpoints_written[] ({session?, checkpoint_path?, progress_pct?, skipped?, preserved?, reason?, error?, refuge_adopted?}), continuity?, primary_session?, reason?, candidates?, action?, refuge_path?, refuges_swept?}.",
+    notes: [
+      "Always exits 0. When no session resolves it parks a refuge checkpoint and reports the degradation on stderr.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const base = await lifecycleOptions(args, ctx);
     if ("failure" in base) return base.failure;

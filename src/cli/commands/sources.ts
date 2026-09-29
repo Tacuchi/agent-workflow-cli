@@ -9,9 +9,22 @@ import type { CliContext } from "../types.js";
 export const sourcesCommand: CliCommand = {
   name: "sources",
   flags: { known: ["code", "session", "scope", "no-git", "verbose"] },
-  describe:
-    "List sources from <NS>-PROJECT block with git status enrichment. " +
-    "Usage: aw sources [--scope <scope>] [--code <NNN>] [--no-git] [--verbose].",
+  help: {
+    purpose: "List the workspace's declared sources with their Git state and expected branches.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect: "Session whose document branches set the expected working branch.",
+      },
+      session: { value: "<code>", effect: "Alias of --code." },
+      scope: { value: "<alias,...>", effect: "Only these sources, comma separated." },
+      "no-git": { effect: "Skip the Git enrichment." },
+      verbose: { effect: "Include every field of each source." },
+    },
+    output:
+      "{sources[] {alias, path, expected_work_branch, current_branch, match, dirty, changed_files[], is_repo, error, ...}, working_branches_from_status, cross_source_consistent, divergent_sources[] {alias, current, expected}, doc_branch_unreadable?, session_code?, scope?}.",
+    notes: ["Read-only."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const session = sessionCodeFlag(args);
     if (!session.ok) return fail("INVALID_INPUT", session.message, { error: session.message });

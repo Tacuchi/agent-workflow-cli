@@ -9,7 +9,19 @@ import type { CliContext } from "../types.js";
 export const hookCommand: CliCommand = {
   name: "hook",
   flags: { known: [], mode: "warn" },
-  describe: "Hook target. Subcommand: sql-mutation-guard.",
+  hook: true,
+  help: {
+    purpose:
+      "Hook target for guards a host runs before a tool call; the only guard is sql-mutation-guard.",
+    args: "sql-mutation-guard",
+    output: "No data; the verdict is the exit code, and a block explains itself on stderr.",
+    exit_codes: {
+      "2": "sql-mutation-guard blocked the tool call: its SQL is not a plain read on a server outside AW_SQL_GUARD_ALLOW.",
+    },
+    notes: [
+      "sql-mutation-guard reads the host hook payload on stdin (tool_name, tool_input). It passes (exit 0) when the runtime configures no SQL guard, AW_SQL_GUARD=off, the tool does not match the guarded pattern, the server is listed in AW_SQL_GUARD_ALLOW (comma separated) or the input carries no SQL. Anything but a closed list of reads (SELECT, VALUES, TABLE, SHOW) is blocked, including SQL that cannot be delimited or classified.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
     if (!subcommand) {

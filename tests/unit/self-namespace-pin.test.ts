@@ -9,6 +9,7 @@ import {
   writeNamespacePin,
 } from "../../src/application/self/namespace-info.js";
 import { selfCommand } from "../../src/cli/commands/self.js";
+import { commandHelpText } from "../../src/cli/help-groups.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { ProcessPort } from "../../src/ports/process.js";
@@ -131,7 +132,7 @@ describe("self namespace --pin", () => {
     );
   });
 
-  it("self describe documents --pin", () => {
-    expect(selfCommand.describe).toContain("--pin");
+  it("self namespace help documents --pin", () => {
+    expect(commandHelpText(selfCommand, "namespace")).toContain("--pin");
   });
 });

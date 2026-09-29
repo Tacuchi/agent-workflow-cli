@@ -7,9 +7,16 @@ import type { CliContext } from "../types.js";
 export const stackCommand: CliCommand = {
   name: "stack",
   flags: { known: ["project-dir"] },
-  describe:
-    "Detect stack of the project (language/framework/db/build). " +
-    "Usage: aw stack [--project-dir <dir>].",
+  help: {
+    purpose: "Detect the project's stack: language, framework, database and build tool.",
+    flags: {
+      "project-dir": {
+        value: "<dir>",
+        effect: "Inspect this directory instead of the current one.",
+      },
+    },
+    output: "{language, framework, db, build, wrapper}; each is null when not detected.",
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const projectDir = args.values.get("project-dir");
     const data = await runStack(ctx.fs, ctx.env, projectDir !== undefined ? { projectDir } : {});

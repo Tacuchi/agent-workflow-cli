@@ -17,18 +17,31 @@ const ACTIONS = new Set<WorktreeInput["action"]>([
 export const worktreeCommand: CliCommand = {
   name: "worktree",
   flags: { known: ["code", "session", "source"] },
-  describe:
-    "Isolation unit of a flow: one git worktree of a source on its own branch, so concurrent flows never share a working tree. " +
-    "The unit lives at ~/<ns>/worktrees/<workspace>/<alias>/<session> on branch aw/<session>; the path IS the registry and " +
-    "`git worktree list` its live view. `integrate` moves work to the unit's sealed base, without switching the checkout, and gives the unit back — " +
-    "one source with --source, or every unit of the session in alias order with only --code; a conflict is reported with its plan, files and " +
-    "path where the merge stopped for external resolution; retry integration after it is resolved, never resolve or abort it automatically. " +
-    "`list` shows every unit and orphan of the workspace, or only one session's with --code, each with its branch, dirty state and HEAD. " +
-    "`reclaim` collects the residue in one act — every orphan of the workspace, or one session's units with --code — reaching sessions that are " +
-    "closed or gone without reopening any. A unit that still custodies work SURVIVES: uncommitted changes, a half-resolved git operation, commits " +
-    "outside the unit's sealed base, or a read that could not be completed. It reports what it collected and what it retained, with the reason " +
-    "and the next step for each retention; it never uses --force and preserves the document and base branches. " +
-    "Usage: aw worktree ensure|list|release|integrate|reclaim [--source <alias>] [--code <NNN>].",
+  help: {
+    purpose:
+      "Manage a flow's isolation unit: one git worktree of a source on its own branch, so concurrent flows never share a working tree.",
+    args: "<ensure|list|release|integrate|reclaim>",
+    flags: {
+      code: {
+        value: "<code>",
+        effect:
+          "Session whose units to act on; defaults to the conversation's session (list and reclaim default to the whole workspace).",
+      },
+      session: { value: "<code>", effect: "Alias of --code." },
+      source: { value: "<alias>", effect: "Source whose unit to act on." },
+    },
+    output:
+      "ensure: {alias, source_path, session, path, branch, created, visibility, base, dependencies, longpaths_enabled}. list: {workspace_key, units[] (with session_active, dirty, head), orphans[], unreadable[], session?}. release: {alias, session, path, branch, released, visibility, branch_kept?, residue_completed?}. integrate with --source: {alias, source_path, session, into, branch, integrated, conflicted[], released, next, unit_path?, merge_path?}; without it: {session, plan, results[], integrated[], pending[], reclaimed[], retained[], next}. reclaim: {workspace_key, session?, reclaimed[], retained[], unreadable[], next}. Refusal: {error, message, hint?, occupant?}.",
+    exit_codes: {
+      "2": "The unit is occupied by another live flow or the action was refused; data is {error, message, hint?, occupant?}.",
+    },
+    notes: [
+      "The unit lives at ~/<ns>/worktrees/<workspace>/<alias>/<session> on branch aw/<session>; the path IS the registry and `git worktree list` its live view.",
+      "integrate moves the work to the unit's sealed base without switching the checkout and gives the unit back: one source with --source, or every unit of the session in alias order with only --code. A conflict is reported with its plan, files and the path where the merge stopped; resolve it externally and retry, it is never resolved or aborted automatically.",
+      "list shows every unit and orphan of the workspace, or one session's with --code, each with its branch, dirty state and HEAD.",
+      "reclaim collects the residue in one act (every orphan of the workspace, or one session's units with --code), reaching closed or gone sessions without reopening any. A unit that still holds work SURVIVES: uncommitted changes, a half-resolved git operation, commits outside its sealed base, or a read that could not complete. It reports what it collected and retained, with the reason and next step per retention; it never uses --force and keeps the document and base branches.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const action = args.rest[0] as WorktreeInput["action"] | undefined;
     if (action === undefined || !ACTIONS.has(action)) {

@@ -14,8 +14,11 @@ interface SkillsData {
 export const skillsCommand: CliCommand<SkillsData> = {
   name: "skills",
   flags: { known: [] },
-  describe:
-    "Diagnóstico de bindings propios del bundle (skills.toml). Usage: aw skills [--detail].",
+  help: {
+    purpose: "Show which skill each role is bound to after the skills.toml cascade.",
+    output:
+      "{skills {<role>: {skill, enabled, source}}, sources {global, workspace}, warnings[]}. Read-only.",
+  },
 
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult<SkillsData>> {
     const resolution = await resolveSkills(ctx.fs, ctx.paths);

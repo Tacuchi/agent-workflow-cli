@@ -11,9 +11,31 @@ import type { CliContext } from "../types.js";
 export const sessionsCommand: CliCommand<ListSessionsOutput | SessionSweepOutput> = {
   name: "sessions",
   flags: { known: ["all", "state", "include-legacy", "verbose", "sweep", "apply"] },
-  describe:
-    "List sessions with counts and next correlative. " +
-    "Usage: aw sessions [--state <estado>] [--all] [--include-legacy] [--verbose].",
+  help: {
+    purpose: "List the workspace sessions with their counts and the next session correlative.",
+    flags: {
+      all: { effect: "List sessions in every state; same as --state all." },
+      state: {
+        value: "<active|closed|paused|abandoned|all>",
+        effect: "List only sessions in this state.",
+      },
+      "include-legacy": { effect: "Include the legacy field, always empty in the current model." },
+      verbose: {
+        effect:
+          "Add per-session detail and history_exists; lists every state unless --state narrows it.",
+      },
+      sweep: {
+        effect:
+          "Instead of listing, report stale locks, attempts, bindings and refuges left behind.",
+      },
+      apply: { effect: "With --sweep, remove what the sweep reports; refused without --sweep." },
+    },
+    output:
+      "{sessions[], active_count, closed_count, paused_count, abandoned_count, total_count, next_correlative, legacy[]?, history_exists?}; with --sweep: {applied, locks[], attempts[], bindings[], refuges[]}.",
+    notes: [
+      "Without --state, --all or --verbose only active sessions are listed. --sweep without --apply is read-only.",
+    ],
+  },
   async execute(
     args: ParsedArgs,
     ctx: CliContext,

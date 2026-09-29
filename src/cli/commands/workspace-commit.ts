@@ -9,9 +9,39 @@ import type { CliContext } from "../types.js";
 
 export const workspaceCommitCommand: CliCommand<WorkspaceCommitResult> = {
   name: "workspace-commit",
-  flags: { known: ["code", "export", "approval", "with-evidence"] },
-  describe:
-    "Prepare an exact workspace commit, or apply only after approval. Usage: aw workspace-commit prepare --code <sesión> [--with-evidence] | --export <docs/ruta> · aw workspace-commit apply --code <sesión>|--export <docs/ruta> --approval <digest>. --with-evidence previews the scratchpad copies approved at the flow close.",
+  flags: {
+    known: ["code", "export", "approval", "with-evidence"],
+    exclusive: [["code", "export"]],
+    actions: { prepare: { known: [] }, apply: { known: [] } },
+  },
+  help: {
+    purpose:
+      "Commit a session's or an export's workspace files with an exact pathspec, after approval.",
+    flags: {
+      code: { value: "<code>", effect: "Commit the files of this session." },
+      export: { value: "<docs-path>", effect: "Commit the files of this export under docs/." },
+      approval: {
+        value: "<digest>",
+        effect: "Approval digest returned by prepare; required by apply, refused by prepare.",
+      },
+      "with-evidence": {
+        effect:
+          "Read by prepare with --code: include the scratchpad copies approved at the flow close.",
+      },
+    },
+    actions: {
+      prepare: {
+        purpose: "Propose the exact commit (paths, exclusions, message) and its approval digest.",
+        output: "{proposal {repo, branch, head, message, paths[], excluded[], approval}}.",
+      },
+      apply: {
+        purpose: "Re-derive the proposal and commit it only if it still matches the approval.",
+        output:
+          "{proposal {repo, branch, head, message, paths[], excluded[], approval}, committed {branch, before, after, parents[]}}.",
+      },
+    },
+    notes: ["Never stages with git add .; only the listed paths are committed."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceCommitResult>> {
     const action = args.rest[0];
     if (action !== "prepare" && action !== "apply")

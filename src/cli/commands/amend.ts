@@ -68,15 +68,51 @@ export const amendCommand: CliCommand<AmendOutput> = {
   name: "amend",
   flags: {
     known: ["de", "a", "declaracion", "declaration"],
-    actions: { apply: { known: ["check"] } },
+    actions: { apply: { known: ["check"] }, revert: { known: [] }, list: { known: [] } },
   },
-  describe:
-    "Correct the WORDING of an already closed spec or plan, in one act, without opening a refinement. " +
-    "Cross-cutting: it opens no flow and creates no session. It demands an explicit declaration that the correction changes no scope, criteria or rules, " +
-    "writes under the workspace lock with the document's own digest as the compare-and-swap base, and records the exact pre-image in an append-only ledger. " +
-    "It refuses structurally what does touch the contract — a spec's functional content, or a plan's header, phase/task graph, closing clauses or batches — and names the refinement instead. " +
-    "`apply --check` classifies the replacement without writing or recording: wording → aw amend, contract or open document → its refine. No declaration is required to check. " +
-    "`revert` undoes one recorded correction. Usage: aw amend apply <documento> --de <texto> --a <texto> [--check | --declaracion <motivo>] | aw amend revert <id> | aw amend list [documento].",
+  help: {
+    purpose:
+      "Correct the wording of a closed spec or plan in one recorded act, without opening a refinement.",
+    flags: {
+      de: { value: "<text>", effect: "apply only, required: the exact fragment to replace." },
+      a: { value: "<text>", effect: "apply only, required: the replacement text." },
+      declaracion: {
+        value: "<reason>",
+        effect: "apply only: declare that the correction changes no scope, criteria or rules.",
+      },
+      declaration: { value: "<reason>", effect: "Alias of --declaracion." },
+    },
+    actions: {
+      apply: {
+        purpose:
+          "Replace one fragment of a closed document, or classify the replacement with --check.",
+        args: "<spec|plan>",
+        flags: {
+          check: {
+            effect:
+              "Classify the replacement (wording, contract or open) without writing or recording.",
+          },
+        },
+        output:
+          "{action: apply, status: applied, amendment {id, document, origin, declaration, from, to, before_digest, after_digest}, written[]}; with --check: {action: check, status: checked, document, line, classification, reason, next, written: []}.",
+        notes: [
+          "Writing needs the declaration; checking does not. The write runs under the workspace lock with the document's digest as compare-and-swap base, and the pre-image goes to an append-only ledger. What touches the contract (a spec's functional content, a plan's header, phase/task graph, closing clauses or batches) is refused and the refinement is named instead.",
+        ],
+      },
+      revert: {
+        purpose: "Undo one recorded correction by its id.",
+        args: "<id>",
+        output: "{action: revert, status: reverted, amendment, written[]}.",
+      },
+      list: {
+        purpose: "List the recorded corrections, of one document or of the whole workspace.",
+        args: "[<document>]",
+        output:
+          "{action: list, document, events[] ({version, at, event: amended|reverted, amendment, cause?})}. Read-only.",
+      },
+    },
+    notes: ["Cross-cutting: it opens no flow and creates no session."],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<AmendOutput>> {
     const action = args.rest[0] as Action | undefined;

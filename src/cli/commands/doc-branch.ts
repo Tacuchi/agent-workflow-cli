@@ -32,12 +32,48 @@ export const docBranchCommand: CliCommand = {
   flags: {
     known: [],
     actions: {
-      show: { known: ["code", "session", "doc"] },
-      set: { known: ["code", "session", "doc", "source", "rama", "from"] },
+      show: { known: ["code", "session", "doc"], exclusive: [["code", "doc"]] },
+      set: {
+        known: ["code", "session", "doc", "source", "rama", "from"],
+        required: ["source"],
+        exclusive: [
+          ["code", "doc"],
+          ["rama", "from"],
+        ],
+      },
     },
-    usage: USAGE,
   },
-  describe: `Show or register a document's own working branch per source, inherited by its plans. Show never fetches or writes; set creates or reuses a branch before recording it. ${USAGE}`,
+  help: {
+    purpose:
+      "Show or register a document's own working branch per source, which its plans inherit.",
+    actions: {
+      show: {
+        purpose: "Show the document's branch per source; never fetches or writes.",
+        flags: {
+          code: { value: "<code>", effect: "Select the document of this session." },
+          session: { value: "<code>", effect: "Alias of --code." },
+          doc: { value: "<spec|plan|quick:NNN>", effect: "Select the document directly." },
+        },
+        output:
+          "{doc, sources[] ({source, branch, origin, proposed, local, remote, error_code?, error?}), unreadable[], next}.",
+      },
+      set: {
+        purpose: "Create or reuse a working branch in one source and record it as the document's.",
+        flags: {
+          code: { value: "<code>", effect: "Select the document of this session." },
+          session: { value: "<code>", effect: "Alias of --code." },
+          doc: { value: "<spec|plan|quick:NNN>", effect: "Select the document directly." },
+          source: { value: "<alias>", effect: "Source whose branch is recorded." },
+          rama: { value: "<branch>", effect: "Branch name to create or reuse." },
+          from: {
+            value: "<spec|plan|quick:NNN>",
+            effect: "Reuse the branch another document already owns in that source.",
+          },
+        },
+        output: "{doc, source, branch, outcome, start_point?, unreadable[]}.",
+      },
+    },
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const action = args.rest[0];
     if (action !== "show" && action !== "set") return fail("INVALID_INPUT", USAGE);

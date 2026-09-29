@@ -6,11 +6,27 @@ import type { CliContext } from "../types.js";
 
 export const codeScanCommand: CliCommand = {
   name: "code-scan",
-  flags: { known: ["root", "pattern", "patterns-file", "ext", "exclude", "max-per-pattern"] },
-  describe:
-    "Scan files for release patterns (localhost, secrets, TODOs, ...). " +
-    "Usage: aw code-scan [--root <dir>] [--patterns-file <file>] " +
-    "[--pattern <id:regex[:sev]> ...] [--ext <csv>] [--exclude <csv>] [--max-per-pattern <n>].",
+  flags: {
+    known: ["root", "pattern", "patterns-file", "ext", "exclude", "max-per-pattern"],
+    repeatable: ["pattern"],
+  },
+  help: {
+    purpose: "Scan files for release patterns such as localhost URLs, secrets and TODOs.",
+    flags: {
+      root: { value: "<dir>", effect: "Directory to scan; defaults to the workspace." },
+      pattern: {
+        value: "<id:regex[:severity]>",
+        effect: "Inline pattern; replaces the built-in and file patterns.",
+      },
+      "patterns-file": { value: "<file>", effect: "File of patterns replacing the built-in ones." },
+      ext: { value: "<csv>", effect: "File extensions to scan instead of the defaults." },
+      exclude: { value: "<csv>", effect: "Directory names to skip instead of the defaults." },
+      "max-per-pattern": { value: "<n>", effect: "Cap on the matches reported per pattern." },
+    },
+    output:
+      "{matches[] {pattern_id, severity, file, line, snippet, recommendation}, counts, by_severity {alta, media, baja}, root, patterns_used[], total_matches}; or {error, root?, file?} when the root or the patterns file is unusable.",
+    notes: ["Read-only. The default severity of an inline pattern is media."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const root = args.values.get("root");
     const patternsFile = args.values.get("patterns-file");

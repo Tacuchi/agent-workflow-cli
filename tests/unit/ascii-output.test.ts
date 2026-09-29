@@ -162,9 +162,11 @@ describe("--ascii · the human projection stays inside ASCII", () => {
     const help = globalHelpText(names, commandDescribes(), "workflow");
     expect(aboveAscii(help).length).toBeGreaterThan(0);
     expect(aboveAscii(forPerson(help, ASCII))).toEqual([]);
+    // Per-command help is English (plan 082 F2), so it is ASCII already and the
+    // mark has nothing left to replace in it.
     const perCommand = commandHelpText(statusCommand);
-    expect(aboveAscii(perCommand).length).toBeGreaterThan(0);
-    expect(aboveAscii(forPerson(perCommand, ASCII))).toEqual([]);
+    expect(aboveAscii(perCommand)).toEqual([]);
+    expect(forPerson(perCommand, ASCII)).toBe(perCommand);
     expect(forPerson(perCommand, HUMAN)).toBe(perCommand);
   });
 

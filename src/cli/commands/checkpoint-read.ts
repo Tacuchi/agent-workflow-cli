@@ -9,9 +9,17 @@ import type { CliContext } from "../types.js";
 export const checkpointReadCommand: CliCommand = {
   name: "checkpoint-read",
   flags: { known: ["code"] },
-  describe:
-    "Read CHECKPOINT.md of the conversation's session (or --code). " +
-    "Usage: aw checkpoint-read [--code <session>].",
+  help: {
+    purpose: "Read the CHECKPOINT.md of the conversation's session or of the one named.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect: "Session to read; defaults to the one bound to this conversation.",
+      },
+    },
+    output:
+      "{session, checkpoint (parsed fields, or null when CHECKPOINT.md does not exist), reason?}. Read-only.",
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const contextId = readContextId(ctx.env);

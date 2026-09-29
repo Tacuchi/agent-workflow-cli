@@ -18,11 +18,23 @@ export const projectMdUpsertCommand: CliCommand = {
     exclusive: [["read", "init"]],
     repeatable: ["fuente", "working-branch"],
   },
-  describe:
-    "Read or update the <NS>-PROJECT block in CLAUDE.md/AGENTS.md. " +
-    "Usage: aw project-md-upsert [--read] [--init] [--proyecto <name>] " +
-    "[--fuente <alias:path[:rama]> ...] [--working-branch <alias:rama> ...] " +
-    "[--main-branch <rama>] [--verbose].",
+  help: {
+    purpose: "Read or update the workspace block that CLAUDE.md and AGENTS.md carry.",
+    flags: {
+      init: { effect: "Write the block, merging the given values over the existing ones." },
+      read: { effect: "Read the block without writing." },
+      proyecto: {
+        value: "<name>",
+        effect: "Project description; a single line renames the workspace.",
+      },
+      fuente: { value: "<alias:path[:branch]>", effect: "Declare a source with --init." },
+      "main-branch": { value: "<branch>", effect: "Main branch for sources that declare none." },
+      "working-branch": { value: "<alias:branch>", effect: "Working branch of one source." },
+      verbose: { effect: "Return the full detail." },
+    },
+    output:
+      "With --read: {block, files[], cache_used?}. With --init: {ok, action, results[] {file, path, action?, error?}, working_branches?, qa_branches?, dropped_lines[]?, migrated[]?, not_migrated[]?}.",
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verbose = args.flags.has("--verbose");
     if (args.flags.has("--read") === args.flags.has("--init")) {

@@ -10,8 +10,14 @@ const usage = "aw set-pipeline <alias> <build|test> <comando|ninguno>";
 
 export const setPipelineCommand: CliCommand = {
   name: "set-pipeline",
-  flags: { known: [], usage },
-  describe: `Declara el build o test versionado de una fuente en ambos espejos. Usage: ${usage}.`,
+  flags: { known: [] },
+  help: {
+    purpose: "Declare the versioned build or test command of one declared source.",
+    args: "<alias> <build|test> <command|ninguno>",
+    output:
+      "{ok, action, results[] {file, path, action?, error?}, working_branches?, qa_branches?, dropped_lines[]?, migrated[]?, not_migrated[]?}.",
+    notes: ["The value ninguno declares that the source has no such command."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const [alias, field, command] = args.rest;
     if (

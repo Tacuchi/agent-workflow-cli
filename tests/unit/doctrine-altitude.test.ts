@@ -8,6 +8,7 @@ import {
   parseSpecRelation,
 } from "../../src/application/parsers/spec-relation.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
+import { commandHelpText } from "../../src/cli/help-groups.js";
 import { alignSpecBaseline, specBaselineDigest } from "../../src/domain/lineage.js";
 
 // Doctrine ALTITUDE guards (lote G — the spec is the functional "what", the plan
@@ -142,8 +143,8 @@ describe("doctrine altitude — the seal, and the exit a divergent one has", () 
     // ninguna mención ofrezca una salida que el CLI no da.
     const reseal = ALL_COMMANDS.find((command) => command.name === "reseal");
     expect(reseal, "`aw reseal` tiene que estar registrado").toBeDefined();
-    expect(reseal?.describe ?? "").toContain("aw reseal prepare|apply");
-    expect(reseal?.describe ?? "").toContain("--approval");
+    expect(Object.keys(reseal?.flags.actions ?? {})).toEqual(["prepare", "apply"]);
+    expect(reseal ? commandHelpText(reseal, "apply") : "").toContain("--approval");
 
     const files = await listMd(SKILL_ROOT);
     let mentions = 0;

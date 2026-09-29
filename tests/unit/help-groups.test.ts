@@ -142,24 +142,22 @@ describe("renderGroupedCommandLines with describes", () => {
   });
 });
 
+function byName(name: string) {
+  const command = ALL_COMMANDS.find((item) => item.name === name);
+  if (!command) throw new Error(name);
+  return command;
+}
+
 describe("commandHelpText", () => {
-  it("muestra la sintaxis declarada para set-pipeline, doc-branch y workspace-move", () => {
-    const byName = (name: string) => {
-      const command = ALL_COMMANDS.find((item) => item.name === name);
-      if (!command) throw new Error(name);
-      return command;
-    };
+  it("generates the usage line from the contract, positionals and exclusive groups included", () => {
     expect(commandHelpText(byName("set-pipeline"))).toContain(
-      "Usage: aw set-pipeline <alias> <build|test> <comando|ninguno>",
+      "Usage: aw set-pipeline <alias> <build|test> <command|ninguno>",
     );
     expect(commandHelpText(byName("doc-branch"), "set")).toContain(
-      "aw doc-branch set (--code <NNN>|--doc <tipo:NNN>) --source <alias> (--rama <nombre>|--from <tipo:NNN>)",
+      "Usage: aw doc-branch set (--code <code> | --doc <spec|plan|quick:NNN>) (--rama <branch> | --from <spec|plan|quick:NNN>) [--session <code>] --source <alias>",
     );
     expect(commandHelpText(byName("doc-branch"), "show")).toContain(
-      "Usage: aw doc-branch show (--code <NNN>|--doc <spec|plan:NNN|quick:NNN>)",
-    );
-    expect(commandHelpText(byName("workspace-move"))).toContain(
-      "Usage: aw workspace-move <destino> [--dry-run] | aw workspace-move --repair",
+      "Usage: aw doc-branch show (--code <code> | --doc <spec|plan|quick:NNN>) [--session <code>]",
     );
   });
 
@@ -170,41 +168,49 @@ describe("commandHelpText", () => {
     expect(help).not.toContain("the invoked directory is the\nimplicit root");
   });
 
-  it("renders the command name and its describe (per-subcommand help, not the global list)", () => {
+  it("renders its own contract, not the global list", () => {
     const out = commandHelpText({
-      name: "workspace-init",
-      describe: "Inicializa un workspace. Flags: --proyecto, --source, --working-branch.",
+      name: "foo",
+      flags: { known: ["bar"], required: ["bar"] },
+      help: {
+        purpose: "Do foo.",
+        flags: { bar: { value: "<n>", effect: "How many." } },
+        output: "{count}.",
+        exit_codes: { "2": "nothing to do." },
+      },
     });
-    expect(out).toContain("agent-workflow workspace-init");
-    expect(out).toContain("Flags: --proyecto, --source, --working-branch.");
-    // Must NOT spill the global command list (the bug it replaces).
+    expect(out).toBe(
+      [
+        "aw foo",
+        "",
+        "Do foo.",
+        "",
+        "Usage: aw foo --bar <n>",
+        "",
+        "Flags:",
+        "  --bar <n>  How many. (required)",
+        "",
+        "Output (JSON data): {count}.",
+        "Human output: no; the output is JSON in every mode.",
+        "Exit 2: nothing to do.",
+        "",
+      ].join("\n"),
+    );
     expect(out).not.toContain("Session lifecycle:");
-  });
-
-  it("falls back to a placeholder when describe is missing", () => {
-    const out = commandHelpText({ name: "foo" });
-    expect(out).toContain("agent-workflow foo");
-    expect(out).toContain("(sin descripción)");
   });
 });
 
 describe("ayuda derivada de la declaración que rechaza flags desconocidos", () => {
   it("todos los comandos y subverbos muestran exactamente sus flags activos", () => {
     const flagNames = (help: string) =>
-      [...help.matchAll(/^ {2}--([\w-]+) \(/gm)].map((match) => match[1]).sort();
+      [...help.matchAll(/^ {2}--([\w-]+)(?: \S+)? {2,}/gm)].map((match) => match[1]).sort();
     for (const command of ALL_COMMANDS) {
-      const contracts = Object.entries(command.flags.actions ?? {});
-      const parent = commandHelpText(command);
-      expect(flagNames(parent), command.name).toEqual(
-        [
-          ...new Set([...command.flags.known, ...contracts.flatMap(([, flags]) => flags.known)]),
-        ].sort(),
+      expect(flagNames(commandHelpText(command)), command.name).toEqual(
+        [...command.flags.known].sort(),
       );
-      for (const [verb, contract] of contracts) {
+      for (const [verb, contract] of Object.entries(command.flags.actions ?? {})) {
         const actionHelp = commandHelpText(command, verb);
-        expect(actionHelp, `${command.name} ${verb}`).toContain(
-          `agent-workflow ${command.name} ${verb}`,
-        );
+        expect(actionHelp, `${command.name} ${verb}`).toContain(`aw ${command.name} ${verb}`);
         expect(flagNames(actionHelp), `${command.name} ${verb}`).toEqual(
           [...new Set([...command.flags.known, ...contract.known])].sort(),
         );
@@ -214,8 +220,8 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
 
   it("project-md-upsert exige exactamente uno, y rechaza ambas operaciones juntas", async () => {
     const help = commandHelpText(projectMdUpsertCommand);
-    expect(help).toContain("exactamente uno: --read | --init");
-    expect(help).toContain("--fuente (común, repetible)");
+    expect(help).toContain("exactly one of: --read | --init");
+    expect(help).toMatch(/--fuente <[^>]+> +Declare a source with --init\. \(repeatable\)/);
     const result = await projectMdUpsertCommand.execute(
       parseArgv(["project-md-upsert", "--read", "--init"]),
       {} as CliContext,
@@ -224,20 +230,17 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
   });
 
   it("no ofrece overwrite en scripts, doctor nombra sus subverbos y self sólo los propios", () => {
-    const byName = (name: string) => {
-      const command = ALL_COMMANDS.find((item) => item.name === name);
-      if (!command) throw new Error(name);
-      return command;
-    };
     expect(commandHelpText(byName("export-scripts"))).not.toContain("--overwrite");
-    expect(commandHelpText(byName("export-scripts"))).toContain("--exclude (común, repetible)");
-    expect(commandHelpText(byName("export-scripts"))).toContain("--sessions (común)");
+    expect(commandHelpText(byName("export-scripts"))).toMatch(/--exclude <name> +.*\(repeatable\)/);
+    expect(commandHelpText(byName("export-scripts"))).toContain("--sessions <a,b>");
     expect(commandHelpText(byName("export-manuals"), "apply")).toContain("--overwrite");
-    expect(commandHelpText(byName("doctor"))).toContain("Subverbos: prepare, apply");
-    for (const flag of ["--host", "--only", "--skip-native", "--select", "--approval"]) {
+    expect(commandHelpText(byName("doctor"))).toMatch(/^ {2}prepare {2}/m);
+    expect(commandHelpText(byName("doctor"))).toMatch(/^ {2}apply {4}/m);
+    for (const flag of ["--host", "--only", "--skip-native"]) {
       expect(commandHelpText(byName("doctor"))).toContain(flag);
     }
     expect(commandHelpText(byName("doctor"), "prepare")).toContain("--select");
+    expect(commandHelpText(byName("doctor"), "apply")).toContain("--approval");
     expect(Object.keys(byName("self").flags.actions ?? {})).toHaveLength(12);
     expect(commandHelpText(byName("self"), "update")).toContain("--dry-run");
     expect(commandHelpText(byName("flow"), "advance")).toContain("--adopt");
@@ -246,9 +249,9 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
   it("el dispatcher entrega la ayuda del subverbo solicitado, sin ejecutarlo", () => {
     const cli = resolve(__dirname, "../../dist/cli/main.js");
     for (const [args, expected] of [
-      [["self", "update", "--help"], "agent-workflow self update"],
-      [["doctor", "prepare", "--help"], "agent-workflow doctor prepare"],
-      [["flow", "advance", "--help"], "agent-workflow flow advance"],
+      [["self", "update", "--help"], "aw self update"],
+      [["doctor", "prepare", "--help"], "aw doctor prepare"],
+      [["flow", "advance", "--help"], "aw flow advance"],
     ] as const) {
       const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
       expect(result.status, args.join(" ")).toBe(0);

@@ -28,16 +28,19 @@ type PrepareBranch = (alias: string, rama: string, ctx: CliContext) => Promise<B
 // branch it makes sure exists first; the factory keeps them in lockstep.
 function makeSetBranchCommand(
   name: string,
-  label: string,
+  purpose: string,
   key: "workingBranches" | "qaBranches" | "exceptionBranches",
   prepare?: PrepareBranch,
 ): CliCommand {
   return {
     name,
     flags: { known: ["verbose"] },
-    describe:
-      `Set the ${label} branch for a source in the WORKSPACE block. ` +
-      `Usage: aw ${name} <alias> <rama>.`,
+    help: {
+      purpose,
+      args: "<alias> <branch>",
+      flags: { verbose: { effect: "Return the full upsert detail." } },
+      output: `{ok, action, results[] {file, path, action?, error?}, working_branches?, qa_branches?, dropped_lines[]?, migrated[]?, not_migrated[]?${prepare ? ", working_branch?" : ""}}.`,
+    },
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
       const alias = args.rest[0];
       const rama = args.rest[1];
@@ -113,12 +116,16 @@ const ensureDeclaredWorkingBranch: PrepareBranch = async (alias, rama, ctx) => {
 
 export const setWorkingBranchCommand = makeSetBranchCommand(
   "set-working-branch",
-  "WORKING",
+  "Set a source's working branch in the WORKSPACE block, creating it from PROD when missing.",
   "workingBranches",
   ensureDeclaredWorkingBranch,
 );
 
-export const setQaBranchCommand = makeSetBranchCommand("set-qa-branch", "QA", "qaBranches");
+export const setQaBranchCommand = makeSetBranchCommand(
+  "set-qa-branch",
+  "Set a source's QA branch in the WORKSPACE block.",
+  "qaBranches",
+);
 
 const checkExceptionBranch: PrepareBranch = async (alias, rama, ctx) => {
   const block = await readWorkspaceBlock(
@@ -142,7 +149,7 @@ const checkExceptionBranch: PrepareBranch = async (alias, rama, ctx) => {
 
 export const setExceptionBranchCommand = makeSetBranchCommand(
   "set-exception-branch",
-  "exception",
+  "Declare an exception branch for a source, other than its development and PROD branches.",
   "exceptionBranches",
   checkExceptionBranch,
 );

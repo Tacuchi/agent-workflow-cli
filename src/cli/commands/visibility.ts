@@ -12,10 +12,28 @@ import type { CliContext } from "../types.js";
 
 export const visibilityCommand: CliCommand<VisibilityDoctorResult> = {
   name: "visibility",
-  flags: { known: ["workspace", "global"] },
-  describe:
-    "Inspector de visibilidad multi-root del hub. Subcomandos: doctor [--workspace dir] [--global] " +
-    "[--format human|json] [--detail].",
+  flags: { known: ["workspace", "global"], actions: { doctor: { known: [] } } },
+  help: {
+    purpose: "Inspect whether every host sees the workspace's sources as multi-root paths.",
+    flags: {
+      workspace: {
+        value: "<dir>",
+        effect: "Read by doctor: workspace to inspect instead of the resolved one.",
+      },
+      global: { effect: "Read by doctor: also inspect the global scope of each host." },
+    },
+    actions: {
+      doctor: {
+        purpose:
+          "Report, host by host, the multi-root paths that are missing or left over against the declared sources.",
+        output:
+          "{workspace_dir, unreadable_sources[]?, reports[] {host, scope, target, targets[], declared_paths[], registered_paths[], missing[], extra[], status, detail?}, global_reports[], summary {ok, missing_paths, extra_paths, no_settings, global_pollution, no_project_block}}.",
+        notes: [
+          "Any drift returns the error envelope VISIBILITY_DRIFT with the same data and the per-host diagnosis in action.",
+        ],
+      },
+    },
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<VisibilityDoctorResult>> {
     const subcommand = args.rest[0];
     if (subcommand === "doctor") return runDoctorSub(args, ctx);

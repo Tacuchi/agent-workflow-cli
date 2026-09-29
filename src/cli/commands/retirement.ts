@@ -28,7 +28,7 @@ import {
 import type { RetirementMode } from "../../domain/retirement/proposal.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
-import type { CliCommand, HumanRenderContext } from "../registry.js";
+import type { CliCommand, CommandHelp, HumanRenderContext } from "../registry.js";
 import type { CliContext } from "../types.js";
 
 type Action = "prepare" | "apply";
@@ -76,8 +76,8 @@ function usage(mode: RetirementMode): string {
 function retirementCommand(mode: RetirementMode): CliCommand<RetirementOutput> {
   return {
     name: mode,
-    flags: { known: ["approval"] },
-    describe: describeOf(mode),
+    flags: { known: ["approval"], actions: { prepare: { known: [] }, apply: { known: [] } } },
+    help: helpOf(mode),
     async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<RetirementOutput>> {
       const action = args.rest[0] as Action | undefined;
       const target = args.rest[1];
@@ -122,14 +122,42 @@ function retirementCommand(mode: RetirementMode): CliCommand<RetirementOutput> {
   };
 }
 
-function describeOf(mode: RetirementMode): string {
-  const shared =
-    "Cross-cutting: it opens no flow and creates no session. `prepare` is read-only and returns the sealed proposal + its digest; " +
-    "`apply` requires that digest, recomputes everything under the workspace lock and converges all-or-nothing. " +
-    "Local changes attributable to the scope are discarded; commits are only reverted as new commits, never rewritten, and no push happens.";
-  return mode === "discard"
-    ? `Retire a spec, plan, quick or session together with every descendant it exclusively owns. ${shared} Usage: aw discard prepare|apply <spec:NNN|plan:PPP|quick:NNN|session:NNN|ruta> [--approval <digest>].`
-    : `Return an incomplete session's inputs to the exact bytes they had before it ran, and retire the session with its outputs. ${shared} Usage: aw reset prepare|apply <plan:PPP|session:NNN|ruta> [--approval <digest>].`;
+function helpOf(mode: RetirementMode): CommandHelp {
+  const targets =
+    mode === "discard"
+      ? "<spec:NNN|plan:PPP|quick:NNN|session:NNN|path>"
+      : "<plan:PPP|session:NNN|path>";
+  return {
+    purpose:
+      mode === "discard"
+        ? "Retire a spec, plan, quick or session together with every descendant it exclusively owns."
+        : "Undo an incomplete session: put its inputs back to their exact prior bytes and retire it.",
+    flags: {
+      approval: {
+        value: "<digest>",
+        effect: "apply only, where it is required: the digest prepare returned.",
+      },
+    },
+    actions: {
+      prepare: {
+        purpose: `Build the sealed ${mode} proposal and its digest without changing anything.`,
+        args: targets,
+        output:
+          "{mode, action: prepare, digest, preview {target, disappears[], restores[], custody[], restores_nothing, local_changes[], reverts[], publication, units[], reservations[], bindings, history_row, touches_git_history}, next}.",
+        notes: ["Read-only."],
+      },
+      apply: {
+        purpose: `Recompute the ${mode} under the workspace lock and converge it all-or-nothing.`,
+        args: targets,
+        output:
+          "{action: apply, digest, mode, target, removed[], restored[], bindings_invalidated, published, pending_remote_publication[], units_released[], pending_reconciliation[], reservations_released[], reservations_held[], already_applied}.",
+        notes: ["A missing digest fails with APPROVAL_REQUIRED."],
+      },
+    },
+    notes: [
+      "Cross-cutting: it opens no flow and creates no session. Local changes attributable to the scope are discarded; commits are only reverted as new commits, never rewritten, and nothing is pushed.",
+    ],
+  };
 }
 
 /**

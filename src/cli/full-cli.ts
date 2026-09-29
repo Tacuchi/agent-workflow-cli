@@ -89,8 +89,9 @@ function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
   const parsed = parseCli(argv);
   if (parsed === null) return rawTransportExitCode(argv);
   const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
-  if (isMcpStdioInvocation(parsed) && (parsed.flags.has("--version") || hasHelp)) {
-    process.stderr.write("aw mcp: --version y --help no son válidos para un servidor stdio\n");
+  // `--help` never starts a stdio server: it is answered like any other help.
+  if (isMcpStdioInvocation(parsed) && parsed.flags.has("--version") && !hasHelp) {
+    process.stderr.write("aw mcp: --version no es válido para un servidor stdio\n");
     return 2;
   }
   // Global ONLY when nothing else was asked. With a command present `--version`

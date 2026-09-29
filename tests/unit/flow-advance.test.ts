@@ -9,7 +9,11 @@ import { projectRun } from "../../src/application/flow/run-projection.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js";
-import { groupCommands, renderGroupedCommandLines } from "../../src/cli/help-groups.js";
+import {
+  commandHelpText,
+  groupCommands,
+  renderGroupedCommandLines,
+} from "../../src/cli/help-groups.js";
 import { NOTE_AUTHOR_FIELDS, NOTE_SCHEMA } from "../../src/domain/decision-note.js";
 import type { FlowAuthority, FlowDecision } from "../../src/domain/flow/authority.js";
 import { decisionsOfScope } from "../../src/domain/flow/authority.js";
@@ -261,11 +265,12 @@ describe("la entrada pública queda en su familia y ninguna guarda se rompe", ()
     );
     const row = lines.find((line) => line.trim().startsWith("flow "));
     expect(row).toBeDefined();
-    expect(row).toContain("frontera");
+    expect(row).toContain("journey");
   });
 
-  it("el describe nombra su propia invocación", () => {
-    expect(commandDescribes().get("flow")).toContain("aw flow advance");
+  it("la ayuda nombra su propia invocación", () => {
+    const flow = ALL_COMMANDS.find((command) => command.name === "flow");
+    expect(flow ? commandHelpText(flow, "advance") : "").toContain("Usage: aw flow advance");
   });
 });
 

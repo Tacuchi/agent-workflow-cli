@@ -12,9 +12,23 @@ import type { CliContext } from "../types.js";
 export const contextBudgetCommand: CliCommand<ContextBudgetOutput> = {
   name: "context-budget",
   flags: { known: ["root", "baseline"] },
-  describe:
-    "Mide el costo de contexto del bundle w en sus tres tramos (discovery, activación, ejecución) y lo compara contra un baseline congelado. " +
-    "Usage: aw context-budget [--root <bundle>] [--baseline <archivo>] [--format human|json] [--detail].",
+  help: {
+    purpose:
+      "Measure the context budget of the w bundle (discovery, activation, execution bytes) against a frozen baseline.",
+    flags: {
+      root: {
+        value: "<bundle>",
+        effect: "Measure this bundle directory instead of the resolved one.",
+      },
+      baseline: {
+        value: "<file>",
+        effect: "Frozen baseline to judge against; without it the run only measures.",
+      },
+    },
+    output:
+      "{root, root_origin, revision, discovery, activation, execution, guaranteed[], modules, baseline_path, baseline_revision, tokens {available: false, reason}, budget[], offenders[], verdict: measured|ok|over-budget}.",
+    notes: ["Bytes are the gate metric; tokens are declared unavailable, never estimated."],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ContextBudgetOutput>> {
     const input: Parameters<typeof runContextBudget>[1] = {};

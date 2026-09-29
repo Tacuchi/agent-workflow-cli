@@ -95,6 +95,46 @@ const MCP_SERVE_DB = {
   mode: "warn",
 } as const;
 
+const CONNECTION_HELP = {
+  instance: {
+    value: "<name>",
+    effect: "Connection to act on, by its name in mcp-connections.json.",
+  },
+  "all-connections": { effect: "Act on every registered connection." },
+  "dsn-var": {
+    value: "<var>",
+    effect:
+      "Refused: the DSN variable is declared only in mcp-connections.json (aw self mcp use-env).",
+  },
+} as const;
+
+const SCOPE_FLAGS = {
+  host: {
+    value: "<host>",
+    effect: `Host config to act on: ${[...FILE_HOSTS, "all"].join(", ")}; defaults to the host running this command.`,
+  },
+  ...CONNECTION_HELP,
+  workspace: {
+    value: "<path>",
+    effect: "Workspace whose config is used; defaults to the resolved one.",
+  },
+  global: { effect: "Act on the host's global config instead of the workspace one." },
+} as const;
+
+const SERVE_DB_FLAGS = {
+  host: { value: "<host>", effect: "Host whose descriptor launched the server." },
+  scope: {
+    value: "<workspace|global>",
+    effect: "Scope of that descriptor; with --host, lets a global launch be recorded as observed.",
+  },
+  "descriptor-generation": {
+    value: "<n>",
+    effect: "Seal read back from the descriptor; the server itself ignores it.",
+  },
+  ...CONNECTION_HELP,
+  "all-connections": { effect: "Refused: serve-db runs exactly one connection." },
+} as const;
+
 export const mcpCommand: CliCommand = {
   name: "mcp",
   flags: {
@@ -110,8 +150,109 @@ export const mcpCommand: CliCommand = {
       "warp-status": { known: ["workspace"] },
     },
   },
-  describe:
-    "MCP server tooling. `serve` corre el servidor de elicitation de Workline y `serve-db` sirve las tools PostgreSQL; ambas reservan stdout para JSON-RPC. `dbhub` queda como alias deprecado de serve-db. Subcomandos: serve | serve-db [--instance i] | dbhub [--instance i] | setup/remove/doctor [--host h] [--instance i|--all-connections] [--workspace dir] [--global] [--dry-run] [--force] | migrate [--host h] [--instance i|--all-connections] [--workspace dir] [--global] [--apply --force] | warp-status.",
+  help: {
+    purpose:
+      "Run the Workline MCP servers and install, remove, check or migrate their descriptors in each host.",
+    notes: [
+      "Only serve, serve-db and dbhub are stdio servers: they reserve stdout for JSON-RPC and warn about unknown flags on stderr instead of refusing. The other actions take no positional connection; select it with --instance or --all-connections.",
+    ],
+    actions: {
+      serve: {
+        purpose: "Run the Workline elicitation MCP server over stdio.",
+        flags: {
+          host: {
+            value: "<host>",
+            effect:
+              "Host that launched the server, as it declared when registering it; enables its observed elicitation path.",
+          },
+        },
+        output: "None: stdout carries JSON-RPC only.",
+      },
+      "serve-db": {
+        purpose:
+          "Serve the read-only PostgreSQL tools of one connection as an MCP server over stdio.",
+        flags: SERVE_DB_FLAGS,
+        output: "None: stdout carries JSON-RPC only.",
+        exit_codes: {
+          "2": "Bootstrap failed (positional connection, --instance without a name, unresolvable or missing connection); reported on stderr only.",
+        },
+      },
+      dbhub: {
+        purpose: "Deprecated alias of serve-db; warns on stderr and serves the same tools.",
+        flags: SERVE_DB_FLAGS,
+        output: "None: stdout carries JSON-RPC only.",
+        exit_codes: { "2": "Bootstrap failed, as in serve-db." },
+      },
+      setup: {
+        purpose:
+          "Write the serve-db descriptor of the selected connections into each host's MCP config.",
+        flags: {
+          ...SCOPE_FLAGS,
+          "dry-run": { effect: "Report what would be written without writing." },
+          force: { effect: "Approve writing the global host config (required with --global)." },
+        },
+        output:
+          "{scope, scope_dir, dry_run, applied[], skipped[], conflicts[], errors[], receipts?, launch_probes?, materialization?, warp_hints?}. Errors or conflicts make it fail with MCP_SETUP_PARTIAL and the same data.",
+        exit_codes: { "2": "GLOBAL_REQUIRES_FORCE: --global without --force." },
+      },
+      remove: {
+        purpose:
+          "Remove the Workline descriptors of the selected connections from each host's MCP config.",
+        flags: {
+          ...SCOPE_FLAGS,
+          "dry-run": { effect: "Report what would be removed without writing." },
+          force: { effect: "Approve editing the global host config (required with --global)." },
+        },
+        output:
+          "{scope, scope_dir, dry_run, removed[], skipped[], conflicts[], errors[], reload_required?, materialization?}. Errors or conflicts make it fail with MCP_REMOVE_PARTIAL and the same data.",
+        exit_codes: { "2": "GLOBAL_REQUIRES_FORCE: --global without --force." },
+      },
+      doctor: {
+        purpose:
+          "Check each host's MCP descriptors for drift, launch problems and safety; read-only.",
+        flags: {
+          ...SCOPE_FLAGS,
+          probe: {
+            value: "<launch|data>",
+            effect:
+              "Also start each descriptor: launch checks it initializes, data also runs a read.",
+          },
+        },
+        output:
+          "{scope, scope_dir, reports[] (status, probe?, safety?, ...), summary}. Any drifted, failed or blocked entry makes it fail with MCP_DOCTOR_DRIFT and the same data.",
+        exit_codes: { "2": "--probe without a value or with one other than launch or data." },
+      },
+      migrate: {
+        purpose:
+          "Preview, or apply, the rewrite of outdated Workline descriptors to the current form.",
+        flags: {
+          ...SCOPE_FLAGS,
+          "dry-run": {
+            effect: "Preview only; already the default, and refused together with --apply.",
+          },
+          apply: { effect: "Write the migration; requires --force." },
+          force: { effect: "Confirm --apply after reviewing the preview." },
+        },
+        output:
+          "{scope, scope_dir, preview, items[], summary, receipts?, receipt_errors?, readback_errors?, launch_probes?, probe_errors?, native_checks?, ...}. Problems while applying make it fail with MCP_MIGRATE_PARTIAL and the same data.",
+        exit_codes: {
+          "2": "--dry-run with --apply, --apply without --force, or a global migration that was not approved.",
+        },
+      },
+      "warp-status": {
+        purpose:
+          "Report whether Warp's file-based MCP configs exist in the workspace and home, with the activation hint.",
+        flags: {
+          workspace: {
+            value: "<path>",
+            effect: "Workspace whose .warp/.mcp.json is read; defaults to the resolved one.",
+          },
+        },
+        output:
+          "{reports[] ({scope, file, exists, servers[], hint, hint_formatted}), summary}. Read-only.",
+      },
+    },
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const subcommand = args.rest[0];
     if (

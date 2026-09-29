@@ -5,8 +5,15 @@ import { fail } from "../render.js";
 export const addSourceCommand: CliCommand = {
   name: "add-source",
   flags: { known: ["working-branch"] },
-  describe:
-    "Declare or update one source without removing any other: aw add-source <alias>:<ruta>[:<rama>] [--working-branch <rama>].",
+  help: {
+    purpose: "Declare or update one source of the workspace without removing any other.",
+    args: "<alias>:<path>[:<main-branch>]",
+    flags: {
+      "working-branch": { value: "<branch>", effect: "Working branch to record for the source." },
+    },
+    output: "{alias, path, working_branch}.",
+    notes: ["The path must exist on this host and be a Git repository."],
+  },
   async execute(args, ctx) {
     const coordinate = args.rest[0];
     if (!coordinate || args.rest.length !== 1)

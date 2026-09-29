@@ -16,11 +16,29 @@ export const resumeSummaryCommand: CliCommand = {
     retired: ["can-pause"],
     mode: "warn",
   },
-  describe:
-    "Compact resume payload for the PostCompact hook: the session named by --code or " +
-    "associated with the conversation; otherwise degraded continuity with the candidates " +
-    "(the active sessions, even when only one is active) and this conversation's refuge. " +
-    "Usage: aw resume-summary [--code <NNN>] [--include-recent-closed] [--recent-days <n>].",
+  hook: true,
+  help: {
+    purpose:
+      "PostCompact hook target: return the compact resume payload of the named or conversation-bound session.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect: "Session to summarize; defaults to the one bound to this conversation.",
+      },
+      "include-recent-closed": {
+        effect: "Also list recently closed sessions that produced artifacts.",
+      },
+      "recent-days": {
+        value: "<n>",
+        effect: "Window in days for --include-recent-closed; a positive integer, default 7.",
+      },
+    },
+    output:
+      "{active_sessions[], primary_session, primary_session_code?, checkpoint_present, checkpoint_path?, checkpoint_status, checkpoint_age_seconds?, unfilled_placeholders[], needs_ai_action, continuity (ok|degraded), instruction, candidates?, action?, refuge?, checkpoint?, recent_closed_with_artifacts?}.",
+    notes: [
+      "Read-only; it never binds the session it presents. With no resolvable session continuity is degraded and the payload lists the active sessions as candidates (even when only one is active) plus this conversation's refuge, if one was parked.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const options: ResumeSummaryOptions = {};
     if (args.flags.has("--include-recent-closed")) {

@@ -7,13 +7,27 @@ import type { CliCommand, CommandFlags } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const FLAGS: CommandFlags = { known: ["host"], usage: "aw host-memory [--host <id>] --json" };
+const FLAGS: CommandFlags = { known: ["host"] };
 const HOST_IDS = HARNESSES.map((spec) => spec.id).join(" | ");
 
 export const hostMemoryCommand: CliCommand = {
   name: "host-memory",
   flags: FLAGS,
-  describe: `Read-only report of what the other hosts of this machine learned about Workline in their curated memory: one row per host with its state and reason, and each Workline learning with its id, host, date, source, provenance (native or a marked copy), origin mark, stale-command signals and whether the current host's destination already holds it. Also names where the current host would save, or why it has nowhere. Anything else is only counted. Writes nothing and logs nothing. Usage: aw host-memory [--host <${HOST_IDS}>] --json.`,
+  help: {
+    purpose:
+      "Report what the other hosts on this machine learned about Workline in their curated memory.",
+    flags: {
+      host: {
+        value: `<${HOST_IDS.replaceAll(" ", "")}>`,
+        effect: "Report as this host instead of the detected one.",
+      },
+    },
+    output:
+      "{current_host {id, detected_via, destination, destination_reason}, hosts[] (state, reason), entries[] (id, host, date, source, provenance, origin mark, stale-command signals, already at destination)}.",
+    notes: [
+      "Read-only: writes nothing and logs nothing. Memory unrelated to Workline is only counted.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const host = args.values.get("host");
     if (host !== undefined && !isHarnessId(host)) {

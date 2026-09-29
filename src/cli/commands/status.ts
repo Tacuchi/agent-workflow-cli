@@ -12,9 +12,14 @@ import type { CliContext } from "../types.js";
 export const statusCommand: CliCommand<StatusOutput> = {
   name: "status",
   flags: { known: [] },
-  describe:
-    "Read-only workspace dashboard: specs, plans, sessions y descartados con fechas relativas en español. " +
-    "Usage: aw status [--format human|json] [--detail].",
+  help: {
+    purpose: "Show what is pending in the workspace: specs, plans, sessions and discarded work.",
+    output:
+      "{workspace, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], ...}. Read-only.",
+    notes: [
+      "The human view lists pending work only; --detail adds finished history, sessions and discarded items.",
+    ],
+  },
 
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult<StatusOutput>> {
     const data = await runStatusCommand(ctx.fs, ctx.env, ctx.paths, { git: ctx.git });

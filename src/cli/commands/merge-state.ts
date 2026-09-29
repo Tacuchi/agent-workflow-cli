@@ -7,10 +7,22 @@ import type { CliContext } from "../types.js";
 export const mergeStateCommand: CliCommand = {
   name: "merge-state",
   flags: { known: ["source", "all"] },
-  describe:
-    "Inspect in-progress merge state per repo, read-only (origin/destination + conflicted files). " +
-    "Usage: aw merge-state [<repo-path>] [--source <alias>] [--all]. Works on any repo (no workspace needed). " +
-    "Exit 2 when a merge is in progress; exit 1 when a source or unit cannot be read and no merge was found.",
+  help: {
+    purpose:
+      "Inspect the in-progress merge of each repository: origin, destination and conflicted files.",
+    args: "[<repo-path>]",
+    flags: {
+      source: { value: "<alias>", effect: "Inspect this workspace source." },
+      all: { effect: "Inspect every workspace source." },
+    },
+    output:
+      "{repos[] {alias, unit?, path, is_repo, is_merging, current_branch, merge_origin, conflicted_files[], dirty, error?}, any_merging, unreadable[] {alias, path, code, action}, notes[]?}.",
+    exit_codes: {
+      "1": "A source or unit could not be read and no merge was found; ok is still true and data lists unreadable.",
+      "2": "A merge is in progress.",
+    },
+    notes: ["Read-only. With a path, or none, it works on any repository without a workspace."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: MergeStateInput = {};
     const path = args.rest[0];

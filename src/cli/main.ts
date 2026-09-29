@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import { hasWorklineMarker } from "../runtime/workline-marker.js";
 const argv = process.argv.slice(2);
+// Help reads no workspace, so it is served wherever it is asked for.
+const asksHelp = argv.includes("--help") || argv.includes("-h");
 const scoped =
-  argv[0] === "checkpoint-write" ||
-  argv[0] === "resume-summary" ||
-  argv[0] === "auto-compact-on-close" ||
-  (argv[0] === "self" && argv[1] === "namespace" && argv.includes("--pin"));
+  !asksHelp &&
+  (argv[0] === "checkpoint-write" ||
+    argv[0] === "resume-summary" ||
+    argv[0] === "auto-compact-on-close" ||
+    (argv[0] === "self" && argv[1] === "namespace" && argv.includes("--pin")));
 
 async function scopedWorkspaceVisible(): Promise<boolean> {
   if (await hasWorklineMarker(process.cwd())) return true;
@@ -26,7 +29,7 @@ async function scopedWorkspaceVisible(): Promise<boolean> {
   }
 }
 
-if (argv[0] === "hook" && argv[1] !== "sql-mutation-guard" && argv[1] !== "--help") {
+if (argv[0] === "hook" && argv[1] !== "sql-mutation-guard" && !asksHelp) {
   // A retired hook invoked by an old host config must not materialize runtime
   // or block an edit. Refuse it directly, without loading the full CLI.
   process.stdout.write(

@@ -298,7 +298,7 @@ describe("flag contracts · the dispatcher refuses what no command reads", () =>
     expect(outcome.result.data).toEqual({
       unknown_flags: ["--name"],
       action:
-        "corregí el flag y reintentá: `aw session-close --code <sesión> [--refs <csv>] [--force] [--abandon] [--with-evidence]`",
+        "corregí el flag y reintentá: `aw session-close --code <code> [--refs <csv>] [--force] [--abandon] [--with-evidence]`",
     });
   });
 });

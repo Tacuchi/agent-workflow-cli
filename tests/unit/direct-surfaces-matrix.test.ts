@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ALL_COMMANDS, commandDescribes } from "../../src/cli/commands/index.js";
-import { groupCommands } from "../../src/cli/help-groups.js";
+import { commandHelpText, groupCommands } from "../../src/cli/help-groups.js";
 import { resolveOutputMode } from "../../src/cli/output-mode.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import { CommandRegistry } from "../../src/cli/registry.js";
@@ -51,21 +51,22 @@ describe("C1 · every declared surface is a real, registered command", () => {
     expect(
       groupCommands(registry().list()).find((g) => g.name === "Sources / Branches")?.commands,
     ).toContain("set-pipeline");
-    expect(commandDescribes().get("set-pipeline")).toContain("aw set-pipeline");
+    expect(commandDescribes().get("set-pipeline")).toMatch(/build or test/);
   });
 
-  it("every surface carries a describe that names its usage", () => {
-    const describes = commandDescribes();
+  it("every surface carries a help whose usage names it", () => {
     for (const surface of SURFACES) {
-      const describe_ = describes.get(surface.name) ?? "";
-      expect(describe_, surface.name).toContain(`aw ${surface.name}`);
+      const command = registry().resolve(surface.name);
+      expect(command ? commandHelpText(command) : "", surface.name).toContain(
+        `Usage: aw ${surface.name}`,
+      );
     }
   });
 
   // Three commands share the `resume` stem and three different audiences.
   it("the three resume-shaped commands stay distinguishable", () => {
     const describes = commandDescribes();
-    expect(describes.get("resume")).toContain("pipeline documental");
+    expect(describes.get("resume")).toMatch(/what to resume/i);
     expect(describes.get("resume-summary")).toContain("PostCompact");
     expect(describes.get("session-resume")).toContain("session");
   });

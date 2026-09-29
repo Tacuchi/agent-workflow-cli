@@ -33,9 +33,43 @@ const USAGE =
  */
 export const cutIntentCommand: CliCommand = {
   name: "cut-intent",
-  flags: { known: ["spec", "order", "plan", "deferred", "cause"] },
-  describe:
-    "The intent with which a cut of plans born from one spec was meant to be executed: which plans go together, in what order inside the group, and which are held back for a later pass. 'cut-intent' or 'cut-intent show' reads it back — with --plan it answers for one plan, and a plan nobody declared gets an explicit answer, never an empty list. 'cut-intent declare --spec <NNN> --order <NNN,NNN>' records it; declaring again is how you correct it, and the superseded record is kept, never rewritten. The book is append-only under the workspace namespace, next to HISTORY.md. It constrains nothing: executing out of the declared order is allowed and only warned about. Usage: aw cut-intent [show] [--plan <NNN|ruta>] | aw cut-intent declare --spec <NNN> --order <NNN,NNN> [--deferred <NNN,…>] [--cause <texto>].",
+  flags: {
+    known: ["spec", "order", "plan", "deferred", "cause"],
+    actions: { show: { known: [] }, declare: { known: [] } },
+  },
+  help: {
+    purpose: "Declare or read the intended order and grouping of the plans cut from one spec.",
+    flags: {
+      spec: {
+        value: "<NNN|path>",
+        effect: "Spec of the cut; required by declare, a filter for show.",
+      },
+      order: {
+        value: "<NNN,NNN>",
+        effect: "declare only, required: plans that go together, in execution order.",
+      },
+      plan: { value: "<NNN|path>", effect: "show only: answer for this one plan." },
+      deferred: { value: "<NNN,...>", effect: "declare only: plans held back for a later pass." },
+      cause: { value: "<text>", effect: "declare only: why this intent is declared." },
+    },
+    actions: {
+      show: {
+        purpose: "Read the intents in force; the default when no action is given.",
+        output:
+          "Whole book: {path, cuts[] ({spec, at, intent}), records, superseded, unreadable}. --spec: {spec, declared, at?, intent?, reason?}. --plan: {plan, declared, intent?, at?, position?, reason?}.",
+        notes: [
+          "A plan nobody declared gets an explicit declared: false with its reason, never an empty list.",
+        ],
+      },
+      declare: {
+        purpose: "Record the intent for one spec; declaring again is how it is corrected.",
+        output: "{declared: true, at, intent {spec, order[], deferred[]}, path, supersedes}.",
+        notes: [
+          "The book is append-only under the workspace namespace: the superseded record is kept, never rewritten. It constrains nothing; executing out of the declared order is only warned about.",
+        ],
+      },
+    },
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const verb = args.rest[0] ?? "show";
     if (verb !== "show" && verb !== "declare")

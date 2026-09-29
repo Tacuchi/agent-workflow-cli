@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { selfCommand } from "../../src/cli/commands/self.js";
+import { commandHelpText } from "../../src/cli/help-groups.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { ProcessPort } from "../../src/ports/process.js";
@@ -86,7 +87,7 @@ describe("selfCommand — without subcommand (H-07)", () => {
       expect(result.ok).toBe(false);
       expect(result.error?.code).toBe("INVALID_INPUT");
       expect(selfCommand.flags?.actions).not.toHaveProperty(sub);
-      expect(selfCommand.describe).not.toContain(sub);
+      expect(commandHelpText(selfCommand)).not.toContain(sub);
     },
   );
 });

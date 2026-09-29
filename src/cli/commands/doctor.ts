@@ -90,8 +90,62 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
       apply: { known: ["select", "approval"], repeatable: ["select"], required: ["approval"] },
     },
   },
-  describe:
-    "aw doctor: diagnóstico contextual de la instalación y los recursos de Workline en los hosts detectados, con cobertura por categoría y veredicto en el código de salida. Con --verify-connection autorizás verificar las credenciales contra su servicio.",
+  help: {
+    purpose:
+      "Diagnose the installation: Workline and its resources on every detected host, with coverage per category and the verdict in the exit code.",
+    flags: {
+      doctor: { effect: "Set by the aw --doctor alias; has no further effect." },
+      host: {
+        value: "<host>",
+        effect: "Host the run is invoked from; it is highlighted, never filtered.",
+      },
+      only: { value: "<host>", effect: "Diagnose only this host." },
+      "skip-native": { effect: "Skip each host's own MCP connection verdict." },
+      "verify-connection": {
+        effect: "Authorize a read-only network check of the credentials against their service.",
+      },
+    },
+    output:
+      "{schema_version, cli_version, scope {workspace_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, workline_installed}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
+    exit_codes: {
+      "1": "The verdict is not healthy: a blocking finding or an unavailable coverage. ok is still true and data is the full report.",
+    },
+    notes: [
+      "Without an action it runs the read-only diagnosis and returns the report; the action is optional.",
+      `Categories: ${DOCTOR_CATEGORIES.join(", ")}. schema_version 1 is the published shape of the report.`,
+      "Repairs go in two steps: prepare lists the actionable findings or, with --select, seals a batch and returns its digest; apply runs that batch only with the approval digest the person approved.",
+    ],
+    actions: {
+      prepare: {
+        purpose:
+          "List the findings with an automatable repair, or seal a repair batch for the selected ones.",
+        flags: {
+          select: { value: "<finding-id>", effect: "Finding to repair; without it only lists." },
+        },
+        output:
+          "Without --select: {kind: prepare-listing, actionable[] {finding_id, host, resource, op, args, effects[], depends_on[], expected}, report}. With --select: {kind: prepare-sealed, digest, batch {actions[], effects[], requires_approval[]}, read_set[], preview[], next}.",
+      },
+      apply: {
+        purpose:
+          "Apply a sealed repair batch after the person approved its digest, and recheck each action.",
+        flags: {
+          select: {
+            value: "<finding-id>",
+            effect: "Finding of the approved batch; the same selection as prepare.",
+          },
+          approval: {
+            value: "<digest>",
+            effect: "Digest returned by prepare and approved by the person.",
+          },
+        },
+        output:
+          "{kind: applied, status (completed|partial|failed|already), digest, actions[] {finding_id, op, host, resource, status, reason, recheck, recheck_detail}, summary {applied, failed, skipped, blocked, resolved}, exit_code, reason}.",
+        exit_codes: {
+          "1": "The batch did not complete; ok is still true and data reports each action.",
+        },
+      },
+    },
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DoctorCommandData>> {
     const options = {
       host: flagValue(args, "host") ?? null,

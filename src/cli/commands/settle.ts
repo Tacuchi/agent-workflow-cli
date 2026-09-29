@@ -76,14 +76,63 @@ function declarationsOf(args: ParsedArgs) {
 
 export const settleCommand: CliCommand<SettleOutput> = {
   name: "settle",
-  flags: { known: ["settle", "handoff", "pending", "approval"] },
-  describe:
-    "Settle or acknowledge the live obligations of a plan whose decision notes still block its closure, when no execution run is open on it. " +
-    "Cross-cutting: it opens no flow and creates no session. `list` shows each obligation with its note, position, class, whether the class was declared and the plan's CURRENT resume point; " +
-    "`prepare` derives the same settlement note the closure derives, writes nothing, and returns the preview plus the digest that authorizes it; " +
-    "`apply` re-derives everything from the live workspace, demands that digest and publishes under the lock. " +
-    "With an execution run open on the plan it refuses and names that run. " +
-    "Usage: aw settle list|prepare|apply <ruta del plan|correlativo> [--settle 'DEC-001[0]=<evidencia>'] [--handoff 'DEC-001[1]'] [--pending 'DEC-002[0]'] [--approval <digest>].",
+  flags: {
+    known: ["settle", "handoff", "pending", "approval"],
+    repeatable: ["settle", "handoff", "pending"],
+    actions: { list: { known: [] }, prepare: { known: [] }, apply: { known: [] } },
+  },
+  help: {
+    purpose:
+      "Settle or acknowledge the live obligations blocking a plan's closure when no execution run is open on it.",
+    flags: {
+      settle: {
+        value: "<DEC-NNN[i]=evidence>",
+        effect: "prepare/apply: settle that obligation, with the real output that proves it.",
+      },
+      handoff: {
+        value: "<DEC-NNN[i]>",
+        effect: "prepare/apply: declare that obligation belongs to somebody else (non-blocking).",
+      },
+      pending: {
+        value: "<DEC-NNN[i]>",
+        effect: "prepare/apply: declare that obligation not done yet; it stays as it is.",
+      },
+      approval: {
+        value: "<digest>",
+        effect:
+          "apply only, where it is required: the digest prepare returned for the same declarations.",
+      },
+    },
+    actions: {
+      list: {
+        purpose:
+          "Show each obligation with its note, position, class and the plan's current resume point.",
+        args: "<plan-path|number>",
+        output:
+          "{action: list, listing {plan, spec, compensations[], handoffs[], closable, current_point}}. Read-only.",
+      },
+      prepare: {
+        purpose:
+          "Derive the settlement note the closure would derive and return its approval digest.",
+        args: "<plan-path|number>",
+        output:
+          "{action: prepare, status: prepared|listed, listing, planned[], digest, next}; listed (digest and next null) when nothing was declared.",
+        notes: ["Writes nothing."],
+      },
+      apply: {
+        purpose:
+          "Re-derive everything from the live workspace and publish the approved settlement.",
+        args: "<plan-path|number>",
+        output: "{action: apply, status: applied, listing, published[], settled[], closable}.",
+        notes: [
+          "Pass the same declarations as prepare. Publishes under the workspace lock; a missing digest fails with APPROVAL_REQUIRED.",
+        ],
+      },
+    },
+    notes: [
+      "Cross-cutting: it opens no flow and creates no session. With an execution run open on the plan it refuses and names that run. Approving asserts the work was done, or was somebody else's.",
+    ],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<SettleOutput>> {
     const action = args.rest[0] as Action | undefined;

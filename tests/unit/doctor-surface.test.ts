@@ -279,7 +279,7 @@ describe("aw doctor · registro y ayuda", () => {
     expect(typeof doctorCommand.renderHuman).toBe("function");
     // `aw --help` imprime el describe de cada comando: sin él el grupo lista un
     // renglón mudo. Se afirma que EXISTE, no cómo está redactado.
-    expect(doctorCommand.describe?.trim()).toBeTruthy();
+    expect(doctorCommand.help.purpose.trim()).toBeTruthy();
   });
 });
 

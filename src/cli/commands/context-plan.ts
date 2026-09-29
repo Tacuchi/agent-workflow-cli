@@ -7,10 +7,37 @@ import type { CliContext } from "../types.js";
 
 export const contextPlanCommand: CliCommand<ContextPlanOutput> = {
   name: "context-plan",
-  flags: { known: ["command", "signal", "capability", "root"] },
-  describe:
-    "Devuelve el read-set ordenado de un comando —qué documentos leer, en qué orden y a qué costo— más el recibo de lo cargado. " +
-    "Usage: aw context-plan --command <cmd> [--signal <s>]… [--root <bundle>] [--format human|json] [--detail].",
+  flags: {
+    known: ["command", "signal", "capability", "root"],
+    repeatable: ["signal", "capability"],
+  },
+  help: {
+    purpose:
+      "Return a command's ordered read-set: which bundle documents to read, in what order and at what cost.",
+    flags: {
+      command: {
+        value: "<cmd>",
+        effect: "Command whose read-set is planned; the first positional is accepted instead.",
+      },
+      signal: {
+        value: "<signal>",
+        effect: "Observed signal that loads its module into the read-set.",
+      },
+      capability: {
+        value: "<capability>",
+        effect: "Host capability that satisfies a module requiring it.",
+      },
+      root: {
+        value: "<bundle>",
+        effect: "Plan against this bundle directory instead of the resolved one.",
+      },
+    },
+    output:
+      "{command, profile, signals[], available_signals[] ({signal, means, module}), read_set[] ({absolute, signal, bytes, missing}), bytes, degraded, notice, receipt}.",
+    notes: [
+      "notice is a line to relay verbatim when the profile widened; the receipt records what was loaded.",
+    ],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ContextPlanOutput>> {
     const command = flagValue(args, "command") ?? args.rest[0] ?? "";

@@ -94,27 +94,15 @@ const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul", "ret
  * context budget is frozen and this is reference material: it is read when
  * somebody is composing an answer, not on every run.
  */
-const ENVELOPE = [
-  "Sobre de `submit` — un único objeto JSON por stdin, con sus campos en el NIVEL SUPERIOR:",
-  "",
-  "  siempre         input_digest: el `state_digest` de la directiva que contestás — la directiva lo rotula `continuidad:` y el sobre lo llama `input_digest`; es el mismo valor.",
-  "",
-  "  execution       outcome: completed | needs_input | blocked | failed | cancelled",
-  "                  invocation: {program, args[], target, input} — el OBJETO idéntico al que la directiva selló; si cambia el programa, un argumento, el target o el input, se rechaza.",
-  "                  validations: [{id, passed, detail, proof?}] — un ítem por CADA evidencia que la directiva exige, con `passed: true` y `detail` no vacío: ahí va la salida real de la herramienta, no una afirmación sobre ella.",
-  "                  proof es obligatorio para `workline.source-bounded`: {kind: 'command'|'inspection', source, relative_cwd, checkout_digest, invocation}; sólo acredita un checkout vigente.",
-  "                  En la validación de fase de plan-exec va un ítem `workline.source-bounded` por CADA fuente del lote, cada uno con su prueba ('aw flow prove --source <alias>'), tomada después de los cambios del lote: sin cambios desde su base, o con una prueba que ya acreditó otro lote, no acredita.",
-  "                  effects: {planned[], approved[], applied[]} — el registro de clases de efecto, no una lista.",
-  "                  output: opcional — {value, reference: {id, revision, digest, locator}, completeness} o null.",
-  "",
-  "  semantic        signals[]: solo identificadores del vocabulario que esa frontera declara · decisions: objeto con al menos una clave. Alcanza con uno de los dos.",
-  "                  artifacts: [{path, content}] — obligatorio cuando la frontera propone efectos locales, rechazado cuando no propone ninguno.",
-  "",
-  "  human           choice: la etiqueta literal de una de las alternativas que la directiva emitió.",
-  "",
-  "  authorization   --approval <digest> se exige sólo en fronteras authorization; el digest está en expects.approval.digest y NO es el state_digest. En semantic, human y execution se ignora --approval. Con `Cerrar` o `Compactar` no se pide aprobación.",
-  "  submit --check  lee este mismo sobre y lista sus violaciones sin registrar intento, avanzar ni ejecutar acciones internas.",
-].join("\n");
+const ENVELOPE_NOTES = [
+  "Submit envelope: one JSON object on stdin, fields at the TOP level. Always: input_digest, the `state_digest` of the directive being answered; it is the same value, and the human directive labels it `continuidad:`.",
+  "execution boundary: outcome (completed | needs_input | blocked | failed | cancelled); invocation {program, args[], target, input}, the exact object the directive sealed (any change to program, an argument, target or input is rejected); validations [{id, passed, detail, proof?}], one item per evidence the directive demands, with passed: true and a non-empty detail carrying the real tool output, not a claim about it; effects {planned[], approved[], applied[]}, the effect-class ledger, not a list; output, optional: {value, reference: {id, revision, digest, locator}, completeness} or null.",
+  "proof is mandatory for `workline.source-bounded`: {kind: 'command'|'inspection', source, relative_cwd, checkout_digest, invocation}; it only credits a current checkout. In the plan-exec phase validation, send one `workline.source-bounded` item per source of the batch, each with its own proof (`aw flow prove --source <alias>`) taken after the batch changes: a source unchanged since its base, or a proof another batch already credited, does not credit. Which checkout each source resolves to: see `aw flow prove --help`.",
+  "semantic boundary: signals[] (only ids from the vocabulary that boundary declares) and/or decisions (an object with at least one key); one of the two suffices. artifacts [{path, content}] is mandatory when the boundary proposes local effects and rejected when it proposes none.",
+  "human boundary: choice, the literal label of one of the choices the directive emitted.",
+  "authorization boundary: --approval <digest> is required only here; the digest is expects.approval.digest and is NOT the state_digest. semantic, human and execution boundaries ignore --approval. The close and compact choices need no approval.",
+  "At the workspace commit gate the directive carries workspace_commit_preview; to approve it include decisions.commit_approval with that preview's approval digest.",
+] as const;
 
 /**
  * How the eligible aliases resolve to real directories on THIS machine.
@@ -130,43 +118,21 @@ const ENVELOPE = [
  * absolute path a directive prints is an observation of one host, and the rule is
  * what makes that path predictable somewhere else.
  */
-const CHECKOUT = [
-  "Fronteras con evidencia `workline.source-bounded` — contra qué checkout se valida:",
-  "",
-  "  La directiva imprime `checkout que validará: <alias> → <raíz>`. Esa raíz es una observación",
-  "  de ESTE host, no una identidad transferible: no la copies a otra máquina ni a otro sobre.",
-  "  Lo portable es la regla que la eligió, y es determinista:",
-  "",
-  "  workspace       la raíz DOCUMENTAL: se sube desde el directorio del workspace y se para en el",
-  "                  PRIMER ancestro que contiene el marcador de Workline. En un hub anidado ese",
-  "                  directorio NO es la raíz del repo git, y el digest se calcula sobre él, no sobre",
-  "                  el repo. Es el caso que más intentos cuesta, porque `git status` en la raíz git",
-  "                  puede estar limpio mientras la huella del subdirectorio es otra.",
-  "  otros alias     la unidad de aislamiento de ESTA sesión para ese alias de `AGENTS.md > Fuentes`.",
-  "                  Una prueba no puede prestarse el worktree de otra corrida por escribir su alias.",
-  "",
-  "  Una frontera ausente, ilegible o cuya huella no es reproducible falla CERRADA: no se trata como",
-  "  un árbol limpio. El digest caduca con cada escritura al árbol probado, así que el orden es",
-  "  correr la invocación sellada → capturar la prueba → hacer el submit, sin tocar el repo en medio",
-  "  (el sobre JSON va a un directorio temporal FUERA del checkout probado).",
-  "",
-  "  No calcules el digest a mano. `aw flow prove --session <código>` produce la prueba COMPLETA que",
-  "  el `kind` de la frontera vigente exige, contra la raíz que la directiva publicó, y la prevalida",
-  "  con la MISMA política que aplicará el submit: si pasa acá, sólo puede fallar allá porque el árbol",
-  "  se movió en el medio. No avanza la frontera, no gasta intento y no escribe en el checkout que mide.",
-  "    --source <alias>     qué frontera probar; por defecto `workspace`.",
-  "    --artifact <ruta>    produce una prueba `inspection` sobre esa ruta relativa en vez de la",
-  "                         prueba `command` de la invocación sellada.",
-  "  Devuelve la prueba lista para pegar como campo `proof` del ítem de `validations` que acredita",
-  "  esa frontera. Si la raíz no se observa o la huella no es estable, falla cerrada y dice cuál de",
-  "  las dos cosas pasó, porque estabilizar y recapturar no son el mismo arreglo.",
-  "",
-  "  Y conviene usarlo: una prueba cuya forma no coincide con su `kind` vuelve como",
-  "  `WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID`, sin gastar intento. Los errores de tipo, forma,",
-  "  literal, digest, invocación, gramática del plan o prueba vencida tampoco gastan. Sólo gasta",
-  "  un rechazo que juzga la decisión o afirmación de la respuesta: ejecución inconclusa, evidencia",
-  "  que no pasa, alcance o decisión que la frontera no acepta, o respuesta vacía.",
-].join("\n");
+const CHECKOUT_NOTES = [
+  "Which checkout a `workline.source-bounded` evidence is validated against: the directive prints the checkout it will validate (alias and root). That root is an observation of THIS host, not a transferable identity: never copy it to another machine or envelope. The rule that chose it is portable and deterministic.",
+  "workspace alias: the DOCUMENT root, found by walking up from the workspace directory to the FIRST ancestor holding the Workline marker. In a nested hub that directory is NOT the git repo root and the digest is computed over it, not over the repo; `git status` at the git root can be clean while the subdirectory fingerprint differs. Other aliases: this session's isolation unit for that alias of the AGENTS.md sources table; a proof cannot borrow another run's worktree by naming its alias.",
+  "A boundary that is absent, unreadable or whose fingerprint is not reproducible fails CLOSED; it is never treated as a clean tree. The digest expires with every write to the proven tree, so the order is: run the sealed invocation, capture the proof, submit, without touching the repo in between (write the JSON envelope to a temporary directory OUTSIDE the proven checkout).",
+] as const;
+
+const PROVE_NOTES = [
+  "Never compute the digest by hand. prove builds the COMPLETE proof the current boundary kind demands, against the root the directive published, and prevalidates it with the SAME policy submit applies: if it passes here it can only fail there because the tree moved. It does not advance the boundary, spends no attempt and never writes to the checkout it measures.",
+  "The result's proof is ready to paste as the `proof` field of the validations item that credits that boundary. If the root cannot be observed or the fingerprint is unstable it fails closed and says which, because stabilizing and recapturing are different fixes.",
+  ...CHECKOUT_NOTES,
+] as const;
+
+const ATTEMPT_NOTES = [
+  "Attempts: a proof whose shape does not match its kind returns WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID without spending an attempt. Type, shape, literal, digest, invocation, plan grammar and expired-proof errors spend none either. Only a rejection that judges the answer's decision or claim spends one: inconclusive execution, failing evidence, a scope or decision the boundary does not accept, or an empty answer.",
+] as const;
 
 /**
  * The four refusals every verb shares, answered before any of them runs.
@@ -221,6 +187,9 @@ function readFlowArgs(
   };
 }
 
+const DIRECTIVE_OUTPUT =
+  "The directive: {version, flow, tranche, session, boundary {transition, kind, ...}, outcome, state_digest, applied[], pending[], request, action, choices[], proposal, decision_preview, fix_preview, route, effects, expects {effects[], approval {required, digest}, decisions, note, source_scope}, authorizations[], degradations[], error, attempt_accounting, next_action}. request is set only at a semantic boundary, action only at an execution one, choices only at human or authorization ones.";
+
 export const flowCommand: CliCommand<FlowResult> = {
   name: "flow",
   flags: {
@@ -230,20 +199,132 @@ export const flowCommand: CliCommand<FlowResult> = {
       submit: { known: ["approval", "check"] },
       prove: { known: ["source", "artifact"] },
       recover: { known: ["transition", "reinfer-batch", "approval"] },
-      retract: { known: ["signal"] },
-      annul: { known: ["from", "approval"] },
+      retract: { known: ["signal"], required: ["signal"] },
+      annul: { known: ["from", "approval"], required: ["from"] },
       restart: { known: [] },
     },
   },
-  describe: `Avanza un recorrido de Workline hasta su primera frontera no determinista y devuelve su directiva. Verbos: ${VERBS.join(" | ")}. La respuesta de submit entra por stdin como JSON y la aprobación de efecto viaja aparte en --approval. recover le devuelve los intentos a la frontera agotada vigente conservando todo lo aplicado, y se niega si esa frontera ya ejerció efectos. restart saca de cualquier estado trabado —frontera agotada con efectos, registro ilegible o sellado mal, anterior a la v11, contador de intentos ilegible o revertido—: archiva el registro y su contador en un archivo con fecha y sello dentro de la sesión, re-adopta el mismo flow (del registro, de la custodia o de --flow) y lo deja en la traza; nunca hace falta tocar .flow-run.json a mano. annul reabre un lote mal acreditado y los posteriores: sin --approval muestra las fases y tareas que reabre y el digest que lo aprueba, sin escribir nada; con ese digest las deja pendientes y abiertas en el plan, retira su sello done si lo tenía, re-adopta la corrida para que las vuelva a inferir y lo deja en la traza; git no se toca. Usage: aw flow advance --session <código> [--flow <flow> --adopt] · aw flow recover --session <código> [--transition <id>] · aw flow prove --session <código> [--source <alias>] [--artifact <ruta>] · aw flow restart --session <código> [--flow <flow>] · aw flow annul --session <código> --from <lote> [--approval <digest>].
-
-retract retira una señal antes de que se aplique su fila consumidora y deja una traza, sin perdonar intentos: aw flow retract --session <código> --signal <señal>.
-
-recover --reinfer-batch muestra el diff del lote inferido sin escribir; con --approval <digest> re-sella el mismo lote no publicado y obliga a repetir validación y revisión. Uso: aw flow recover --session <código> --reinfer-batch [--approval <digest>].
-
-${ENVELOPE}
-
-${CHECKOUT}`,
+  help: {
+    purpose:
+      "Drive a Workline journey: apply every transition the CLI owns and return the directive of the first boundary it does not.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect: "Session to act on; defaults to the session bound to this host context.",
+      },
+      session: { value: "<code>", effect: "Alias of --code." },
+      flow: {
+        value: "<flow>",
+        effect: `Flow to adopt (advance --adopt) or to re-adopt on restart when nothing records it: ${WORKLINE_FLOWS.join(", ")}.`,
+      },
+      host: { value: "<host>", effect: "Host id; refused unless it is in the installed catalog." },
+    },
+    notes: [
+      "Order of a walk: advance returns a directive; answer its boundary with submit (JSON on stdin); for evidence `workline.source-bounded`, run the sealed invocation, then prove, then submit. Every directive carries state_digest, the seal an answer quotes back as input_digest.",
+    ],
+    actions: {
+      advance: {
+        purpose:
+          "Apply the consecutive CLI-owned transitions and return the directive of the first boundary that needs an answer.",
+        flags: {
+          adopt: { effect: "Start the run of --flow in this session when none is adopted yet." },
+        },
+        output: DIRECTIVE_OUTPUT,
+        notes: [
+          "Reads no stdin. At the closing commit gate the directive adds workspace_commit_preview {repo, branch, head, message, paths[], excluded[], approval}.",
+        ],
+      },
+      submit: {
+        purpose:
+          "Answer the boundary in force with the JSON envelope read from stdin and continue the walk.",
+        flags: {
+          approval: {
+            value: "<digest>",
+            effect:
+              "Effect approval digest (expects.approval.digest); read only at authorization boundaries.",
+          },
+          check: {
+            effect:
+              "Validate the envelope and list its violations without recording an attempt, advancing or running internal actions.",
+          },
+        },
+        output: `${DIRECTIVE_OUTPUT} With --check: {check: true, valid, error, violations[] ({field, message})}.`,
+        notes: [...ENVELOPE_NOTES, ...ATTEMPT_NOTES],
+      },
+      prove: {
+        purpose:
+          "Capture the checkout proof the current boundary demands, prevalidated, without advancing or spending an attempt.",
+        flags: {
+          source: {
+            value: "<alias>",
+            effect: "Source whose boundary to prove; defaults to workspace.",
+          },
+          artifact: {
+            value: "<path>",
+            effect:
+              "Build an `inspection` proof over this relative path instead of the `command` proof of the sealed invocation.",
+          },
+        },
+        output:
+          "{session, boundary, evidence[], checkout {source, root}, proof, warnings[], usage}.",
+        notes: [...PROVE_NOTES, ...ATTEMPT_NOTES],
+      },
+      recover: {
+        purpose:
+          "Give the exhausted boundary in force back its attempts, keeping everything applied; or re-seal the inferred batch.",
+        flags: {
+          transition: {
+            value: "<id>",
+            effect: "Transition expected to be in force; refused if another one is.",
+          },
+          "reinfer-batch": {
+            effect:
+              "Preview the diff of the re-inferred batch without writing; with --approval, re-seal the same unpublished batch.",
+          },
+          approval: {
+            value: "<digest>",
+            effect:
+              "Approval digest from the --reinfer-batch preview; only valid with --reinfer-batch.",
+          },
+        },
+        output: `${DIRECTIVE_OUTPUT} With --reinfer-batch and no --approval: {reinfer_batch: true, session, batch, old_digest, new_digest, diff, approval_digest, next}.`,
+        notes: [
+          "Reads no stdin and does not walk: it returns the boundary to an answerable state and stops. It refuses when that boundary already exercised effects (use restart). --reinfer-batch refuses --transition; re-sealing forces validation and review to run again.",
+        ],
+      },
+      restart: {
+        purpose:
+          "Archive a stuck run record and re-adopt the same flow, so the session never needs hand edits to its run state.",
+        flags: {},
+        output: DIRECTIVE_OUTPUT,
+        notes: [
+          "Covers any stuck state: an exhausted boundary with effects, an unreadable or badly sealed record, a record older than v11, an unreadable or reverted attempt counter. The record and its counter are archived to a dated, sealed file inside the session; the flow is re-adopted from the record, the custody or --flow, and the restart is traced. Never edit .flow-run.json by hand.",
+        ],
+      },
+      annul: {
+        purpose:
+          "Reopen a wrongly credited batch and every later one, previewing first and applying with its digest.",
+        flags: {
+          from: { value: "<batch>", effect: "First batch to reopen; later batches reopen too." },
+          approval: {
+            value: "<digest>",
+            effect:
+              "Digest from the preview; applies the annulment. Without it nothing is written.",
+          },
+        },
+        output: `Preview: {session, plan, batches[] ({id, phases[], tasks[], kind?}), phases[], tasks[], unseals_done, digest, next}. Applied: ${DIRECTIVE_OUTPUT}`,
+        notes: [
+          "Applying leaves the phases and tasks pending and open in the plan, removes its done seal if present, re-adopts the run so it infers them again and traces it. Git is never touched.",
+        ],
+      },
+      retract: {
+        purpose:
+          "Withdraw a signal before its consuming row applies, leaving a trace and without refunding attempts.",
+        flags: { signal: { value: "<signal>", effect: "Signal id to withdraw." } },
+        output: DIRECTIVE_OUTPUT,
+      },
+    },
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<FlowResult>> {
     const parsed = readFlowArgs(args, ctx);

@@ -12,8 +12,40 @@ import type { CliContext } from "../types.js";
 
 export const sessionCreateCommand: CliCommand = {
   name: "session-create",
-  flags: { known: ["type", "name", "objetivo", "from", "input", "allow-repeat"] },
-  describe: `Create an internal session folder + SESSION.md and seal its custody (typed parents + byte-exact baseline of every declared input). Without --input the run's own document is DERIVED from the descriptor (\`<slug>-spec-refine\`/\`-plan-new\` seal ${DEFAULT_CORE_DOCS_CANON.spec}/NNN-spec-<slug>.md; \`-plan-refine\`/\`-plan-exec\` seal ${DEFAULT_CORE_DOCS_CANON.plan}/NNN-plan-<slug>.md); \`inputs_from\` reports which road was taken and \`inputs_note\` why none was. Flags: --type {research|refine|exec|quick} --name <folder> --objetivo <text> [--from <origin>] [--input <ruta-relativa> (repeatable)].`,
+  flags: {
+    known: ["type", "name", "objetivo", "from", "input", "allow-repeat"],
+    required: ["type", "name", "objetivo"],
+    repeatable: ["input"],
+  },
+  help: {
+    purpose:
+      "Create a session folder with its SESSION.md and seal the custody of the inputs it may modify.",
+    flags: {
+      type: { value: "<research|refine|exec|quick>", effect: "Kind of session." },
+      name: {
+        value: "<folder>",
+        effect: "Session descriptor; it must end in a recognized flow, e.g. <slug>-plan-exec.",
+      },
+      objetivo: { value: "<text>", effect: "Objective recorded in SESSION.md." },
+      from: {
+        value: "<origin>",
+        effect: "Plain origin of the session (who or where it came from).",
+      },
+      input: {
+        value: "<relative-path>",
+        effect:
+          "Workspace-relative artifact the run receives and may modify; its bytes are sealed.",
+      },
+      "allow-repeat": {
+        effect: "Open a quick again although a closed quick with the same name exists.",
+      },
+    },
+    output:
+      "{type, name, number, folder, path, session_path, custody_path, inputs[], inputs_from (declared|derived|none), flow?, inputs_note?, origin?, registry_warning?, materialization}.",
+    notes: [
+      `Without --input the run's own document is derived from the descriptor: <slug>-spec-refine and <slug>-plan-new seal ${DEFAULT_CORE_DOCS_CANON.spec}/NNN-spec-<slug>.md; <slug>-plan-refine and <slug>-plan-exec seal ${DEFAULT_CORE_DOCS_CANON.plan}/NNN-plan-<slug>.md. inputs_from reports which road was taken and inputs_note why nothing was sealed.`,
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionCreateInput = {};
     const inputs = args.valuesMulti.get("input");

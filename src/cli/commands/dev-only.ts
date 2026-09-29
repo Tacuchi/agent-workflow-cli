@@ -20,7 +20,20 @@ const HARNESS_IDS = HARNESSES.map((h) => h.id).join(" | ");
 export const harnessCommand: CliCommand = {
   name: "harness",
   flags: { known: ["host"] },
-  describe: `Identify the host harness from its env markers (${HARNESS_IDS} | unknown). 'unknown' is a legitimate answer — some hosts export no marker to their subprocesses; use 'self detect-hosts' for what is actually installed on the machine.`,
+  help: {
+    purpose: "Identify the agent host running this invocation from its environment markers.",
+    flags: {
+      host: {
+        value: `<${HARNESS_IDS.replaceAll(" ", "")}>`,
+        effect: "Bind the answer to this host instead of detecting it.",
+      },
+    },
+    output:
+      "{agent_host, terminal_host, harness (deprecated), execution, resource_policy {deterministic, semantic_default}, supports_plan_subagent, detected_via, terminal_detected_via, ...}.",
+    notes: [
+      "unknown is a legitimate answer: some hosts export no marker to their subprocesses. aw self detect-hosts reports what is installed on the machine.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const requested = args.values.get("host");
     if (requested !== undefined && !isHarnessId(requested)) {
@@ -37,7 +50,11 @@ export const harnessCommand: CliCommand = {
 export const profilesCommand: CliCommand = {
   name: "profiles",
   flags: { known: [] },
-  describe: "Resolve user preferences from the namespace's user-config.md.",
+  help: {
+    purpose: "Resolve the user preferences declared in the namespace's user-config.md.",
+    output:
+      "{validation_mode: ask|auto|manual, teaching_mode: off|on, delegate_to_subagent, source: default|user-config, legacy_section_detected}.",
+  },
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const data = await runProfiles(ctx.fs, ctx.paths);
     return { ok: true, data, exitCode: 0 };
@@ -47,7 +64,15 @@ export const profilesCommand: CliCommand = {
 export const logsCommand: CliCommand = {
   name: "logs",
   flags: { known: ["tail", "clear"] },
-  describe: "View or clear the CLI log. Usage: aw logs [--tail <n>] [--clear].",
+  help: {
+    purpose: "Show or clear the CLI's user-level daily log.",
+    flags: {
+      tail: { value: "<n>", effect: "Show the last n lines of today's log (default 20)." },
+      clear: { effect: "Delete every daily log file instead of showing one." },
+    },
+    output:
+      "{path, lines[], total_lines?, showing?, message?}; with --clear: {cleared: true, path}.",
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const tailStr = args.values.get("tail");
     const tail = tailStr ? Number.parseInt(tailStr, 10) : undefined;
@@ -107,8 +132,32 @@ function nextNumberRefusal(input: {
 export const nextNumberCommand: CliCommand = {
   name: "next-number",
   flags: { known: ["claim", "publish", "code", "dry-run", "folder"] },
-  describe:
-    "Compute next NNN correlative for a directory. --claim <nombre> --code <sesión> reserves a file; add --folder to reserve a directory with its marker inside. --publish <nombre> writes an idempotent numbered document with NNN in its title, or previews it with --dry-run; requires a materialized Workline workspace. Usage: aw next-number <directorio> [--claim <nombre> --code <sesión> [--folder]] [--publish <nombre> [--dry-run]] [--dry-run].",
+  help: {
+    purpose:
+      "Number a new document: compute the next NNN of a directory, reserve it for a session, or publish the document under it.",
+    args: "<dir>",
+    flags: {
+      claim: {
+        value: "<name>",
+        effect: "Reserve <NNN>-<name> for the session given by --code; requires --code.",
+      },
+      publish: {
+        value: "<name>",
+        effect:
+          "Write the document read from stdin as <NNN>-<name>, with NNN in its title; idempotent.",
+      },
+      code: { value: "<code>", effect: "Session that owns the --claim reservation." },
+      "dry-run": { effect: "Preview without creating the directory or writing; not with --claim." },
+      folder: {
+        effect: "With --claim, reserve a directory with its marker inside instead of a file.",
+      },
+    },
+    output:
+      "{directory, exists, created, current_max, next, files[], claimed_path, claimed_owner, published_path, claim_reused}.",
+    notes: [
+      "Without --claim or --publish it is a pure query. --claim and --publish exclude each other. --publish needs a materialized Workline workspace (.workflow/sessions/) and the final content on stdin; zero bytes are refused.",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
     const usage =

@@ -18,12 +18,23 @@ const USAGE = "uso: plan lint <ruta del plan|correlativo>";
 
 export const planCommand: CliCommand<PlanLintReport> = {
   name: "plan",
-  flags: { known: [] },
-  describe:
-    "Actions over a plan document that need no run. `lint` returns every violation of the plan grammar " +
-    "(sources, closing clauses, execution limit and lineage), each with its code, line, message, rule and the gate " +
-    "that judges it (publication, execution-entry or both). It opens no flow, creates no session and writes nothing; " +
-    "it exits 2 when there are violations. Usage: aw plan lint <ruta del plan|correlativo>.",
+  flags: { known: [], actions: { lint: { known: [] } } },
+  help: {
+    purpose: "Run actions over a plan document that need no flow or session.",
+    actions: {
+      lint: {
+        purpose:
+          "Report every plan grammar violation at once: sources, closing clauses, execution limit and lineage.",
+        args: "<plan-path|number>",
+        output:
+          "{plan, workspace_block, violations[] ({code, line, message, rule, moment: publication|execution-entry|both})}.",
+        exit_codes: { "2": "The plan has violations; the report is still printed." },
+        notes: [
+          "Read-only: opens no flow, creates no session and writes nothing. Without a readable WORKSPACE block (workspace_block false) publication judges the clauses only.",
+        ],
+      },
+    },
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<PlanLintReport>> {
     const action = args.rest[0];

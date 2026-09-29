@@ -20,11 +20,26 @@ export const releaseDataCommand: CliCommand = {
       "verbose",
     ],
   },
-  describe:
-    "Dump consolidado del corpus de sesiones para la familia export-* " +
-    "(scripts/manuals/diagrams/reports). Usage: aw release-data [--sessions <csv>] " +
-    "[--since sessionNNN] [--source <alias>] [--include-graduated] " +
-    "[--standalone-sql] [--no-open] [--no-closed] [--verbose].",
+  help: {
+    purpose:
+      "Dump the consolidated session corpus that the export commands (scripts, manuals, diagrams, reports) read.",
+    flags: {
+      sessions: {
+        value: "<csv>",
+        effect: "Only these session codes; takes precedence over --since.",
+      },
+      since: { value: "<code>", effect: "Only the sessions after this one." },
+      source: { value: "<alias>", effect: "Read the docs and release roots of this source." },
+      "include-graduated": { effect: "Also list the bundles the sessions already graduated to." },
+      "no-closed": { effect: "Leave out closed sessions." },
+      "no-open": { effect: "Leave out open sessions." },
+      "standalone-sql": { effect: "Also list SQL files that belong to no session." },
+      verbose: { effect: "Include the full detail of each session." },
+    },
+    output:
+      "{source_alias, docs_root, release_root, sessions[], sessions_count, legacy_sessions[]?, since?, graduated_bundles[]?, standalone_sql[]?, warnings[]?}.",
+    notes: ["Read-only."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: Parameters<typeof runReleaseData>[3] = {};
     const sessionsRaw = args.values.get("sessions");

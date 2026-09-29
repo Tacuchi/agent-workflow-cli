@@ -5,7 +5,12 @@ import { fail } from "../render.js";
 export const setEditModeCommand: CliCommand = {
   name: "set-edit-mode",
   flags: { known: [] },
-  describe: "Declare the workspace edit mode. Usage: aw set-edit-mode in-place|unit.",
+  help: {
+    purpose: "Declare whether the workspace edits sources in place or in isolation units.",
+    args: "<in-place|unit>",
+    output:
+      "{ok, action, results[] {file, path, action?, error?}, working_branches?, qa_branches?, dropped_lines[]?, migrated[]?, not_migrated[]?}.",
+  },
   async execute(args, ctx) {
     const mode = args.rest[0];
     if (args.rest.length !== 1 || (mode !== "in-place" && mode !== "unit"))

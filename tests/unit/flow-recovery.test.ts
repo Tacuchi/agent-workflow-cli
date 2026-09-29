@@ -18,6 +18,7 @@ import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import { flowCommand } from "../../src/cli/commands/flow.js";
+import { commandHelpText } from "../../src/cli/help-groups.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { FLOW_ANSWER_REJECTIONS, spendsAttempt } from "../../src/domain/flow/answer.js";
@@ -904,7 +905,7 @@ describe("intentos, agotamiento y recuperación sobre un workspace real", () => 
       expect(result.data?.boundary.transition).toBe("fixture.observe");
       expect(attemptsAt(await state(), "fixture.observe")).toBe(0);
       // Y está publicado donde se lee sin correr un recorrido.
-      expect(flowCommand.describe).toContain("recover");
+      expect(commandHelpText(flowCommand, "recover")).toContain("aw flow recover");
     });
 
     it("restaurar una copia vieja después de recuperar tampoco devuelve intentos", async () => {

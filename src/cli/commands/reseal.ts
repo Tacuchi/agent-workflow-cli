@@ -65,13 +65,37 @@ function refuse(code: string, message: string, action: string): CommandResult<Re
 
 export const resealCommand: CliCommand<ResealOutput> = {
   name: "reseal",
-  flags: { known: ["approval"] },
-  describe:
-    "Re-seal a plan's `> Baseline:` against the current functional content of its spec, when a review concluded the plan still holds. " +
-    "Cross-cutting: it opens no flow and creates no session. `prepare` is read-only and returns the line it would write plus its digest; " +
-    "`apply` requires that digest, re-runs the whole preparation under the workspace lock and rewrites the seal line only. " +
-    "It asserts nothing on its own: the divergence a redesign should close still belongs to /w:plan-refine. " +
-    "Usage: aw reseal prepare|apply <ruta del plan|correlativo> [--approval <digest>].",
+  flags: { known: ["approval"], actions: { prepare: { known: [] }, apply: { known: [] } } },
+  help: {
+    purpose:
+      "Re-seal a plan's Baseline line against its spec's current functional content after a review confirmed the plan holds.",
+    flags: {
+      approval: {
+        value: "<digest>",
+        effect: "apply only, where it is required: the digest prepare returned.",
+      },
+    },
+    actions: {
+      prepare: {
+        purpose:
+          "Show the seal it would replace, the line it would write and the digest that authorizes it.",
+        args: "<plan-path|number>",
+        output:
+          "{action: prepare, status: prepared|already, digest, preview {plan, spec, sealed_digest, current_digest, baseline_line}, next}; already (digest and next null) when the seal is current.",
+        notes: ["Read-only."],
+      },
+      apply: {
+        purpose:
+          "Recompute the preparation under the workspace lock and rewrite the seal line only.",
+        args: "<plan-path|number>",
+        output: "{action: apply, status: applied|already, preview, written[], already_applied}.",
+        notes: ["A missing digest fails with APPROVAL_REQUIRED."],
+      },
+    },
+    notes: [
+      "Cross-cutting: it opens no flow and creates no session. Approving asserts a person read the plan against the current spec; a divergence that needs a redesign belongs to /w:plan-refine.",
+    ],
+  },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ResealOutput>> {
     const action = args.rest[0] as Action | undefined;

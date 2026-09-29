@@ -25,11 +25,26 @@ const DUMP_KINDS = new Set([
 export const sessionArtifactsCommand: CliCommand = {
   name: "session-artifacts",
   flags: { known: ["code", "dump", "no-narrative", "verbose"] },
-  describe:
-    "Consolidated view of a session's artifacts. Default: counts + presence flags. " +
-    "Usage: aw session-artifacts --code <NNN> [--verbose] [--detail] [--no-narrative] " +
-    "[--dump [objetivo,decisiones,conclusiones,tasks,checkpoint,backlog,scripts]] — " +
-    "--dump devuelve {path, content, size} por artefacto (sin CSV: todos).",
+  help: {
+    purpose:
+      "Show a consolidated view of one session's artifacts: its narrative, counts and presence.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect:
+          "Session to read; defaults to the one associated with this conversation. Required with --dump.",
+      },
+      dump: {
+        value: "[kinds]",
+        effect:
+          "Return the content of the listed artifacts, comma separated from objetivo, decisiones, conclusiones, tasks, checkpoint, backlog, scripts; without a list, all of them.",
+      },
+      "no-narrative": { effect: "Omit the narrative and return the technical summary only." },
+      verbose: { effect: "Widen the artifact summary." },
+    },
+    output:
+      "{session, path, code, state, artifacts {session, tasks, decisiones_count, checkpoint_present?, conclusiones_present?, backlog_present?, scripts?, ...}, branch?, narrative?}. With --dump: {session, path, code, state, <kind>: {path, content, size}, scripts[]}.",
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const code = args.values.get("code");
     const dumpCsv = args.values.get("dump");

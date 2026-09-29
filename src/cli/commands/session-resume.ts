@@ -12,9 +12,18 @@ import type { CliContext } from "../types.js";
 export const sessionResumeCommand: CliCommand = {
   name: "session-resume",
   flags: { known: ["code", "reopen"] },
-  describe:
-    "Load resume payload for a session (objetivo + checkpoint). With --reopen, reactivate it if closed (inter-turn continuity). " +
-    "Usage: aw session-resume [--code <session>] [--reopen].",
+  help: {
+    purpose: "Load what a session needs to resume: its objective and its last checkpoint.",
+    flags: {
+      code: {
+        value: "<code>",
+        effect: "Session to resume; defaults to the one associated with this conversation.",
+      },
+      reopen: { effect: "Reactivate the session if it is closed, so new work lands in it." },
+    },
+    output: "{code, folder, path, state, objetivo, objetivo_text, checkpoint, run? {resumes_at}}.",
+    notes: ["Without --reopen the command is read-only."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: SessionResumeInput = {};
     const code = args.values.get("code");

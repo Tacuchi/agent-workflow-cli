@@ -20,11 +20,32 @@ export const toolCommand: CliCommand<ToolCliPayload> = {
   name: "tool",
   flags: {
     known: ["connection", "input-json"],
+    required: ["connection"],
     // The tool protocol keeps its own envelope and exit code for a refusal.
     refuse: (message) => toolCommandFailure("UNKNOWN_FLAG", message, 2),
   },
-  describe:
-    "Invoca una tool PostgreSQL de Workline sin crear un servidor MCP. Uso: tool list --connection <nombre> | tool call <tool> --connection <nombre> --input-json <json|->.",
+  help: {
+    purpose:
+      "Invoke a Workline read-only PostgreSQL tool directly, without starting an MCP server.",
+    args: "<list | call <tool>>",
+    flags: {
+      connection: { value: "<name>", effect: "Database connection registered with aw self mcp." },
+      "input-json": {
+        value: "<json|->",
+        effect:
+          "Tool input as JSON, or - to read it from stdin (max 1 MiB); required by call, refused by list.",
+      },
+    },
+    output:
+      "Not the { ok, error } envelope: the tool protocol. list: {tools[] ({name, description, inputSchema})}. call: {success: true, data, warnings?}; failure: {success: false, error, code, details?}.",
+    exit_codes: {
+      "1": "The tool failed; stdout carries {success: false, error, code, details?}.",
+      "2": "Invalid usage or input (unknown flag, missing --connection or --input-json, invalid JSON, input too large), unresolvable connection, invalid SQL or failed database connection; stdout carries the tool failure.",
+    },
+    notes: [
+      "Tools: execute_sql (one read-only query in a read-only transaction) and search_objects (find schemas, tables, columns and other objects).",
+    ],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<ToolCliPayload>> {
     const subcommand = args.rest[0];
     const connection = args.values.get("connection");

@@ -13,6 +13,7 @@ import {
 } from "../../src/application/export-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { exportScriptsCommand } from "../../src/cli/commands/export.js";
+import { commandHelpText } from "../../src/cli/help-groups.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -798,9 +799,11 @@ describe("el sobre y el rechazo se entienden sin gastar un intento", () => {
   });
 
   it("la ayuda del comando publica las cabeceras con su nombre exacto", () => {
-    const help = exportScriptsCommand.describe;
+    const help = [undefined, "prepare", "validate", "apply"]
+      .map((action) => commandHelpText(exportScriptsCommand, action))
+      .join("\n");
     for (const header of ["version", "operation", "input_digest", "state", "scope", "artifacts"]) {
-      expect(help, header).toContain(`${header}:`);
+      expect(help, header).toMatch(new RegExp(`\\b${header}\\b`));
     }
     expect(help).toContain("proposed | ambiguous | unsupported");
     expect(help).toContain("--approval");

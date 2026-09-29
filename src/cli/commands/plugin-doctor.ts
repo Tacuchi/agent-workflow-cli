@@ -12,10 +12,23 @@ export const pluginDoctorCommand: CliCommand = {
   flags: {
     known: ["plugin-root", "plugin-version", "plugin-name", "compat-range", "exports-file"],
   },
-  describe:
-    "Health check del plugin (frontmatter, manifests, hooks, MCP, exports). " +
-    "Usage: aw plugin-doctor [--plugin-root <path>] [--plugin-name <name>] " +
-    "[--plugin-version <semver>] [--compat-range <range>] [--exports-file <file>].",
+  help: {
+    purpose:
+      "Check one plugin package only (frontmatter, manifests, hooks, MCP, exports); for the whole installation use aw doctor.",
+    flags: {
+      "plugin-root": { value: "<path>", effect: "Plugin directory to check." },
+      "plugin-version": { value: "<semver>", effect: "Version the plugin is expected to carry." },
+      "plugin-name": { value: "<name>", effect: "Name the plugin is expected to carry." },
+      "compat-range": { value: "<range>", effect: "CLI version range the plugin declares." },
+      "exports-file": { value: "<file>", effect: "Exports manifest to check the skills against." },
+    },
+    output:
+      "{status (ok|warn|error), plugin, plugin_root, plugin_version, compat_range, skills_count, readme_count_expected, readme_count_match, manifests, hooks, mcp, skills[], exported_skills[], findings[]}.",
+    exit_codes: {
+      "1": "At least one finding is an error; ok is still true and data is the full report.",
+    },
+    notes: ["Read-only."],
+  },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: PluginDoctorInput = {};
     const root = args.values.get("plugin-root") ?? args.plugin.pluginRoot;
