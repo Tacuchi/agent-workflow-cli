@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { CORRELATIVE_SOURCE, correlativeValue, sameCorrelative } from "../domain/correlative.js";
 import { type CoreDocsCanon, coreDocumentDirectory } from "../domain/docs-canon.js";
 import { newRunState } from "../domain/flow/run-state.js";
+import { FLOW_SUCCESS_CRITERIA } from "../domain/flow/success-criteria.js";
 import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { CustodyArtifact } from "../domain/session/custody.js";
 import type { SessionType } from "../domain/types.js";
@@ -20,6 +21,7 @@ import {
 } from "./history-table.js";
 import { upsertHistoryRow } from "./history-update-service.js";
 import { withCwdLock } from "./lock-service.js";
+import { parseDerivedFromPath, specCriteriaLines } from "./parsers/spec-relation.js";
 import type { PathsService } from "./paths-service.js";
 import { canonicalArtifactPath } from "./session-artifacts.js";
 import { bindContextToSession, readBindingRegistry } from "./session-binding-service.js";
@@ -171,6 +173,13 @@ export async function runSessionCreate(
   const sessionPath = folderInfo.sessionPath;
   const origin = input.originRaw?.trim();
   const sessionFilePath = canonicalArtifactPath(sessionPath, "session");
+  const criteria = await seededCriteria(
+    fs,
+    paths,
+    flowOfDescriptor(name),
+    baselines.artifacts.map((artifact) => artifact.path),
+    resolvedCanon.canon,
+  );
   await fs.writeText(
     sessionFilePath,
     renderSessionMarkdown({
@@ -178,6 +187,7 @@ export async function runSessionCreate(
       type,
       objetivo,
       ...(origin && origin.length > 0 ? { origin } : {}),
+      criteria,
     }),
   );
 
@@ -262,6 +272,36 @@ async function localRegistryWarning(
   return remoteValue !== null && (localValue === null || remoteValue > localValue)
     ? `HISTORY local está detrás de ${upstream}: máximo local ${local ?? "ninguno"}, upstream ${remote}`
     : undefined;
+}
+
+/**
+ * The Success criteria a documentary flow starts with (plan 082 F7 · spec 061
+ * AC-09): its fixed checklist, then the acceptance criteria of the spec the run
+ * rests on — the input spec, or the one a refined plan derives from. Any other
+ * flow starts blank, as before.
+ */
+async function seededCriteria(
+  fs: FileSystemPort,
+  paths: PathsService,
+  flow: WorklineFlow | null,
+  inputs: readonly string[],
+  canon: CoreDocsCanon,
+): Promise<string[]> {
+  const fixed = flow === null ? undefined : FLOW_SUCCESS_CRITERIA[flow];
+  if (fixed === undefined) return [];
+  const read = async (path: string): Promise<string | null> => {
+    const absolute = join(paths.workspaceDir(), path);
+    return (await fs.exists(absolute)) ? await fs.readText(absolute) : null;
+  };
+  // The document the run rests on, whatever order the inputs came in.
+  const home = flow === "plan-refine" ? canon.plan : canon.spec;
+  const input = inputs.find((path) => path.startsWith(`${home}/`)) ?? inputs[0];
+  const text = input === undefined ? null : await read(input);
+  const specPath =
+    flow === "plan-refine" && text !== null ? parseDerivedFromPath(text, canon.spec) : input;
+  const spec = specPath == null ? null : specPath === input ? text : await read(specPath);
+  const criteria = spec === null ? [] : specCriteriaLines(spec).map((criterion) => criterion.text);
+  return [...fixed, ...criteria];
 }
 
 /**
@@ -379,7 +419,7 @@ async function listNames(fs: FileSystemPort, dir: string, re: RegExp): Promise<s
   }
 }
 
-function escapeRegExp(value: string): string {
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

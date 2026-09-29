@@ -1113,11 +1113,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CHASSIS_MD,
     attribution: CHASSIS_ATTRIBUTION,
-    // QUICK's two, and only QUICK's: it is the one flow whose deliverable has no
-    // document of its own, so its criteria have to be authored and ratified as a
-    // step. The other four take theirs from the spec or plan they already read —
-    // "referenced, not duplicated" — so there is nothing for them to seed, and
-    // inventing a row for each would be four steps that ask nothing.
+    // Two ways, neither a question. The documentary flows (spec-refine, plan-new,
+    // plan-refine) are seeded by `session-create` itself: their fixed checklist
+    // (FLOW_SUCCESS_CRITERIA) plus the acceptance criteria of the spec they rest
+    // on, so the run starts with them written. QUICK is the one flow whose
+    // deliverable has no document of its own, so its criteria are authored and
+    // ratified as the two steps below; plan-exec closes on the plan's own phases.
     realized_by: {
       kind: "transitions",
       ids: ["quick.success-criteria-authoring", "quick.success-criteria-ratification"],

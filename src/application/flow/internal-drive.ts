@@ -336,6 +336,9 @@ function accept(
     output_digest: outputDigest,
     effects: [...outcome.effects],
     evidence: [...pending.action.evidence],
+    ...(pending.plan.operation === "proposal.publish" && state.proposal !== null
+      ? { published: state.proposal.artifacts.map((artifact) => artifact.path) }
+      : {}),
   });
   next = withPlanExecBatchStageForTransition(
     applyTransition(next, pending.decision.id, declared),

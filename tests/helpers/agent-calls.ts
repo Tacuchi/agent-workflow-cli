@@ -7,6 +7,7 @@ import { NodeProcess } from "../../src/adapters/node-process.js";
 import type { WorklineFlow } from "../../src/application/capability/compose.js";
 import { effectsOfTransition, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
+import { startFlow } from "../../src/application/flow/flow-start.js";
 import { proveFlowBoundary } from "../../src/application/flow/prove.js";
 import { journeyForRun } from "../../src/application/flow/run-journey.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
@@ -203,6 +204,8 @@ export interface MeasuredRun {
   paths: PathsService;
   session: string;
   opened: FlowDirective;
+  /** What opening this run cost: 1 through `flow start`, 3 without it. */
+  openingCalls: number;
   /** The boundary the run stands on now. */
   current(): Promise<{ state: FlowRunState; resolved: Resolved }>;
   /** Submit `raw` as the agent would, with the live checkout reader. */
@@ -318,9 +321,6 @@ export async function openMeasuredRun(
   flow: WorklineFlow,
   options: WalkOptions = {},
 ): Promise<MeasuredRun> {
-  if (offersStart()) {
-    throw new Error("aw flow start existe: abrí la corrida con él antes de acreditarle 1 llamada");
-  }
   const root = await mkdtemp(join(tmpdir(), `aw-calls-${flow}-`));
   const paths = new PathsService(normalizeNamespace("agent-workflow"), root, root);
   const recording = new RecordingGit();
@@ -329,8 +329,22 @@ export async function openMeasuredRun(
   const session = SESSIONS[flow];
   const code = session.slice(0, 3);
   await seed(root, paths, flow, options.execPhases ?? 1);
-  const adopted = await advanceFlow(fs, paths, { code, flow, adopt: true, executor });
-  if (!adopted.ok) throw new Error(`no se pudo abrir la corrida de ${flow}`);
+  // The opening is credited by what really opened the run: `flow start` when the
+  // surface offers it (one call), the three calls of 27.0.1 otherwise.
+  const starting = offersStart();
+  const opened = starting
+    ? await startFlow({ fs, paths, git: live }, executor, {
+        flow,
+        name: "medida",
+        objetivo: "recorrer el flujo entero",
+      })
+    : await advanceFlow(fs, paths, { code, flow, adopt: true, executor });
+  if (!opened.ok)
+    throw new Error(`no se pudo abrir la corrida de ${flow}: ${JSON.stringify(opened)}`);
+  const adopted = { directive: "data" in opened ? opened.data.directive : opened.directive };
+  if (starting && "data" in opened && opened.data.session.folder !== session) {
+    throw new Error(`flow start abrió ${opened.data.session.folder} y no la sesión sembrada`);
+  }
 
   async function current() {
     const read = await readRun(fs, locateRun(paths, session));
@@ -404,6 +418,7 @@ export async function openMeasuredRun(
     paths,
     session,
     opened: adopted.directive,
+    openingCalls: starting ? 1 : 3,
     current,
     submit,
     answerFor,
@@ -424,7 +439,7 @@ export async function countAgentCalls(
   const run = await openMeasuredRun(flow, options);
   const count: AgentCallCount = {
     flow,
-    opening: 3,
+    opening: run.openingCalls,
     submits: 0,
     commands: 0,
     proves: 0,

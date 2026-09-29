@@ -44,6 +44,7 @@ export const sessionCreateCommand: CliCommand = {
       "{type, name, number, folder, path, session_path, custody_path, inputs[], inputs_from (declared|derived|none), flow?, inputs_note?, origin?, registry_warning?, materialization}.",
     notes: [
       `Without --input the run's own document is derived from the descriptor: <slug>-spec-refine and <slug>-plan-new seal ${DEFAULT_CORE_DOCS_CANON.spec}/NNN-spec-<slug>.md; <slug>-plan-refine and <slug>-plan-exec seal ${DEFAULT_CORE_DOCS_CANON.plan}/NNN-plan-<slug>.md. inputs_from reports which road was taken and inputs_note why nothing was sealed.`,
+      "spec-refine, plan-new and plan-refine sessions are born with their Success criteria seeded: the flow's fixed checklist plus the acceptance criteria of the spec they rest on. `aw flow start` creates the session and opens its run in one call.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

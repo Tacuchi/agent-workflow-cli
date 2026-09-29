@@ -202,6 +202,7 @@ export const INTENTS: readonly { intent: string; command: string }[] = [
   { intent: "number a new document", command: "next-number" },
   { intent: "diagnose the installation", command: "doctor" },
   { intent: "consolidate SQL", command: "export-scripts" },
+  { intent: "open a run", command: "flow start" },
 ];
 
 /**

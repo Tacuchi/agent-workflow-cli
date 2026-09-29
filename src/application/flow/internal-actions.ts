@@ -653,8 +653,9 @@ async function artifacts(
   // `objetivo` is the artifact that carries the success criteria, so demanding it
   // is demanding them: a SESSION.md with a criteria heading and nothing under it
   // is exactly the seed this row exists to make checkable. The count is not enough
-  // — `session-create` seeds an empty `- [ ]`, and a criterion with no text is the
-  // template, not a done-condition anybody could falsify.
+  // — `session-create` seeds an empty `- [ ]` for the flows it has no checklist
+  // for, and a criterion with no text is the template, not a done-condition anybody
+  // could falsify.
   if (dump.includes("objetivo") && !hasWrittenCriteria(dumped.objetivo)) {
     return refusal(
       "session.artifacts",

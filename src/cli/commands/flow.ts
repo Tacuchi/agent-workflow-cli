@@ -1,4 +1,4 @@
-import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
+import { WORKLINE_FLOWS, type WorklineFlow } from "../../application/capability/compose.js";
 import { isHarnessId } from "../../application/dev-only-services.js";
 import {
   type AnnulPrepareResult,
@@ -14,6 +14,7 @@ import {
   restartFlow,
   retractFlowSignal,
 } from "../../application/flow/flow-service.js";
+import { type FlowStartOutput, startFlow } from "../../application/flow/flow-start.js";
 import {
   type InternalActionExecutor,
   internalActionExecutor,
@@ -76,9 +77,19 @@ type FlowResult =
   | CheckoutProofReceipt
   | AnnulPreview
   | FlowCheckReceipt
-  | ReinferBatchPreview;
+  | ReinferBatchPreview
+  | FlowStartOutput;
 
-const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul", "retract"] as const;
+const VERBS = [
+  "start",
+  "advance",
+  "submit",
+  "recover",
+  "prove",
+  "restart",
+  "annul",
+  "retract",
+] as const;
 
 /**
  * The answer envelope, published where an executor can read it WITHOUT running a
@@ -215,6 +226,11 @@ export const flowCommand: CliCommand<FlowResult> = {
       retract: { known: ["signal"], required: ["signal"] },
       annul: { known: ["from", "approval"], required: ["from"] },
       restart: { known: [] },
+      start: {
+        known: ["name", "objetivo", "input", "from"],
+        required: ["name", "objetivo"],
+        repeatable: ["input"],
+      },
     },
   },
   help: {
@@ -236,6 +252,25 @@ export const flowCommand: CliCommand<FlowResult> = {
       "Order of a walk: advance returns a directive; answer its boundary with submit (JSON on stdin); for evidence `workline.source-bounded`, run the sealed invocation, then prove, then submit. Every directive carries state_digest, the seal an answer quotes back as input_digest.",
     ],
     actions: {
+      start: {
+        purpose:
+          "Open a run in one call: create or resume its session, seed its criteria, adopt the run and return the read-set and the first directive.",
+        flags: {
+          name: { value: "<slug>", effect: "Session slug; the session is <slug>-<flow>." },
+          objetivo: { value: "<text>", effect: "One-line objective of the session." },
+          input: {
+            value: "<path>",
+            effect:
+              "Workspace-relative document the run may modify; derived from the slug when absent.",
+          },
+          from: { value: "<origin>", effect: "Who or what the run comes from, for its Origin." },
+        },
+        output:
+          "{session {folder, resumed, created (the session-create record) | null}, read_set[] {path, absolute, bytes, kind, signal, missing, loaded}, bytes_to_read, directive}.",
+        notes: [
+          "--flow is required. An active session with the same <slug>-<flow> is resumed instead of creating a second one. The command's own guide (commands/<flow>.md) is marked loaded: the host already read it; the rest of the read-set is what to read before answering the directive.",
+        ],
+      },
       advance: {
         purpose:
           "Apply the consecutive CLI-owned transitions and return the directive of the first boundary that needs an answer.",
@@ -407,6 +442,8 @@ export const flowCommand: CliCommand<FlowResult> = {
 
     if (verb === "annul") return annulVerb(args, ctx, session, executor);
 
+    if (verb === "start") return startVerb(args, ctx, flow, session, executor);
+
     if (verb === "restart") return restartVerb(ctx, session, flow, executor);
 
     if (verb === "submit") {
@@ -459,9 +496,58 @@ export const flowCommand: CliCommand<FlowResult> = {
     if ("reinfer_batch" in data)
       return `Lote ${data.batch}: ${data.old_digest} → ${data.new_digest}\n${data.diff}\nDigest de aprobación: ${data.approval_digest}\n${data.next}\n`;
     if ("batches" in data) return `${renderAnnulHuman(data)}\n`;
+    if ("read_set" in data) {
+      const read = data.read_set.filter((entry) => !entry.loaded).map((entry) => entry.path);
+      return `${data.session.resumed ? "sesión retomada" : "sesión creada"}: ${data.session.folder}\nleé antes de contestar: ${read.join(", ")}\n${renderDirectiveHuman(data.directive, context.detail)}\n`;
+    }
     return `${renderDirectiveHuman(data, context.detail)}\n`;
   },
 };
+
+async function startVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+  flow: string | undefined,
+  session: { contextId?: string },
+  executor: InternalActionExecutor,
+): Promise<CommandResult<FlowResult>> {
+  if (flow === undefined) {
+    return failSemantic({
+      code: "ARGS_INVALID",
+      message: "aw flow start exige --flow",
+      ...usageAction("start"),
+    });
+  }
+  if (args.values.has("code") || args.values.has("session")) {
+    return failSemantic({
+      code: "ARGS_INVALID",
+      message:
+        "aw flow start nombra la sesión con --name y --flow: --code/--session son de las corridas ya abiertas",
+      ...usageAction("start"),
+    });
+  }
+  const inputs = args.valuesMulti.get("input");
+  const from = args.values.get("from");
+  const started = await startFlow(
+    {
+      fs: ctx.fs,
+      ...(ctx.rawFs === undefined ? {} : { rawFs: ctx.rawFs }),
+      paths: ctx.paths,
+      git: ctx.git,
+    },
+    executor,
+    {
+      flow: flow as WorklineFlow,
+      name: args.values.get("name") ?? "",
+      objetivo: args.values.get("objetivo") ?? "",
+      ...(inputs === undefined ? {} : { inputs }),
+      ...(from === undefined ? {} : { from }),
+      ...(session.contextId === undefined ? {} : { contextId: session.contextId }),
+    },
+  );
+  if (!started.ok) return failSemantic({ ...started.failure });
+  return { ok: true, data: started.data, exitCode: 0 };
+}
 
 async function reinferVerb(
   args: ParsedArgs,

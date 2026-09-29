@@ -217,6 +217,25 @@ export function parseSpecCriteria(text: string, specNumber?: string): string[] {
 }
 
 /**
+ * The acceptance criteria a spec states, as the checklist lines that state them
+ * (`AC-01: outcome`), in document order: what a run that rests on the spec seeds
+ * as its Success criteria. Only the `## Acceptance criteria` sections count.
+ */
+export function specCriteriaLines(text: string): { id: string; text: string }[] {
+  const { lines, fenced, headings } = scanMarkdown(text);
+  const checklists = criteriaSections(headings, lines.length);
+  const out: { id: string; text: string }[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (line === undefined || fenced[index] === true) continue;
+    if (!checklists.some((section) => index >= section.start && index < section.end)) continue;
+    const id = LABELLED_AC.exec(line)?.[1];
+    if (id === undefined) continue;
+    out.push({ id, text: line.replace(/^\s*[-*+]\s*\[[ xX]\]\s*/, "").trim() });
+  }
+  return out;
+}
+
+/**
  * A checklist item whose label IS its criterion: `- [ ] AC-01:`, `- [x] **AC-02**:`,
  * `- [ ] AC-CAP-03.`
  *

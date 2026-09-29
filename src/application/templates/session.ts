@@ -34,6 +34,8 @@ export interface SessionTemplateValues {
   objetivo: string;
   /** Optional plain origin string (from --from): who/where it was created from. */
   origin?: string;
+  /** Success criteria seeded at creation; none leaves the one blank item. */
+  criteria?: readonly string[];
 }
 
 function renderOriginSection(origin: string | undefined): string {
@@ -63,6 +65,6 @@ ${renderOriginSection(values.origin)}
 
 ${typeBlock}## Success criteria
 <!-- Verification-first done-condition, seeded BEFORE executing: falsifiable [ ] items (tests for code, a by-inspection rubric for analysis/design). The loop persists until all are green and flips each to [x] at the convergence gate; replace this comment when filling. -->
-- [ ]
+${(values.criteria?.length ?? 0) === 0 ? "- [ ]" : (values.criteria ?? []).map((item) => `- [ ] ${item}`).join("\n")}
 `;
 }

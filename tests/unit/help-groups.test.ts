@@ -269,7 +269,7 @@ describe("aw --help — contract once, one command per intent, hook targets apar
     }
   });
 
-  it("leads with six intents, each answered by exactly one registered command", () => {
+  it("leads with seven intents, each answered by exactly one registered command", () => {
     expect(INTENTS.map((row) => row.intent)).toEqual([
       "what to resume",
       "what is pending",
@@ -277,14 +277,16 @@ describe("aw --help — contract once, one command per intent, hook targets apar
       "number a new document",
       "diagnose the installation",
       "consolidate SQL",
+      "open a run",
     ]);
     const commands = INTENTS.map((row) => row.command);
     expect(new Set(commands).size).toBe(commands.length);
     for (const { intent, command } of INTENTS) {
-      expect(
-        ALL_COMMANDS.some((c) => c.name === command),
-        command,
-      ).toBe(true);
+      // A command, or a command and its action (`flow start`), both registered.
+      const [name, action] = command.split(" ");
+      const registered = ALL_COMMANDS.find((c) => c.name === name);
+      expect(registered, command).toBeDefined();
+      if (action !== undefined) expect(registered?.flags.actions?.[action], command).toBeDefined();
       expect(help, intent).toMatch(new RegExp(`^ {2}${intent} +aw ${command}$`, "m"));
     }
     expect(help.indexOf("By intent:")).toBeLessThan(help.indexOf("Commands:"));

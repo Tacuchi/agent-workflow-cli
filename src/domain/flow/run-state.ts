@@ -836,6 +836,11 @@ export type FlowRunEvent =
       output_digest: string;
       effects: EffectClass[];
       evidence: string[];
+      /**
+       * The documents a publication wrote, by path: what the run's closing
+       * directive derives its next command from (plan 082 F7 · spec 061 AC-11).
+       */
+      published?: string[];
     }
   | {
       /**
@@ -3653,7 +3658,8 @@ const EVENT_BODIES: ReadonlyMap<string, (entry: Record<string, unknown>) => bool
       typeof entry.summary === "string" &&
       typeof entry.output_digest === "string" &&
       isEffectClassArray(entry.effects) &&
-      isStringArray(entry.evidence),
+      isStringArray(entry.evidence) &&
+      (entry.published === undefined || isStringArray(entry.published)),
     reconciled: (entry) => isRepairArray(entry.repairs),
     retracted: (entry) =>
       nonEmpty(entry.signal) &&

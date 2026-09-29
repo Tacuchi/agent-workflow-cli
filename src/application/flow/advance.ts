@@ -1523,10 +1523,11 @@ function choicesFor(
  */
 function finalAction(state: FlowRunState): string {
   const lastClose = state.events?.at(-1);
-  const detail =
+  const detail = `${
     lastClose?.kind === "executed" && lastClose.operation === "session.close"
       ? ` · ${lastClose.summary}`
-      : "";
+      : ""
+  } · siguiente comando: ${nextCommandOf(state)}`;
   if (state.reentries?.at(-1)?.kind === "close") {
     const closed = [...(state.events ?? [])]
       .reverse()
@@ -1541,6 +1542,36 @@ function finalAction(state: FlowRunState): string {
   }
   const names = degraded.map((one) => `'${one.transition}'`).join(", ");
   return `el recorrido terminó dejando degradadas ${names}: nadie las resolvió y el estado declara la causa de cada una — ${DEGRADE_ACTION}${detail}`;
+}
+
+/** The documents the run's last publication wrote, as its event recorded them. */
+function publishedDocuments(state: FlowRunState): string[] {
+  const published = [...(state.events ?? [])]
+    .reverse()
+    .find((event) => event.kind === "executed" && event.operation === "proposal.publish");
+  return published?.kind === "executed" ? [...(published.published ?? [])] : [];
+}
+
+/**
+ * The command that follows a finished run (plan 082 F7 · spec 061 AC-11), derived
+ * from its final state: a refined spec goes to plan-new, a published plan to
+ * plan-exec — several published documents are alternatives, never a choice made
+ * here — an escalated quick to its destination, and anything else to none.
+ */
+export function nextCommandOf(state: FlowRunState): string {
+  if (state.handoff != null) return state.handoff.command;
+  const documents = publishedDocuments(state);
+  const next =
+    state.flow === "spec-refine"
+      ? documents
+          .filter((path) => /-spec-[^/]+\.md$/.test(path))
+          .map((path) => `/w:plan-new ${path}`)
+      : state.flow === "plan-new" || state.flow === "plan-refine"
+        ? documents
+            .filter((path) => /-plan-[^/]+\.md$/.test(path))
+            .map((path) => `/w:plan-exec ${path}`)
+        : [];
+  return next.length === 0 ? "ninguno" : next.join(" o ");
 }
 
 function nextActionFor(
