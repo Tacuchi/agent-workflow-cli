@@ -29,7 +29,7 @@ The phase contracts, dependencies, risks and open questions are the reproducible
 Choose the maximal consecutive `continuous` ranges: a range stays eligible while nothing observable
 breaks it. Anything else is `isolated`; if every phase is eligible, the whole plan is one batch.
 
-> **Which facts break eligibility, and what one of them costs, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. It emits the closed vocabulary of those facts at the boundary that asks for them.
+> **Which facts break eligibility, and what one of them costs:** `aw flow` decides. It emits the closed vocabulary of those facts at the boundary that asks for them.
 
 This is an inference from observable facts, not a preference question. The PLAN gate fails when a
 phase is missing, duplicated, reordered or grouped across an ineligible boundary.
@@ -62,4 +62,4 @@ commits only those paths and verifies git before the next batch; approval alone 
 No paths means no commit. `done` is sealed after git/integration in the workspace plan, not in a
 source commit; a later workspace-close commit may carry it. An unrun check is never green.
 
-> **What proves the batch was green is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — positionally, behind the delegated validation and the review, neither of which a narration can pass.
+> **What proves the batch was green is not this document's call:** `aw flow` decides — positionally, behind the delegated validation and the review, neither of which a narration can pass.

@@ -4,7 +4,7 @@ Loaded when a trigger says the solution space is unexplored (signal `web`).
 
 ## Ideation gate (creativity)
 
-The loop's one **divergent** gate: every other resolver closes a gap; this one widens the option space before the spec hardens around its first idea. **Unexplored solution space is not a universal gap** — exploring what is already decided burns context and invites gold-plating, so the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document: you declare whether a trigger fires, and the offer appears only then.
+The loop's one **divergent** gate: every other resolver closes a gap; this one widens the option space before the spec hardens around its first idea. **Unexplored solution space is not a universal gap** — exploring what is already decided burns context and invites gold-plating, so `aw flow` decides: you declare whether a trigger fires, and the offer appears only then.
 
 **Triggers.** The user knows the problem but not the desired outcome · several functional directions carry materially different consequences · the spec adopted the first alternative prematurely · a choice can materially change scope · the alternatives change experience, rules or acceptance · the user asks to explore.
 

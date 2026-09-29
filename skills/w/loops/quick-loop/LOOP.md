@@ -46,11 +46,11 @@ Git safety, DB scripts-only and inline research are loop rules. Host-native help
 
 ## QUICK delta — minimal ceremony
 
-> **Directed tranche:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — it names the boundary in force, its alternatives and the exact invocation when something runs outside. What stays here is the *why*, and every step that is judgment.
+> **Directed tranche:** `aw flow` decides — it names the boundary in force, its alternatives and the exact invocation when something runs outside. What stays here is the *why*, and every step that is judgment.
 
 - **No phases, no plan-doc**: the prompt **is** the task (a single unit). No roadmap.
 - **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is the run's `SESSION.Success criteria` (see [chassis § *Verification-first*](../CHASSIS.md)).
-- **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, verify each source's expected branch (`aw check-branch`); propose exact-path commits for approval. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql`; fixture/ephemeral checks are local proof and any remote read is research context, never closure.
+- **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, the CLI verifies each source's branch; propose exact-path commits for approval. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql`; fixture/ephemeral checks are local proof and any remote read is research context, never closure.
 - **Fix preview, before executing**: declare the fix you are about to make — files to touch, intent, expected shape of the diff. It is **proportional**: one line for something trivial; approach, files and risks for something complex. Above the same signal threshold that fires the entry size gate (below), a person approves it (`Ejecutar tal cual` · `Ajustar el enfoque` · `Escalar a spec` → *Mid-loop escalation*). **Below the threshold there is no human stop**: the preview stays declared in the session and the task executes.
 - **One session. One commit** proposed at the end (only if there were code changes), **after the proportional closing review gate** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate*): diff re-read + ambient conventions; fix or defer; nothing reaches the commit unreviewed.
 - **Entry SIZE GATE** (before implementation): a quick that should have been a spec costs more than the ceremony it saved. Recognize the signals; the threshold, anti-duplicate search and alternatives are the CLI's. A signal resolved by *adopted context* is **not** a signal (chassis § *Adopted context*). A **resume** never re-fires the gate.
@@ -76,7 +76,7 @@ quick-loop(prompt):
     adopt them (SESSION.Origin = "adopted from host conversation"; reference in CONCLUSIONS) — never re-derive/re-ask
   author SESSION.Success criteria = the deliverable's check  # test(s) if code · short RATIFIED rubric if analysis/design
   work the task (minimal loop):
-    if it edits code → verify each source's expected branch (`aw check-branch`); mismatch → pause + resolve
+    if it edits code → CLI verifies branches; mismatch → fix what it names, aw flow advance
     declare the fix preview (files · intent · expected diff), proportional to the task
       above the gate's threshold → the CLI asks for approval; below it, nothing stops
     produce the deliverable: edit code (minimal change) OR author the analysis/design

@@ -123,7 +123,7 @@ technical implementation choices still open go to `## Open questions`, never Sco
 
 ## Who decides what
 
-> **Directed tranche:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document — it opens the session, resolves the shape gate, decides when the ideation offer and the ambiguity question appear, evaluates the ready-for-plan gate and holds the save until its result comes back. What stays here is the *why*: the taxonomy, the checklist and what each branch means. The split gate keeps its rule in [`../../modules/SPLIT-GATE.md`](../../modules/SPLIT-GATE.md), which the PLAN flows still read.
+> **Directed tranche:** `aw flow` decides — it opens the session, resolves the shape gate, decides when the ideation offer and the ambiguity question appear, evaluates the ready-for-plan gate and holds the save until its result comes back. What stays here is the *why*: the taxonomy, the checklist and what each branch means. The split gate keeps its rule in [`../../modules/SPLIT-GATE.md`](../../modules/SPLIT-GATE.md), which the PLAN flows still read.
 
 ## Gap taxonomy — signal, resolver, destination
 
@@ -159,7 +159,7 @@ technical implementation choices still open go to `## Open questions`, never Sco
 spec-refine-loop(spec):
   input = glob(NNN-spec*.md) | argument (path)          # always the spec itself (in place)
   refine_session = the run's session          # the CLI opens or resumes it and verifies its seed
-  SESSION.Success criteria = acceptance criteria + ready-for-plan checklist  # what its gate evaluates later
+  SESSION.Success criteria born seeded by aw flow start          # flip each at the gate
   work = read(input)  (+ apply checkpoint progress if resuming)
   adopt(spec-new facts + assumptions + open questions + conversation)  # never re-derive (§ Reads)
   baseline = resolve_current_behavior(work)      # inline research, ONLY what the change rests on

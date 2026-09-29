@@ -17,13 +17,13 @@ Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + res
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
 > 1. **Size gate BEFORE any session** — if the objective exceeds a quick (≥2 clear signals: needs architecture · ≥2 sources · several deliverables · large feature/refactor · ambiguous requirements), ask first with these verbatim options: `Cambiar a SPEC` *(recommended)* · `Seguir en quick` · `Recortar alcance`. If it escalates, create **no** quick session.
-> 2. **Session first** — otherwise, before touching code, create/resume the run's session: `aw session-create --type quick --name <slug>-quick --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
+> 2. **Session first** — otherwise, before touching code, open or resume the run: `aw flow start --flow quick --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 3. **Git/DB** — commits are **proposed** for exact paths and never executed without approval; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
 
 ## Run the loop
 
-1. `aw context-plan --command quick --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
+1. Read, in order, the `read_set` entries it returned that are not `loaded`.
 2. Follow the loop manual end to end, taking `$ARGUMENTS` as the task: it evaluates the size gate, creates the light session, works with minimal ceremony (git-safe), escalates if the task grows, and reports.
 
 > `quick-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.

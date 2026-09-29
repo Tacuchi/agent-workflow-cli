@@ -57,8 +57,8 @@ inference, the deferred-validation cycle and conditional Git authorization.
 **Before touching code**, read the plan and its spec and check the shape execution depends on:
 this is § *Entry gate — executability*. Once that shape exists, plan-refine is auxiliary, not mandatory.
 
-1. the plan declares `> Límite de ejecución: checkout`; every phase has `> Fuentes:` and every task has `_(fuentes: …)_`; aliases resolve through `AGENTS.md > Fuentes` (except reserved `workspace`) and task sources are a subset of their phase;
-2. every phase declares its `Resultado`, its `Condición de salida` and its `Validación de fase`;
+1. `aw plan lint` reports no violation (sources, closing clauses, execution limit, lineage);
+2. every phase has its `> Estado:` line, `Resultado`, `Condición de salida` and `Validación de fase` (the lint does not check them);
 3. if temporary behavior exists, its current boundary and retirement phase are identifiable; otherwise the simulation check is not applicable;
 4. the primary proof of the first `pendiente` phase is identifiable and is a checkout command or inspection;
 5. no structural contradiction is evident (a phase that undoes an earlier one, evidence nobody can produce).
@@ -69,11 +69,11 @@ Execution **no longer accepts in silence** a plan that would force it to invent 
 - **Minor gap** — the plan is all but executable: an exit condition derivable from what is already written, the obvious evidence unnamed, micro-tasks to group. Normalizing edits the `### Fn` blocks in place, **adds no scope and moves no boundary**, and is recorded in `DECISION` + `CHECKPOINT`.
 - **Structural gap** — phases, contracts or journey are missing, or a change that **does** carry temporary behavior leaves its boundary undeclared. It does **not** improvise: record the finding in `CHECKPOINT`, hand off to [`plan-refine-loop`](../plan-refine-loop/LOOP.md) (`/w:plan-refine`) and resume execution over the refined plan.
 
-> **Which outcome a declared gap produces, and whether anybody is asked to consent, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Normalization is offered on a minor gap and on nothing else — a structural one is not something to consent to.
+> **Which outcome a declared gap produces, and whether anybody is asked to consent:** `aw flow` decides. Normalization is offered on a minor gap and on nothing else — a structural one is not something to consent to.
 
 > **A missing `Límite de simulación` is a gap only when there is something to simulate.** No task and no phase introduces temporary behavior → the block is legitimately absent and the gate passes; demanding it anyway pushes execution to invent a stub so the plan matches a template. The same holds for `Diferido` and every other conditional block.
 
-> The gate reads the **canonical phase contract** from [`plan-new-loop`](../plan-new-loop/LOOP.md) § *Phase contract (canonical)* — required sections, the `> Estado:` vocabulary, semantic granularity. Execution references it; it never redefines it. The marker is a **line of its own** inside the `### Fn` block (`> Estado: <value>`); written any other way it reads as `pendiente`.
+> The gate reads the **canonical phase contract** from [`plan-new-loop`](../plan-new-loop/LOOP.md) § *Phase contract (canonical)* ; execution never redefines it. The marker is a **line of its own** inside the `### Fn` block (`> Estado: <value>`); written any other way it reads as `pendiente`.
 
 After this gate and before editing, infer the effective batches over pending phases. The live
 checkout may merge or split the plan's declaration without consent; record the result and drift in
@@ -81,7 +81,7 @@ checkout may merge or split the plan's declaration without consent; record the r
 
 ## Delta 1 — One session per run; execution-unit cycle in the plan-doc
 
-`aw flow advance --adopt` adopts an existing plan; `aw flow recover` restores exhausted no-effect frontiers, `aw flow restart` unsticks runs, `aw flow annul` reopens miscredited batches. `aw flow prove --source <alias>` supplies checkout-bound evidence to `aw flow submit` after validation.
+Adoption, recovery and the evidence order live in `aw flow --help`.
 
 - Walk the plan's `### Fn` blocks under `## Tasks` in dependency order inside one session. Infer
   effective `continuous`/`isolated` batches first; legacy `## Phases` tables degrade the same way.
@@ -159,7 +159,7 @@ leaves nothing half-written. Counts — of criteria, phases or repositories — 
 nothing: a divergence touching one criterion that closes three of the four is not composable, and one
 touching nine that closes all four is.
 
-> **Which exit the run takes is the person's, and which are offered is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Recognizing the divergence and closing its eligibility are judgment; counting the closures and raising the choice are a rule.
+> **Which exit the run takes is the person's, and which are offered:** `aw flow` decides. Recognizing the divergence and closing its eligibility are judgment; counting the closures and raising the choice are a rule.
 
 On any exit that leaves the phase: `CHECKPOINT` records the state reached and the trigger, the phase
 keeps the state it really has (`en ejecución` or `bloqueada`, never `validada`), and the working tree
@@ -230,11 +230,7 @@ without subagents runs a clean re-read instead, and the closing report declares 
   **after Git**: commit each unit, integrate it, and only then seal `done`. A run that isolates its
   writing holds commits that live on `aw/<session>` and nowhere else, so a `done` stamped before the
   merge would be true of no branch anybody reads.
-- **Integrating is part of closing, not a chore after it.** `aw worktree integrate --code <NNN>`
-  merges each unit into its sealed base, in alias order, over the live branch without rewriting its commits. A **conflict is a
-  live state, not a failure**: the unit, its commits and the merge are kept, the receipt names the
-  plan, source, unit, merge path and files. Resolve the merge externally, then run the same integration again to confirm and give the unit back. The plan
-  is not `done` and the session does not close while a unit is still alive.
+- **Integrating is part of closing.** After the person authorizes it, the CLI integrates each unit itself. A **conflict is a live state, not a failure**: the unit and the merge are kept and the report names the files. Resolve the merge externally, then `aw flow advance` again. The plan is not `done` while a unit is still alive.
 - **Marking done = ONE status line in the plan-doc** under the title: `> Estado: done`. The CLI seals `> Cierre:` with evidence of the run and `> Assurance: verified|partially_verified|unverified_accepted` on separate lines. Position distinguishes title from phase states; no per-phase result tables or suffixes (use session `DECISION`/`CHECKPOINT`).
 - **Legacy status line, migrated on write.** A plan carrying the old single-line form (`> Estado: done — YYYY-MM-DD · sesión NNN`) is still **read** as closed; the first time this loop legitimately writes that document, it is rewritten to the two-line form. Compatibility is for reading old plans — every new write uses the normalized contract.
 - **No automatic export**: session artifacts stay there; only a later explicit `export-*` promotes them to `docs/`.
@@ -252,7 +248,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
       may merge/split declared rows without asking; legacy absence is allowed
       record batches + declaration drift in CHECKPOINT
   for each Batch in batches:
-    verify every affected source's branch; mismatch → stop + human
+    CLI verifies branches and units; mismatch → stop + human
     seed CHECKPOINT.Next = Batch Bn (mode + phases + tasks)
     for each Phase in Batch:
       if Estado == validada: skip
@@ -278,10 +274,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
       approved → CLI commits those paths, verifies git and stores receipts before the next batch
       Cerrar → persist the pending batch and its uncommitted changes
     if last Batch + final validation green:
-      integrate: aw worktree integrate --code NNN            # every unit, alias order, live branch
-        conflict → keep unit + merge; report plan/source/unit/merge path/files
-                   resolve externally → integrate again → release
-        refused (dirty checkout / off branch / uncommitted unit) → fix what it names; retry
+      authorized → CLI integrates every unit; conflict → resolve externally → aw flow advance
       then CLI seals plan: > Estado: done + > Cierre: run evidence + > Assurance: verdict (Delta 6)
     next-batch precondition: working trees clean or acknowledged
   if no Batch ran and phases are already validada:

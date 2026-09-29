@@ -131,7 +131,7 @@ This loop's instance of the chassis convergence gate — the same one `plan-exec
 - **Contract** — relevant inputs, outputs and observable states identified; the final behavior matches the spec; no functional criterion invented here.
 - **Journey** — main components identified, order reasonable, repo/process boundaries visible, the described architecture the one the project actually has.
 - **Phases** — each leaves a verifiable state with its exit condition, none is a list of layers or files, the order allows early integration, deferrals are explicit.
-- **Source boundary** — the plan declares `> Límite de ejecución: checkout`, each phase declares `> Fuentes:`, every task carries `_(fuentes: …)_`, aliases resolve through `AGENTS.md > Fuentes` (or reserved `workspace`) and task sources stay within their phase.
+- **Grammar** — `aw plan lint` reports no violation; it covers sources, closing clauses, the execution limit and lineage.
 - **Source-bounded semantics** — read the meaning of every task, phase validation and exit condition. A deployed product, installed host, MCP connection or remote URL may be research context or `Handoff operativo`, never a prerequisite or proof of closure; rewrite it as a fixture, ephemeral dependency or checkout inspection. This is semantic review, not a word denylist.
 - **Simulation** *(only when the change carries one)* — initial boundary identified, every displacement foreseen, one phase owns the retirement, nothing can stay active by accident. No temporary behavior → the check does not apply, and no empty `Límite de simulación` is required.
 - **Evidence** — every phase declares its primary proof, per-layer tests are justified, the same scenario is not duplicated by default, declared risks have evidence or an explicit deferral.
@@ -146,7 +146,7 @@ The CLI alone seals `> Cierre:` with run evidence and `> Assurance:` after final
 plan-refine-loop(plan):
   input = glob(docs/plans/PPP-plan-*.md) | argument path       # always the plan itself (in place)
   session = create_or_resume("<slug>-plan-refine")             # reopens if it exists (see Compact / resume)
-  seed SESSION.Success criteria = executability-gate checklist # verification-first, BEFORE
+  SESSION.Success criteria born seeded by aw flow start          # flip each at the gate
   work = read(plan) (+ the spec if realignment is needed; + checkpoint/exec history if resuming or returning from plan-exec)
   journey = map(observable contract, technical journey, incremental strategy, evidence)  # bounded research
   work = phases grouped by verifiable state (phase contract) + simulation lifecycle if any + primary proof each
@@ -180,7 +180,7 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 - Passes → the save confirmation and, only after it, the in-place edit → `finalize`. On the split
   branch the same step edits the original reduced and writes the extracted siblings.
 
-> **When the gate is evaluated, when the offer appears and with what alternatives, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. The write follows the confirmation, never the other way round.
+> **When the gate is evaluated, when the offer appears and with what alternatives:** `aw flow` decides. The write follows the confirmation, never the other way round.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`; `BACKLOG` only if something is deferred; closes the session, reports).
 
 > **After refining:** the plan goes to `plan-exec`, which re-checks this same gate on entry — a plan saved here should never bounce back for its structure.

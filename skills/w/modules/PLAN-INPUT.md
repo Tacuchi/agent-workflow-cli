@@ -11,9 +11,9 @@ Loaded when the input is not plainly a `ready-for-plan` spec (signal `input`).
 
 > **Mode 3 vs 4:** a prompt that *describes a wish* → mode 3 (spec first, or a standalone plan when the conversation already settled the how); content that *already is a plan* → adopt (mode 4).
 
-> Adoption is CLI-owned: the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document.
+> Adoption is CLI-owned: `aw flow` decides.
 
-> **Source-bounded:** new/refined plans declare `> Límite de ejecución: checkout`; each phase `> Fuentes:`; each task `_(fuentes: …)_`. `workspace` is reserved; other aliases exist in `AGENTS.md > Fuentes`; task sources are a phase subset. A legacy/manual plan without this form is adopted but **cannot execute**: `/w:plan-refine` adds it.
+> **Source-bounded:** `aw plan lint` checks the source grammar. A legacy/manual plan that fails it is adopted but **cannot execute**: `/w:plan-refine` adds it.
 
 > **Ready vs not** is read from the spec's frontmatter `status`, never from the filename. **Legacy compat:** a spec with no frontmatter that carries `## Refinement decisions` — or the older `## Q&A traceability` — counts as ready the same way.
 

@@ -11,4 +11,4 @@ The gate itself — signals, offer, anti-duplicate, sibling contract, partition 
 - The split is recorded in `## Refinement decisions` (what moved where + why); original + siblings together keep the **complete, disjoint partition** of the spec criteria (spec-less: the Delta 2 degradation applies).
 - **Closing action** on the split branch edits the original reduced and writes the extracted siblings — after the confirmation, never before it.
 
-> **When the cut fires, and that the write follows the confirmation, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. The offer's alternatives are its too.
+> **When the cut fires, and that the write follows the confirmation:** `aw flow` decides. The offer's alternatives are its too.

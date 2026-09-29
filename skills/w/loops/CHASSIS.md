@@ -2,7 +2,7 @@
 
 The **common engine** of Workline loops: heirs read it before their deltas and only reference it.
 
-> **When:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. `aw flow submit` answers the frontier. Read its envelope and digest from `aw flow --help`, never guess. Use `--adopt` for an existing run; `aw flow recover` restores a no-effect exhausted frontier, `aw flow restart` handles stuck runs, `aw flow annul` reopens miscredited batches, and `aw flow prove` binds evidence to the checkout.
+> **When:** `aw flow` decides. `aw flow submit` answers the frontier. Its envelope, the minimal answer, drafts by path and recovery live in `aw flow --help`, never guessed.
 
 ## Host execution rules
 
@@ -82,7 +82,7 @@ The loop creates and manages its session under `.workflow/sessions/`; **the user
 
 > The flow's input document (spec/plan) **never** goes inside a session; it lives in `docs/`.
 
-**CLI**: `aw session-create --type <type> --name <slug>-<flow> --objetivo "<one-line objective>"` opens it · `aw checkpoint-write --code <NNN>` / `aw checkpoint-read` keep it resumable. The CLI closes at `finalize`; loops never call it. `aw session-close` mid-run applies `finalize` at its boundary; `aw session-resume --code <NNN> --reopen` resumes both there.
+**CLI**: `aw flow start --flow <flow> --name <slug> --objetivo "…"` opens it (`aw session-create` alone still works) · `aw checkpoint-write --code <NNN>` / `aw checkpoint-read` keep it resumable. The CLI closes at `finalize`; loops never call it. `aw session-close` mid-run applies `finalize` at its boundary; `aw session-resume --code <NNN> --reopen` resumes both there.
 
 > The caller passes **only the descriptor** via `--name` — **never** a number; the CLI owns the global `NNN`. Its assignment, locating or reopening a session and repairing a failed history upsert live in the `sessions` module.
 

@@ -227,7 +227,7 @@ export const flowCommand: CliCommand<FlowResult> = {
       annul: { known: ["from", "approval"], required: ["from"] },
       restart: { known: [] },
       start: {
-        known: ["name", "objetivo", "input", "from"],
+        known: ["name", "objetivo", "input", "from", "root"],
         required: ["name", "objetivo"],
         repeatable: ["input"],
       },
@@ -264,6 +264,10 @@ export const flowCommand: CliCommand<FlowResult> = {
               "Workspace-relative document the run may modify; derived from the slug when absent.",
           },
           from: { value: "<origin>", effect: "Who or what the run comes from, for its Origin." },
+          root: {
+            value: "<dir>",
+            effect: "Bundle root the read-set is resolved from, as aw context-plan --root.",
+          },
         },
         output:
           "{session {folder, resumed, created (the session-create record) | null}, read_set[] {path, absolute, bytes, kind, signal, missing, loaded}, bytes_to_read, directive}.",
@@ -528,6 +532,7 @@ async function startVerb(
   }
   const inputs = args.valuesMulti.get("input");
   const from = args.values.get("from");
+  const root = args.values.get("root");
   const started = await startFlow(
     {
       fs: ctx.fs,
@@ -542,6 +547,7 @@ async function startVerb(
       objetivo: args.values.get("objetivo") ?? "",
       ...(inputs === undefined ? {} : { inputs }),
       ...(from === undefined ? {} : { from }),
+      ...(root === undefined ? {} : { root }),
       ...(session.contextId === undefined ? {} : { contextId: session.contextId }),
     },
   );

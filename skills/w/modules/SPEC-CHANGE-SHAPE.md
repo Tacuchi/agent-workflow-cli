@@ -17,7 +17,7 @@ The investigation can reveal the draft's shape was wrong. Does the spec still ca
 
 When a new spec contradicts or replaces an implemented spec, the old one is historical: never split/reformulate or reconcile it to align with the new one; refine the new spec without a blocker.
 
-> **When it runs, and that it never travels inside the gap loop, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Why it matters: a shape decision parked among the gap questions is erased by the next batch — or never asked at all, because a spec with no blocking gap leaves the loop before a batch is built.
+> **When it runs, and that it never travels inside the gap loop:** `aw flow` decides. Why it matters: a shape decision parked among the gap questions is erased by the next batch — or never asked at all, because a spec with no blocking gap leaves the loop before a batch is built.
 
 - same outcome — more clarity, or more technical components → **`same`**: no shape question, keep refining this spec;
 - independent functional outcomes discovered → **`split`** (below);

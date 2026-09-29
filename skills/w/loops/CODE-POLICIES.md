@@ -13,16 +13,12 @@ recorded as uncommitted in `CHECKPOINT` and `BACKLOG`. Between units each workin
 explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles
 its internal phases in one reviewed commit, and no batch may co-mingle with another.
 
-Concurrent flows declare sources. By default a run takes an **isolation
-unit** in each before writing — a worktree on its own branch
-(`aw worktree ensure | list | release`). An edit outside is
-blocked naming the command that gets one, and at close `aw worktree integrate` merges each into
-the source's work branch; a conflict is reported with the unit, merge path and files, remains pending for external resolution and is retried without an automatic abort.
+Concurrent flows declare sources. By default a run writes in an **isolation unit** per source (a worktree on its own branch, `aw worktree ensure | list | release`); an edit outside is blocked naming the command that gets one. At close the CLI integrates each unit; a conflict stays pending for external resolution, never aborted.
 An in-place workspace declares `Modo de edición: in-place`; a plan may override it with `> Aislamiento: unidad`. In-place declares and approves only its own paths against the acquisition snapshot, without integration.
 
 For frontend sources, install dependencies (`npm ci` if the lockfile changes) inside each acquired unit: `node_modules` belongs to that worktree, never to a sibling checkout.
 
-> **When the branch is verified, when a commit becomes available and what an approval covers is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document. Approving is the person's act and committing is a separate effect that comes back as the units' own git state — which is what makes "the checks passed" impossible to assert without having run them.
+> **When the branch is verified, when a commit becomes available and what an approval covers:** `aw flow` decides. Approving is the person's act and committing is a separate effect that comes back as the units' own git state — which is what makes "the checks passed" impossible to assert without having run them.
 
 ## Closing review gate (conventions, pre-commit)
 

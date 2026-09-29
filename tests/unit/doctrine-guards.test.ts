@@ -5,6 +5,8 @@ import {
   type ContextBudgetOutput,
   runContextBudget,
 } from "../../src/application/context/budget-service.js";
+import { flowCommand } from "../../src/cli/commands/flow.js";
+import { commandHelpText } from "../../src/cli/help-groups.js";
 import { FLOW_DECISIONS, decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
@@ -124,17 +126,15 @@ describe("Reglas de host y verbos vigentes", () => {
     for (const rule of ["file tool", "heredoc", "CLI verb", "approvable effect", "PYTHONUTF8=1"]) {
       expect(chassis, rule).toContain(rule);
     }
-    for (const verb of [
-      "--adopt",
-      "aw flow recover",
-      "aw flow prove",
-      "aw flow restart",
-      "aw flow annul",
-    ]) {
-      expect(chassis, verb).toContain(verb);
+    // The recovery verbs moved to the flow help (plan 082 F8): the chassis points
+    // there and the help is what names them.
+    expect(chassis).toContain("`aw flow --help`");
+    const help = commandHelpText(flowCommand);
+    for (const verb of ["--adopt", "recover", "prove", "restart", "annul"]) {
+      expect(help, verb).toContain(verb);
     }
     const policy = await readRel("loops/CODE-POLICIES.md");
-    expect(policy).toContain("aw worktree integrate");
+    expect(policy).toContain("the CLI integrates each unit");
     expect(policy).toContain("approved paths once per source");
   });
 
@@ -908,35 +908,42 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     const contract = await phaseContract();
     expect(contract).toContain("**verifiable state of the system**");
     expect(contract).toContain("never a list of layers, files or classes");
-    for (const section of [
-      "`Resultado`",
-      "`Trabajo`",
-      "`Validaci\u00f3n de fase`",
-      "`Condici\u00f3n de salida`",
+    // `aw plan lint` does not check the phase blocks nor the state line, so the
+    // template stays here; the lint owns only sources, closure and lineage.
+    for (const block of [
+      "> Estado: pendiente",
+      "**Resultado:**",
+      "**Trabajo:**",
+      "**Validaci\u00f3n de fase:**",
+      "**Condici\u00f3n de salida:**",
     ]) {
-      expect(contract, section).toContain(section);
+      expect(contract, block).toContain(block);
     }
+    expect(contract).toContain("Every block above is required.");
+    expect(contract).toContain("no wildcards");
+    expect(contract).toContain("`aw plan lint`");
   });
 
   it("the phase state is machine state, and `validada` never follows from the checkboxes", async () => {
-    const contract = await phaseContract();
-    expect(contract).toContain("**Phase state = machine state.**");
-    expect(contract).toContain("> Estado: <value>");
-    expect(contract).toContain("**Never** because all its checkboxes are ticked.");
-    // Additive by design: the round adds a signal, it does not replace progress.
-    expect(contract).toContain("**alongside \u2014 not instead of \u2014**");
-    expect(contract).toContain("nothing is back-filled");
-    // Nor from a validation that was merely declared: it has to have run.
-    expect(contract).toContain("its validation **ran and passed**");
+    // The parser is the rule (tests/unit/phases-parser.test.ts); here, by its
+    // behavior: ticked boxes never validate a phase.
+    const { parsePhases } = await import("../../src/application/parsers/phases.js");
+    const ticked = [
+      "## Tasks",
+      "### F1 \u2014 El cup\u00f3n aplica",
+      "> Estado: pendiente",
+      "- [x] T1.1",
+    ].join("\n");
+    expect(parsePhases(ticked)).toMatchObject({ total: 1, validated: 0 });
+    expect(await readSurface(PLAN_EXEC)).toContain("a missing line reads `pendiente`");
   });
 
   it("the state line carries a bare value \u2014 the reason lives on its own line", async () => {
     // The parser reads the value as an exact match, so an annotation does not
     // qualify a state, it destroys it. Doctrine and runtime say the same thing.
-    const contract = await phaseContract();
-    expect(contract).toContain("**The state line carries its value alone**");
-    expect(contract).toContain("an annotated value reads as `pendiente`");
-    expect(contract).toContain("> Bloqueo: <reason>");
+    const exec = await readSurface(PLAN_EXEC);
+    expect(exec).toContain("written any other way it reads as `pendiente`");
+    expect(exec).toContain("> Bloqueo:");
 
     const { parsePhases } = await import("../../src/application/parsers/phases.js");
     const annotated = [
@@ -1004,7 +1011,7 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
       expect(doc, name).not.toContain("\n## Phase contract");
     }
     expect(refine).toContain("**applies** it and never redefines it");
-    expect(exec).toContain("it never redefines it");
+    expect(exec).toContain("execution never redefines it");
   });
 
   it("granularity is semantic \u2014 the mechanical complexity criterion is gone", async () => {
@@ -1169,14 +1176,16 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
   }
 
   it("the plan carries a state of its own, distinct from the phase marks", async () => {
-    const contract = await phaseContract();
-    expect(contract).toContain("**The plan carries its own state, and it is a different axis.**");
-    expect(contract).toContain("`open` | `done`");
-    expect(contract).toContain("> Cierre:` (run evidence)");
-    expect(contract).toContain("> Assurance:");
+    // The axis is the plan-status parser's (tests/unit/plan-status-parser.test.ts);
+    // the doctrine that writes it keeps the two lines and the discriminator.
+    expect(await phaseContract()).toContain("`open`/`done`");
+    const exec = await readSurface(PLAN_EXEC);
+    expect(exec).toContain("`> Estado: done`");
+    expect(exec).toContain("`> Cierre:`");
+    expect(exec).toContain("> Assurance:");
     // Position is the discriminator; one rule for both marks would let a
     // validated first phase close the plan.
-    expect(contract).toContain("Position disambiguates the two marks");
+    expect(exec).toContain("Position distinguishes title from phase states");
   });
 
   it("doctrine and runtime agree on the plan-level vocabulary", async () => {
@@ -1232,7 +1241,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(loop).toContain("## Gap taxonomy");
     // WHEN it runs stopped being this document's call at the SPEC cutover; what
     // the document keeps is why it matters, and the engine keeps the order.
-    expect(loop).toContain("is not this document's call");
+    expect(loop).toContain("`aw flow` decides");
     expect(loop).toContain("erased by the next batch");
     const ids = decisionsOfScope("spec-refine").map((decision) => decision.id);
     expect(ids.indexOf("spec-refine.change-shape-gate")).toBeLessThan(
@@ -1282,10 +1291,9 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
 
   it("the conditional phase blocks are declared conditional wherever they are demanded", async () => {
     const contract = await phaseContract();
-    expect(contract).toContain("**Required**");
-    expect(contract).toContain("**Conditional**");
-    expect(contract).toContain("**A new phase never writes an empty conditional block.**");
-    expect(contract).toContain("(**only** when temporary behavior exists)");
+    expect(contract).toContain("Conditional blocks appear only when their cause does");
+    expect(contract).toContain("**a new phase never writes an empty conditional block**");
+    expect(contract).toContain("only if temporary behavior exists");
 
     // Each rule that could demand a simulation states its own condition — the
     // failure mode is one conditional sentence somewhere and unconditional
@@ -1637,9 +1645,9 @@ describe("Doctrine guards — G7 · hard floor inline in the flow commands (info
     for (const rel of LOOP_COMMANDS) {
       const text = await readRel(rel);
       expect(text, rel).toContain("Hard floor — applies even if you read nothing beyond this file");
-      expect(text, rel).toContain("aw session-create --type");
+      expect(text, rel).toContain("aw flow start --flow");
       // The signature must be runnable as written: --objetivo is mandatory
-      // (session-create-service rejects a missing objetivo). A hard floor that
+      // (flow start → session-create-service rejects a missing objetivo). A hard floor that
       // omits it fails on first run for the weakest models — the exact bug this
       // guards against.
       expect(text, rel).toContain("--objetivo");
@@ -2172,5 +2180,33 @@ describe("doctrine guards — G8b scan/install root containment", () => {
   it("HARNESS.md capability matrix reflects crush's XDG skills root", async () => {
     const harness = await readRel("harness/HARNESS.md");
     expect(harness).toContain("`~/.config/crush`");
+  });
+});
+
+describe("Doctrine guards — AC-13 · the doctrine points to the CLI (plan 082 F8)", () => {
+  it("the long attribution sentence is gone from the bundle", async () => {
+    for (const file of await listMdFiles(SKILL_ROOT)) {
+      const text = await readFile(file, "utf8");
+      expect(text, file).not.toContain("the deterministic steps below are decided by the CLI");
+    }
+  });
+
+  it("the prove → submit order lives only in the flow help", async () => {
+    const order = /aw flow prove[^\n]*aw flow submit|prove[^\n]{0,40}before[^\n]{0,20}submit/i;
+    for (const file of await listMdFiles(SKILL_ROOT)) {
+      expect(await readFile(file, "utf8"), file).not.toMatch(order);
+    }
+    expect(commandHelpText(flowCommand)).toMatch(/then prove, then submit/);
+  });
+
+  it("the plan grammar is `aw plan lint`'s, cited where a plan is written or read", async () => {
+    for (const rel of [
+      "loops/plan-exec-loop/LOOP.md",
+      "loops/plan-refine-loop/LOOP.md",
+      "loops/plan-new-loop/LOOP.md",
+      "modules/PLAN-INPUT.md",
+    ]) {
+      expect(await readRel(rel), rel).toContain("aw plan lint");
+    }
   });
 });

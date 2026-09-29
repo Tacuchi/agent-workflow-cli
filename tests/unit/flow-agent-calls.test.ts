@@ -76,4 +76,12 @@ describe("agent calls per run — never more than 27.0.1", () => {
       }
     }
   }, 60_000);
+
+  it("every flow asks the agent for strictly fewer calls than 27.0.1", async () => {
+    // Plan 082 F8 · AC-15: not merely no worse — the release has to save calls.
+    const ref = JSON.parse(await readFile(REFERENCE_PATH, "utf8")) as Reference;
+    for (const count of await counted()) {
+      expect(count.total, count.flow).toBeLessThan(ref.flows[count.flow]?.total ?? 0);
+    }
+  }, 60_000);
 });

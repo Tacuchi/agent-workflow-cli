@@ -19,7 +19,7 @@ checkboxes and `> Estado:` line in the living plan.
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
-> 1. **Session first** — create/resume the run's session before touching code: `aw session-create --type exec --name <slug>-plan-exec --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
+> 1. **Session first** — open or resume the run before touching code: `aw flow start --flow plan-exec --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Git/DB** — verify declared branches at each batch's local precondition; the CLI commits exact changed paths once per source
 >    after batch checks/review and that batch's approval.
 >    DML/DDL stays in `SCRIPTS.sql`.
@@ -28,11 +28,11 @@ checkboxes and `> Estado:` line in the living plan.
 
 ## Run the loop
 
-1. `aw context-plan --command plan-exec --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
+1. Read, in order, the `read_set` entries it returned that are not `loaded`.
 2. Follow it end to end: check executability, infer live batches, execute each without internal
    validation pauses, then validate/review/commit at its close.
 
-`aw flow advance --session <NNN> --flow plan-exec --adopt` resumes an adopted plan. At a stuck frontier use `aw flow recover` (no effects) or `aw flow restart`; `aw flow annul` reopens a miscredited batch. After validation use `aw flow prove --session <NNN> --source <alias>` for each batch source before `aw flow submit`.
+Answer each boundary per `aw flow --help`; the CLI fills what it knows. A stuck frontier: `aw flow recover` or `aw flow restart`; `aw flow annul` reopens a miscredited batch.
 
 > `plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body. It is **resumable**: an existing CHECKPOINT continues from there.
 

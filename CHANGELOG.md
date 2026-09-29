@@ -12,6 +12,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [28.0.0] — 2026-09-29
+
+**El CLI hace lo determinista y el agente pide menos: ayuda en inglés por comando, error con su siguiente comando, respuestas mínimas, fronteras que contesta el propio CLI y una corrida que se abre en una llamada.**
+
+### Contrato
+
+- **Deja de valer:** la ayuda en español armada con `describe` y el uso suelto de cada comando. **Lo reemplaza:** un contrato de ayuda en inglés por comando (propósito, argumentos, flags con su efecto, salida, códigos de salida y notas), que `--help` sirve también fuera de un workspace y en los servidores stdio; `aw --help` declara una vez el contrato común, abre con una sección *By intent* y agrupa los comandos por familia. **Qué hacer:** si parseás el texto de la ayuda, leé las secciones nuevas en inglés.
+- **Deja de valer:** la acción de un error como texto libre, que había que interpretar. **Lo reemplaza:** `data.next_step` con `{command}`, que es un único `aw …` ejecutable, o con `{alternatives}` cuando hay que elegir. **Qué hacer:** tomá el siguiente comando de `data.next_step`; `action` sigue siendo la explicación para una persona.
+- **Deja de valer:** que `aw flow submit` exija el sobre completo: digest, invocación, efectos, evidencia y pruebas de checkout. **Lo reemplaza:** una respuesta mínima que el CLI completa antes de observarla. Sin digest hay que nombrar `transition`. Las pruebas se capturan solas, y los gates de prueba vencida y de efecto parcial juzgan sólo lo que el agente manda. Un plan propuesto como `done` se rechaza con `FLOW_PROPOSAL_PLAN_DONE`. **Qué hacer:** mandá sólo el resultado y las decisiones; un sobre completo se sigue aceptando.
+- **Deja de valer:** pasar el documento propuesto sólo como texto dentro del sobre. **Lo reemplaza:** el borrador por ruta, `{path, draft}`, confinado a la carpeta de la sesión, y el status que el CLI sella al guardar. **Qué hacer:** escribí el borrador en la sesión y mandá su ruta.
+- **Deja de valer:** que el agente conteste las fronteras sin juicio: el scope de plan-exec, la verificación de rama y de unidades, la integración autorizada y la numeración de plan-new. **Lo reemplaza:** el CLI las contesta por el mismo camino de `submit` y lo reporta en `directive.cli_answers`. Una derivación que da `blocked` no se envía: devuelve el error con la recuperación de la fila, sin gastar intento. Una que no puede correr deja la frontera al agente, como antes. Las corridas nuevas no pasan por `commit-execution`. **Qué hacer:** respondé esas fronteras sólo cuando la directiva te las deje; si una queda bloqueada, corregí lo que nombra y corré `aw flow advance`.
+- **Deja de valer:** abrir una corrida con tres llamadas, `aw session-create`, `aw context-plan` y `aw flow advance --adopt`. **Lo reemplaza:** `aw flow start --flow <flow> --name <slug> --objetivo "…"`, que crea o retoma la sesión (en spec-refine, plan-new y plan-refine la crea con los criterios de éxito sembrados), adopta la corrida y devuelve el read-set (la guía del comando ya marcada `loaded`) y la primera directiva. Rechaza `--code` y `--session`. **Qué hacer:** abrí con `aw flow start`; las tres llamadas siguen funcionando.
+- **Deja de valer:** que la directiva final termine sin indicar a dónde seguir. **Lo reemplaza:** la directiva final nombra el siguiente comando del recorrido. **Qué hacer:** seguí el comando que nombra.
+- **Deja de valer:** que `aw check-branch` sin objetivo (ni `--source`, ni `--path`, ni `--file`) responda `match: true` sin verificar nada. **Lo reemplaza:** verifica cada fuente declarada (`reason: all_declared_sources`, `sources[]`); sin fuentes declaradas devuelve `match: false`. **Qué hacer:** leé el veredicto por fuente en `sources[]`.
+- **Deja de valer:** el recorrido de los comandos de flujo que empezaba por `aw session-create` y sembraba a mano el checklist de éxito. **Lo reemplaza:** los cinco comandos abren con `aw flow start`, y la doctrina remite a `aw flow --help`, a `aw plan lint` y a las fronteras del CLI. **Qué hacer:** reinstalá el bundle con `aw self install-skill --target <host>`.
+
 ## [27.0.1] — 2026-09-29
 
 **La actualización retira también el wrapper `design` que la 26.0.0 dejó en Claude.**

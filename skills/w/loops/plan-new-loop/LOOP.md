@@ -77,7 +77,7 @@ Batch syntax, inference and runtime semantics are defined once in
 
 ## Phase contract (canonical)
 
-A `### Fn` is a **verifiable state of the system**, never a list of layers, files or classes.
+A `### Fn` is a **verifiable state of the system**, never a list of layers, files or classes:
 
 ```markdown
 ### F1 — <result-oriented name>
@@ -91,24 +91,7 @@ A `### Fn` is a **verifiable state of the system**, never a list of layers, file
 **Condición de salida:** <falsifiable result · contract preserved>
 ```
 
-**Required**: `Resultado`, `Trabajo`, `Validación de fase`, `Condición de salida`, state and `Fuentes`. Every task declares `_(fuentes: …)_` within its phase (`workspace` or `AGENTS.md > Fuentes`); `Impacted` is no substitute. **Conditional**: `Estado inicial` if unclear; `Recorrido afectado` if distributed; `Dependencias` if sequence is insufficient; `Límite de simulación` (**only** when temporary behavior exists); `Diferido` for excluded work. **A new phase never writes an empty conditional block.**
-
-**Preexisting failures (conditional):** only when observed, add
-`> Rojos previos: [{"file":"tests/x.test.ts","case":"suite > case"}]` inside the phase.
-Use exact runner file/full-case identifiers (JVM: class/method), no wildcards.
-`passed: true` then means no failures outside that list; unidentified failures still reject.
-
-**Checkout is the only closing surface**: use local commands, fixtures, ephemeral DB or inspection; deployed hosts and remote reads are research or non-blocking `Handoff operativo`.
-
-**Phase state = machine state.** One bare `> Estado: <value>` line uses `pendiente` | `en ejecución` | `bloqueada` | `validada`. It is updated in place and counted **alongside — not instead of —** checkboxes. `validada` requires completed work, a true exit condition, its validation **ran and passed**, and a green review gate. **Never** because all its checkboxes are ticked. Legacy blocks have no line; a missing one reads `pendiente`, and nothing is back-filled.
-
-**The state line carries its value alone**; an annotated value reads as `pendiente`. A blocker
-uses its own `> Bloqueo: <reason>` line and the session records.
-
-**The plan carries its own state, and it is a different axis.** Its title-level value is `open` | `done`;
-only the CLI seals `done`, `> Cierre:` (run evidence) and `> Assurance:` after final validation.
-Position disambiguates the two marks. `done` with open work is `inconsistent`; all phases green without
-closure is `final_validation_pending`.
+Every block above is required. The state line is a bare `pendiente` | `en ejecución` | `bloqueada` | `validada`; batch close refuses a phase without it. Only when failures were observed before the work, add `> Rojos previos: [{"file":"tests/x.test.ts","case":"suite > case"}]` with exact runner identifiers and no wildcards; `passed: true` then means no failure outside that list. `aw plan lint` checks sources, isolation, closure, lineage and final validation; the blocks and the state line are this contract's. Conditional blocks appear only when their cause does — `Límite de simulación` only if temporary behavior exists — and **a new phase never writes an empty conditional block**. A phase closes on the checkout, never on a deployed host; the plan's own `open`/`done` is sealed by the CLI.
 
 **Granularity is semantic, not mechanical.** Tasks express purposes across files.
 An edit is a **micro step**, not a task. Size informs risk, never forces splits.
@@ -153,7 +136,7 @@ plan-new-loop(spec):
   if the spec is not status: ready-for-plan (nor a legacy mark):
     soft-suggest /w:spec-refine    # never blocks — the user may proceed anyway
   session = create_or_resume("<slug>-plan-new")
-  seed SESSION.Success criteria = coherence-gate checklist
+  SESSION.Success criteria born seeded by aw flow start          # flip each at the gate
   work = plan skeleton (Delta 1) derived from the spec (+ checkpoint progress if resuming)
   work.Execution batches = infer maximal phase partition (PLAN-EXECUTION-BATCHES)
   repeat:
@@ -189,7 +172,7 @@ finalize: CHECKPOINT persisted (+ BACKLOG only if something is deferred) + close
 - Passes → the save confirmation and only then the write (confirmed again if the document exists) →
   `finalize`. The split branch writes the N siblings in that same step.
 
-> **When the gate is evaluated, when the offer appears and with what alternatives, is not this document's call:** the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document.
+> **When the gate is evaluated, when the offer appears and with what alternatives:** `aw flow` decides.
 - `Cerrar` at any time → `finalize` (persists `CHECKPOINT`, closes the session, reports).
 
 > **After generating:** run `plan-exec` (`plan-refine` first only if the structure changes).

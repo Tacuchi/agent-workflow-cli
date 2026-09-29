@@ -17,14 +17,14 @@ An unready or legacy spec is input, never a block.
 
 > **Hard floor — applies even if you read nothing beyond this file:**
 >
-> 1. **Session first** — create/resume the run's session before working: `aw session-create --type refine --name <slug>-plan-new --objetivo "<one-line objective>"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
+> 1. **Session first** — open or resume the run before working: `aw flow start --flow plan-new --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow writes only `docs/plans/…` (with confirmation if it exists); nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the plan's content) goes in the **user's language**.
 
 ## Run the loop
 
-1. `aw context-plan --command plan-new --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` — read exactly the documents it lists, in order.
+1. Read, in order, the `read_set` entries it returned that are not `loaded`.
 2. Follow the loop manual end to end, taking `$ARGUMENTS` as input (resolved per the module below): it detects state/resume, runs the gap-driven engine, manages sessions, converges and reports.
 
 > `plan-new-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.

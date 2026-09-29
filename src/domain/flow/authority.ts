@@ -789,8 +789,7 @@ const cmd = (name: string): DecisionScope => `${COMMAND_SCOPE_PREFIX}${name}`;
  * context budget to say the same thing twelve times. The document keeps the
  * EXPLANATION of each rule and hands over the rule itself.
  */
-const QUICK_ATTRIBUTION =
-  "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
+const QUICK_ATTRIBUTION = "`aw flow` decides";
 
 /**
  * What the engine's own document says about who decides its transversal steps.
@@ -876,8 +875,7 @@ const CHANGE_SHAPE = "modules/SPEC-CHANGE-SHAPE.md";
  * `SPLIT-GATE.md` keeps its rule and gets no marker at all: it belongs to
  * `/w:spec-new`, which starts no loop, and the registry declares that exclusion.
  */
-const SPEC_ATTRIBUTION =
-  "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
+const SPEC_ATTRIBUTION = "`aw flow` decides";
 const PLAN_NEW_LOOP = "loops/plan-new-loop/LOOP.md";
 const PLAN_REFINE_LOOP = "loops/plan-refine-loop/LOOP.md";
 const PLAN_EXEC_LOOP = "loops/plan-exec-loop/LOOP.md";
@@ -913,8 +911,7 @@ const DB_SCRIPTS_ONLY = "modules/DB-SCRIPTS-ONLY.md";
  * anymore. Until that tranche they had to stay, because retiring a rule from a
  * document an undirected journey reads would leave that journey without it.
  */
-const PLAN_ATTRIBUTION =
-  "the deterministic steps below are decided by the CLI (`aw flow advance`), not by this document";
+const PLAN_ATTRIBUTION = "`aw flow` decides";
 
 /**
  * The multi-plan gate's rule: two of the five declared signals.
