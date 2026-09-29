@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,11 +22,13 @@ import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import {
   type FlowDecision,
+  actionOf,
   journeyOfFlow,
   publishApprovalOf,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
+import { bindAction } from "../../src/domain/flow/rules.js";
 import { reservationMarker } from "../../src/domain/reservation.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
@@ -135,6 +138,14 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
 
   /** El destino que este recorrido reservó, relativo al workspace. */
   function reserved(run: Walker): string {
+    // The CLI claims the number itself now (plan 082 F6): the slot it reserved is
+    // the placeholder the claim materialized under this run's slug.
+    if (run.claimed === null) {
+      const slot = readdirSync(join(workdir, "docs/plans")).find((name) =>
+        name.endsWith(`-plan-${run.slug}.md`),
+      );
+      run.claimed = slot?.split("-")[0] ?? null;
+    }
     if (run.claimed === null) throw new Error(`la corrida ${run.code} todavía no reclamó`);
     return `docs/plans/${run.claimed}-plan-${run.slug}.md`;
   }
@@ -256,6 +267,8 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     // solapamiento real, no dos corridas en fila.
     await walkTo(alpha, "plan-new.phase-shaping");
     await walkTo(beta, "plan-new.phase-shaping");
+    reserved(alpha);
+    reserved(beta);
     expect(alpha.claimed).not.toBeNull();
     expect(beta.claimed).not.toBe(alpha.claimed);
     expect(await plans()).toEqual([
@@ -384,63 +397,34 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
    * cualquier otro nombre, y verificar sin ligar es exactamente el estado que
    * rompía. Ninguna de las dos sola describe el contrato.
    */
-  it("la numeración se sella con el slug ligado y rechaza un resultado con la plantilla", async () => {
+  it("la numeración la reclama el CLI con el slug ligado y la sesión dueña", async () => {
+    // Plan 082 F6 · spec 061 AC-08: nobody answers the numbering any more; the CLI
+    // runs the sealed claim itself and the run moves past it.
     const alpha = walker("201", "alpha");
-    await walkTo(alpha, "plan-new.numbering");
-
-    const { resolved } = await current(alpha);
-    const action = resolved.action;
-    if (action === null) throw new Error("la numeración dejó de delegar su invocación");
-
-    // Mitad 1 — lo sellado es ejecutable tal cual: ni una llave ni un ángulo vivos.
-    expect(action.invocation.args).toEqual([
+    await walkTo(alpha, "plan-new.phase-shaping");
+    const { state } = await current(alpha);
+    expect(state.applied).toContain("plan-new.numbering");
+    expect(reserved(alpha)).toMatch(/^docs\/plans\/\d{3}-plan-alpha\.md$/);
+    expect(await plans()).not.toContain("plan-<slug>.md");
+    const numbered = state.attempts.filter((a) => a.transition === "plan-new.numbering");
+    expect(numbered).toHaveLength(1);
+    // The sealed invocation stays runnable as written — bound slug, the owning
+    // folder, no live placeholder — and the claim made is exactly that one.
+    const row = JOURNEY.find((decision) => decision.id === "plan-new.numbering");
+    const action = row === undefined ? null : actionOf(row);
+    if (action === null) throw new Error("la numeración dejó de declarar su invocación");
+    const bound = bindAction(action, { session: alpha.folder, code: alpha.folder, slug: "alpha" });
+    if (!bound.ok) throw new Error(bound.unbound);
+    expect(bound.action.invocation.args).toEqual([
       "next-number",
       "docs/plans",
       "--claim",
       "plan-alpha.md",
       "--code",
-      // El FOLDER: es la única identidad que resuelve a una sola sesión.
       "201-alpha-plan-new",
     ]);
-    for (const arg of action.invocation.args) {
-      expect(arg).not.toMatch(/[{<][a-z_-]+[}>]/);
-    }
-
-    // Mitad 2 — reportar la plantilla es reportar otra invocación, y se rechaza.
-    const impostor = await answer(alpha, {
-      input_digest: resolved.seal,
-      outcome: "completed",
-      invocation: {
-        ...action.invocation,
-        args: action.invocation.args.map((arg) =>
-          arg === "plan-alpha.md" ? "plan-<slug>.md" : arg,
-        ),
-      },
-      validations: action.evidence.map((id) => ({
-        id,
-        passed: true,
-        detail: "reserva",
-        ...(id === "workline.source-bounded"
-          ? {
-              proof: {
-                kind: "inspection" as const,
-                source: "workspace",
-                relative_cwd: ".",
-                checkout_digest: "test-checkout",
-                invocation: { artifact: "tests/unit/plan-new-concurrent-numbering.test.ts" },
-              },
-            }
-          : {}),
-      })),
-      effects: { planned: ["local_additive"], approved: [], applied: ["local_additive"] },
-      output: null,
-    });
-
-    expect(impostor.error?.code).toBe("FLOW_ACTION_MISMATCH");
-    expect(impostor.error?.message).toContain("plan-<slug>.md");
-    // Y no se acreditó nada: la corrida sigue parada en la misma frontera.
-    const after = await current(alpha);
-    expect(after.resolved.stopped?.id).toBe("plan-new.numbering");
+    for (const arg of bound.action.invocation.args) expect(arg).not.toMatch(/[{<][a-z_-]+[}>]/);
+    expect(reserved(alpha).endsWith(`-${bound.action.invocation.args[3]}`)).toBe(true);
   });
 
   it("una corrida cuya sesión no lleva slug se niega en vez de reclamar un nombre inventado", async () => {

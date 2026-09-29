@@ -83,6 +83,7 @@ import { runWorkspaceCommit } from "../workspace-commit-service.js";
 import { type IsolationUnit, classifyListedUnits, runWorktree } from "../worktree-service.js";
 import { commitBatch, verifyBatchGitState } from "./batch-commit.js";
 import { observeScopedFingerprints, resolveCheckoutCandidates } from "./checkout-observation.js";
+import { deriveCliAnswer } from "./cli-answers.js";
 import { preserveBoundaryClose } from "./close-artifacts.js";
 import { closeDocumentGuidance } from "./close-document-guidance.js";
 import { projectRun } from "./run-projection.js";
@@ -174,6 +175,8 @@ export function internalActionExecutor(deps: InternalActionDeps): InternalAction
         return sealPlanDone(deps, run);
       case "plan-exec.settlement-publish":
         return publishSettlement(deps, run);
+      case "cli-answer":
+        return deriveCliAnswer(deps, run, plan.answer);
     }
   };
 }

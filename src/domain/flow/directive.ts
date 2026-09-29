@@ -167,6 +167,16 @@ export function skippedStepOf(decision: FlowDecision, reason: string): FlowStep 
   return { ...stepOf(decision), outcome: "skipped", reason };
 }
 
+/** A boundary the CLI answered on the agent's behalf, with what it found. */
+export interface CliAnswerTrace {
+  transition: string;
+  summary: string;
+  /** The service's own report: the claimed path, the units, a conflict's files. */
+  report: unknown;
+  /** `true` when the finding blocked the run instead of answering it. */
+  blocked: boolean;
+}
+
 export interface FlowDirective {
   version: number;
   flow: WorklineFlow;
@@ -273,6 +283,11 @@ export interface FlowDirective {
    */
   attempt_accounting: AttemptAccounting | null;
   /** Never empty. A directive with no next action is a dead end. */
+  /**
+   * The boundaries the CLI answered itself before handing this one over (plan
+   * 082 F6), in order; absent when it answered none.
+   */
+  cli_answers?: CliAnswerTrace[];
   next_action: string;
 }
 
@@ -320,7 +335,13 @@ export const FLOW_DIRECTIVE_KEYS = [
   "error",
   "attempt_accounting",
   "next_action",
+  "cli_answers",
 ] as const;
+
+/** Keys of {@link FLOW_DIRECTIVE_KEYS} a directive carries only when they say something. */
+export const FLOW_DIRECTIVE_OPTIONAL_KEYS: readonly (typeof FLOW_DIRECTIVE_KEYS)[number][] = [
+  "cli_answers",
+];
 
 /**
  * Keys the directive shares with the receipt ON PURPOSE, each because it is the

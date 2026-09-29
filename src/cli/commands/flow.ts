@@ -96,6 +96,7 @@ const VERBS = ["advance", "submit", "recover", "prove", "restart", "annul", "ret
  * somebody is composing an answer, not on every run.
  */
 const ENVELOPE_NOTES = [
+  "Boundaries that need no judgment are answered by the CLI itself on the same road a sent answer takes: the plan-exec scope and branch checks, the quick branch check, the plan-new numbering and, once authorized, the unit integration. Only one that comes back blocked reaches you, with its action.",
   "Minimal answer: {transition, ...your judgment} plus, at an execution boundary, outcome and detail (the real output). The CLI fills what it knows before judging: input_digest, the sealed invocation, the effects, the id of the single evidence the row demands, and one checkout proof per eligible source captured in the submit itself (expects.proofs_captured); an `artifact` field makes it an inspection proof. Any field you send instead is judged as sent. A resent answer whose transition is no longer in force is refused as stale.",
   "Documents by path: at a save-proposal boundary send artifacts [{path, draft}] where draft is relative to the session folder and stays inside it; the CLI reads the bytes and seals `status: ready-for-plan` (spec) or `> Estado: open` (plan) in the proposal. Inline {path, content} still works and seals the same digest.",
   "Submit envelope: one JSON object on stdin, fields at the TOP level. Always: input_digest, the `state_digest` of the directive being answered; it is the same value, and the human directive labels it `continuidad:`.",

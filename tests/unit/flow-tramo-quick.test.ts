@@ -1309,15 +1309,13 @@ describe("resume y status proyectan la frontera vigente", () => {
     });
     if (!criteria.ok) throw new Error("esperaba avanzar");
 
-    // La primera ejecución que SÍ es de afuera: la rama de cada fuente.
+    // La rama de cada fuente la verifica el CLI solo (plan 082 F6): la
+    // proyección ya no la ofrece como una ejecución para el agente.
     const execution = await projectRun(fs, paths, SESSION);
-    expect(execution?.boundary).toBe("execution");
-    expect(execution?.transition).toBe("quick.branch-precondition");
-    expect(execution?.invocation).toBe("aw sources --verbose --code 007-tramo-quick-quick");
-    // El comando que continúa la corrida ES la invocación: nadie tiene que
-    // reconstruirla leyendo prosa.
-    expect(execution?.command).toBe("aw sources --verbose --code 007-tramo-quick-quick");
-    expect(execution?.summary).toContain("aw flow submit");
+    expect(execution?.transition).not.toBe("quick.branch-precondition");
+    const read = await readRun(fs, locateRun(paths, SESSION));
+    if (!read.ok) throw new Error(read.failure.code);
+    expect(read.state.applied).toContain("quick.branch-precondition");
     expect(execution?.summary).not.toContain("quick.branch-precondition");
   });
 

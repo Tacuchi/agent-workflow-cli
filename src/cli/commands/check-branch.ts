@@ -21,9 +21,12 @@ export const checkBranchCommand: CliCommand = {
       strict: { effect: "Exit 2 when the branch or unit does not match." },
     },
     output:
-      "{match, reason?, alias?, path?, current_branch?, expected_work_branch?, expected_origin?, main_branch?, session_code?, work_branch?, document?, dirty?, changed_files[]?, is_repo?, error?, actual_unit?, expected_unit?, remedy?}.",
+      "{match, reason?, alias?, path?, current_branch?, expected_work_branch?, expected_origin?, main_branch?, session_code?, work_branch?, document?, dirty?, changed_files[]?, is_repo?, error?, actual_unit?, expected_unit?, remedy?, sources[]?}.",
     exit_codes: { "2": "With --strict, match is false." },
-    notes: ["Read-only."],
+    notes: [
+      "Read-only.",
+      "Without --source, --path or --file it checks every declared source: sources[] holds one verdict per alias and match is true only if all match; with no source declared, match is false with reason no_sources_declared.",
+    ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const alias = flagValue(args, "source");

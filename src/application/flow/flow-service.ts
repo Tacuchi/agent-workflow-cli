@@ -53,6 +53,7 @@ import {
   readRun,
   restartUnderLock,
 } from "./run-state-service.js";
+import { answerCliBoundaries } from "./submit.js";
 
 export interface AdvanceFlowInput {
   code?: string;
@@ -175,11 +176,25 @@ export async function advanceFlow(
     paths,
   );
   if (!driven.ok) return { ok: false, failure: driven.failure };
+  // The boundaries that need no judgment are answered here too, so an advance
+  // that lands on one never hands it to the agent.
+  const answered = await answerCliBoundaries(
+    fs,
+    paths,
+    {
+      code: session,
+      ...(input.contextId === undefined ? {} : { contextId: input.contextId }),
+      executor: input.executor,
+      ...(input.git === undefined ? {} : { git: input.git }),
+    },
+    driven.value,
+  );
+  if (!answered.ok) return answered;
   // After the lock, so the walk stays pure and the seal is long computed. The roots
   // are VERIFIED before being published, exactly as `submit` verifies its own.
   return {
     ok: true,
-    directive: await publishObservedCheckouts(fs, paths, session, input.git, driven.value),
+    directive: await publishObservedCheckouts(fs, paths, session, input.git, answered.directive),
   };
 }
 

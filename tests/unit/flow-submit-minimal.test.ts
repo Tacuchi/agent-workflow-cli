@@ -117,12 +117,12 @@ describe("minimal and complete answers are the same answer", () => {
 
 describe("what the agent sends is still judged", () => {
   it("an explicit `applied` shorter than what the row declares is refused", async () => {
-    const at = await walkTo("quick", "quick.branch-precondition");
+    const at = await walkTo("quick", "quick.convergence-gate");
     const { state, resolved } = await at.current();
     const declared = [...effectsOfTransition(state, resolved.stopped as FlowDecision)];
     expect(declared.length).toBeGreaterThan(0);
     const result = await at.submit({
-      transition: "quick.branch-precondition",
+      transition: "quick.convergence-gate",
       outcome: "completed",
       detail: "salida real",
       effects: { planned: declared, approved: [], applied: [] },

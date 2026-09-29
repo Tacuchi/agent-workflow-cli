@@ -1,7 +1,9 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
@@ -34,10 +36,12 @@ import {
   effectsOf,
   internalActionOf,
   journeyForState,
+  journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
 import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import {
   FLOW_RUN_STATE_FILE,
+  FLOW_RUN_STATE_VERSION,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
   attemptsAt,
@@ -53,8 +57,10 @@ import {
 import { sealProposal } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { acceptAdaptiveRoute } from "../helpers/accept-adaptive-route.js";
+import { COUNTED_FLOWS, countAgentCalls, openMeasuredRun } from "../helpers/agent-calls.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
+import { stateWrittenAt } from "../helpers/journey-fixtures.js";
 import { MemFs } from "../helpers/mem-fs.js";
 import { planExecWalk } from "../helpers/plan-exec-walk.js";
 import {
@@ -63,6 +69,7 @@ import {
   seedExecutedPlanOwingCompensation,
 } from "../helpers/plan-obligation-fixtures.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { testExecutor } from "../helpers/test-executor.js";
 
 /**
  * Lo que el CLI hace por su cuenta, y lo que sigue sin hacer.
@@ -797,6 +804,10 @@ describe("la escritura del registro falla después del efecto", () => {
     return result.directive;
   }
 
+  const CLI_ANSWERED = new Set(
+    FLOW_DECISIONS.filter((row) => row.answered_by !== undefined).map((row) => row.id),
+  );
+
   async function expectRecognized(transition: string) {
     const stuck = await current();
     const before = occurrences(stuck, transition);
@@ -806,8 +817,12 @@ describe("la escritura del registro falla después del efecto", () => {
     const directive = await advanceAgain();
     const after = await current();
     expect(occurrences(after, transition)).toBe(before + 1);
-    // Nothing charged: no attempt row was added, and the count never grew.
-    expect(after.attempts).toHaveLength(stuck.attempts.length);
+    // Nothing charged: no attempt row was added, and the count never grew. The
+    // boundaries the CLI answers itself right after (plan 082 F6) record their own
+    // answers, which are not a charge for this one.
+    const own = (state: typeof after) =>
+      state.attempts.filter((attempt) => !CLI_ANSWERED.has(attempt.transition));
+    expect(own(after)).toHaveLength(own(stuck).length);
     expect(attemptsAt(after, transition)).toBeLessThanOrEqual(spent);
     expect(after.skipped.filter((id) => id === transition)).toHaveLength(0);
     expect(directive.boundary.transition).not.toBe(transition);
@@ -969,4 +984,120 @@ describe("la vuelta del CLI sobre una frontera agotada", () => {
     });
     expect(awaitingCliRerun(granted, PUBLICATION)).toBe(true);
   });
+});
+
+describe("the boundaries with no judgment are the CLI's to answer (plan 082 F6 · spec 061 AC-08)", () => {
+  const STOPS = resolve(__dirname, "..", "fixtures", "agent-stops-28.0.0-next.json");
+  const CLI_ONLY = [
+    "plan-exec.source-scope",
+    "plan-exec.branch-precondition",
+    "quick.branch-precondition",
+    "plan-new.numbering",
+    "plan-exec.commit-execution",
+  ];
+
+  it("a new run of plan-exec, quick and plan-new stops the agent only at judgment or approval", async () => {
+    const walked: Record<string, string[]> = {};
+    for (const flow of COUNTED_FLOWS) {
+      const count = await countAgentCalls(flow);
+      walked[flow] = count.stops.map((stop) => `${stop.transition}:${stop.kind}`);
+      for (const stop of count.stops) {
+        expect(CLI_ONLY, `${flow} ${stop.transition}`).not.toContain(stop.transition);
+        // The integration still asks its approval; its execution is the CLI's.
+        if (stop.transition === "plan-exec.unit-integration") {
+          expect(stop.kind, flow).toBe("authorization");
+        }
+      }
+    }
+    if (process.env.AW_FREEZE_AGENT_STOPS === "1") {
+      writeFileSync(
+        STOPS,
+        `${JSON.stringify({ cli_version: "28.0.0-next", flows: walked }, null, 2)}\n`,
+      );
+    }
+    // The new journey, frozen: the boundaries each flow hands the agent, in order.
+    expect(walked).toEqual(JSON.parse(readFileSync(STOPS, "utf8")).flows);
+  }, 120_000);
+});
+
+describe("a branch that does not match stops the run with an action, never asks to verify it", () => {
+  it("a scoped source without this session's unit blocks branch-precondition with its remedy", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aw-branch-mismatch-"));
+    try {
+      const paths = new PathsService(normalizeNamespace("agent-workflow"), root, root);
+      const session = "071-rama-plan-exec";
+      await mkdir(join(paths.cwdSessionsDir(), session), { recursive: true });
+      await mkdir(join(root, "acme"), { recursive: true });
+      await writeFile(
+        join(root, "CLAUDE.md"),
+        `<!-- AGENT-WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| acme | ${join(root, "acme")} | main |\n<!-- AGENT-WORKFLOW-PROJECT-END -->\n`,
+      );
+      const ids = journeyOfFlow("plan-exec").map((row) => row.id);
+      const state = stateWrittenAt(
+        FLOW_RUN_STATE_VERSION,
+        "plan-exec",
+        session,
+        ids.slice(0, ids.indexOf("plan-exec.branch-precondition")),
+        "plan-exec.branch-precondition",
+        { scope: { plan: "docs/plans/071-plan-rama.md", sources: ["acme"] } },
+      );
+      await writeFile(locateRun(paths, session).statePath, serializeRunState(state));
+      const fs = new NodeFileSystem();
+      const advanced = await advanceFlow(fs, paths, {
+        code: session,
+        adopt: false,
+        executor: testExecutor(fs, paths),
+      });
+      if (!advanced.ok) throw new Error(JSON.stringify(advanced));
+      expect(advanced.directive.boundary.transition).toBe("plan-exec.branch-precondition");
+      // What the CLI found travels with the refusal: the finding and its report.
+      expect(advanced.directive.error?.message).toContain("sin unidad de esta sesión: acme");
+      expect(advanced.directive.cli_answers).toMatchObject([
+        { transition: "plan-exec.branch-precondition", blocked: true },
+      ]);
+      expect(advanced.directive.cli_answers?.[0]?.report).toMatchObject({ units: [] });
+      expect(advanced.directive.error?.code).toBe("FLOW_EXECUTION_NOT_COMPLETED");
+      expect(advanced.directive.error?.action).toContain(
+        `aw worktree ensure --source <alias> --code ${session}`,
+      );
+      // The CLI's own finding costs the agent nothing, however many times it is read.
+      await advanceFlow(fs, paths, {
+        code: session,
+        adopt: false,
+        executor: testExecutor(fs, paths),
+      });
+      const read = await readRun(fs, locateRun(paths, session));
+      if (!read.ok) throw new Error(read.failure.code);
+      expect(read.state.applied).not.toContain("plan-exec.branch-precondition");
+      expect(read.state.applied).toEqual(state.applied);
+      expect(read.state.attempts).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("what the CLI answered is said in the directive", () => {
+  it("the claimed plan path is named, not left to guess or to look up on disk", async () => {
+    const run = await openMeasuredRun("plan-new");
+    try {
+      let directive = run.opened;
+      let claimed: string | null = null;
+      for (let step = 0; step < 20 && claimed === null; step += 1) {
+        const { resolved } = await run.current();
+        if (resolved.stopped === null) break;
+        const plan = await run.answerFor(directive, resolved);
+        const result = await run.submit(plan.raw, plan.approval);
+        if (!result.ok) throw new Error(JSON.stringify(result));
+        directive = result.directive;
+        const numbered = directive.cli_answers?.find((t) => t.transition === "plan-new.numbering");
+        claimed = (numbered?.report as { claimed_path?: string } | undefined)?.claimed_path ?? null;
+      }
+      // A structured field for the agent, the same fact in prose for the person.
+      expect(claimed).toMatch(/docs\/plans\/\d{3}-plan-medida\.md$/);
+      expect(directive.next_action).toContain("plan-new.numbering: reclamado:");
+    } finally {
+      await run.dispose();
+    }
+  }, 30_000);
 });

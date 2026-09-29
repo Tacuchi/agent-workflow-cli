@@ -15,6 +15,7 @@ import type { DelegatedAction, FlowChoice } from "../../src/domain/flow/authorit
 import {
   FLOW_BOUNDARY_KINDS,
   FLOW_DIRECTIVE_KEYS,
+  FLOW_DIRECTIVE_OPTIONAL_KEYS,
   FLOW_DIRECTIVE_REUSED_KEYS,
   FLOW_STEP_OUTCOMES,
   type FlowBoundary,
@@ -151,7 +152,9 @@ describe("directiva de frontera — la forma válida", () => {
     expect(built.directive.tranche).toBe("quick");
     expect(built.directive.boundary.ownership).toBe("cli-owned");
     expect(built.directive.next_action.length).toBeGreaterThan(0);
-    expect(Object.keys(built.directive).sort()).toEqual([...FLOW_DIRECTIVE_KEYS].sort());
+    expect(Object.keys(built.directive).sort()).toEqual(
+      FLOW_DIRECTIVE_KEYS.filter((key) => !FLOW_DIRECTIVE_OPTIONAL_KEYS.includes(key)).sort(),
+    );
   });
 
   it("una finalización declara que no queda trabajo pendiente", () => {

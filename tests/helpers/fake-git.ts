@@ -253,16 +253,26 @@ export class RecordingGit implements GitPort {
     return [
       { path: repo, head: null, branch: this.branchOf(repo), main: true, prunable: false },
       ...(this.opts.worktrees?.[repo] ?? []),
+      ...(this.added.get(repo) ?? []),
     ];
   }
+
+  /** Worktrees this fake created, listed back as git would list them. */
+  private readonly added = new Map<string, WorktreeEntry[]>();
 
   async worktreeAdd(repo: string, path: string, branch: string, _base: string | null) {
     this.calls.push({ op: "worktreeAdd", repo, arg: `${branch} ${path}` });
     await mkdir(path, { recursive: true });
+    const entries = (this.added.get(repo) ?? []).filter((entry) => entry.path !== path);
+    this.added.set(repo, [...entries, { path, head: null, branch, main: false, prunable: false }]);
   }
 
   async worktreeRemove(repo: string, path: string): Promise<void> {
     this.calls.push({ op: "worktreeRemove", repo, arg: path });
+    this.added.set(
+      repo,
+      (this.added.get(repo) ?? []).filter((entry) => entry.path !== path),
+    );
   }
 
   async worktreePrune(repo: string): Promise<void> {

@@ -1031,17 +1031,18 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
         integrated.resolved.authorization?.planned ?? [],
       ),
     );
-    expect(granted.boundary.transition).toBe("plan-exec.unit-integration");
-    expect(granted.boundary.kind).toBe("execution");
-    expect(granted.attempt_accounting?.spent).toBe(0);
+    // Authorized, the CLI integrates itself (plan 082 F6): nobody is handed the
+    // merge to run, and the run goes on to its seal.
+    expect(granted.error).toBeNull();
+    expect(granted.boundary.transition).not.toBe("plan-exec.unit-integration");
+    const done = await current();
     expect(
-      (await current()).state.attempts.some(
+      done.state.attempts.some(
         (attempt) => attempt.transition === "plan-exec.unit-integration" && attempt.approval,
       ),
     ).toBe(true);
-    const complete = await answer(resultFor((await current()).resolved));
-    expect(complete.error).toBeNull();
-    expect((await current()).state.applied).toContain("plan-exec.plan-done");
+    expect(done.state.applied).toContain("plan-exec.unit-integration");
+    expect(done.state.applied).toContain("plan-exec.plan-done");
   });
 });
 

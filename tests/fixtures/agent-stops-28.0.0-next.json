@@ -1,0 +1,71 @@
+{
+  "cli_version": "28.0.0-next",
+  "flows": {
+    "spec-refine": [
+      "chassis.route-evaluation:semantic",
+      "chassis.route-evaluation:human",
+      "spec-refine.escalation-adoption:semantic",
+      "spec-refine.baseline-scope:semantic",
+      "spec-refine.split-signal:semantic",
+      "spec-refine.gap-recognition:semantic",
+      "spec-refine.content-authoring:semantic",
+      "spec-refine.ready-gate:execution",
+      "spec-refine.save-proposal:semantic",
+      "spec-refine.save-confirmation:human",
+      "chassis.commit-choice:human"
+    ],
+    "plan-new": [
+      "chassis.route-evaluation:semantic",
+      "chassis.route-evaluation:human",
+      "plan-new.slug-derivation:semantic",
+      "plan-new.phase-shaping:semantic",
+      "plan-new.batch-eligibility-signal:semantic",
+      "plan-new.split-signal:semantic",
+      "plan-new.coherence-gate:execution",
+      "plan-new.save-proposal:semantic",
+      "plan-new.save-confirmation:human",
+      "chassis.commit-choice:human"
+    ],
+    "plan-refine": [
+      "chassis.route-evaluation:semantic",
+      "chassis.route-evaluation:human",
+      "plan-refine.escalation-adoption:semantic",
+      "plan-refine.journey-map:semantic",
+      "plan-refine.batch-eligibility-signal:semantic",
+      "plan-refine.split-signal:semantic",
+      "plan-refine.executability-gate:execution",
+      "plan-refine.save-proposal:semantic",
+      "plan-refine.save-confirmation:human",
+      "chassis.commit-choice:human"
+    ],
+    "plan-exec": [
+      "chassis.route-evaluation:semantic",
+      "chassis.route-evaluation:human",
+      "plan-exec.entry-gate:execution",
+      "plan-exec.entry-gap-recognition:semantic",
+      "plan-exec.batch-eligibility-signal:semantic",
+      "plan-exec.unit-acquisition:authorization",
+      "plan-exec.implementation:semantic",
+      "plan-exec.deviation-recognition:semantic",
+      "plan-exec.validation-execution:execution",
+      "plan-exec.review-findings:semantic",
+      "plan-exec.batch-commit-proposal:semantic",
+      "plan-exec.final-validation:execution",
+      "plan-exec.unit-integration:authorization",
+      "chassis.commit-choice:human"
+    ],
+    "quick": [
+      "chassis.route-evaluation:semantic",
+      "chassis.route-evaluation:human",
+      "quick.entry-gate-signal:semantic",
+      "quick.success-criteria-authoring:semantic",
+      "quick.fix-preview:semantic",
+      "quick.deliverable-authoring:semantic",
+      "quick.db-touched:semantic",
+      "quick.convergence-gate:execution",
+      "quick.review-findings:semantic",
+      "quick.commit-authorization:human",
+      "chassis.commit-choice:human"
+    ]
+  }
+}

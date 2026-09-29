@@ -72,6 +72,14 @@ export const FLOW_TRANCHES = ["quick", "spec", "plan", "chassis"] as const;
 
 export type FlowTranche = (typeof FLOW_TRANCHES)[number];
 
+/** The boundaries whose answer needs no judgment, and the derivation that yields it. */
+export type CliAnswer =
+  | "plan-exec.scope"
+  | "worktree.verify"
+  | "worktree.integrate"
+  | "sources.verify"
+  | "next-number.claim";
+
 export interface FlowDecision {
   /** Stable id, `<scope>.<decision>`; what the run state records as applied. */
   id: string;
@@ -191,6 +199,13 @@ export interface FlowDecision {
    * the plan against the document it names. See {@link FlowRunScope}.
    */
   scopes_sources?: true;
+  /**
+   * The CLI answers this boundary itself, by running the named derivation and
+   * submitting the minimal answer it yields (plan 082 F6 · spec 061 AC-08). The
+   * row keeps its kind, evidence and validation: only who sends the answer moves.
+   * An authorization stop of the same row is still asked.
+   */
+  answered_by?: CliAnswer;
   /**
    * This human row decides the standing proposal, and its `approve` label is the
    * one alternative that grants.
@@ -476,6 +491,8 @@ export const INTERNAL_ACTION_OPERATIONS = [
   "plan-exec.plan-done",
   /** Publish the successor note that settles what the closure just discharged. */
   "plan-exec.settlement-publish",
+  /** Derive the answer of a boundary the CLI answers itself; see {@link CliAnswer}. */
+  "cli-answer",
 ] as const;
 
 export type InternalActionOperation = (typeof INTERNAL_ACTION_OPERATIONS)[number];
@@ -519,6 +536,9 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   // creation class as well would make the verdict demand an effect this
   // operation can never exercise, and every publication would refuse itself.
   "plan-exec.settlement-publish": ["mutate_overwrite"],
+  // It only derives an answer; the effects of that answer are the row's own and
+  // are credited, as always, by the submit that judges it.
+  "cli-answer": [],
 };
 
 /**
@@ -590,7 +610,8 @@ export type InternalActionPlan =
    * derives the settlement, the run only supplies its evidence" a property of
    * the contract instead of a rule somebody follows.
    */
-  | { operation: "plan-exec.settlement-publish" };
+  | { operation: "plan-exec.settlement-publish" }
+  | { operation: "cli-answer"; answer: CliAnswer };
 
 export type ActionExecution =
   | ({ kind: "internal" } & InternalActionPlan)
@@ -1517,8 +1538,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
-    // Same read as PLAN's, and for the same reason: `aw check-branch` with no
-    // --source resolves no target and passes unconditionally.
+    // Answered by the CLI (sources.verify): `aw check-branch` without a target now
+    // checks every declared source, and a workspace with none has nothing to verify.
+    answered_by: "sources.verify",
     action: {
       invocation: {
         program: "aw",
@@ -2152,6 +2174,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // The claim is a WRITE and now travels as one, with the slot it produced as
     // the evidence.
     effects: ["local_additive"],
+    // The claim needs no judgment: the CLI makes it (next-number.claim) and its
+    // claimed_path travels as the answer's real output.
+    answered_by: "next-number.claim",
     action: {
       invocation: {
         program: "aw",
@@ -2724,15 +2749,17 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     id: "plan-exec.source-scope",
     scope: "plan-exec",
     title: "fijar el plan de la corrida y las fuentes exactas que va a editar",
+    // Still an answer, never a rule: `authority: "cli"` would apply the row with
+    // no scope at all. Who SENDS the answer is `answered_by`.
     authority: "agent",
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
-    // Which sources a plan touches is read off the plan, and the engine never read
-    // one — so this is judgment, and it is the only thing here that is. What the
-    // answer hands over is CHECKED before it is persisted: an alias the WORKSPACE
-    // block does not declare, or one the plan never names, is refused. That is the
-    // half a rule can hold; the other half is why the row exists at all.
+    // Which sources a plan touches is read off the plan, and the execution entry
+    // already reads it: the scope is the union of its `> Fuentes:`, so the CLI
+    // answers with that union and the plan it adopted. The answer is still CHECKED
+    // before it is persisted — an alias the WORKSPACE block does not declare, or
+    // one the plan never names, is refused — by the same rule a sent answer meets.
     //
     // It carries no signals on purpose. A vocabulary would be a verdict over a
     // fixed taxonomy, and the aliases of a workspace are not one.
@@ -2741,6 +2768,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // must inherit the same already-validated plan/sources, never ask to widen
     // the edit boundary while work is in progress.
     scopes_sources: true,
+    answered_by: "plan-exec.scope",
   },
   {
     id: "plan-exec.batch-eligibility-signal",
@@ -2844,8 +2872,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // y su HEAD. Una fuente del scope sin unidad no aparece, y esa ausencia es
     // exactamente lo que deja la frontera pendiente.
     //
-    // (`aw check-branch` sigue sin poder servir acá: sin --source no resuelve
-    // ningún target y contesta `match: true` incondicional.)
+    // La responde el CLI con la misma lectura (worktree.verify), o con
+    // `aw check-branch` por fuente en un workspace in-place.
+    answered_by: "worktree.verify",
     action: {
       invocation: {
         program: "aw",
@@ -3280,6 +3309,9 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
     effects: ["execute", "local_additive"],
+    // Legacy runs only: a run that commits per batch (`plan-exec.batch-commit`)
+    // never stops here, and the journey fixture of new runs pins that.
+    //
     // Approving is not committing: the human approval above already carries the
     // grant over this row's exact seal, and what applies the transition is still
     // the real git state coming back — which is also the between-unit precondition
@@ -3329,10 +3361,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // has no losing side to report, and BEFORE the `done` seal because sealing a
     // plan whose result is still only in a unit would make `done` true of nothing.
     //
-    // Delegated, not internal, although this CLI owns the service: a merge into
-    // the source's working branch writes on somebody else's books, and its failure
-    // mode — a conflict — needs external resolution before the same integration
-    // this executor's. What comes back is the command's own per-unit report.
+    // Answered by the CLI once authorized (worktree.integrate): the authorization
+    // stop above is still the person's. A conflict keeps the unit and comes back
+    // blocked with the command's own per-unit report; resolved outside, `aw flow
+    // advance` integrates again.
+    answered_by: "worktree.integrate",
     action: {
       invocation: {
         program: "aw",

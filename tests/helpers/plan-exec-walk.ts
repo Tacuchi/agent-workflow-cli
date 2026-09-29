@@ -1,6 +1,9 @@
 import { resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
-import { internalActionExecutor } from "../../src/application/flow/internal-actions.js";
+import {
+  type InternalActionExecutor,
+  internalActionExecutor,
+} from "../../src/application/flow/internal-actions.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import type { PathsService } from "../../src/application/paths-service.js";
@@ -64,6 +67,11 @@ export interface WalkOptions {
    * alternative is a walk that "reached" it by having it skipped.
    */
   signals?: readonly string[];
+  /**
+   * The agent answers `plan-exec.source-scope` itself instead of the CLI, so a
+   * suite can send the malformed or mismatched scopes the validation refuses.
+   */
+  agentAnswersScope?: boolean;
 }
 
 /**
@@ -125,16 +133,26 @@ function resultFor(
 }
 
 export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
-  const { sources, signals = [] } = options;
+  const { sources, signals = [], agentAnswersScope = false } = options;
   const EXEC = journeyOfFlow("plan-exec");
 
-  function executor() {
-    return internalActionExecutor({
+  function executor(): InternalActionExecutor {
+    const real = internalActionExecutor({
       fs: deps.fs,
       env: deps.env,
       paths: deps.paths,
       git: deps.git,
     });
+    if (!agentAnswersScope) return real;
+    return async (plan, run) =>
+      plan.operation === "cli-answer" && plan.answer === "plan-exec.scope"
+        ? {
+            ok: false,
+            summary: "el agente contesta el scope en esta prueba",
+            output: "",
+            effects: [],
+          }
+        : real(plan, run);
   }
 
   async function current(folder: string) {

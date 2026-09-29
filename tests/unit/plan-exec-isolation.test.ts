@@ -114,7 +114,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
       git: new GitCliAdapter(new NodeProcess()),
       paths: new PathsService(normalizeNamespace("agent-workflow"), home, workspace),
     };
-    walk = planExecWalk(deps, { sources: [ALIAS] });
+    walk = planExecWalk(deps, { sources: [ALIAS], agentAnswersScope: true });
 
     writeFileSync(join(workspace, "CLAUDE.md"), block(source, otro));
     mkdirSync(join(workspace, "docs", "plans"), { recursive: true });

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
+import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { readWorkspaceBlock } from "../../src/application/parsers/project-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
@@ -293,21 +294,36 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     const parada = await walk.current(DOS.folder);
     expect(parada.resolved.stopped?.id).toBe("plan-exec.unit-integration");
     expect(parada.resolved.kind).toBe("authorization");
-    await walk.step(DOS);
+    // The other run lands first, so this merge really conflicts.
+    await integrate(UNO);
 
-    // Un merge conflictivo NO es una invocación completada. Devolverlo como tal
-    // sería declarar integrado lo que sigue en su rama, y por eso el motor lo
-    // rechaza con el remedio de la fila: el conflicto es un estado activo.
-    const rechazo = await walk.step(DOS, { outcome: "needs_input" });
+    // Authorized, the CLI integrates itself (plan 082 F6) — and a conflicting
+    // merge is NOT a completed invocation: it comes back blocked with the row's
+    // remedy, because the conflict is a live state.
+    const rechazo = await walk.step(DOS);
     expect(rechazo.error?.code).toBe("FLOW_EXECUTION_NOT_COMPLETED");
     expect(rechazo.error?.action).toContain("resolvé externamente");
+    // Where the merge stopped and which files collide travel with the refusal.
+    const report = rechazo.cli_answers?.find((t) => t.transition === "plan-exec.unit-integration")
+      ?.report as { results?: { merge_path?: string; conflicted?: string[] }[] } | undefined;
+    expect(report?.results?.[0]?.merge_path).toBe(source);
+    expect(report?.results?.[0]?.conflicted).toContain(COMPARTIDO);
     const pendiente = await walk.current(DOS.folder);
     expect(pendiente.state.applied).not.toContain("plan-exec.unit-integration");
     expect(pendiente.resolved.stopped?.id).toBe("plan-exec.unit-integration");
 
-    // Y resuelto, la MISMA transición la acredita: es la frontera a la que se
-    // vuelve, no una que haya que saltear.
-    await walk.step(DOS);
+    // Resolved outside, `aw flow advance` integrates again: it is the boundary
+    // the run goes back to, never one to skip.
+    writeFileSync(join(source, COMPARTIDO), "export const version = 3;\n");
+    git(source, "add", "-A");
+    git(source, "commit", "--no-edit");
+    const again = await advanceFlow(deps.fs, deps.paths, {
+      code: DOS.code,
+      adopt: false,
+      executor: walk.executor(),
+      git: deps.git,
+    });
+    if (!again.ok) throw new Error(JSON.stringify(again));
     // Con un ejecutor interno el sello final ya no vuelve como una edición
     // manual: revalida el plan y escribe `Estado: done` + `Cierre` en la misma
     // continuación que acreditó la integración.

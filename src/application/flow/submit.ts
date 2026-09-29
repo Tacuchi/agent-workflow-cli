@@ -64,6 +64,7 @@ import {
   STOP_LABEL,
   stepOf,
 } from "../../domain/flow/directive.js";
+import type { CliAnswerTrace } from "../../domain/flow/directive.js";
 import {
   type ExecutionRefusal,
   batchCreditVerdict,
@@ -291,6 +292,103 @@ export async function checkFlow(
 }
 
 export async function submitFlow(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: SubmitFlowInput,
+): Promise<SubmitFlowResult> {
+  const answered = await submitOnce(fs, paths, input);
+  if (!answered.ok) return answered;
+  return answerCliBoundaries(fs, paths, input, answered.directive);
+}
+
+/**
+ * Answer, one after the other, the boundaries the CLI answers itself (plan 082
+ * F6 · spec 061 AC-08), until the run stands on one that needs the agent.
+ *
+ * Each answer is derived by the executor and sent down the SAME submit road a
+ * sent answer takes, so it is completed, observed and judged like one. A refused
+ * or blocked derived answer stops here with its directive: its error names the
+ * action, and the agent is handed exactly that. An authorization stop is never
+ * answered: approvals stay the person's.
+ */
+export async function answerCliBoundaries(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: Omit<SubmitFlowInput, "raw" | "approval" | "identity">,
+  directive: FlowDirective,
+): Promise<SubmitFlowResult> {
+  let current = directive;
+  const answered: CliAnswerTrace[] = [];
+  // A caller without an executor cannot derive anything: the boundary stays its.
+  if (typeof input.executor !== "function") return { ok: true, directive: current };
+  // Bounded by the journey: every derived answer that applies moves the cursor.
+  for (let round = 0; round < 16 && current.error === null; round += 1) {
+    const read = await readRun(fs, locateRun(paths, current.session));
+    if (!read.ok) break;
+    const resolved = resolveBoundary(read.state, journeyForRun(read.state));
+    const row = resolved.stopped;
+    if (row?.answered_by === undefined || resolved.kind === "authorization") break;
+    const derived = await input.executor(
+      { operation: "cli-answer", answer: row.answered_by },
+      {
+        session: read.state.session,
+        code: read.state.session,
+        scope: read.state.scope,
+        proposal: read.state.proposal,
+        state_digest: read.state.digest,
+      },
+    );
+    if (!derived.ok) break;
+    const { report, ...body } = JSON.parse(derived.output) as {
+      outcome?: string;
+      report?: unknown;
+    };
+    const trace: CliAnswerTrace = {
+      transition: row.id,
+      summary: derived.summary,
+      report: report ?? null,
+      blocked: body.outcome === "blocked",
+    };
+    answered.push(trace);
+    if (trace.blocked) {
+      // What the CLI itself found is not an attempt the agent made: the boundary
+      // stays in force with the finding and the row's remedy, the report travels
+      // in `cli_answers`, and the ledger is untouched.
+      current = {
+        ...current,
+        error: {
+          code: "FLOW_EXECUTION_NOT_COMPLETED",
+          message: `la comprobación del CLI no pasó: ${derived.summary}`,
+          action:
+            resolved.action?.recovery ?? "corregí lo que el mensaje nombra y corré aw flow advance",
+        },
+      };
+      break;
+    }
+    const next = await submitOnce(fs, paths, {
+      ...input,
+      code: read.state.session,
+      raw: JSON.stringify({ ...body, transition: row.id }),
+      approval: null,
+    });
+    if (!next.ok) return next;
+    current = next.directive;
+  }
+  // What the CLI answered on the agent's behalf is published, so a value it
+  // produced — the claimed plan path, a conflict's files — is never guessed.
+  if (answered.length > 0) {
+    current = {
+      ...current,
+      cli_answers: answered,
+      next_action: `${current.next_action} · el CLI respondió ${answered
+        .map((trace) => `${trace.transition}: ${trace.summary}`)
+        .join("; ")}`,
+    };
+  }
+  return { ok: true, directive: current };
+}
+
+async function submitOnce(
   fs: FileSystemPort,
   paths: PathsService,
   input: SubmitFlowInput,

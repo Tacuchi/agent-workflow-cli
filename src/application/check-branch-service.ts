@@ -59,6 +59,8 @@ export interface CheckBranchOutput {
   expected_unit?: UnitRef | null;
   /** The exact command that obtains the expected unit, when one is missing. */
   remedy?: string | null;
+  /** Without a target: the verdict of every declared source, by alias. */
+  sources?: CheckBranchOutput[];
 }
 
 export async function runCheckBranch(
@@ -71,6 +73,22 @@ export async function runCheckBranch(
   const cwd = paths.workspaceDir();
   const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
   const sources = block?.fuentes ?? [];
+  const untargeted =
+    input.alias === undefined && input.pathArg === undefined && input.fileArg === undefined;
+  if (untargeted) {
+    // Without a target nothing was checked yet, so nothing may be claimed to
+    // match: every declared source is checked, and none declared matches nothing.
+    if (sources.length === 0) return { match: false, reason: "no_sources_declared" };
+    const verdicts: CheckBranchOutput[] = [];
+    for (const source of sources) {
+      verdicts.push(await runCheckBranch(fs, _env, git, paths, { ...input, alias: source.alias }));
+    }
+    return {
+      match: verdicts.every((verdict) => verdict.match),
+      reason: "all_declared_sources",
+      sources: verdicts,
+    };
+  }
   if (sources.length === 0) {
     return { match: true, reason: "no_sources_declared" };
   }

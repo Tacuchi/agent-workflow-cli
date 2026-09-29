@@ -1,3 +1,4 @@
+import { readdirSync } from "node:fs";
 // La publicación de un plan SELLA su baseline, dentro de la misma propuesta.
 //
 // El sello no puede quedar en manos de quien redacta: un digest no es algo que
@@ -152,6 +153,14 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
    * constante del test: si el recorrido cambiara lo que reclama, esto reclamaría
    * lo nuevo en vez de seguir probando contra una ruta inventada.
    */
+  /** The plan slot the CLI claimed for this run, from the placeholder it wrote. */
+  function claimedSlot(): string | null {
+    const name = readdirSync(join(workdir, "docs", "plans")).find((file) =>
+      /^\d{3,}-plan-.+\.md$/.test(file),
+    );
+    return name === undefined ? null : `docs/plans/${name}`;
+  }
+
   async function claimNumber(args: readonly string[]): Promise<string> {
     const directory = args[1] as string;
     const claim = args[args.indexOf("--claim") + 1] as string;
@@ -215,6 +224,9 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
     if (resolved.kind === "execution") return executionBody(resolved, claimed);
     if (resolved.kind === "semantic") {
       if (proposalContractOf(stopped) !== null) {
+        // The CLI claims the number itself (plan 082 F6): the slot is the
+        // placeholder it materialized under this run's slug.
+        planPath ??= claimedSlot();
         if (planPath === null)
           throw new Error("se propuso guardar antes de reclamar el correlativo");
         return { input_digest: resolved.seal, artifacts: [{ path: planPath, content }] };

@@ -210,3 +210,22 @@ it("status y resume no descartan la fuente ausente ni en JSON ni en la salida hu
   } as never);
   expect(renderedResume).toContain("aw add-source remoto:<ruta>");
 });
+
+it("check-branch sin objetivo verifica cada fuente declarada y no afirma una coincidencia que no midió", async () => {
+  // Plan 082, F6 · spec 061 AC-12: before, no target answered `match: true`.
+  const { fs, env, git, paths } = await missingHub();
+  const all = await runCheckBranch(fs, env, git, paths, {});
+  expect(all).toMatchObject({ match: false, reason: "all_declared_sources" });
+  expect(all.sources?.map((verdict) => [verdict.alias, verdict.reason])).toEqual([
+    ["remoto", "SOURCE_PATH_MISSING"],
+  ]);
+
+  const empty = await mkdtemp(join(tmpdir(), "aw-source-none-"));
+  roots.push(empty);
+  const bare = new PathsService(normalizeNamespace("workflow"), empty, empty);
+  await mkdir(bare.cwdRoot());
+  expect(await runCheckBranch(fs, env, git, bare, {})).toEqual({
+    match: false,
+    reason: "no_sources_declared",
+  });
+});
