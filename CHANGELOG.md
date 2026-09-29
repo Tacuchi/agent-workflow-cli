@@ -12,6 +12,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [27.0.1] — 2026-09-29
+
+**La actualización retira también el wrapper `design` que la 26.0.0 dejó en Claude.**
+
+### Contrato
+
+Ninguno.
+
+### Fixed
+
+- `aw self install-skill` reconoce como propio el wrapper `design` que la 26.0.0 instalaba en Claude y lo retira al actualizar. En la 27.0.0 quedaba preservado como «contenido editado o propiedad no demostrada» y seguía tapando la herramienta nativa del host. Las copias editadas, con archivos extra o enlazadas se siguen preservando.
+
 ## [27.0.0] — 2026-09-28
 
 **Workline concentra su runtime en SPEC, PLAN y QUICK; el host puede aportar técnicas opcionales sujetas a los mismos controles.** Este salto mayor retira comandos sin alias de compatibilidad.
