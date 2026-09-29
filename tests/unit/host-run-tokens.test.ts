@@ -102,8 +102,8 @@ describe("host-run tokens", () => {
       for (const v of TOKEN_VARS) expect(p.env, `${id} ${v}`).not.toHaveProperty(v);
       expect(JSON.stringify(p.steps), id).not.toContain(FAKE);
       if (tokenSpecs(id).length > 0) {
-        expect(p.pane.command, id).toContain(`${p.root}/bin/launch-${HOSTS[id].bin}`);
-        for (const t of tokenSpecs(id)) expect(p.pane.command, id).not.toContain(t.env);
+        expect(p.pane.launchLine, id).toContain(`${p.root}/bin/launch-${HOSTS[id].bin}`);
+        for (const t of tokenSpecs(id)) expect(p.pane.launchLine, id).not.toContain(t.env);
         const probe = p.steps.find((s: { kind: string }) => s.kind === "auth-probe");
         expect(probe.bin, id).toBe(p.secret.wrapper);
       } else {
@@ -248,7 +248,7 @@ describe("host-run tokens", () => {
     );
     // Only claude's env carries the scrub switch; it reaches its pane command.
     expect(plan("claude-code").env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB).toBe("1");
-    expect(plan("claude-code").pane.command).toContain("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1");
+    expect(plan("claude-code").pane.launchLine).toContain("CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1");
     for (const id of COVERED_HOSTS.filter((h) => h !== "claude-code")) {
       expect(plan(id).env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB, id).toBeUndefined();
     }
@@ -296,7 +296,7 @@ describe("host-run tokens", () => {
     const p = plan("gemini");
     expect(p.secret).toBeNull();
     for (const v of ["GEMINI_API_KEY", "GOOGLE_API_KEY"]) expect(p.env).not.toHaveProperty(v);
-    expect(p.pane.command).not.toMatch(/GEMINI_API_KEY|GOOGLE_API_KEY|launch-/);
+    expect(p.pane.launchLine).not.toMatch(/GEMINI_API_KEY|GOOGLE_API_KEY|launch-/);
     expect(JSON.stringify(p.steps)).not.toMatch(/GEMINI_API_KEY|GOOGLE_API_KEY/);
   });
 
@@ -555,7 +555,9 @@ describe("host-run pane token hand-over", () => {
       if (slept >= 25_000) files.delete(plan.secret.path);
     };
     const herdr = { openPane: vi.fn(() => ({ workspace: "w1", pane: "p1" })) };
-    const r = await openPaneWithToken(fakeFs, herdr, plan, "sk-ant-oat01-TEST-fake", { sleep });
+    const r = await openPaneWithToken(fakeFs, herdr, plan, "sk-ant-oat01-TEST-fake", {
+      pickup: { sleep },
+    });
     expect(r.notice).toBeNull();
     expect(slept).toBeGreaterThanOrEqual(25_000);
     expect(files.size).toBe(0);

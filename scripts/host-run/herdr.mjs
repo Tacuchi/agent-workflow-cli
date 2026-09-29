@@ -21,6 +21,7 @@ export const herdrArgv = {
     "--no-focus",
   ],
   closeWorkspace: (id) => ["workspace", "close", id],
+  listWorkspaces: () => ["workspace", "list"],
   closePane: (id) => ["pane", "close", id],
   run: (pane, command) => ["pane", "run", pane, command],
   agentGet: (pane) => ["agent", "get", pane],
@@ -58,6 +59,18 @@ export function agentStatus(json) {
     dig(json, "result", "agent", "status") ??
     json?.status;
   return typeof s === "string" ? s : "unknown";
+}
+
+/**
+ * The `host-run-*` workspaces in a `workspace list` answer (`workspace_list`:
+ * workspaces[] of WorkspaceInfo {workspace_id, label}, Herdr API schema).
+ */
+export function leftoverWorkspaces(json) {
+  const list = dig(json, "result", "workspaces") ?? dig(json, "workspaces") ?? [];
+  return (Array.isArray(list) ? list : [])
+    .filter((w) => typeof w?.label === "string" && w.label.startsWith("host-run-"))
+    .map((w) => ({ id: w.workspace_id ?? w.id, label: w.label }))
+    .filter((w) => typeof w.id === "string");
 }
 
 /** Consecutive identical reads before a screen-only pane counts as idle. */
@@ -99,8 +112,10 @@ export class HerdrClient {
   /**
    * Creates the host's workspace and starts the pane command in its root pane.
    * Without both ids nothing is started, and whatever was created is closed.
+   * `onCreated(workspace)` runs as soon as the workspace exists, so a Ctrl-C
+   * during the launch (or the token pick-up wait) still closes it.
    */
-  openPane(cwd, label, command) {
+  openPane(cwd, label, command, onCreated) {
     const created = parse(this.call(herdrArgv.createWorkspace(cwd, label)));
     const workspace =
       dig(created, "result", "workspace", "workspace_id") ??
@@ -114,6 +129,7 @@ export class HerdrClient {
         `herdr workspace create returned no ${workspace ? "root pane" : "workspace"} id`,
       );
     }
+    onCreated?.(workspace);
     try {
       this.call(herdrArgv.run(pane, command));
     } catch (err) {
@@ -148,5 +164,9 @@ export class HerdrClient {
   }
   close(workspace) {
     if (workspace) this.exec(herdrArgv.closeWorkspace(workspace));
+  }
+  /** Workspaces a run left open (label `host-run-*`), as {id, label}; read-only. */
+  leftoverWorkspaces() {
+    return leftoverWorkspaces(parse(this.call(herdrArgv.listWorkspaces())));
   }
 }

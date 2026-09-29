@@ -89,6 +89,20 @@ export function paneCommand(env, bin, args) {
   ].join(" ");
 }
 
+/**
+ * The pane's launcher script: the whole `env -i …` line lives in this 0700 file
+ * inside the root, so what is typed into the pane is only its absolute path. A
+ * typed line longer than the tty's canonical limit (MAX_CANON, 1024 bytes on
+ * macOS) is cut before the shell reads it — the s280 run died that way. It
+ * names the token wrapper, never a token.
+ */
+export function launcherSource(launchLine) {
+  return `#!/bin/sh\nexec ${launchLine}\n`;
+}
+
+/** The longest line a launch may type into a pane (well under MAX_CANON). */
+export const MAX_TYPED_LAUNCH = 256;
+
 /** A shim logs which binary ran and why, then runs the checkout's CLI. */
 export function shimSource({ node, cliMain }) {
   return `#!/bin/sh
@@ -258,7 +272,21 @@ export function planIsolation({
     providerModel,
     model: runModel ?? null,
     signInInPane: probeSkipped,
-    pane: { cwd: workspace, command: paneCommand(env, launcher, paneArgs) },
+    pane: paneOf(hostId, root, workspace, paneCommand(env, launcher, paneArgs)),
+  };
+}
+
+/**
+ * The pane: its launcher script (`<root>/bin/pane-<host>`, 0700) holding the
+ * `env -i …` line, and the short command typed into the pane — the launcher's path.
+ */
+function paneOf(hostId, root, workspace, launchLine) {
+  const path = join(root, "bin", `pane-${hostId}`);
+  return {
+    cwd: workspace,
+    command: shellQuote(path),
+    launcher: { path, source: launcherSource(launchLine) },
+    launchLine,
   };
 }
 
@@ -382,6 +410,8 @@ export async function prepareHost(plan, deps) {
     0o600,
   );
   for (const shim of plan.shims) fs.writeFile(shim.path, shim.source, 0o755);
+  // The pane's launcher: only its path is typed into the pane.
+  fs.writeFile(plan.pane.launcher.path, plan.pane.launcher.source, 0o700);
   fs.mkdir(join(plan.home, ".workflow", "dev"));
   fs.writeFile(plan.dsnFile.path, plan.dsnFile.source, 0o600);
   for (const step of plan.steps) {
@@ -1227,11 +1257,16 @@ export async function awaitTokenPickup(fs, path, opts = {}) {
  * wrapper deletes it as it starts and the run waits for that; the file is gone
  * whatever happens, `openPane` throwing included. Returns {pane, notice}.
  */
-export async function openPaneWithToken(fs, herdr, plan, value, pickup = {}) {
+export async function openPaneWithToken(fs, herdr, plan, value, { pickup = {}, onCreated } = {}) {
   const handoff = plan.secret ? handTokenOver(fs, plan.secret, value) : null;
   let waited = false;
   try {
-    const pane = herdr.openPane(plan.workspace, `host-run-${plan.host}`, plan.pane.command);
+    const pane = herdr.openPane(
+      plan.workspace,
+      `host-run-${plan.host}`,
+      plan.pane.command,
+      onCreated,
+    );
     const notice = handoff ? await awaitTokenPickup(fs, plan.secret.path, pickup) : null;
     waited = true;
     return { pane, notice };

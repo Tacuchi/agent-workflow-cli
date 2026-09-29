@@ -352,13 +352,13 @@ describe("host-run isolation", () => {
   });
 
   it("the pane runs env -i with the absolute host binary, its profile args and model/effort", () => {
-    const cmd = plan("gemini").pane.command;
+    const cmd = plan("gemini").pane.launchLine;
     expect(cmd.startsWith("env -i HOME=")).toBe(true);
     // agy takes no token (it signs in inside its pane): the pane launches agy itself.
     expect(cmd).toContain(" /opt/bin/gemini --model m1 --effort high");
     expect(cmd).not.toContain("launch-");
     expect(cmd).not.toContain("accept-edits");
-    expect(plan("codex").pane.command).toContain(
+    expect(plan("codex").pane.launchLine).toContain(
       "/opt/bin/codex -m m1 -c model_reasoning_effort=high",
     );
   });

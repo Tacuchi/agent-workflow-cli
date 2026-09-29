@@ -347,7 +347,9 @@ function hostView(id) {
     effective: profile.effective(effectiveCtx(id, plan, siblings)),
     files: files.map((f) => ({ path: f.path, kind: f.kind })),
     text: renderedText(files),
+    // What is typed, and the launcher it runs: the person approves what runs.
     pane_command: plan.pane.command,
+    pane_launcher: plan.pane.launcher.source,
     setup: plan.steps.map(describeStep),
     credentials: HOSTS[id].credentials,
     model: args.model[id] ?? null,
@@ -449,12 +451,15 @@ function showHost(out, id) {
     `  effective permissions: ${JSON.stringify(profileFor(id).effective(effectiveCtx(id, plan, siblings)))}`,
   );
   for (const l of profileFor(id).limitations) out(`  limitation: ${l}`);
-  out(`  pane command: ${plan.pane.command}`);
+  out(`  pane launcher ${plan.pane.launcher.path} (0700): ${plan.pane.launchLine}`);
+  out(
+    `  typed into the pane: ${plan.pane.command} (${Buffer.byteLength(plan.pane.command)} bytes)`,
+  );
   out(
     `  herdr: ${["herdr", ...herdrArgv.createWorkspace(plan.workspace, `host-run-${id}`)].join(" ")}`,
   );
   const kind = HOSTS[id].herdrKind ? "" : "  (no Herdr kind: state read from the screen)";
-  out(`  herdr: herdr pane run <root-pane> '<pane command>'${kind}`);
+  out(`  herdr: herdr pane run <root-pane> ${plan.pane.command}${kind}`);
 }
 
 function show(out = console.log) {
@@ -602,8 +607,12 @@ function foreignMcpNames() {
   }
 }
 
-async function openWithToken(herdr, plan, tokens) {
-  const opened = await openPaneWithToken(nodeFs(), herdr, plan, tokens[plan.host]);
+async function openWithToken(herdr, plan, tokens, cleanup) {
+  // The close hook is registered the moment the workspace exists: a Ctrl-C
+  // during the launch or the token pick-up wait still closes it.
+  const opened = await openPaneWithToken(nodeFs(), herdr, plan, tokens[plan.host], {
+    onCreated: (ws) => cleanup.addHook(() => herdr.close(ws)),
+  });
   if (opened.notice) console.log(`[${plan.host}] ${opened.notice}`);
   return opened.pane;
 }
@@ -622,8 +631,7 @@ function hostRecords(plan) {
 async function openHosts(herdr, plans, cleanup, tokens) {
   const hosts = [];
   for (const plan of plans) {
-    const opened = await openWithToken(herdr, plan, tokens);
-    cleanup.addHook(() => herdr.close(opened.workspace));
+    const opened = await openWithToken(herdr, plan, tokens, cleanup);
     const out =
       hostRead(hostBins[plan.host], ["--version"], {
         env: plan.env,
@@ -752,6 +760,28 @@ function keepRotatedCredentials(plans, transcriptsDir) {
   }
 }
 
+/**
+ * A run that was stopped (Ctrl-C) may have left `host-run-*` workspaces open:
+ * listed by label (read-only `herdr workspace list`), closed only if the person
+ * says so.
+ */
+async function offerToCloseLeftovers(herdr, ask = askLine, log = console.log) {
+  let left;
+  try {
+    left = herdr.leftoverWorkspaces();
+  } catch {
+    log("could not list Herdr workspaces (is the Herdr server running?); continuing");
+    return;
+  }
+  if (left.length === 0) return;
+  log(`Herdr workspaces left open by an earlier run: ${left.map((w) => w.label).join(", ")}`);
+  const typed = await ask("Close them now? [y/N] ");
+  if (typeof typed === "string" && /^y(es)?$/i.test(typed.trim())) {
+    for (const w of left) herdr.close(w.id);
+    log(`closed: ${left.map((w) => w.label).join(", ")}`);
+  } else log("left open; close them yourself in Herdr");
+}
+
 async function startLive() {
   const missing = args.hosts.filter((id) => hostBins[id] === null);
   if (missing.length > 0) {
@@ -766,6 +796,8 @@ async function startLive() {
   const cleanup = new Cleanup(remove, undefined, reapAndTell);
   cleanup.install();
   live.sweep(TMP_ROOT, remove, console.log);
+  const herdr = new HerdrClient((argv) => sh("herdr", argv));
+  await offerToCloseLeftovers(herdr);
   // Kept on purpose after the run: the full transcript is the person's, outside the repo.
   const transcriptsDir = mkdtempSync(join(TMP_ROOT, `aw-host-transcripts-${runId}-`));
   // Registered BEFORE preparing: an auth probe can already rotate a token, and a
@@ -796,7 +828,6 @@ async function startLive() {
     return 1;
   }
 
-  const herdr = new HerdrClient((argv) => sh("herdr", argv));
   // The evidence names the Workline it exercised: every root's copy hashed equal
   // to the checkout (the copy-cli step refuses otherwise).
   const copies = plans.map((p) => p.steps.find((st) => st.kind === "copy-cli"));

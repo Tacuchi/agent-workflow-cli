@@ -31,9 +31,11 @@ import {
   privacyViolations,
   redactSecrets,
 } from "../../scripts/host-run/extract.mjs";
-import { HOSTS, NOT_COVERED, tokenSpec } from "../../scripts/host-run/hosts.mjs";
+import { HerdrClient, herdrArgv, leftoverWorkspaces } from "../../scripts/host-run/herdr.mjs";
+import { COVERED_HOSTS, HOSTS, NOT_COVERED, tokenSpec } from "../../scripts/host-run/hosts.mjs";
 import {
   CAPTURED_SPAWN,
+  MAX_TYPED_LAUNCH,
   agyErrorReason,
   capturedRun,
   capturedRunSync,
@@ -45,6 +47,7 @@ import {
   probeReason,
   reapRootProcesses,
   rootProcesses,
+  rootTemplate,
 } from "../../scripts/host-run/isolation.mjs";
 import { renderLedger } from "../../scripts/host-run/ledger.mjs";
 import { crushFields, prepareAll } from "../../scripts/host-run/live.mjs";
@@ -673,8 +676,8 @@ describe("host-run process groups, detached servers and signals", () => {
       realHome: "/Users/someone",
       profile: PROFILES.crush,
     });
-    expect(p.pane.command).toContain("CRUSH_CLIENT_SERVER=0");
-    expect(p.pane.command).toContain("CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1");
+    expect(p.pane.launchLine).toContain("CRUSH_CLIENT_SERVER=0");
+    expect(p.pane.launchLine).toContain("CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1");
     expect(PROFILES.crush.limitations.join(" ")).toMatch(/children .* inherit it/);
   });
 
@@ -952,4 +955,153 @@ describe("host-run: sign-in markers only on agy; kimi refused; the scenario neve
     ]);
     expect(text).toContain('agy_keychain: "real (accepted by the person)"');
   }, 240_000);
+});
+
+describe("host-run pane launch: a short typed command, the env -i line in a 0700 launcher", () => {
+  // The real shape: macOS's per-user TMPDIR, a longer one for margin, and the
+  // run id format (toISOString with ':' and '.' replaced), whose length is fixed.
+  const RUN_ID = "2026-12-31T23-59-59Z";
+  const TMPDIRS = [
+    "/private/var/folders/06/cqtqvjws0jlcr25tsls9tw8m0000gn/T",
+    `/private/var/folders/${"x".repeat(60)}/T`,
+  ];
+  const planAt = (hostId: string, tmp: string, over: Record<string, unknown> = {}) =>
+    planIsolation({
+      hostId,
+      root: `${rootTemplate(tmp, RUN_ID, hostId)}XXXXXX`,
+      checkout: "/Users/someone/Git/agent-workflow-cli",
+      node: "/Users/someone/.nvm/versions/node/v22.20.0/bin/node",
+      hostBin: `/Users/someone/.local/share/${hostId}/versions/9.99.999/bin/${HOSTS[hostId].bin}`,
+      realHome: "/Users/someone",
+      profile: PROFILES[hostId],
+      tokenPresent: true,
+      ...over,
+    });
+
+  it(`every command typed to launch a pane is at most ${MAX_TYPED_LAUNCH} bytes, for all ${COVERED_HOSTS.length} hosts`, () => {
+    expect(COVERED_HOSTS).toHaveLength(5);
+    for (const tmp of TMPDIRS) {
+      for (const id of COVERED_HOSTS) {
+        const p = planAt(id, tmp, { model: "some-long-model-name-v9", effort: "high" });
+        const argv = herdrArgv.run("w1:p1", p.pane.command);
+        expect(Buffer.byteLength(argv.at(-1) as string), `${id} ${tmp}`).toBeLessThanOrEqual(
+          MAX_TYPED_LAUNCH,
+        );
+        expect(p.pane.command).toBe(`${p.root}/bin/pane-${id}`);
+        // The long line is what the launcher holds, never what is typed.
+        expect(Buffer.byteLength(p.pane.launchLine)).toBeGreaterThan(MAX_TYPED_LAUNCH);
+      }
+    }
+  });
+
+  it("the launcher is written 0700, runs env -i with exactly the planned variables, and holds no secret", async () => {
+    const dir = temp();
+    const root = join(dir, "aw-host-run-r1-claude-code-L");
+    const p = planIsolation({
+      hostId: "claude-code",
+      root,
+      checkout: "/checkout",
+      node: process.execPath,
+      hostBin: "/opt/claude",
+      realHome: join(dir, "no-home"),
+      profile: PROFILES["claude-code"],
+      tokenPresent: true,
+    });
+    await prepareHost(
+      { ...p, steps: [] },
+      { fs: nodeFs(), run: capturedRun(spawn), secrets: { "claude-code": ANTHROPIC } },
+    );
+    const path = p.pane.launcher.path;
+    expect(statSync(path).mode & 0o777).toBe(0o700);
+    const text = readFileSync(path, "utf8");
+    expect(text.startsWith("#!/bin/sh\nexec env -i ")).toBe(true);
+    const vars = [...text.matchAll(/ ([A-Z_][A-Z0-9_]*)=/g)].map((m) => m[1]);
+    expect(vars.sort()).toEqual(Object.keys(p.env).sort());
+    // It execs the token wrapper; the token itself never is in it.
+    expect(text).toContain(`${root}/bin/launch-claude`);
+    expect(text).not.toContain(ANTHROPIC);
+    expect(text).not.toMatch(/CLAUDE_CODE_OAUTH_TOKEN/);
+    expect(containsSecret(text, [ANTHROPIC])).toBe(false);
+  });
+
+  it("a host started through the launcher gets exactly the planned environment", async () => {
+    const dir = temp();
+    const root = join(dir, "aw-host-run-r1-opencode-E");
+    // /usr/bin/env as the host: it prints the environment it was started with.
+    const p = planIsolation({
+      hostId: "opencode",
+      root,
+      checkout: "/checkout",
+      node: process.execPath,
+      hostBin: "/usr/bin/env",
+      realHome: join(dir, "no-home"),
+      profile: PROFILES.opencode,
+    });
+    await prepareHost({ ...p, steps: [] }, { fs: nodeFs(), run: capturedRun(spawn), secrets: {} });
+    const r = spawnSync(p.pane.command, [], {
+      encoding: "utf8",
+      env: { PATH: "/usr/bin:/bin", LEAKED: "must-not-pass" },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    const got = Object.fromEntries(
+      r.stdout
+        .trim()
+        .split("\n")
+        .map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]),
+    );
+    expect(got).toEqual(p.env);
+  });
+
+  it("the workspace's close hook exists as soon as it is created, even when the launch fails", () => {
+    const calls: string[][] = [];
+    const hooks: string[] = [];
+    const client = new HerdrClient((argv: string[]) => {
+      calls.push(argv);
+      if (argv[0] === "workspace" && argv[1] === "create")
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            result: { workspace: { workspace_id: "w9" }, root_pane: { pane_id: "w9:p1" } },
+          }),
+          stderr: "",
+        };
+      if (argv[0] === "pane" && argv[1] === "run") return { status: 1, stdout: "", stderr: "boom" };
+      return { status: 0, stdout: "", stderr: "" };
+    });
+    expect(() =>
+      client.openPane("/w", "host-run-codex", "/r/bin/pane-codex", (ws: string) => hooks.push(ws)),
+    ).toThrow();
+    expect(hooks).toEqual(["w9"]);
+    expect(calls.find((a) => a[1] === "run")).toEqual([
+      "pane",
+      "run",
+      "w9:p1",
+      "/r/bin/pane-codex",
+    ]);
+  });
+
+  it("leftover host-run-* workspaces are found by label in a workspace list", () => {
+    const json = {
+      result: {
+        type: "workspace_list",
+        workspaces: [
+          { workspace_id: "w1", label: "host-run-claude-code" },
+          { workspace_id: "w2", label: "my-project" },
+          { workspace_id: "w3", label: "host-run-crush" },
+          { label: "host-run-broken" },
+        ],
+      },
+    };
+    expect(leftoverWorkspaces(json)).toEqual([
+      { id: "w1", label: "host-run-claude-code" },
+      { id: "w3", label: "host-run-crush" },
+    ]);
+    expect(leftoverWorkspaces(null)).toEqual([]);
+    // run.mjs offers to close them at the next start, before preparing anything.
+    const src = readFileSync(RUN, "utf8");
+    expect(src).toContain("await offerToCloseLeftovers(herdr);");
+    expect(src.indexOf("await offerToCloseLeftovers(herdr);")).toBeLessThan(
+      src.indexOf("await live.prepareAll("),
+    );
+  });
 });
