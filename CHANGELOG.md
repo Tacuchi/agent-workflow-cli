@@ -12,6 +12,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [27.0.0] — 2026-09-28
+
+**Workline concentra su runtime en SPEC, PLAN y QUICK; el host puede aportar técnicas opcionales sujetas a los mismos controles.** Este salto mayor retira comandos sin alias de compatibilidad.
+
+### Contrato
+
+- **Deja de valer:** `design`, su wrapper, `aw designs`/`aw capability --capability design`, paquetes UI, gates y acreditación por intento. **Lo reemplaza:** la decisión funcional UI y su motivo en `## Decisions`, con efectos observables en criterios y escenarios; las ayudas del host no acreditan por sí solas una decisión. **Qué hacer:** quitá invocaciones a design y usa el host o la pregunta funcional; la instalación retira sólo wrappers propios íntegros y preserva copias intervenidas y paquetes históricos.
+- **Deja de valer:** las técnicas internas de autoría de diagramas, SQL y research como roles exigidos. **Lo reemplaza:** `export-diagrams`, `export-scripts`, `export-manuals` y `export-reports` conservan selección, destinos, aprobación, validación y guardas DB sin prescribir herramienta de autoría. **Qué hacer:** aporta el contenido con la herramienta del host que prefieras; sigue entregando scripts SQL para aplicación ajena y no ejecutes DML/DDL por ningún canal.
+- **Deja de valer:** el rol Git general, hooks de rama/commit y `aw fix-git`/`/w:fix-git`. **Lo reemplaza:** los flujos verifican rama, custodia, integración y commit exacto aprobado por fuente; `aw git-flow` y Git visual continúan directos. Un conflicto conserva unidad y commits y queda pendiente de resolución externa. **Qué hacer:** resuelve el merge fuera de Workline y reintenta `aw worktree integrate`; no esperes resolución ni aborto automáticos.
+- **Deja de valer:** `aw generate-launch`/`/w:generate-launch`, lanzar/parar desde la TUI y barrer procesos de fuentes. **Lo reemplaza:** la gestión de fuentes y Git permanece, sin lanzador. `.workflow/launch/`, `.workflow/processes.json` y `docs/logs/` anteriores quedan inertes y gitignorados; mudanza sólo los traslada como bytes. **Qué hacer:** controla manualmente los procesos previos; los scripts antiguos pueden conservar rutas absolutas obsoletas tras una mudanza.
+
+### Changed
+
+- Flujos y exports no cargan la TUI; la TUI toma contadores y siguiente paso del estado público de sólo lectura, con degradación cuando falta. `aw git-flow` ya no materializa el runtime Workline.
+- La instalación y actualización dejan de ofrecer el wrapper design propio y conservan cambios ajenos. El diagnóstico y la ayuda no exigen técnicas externas ni vinculan proveedores concretos.
+- Se aclararon el relevo y la precedencia de las specs ya implementadas.
+
 ## [26.0.0] — 2026-09-28
 
 **Workline deja de gestionar skills ajenas: distribuye y diagnostica su bundle y capacidades propios, admite ayuda del host sin exigirla y exige validación final completa al publicar planes.**

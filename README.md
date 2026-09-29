@@ -1,6 +1,6 @@
 # @tacuchi/agent-workflow-cli
 
-Agnostic runtime CLI for **Workline** — the **stages + loops + artifacts** system for agent work. Bundles the universal **`w`** skill set (`w` = *workline*) and supports optional plugins without making them a core dependency.
+Agnostic runtime CLI for **Workline** — the **stages + loops + artifacts** system for agent work. Bundles the universal **`w`** skill set (`w` = *workline*); host-provided help is optional and never bypasses a flow's approvals or validation.
 
 The CLI exposes two binaries: `agent-workflow` (canonical) and `aw` (short alias).
 
@@ -20,11 +20,11 @@ Workline has three layers plus a permanent `docs/` zone:
   - **QUICK** — `/w:quick` — lightweight shortcut; escalates live to SPEC when the goal outgrows a quick.
   - **EXPORTS** — `/w:export-scripts` · `export-manuals` · `export-diagrams` · `export-reports` (the only path that promotes artifacts to `docs/`).
   - **Workspace** — every invoked directory is usable immediately. `/w:workspace-init` only materializes the runtime early, or configures sources when they are supplied.
-  - **Transversal** — `/w:status` · `/w:doctor` (read-only diagnosis across every detected host, with the verdict in the exit code; repairs only what Workline owns, over a batch approved by digest) · `/w:resume` (read-only: composes `/w:status` and proposes how to continue, routed to the target command) · `/w:recall` (what the other hosts' curated memory learned about Workline, contrasted and applied; saving goes to the current host's own memory only after confirmation) · `/w:fix-git` · `/w:generate-launch` · `/w:persist` (persists in-conversation work into `docs/` — classify → `docs/research` · spec draft · plan adoption; the host→`docs/` counterpart of `export-*`).
+  - **Transversal** — `/w:status` · `/w:doctor` (read-only diagnosis across every detected host, with the verdict in the exit code; repairs only what Workline owns, over a batch approved by digest) · `/w:resume` (read-only: composes `/w:status` and proposes how to continue, routed to the target command) · `/w:recall` (what the other hosts' curated memory learned about Workline, contrasted and applied; saving goes to the current host's own memory only after confirmation) · `/w:persist` (persists in-conversation work into `docs/` — classify → `docs/research` · spec draft · plan adoption; the host→`docs/` counterpart of `export-*`).
 - **Layer 2 · Loops** — the AI runs them whole: `spec-refine-loop` · `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` · `quick-loop` — all heirs of the shared engine `skills/w/loops/CHASSIS.md` (+ `CODE-POLICIES.md` for the code-editing loops). Each loop is a **persistent goal** that runs until its success criteria are green (verification-first); gap-driven, with **structured-choice** lifecycle control (compact/close — the host's own question surface where one is reachable, **labeled markdown** where none is; the binding per host is stamped into what gets installed) and resumable `CHECKPOINT`.
 - **Layer 3 · Sessions + artifacts** — internal, ephemeral process state under `.workflow/sessions/` (`SESSION` · `CHECKPOINT` · `BACKLOG` · `SCRIPTS.sql` · `ANALYSIS-FILE` · `CONCLUSIONS` · `DECISION` · …). Sessions are slug-named folders, created by loops, never by the user.
 
-**Capacidades propias.** `design` conserva su floor y operaciones; `overview` orienta sobre Workline. Sólo estos roles propios se resuelven por `skills.toml` (default → global → workspace). `off` conserva el contrato por operación y los bindings históricos ajenos se avisan sin usar ni reescribir. `aw skills --detail` informa únicamente capacidades propias y wrappers; el host puede aportar otras ayudas sin preregistro ni dependencia para SPEC, PLAN y QUICK. Para instalar o retirar skills ajenas, usá el host o marketplace que elijas. Los scripts de arranque por fuente viven en `.workflow/launch/` y las herramientas creadas en `docs/tools/`.
+**Capacidad propia.** `overview` orienta sobre Workline mediante la skill `w`. Su binding se resuelve por `skills.toml` (default → global → workspace); `off` conserva el opt-out y los bindings históricos ajenos se avisan sin reescribirlos. `aw skills --detail` informa sólo sobre capacidades y wrappers propios. SPEC resuelve las decisiones UI como decisiones funcionales ordinarias; PLAN y QUICK aceptan ayuda del host sin exigir una skill externa. Los exports conservan destinos y guardas independientemente de cómo se produzca el contenido. Los lanzadores y registros de procesos anteriores son artefactos inertes y permanecen gitignorados.
 
 **Invariants.** No auto-export (only `export-*` writes `docs/`); the spec and plan are documents, not artifacts; DB scripts-only (never executes DML/DDL); git-safe (verifies the per-source working branch before edits; proposes commits).
 
@@ -71,7 +71,7 @@ agent-workflow self detect-hosts                # which hosts are present + alre
 agent-workflow self install --target claude --dry-run
 ```
 
-By default the CLI clears the target host's plugin cache before installing (opt out with `--keep-cache`) and removes legacy artifacts from prior installs — the old `agent-workflow`-named SKILL, the stale `/agent-workflow:*` slash commands, the inert `~/.codex/commands/w` dir ≤v18 wrote, the pre-rename `agent-workflow-*` flattened sub-skills, and skill roots the host never reads (`~/.crush/skills` ≤v19.1, ownership-verified) — keep them with `--keep-legacy`.
+La instalación actualiza sólo artefactos propios: el bundle `w`, wrappers y hooks administrados. Al actualizar, retira un wrapper `design` anterior únicamente si sus bytes prueban propiedad de Workline; conserva e informa copias intervenidas o ajenas. `--keep-legacy` conserva también el legado propio identificado. Para ayudas externas, usa el mecanismo nativo del host.
 
 ### Per-target install matrix
 
@@ -91,9 +91,9 @@ By default the CLI clears the target host's plugin cache before installing (opt 
 
 The bundle's internal manuals (`loops/*/LOOP.md`, `roles/*/ROLE.md`, `exports/*/EXPORT.md`, `harness/HARNESS.md`) are deliberately **not** `SKILL.md` files, so hosts that scan skill roots recursively (Codex, OpenCode, Crush) never list them as invocable skills — only the commands and the `w` orientation skill surface. Where a layer is skipped, the SKILL is sufficient — the AI reads it and invokes `agent-workflow <subcommand>` directly.
 
-Opt-out flags: `--skill-only`, `--no-commands`, `--no-hooks`. Override the source with `--from /path/to/skills/w`. Other flags: `--confirm-all` (required with `--target all`), `--keep-cache`, `--force`, `--dry-run`.
+Opt-out flags: `--skill-only`, `--no-commands`, `--no-hooks`. Override the source with `--from /path/to/skills/w`. Other flags: `--confirm-all` (required with `--target all`), `--keep-legacy`, `--force`, `--dry-run`.
 
-To add the `UserPromptSubmit` branch advisory to an existing Claude or Kimi installation, rerun `aw self install-hooks --target claude` or `--target kimi`; updating the CLI alone does not reinstall hooks. Editing remains protected by `branch-check` on all managed hosts.
+Los flujos verifican la rama declarada por fuente antes de editar (`aw check-branch`), sin hooks generales de rama o commit. La integración conserva una unidad con conflicto y exige resolución externa antes del reintento.
 
 **What `--target all` means.** Every **host** — never the shared skills dirs, which are install destinations rather than hosts and are reached explicitly (`--target agents`). `install` and `uninstall` use the same set, so the round trip matches: what `all` installs is what `all` removes. (`oz` installs into `~/.agents/skills`, so that directory is still covered under `all` through its host.)
 
@@ -105,7 +105,7 @@ The difference is what gets *checked*, not what gets installed: local fixtures v
 
 Re-verify when a release touches a host. A host marked **pre-1.0** (Kimi Code, Crush, Oz) can change its surface between its own releases faster than we re-check — Kimi Code ships roughly twice a week — so the table states the version a run actually proved and the date it proved it. It is a claim about that version, not a promise about the next one.
 
-Validation platform: **macOS** is where all eight runtimes live and where the suite is expected to pass. **Windows** stays best-effort on the existing launch smokes. **Linux** is documented without a guarantee.
+Validation platform: **macOS** is where all eight runtimes live and where the suite is expected to pass. **Windows** remains best-effort; **Linux** is documented without a guarantee.
 
 ### Retiring a host
 
