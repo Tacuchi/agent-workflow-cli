@@ -381,12 +381,12 @@ describe("frontera de ejecución — nada se acredita sin resultado", () => {
     expect(await bytes()).toBe(before);
   });
 
-  it("un resultado que no declara qué se ejecutó no avanza", async () => {
+  it("un resultado con una invocación mal formada no avanza", async () => {
+    // Una invocación AUSENTE la completa el CLI con la sellada (plan 082, F5);
+    // una que el agente trae se sigue juzgando, y mal formada no acredita nada.
     await reachSeed();
     const before = await bytes();
-    const payload = seedResult(await seal());
-    // biome-ignore lint/performance/noDelete: the case IS the absent field.
-    delete payload.invocation;
+    const payload = { ...seedResult(await seal()), invocation: "aw session-create" };
     const directive = await submit(JSON.stringify(payload));
     expect(directive.error?.code).toBe("FLOW_RESULT_INVALID");
     expect(directive.error?.message).toContain("invocación");

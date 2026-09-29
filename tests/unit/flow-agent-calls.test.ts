@@ -64,7 +64,7 @@ describe("agent calls per run — never more than 27.0.1", () => {
       expect(count.stops.length, count.flow).toBeGreaterThan(0);
       expect(count.stops.at(-1)?.transition, count.flow).toBe("chassis.commit-choice");
     }
-  });
+  }, 60_000);
 
   it("no flow asks the agent for more calls of any kind than 27.0.1", async () => {
     // Per kind, not only in total: fewer proves must never pay for more submits.
@@ -75,5 +75,5 @@ describe("agent calls per run — never more than 27.0.1", () => {
         expect(count[kind], `${count.flow} ${kind}`).toBeLessThanOrEqual(frozen?.[kind] ?? 0);
       }
     }
-  });
+  }, 60_000);
 });

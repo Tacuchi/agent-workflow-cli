@@ -1,9 +1,13 @@
+import { execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { GitCliAdapter } from "../../src/adapters/git-cli.js";
+import { NodeProcess } from "../../src/adapters/node-process.js";
 import type { WorklineFlow } from "../../src/application/capability/compose.js";
-import { resolveBoundary } from "../../src/application/flow/advance.js";
+import { effectsOfTransition, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
+import { proveFlowBoundary } from "../../src/application/flow/prove.js";
 import { journeyForRun } from "../../src/application/flow/run-journey.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
@@ -11,13 +15,14 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   type FlowDecision,
-  effectsOf,
   internalActionOf,
   proposalContractOf,
 } from "../../src/domain/flow/authority.js";
-import { effectApprovalDigest } from "../../src/domain/flow/authorization.js";
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
+import type { FlowRunState } from "../../src/domain/flow/run-state.js";
+import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
 import { batchReview } from "./batch-review.js";
 import { RecordingGit } from "./fake-git.js";
 import { NodeFileSystem } from "./real-fs.js";
@@ -63,11 +68,10 @@ export const COUNTED_FLOWS: readonly WorklineFlow[] = [
 ];
 
 const ALIAS = "acme";
-const SOURCE_PATH = "/tmp/acme";
 const SPEC_DOC = "docs/specs/001-spec-medida.md";
 const PLAN_DOC = "docs/plans/001-plan-medida.md";
 
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
+const workspaceBlock = (source: string) => `<!-- AGENT-WORKFLOW-PROJECT-START -->
 ## Proyecto
 
 Medida de llamadas.
@@ -76,7 +80,7 @@ Medida de llamadas.
 
 | Alias | Path | Rama principal |
 |---|---|---|
-| ${ALIAS} | ${SOURCE_PATH} | main |
+| ${ALIAS} | ${source} | main |
 
 ## Pipeline
 
@@ -135,14 +139,39 @@ const PLAN = `# Plan 001 — medida
 /**
  * plan-exec runs over the reserved `workspace` source: the count is about the
  * boundaries it asks, and an isolation unit in a real repository would only add
- * git to what is measured.
+ * git to what is measured. `phases` isolated batches, each with one task.
  */
-const EXEC_PLAN = PLAN.replaceAll(`${ALIAS}`, "workspace")
-  .replace(
-    "> Límite de ejecución: checkout",
-    "> Standalone: medida de llamadas\n> Límite de ejecución: checkout",
-  )
-  .replace(/\n## Validations[\s\S]*$/, "\n");
+function execPlan(phases: number): string {
+  const blocks = Array.from({ length: phases }, (_, index) => {
+    const n = index + 1;
+    return `### F${n} — el tramo ${n} se recorre
+> Estado: pendiente
+> Fuentes: workspace
+
+**Resultado:** el tramo ${n} se recorre entero.
+
+- [ ] T${n}.1 — recorrer el tramo ${n} _(fuentes: workspace)_
+
+**Validación de fase:** \`npm test\` pasa en el checkout.
+**Condición de salida:** la prueba local queda verde.
+`;
+  });
+  const batches = Array.from({ length: phases }, (_, i) => `- B${i + 1} · isolated · F${i + 1}`);
+  return `# Plan 001 — medida
+
+> Derived from ${SPEC_DOC}
+> Standalone: medida de llamadas
+> Estado: open
+> Límite de ejecución: checkout
+
+## Tasks
+
+${blocks.join("\n")}
+## Execution batches
+
+${batches.join("\n")}
+`;
+}
 
 /** The session each flow runs in, and the documents it starts from. */
 const SESSIONS: Record<WorklineFlow, string> = {
@@ -154,10 +183,39 @@ const SESSIONS: Record<WorklineFlow, string> = {
   quick: "001-medida-quick",
 };
 
-interface Run {
-  code: string;
+export interface WalkOptions {
+  /**
+   * `minimal`: the transition, the judgment and the real output, and nothing the
+   * CLI knows. `complete`: every field, with proofs taken by `aw flow prove`,
+   * as a 27.0.1 agent answers. Default: minimal where the CLI completes answers.
+   */
+  answers?: "minimal" | "complete";
+  /** plan-exec only: how many one-phase batches its plan declares. */
+  execPhases?: number;
+}
+
+type Resolved = ReturnType<typeof resolveBoundary>;
+
+/** One run of a flow over its own fresh workspace, answered as a scripted agent. */
+export interface MeasuredRun {
+  flow: WorklineFlow;
+  root: string;
   paths: PathsService;
-  executor: ReturnType<typeof testExecutor>;
+  session: string;
+  opened: FlowDirective;
+  /** The boundary the run stands on now. */
+  current(): Promise<{ state: FlowRunState; resolved: Resolved }>;
+  /** Submit `raw` as the agent would, with the live checkout reader. */
+  submit(raw: unknown, approval?: string | null): ReturnType<typeof submitFlow>;
+  /** The answer the options ask for at the boundary in force. */
+  answerFor(directive: FlowDirective, resolved: Resolved): Promise<AnswerPlan>;
+  dispose(): Promise<void>;
+}
+
+interface AnswerPlan {
+  raw: Record<string, unknown>;
+  approval: string | null;
+  proves: number;
 }
 
 /** `true` once `aw flow` offers the one-call opening. */
@@ -166,38 +224,14 @@ function offersStart(): boolean {
   return "start" in (flow?.flags.actions ?? {});
 }
 
-/**
- * Open a fresh run the way the CLI surface demands, and say what it cost.
- *
- * Without `flow start` the agent pays `session-create`, `context-plan` and
- * `flow advance --adopt`; the session is seeded here and the adoption runs for
- * real. A `start` verb is only credited by opening THROUGH it, so the day it
- * exists this function must call it instead of refusing.
- */
-async function openRun(
-  flow: WorklineFlow,
-  run: Run,
-): Promise<{ directive: FlowDirective; calls: number }> {
-  if (offersStart()) {
-    throw new Error("aw flow start existe: abrí la corrida con él antes de acreditarle 1 llamada");
-  }
-  const adopted = await advanceFlow(fs, run.paths, {
-    code: run.code,
-    flow,
-    adopt: true,
-    executor: run.executor,
-  });
-  if (!adopted.ok) throw new Error(`no se pudo abrir la corrida de ${flow}`);
-  return { directive: adopted.directive, calls: 3 };
+/** `true` once the directive publishes `proofs_captured`: the CLI completes minimal answers. */
+function completesAnswers(directive: FlowDirective): boolean {
+  return "proofs_captured" in directive.expects;
 }
 
-const fs = new (class extends NodeFileSystem {
-  override async exists(path: string): Promise<boolean> {
-    return path === SOURCE_PATH || super.exists(path);
-  }
-})();
+const fs = new NodeFileSystem();
 
-async function seed(root: string, paths: PathsService, flow: WorklineFlow): Promise<void> {
+async function seed(root: string, paths: PathsService, flow: WorklineFlow, phases: number) {
   const session = join(paths.cwdSessionsDir(), SESSIONS[flow]);
   await mkdir(join(session, "scripts"), { recursive: true });
   await writeFile(
@@ -206,14 +240,29 @@ async function seed(root: string, paths: PathsService, flow: WorklineFlow): Prom
     "utf8",
   );
   await writeFile(join(session, "CHECKPOINT.md"), "# CHECKPOINT\n\nsembrado\n", "utf8");
-  await writeFile(join(root, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+  await writeFile(join(root, "CLAUDE.md"), workspaceBlock(join(root, ALIAS)), "utf8");
   for (const dir of ["docs/specs", "docs/plans"]) await mkdir(join(root, dir), { recursive: true });
   await writeFile(join(root, SPEC_DOC), SPEC, "utf8");
   if (flow === "plan-refine") await writeFile(join(root, PLAN_DOC), PLAN, "utf8");
-  if (flow === "plan-exec") await writeFile(join(root, PLAN_DOC), EXEC_PLAN, "utf8");
+  if (flow === "plan-exec") await writeFile(join(root, PLAN_DOC), execPlan(phases), "utf8");
+  await writeFile(
+    join(root, ".agent-workflow", "workline.json"),
+    worklineMarkerContent("agent-workflow"),
+  );
+  // The declared source exists, so the plan's aliases resolve.
+  await mkdir(join(root, ALIAS), { recursive: true });
+  await writeFile(join(root, ALIAS, ".keep"), "", "utf8");
+  // A real checkout, so the proofs taken measure something.
+  for (const args of [
+    ["init", "--quiet", "--initial-branch=main"],
+    ["config", "user.email", "medida@example.com"],
+    ["config", "user.name", "Medida"],
+    ["add", "-A"],
+    ["commit", "--quiet", "-m", "medida"],
+  ]) {
+    execFileSync("git", args, { cwd: root });
+  }
 }
-
-type Resolved = ReturnType<typeof resolveBoundary>;
 
 /** The document bytes an authoring boundary delivers. */
 function artifactFor(stopped: FlowDecision) {
@@ -221,58 +270,6 @@ function artifactFor(stopped: FlowDecision) {
   return destination.includes("plans")
     ? { path: PLAN_DOC, content: PLAN }
     : { path: `${destination}/001-spec-medida.md`, content: SPEC };
-}
-
-/** A proof per eligible source: one per batch source at phase validation, the document's elsewhere. */
-function proofsOf(stopped: FlowDecision, seal: string) {
-  const batch = stopped.id === "plan-exec.validation-execution";
-  return [
-    {
-      kind: "inspection" as const,
-      source: "workspace",
-      relative_cwd: ".",
-      checkout_digest: batch ? `medida-${seal.slice(0, 16)}` : "medida",
-      invocation: { artifact: "tests/helpers/agent-calls.ts" },
-    },
-  ];
-}
-
-/**
- * Whether the CLI captures the checkout proofs itself. `proofs_captured` is the
- * field F5 of plan 082 has to publish under `expects`; until then it is absent
- * and every proof is the agent's to bring.
- */
-function proofsCaptured(directive: FlowDirective): boolean {
-  return (directive.expects as { proofs_captured?: boolean }).proofs_captured === true;
-}
-
-function executionBody(
-  resolved: Resolved,
-  stopped: FlowDecision,
-  captured: boolean,
-): Record<string, unknown> {
-  const action = resolved.action;
-  if (action === null) throw new Error(`${stopped.id} no nombra ninguna acción`);
-  const declared = resolved.proposal?.effects ?? effectsOf(stopped);
-  const evidence = (id: string) => {
-    if (id !== "workline.source-bounded")
-      return [{ id, passed: true, detail: `salida real de ${id}` }];
-    // A captured proof is left out, so a CLI that only claims to capture it fails the walk.
-    return proofsOf(stopped, resolved.seal).map((proof) => ({
-      id,
-      passed: true,
-      detail: `salida real de ${id}`,
-      ...(captured ? {} : { proof }),
-    }));
-  };
-  return {
-    input_digest: resolved.seal,
-    outcome: "completed",
-    invocation: action.invocation,
-    validations: action.evidence.flatMap(evidence),
-    effects: { planned: [...declared], approved: [], applied: [...declared] },
-    output: null,
-  };
 }
 
 const ROUTE = {
@@ -298,110 +295,181 @@ function decisionsFor(stopped: FlowDecision): Record<string, unknown> {
   return { paso: stopped.id };
 }
 
-function bodyFor(resolved: Resolved, directive: FlowDirective): Record<string, unknown> {
+/** What the agent judges at a boundary, the same in both answer modes. */
+function judgment(directive: FlowDirective, resolved: Resolved): Record<string, unknown> {
   const stopped = resolved.stopped as FlowDecision;
   if (resolved.kind === "execution") {
-    return executionBody(resolved, stopped, proofsCaptured(directive));
+    return { outcome: "completed", detail: `salida real de ${directive.boundary.transition}` };
   }
-  if (resolved.kind !== "semantic") {
-    return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };
-  }
-  if (proposalContractOf(stopped) !== null) {
-    return { input_digest: resolved.seal, artifacts: [artifactFor(stopped)] };
-  }
-  return { input_digest: resolved.seal, signals: [], decisions: decisionsFor(stopped) };
+  if (resolved.kind === "authorization") return { choice: "Autorizar el efecto" };
+  if (resolved.kind !== "semantic") return { choice: directive.choices[0]?.label ?? "" };
+  if (proposalContractOf(stopped) !== null) return { artifacts: [artifactFor(stopped)] };
+  return { signals: [], decisions: decisionsFor(stopped) };
 }
 
-/** What answering this directive costs the agent, by kind of call. */
-function priceOf(
-  resolved: Resolved,
-  directive: FlowDirective,
-): { submits: number; commands: number; proves: number } {
-  if (resolved.kind !== "execution") return { submits: 1, commands: 0, proves: 0 };
-  const proofs = (resolved.action?.evidence ?? []).filter(
-    (id) => id === "workline.source-bounded",
-  ).length;
-  return { submits: 1, commands: 1, proves: proofsCaptured(directive) ? 0 : proofs };
+/** The sources whose proof a boundary demands: one per batch source, the document's elsewhere. */
+function proofSources(state: FlowRunState, stopped: FlowDecision): string[] {
+  return stopped.id === "plan-exec.validation-execution"
+    ? [...(state.scope?.sources ?? [])]
+    : ["workspace"];
 }
 
-/** Answer the boundary in force once, as the agent would, and return what comes next. */
-async function answer(
+export async function openMeasuredRun(
   flow: WorklineFlow,
-  run: Run,
-  resolved: Resolved,
-  directive: FlowDirective,
-  git: RecordingGit,
-): Promise<FlowDirective> {
-  const stopped = resolved.stopped as FlowDecision;
-  const approval =
-    resolved.kind === "authorization"
-      ? effectApprovalDigest(stopped.id, resolved.authorization?.planned ?? [])
-      : null;
-  const result = await submitFlow(fs, run.paths, {
-    code: run.code,
-    raw: JSON.stringify(
-      approval === null
-        ? bodyFor(resolved, directive)
-        : { input_digest: resolved.seal, choice: "Autorizar el efecto" },
-    ),
-    approval,
-    executor: run.executor,
-    // Freshness is not what is measured: git only reaches the row that reads it.
-    ...(stopped.id === "plan-exec.batch-commit-proposal" ? { git } : {}),
-  });
-  if (!result.ok) throw new Error(`${flow}: ${JSON.stringify(result)}`);
-  if (result.directive.error !== null && result.directive.boundary.transition === stopped.id) {
-    throw new Error(`${flow} se trabó en ${stopped.id}: ${JSON.stringify(result.directive.error)}`);
+  options: WalkOptions = {},
+): Promise<MeasuredRun> {
+  if (offersStart()) {
+    throw new Error("aw flow start existe: abrí la corrida con él antes de acreditarle 1 llamada");
   }
-  return result.directive;
-}
-
-/** Walk one fresh run of `flow` to its end and price every stop. */
-export async function countAgentCalls(flow: WorklineFlow): Promise<AgentCallCount> {
   const root = await mkdtemp(join(tmpdir(), `aw-calls-${flow}-`));
   const paths = new PathsService(normalizeNamespace("agent-workflow"), root, root);
-  const git = new RecordingGit();
-  const run: Run = {
-    code: SESSIONS[flow].slice(0, 3),
+  const recording = new RecordingGit();
+  const live = new GitCliAdapter(new NodeProcess());
+  const executor = testExecutor(fs, paths, { git: recording });
+  const session = SESSIONS[flow];
+  const code = session.slice(0, 3);
+  await seed(root, paths, flow, options.execPhases ?? 1);
+  const adopted = await advanceFlow(fs, paths, { code, flow, adopt: true, executor });
+  if (!adopted.ok) throw new Error(`no se pudo abrir la corrida de ${flow}`);
+
+  async function current() {
+    const read = await readRun(fs, locateRun(paths, session));
+    if (!read.ok) throw new Error(`corrida ilegible: ${read.failure.code}`);
+    return { state: read.state, resolved: resolveBoundary(read.state, journeyForRun(read.state)) };
+  }
+
+  function submit(raw: unknown, approval: string | null = null) {
+    const stopped = raw as { transition?: string };
+    return submitFlow(fs, paths, {
+      code,
+      raw: typeof raw === "string" ? raw : JSON.stringify(raw),
+      approval,
+      executor,
+      // The commit proposal reads the recording git, so no real commit is
+      // attempted; every other answer is observed against the live checkout.
+      git: stopped.transition === "plan-exec.batch-commit-proposal" ? recording : live,
+    });
+  }
+
+  async function answerFor(directive: FlowDirective, resolved: Resolved): Promise<AnswerPlan> {
+    const stopped = resolved.stopped as FlowDecision;
+    const transition = directive.boundary.transition;
+    const minimal = (options.answers ?? "minimal") === "minimal" && completesAnswers(directive);
+    const judged = judgment(directive, resolved);
+    const approval = resolved.kind === "authorization" ? directive.expects.approval.digest : null;
+    if (minimal || resolved.kind !== "execution") {
+      return {
+        raw: { ...(minimal ? { transition } : { input_digest: resolved.seal }), ...judged },
+        approval,
+        proves: 0,
+      };
+    }
+    const action = resolved.action;
+    if (action === null) throw new Error(`${stopped.id} no nombra ninguna acción`);
+    const { state } = await current();
+    const detail = judged.detail as string;
+    const validations: Record<string, unknown>[] = [];
+    let proves = 0;
+    for (const id of action.evidence) {
+      if (id !== SOURCE_BOUNDED_EVIDENCE) {
+        validations.push({ id, passed: true, detail });
+        continue;
+      }
+      for (const source of proofSources(state, stopped)) {
+        const proved = await proveFlowBoundary(fs, paths, { code, source, git: live });
+        if (!proved.ok)
+          throw new Error(`prove de ${source} en ${stopped.id}: ${JSON.stringify(proved)}`);
+        proves += 1;
+        validations.push({ id, passed: true, detail, proof: proved.receipt.proof });
+      }
+    }
+    const declared = [...effectsOfTransition(state, stopped)];
+    return {
+      raw: {
+        input_digest: resolved.seal,
+        outcome: "completed",
+        invocation: action.invocation,
+        validations,
+        effects: { planned: declared, approved: [], applied: declared },
+        output: null,
+      },
+      approval,
+      proves,
+    };
+  }
+
+  return {
+    flow,
+    root,
     paths,
-    executor: testExecutor(fs, paths, { git }),
+    session,
+    opened: adopted.directive,
+    current,
+    submit,
+    answerFor,
+    dispose: () => rm(root, { recursive: true, force: true }),
+  };
+}
+
+const WRITES_THE_DELIVERABLE: ReadonlySet<string> = new Set([
+  "plan-exec.implementation",
+  "quick.deliverable-authoring",
+]);
+
+/** Walk one fresh run of `flow` to its end and price every stop. */
+export async function countAgentCalls(
+  flow: WorklineFlow,
+  options: WalkOptions = {},
+): Promise<AgentCallCount> {
+  const run = await openMeasuredRun(flow, options);
+  const count: AgentCallCount = {
+    flow,
+    opening: 3,
+    submits: 0,
+    commands: 0,
+    proves: 0,
+    total: 0,
+    stops: [],
   };
   try {
-    await seed(root, paths, flow);
-    const opened = await openRun(flow, run);
-    const count: AgentCallCount = {
-      flow,
-      opening: opened.calls,
-      submits: 0,
-      commands: 0,
-      proves: 0,
-      total: 0,
-      stops: [],
-    };
-    let directive = opened.directive;
+    let directive = run.opened;
     for (let step = 0; step < 200; step += 1) {
-      const read = await readRun(fs, locateRun(paths, SESSIONS[flow]));
-      if (!read.ok) throw new Error(`corrida ilegible: ${read.failure.code}`);
-      const resolved = resolveBoundary(read.state, journeyForRun(read.state));
+      const { state, resolved } = await run.current();
       if (resolved.stopped === null) break;
       if (resolved.kind !== "authorization" && internalActionOf(resolved.stopped) !== null) {
-        const events = JSON.stringify(read.state.events.slice(-3));
+        const events = JSON.stringify(state.events.slice(-3));
         throw new Error(`${flow} quedó en la interna ${resolved.stopped.id}: ${events}`);
       }
-      const price = priceOf(resolved, directive);
+      if (WRITES_THE_DELIVERABLE.has(resolved.stopped.id)) {
+        // The deliverable changes the checkout, as real work does: a batch that
+        // changed nothing credits nothing, and a quick with no diff asks no commit.
+        await writeFile(join(run.root, "medida.txt"), `${step}\n`, "utf8");
+      }
+      const plan = await run.answerFor(directive, resolved);
+      const commands = resolved.kind === "execution" ? 1 : 0;
       count.stops.push({
         transition: resolved.stopped.id,
         kind: resolved.kind,
-        calls: price.submits + price.commands + price.proves,
+        calls: 1 + commands + plan.proves,
       });
-      count.submits += price.submits;
-      count.commands += price.commands;
-      count.proves += price.proves;
-      directive = await answer(flow, run, resolved, directive, git);
+      count.submits += 1;
+      count.commands += commands;
+      count.proves += plan.proves;
+      const result = await run.submit(plan.raw, plan.approval);
+      if (!result.ok) throw new Error(`${flow}: ${JSON.stringify(result)}`);
+      if (
+        result.directive.error !== null &&
+        result.directive.boundary.transition === resolved.stopped.id
+      ) {
+        throw new Error(
+          `${flow} se trabó en ${resolved.stopped.id}: ${JSON.stringify(result.directive.error)}`,
+        );
+      }
+      directive = result.directive;
     }
     count.total = count.opening + count.submits + count.commands + count.proves;
     return count;
   } finally {
-    await rm(root, { recursive: true, force: true });
+    await run.dispose();
   }
 }

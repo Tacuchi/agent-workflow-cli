@@ -24,6 +24,7 @@
  */
 
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
+import type { DelegatedAction } from "../../domain/flow/authority.js";
 import type { FlowBoundaryKind } from "../../domain/flow/directive.js";
 import {
   type CheckoutIdentity,
@@ -183,7 +184,68 @@ export async function proveFlowBoundary(
     };
   }
 
-  const wanted = input.source ?? "workspace";
+  const captured = await captureCheckoutProof(fs, paths, input.git, session, action, {
+    source: input.source ?? "workspace",
+    ...(input.artifact === undefined ? {} : { artifact: input.artifact }),
+  });
+  if (!captured.ok) return { ok: false, failure: captured.failure };
+  const { identity, proof } = captured;
+
+  let warnings: string[] = [];
+  if ((input.platform ?? process.platform) === "win32") {
+    try {
+      const longpaths = await input.git.readConfig?.(identity.root, "core.longpaths");
+      if (longpaths?.toLowerCase() !== "true")
+        warnings = [
+          "git core.longpaths no está activado en Windows: las rutas largas pueden impedir la prueba",
+        ];
+    } catch (error) {
+      warnings = [
+        `no se pudo leer git core.longpaths: ${error instanceof Error ? error.message : String(error)}`,
+      ];
+    }
+  }
+  return {
+    ok: true,
+    receipt: {
+      session,
+      boundary: resolved.stopped?.id ?? null,
+      evidence: action.evidence,
+      checkout: identity,
+      proof,
+      warnings,
+      // The id is spelled out because the validator does not search: it looks up
+      // exactly the item called `workline.source-bounded`. Hanging the proof on any
+      // other item of the list reads as a proof that never arrived, and that costs
+      // an attempt — which is the cost this surface exists to avoid.
+      usage: `va como campo 'proof' del ítem de 'validations' cuyo id es exactamente '${SOURCE_BOUNDED_EVIDENCE}', no de otro ítem de la lista. Caduca con la próxima escritura a esa raíz: no toques el árbol entre esta captura y el submit.`,
+    },
+  };
+}
+
+/**
+ * The proof of one source's checkout for the boundary's sealed action: observed,
+ * built and prevalidated exactly as `aw flow prove` hands it back. `submit`
+ * captures with this same function, so a proof it fills in can only differ from
+ * one the agent captured if the tree moved in between.
+ */
+export async function captureCheckoutProof(
+  fs: FileSystemPort,
+  paths: PathsService,
+  git: GitPort,
+  session: string,
+  action: DelegatedAction,
+  request: { source: string; artifact?: string },
+): Promise<
+  | { ok: true; identity: CheckoutIdentity; proof: CheckoutProof }
+  | {
+      ok: false;
+      failure: CapabilityFailure;
+      /** git itself threw: the submit's own observation reports it with git's words. */
+      gitFailed?: true;
+    }
+> {
+  const wanted = request.source;
   const candidates = await resolveCheckoutCandidates(fs, paths, session);
   const identity = candidates.find((candidate) => candidate.source === wanted);
   if (identity === undefined) return { ok: false, failure: notEligible(wanted, candidates) };
@@ -194,10 +256,11 @@ export async function proveFlowBoundary(
   // capture refuses to hand back a proof built on one.
   let state: Awaited<ReturnType<typeof observeCheckout>>;
   try {
-    state = await observeCheckout(fs, input.git, identity);
+    state = await observeCheckout(fs, git, identity);
   } catch (error) {
     return {
       ok: false,
+      gitFailed: true,
       failure: {
         code: "FLOW_PROVE_CHECKOUT_UNOBSERVABLE",
         message: error instanceof Error ? error.message : String(error),
@@ -233,7 +296,7 @@ export async function proveFlowBoundary(
     };
   }
   const proof: CheckoutProof =
-    input.artifact === undefined
+    request.artifact === undefined
       ? {
           kind: "command",
           source: identity.source,
@@ -252,7 +315,7 @@ export async function proveFlowBoundary(
           root: identity.root,
           relative_cwd: ".",
           checkout_digest: state.digest,
-          invocation: { artifact: input.artifact },
+          invocation: { artifact: request.artifact },
         };
 
   // The same function `submit` runs. If this ever disagrees with the submit, it is
@@ -269,35 +332,5 @@ export async function proveFlowBoundary(
       },
     };
   }
-
-  let warnings: string[] = [];
-  if ((input.platform ?? process.platform) === "win32") {
-    try {
-      const longpaths = await input.git.readConfig?.(identity.root, "core.longpaths");
-      if (longpaths?.toLowerCase() !== "true")
-        warnings = [
-          "git core.longpaths no está activado en Windows: las rutas largas pueden impedir la prueba",
-        ];
-    } catch (error) {
-      warnings = [
-        `no se pudo leer git core.longpaths: ${error instanceof Error ? error.message : String(error)}`,
-      ];
-    }
-  }
-  return {
-    ok: true,
-    receipt: {
-      session,
-      boundary: resolved.stopped?.id ?? null,
-      evidence: action.evidence,
-      checkout: identity,
-      proof,
-      warnings,
-      // The id is spelled out because the validator does not search: it looks up
-      // exactly the item called `workline.source-bounded`. Hanging the proof on any
-      // other item of the list reads as a proof that never arrived, and that costs
-      // an attempt — which is the cost this surface exists to avoid.
-      usage: `va como campo 'proof' del ítem de 'validations' cuyo id es exactamente '${SOURCE_BOUNDED_EVIDENCE}', no de otro ítem de la lista. Caduca con la próxima escritura a esa raíz: no toques el árbol entre esta captura y el submit.`,
-    },
-  };
+  return { ok: true, identity, proof };
 }

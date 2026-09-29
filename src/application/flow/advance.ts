@@ -104,6 +104,7 @@ import {
   withRouteDecisions,
 } from "../../domain/flow/run-state.js";
 import { UNCHANGED_PHASE_CONSENT } from "../../domain/flow/unchanged-phase.js";
+import { SOURCE_BOUNDED_EVIDENCE } from "../../domain/source-boundary.js";
 import {
   type SemanticRequest,
   buildSemanticRequest,
@@ -1187,6 +1188,7 @@ export function directiveFor(
                   : null,
             }
           : null,
+      proofs_captured: resolved.action?.evidence.includes(SOURCE_BOUNDED_EVIDENCE) ?? false,
     },
     authorizations: resolved.authorization?.covered ?? [],
     // The cause of a block travels with the boundary that declares it: a

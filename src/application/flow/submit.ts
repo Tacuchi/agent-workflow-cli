@@ -167,6 +167,7 @@ import {
   effectsOfTransition,
   resolveBoundary,
 } from "./advance.js";
+import { completeAnswer } from "./answer-completion.js";
 import {
   observeCheckout,
   observeScopedFingerprints,
@@ -199,6 +200,28 @@ export interface SubmitFlowInput {
   /** Live checkout reader used to verify source-bounded evidence. */
   git?: GitPort;
   process?: ProcessPort;
+  /**
+   * What identifies the attempt when `raw` was completed by the CLI: the answer
+   * as sent, drafts expanded, without the filled fields. Set by
+   * {@link completeAnswer}; absent, `raw` is its own identity.
+   */
+  identity?: string;
+}
+
+/** The answer completed with what the CLI knows, or the envelope refusal of completing it. */
+async function completed(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: SubmitFlowInput,
+  session: string,
+): Promise<{ ok: true; input: SubmitFlowInput } | { ok: false; failure: CapabilityFailure }> {
+  const answer = await completeAnswer(fs, paths, {
+    raw: input.raw,
+    session,
+    ...(input.git === undefined ? {} : { git: input.git }),
+  });
+  if (!answer.ok) return answer;
+  return { ok: true, input: { ...input, raw: answer.raw, identity: answer.identity } };
 }
 
 export type SubmitFlowResult =
@@ -240,8 +263,10 @@ export async function checkFlow(
   const session = resolution.session.folder;
   const read = await readRun(fs, locateRun(paths, session));
   if (!read.ok) return { ok: false, failure: read.failure };
-  const snapshot = await observe(fs, paths, input.raw, session, input.git);
-  const decision = await decide(fs, paths, read.state, input, snapshot, true);
+  const answer = await completed(fs, paths, input, session);
+  if (!answer.ok) return answer;
+  const snapshot = await observe(fs, paths, answer.input.raw, session, input.git);
+  const decision = await decide(fs, paths, read.state, answer.input, snapshot, true);
   if (!decision.ok) return { ok: false, failure: decision.failure };
   const error = decision.value.directive.error;
   return {
@@ -296,7 +321,9 @@ export async function submitFlow(
   // creates or replaces, and what it would replace — plus the two facts a declared
   // scope is checked against. The race it leaves open on the destinations is
   // exactly the one the compare-and-swap closes at publish time.
-  const snapshot = await observe(fs, paths, input.raw, resolution.session.folder, input.git);
+  const answer = await completed(fs, paths, input, resolution.session.folder);
+  if (!answer.ok) return answer;
+  const snapshot = await observe(fs, paths, answer.input.raw, resolution.session.folder, input.git);
   const applied = await applyUnderLock<SubmitOutcome>(fs, location, async (current) => {
     if (current === null) {
       return {
@@ -308,7 +335,7 @@ export async function submitFlow(
         },
       };
     }
-    return await decide(fs, paths, current, input, snapshot);
+    return await decide(fs, paths, current, answer.input, snapshot);
   });
 
   if (!applied.ok) return { ok: false, failure: applied.failure };
@@ -839,7 +866,7 @@ async function decide(
   const identity = attemptIdentity(
     state,
     input,
-    claimedSeal(input.raw) ?? resolved.seal,
+    claimedSeal(input.identity ?? input.raw) ?? resolved.seal,
     resolved.stopped.id,
   );
   const cost: RejectionCost = { journey, identity };
@@ -3293,7 +3320,7 @@ function attemptIdentity(
   seal: string,
   transition: string,
 ): FlowRunAttempt {
-  const digest = semanticDigest({ payload: input.raw, approval: input.approval });
+  const digest = semanticDigest({ payload: input.identity ?? input.raw, approval: input.approval });
   const rowIteration = iterationOf(state, transition);
   const prior = state.attempts.filter((past) => past.invocation_id === seal);
   const twin = prior.find((past) => past.request_digest === digest);

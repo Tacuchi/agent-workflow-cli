@@ -282,6 +282,11 @@ export interface FlowExpectations {
   decisions: Record<string, string>;
   note: { schema: string; fields: Record<string, string> } | null;
   source_scope: { aliases: string[] | null; rule: string | null } | null;
+  /**
+   * `submit` captures this boundary's checkout proofs itself when the answer
+   * brings none, so the agent never runs `aw flow prove` for it.
+   */
+  proofs_captured: boolean;
 }
 
 /**
@@ -417,6 +422,7 @@ export function buildFlowDirective(input: BuildDirectiveInput): DirectiveBuild {
       decisions: {},
       note: null,
       source_scope: null,
+      proofs_captured: false,
     },
     authorizations: [...(input.authorizations ?? [])],
     degradations: [...(input.degradations ?? [])],
