@@ -80,11 +80,12 @@ describe("host-run scenario", () => {
     }
   });
 
-  it("covers the six hosts and leaves only warp and oz out, each with its reason", () => {
+  it("covers five hosts and leaves warp, oz and kimi (excluded by the person) out, each with its reason", () => {
     expect([...COVERED_HOSTS].sort()).toEqual(
-      ["claude-code", "codex", "crush", "gemini", "kimi", "opencode"].sort(),
+      ["claude-code", "codex", "crush", "gemini", "opencode"].sort(),
     );
-    expect(Object.keys(NOT_COVERED).sort()).toEqual(["oz", "warp"]);
+    expect(Object.keys(NOT_COVERED).sort()).toEqual(["kimi", "oz", "warp"]);
+    expect(NOT_COVERED.kimi).toMatch(/subscription cancelled by the person/);
     for (const reason of Object.values(NOT_COVERED)) expect(reason.length).toBeGreaterThan(20);
     expect(ALL_HOSTS).toEqual(HARNESSES.map((h) => h.id));
   });

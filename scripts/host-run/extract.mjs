@@ -187,6 +187,34 @@ export function distinctivePart(value) {
 
 const usable = (secrets) => secrets.filter((v) => typeof v === "string" && v.length > 0);
 
+/**
+ * Credential shapes redacted whatever the run was given: a host's own output can
+ * carry one it minted (an OAuth code agy echoed, s280). Each needs a run of
+ * token characters after its prefix, so ordinary text («4/0» in a date, `sk-`
+ * in a word) does not match.
+ */
+export const SECRET_PATTERNS = [
+  // Google OAuth: authorization code, refresh token, access token.
+  /(?<![\w/.-])4\/0A[0-9A-Za-z_-]{10,}/g,
+  /(?<![\w/.-])1\/\/0[0-9A-Za-z_-]{10,}/g,
+  /(?<![\w.-])ya29\.[0-9A-Za-z_-]{10,}/g,
+  // GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_).
+  /(?<![\w-])gh[pousr]_[A-Za-z0-9]{20,}/g,
+  // Anthropic, then any other `sk-` key (OpenAI and others).
+  /(?<![\w-])sk-ant-[A-Za-z0-9]{2,}-[A-Za-z0-9_-]{16,}/g,
+  /(?<![\w-])sk-[A-Za-z0-9_-]{20,}/g,
+  // Google API keys.
+  /(?<![\w-])AIza[0-9A-Za-z_-]{30,}/g,
+  // Slack tokens.
+  /(?<![\w-])xox[abprs]-[A-Za-z0-9-]{10,}/g,
+  // A sign-in URL a host shows (Google's OAuth consent or device page): it
+  // carries the client, the state and the challenge of that person's login.
+  /https:\/\/accounts\.google\.com\/o\/oauth2\/[^\s"'<>)]+/g,
+  /https:\/\/oauth2\.googleapis\.com\/[^\s"'<>)]+/g,
+  // JWT-like: three base64url segments, the first a JSON header.
+  /(?<![\w-])eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g,
+];
+
 /** Characters a token is made of (base64url, and the dashes of its prefix). */
 const TOKEN_CHAR = /[A-Za-z0-9_-]/;
 
@@ -226,6 +254,30 @@ function widen(text, a, b) {
   return [start, end];
 }
 
+/** Spans of the credential shapes (SECRET_PATTERNS), whatever the run was given. */
+function patternSpans(t) {
+  return SECRET_PATTERNS.flatMap((pattern) =>
+    [...t.matchAll(pattern)].map((m) => widen(t, m.index, m.index + m[0].length)),
+  );
+}
+
+/** Spans of every SECRET_PREFIX-long window of each value's own body, whitespace ignored. */
+function valueSpans(t, values) {
+  const { flat, at } = compact(t);
+  const spans = [];
+  for (const v of values) {
+    const body = distinctiveBody(v);
+    const size = Math.min(SECRET_PREFIX, body.length);
+    for (let k = 0; size > 0 && k + size <= body.length; k++) {
+      const window = body.slice(k, k + size);
+      for (let i = flat.indexOf(window); i !== -1; i = flat.indexOf(window, i + 1)) {
+        spans.push(widen(t, at[i], at[i + size - 1] + 1));
+      }
+    }
+  }
+  return spans;
+}
+
 /**
  * Where `text` carries a secret, as merged [start, end) spans of `text`: any
  * SECRET_PREFIX-long window of a token's distinctive body (or all of a shorter
@@ -234,19 +286,7 @@ function widen(text, a, b) {
  */
 export function secretSpans(text, secrets) {
   const t = String(text ?? "");
-  const { flat, at } = compact(t);
-  const spans = [];
-  for (const v of usable(secrets)) {
-    const body = distinctiveBody(v);
-    const size = Math.min(SECRET_PREFIX, body.length);
-    if (size === 0) continue;
-    for (let k = 0; k + size <= body.length; k++) {
-      const window = body.slice(k, k + size);
-      for (let i = flat.indexOf(window); i !== -1; i = flat.indexOf(window, i + 1)) {
-        spans.push(widen(t, at[i], at[i + size - 1] + 1));
-      }
-    }
-  }
+  const spans = [...patternSpans(t), ...valueSpans(t, usable(secrets))];
   spans.sort((x, y) => x[0] - y[0]);
   const merged = [];
   for (const span of spans) {

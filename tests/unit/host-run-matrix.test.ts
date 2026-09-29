@@ -152,8 +152,12 @@ describe("host-run matrix", () => {
     });
     expect(m.partial).toBe(true);
     expect(m.hosts.codex.cells.mcp.state).toBe("not-reached");
-    for (const s of SURFACES) expect(m.hosts.kimi.cells[s].state).toBe("not-run");
-    expect(m.hosts.kimi.launched).toBe(false);
+    for (const s of SURFACES) expect(m.hosts.opencode.cells[s].state).toBe("not-run");
+    expect(m.hosts.opencode.launched).toBe(false);
+    // kimi, excluded by the person, is not covered with its reason — never not-run.
+    expect(m.hosts.kimi.covered).toBe(false);
+    expect(m.hosts.kimi.reason).toMatch(/subscription cancelled/);
+    for (const s of SURFACES) expect(m.hosts.kimi.cells[s].state).toBe("not-covered");
     expect(validateMatrix(m)).toEqual([]);
   });
 

@@ -29,23 +29,22 @@ export default {
     "every command and edit asks you in the pane",
     "prefix rules cannot match --force anywhere; only its fallback prefixes are denied",
     "reads cannot be path-scoped here: this host may read the other hosts' disposable roots (their copied credentials) unasked; a token file there lives only milliseconds, between its write and its wrapper's rm -f before exec",
+    "you sign in inside its pane when the run starts: no probe checks it beforehand, and the run sends nothing while the sign-in is on screen",
+    "agy stores its login in your macOS login keychain (per user, not per HOME): the pane may reuse your existing agy login, and signing in or a token refresh may overwrite it; /logout in the pane would remove it — accepted by the person",
   ],
-  // With a GEMINI_API_KEY given, agy is pointed at the Gemini API as its own
-  // changelog says (`modelProvider: "gemini"`); without one it keeps its sign-in.
-  files: ({ tokenPresent = false } = {}) => [
+  // agy runs on the person's own sign-in, done inside its pane when the run
+  // starts: no `modelProvider`, never a Gemini API key (that key is crush's).
+  files: () => [
     {
       path: ".gemini/antigravity-cli/settings.json",
       kind: "json",
-      value: {
-        ...(tokenPresent ? { modelProvider: "gemini" } : {}),
-        permissions: { deny: denials.map((d) => d.rule) },
-      },
+      value: { permissions: { deny: denials.map((d) => d.rule) } },
     },
   ],
   deniedIn: (files) => permissionsOf(files).deny ?? [],
   allowedIn: (files) => permissionsOf(files).allow ?? [],
-  effective: ({ tokenPresent = false } = {}) => ({
-    model_provider: tokenPresent ? "gemini (Gemini API key, not your sign-in)" : "your sign-in",
+  effective: () => ({
+    model_provider: "your own sign-in, done inside the pane when the run starts",
     allow: [],
     deny: denials.map((d) => d.rule),
   }),

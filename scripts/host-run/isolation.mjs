@@ -7,6 +7,7 @@
 // fs/spawn, and `Cleanup` removes every root on exit and on SIGINT/SIGTERM/SIGHUP.
 // SIGKILL cannot be caught: `staleRoots` finds what a dead run left behind.
 
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   chmodSync,
@@ -23,7 +24,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
-import { HOSTS } from "./hosts.mjs";
+import { redactSecrets } from "./extract.mjs";
+import { HOSTS, tokenSpec } from "./hosts.mjs";
 import { mergeJson, mergeToml } from "./profiles/index.mjs";
 import { PROBE_DSN, PROBE_MCP } from "./scenario.mjs";
 
@@ -115,9 +117,15 @@ export function planIsolation({
   deps = [],
   tokenPresent = false,
   siblingRoots = [],
+  token = undefined,
 }) {
   const host = HOSTS[hostId];
   if (host === undefined) throw new Error(`host '${hostId}' is not covered by the run`);
+  // The token spec in force: given by the caller (a host with key choices), or
+  // the host's own. A provider key (crush) also fixes the provider and model.
+  const spec = token === undefined ? tokenSpec(hostId) : token;
+  const providerModel =
+    tokenPresent && spec?.provider ? { provider: spec.provider, model: spec.model } : null;
   const home = join(root, "home");
   const workspace = join(root, "workspace");
   // The root runs its OWN copy of the checkout's CLI, so the read-sets `aw` hands
@@ -135,15 +143,20 @@ export function planIsolation({
   // A host whose token travels in a variable gets it ONLY through a wrapper that
   // reads <root>/secrets/<host>.env: the visible pane command names the wrapper,
   // never the value. Everything else (setup steps, `mcp list`) runs without it.
-  const secret = host.token
+  const secret = spec
     ? {
-        var: host.token.env,
+        host: hostId,
+        var: spec.env,
         path: join(root, "secrets", `${hostId}.env`),
         wrapper: join(root, "bin", `launch-${basename(hostBin)}`),
       }
     : null;
   const launcher = secret ? secret.wrapper : hostBin;
-  const paneArgs = [...profile.paneArgs, ...host.modelArgs(model, effort)];
+  const runModel = model;
+  const paneArgs = [...profile.paneArgs, ...host.modelArgs(runModel, effort)];
+  // A host that signs in inside its pane (agy): no probe — without a login, a
+  // probe would open the OAuth flow.
+  const probeSkipped = host.signInInPane === true;
   return {
     host: hostId,
     root,
@@ -198,11 +211,17 @@ export function planIsolation({
           tokenPresent,
           root,
           siblingRoots,
+          providerModel,
         }),
       },
       {
         kind: "credentials",
-        copies: host.credentials.map((rel) => ({ from: join(realHome, rel), to: join(home, rel) })),
+        // With a provider key the person's own crush data (their model
+        // selection) is not copied: it would override the configured provider.
+        copies: (providerModel ? [] : host.credentials).map((rel) => ({
+          from: join(realHome, rel),
+          to: join(home, rel),
+        })),
         keychain: host.keychain,
       },
       { kind: "git", args: ["init", "-q", "-b", "main"], cwd: workspace },
@@ -221,17 +240,36 @@ export function planIsolation({
       ...(secret
         ? [{ kind: "secret", var: secret.var, path: secret.path, wrapper: secret.wrapper, hostBin }]
         : []),
-      {
-        kind: "auth-probe",
-        bin: launcher,
-        args: host.authProbe,
-        cwd: workspace,
-        ...(secret ? { secret: { var: secret.var, path: secret.path } } : {}),
-      },
+      ...(probeSkipped
+        ? []
+        : [
+            {
+              kind: "auth-probe",
+              host: hostId,
+              bin: launcher,
+              args: probeArgs(host, { providerModel }),
+              cwd: workspace,
+              timeoutMs: PROBE_TIMEOUT_MS,
+              ...(secret ? { secret: { host: hostId, var: secret.var, path: secret.path } } : {}),
+            },
+          ]),
     ],
     secret,
+    providerModel,
+    model: runModel ?? null,
+    signInInPane: probeSkipped,
     pane: { cwd: workspace, command: paneCommand(env, launcher, paneArgs) },
   };
+}
+
+/**
+ * The auth probe's argv: the host's own, plus a provider key's `provider/model`
+ * (crush, before the prompt), so the probe runs what the pane will.
+ */
+function probeArgs(host, { providerModel }) {
+  if (!providerModel) return host.authProbe;
+  const [sub, ...rest] = host.authProbe;
+  return [sub, "-m", `${providerModel.provider}/${providerModel.model}`, ...rest];
 }
 
 /**
@@ -279,9 +317,11 @@ export function pidAlive(pid) {
 
 /** Removes every registered root once, whatever ends the process. */
 export class Cleanup {
-  constructor(remove, onSignal = (sig) => process.kill(process.pid, sig)) {
+  constructor(remove, onSignal = (sig) => process.kill(process.pid, sig), reap = null) {
     this.remove = remove;
     this.onSignal = onSignal;
+    // Ends the roots' processes before their dirs go (reapRootProcesses).
+    this.reap = reap;
     this.roots = new Set();
     this.hooks = [];
   }
@@ -292,12 +332,19 @@ export class Cleanup {
     this.hooks.push(fn);
   }
   run() {
+    // Every command still running goes first, its whole group.
+    stopLiveGroups("SIGKILL");
     for (const fn of this.hooks.splice(0)) {
       try {
         fn();
       } catch {
         // A failed hook must not keep a home with copied credentials alive.
       }
+    }
+    try {
+      this.reap?.([...this.roots]);
+    } catch {
+      // Removing the roots matters more than a failed process listing.
     }
     for (const root of this.roots) this.remove(root);
     this.roots.clear();
@@ -306,6 +353,10 @@ export class Cleanup {
     proc.on("exit", () => this.run());
     for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
       proc.once(sig, () => {
+        // Forwarded at once: the detached groups do not get the terminal's Ctrl-C.
+        // They get up to TERM_GRACE_MS to stop; then run() SIGKILLs what is left.
+        stopLiveGroups("SIGTERM");
+        awaitGroupsGone(TERM_GRACE_MS);
         this.run();
         this.onSignal(sig);
       });
@@ -318,7 +369,7 @@ export class Cleanup {
  * run(cmd, args, {env, cwd}) → {status, stdout, stderr}, cliMain}. Returns the
  * outcome of each step; stops at the first failure.
  */
-export function prepareHost(plan, deps) {
+export async function prepareHost(plan, deps) {
   const { fs } = deps;
   const log = [];
   for (const dir of [plan.home, plan.workspace, join(plan.root, "bin"), join(plan.root, "tmp")]) {
@@ -335,7 +386,7 @@ export function prepareHost(plan, deps) {
   fs.writeFile(plan.dsnFile.path, plan.dsnFile.source, 0o600);
   for (const step of plan.steps) {
     // Every `aw` step runs the root's own copy with the root's node.
-    const outcome = STEP_RUNNERS[step.kind](step, {
+    const outcome = await STEP_RUNNERS[step.kind](step, {
       ...deps,
       env: plan.env,
       node: plan.node ?? deps.node,
@@ -350,6 +401,327 @@ export function prepareHost(plan, deps) {
 /** One step alone, with the plan's deps (tests drive a step without a whole plan). */
 export function prepareStep(step, deps) {
   return STEP_RUNNERS[step.kind](step, deps);
+}
+
+/**
+ * How every host-side command runs (setup steps, probes, version reads): stdin
+ * ignored, stdout/stderr captured, and in a NEW SESSION (`detached`: setsid), so
+ * it has no controlling terminal — `/dev/tty` cannot be opened. agy 1.1.2+ reads
+ * a pasted OAuth code from /dev/tty in print mode and echoes it; without a
+ * controlling terminal it fails fast instead («Print mode: not logged in and no
+ * controlling terminal; cannot complete interactive login», agy binary strings).
+ */
+export const CAPTURED_SPAWN = Object.freeze({
+  stdio: ["ignore", "pipe", "pipe"],
+  detached: true,
+});
+
+/** Every auth probe's time limit: a probe that waits for a sign-in times out. */
+export const PROBE_TIMEOUT_MS = 90_000;
+
+/** Output kept per stream, in memory only (a probe's text only classifies). */
+const MAX_OUTPUT = 4 * 1024 * 1024;
+/** After a SIGTERM, how long a group gets before SIGKILL. */
+const TERM_GRACE_MS = 1000;
+
+/** Process groups of commands still running: each is a session leader (detached). */
+const liveGroups = new Set();
+
+/** Signals a whole process group (the child and every descendant still in it). */
+export function killGroup(pid, signal) {
+  if (!pid) return;
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // Gone already.
+  }
+}
+
+/** Waits (blocking: this is the exit path) until every running group is gone, up to `ms`. */
+function awaitGroupsGone(ms) {
+  const cell = new Int32Array(new SharedArrayBuffer(4));
+  for (let waited = 0; waited < ms; waited += 50) {
+    const left = [...liveGroups].filter((pid) => {
+      try {
+        process.kill(-pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (left.length === 0) return;
+    Atomics.wait(cell, 0, 0, 50);
+  }
+}
+
+/** Signals every running command's group: a signal or cleanup ends them all. */
+export function stopLiveGroups(signal = "SIGKILL") {
+  for (const pid of liveGroups) killGroup(pid, signal);
+}
+
+/**
+ * `run(cmd, args, {env, cwd, timeout})` → Promise<{status, signal, stdout,
+ * stderr, error?}>, over `spawn` (child_process.spawn) with CAPTURED_SPAWN. It
+ * never blocks: a Ctrl-C reaches the run at once and `Cleanup` ends the group.
+ * On a timeout the whole group gets SIGTERM, then SIGKILL; when the child
+ * exits, whatever of its group is left is killed too, so no grandchild outlives
+ * its step.
+ */
+export function capturedRun(spawn, defaultTimeout = 180_000) {
+  return (cmd, args, { env, cwd, timeout } = {}) =>
+    new Promise((resolve) => {
+      let child;
+      try {
+        child = spawn(cmd, args, { ...CAPTURED_SPAWN, env, cwd });
+      } catch (error) {
+        resolve({ status: null, signal: null, stdout: "", stderr: "", error });
+        return;
+      }
+      const pid = child.pid;
+      if (pid) liveGroups.add(pid);
+      const out = { stdout: "", stderr: "" };
+      for (const name of ["stdout", "stderr"]) {
+        child[name]?.setEncoding("utf8");
+        child[name]?.on("data", (d) => {
+          if (out[name].length < MAX_OUTPUT) out[name] += d;
+        });
+      }
+      let timedOut = false;
+      let error = null;
+      let exit = { status: null, signal: null };
+      const timer = setTimeout(() => {
+        timedOut = true;
+        killGroup(pid, "SIGTERM");
+        setTimeout(() => killGroup(pid, "SIGKILL"), TERM_GRACE_MS).unref();
+      }, timeout ?? defaultTimeout);
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        killGroup(pid, "SIGKILL");
+        liveGroups.delete(pid);
+        resolve({
+          ...exit,
+          ...out,
+          ...(timedOut ? { error: { code: "ETIMEDOUT" } } : error ? { error } : {}),
+        });
+      };
+      child.on("error", (e) => {
+        error = e;
+        finish();
+      });
+      child.on("exit", (status, signal) => {
+        exit = { status, signal };
+        // The rest of its group (a grandchild holding the pipes) goes now.
+        killGroup(pid, "SIGKILL");
+        // A descendant in another session may still hold the pipes: stop waiting.
+        setTimeout(() => {
+          child.stdout?.destroy();
+          child.stderr?.destroy();
+          finish();
+        }, TERM_GRACE_MS).unref();
+      });
+      child.on("close", finish);
+    });
+}
+
+/**
+ * The same isolation for the run's short reads during the live loop (a host's
+ * `--version`, `aw sources`, `aw host-memory`): synchronous over `spawnSync`,
+ * no stdin, captured, no controlling terminal, and its group killed after.
+ */
+export function capturedRunSync(spawn = spawnSync, defaultTimeout = 30_000) {
+  return (cmd, args, { env, cwd, timeout } = {}) => {
+    const r = spawn(cmd, args, {
+      ...CAPTURED_SPAWN,
+      encoding: "utf8",
+      killSignal: "SIGKILL",
+      maxBuffer: MAX_OUTPUT,
+      env,
+      cwd,
+      timeout: timeout ?? defaultTimeout,
+    });
+    killGroup(r.pid, "SIGKILL");
+    return r;
+  };
+}
+
+/**
+ * The processes that belong to the run's roots: a command line naming a path
+ * under a root, or a working directory under one. `ps` gives
+ * `pid pgid sess tty command` (never the environment); `cwds` maps pid → cwd.
+ * A process with a controlling terminal (the person's own shell that `cd`-ed
+ * into a root to look) is never killed: it is returned in `kept`.
+ * → {kill: [{pid, pgid}], kept: [{pid, name}], ownPgid}.
+ */
+export function rootProcesses(psText, cwds, roots, self = [process.pid, process.ppid]) {
+  const under = (text) =>
+    roots.some((r) => text === r || text.includes(`${r}/`) || text.endsWith(r));
+  const procs = String(psText ?? "")
+    .split("\n")
+    .map((line) => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line))
+    .filter(Boolean)
+    .map(([, pid, pgid, sess, tty, command]) => ({
+      pid: Number(pid),
+      pgid: Number(pgid),
+      sess: Number(sess),
+      tty,
+      command,
+    }));
+  const ownPgid = procs.find((p) => p.pid === self[0])?.pgid ?? null;
+  const matched = procs
+    .filter((p) => !self.includes(p.pid))
+    .filter((p) => under(p.command) || (cwds[p.pid] !== undefined && under(cwds[p.pid])));
+  const hasTty = (p) => p.tty !== "??" && p.tty !== "-" && p.tty !== "";
+  return {
+    kill: matched.filter((p) => !hasTty(p)).map(({ pid, pgid }) => ({ pid, pgid })),
+    kept: matched
+      .filter(hasTty)
+      .map((p) => ({ pid: p.pid, pgid: p.pgid, name: basename(p.command.split(/\s+/)[0]) })),
+    ownPgid,
+  };
+}
+
+/**
+ * Ends every process of the run's roots — a detached server a host started
+ * (crush can), a daemonized helper — and each one's process group, with
+ * SIGTERM, then SIGKILL. Never the run's own group, never a group of a process
+ * with a terminal, never pgid 0 or 1. Synchronous: it runs from Cleanup, also
+ * on exit, after the Herdr close hooks. `deps` = {ps() → text, cwds() → {pid:
+ * cwd}, kill(pid, signal), alive(pid), pause(ms)}. → {killed: [pid], kept:
+ * [{pid, name}]} — `kept` is for the person: a terminal still inside a root.
+ */
+export function reapRootProcesses(roots, deps = nodeProcs()) {
+  if (roots.length === 0) return { killed: [], kept: [] };
+  const { kill, kept, ownPgid } = rootProcesses(deps.ps(), deps.cwds(), roots);
+  const spared = new Set([0, 1, ownPgid, ...kept.map((k) => k.pgid)]);
+  const groups = [...new Set(kill.map((p) => p.pgid))].filter((g) => !spared.has(g));
+  const signal = (sig) => {
+    for (const g of groups) deps.kill(-g, sig);
+    for (const { pid } of kill) deps.kill(pid, sig);
+  };
+  signal("SIGTERM");
+  if (kill.length > 0) deps.pause(TERM_GRACE_MS / 2);
+  for (const g of groups) deps.kill(-g, "SIGKILL");
+  for (const { pid } of kill.filter((p) => deps.alive(p.pid))) deps.kill(pid, "SIGKILL");
+  return { killed: kill.map((p) => p.pid), kept: kept.map(({ pid, name }) => ({ pid, name })) };
+}
+
+/** The line that tells the person which terminals still sit inside a root (none killed). */
+export function keptMessage(kept) {
+  if (kept.length === 0) return null;
+  const list = kept.map((k) => `${k.pid} ${k.name}`).join(", ");
+  return `left running (they have a terminal, inside a disposable root): ${list} — leave that directory; the root is being removed`;
+}
+
+/** The real process table: `ps -axo pid,pgid,sess,command` and lsof's cwd list. */
+export function nodeProcs() {
+  const read = (cmd, args) => {
+    const r = spawnSync(cmd, args, {
+      encoding: "utf8",
+      timeout: 10_000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    return r.status === 0 ? r.stdout : "";
+  };
+  return {
+    ps: () => read("/bin/ps", ["-axo", "pid=,pgid=,sess=,tty=,command="]),
+    cwds: () => {
+      // lsof -Fpn: a `p<pid>` line, then the `n<path>` of its cwd.
+      const out = {};
+      let pid = null;
+      for (const line of read("lsof", ["-nP", "-d", "cwd", "-Fpn"]).split("\n")) {
+        if (line.startsWith("p")) pid = Number(line.slice(1));
+        else if (line.startsWith("n") && pid !== null) out[pid] = line.slice(1);
+      }
+      return out;
+    },
+    kill: (pid, signal) => {
+      try {
+        process.kill(pid, signal);
+      } catch {
+        // Gone already.
+      }
+    },
+    alive: (pid) => pidAlive(pid),
+    pause: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
+  };
+}
+
+/**
+ * agy's structured failure line. agy 1.2.x changelog (binary strings): a
+ * headless turn that ends on an agent or model API failure «prints a structured
+ * `AGY_ERROR: {...}` JSON line on stderr with canonical status, HTTP or gRPC
+ * error code, retryability, and error ID … and exits with code `3`». Only the
+ * enum-shaped status and the numeric codes are reported — never its free text
+ * (`short_error` and messages can quote a request).
+ */
+export function agyErrorReason(text) {
+  const line = /^AGY_ERROR:\s*(\{.*\})\s*$/m.exec(text)?.[1];
+  if (!line) return null;
+  let data;
+  try {
+    data = JSON.parse(line);
+  } catch {
+    return "model API error (unreadable AGY_ERROR line)";
+  }
+  const facts = [...new Set(errorFacts(data))].slice(0, 4);
+  return facts.length > 0 ? `model API error: ${facts.join(", ")}` : "model API error";
+}
+
+/** The only AGY_ERROR keys whose values may be reported. */
+const ERROR_KEYS = new Set(["status", "code", "reason", "http_status"]);
+
+/**
+ * The reportable facts of an AGY_ERROR object: only leaves under a key named
+ * status, code, reason or http_status — an enum-shaped string or a number —
+ * and retryability. Any other leaf, all-caps or not, is never read out.
+ */
+function errorFacts(data) {
+  const leaves = [];
+  const walk = (value, key) => {
+    if (value && typeof value === "object") {
+      for (const [k, v] of Object.entries(value)) walk(v, k);
+    } else leaves.push([key, value]);
+  };
+  walk(data, "");
+  return leaves.map(errorFact).filter(Boolean);
+}
+
+/** One leaf's fact, or null when it may not be reported. */
+function errorFact([key, value]) {
+  if (typeof value === "boolean" && /^retry(able)?$/i.test(key))
+    return value ? "retryable" : "not retryable";
+  if (!ERROR_KEYS.has(key)) return null;
+  if (typeof value === "string" && /^[A-Z][A-Z_]{2,40}$/.test(value)) return value;
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value < 1000)
+    return `${key} ${value}`;
+  return null;
+}
+
+/** A probe waiting for (or refusing without) an interactive sign-in. */
+const NEEDS_SIGN_IN =
+  /no controlling terminal|interactive login|authorization code|visit the url|waiting for authentication|opening browser|device code|not logged in|not signed in|please (sign|log) in|login required|authentication required|no stored credentials/i;
+const REJECTED =
+  /\b401\b|\b403\b|unauthori[sz]ed|invalid (api )?key|invalid_grant|expired (token|credentials)|token (has )?expired|permission denied/i;
+const NO_MODEL = /no (large )?model|no providers configured|model .* not found|not configured/i;
+
+/**
+ * The ONE line a failed probe is reported with, from a fixed vocabulary. The
+ * captured output is matched here, in memory, and never echoed or kept.
+ */
+export function probeReason(r) {
+  if (r.error?.code === "ETIMEDOUT" || r.signal) return "timeout";
+  if (r.error?.code === "ENOENT") return "probe binary not found";
+  if (r.error) return "probe could not start";
+  const text = `${r.stdout ?? ""}\n${r.stderr ?? ""}`;
+  const apiError = agyErrorReason(text);
+  if (apiError) return apiError;
+  if (NEEDS_SIGN_IN.test(text)) return "probe needs interactive sign-in";
+  if (REJECTED.test(text)) return "credentials rejected";
+  if (NO_MODEL.test(text)) return "no provider or model configured";
+  return `probe exited ${r.status}`;
 }
 
 const exitOutcome = (r) => ({
@@ -393,9 +765,10 @@ const STEP_RUNNERS = {
         : "copy differs from the checkout",
     };
   },
-  aw: (step, { run, env, node, cliMain }) =>
-    exitOutcome(run(node, [cliMain, ...step.args], { env, cwd: step.cwd })),
-  git: (step, { run, env }) => exitOutcome(run("git", step.args, { env, cwd: step.cwd })),
+  aw: async (step, { run, env, node, cliMain }) =>
+    exitOutcome(await run(node, [cliMain, ...step.args], { env, cwd: step.cwd })),
+  git: async (step, { run, env }) =>
+    exitOutcome(await run("git", step.args, { env, cwd: step.cwd })),
   "strip-grants": (step, { fs }) => {
     const changed = fs
       .listFiles(step.dir)
@@ -418,8 +791,8 @@ const STEP_RUNNERS = {
           : `grants left in ${left.join(", ")}`,
     };
   },
-  "sources-guard": (step, { run, env, node, cliMain }) => {
-    const r = run(node, [cliMain, "sources", "--no-git"], { env, cwd: step.cwd });
+  "sources-guard": async (step, { run, env, node, cliMain }) => {
+    const r = await run(node, [cliMain, "sources", "--no-git"], { env, cwd: step.cwd });
     const outside = sourcesOutside(r.stdout, step.root, step.cwd);
     if (r.status !== 0 || outside === null) return { ok: false, detail: "cannot read the sources" };
     return {
@@ -436,11 +809,14 @@ const STEP_RUNNERS = {
   },
   credentials: (step, { fs }) => {
     const copied = step.copies.filter((c) => fs.exists(c.from));
+    // Names only (from the host's own list), for the auth check's reason line.
+    step.missing = step.copies.filter((c) => !copied.includes(c)).map((c) => basename(c.to));
     for (const c of copied) fs.copy(c.from, c.to);
     // Size+mtime of each copy, never its content: a host that rotates an OAuth
     // token during the run changes it, and `rotatedCredentials` keeps that copy.
     step.stamps = Object.fromEntries(copied.map((c) => [c.to, fs.stamp(c.to)]));
-    return { ok: true, detail: `${copied.length}/${step.copies.length} copied` };
+    const missing = step.missing.length > 0 ? `; missing: ${step.missing.join(", ")}` : "";
+    return { ok: true, detail: `${copied.length}/${step.copies.length} copied${missing}` };
   },
   // The probe runs as the pane will: same clean env, same binary.
   // The token file (0600, in a 0700 dir inside the root) and its wrapper (0700).
@@ -454,13 +830,27 @@ const STEP_RUNNERS = {
     fs.writeFile(step.wrapper, wrapperSource(step), 0o700);
     return { ok: true, detail: "wrapper written; the token file is written just before each use" };
   },
-  "auth-probe": (step, { run, env, fs, secrets = {} }) => {
-    const handoff = step.secret ? handTokenOver(fs, step.secret, secrets[step.secret.var]) : null;
-    const r = run(step.bin, step.args, { env, cwd: step.cwd });
+  // Its output is captured (never inherited, never printed): only the fixed
+  // reason `probeReason` derives from it leaves this function.
+  // A failed probe's output, redacted, may be kept for the person in a 0600 file
+  // of the 0700 transcripts dir (`keepProbeOutput(host, text)` → its path).
+  "auth-probe": async (step, { run, env, fs, secrets = {}, keepProbeOutput }) => {
+    const handoff = step.secret ? handTokenOver(fs, step.secret, secrets[step.secret.host]) : null;
+    const r = await run(step.bin, step.args, { env, cwd: step.cwd, timeout: step.timeoutMs });
     const leftover = handoff ? handoff.settle() : null;
+    const reason = r.status === 0 && !r.error ? null : probeReason(r);
+    const kept =
+      reason && keepProbeOutput
+        ? keepProbeOutput(
+            step.host ?? basename(step.bin),
+            redactSecrets(`${r.stdout ?? ""}\n${r.stderr ?? ""}`, Object.values(secrets)),
+          )
+        : null;
     return {
-      ok: r.status === 0,
-      detail: `${r.status === 0 ? "authenticated" : "does not authenticate from the disposable home"}${leftover ? `; ${leftover}` : ""}`,
+      ok: reason === null,
+      ...(reason ? { reason } : {}),
+      ...(kept ? { kept } : {}),
+      detail: `${reason === null ? "authenticated" : `NOT authenticated: ${reason}`}${leftover ? `; ${leftover}` : ""}${kept ? `; probe output (redacted): ${kept}` : ""}`,
     };
   },
 };

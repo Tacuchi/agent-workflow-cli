@@ -40,6 +40,12 @@ export interface HarnessRunVerification {
   cells: Record<RunSurface, RunCellState>;
   /** agy only: what it ran against — "gemini" (a Gemini API key) or "sign-in". */
   model_provider?: string;
+  /** agy only: which keychain its sign-in used — "real (accepted by the person)". */
+  agy_keychain?: string;
+  /** crush only: the provider it ran against ("gemini", "openai") or "own-data". */
+  crush_provider?: string;
+  /** crush only: the model a provider key selected; null with its own data. */
+  crush_model?: string | null;
 }
 
 export interface HarnessVerification {

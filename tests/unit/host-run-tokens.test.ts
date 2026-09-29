@@ -32,7 +32,7 @@ import {
   privacyViolations,
   redactSecrets,
 } from "../../scripts/host-run/extract.mjs";
-import { COVERED_HOSTS, HOSTS, TOKEN_VARS } from "../../scripts/host-run/hosts.mjs";
+import { COVERED_HOSTS, HOSTS, TOKEN_VARS, tokenSpecs } from "../../scripts/host-run/hosts.mjs";
 import {
   Cleanup,
   MARKER_FILE,
@@ -83,11 +83,16 @@ describe("host-run tokens", () => {
     return d;
   };
 
-  it("claude reads CLAUDE_CODE_OAUTH_TOKEN and agy GEMINI_API_KEY; nobody else takes one", () => {
+  it("claude reads CLAUDE_CODE_OAUTH_TOKEN, crush a provider key; agy takes none (it signs in in its pane)", () => {
     expect(HOSTS["claude-code"].token.env).toBe("CLAUDE_CODE_OAUTH_TOKEN");
-    expect(HOSTS.gemini.token.env).toBe("GEMINI_API_KEY");
-    for (const id of COVERED_HOSTS.filter((h) => h !== "claude-code" && h !== "gemini")) {
-      expect(HOSTS[id].token, id).toBeUndefined();
+    expect(tokenSpecs("gemini")).toEqual([]);
+    expect(HOSTS.gemini.signInInPane).toBe(true);
+    expect(tokenSpecs("crush").map((t: { env: string }) => t.env)).toEqual([
+      "GEMINI_API_KEY",
+      "OPENAI_API_KEY",
+    ]);
+    for (const id of COVERED_HOSTS.filter((h) => !["claude-code", "crush"].includes(h))) {
+      expect(tokenSpecs(id), id).toEqual([]);
     }
   });
 
@@ -96,9 +101,9 @@ describe("host-run tokens", () => {
       const p = plan(id);
       for (const v of TOKEN_VARS) expect(p.env, `${id} ${v}`).not.toHaveProperty(v);
       expect(JSON.stringify(p.steps), id).not.toContain(FAKE);
-      if (HOSTS[id].token) {
+      if (tokenSpecs(id).length > 0) {
         expect(p.pane.command, id).toContain(`${p.root}/bin/launch-${HOSTS[id].bin}`);
-        expect(p.pane.command, id).not.toContain(HOSTS[id].token.env);
+        for (const t of tokenSpecs(id)) expect(p.pane.command, id).not.toContain(t.env);
         const probe = p.steps.find((s: { kind: string }) => s.kind === "auth-probe");
         expect(probe.bin, id).toBe(p.secret.wrapper);
       } else {
@@ -121,7 +126,7 @@ describe("host-run tokens", () => {
     const p = plan("claude-code", root);
     mkdirSync(join(root, "bin"), { recursive: true });
     const step = p.steps.find((s: { kind: string }) => s.kind === "secret");
-    const outcome = prepareStep(step, { fs: nodeFs(), secrets: { CLAUDE_CODE_OAUTH_TOKEN: FAKE } });
+    const outcome = prepareStep(step, { fs: nodeFs(), secrets: { "claude-code": FAKE } });
     expect(outcome.ok).toBe(true);
     // Preparation writes the wrapper, never the token.
     expect(existsSync(p.secret.path)).toBe(false);
@@ -143,7 +148,7 @@ describe("host-run tokens", () => {
     expect(existsSync(join(root, "secrets"))).toBe(false);
   });
 
-  it("the auth probe gets the token file just before it runs, and the file is gone after", () => {
+  it("the auth probe gets the token file just before it runs, and the file is gone after", async () => {
     const root = temp();
     const p = plan("claude-code", root);
     const probe = p.steps.find((s: { kind: string }) => s.kind === "auth-probe");
@@ -152,11 +157,11 @@ describe("host-run tokens", () => {
       seen.push(existsSync(p.secret.path));
       return { status: 0, stdout: "", stderr: "" };
     };
-    const outcome = prepareStep(probe, {
+    const outcome = await prepareStep(probe, {
       fs: nodeFs(),
       run,
       env: p.env,
-      secrets: { CLAUDE_CODE_OAUTH_TOKEN: FAKE },
+      secrets: { "claude-code": FAKE },
     });
     // The fake probe never deletes it (a real wrapper would): the run does, and says so.
     expect(seen).toEqual([true]);
@@ -249,9 +254,10 @@ describe("host-run tokens", () => {
     }
   });
 
-  it("the agy provider switch is disclosed in effective()", () => {
-    expect(PROFILES.gemini.effective({ tokenPresent: true }).model_provider).toMatch(/Gemini API/);
-    expect(PROFILES.gemini.effective({}).model_provider).toBe("your sign-in");
+  it("agy's effective profile says it runs on your own sign-in, done in its pane", () => {
+    expect(PROFILES.gemini.effective({ tokenPresent: true }).model_provider).toMatch(
+      /your own sign-in, done inside the pane/,
+    );
   });
 
   it("an extract carrying the token is refused and the matrix never holds it", () => {
@@ -283,10 +289,15 @@ describe("host-run tokens", () => {
     expect(JSON.stringify(matrix)).not.toContain(distinctivePart(FAKE));
   });
 
-  it("agy with a key is pointed at the Gemini API, as its changelog says", () => {
-    const text = JSON.stringify(PROFILES.gemini.files({ tokenPresent: true }));
-    expect(text).toContain('"modelProvider":"gemini"');
-    expect(JSON.stringify(PROFILES.gemini.files({}))).not.toContain("modelProvider");
+  it("agy never gets a key: no modelProvider, no key variable in its env, no wrapper", () => {
+    expect(JSON.stringify(PROFILES.gemini.files({ tokenPresent: true }))).not.toContain(
+      "modelProvider",
+    );
+    const p = plan("gemini");
+    expect(p.secret).toBeNull();
+    for (const v of ["GEMINI_API_KEY", "GOOGLE_API_KEY"]) expect(p.env).not.toHaveProperty(v);
+    expect(p.pane.command).not.toMatch(/GEMINI_API_KEY|GOOGLE_API_KEY|launch-/);
+    expect(JSON.stringify(p.steps)).not.toMatch(/GEMINI_API_KEY|GOOGLE_API_KEY/);
   });
 
   it.skipIf(!existsSync(DIST))(
@@ -310,11 +321,13 @@ describe("host-run tokens", () => {
       expect(a.status, a.stderr).toBe(0);
       expect(a.stdout).not.toContain(distinctivePart(FAKE));
       expect(a.stdout).not.toContain(distinctivePart(FAKE_AGY));
-      expect(a.stdout).toContain("agy → Gemini API (modelProvider gemini), not your sign-in");
+      // A GEMINI_API_KEY in the shell is crush's: agy is told to sign in in its pane.
+      expect(a.stdout).toContain("agy → sign-in in the pane (you sign in when the run starts)");
+      expect(a.stdout).toContain("go to crush only, never to agy");
+      expect(a.stdout).not.toMatch(/auth probe: .*agy|modelProvider/);
       expect(a.stdout).toContain(
         "claude token: present (from CLAUDE_CODE_OAUTH_TOKEN; value never shown)",
       );
-      expect(a.stdout).toContain("agy Gemini API key: present");
       const digest = (out: string) => /Approval digest: ([0-9a-f]{12})/.exec(out)?.[1];
       const other = dry({
         CLAUDE_CODE_OAUTH_TOKEN: `${FAKE}-other`,
@@ -329,7 +342,7 @@ describe("host-run tokens", () => {
   );
 
   it.skipIf(!existsSync(DIST))(
-    "a token with a newline, a missing token file, or --agy-without-profile with a key: one-line refusals",
+    "a token with a newline, a missing token file, or the removed --agy-token-file: one-line refusals",
     () => {
       const dir = temp();
       mkdirSync(join(dir, "tmp"));
@@ -351,7 +364,7 @@ describe("host-run tokens", () => {
       };
       oneLine(dry([], { CLAUDE_CODE_OAUTH_TOKEN: `${FAKE}\nsecond` }), /contains a newline/);
       oneLine(dry(["--claude-token-file", join(dir, "missing")]), /no such file/);
-      oneLine(dry(["--agy-without-profile"], { GEMINI_API_KEY: FAKE_AGY }), /cannot be combined/);
+      oneLine(dry(["--agy-token-file", join(dir, "x")]), /--agy-token-file was removed/);
       const blank = dry(["--hosts", "claude-code"], { CLAUDE_CODE_OAUTH_TOKEN: "   " });
       expect(blank.status).toBe(0);
       expect(blank.stdout).toContain("claude token: absent");
@@ -408,7 +421,7 @@ describe("host-run --auth-check", () => {
     markers: ["CLAUDECODE", "HERDR_PANE_ID"],
     ancestor: () => null,
     hosts: ["claude-code", "kimi"],
-    tokens: { "claude-code": "present" },
+    tokens: { "claude-code": { label: "claude token", state: "present" } },
     ask: vi.fn(async () => AUTH_CHECK_WORD),
     log: vi.fn(),
     prepare: vi.fn(() => [

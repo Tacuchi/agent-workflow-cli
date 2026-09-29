@@ -13,16 +13,32 @@ import { HOSTS } from "./hosts.mjs";
 
 export const AUTH_CHECK_WORD = "check";
 
+/** How a host that signs in inside its pane is reported: not a failure. */
+export const IN_PANE = "sign-in in the pane (you sign in when the run starts)";
+
 /** Hosts whose probe is one model turn (they have no login-status subcommand). */
 export const PROMPT_PROBES = Object.keys(HOSTS).filter(
   (id) => HOSTS[id].probeSpendsPrompt === true,
 );
 
-/** One host's outcome from its preparation log: authenticated, or why not (a category). */
+/**
+ * One host's outcome from its preparation log: `authenticated`, or `NOT
+ * authenticated (<reason>)` with ONE reason from a fixed vocabulary — a probe's
+ * own output never reaches it (isolation.mjs `probeReason`).
+ */
 export function authOutcome(log) {
   const failed = log.find((s) => !s.ok);
   if (!failed) return "authenticated";
-  if (failed.step.startsWith("auth probe")) return "NOT authenticated (probe failed)";
+  if (failed.step.startsWith("auth probe")) {
+    const missing = log.find((s) => s.missing?.length > 0)?.missing ?? [];
+    const reason = failed.reason ?? "probe failed";
+    const kept = failed.kept ? ` — probe output (redacted): ${failed.kept}` : "";
+    // A copy the host lists but the person does not have explains an exit best.
+    if (missing.length > 0 && /^probe exited|^credentials rejected/.test(reason))
+      return `NOT authenticated (credential file missing: ${missing.join(", ")})${kept}`;
+    return `NOT authenticated (${reason})${kept}`;
+  }
+  if (failed.reason) return `NOT authenticated (${failed.reason})`;
   const category = failed.step.split(/\s+/).slice(0, 3).join(" ").replace(/:$/, "");
   return `NOT authenticated (preparation failed at: ${category})`;
 }
@@ -69,9 +85,12 @@ function announce(deps) {
       ? `These probes spend one model prompt each: ${spending.join(", ")}.`
       : "No selected probe spends a model prompt.",
   );
-  for (const [host, state] of Object.entries(deps.tokens ?? {})) {
-    if (deps.hosts.includes(host))
-      deps.log(`${HOSTS[host].token.label}: ${state} (value never shown)`);
+  for (const [host, { label, state, absent }] of Object.entries(deps.tokens ?? {})) {
+    if (!deps.hosts.includes(host)) continue;
+    deps.log(`${label}: ${state} (value never shown)`);
+    // A required token that is absent: the actionable line comes before anything runs.
+    if (state === "absent" && HOSTS[host].token?.required)
+      deps.log(`  ${host}: ${absent ?? HOSTS[host].token.absent}`);
   }
   for (const note of deps.notes ?? []) deps.log(note);
 }
@@ -80,7 +99,17 @@ function announce(deps) {
 async function probeAll(deps) {
   let failures = 0;
   for (const host of deps.hosts) {
-    const outcome = authOutcome(await deps.prepare(host));
+    const token = deps.tokens?.[host];
+    if (deps.inPane?.includes(host)) {
+      // Signs in inside its pane when the run starts: no probe, no OAuth flow here.
+      deps.log(`  ${host.padEnd(12)} ${IN_PANE}`);
+      continue;
+    }
+    // A required token that is absent: no root is prepared, no probe is spent.
+    const outcome =
+      token?.state === "absent" && HOSTS[host].token?.required
+        ? `NOT authenticated (${HOSTS[host].token.absent})`
+        : authOutcome(await deps.prepare(host));
     if (outcome !== "authenticated") failures += 1;
     deps.log(`  ${host.padEnd(12)} ${outcome}`);
   }

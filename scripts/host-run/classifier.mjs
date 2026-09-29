@@ -14,6 +14,7 @@
 // Anything that looks like a permission, and anything that does not fit, is
 // `notify`: nothing is sent, that host waits, the others go on.
 
+import { HOSTS } from "./hosts.mjs";
 import { FLOW_CONTROLS } from "./scenario.mjs";
 
 /**
@@ -41,6 +42,34 @@ export const PERMISSION_MARKERS = [
   /\ballow for session\b/i,
   /\ballow\b[^\n]{0,60}\bdeny\b/i,
 ];
+
+/**
+ * A host's own sign-in on screen (agy signs in inside its pane when the run
+ * starts; wording from agy 1.2.x binary strings: «Authentication required.
+ * Please visit the URL to log in:», «Waiting for authentication (timeout 60s)»,
+ * «Opening browser to authenticate with %s», «Enter the authorization code:»,
+ * «Select login method», «Other sign-in options», «Sign in …»):
+ * permission-class — the person signs in, the run notifies once and sends
+ * nothing. The code or URL it shows is redacted from transcripts and extracts
+ * (extract.mjs: the Google OAuth patterns, and SIGN_IN_URL).
+ */
+export const SIGN_IN_MARKERS = [
+  /\bauthorization code\b/i,
+  /\bvisit the url to log in\b/i,
+  /\bauthentication required\b/i,
+  /\bplease sign in\b/i,
+  /\bSign in\b/,
+  /\bwaiting for authentication\b/i,
+  /\bopening browser to authenticate\b/i,
+  /\bselect login method\b/i,
+  /\bother sign-in options\b/i,
+  /\bsign in with google\b/i,
+  /accounts\.google\.com\/o\/oauth2/i,
+  /\bcompleting authentication\b/i,
+];
+
+/** Hosts that sign in inside their pane (hosts.mjs `signInInPane`). */
+const SIGN_IN_HOSTS = new Set(Object.keys(HOSTS).filter((id) => HOSTS[id].signInInPane));
 
 /**
  * Text markers of a structured question for hosts whose Herdr rule cannot be
@@ -116,10 +145,15 @@ export function liveRegion(screen) {
  * screen-only host (no Herdr state: crush) draws its permission dialogs as
  * overlays anywhere on screen, so for it the WHOLE screen is the live dialog.
  */
-export function isPermissionScreen(screen, explain, { wholeScreen = false } = {}) {
+export function isPermissionScreen(screen, explain, { wholeScreen = false, host = null } = {}) {
   if (/\b(permission|approval|approve|trust|allow)\b/i.test(explainRuleText(explain))) return true;
   const region = wholeScreen ? String(screen ?? "") : liveRegion(screen);
-  return PERMISSION_MARKERS.some((re) => re.test(region));
+  // Sign-in wording only counts on the hosts that sign in inside their pane (agy):
+  // elsewhere «Sign in» is just text a host may show.
+  const markers = SIGN_IN_HOSTS.has(host)
+    ? [...PERMISSION_MARKERS, ...SIGN_IN_MARKERS]
+    : PERMISSION_MARKERS;
+  return markers.some((re) => re.test(region));
 }
 
 export function isQuestion(hostId, screen, explain) {
@@ -249,7 +283,7 @@ export function isSelected(screen, label) {
 export function classify(pane, step) {
   const { host, state, screen = "", explain = null } = pane;
   if (state === "working") return { action: "wait", reason: "the host is working" };
-  if (isPermissionScreen(screen, explain, { wholeScreen: pane.screenOnly === true })) {
+  if (isPermissionScreen(screen, explain, { wholeScreen: pane.screenOnly === true, host })) {
     return { action: "notify", reason: "permission or approval on screen: it is the person's" };
   }
   // A known boundary past the step's stop point: the step is done, and that
@@ -307,7 +341,12 @@ export function readyForInput(pane) {
   if (pane.state !== "idle" && pane.state !== "done") {
     return { ok: false, reason: `pane is '${pane.state}', not idle: nothing is typed` };
   }
-  if (isPermissionScreen(pane.screen, pane.explain, { wholeScreen: pane.screenOnly === true })) {
+  if (
+    isPermissionScreen(pane.screen, pane.explain, {
+      wholeScreen: pane.screenOnly === true,
+      host: pane.host,
+    })
+  ) {
     return { ok: false, reason: "permission or trust prompt on screen: it is the person's" };
   }
   return { ok: true };

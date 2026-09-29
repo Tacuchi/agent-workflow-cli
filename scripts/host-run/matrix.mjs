@@ -155,7 +155,11 @@ function coveredHost(host, expectedCells, run, launched, { steps, runId, date, c
       ? {
           agy_without_profile: run?.agy_without_profile === true,
           agy_model_provider: run?.agy_model_provider ?? null,
+          agy_keychain: run?.agy_keychain ?? null,
         }
+      : {}),
+    ...(host === "crush"
+      ? { crush_provider: run?.crush_provider ?? null, crush_model: run?.crush_model ?? null }
       : {}),
     cells,
   };

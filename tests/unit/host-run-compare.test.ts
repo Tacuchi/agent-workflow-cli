@@ -58,13 +58,23 @@ describe("host-run compare", () => {
   });
 
   it("structured-choice observed only non-interactively does not close", () => {
-    expect(closureFailures([sample(WORSE)])).toContain(
-      "kimi/structured-choice: only observed non-interactively (run 2026-09-15T10-00-00Z)",
+    const worse = sample(WORSE);
+    worse.hosts.crush.cells["structured-choice"].mode = "non-interactive";
+    expect(closureFailures([worse])).toContain(
+      "crush/structured-choice: only observed non-interactively (run 2026-09-15T10-00-00Z)",
     );
     // An earlier interactive observation is kept over a later non-interactive one.
-    expect(lastObservations([sample(BASE), sample(WORSE)]).kimi["structured-choice"].mode).toBe(
+    expect(lastObservations([sample(BASE), worse]).crush["structured-choice"].mode).toBe(
       "interactive",
     );
+  });
+
+  it("a host the catalog no longer covers (kimi) says nothing about closure, even from older runs", () => {
+    // The WORSE sample still has kimi covered and only observed non-interactively.
+    expect(sample(WORSE).hosts.kimi.covered).toBe(true);
+    expect(closureFailures([sample(WORSE)]).some((f) => f.startsWith("kimi/"))).toBe(false);
+    expect(lastObservations([sample(BASE), sample(WORSE)])).not.toHaveProperty("kimi");
+    expect(mergedRunBlocks([sample(BASE)])).not.toHaveProperty("kimi");
   });
 
   it("not-reached, catalog-outdated and an undeclared degradation do not close", () => {
@@ -87,15 +97,15 @@ describe("host-run compare", () => {
   it("a host left out of a later run keeps its earlier observations", () => {
     const SUBSET = "2026-09-17T10-00-00Z";
     const cells = lastObservations([sample(BASE), sample(SUBSET)]);
-    expect(cells.kimi.mcp.run_id).toBe(BASE);
+    expect(cells.opencode.mcp.run_id).toBe(BASE);
     expect(cells.codex.mcp.run_id).toBe(SUBSET);
     expect(regressions(sample(BASE), sample(SUBSET))).toEqual([
       { host: "codex", surface: "mcp", from: "works", to: "broken" },
     ]);
     const blocks = mergedRunBlocks([sample(BASE), sample(SUBSET)]);
-    expect(blocks.kimi.id).toBe(BASE);
+    expect(blocks.opencode.id).toBe(BASE);
     expect(blocks.codex.id).toBe(SUBSET);
-    expect(blocks.kimi.cells.mcp).toBe("works");
+    expect(blocks.opencode.cells.mcp).toBe("works");
   });
 
   it("closing is judged against the CURRENT catalog, and a catalog change is reported", () => {

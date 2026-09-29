@@ -13,7 +13,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SURFACES } from "./hosts.mjs";
+import { NOT_COVERED, SURFACES } from "./hosts.mjs";
 import { catalogStates, classifyCell } from "./matrix.mjs";
 
 const CHECKOUT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -62,7 +62,9 @@ export function lastObservations(matrices) {
   const cells = {};
   for (const m of [...matrices].sort(byRunId)) {
     for (const [host, entry] of Object.entries(m.hosts)) {
-      if (!entry.covered) continue;
+      // A host the catalog declares not covered NOW (kimi, excluded by the person)
+      // says nothing about closure, even where an older run covered it.
+      if (!entry.covered || host in NOT_COVERED) continue;
       cells[host] ??= {};
       keepLatest(cells[host], entry, m);
     }
@@ -172,6 +174,15 @@ export function mergedRunBlocks(matrices) {
             ),
             ...(source.hosts[host].agy_model_provider
               ? { model_provider: source.hosts[host].agy_model_provider }
+              : {}),
+            ...(source.hosts[host].agy_keychain
+              ? { agy_keychain: source.hosts[host].agy_keychain }
+              : {}),
+            ...(source.hosts[host].crush_provider
+              ? {
+                  crush_provider: source.hosts[host].crush_provider,
+                  crush_model: source.hosts[host].crush_model ?? null,
+                }
               : {}),
           },
         ];

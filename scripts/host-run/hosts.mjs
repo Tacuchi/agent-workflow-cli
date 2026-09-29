@@ -28,12 +28,15 @@ export const ALL_HOSTS = [
 ];
 
 /**
- * The spec admits only these two as not covered by the run. Anything else that
- * cannot be exercised stops the run and goes back to the person (T3.1).
+ * Hosts no run covers, each with its reason (recorded in every matrix). warp and
+ * oz cannot be driven; kimi was excluded by the person. Anything else that
+ * cannot be exercised stops the run and goes back to the person (T3.1). An
+ * excluded host keeps its entry in HOSTS and its profile, out of every run.
  */
 export const NOT_COVERED = {
   warp: "Warp ships no CLI a pane can launch: it is a desktop terminal app, so no run can drive it",
   oz: "oz is Warp's cloud agent orchestrator (a launcher shim inside Warp.app); it runs remotely and has no local interactive session to observe",
+  kimi: "subscription cancelled by the person (2026-09-29): excluded from every run until they subscribe again",
 };
 
 /**
@@ -53,7 +56,16 @@ export const HOSTS = {
     // `claude setup-token` prints a long-lived OAuth token meant for this variable
     // (claude 2.1.284 binary strings: CLAUDE_CODE_OAUTH_TOKEN; the alternatives it
     // also reads — ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN — are never used here).
-    token: { env: "CLAUDE_CODE_OAUTH_TOKEN", flag: "--claude-token-file", label: "claude token" },
+    // Required: the keychain login does not reach a disposable home, so without
+    // the token the auth check says so and spends no probe on claude.
+    token: {
+      env: "CLAUDE_CODE_OAUTH_TOKEN",
+      flag: "--claude-token-file",
+      label: "claude token",
+      required: true,
+      absent:
+        "token absent (CLAUDE_CODE_OAUTH_TOKEN not set in this shell; export it in the same terminal or use --claude-token-file)",
+    },
     // https://code.claude.com/docs/en/env-vars: `1` strips Anthropic and other
     // recognized credentials from the Bash tool, hooks and stdio MCP servers;
     // the claude process itself keeps them. Direct children only (no _DEEP).
@@ -94,12 +106,11 @@ export const HOSTS = {
   gemini: {
     probeSpendsPrompt: true,
     commandsVia: "skill",
-    // agy 1.2.11 (binary strings, its embedded changelog): «Added support for
-    // GEMINI_API_KEY, so the CLI can run against the Gemini API directly without
-    // signing in. Set modelProvider: "gemini" in settings.json, export
-    // GEMINI_API_KEY». A Gemini API key, not the person's Google sign-in; when it
-    // is given, the profile also sets modelProvider "gemini".
-    token: { env: "GEMINI_API_KEY", flag: "--agy-token-file", label: "agy Gemini API key" },
+    // No token and no key: agy runs on the person's own login, done inside its
+    // pane when the run starts (their decision, s280). No probe runs for it — an
+    // agy probe without a login opens the OAuth flow (agy 1.1.2+ reads the code
+    // from /dev/tty in print mode), which is how a code reached the terminal.
+    signInInPane: true,
     bin: "agy",
     installTarget: "gemini",
     mcpHost: "gemini",
@@ -107,9 +118,14 @@ export const HOSTS = {
     // agy reads no commands dir: the synthesized w-<cmd> skill is named in the prompt.
     command: (cmd) => `Use the w-${cmd} skill.`,
     compact: null,
-    // agy loads its token from the system keyring and falls back to a file whose
-    // path the binary does not name; only the probe can tell.
+    // Nothing is copied: agy keeps its login in the macOS login keychain (per
+    // user, not per HOME; agy strings: KeyringTokenStorage, «Keyring SaveToken
+    // timed out …, falling back to file storage»). The person accepted that the
+    // pane uses, and may overwrite, that real entry (KEYCHAIN_NOTICE).
     credentials: [],
+    keychainNotice:
+      "agy stores its login in your macOS login keychain (per user, not per HOME): the pane may reuse your existing agy login, and signing in or a token refresh may overwrite it; /logout in the pane would remove it",
+    keychainState: "real (accepted by the person)",
     keychain: true,
     // No status subcommand: one print-mode turn is the cheapest proof of login.
     authProbe: ["-p", "Reply with the single word ok.", "--print-timeout", "60s"],
@@ -147,6 +163,38 @@ export const HOSTS = {
     credentials: [".local/share/crush/crush.json"],
     keychain: false,
     authProbe: ["run", "Reply with the single word ok."],
+    // crush 0.96.1 source (internal/cmd/root.go): `useClientServer()` is true
+    // only when CRUSH_CLIENT_SERVER parses true; otherwise the app runs
+    // in-process and no detached `crush server` (startDetachedServer, Setsid)
+    // is started. Set false explicitly. CRUSH_DISABLE_PROVIDER_AUTO_UPDATE
+    // (internal/config/load.go, ParseBool) keeps the embedded Catwalk catalog,
+    // so the provider list and the model id stay fixed during a run.
+    childEnv: { CRUSH_CLIENT_SERVER: "0", CRUSH_DISABLE_PROVIDER_AUTO_UPDATE: "1" },
+    // A provider key through the same wrapper as a token, first present wins
+    // (Gemini first: free from Google AI Studio). Provider and model come from
+    // crush 0.96.1's embedded Catwalk catalog (binary strings): provider `gemini`
+    // (`"api_key": "$GEMINI_API_KEY"`, `default_small_model_id`
+    // "gemini-3-flash-preview") and `openai` (`"api_key": "$OPENAI_API_KEY"`,
+    // `default_small_model_id` "gpt-5.6-luna"). With a key, the person's own
+    // crush data (its model selection) is not copied, so it cannot override.
+    tokenChoices: [
+      {
+        env: "GEMINI_API_KEY",
+        flag: "--crush-gemini-key-file",
+        label: "crush Gemini API key",
+        provider: "gemini",
+        model: "gemini-3-flash-preview",
+        absent:
+          "no provider key: crush falls back to your own crush data; set GEMINI_API_KEY (free, Google AI Studio) or use --crush-gemini-key-file",
+      },
+      {
+        env: "OPENAI_API_KEY",
+        flag: "--crush-openai-key-file",
+        label: "crush OpenAI API key (paid)",
+        provider: "openai",
+        model: "gpt-5.6-luna",
+      },
+    ],
     modelArgs: () => [],
     exposes: { model: false, effort: false },
   },
@@ -168,7 +216,24 @@ export const HOSTS = {
   },
 };
 
-export const COVERED_HOSTS = Object.keys(HOSTS);
+/** The hosts a run launches: every HOSTS entry that is not declared not covered. */
+export const COVERED_HOSTS = Object.keys(HOSTS).filter((h) => !(h in NOT_COVERED));
+
+/**
+ * The token spec a host uses: its single `token`, or the first of its
+ * `tokenChoices` whose value is present (`present(spec)` → boolean), else the
+ * first choice. null for a host that takes none.
+ */
+export function tokenSpec(hostId, present = () => false) {
+  const host = HOSTS[hostId];
+  if (host.token) return host.token;
+  if (!host.tokenChoices) return null;
+  return host.tokenChoices.find((c) => present(c)) ?? host.tokenChoices[0];
+}
+
+/** Every token spec a host can take (flags and variables), for parsing and scrubbing. */
+export const tokenSpecs = (hostId) =>
+  HOSTS[hostId].token ? [HOSTS[hostId].token] : (HOSTS[hostId].tokenChoices ?? []);
 
 /** Every variable that carries a host token: never in any env but its own host's wrapper. */
 export const TOKEN_VARS = [
@@ -178,4 +243,5 @@ export const TOKEN_VARS = [
   "ANTHROPIC_AUTH_TOKEN",
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
+  "OPENAI_API_KEY",
 ];

@@ -35,6 +35,13 @@ const STEP_TIMEOUT_MS = 15 * 60 * 1000;
 /** A step with no observed work is done only after this long idle. */
 const QUIET_DONE_MS = 20000;
 
+/** crush's provider and model for the matrix: set by a provider key, or its own data. */
+export function crushFields(pm) {
+  if (!pm) return {};
+  if (pm === "own-data") return { crush_provider: "own-data", crush_model: null };
+  return { crush_provider: pm.provider, crush_model: pm.model };
+}
+
 /** Removes what a dead run left in the temp dir (SIGKILL cannot be trapped). */
 export function sweep(tmp, remove, log, now = Date.now()) {
   const ageOf = (path) => {
@@ -63,7 +70,7 @@ export function sweep(tmp, remove, log, now = Date.now()) {
 }
 
 /** Prepares every host; returns the plans, or null when the run must stop before panes. */
-export function prepareAll(ctx) {
+export async function prepareAll(ctx) {
   const prepared = [];
   const unauthenticated = [];
   // Every root exists before any is prepared, so each profile can deny the
@@ -74,7 +81,7 @@ export function prepareAll(ctx) {
     const root = roots[host];
     const siblings = Object.values(roots).filter((r) => r !== root);
     const plan = ctx.planFor(host, root, siblings);
-    const steps = prepareHost(plan, ctx.prepareDeps);
+    const steps = await prepareHost(plan, ctx.prepareDeps);
     for (const s of steps) ctx.log(`  [${host}] ${s.ok ? "ok  " : "FAIL"} ${s.step} — ${s.detail}`);
     const failed = steps.find((s) => !s.ok);
     if (failed?.step.startsWith("auth probe")) unauthenticated.push(host);
@@ -239,7 +246,7 @@ async function openPalette(ctx, h, before) {
   const fresh = after.screen.split("\n").filter((l) => !seen.has(l.trim()));
   return (
     fresh.some((l) => PALETTE_OPEN.test(l)) &&
-    !isPermissionScreen(after.screen, after.explain, { wholeScreen: true })
+    !isPermissionScreen(after.screen, after.explain, { wholeScreen: true, host: h.id })
   );
 }
 
@@ -421,6 +428,8 @@ function hostRunOf(ctx, h) {
     effort: h.effort,
     agy_without_profile: h.agyWithoutProfile,
     ...(h.agyModelProvider ? { agy_model_provider: h.agyModelProvider } : {}),
+    ...(h.agyKeychain ? { agy_keychain: h.agyKeychain } : {}),
+    ...crushFields(h.crushProviderModel),
     // Only the category reaches the committed matrix, never the paths found.
     ...(broken.length > 0
       ? { evidence_broken: "the workspace pointed outside the disposable root" }

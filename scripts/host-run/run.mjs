@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Maintainer tool: runs the plan-085 scenario inside the six covered hosts, each
+// Maintainer tool: runs the plan-085 scenario inside the five covered hosts, each
 // in a disposable home with the checkout's Workline, in its own Herdr pane.
 //
 // Usage:
@@ -12,7 +12,7 @@
 // answers only the scenario's fixed labels; every permission stays with the
 // person, in the pane.
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   cpSync,
@@ -39,17 +39,21 @@ import { RUNS_DIR, listRunIds, loadMatrix, mergedRunBlocks, regressions } from "
 import { privacyViolations, redactSecrets, violationCategory } from "./extract.mjs";
 import { staleBuildInputs } from "./freshness.mjs";
 import { HerdrClient, herdrArgv } from "./herdr.mjs";
-import { COVERED_HOSTS, HOSTS, NOT_COVERED, TOKEN_VARS } from "./hosts.mjs";
+import { COVERED_HOSTS, HOSTS, NOT_COVERED, TOKEN_VARS, tokenSpec, tokenSpecs } from "./hosts.mjs";
 import {
   Cleanup,
+  capturedRun,
+  capturedRunSync,
   cleanEnv,
   describeStep,
+  keptMessage,
   makeRoot,
   nodeFs,
   openPaneWithToken,
   planIsolation,
   prepareHost,
   productionDeps,
+  reapRootProcesses,
   rootTemplate,
   rotatedCredentials,
   withoutTokens,
@@ -136,6 +140,16 @@ let args;
 let steps;
 try {
   const argv = process.argv.slice(2);
+  // A host the catalog does not cover (kimi, excluded by the person) is refused by name.
+  const hostsAt = argv.indexOf("--hosts");
+  for (const h of hostsAt >= 0 ? (argv[hostsAt + 1] ?? "").split(",") : []) {
+    if (h in NOT_COVERED) throw new Error(`${h}: not covered: ${NOT_COVERED[h]}`);
+  }
+  if (argv.includes("--agy-token-file")) {
+    throw new Error(
+      "--agy-token-file was removed: agy signs in with your own login inside its pane when the run starts; a Gemini API key goes to crush only (--crush-gemini-key-file)",
+    );
+  }
   const agyWithoutProfile = argv.includes("--agy-without-profile");
   args = {
     ...parseArgs(
@@ -162,10 +176,9 @@ try {
  * value with a newline is a one-line refusal. The value itself is never
  * printed, sealed or hashed — only whether it is there.
  */
-function tokenValue(id) {
-  const t = HOSTS[id].token;
+function tokenValue(t) {
   if (!t) return null;
-  const file = args.tokenFiles[id];
+  const file = args.tokenFiles[t.flag];
   if (file && !existsSync(file)) refuse(`${t.flag}: no such file: ${file}`);
   const value = (file ? readFileSync(file, "utf8") : (process.env[t.env] ?? "")).trim();
   if (/[\r\n]/.test(value)) refuse(`${t.label} contains a newline: give one token on one line`);
@@ -177,29 +190,84 @@ function refuse(message) {
   process.exit(2);
 }
 
-const tokenPresent = (id) => (HOSTS[id].token ? tokenValue(id) !== null : null);
+/** The token spec in force for a host: crush takes the first key given (Gemini first). */
+const specOf = (id) => tokenSpec(id, (spec) => tokenValue(spec) !== null);
 
-/** The token values of the selected hosts, keyed by variable (live run or --auth-check only). */
+const tokenPresent = (id) => (specOf(id) ? tokenValue(specOf(id)) !== null : null);
+
+/**
+ * The token values of the selected hosts, keyed by HOST (live run or
+ * --auth-check only): a host's value reaches only its own host's wrapper (a
+ * GEMINI_API_KEY in the env is crush's; agy never takes one), each from
+ * its own flag, and each reaches only its own host's wrapper.
+ */
 function readTokens() {
   const out = {};
   for (const id of args.hosts) {
-    const value = tokenValue(id);
-    if (value) out[HOSTS[id].token.env] = value;
+    const value = tokenValue(specOf(id));
+    if (value) out[id] = value;
   }
   return out;
 }
 
-if (args.agyWithoutProfile && args.hosts.includes("gemini") && tokenPresent("gemini")) {
-  refuse(
-    "--agy-without-profile cannot be combined with an agy Gemini API key: the key needs the profile's modelProvider setting. Drop one of them.",
-  );
+/**
+ * A failed probe of a host whose token or key is absent: its reason line also
+ * names what would authenticate it (fixed text from hosts.mjs).
+ */
+function withAbsentHint(id, steps) {
+  const spec = specOf(id);
+  const failed = steps.find((st) => !st.ok && st.step.startsWith("auth probe"));
+  if (failed && spec?.absent && !tokenPresent(id))
+    failed.reason = `${failed.reason}; ${spec.absent}`;
+  return steps;
 }
 
-/** What agy runs against, disclosed wherever agy is: its sign-in, or the Gemini API. */
-const agyProvider = () =>
-  tokenPresent("gemini")
-    ? "agy → Gemini API (modelProvider gemini), not your sign-in"
-    : "agy → your own sign-in";
+/**
+ * Writes a failed probe's output — already redacted — to a 0600 file in the
+ * 0700 transcripts dir (`dirOf()` creates it on first use) and returns its path.
+ */
+const probeKeeper = (dirOf) => (host, text) => {
+  const path = join(dirOf(), `probe-${host}.log`);
+  writeFileSync(path, text, { mode: 0o600 });
+  chmodSync(path, 0o600);
+  return path;
+};
+
+/**
+ * Cleanup's reap (after the Herdr close hooks): ends the roots' processes and
+ * names any terminal still inside a root, which it never kills.
+ */
+function reapAndTell(roots) {
+  const message = keptMessage(reapRootProcesses(roots).kept);
+  if (message) console.error(message);
+}
+
+/**
+ * Every setup step and probe: no stdin, output captured, no controlling
+ * terminal, asynchronous (Ctrl-C reaches the run at once), group killed after.
+ */
+const hostRun = capturedRun(spawn);
+/** The live loop's short reads, with the same isolation. */
+const hostRead = capturedRunSync(spawnSync);
+
+/** What crush runs against, disclosed wherever crush is. */
+function crushProvider() {
+  const spec = specOf("crush");
+  const both = HOSTS.crush.tokenChoices.every((c) => tokenValue(c) !== null);
+  if (!tokenPresent("crush"))
+    return "crush → your own crush data (no provider key: GEMINI_API_KEY / --crush-gemini-key-file, or OPENAI_API_KEY / --crush-openai-key-file)";
+  return `crush → ${spec.provider}/${spec.model} (${spec.label}: present, value never shown)${both ? "; both keys given: Gemini (free) is used" : ""}`;
+}
+
+/**
+ * What agy runs against, disclosed wherever agy is: always the person's own
+ * login, done inside its pane when the run starts. A GEMINI_API_KEY in the env
+ * is crush's alone, and is said so.
+ */
+function agyProvider() {
+  const keySeen = ["GEMINI_API_KEY", "GOOGLE_API_KEY"].some((v) => (process.env[v] ?? "").trim());
+  return `agy → sign-in in the pane (you sign in when the run starts): no agy probe runs, the run waits for your login and sends nothing meanwhile${keySeen ? "; GEMINI_API_KEY/GOOGLE_API_KEY in this shell go to crush only, never to agy" : ""}`;
+}
 
 const { HARNESSES } = await import(join(CHECKOUT, "dist", "domain", "harnesses.js"));
 const { capabilitiesFor } = await import(
@@ -248,6 +316,7 @@ const planFor = (id, root, siblingRoots = []) =>
     effort: args.effort[id],
     deps: PROD_DEPS,
     tokenPresent: tokenPresent(id) === true,
+    token: specOf(id),
     siblingRoots,
   });
 
@@ -266,6 +335,7 @@ const effectiveCtx = (id, plan, siblingRoots) => ({
   root: plan.root,
   siblingRoots,
   tokenPresent: tokenPresent(id) === true,
+  providerModel: plan.providerModel,
 });
 
 function hostView(id) {
@@ -283,7 +353,10 @@ function hostView(id) {
     model: args.model[id] ?? null,
     effort: args.effort[id] ?? null,
     // Only whether a token is there: never its value, never a hash of it.
-    ...(HOSTS[id].token ? { token: tokenPresent(id) ? "present" : "absent" } : {}),
+    ...(specOf(id) ? { token: tokenPresent(id) ? "present" : "absent" } : {}),
+    ...(plan.providerModel ? { provider: plan.providerModel } : {}),
+    // The person's consent is part of what they approve.
+    ...(plan.signInInPane ? { sign_in: "sign-in in the pane, real keychain accepted" } : {}),
   };
 }
 
@@ -319,6 +392,11 @@ function showScenario(out) {
 }
 
 function credentialLine(id) {
+  if (HOSTS[id].signInInPane)
+    return `  credentials to copy: (none) — agy signs in inside its pane when the run starts (no probe)\n  WARNING: ${HOSTS[id].keychainNotice}`;
+  // A provider key replaces the person's own crush data: nothing is copied then.
+  if (specOf(id)?.provider && tokenPresent(id))
+    return `  credentials to copy: (none) — ${specOf(id).label} is used instead of your own data`;
   const creds = HOSTS[id].credentials.map(
     (rel) => `${join("~", rel)} ${existsSync(join(realHome, rel)) ? "(present)" : "(absent)"}`,
   );
@@ -330,16 +408,18 @@ function credentialLine(id) {
 
 /** The dry-run's token lines for a host: presence only, and where it would come from. */
 function tokenLines(id) {
-  const token = HOSTS[id].token;
-  if (!token)
+  const specs = tokenSpecs(id);
+  if (HOSTS[id].signInInPane) return [`  ${agyProvider()}`];
+  if (specs.length === 0)
     return ["  token: this host takes no token through a variable here; the auth probe decides"];
-  const state = tokenPresent(id) ? "present" : "absent";
-  const source = args.tokenFiles[id] ? `from ${token.flag}` : `from ${token.env}`;
-  const absent = state === "absent" ? " — without it the auth probe decides" : "";
-  return [
-    `  ${token.label}: ${state} (${source}; value never shown)${absent}`,
-    ...(id === "gemini" ? [`  ${agyProvider()}`] : []),
-  ];
+  const lines = specs.map((t) => {
+    const state = tokenValue(t) !== null ? "present" : "absent";
+    const source = args.tokenFiles[t.flag] ? `from ${t.flag}` : `from ${t.env}`;
+    const absent =
+      state === "absent" ? ` — ${t.absent ?? "without it the auth probe decides"}` : "";
+    return `  ${t.label}: ${state} (${source}; value never shown)${absent}`;
+  });
+  return [...lines, ...(id === "crush" ? [`  ${crushProvider()}`] : [])];
 }
 
 function showHost(out, id) {
@@ -422,7 +502,7 @@ process.exit(code);
 /** `--auth-check`: prepare each root, run its auth probe only, report, clean up. No Herdr. */
 async function runAuthCheck(authCheck) {
   const remove = (p) => rmSync(p, { recursive: true, force: true });
-  const cleanup = new Cleanup(remove);
+  const cleanup = new Cleanup(remove, undefined, reapAndTell);
   cleanup.install();
   const { sweep } = await import("./live.mjs");
   // Every root exists before any is prepared, so each profile denies the others.
@@ -442,7 +522,9 @@ async function runAuthCheck(authCheck) {
     return keptDir;
   };
   cleanup.addHook(() => keepRotatedCredentials(planned, keptIn));
-  const run = (cmd, argv, { env, cwd }) => sh(cmd, argv, { env, cwd, timeout: 180000 });
+  const secrets = readTokens();
+  // Every line to the terminal is redacted too (the probes' output never gets here).
+  const log = (m) => console.log(redactSecrets(m, Object.values(secrets)));
   return authCheck({
     stdinIsTTY: process.stdin.isTTY === true,
     stdoutIsTTY: process.stdout.isTTY === true,
@@ -450,18 +532,34 @@ async function runAuthCheck(authCheck) {
     markers: agentMarkers(HARNESSES),
     ancestor: () => agentAncestor(processChain(process.ppid, psInfo)),
     hosts: args.hosts,
-    notes: args.hosts.includes("gemini") ? [agyProvider()] : [],
+    notes: [
+      ...(args.hosts.includes("gemini")
+        ? [agyProvider(), `WARNING: ${HOSTS.gemini.keychainNotice}`]
+        : []),
+      ...(args.hosts.includes("crush") ? [crushProvider()] : []),
+    ],
     beforePrepare: makeRoots,
+    inPane: args.hosts.filter((id) => HOSTS[id].signInInPane),
     tokens: Object.fromEntries(
       args.hosts
-        .filter((id) => HOSTS[id].token)
-        .map((id) => [id, tokenPresent(id) ? "present" : "absent"]),
+        .filter((id) => specOf(id))
+        .map((id) => [
+          id,
+          { label: specOf(id).label, state: tokenPresent(id) ? "present" : "absent" },
+        ]),
     ),
     ask: askLine,
-    log: (m) => console.log(m),
-    prepare: (id) => {
+    log,
+    prepare: async (id) => {
       if (hostBins[id] === null)
-        return [{ step: "resolve the host binary", ok: false, detail: "not found" }];
+        return [
+          {
+            step: "resolve the host binary",
+            ok: false,
+            detail: "not found",
+            reason: "host binary not found",
+          },
+        ];
       const root = roots[id];
       const plan = planFor(
         id,
@@ -469,13 +567,15 @@ async function runAuthCheck(authCheck) {
         Object.values(roots).filter((r) => r !== root),
       );
       planned.push(plan);
-      return prepareHost(plan, {
+      const steps = await prepareHost(plan, {
         fs: nodeFs(),
-        run,
+        run: hostRun,
         cliMain: CLI_MAIN,
         node,
-        secrets: readTokens(),
+        secrets,
+        keepProbeOutput: probeKeeper(keptIn),
       });
+      return withAbsentHint(id, steps);
     },
     finish: () => cleanup.run(),
   });
@@ -503,9 +603,20 @@ function foreignMcpNames() {
 }
 
 async function openWithToken(herdr, plan, tokens) {
-  const opened = await openPaneWithToken(nodeFs(), herdr, plan, tokens[plan.secret?.var]);
+  const opened = await openPaneWithToken(nodeFs(), herdr, plan, tokens[plan.host]);
   if (opened.notice) console.log(`[${plan.host}] ${opened.notice}`);
   return opened.pane;
+}
+
+/** What the matrix records per host about how it ran: agy's sign-in and keychain, crush's provider. */
+function hostRecords(plan) {
+  const agy = plan.host === "gemini";
+  return {
+    agyWithoutProfile: agy && args.agyWithoutProfile,
+    agyModelProvider: agy ? "sign-in-in-pane" : null,
+    agyKeychain: HOSTS[plan.host].keychainState ?? null,
+    crushProviderModel: plan.host === "crush" ? (plan.providerModel ?? "own-data") : null,
+  };
 }
 
 async function openHosts(herdr, plans, cleanup, tokens) {
@@ -514,7 +625,11 @@ async function openHosts(herdr, plans, cleanup, tokens) {
     const opened = await openWithToken(herdr, plan, tokens);
     cleanup.addHook(() => herdr.close(opened.workspace));
     const out =
-      sh(hostBins[plan.host], ["--version"], { env: plan.env, cwd: plan.workspace }).stdout ?? "";
+      hostRead(hostBins[plan.host], ["--version"], {
+        env: plan.env,
+        cwd: plan.workspace,
+        timeout: 30000,
+      }).stdout ?? "";
     const exposes = HOSTS[plan.host].exposes;
     hosts.push({
       id: plan.host,
@@ -527,11 +642,9 @@ async function openHosts(herdr, plans, cleanup, tokens) {
       nodeBin: plan.node,
       cliMain: plan.cliMain,
       version: /\d+\.\d+[\w.\-+]*/.exec(out)?.[0] ?? null,
-      model: exposes.model ? (args.model[plan.host] ?? null) : null,
+      model: exposes.model ? (plan.model ?? null) : null,
       effort: exposes.effort ? (args.effort[plan.host] ?? null) : null,
-      agyWithoutProfile: plan.host === "gemini" && args.agyWithoutProfile,
-      agyModelProvider:
-        plan.host === "gemini" ? (tokenPresent("gemini") ? "gemini" : "sign-in") : null,
+      ...hostRecords(plan),
       phase: "send",
       stepIndex: 0,
       evidence: {},
@@ -567,7 +680,7 @@ function liveContext(herdr, transcriptsDir, live, secretValues = []) {
         root: h.root,
         workspace: h.workspace,
         home: h.home,
-        sourcesStdout: sh(h.nodeBin, [h.cliMain, "sources", "--no-git"], {
+        sourcesStdout: hostRead(h.nodeBin, [h.cliMain, "sources", "--no-git"], {
           env: h.env,
           cwd: h.workspace,
         }).stdout,
@@ -577,7 +690,7 @@ function liveContext(herdr, transcriptsDir, live, secretValues = []) {
       }),
     readHostMemory: (h) => {
       const argv = [h.cliMain, "host-memory", "--json", "--host", HOSTS[h.id].installTarget];
-      const r = sh(h.nodeBin, argv, { env: h.env, cwd: h.workspace });
+      const r = hostRead(h.nodeBin, argv, { env: h.env, cwd: h.workspace });
       try {
         return JSON.parse(r.stdout);
       } catch {
@@ -650,17 +763,16 @@ async function startLive() {
   // every privacy filter as forbidden strings.
   const tokens = readTokens();
   const remove = (p) => rmSync(p, { recursive: true, force: true });
-  const cleanup = new Cleanup(remove);
+  const cleanup = new Cleanup(remove, undefined, reapAndTell);
   cleanup.install();
   live.sweep(TMP_ROOT, remove, console.log);
-  const run = (cmd, argv, { env, cwd }) => sh(cmd, argv, { env, cwd, timeout: 180000 });
   // Kept on purpose after the run: the full transcript is the person's, outside the repo.
   const transcriptsDir = mkdtempSync(join(TMP_ROOT, `aw-host-transcripts-${runId}-`));
   // Registered BEFORE preparing: an auth probe can already rotate a token, and a
   // failure or a signal during preparation must not lose the rotated copy.
   const planned = [];
   cleanup.addHook(() => keepRotatedCredentials(planned, transcriptsDir));
-  const plans = live.prepareAll({
+  const plans = await live.prepareAll({
     hosts: args.hosts,
     makeRoot: (id) => makeRoot(rootFs, TMP_ROOT, runId, id),
     cleanup,
@@ -669,8 +781,15 @@ async function startLive() {
       planned.push(plan);
       return plan;
     },
-    prepareDeps: { fs: nodeFs(), run, cliMain: CLI_MAIN, node, secrets: tokens },
-    log: console.log,
+    prepareDeps: {
+      fs: nodeFs(),
+      run: hostRun,
+      cliMain: CLI_MAIN,
+      node,
+      secrets: tokens,
+      keepProbeOutput: probeKeeper(() => transcriptsDir),
+    },
+    log: (m) => console.log(redactSecrets(m, Object.values(tokens))),
   });
   if (plans === null) {
     cleanup.run();

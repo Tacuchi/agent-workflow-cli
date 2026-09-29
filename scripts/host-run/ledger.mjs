@@ -47,6 +47,12 @@ export interface HarnessRunVerification {
   cells: Record<RunSurface, RunCellState>;
   /** agy only: what it ran against — "gemini" (a Gemini API key) or "sign-in". */
   model_provider?: string;
+  /** agy only: which keychain its sign-in used — "real (accepted by the person)". */
+  agy_keychain?: string;
+  /** crush only: the provider it ran against ("gemini", "openai") or "own-data". */
+  crush_provider?: string;
+  /** crush only: the model a provider key selected; null with its own data. */
+  crush_model?: string | null;
 }
 
 export interface HarnessVerification {
@@ -83,6 +89,13 @@ function renderRun(run) {
     cells,
     "      },",
     ...(run.model_provider ? [`      model_provider: ${str(run.model_provider)},`] : []),
+    ...(run.agy_keychain ? [`      agy_keychain: ${str(run.agy_keychain)},`] : []),
+    ...(run.crush_provider
+      ? [
+          `      crush_provider: ${str(run.crush_provider)},`,
+          `      crush_model: ${str(run.crush_model ?? null)},`,
+        ]
+      : []),
     "    },",
   ].join("\n");
 }
@@ -160,7 +173,17 @@ export function ledgerRunDrift(ledger, blocks) {
   for (const host of hosts) {
     const a = ledger[host]?.run ?? null;
     const b = blocks[host] ?? null;
-    for (const field of ["id", "at", "version", "cli", "cells", "model_provider"]) {
+    for (const field of [
+      "id",
+      "at",
+      "version",
+      "cli",
+      "cells",
+      "model_provider",
+      "agy_keychain",
+      "crush_provider",
+      "crush_model",
+    ]) {
       if (JSON.stringify(a?.[field] ?? null) !== JSON.stringify(b?.[field] ?? null)) {
         drift.push({ host, field, ledger: a?.[field] ?? null, matrix: b?.[field] ?? null });
       }

@@ -72,7 +72,7 @@ export const STABLE_READS = 3;
  */
 export function screenState(hostId, screen, previous = []) {
   // No Herdr state to lean on: a permission overlay anywhere on screen blocks.
-  if (isPermissionScreen(screen, null, { wholeScreen: true })) return "blocked";
+  if (isPermissionScreen(screen, null, { wholeScreen: true, host: hostId })) return "blocked";
   if ((QUESTION_MARKERS[hostId] ?? []).some((re) => re.test(screen))) return "blocked";
   const last = previous.at(-1);
   if (last !== undefined && last !== screen) return "working";

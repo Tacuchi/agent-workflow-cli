@@ -21,7 +21,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { staleBuildInputs } from "../../scripts/host-run/freshness.mjs";
-import { COVERED_HOSTS } from "../../scripts/host-run/hosts.mjs";
+import { COVERED_HOSTS, HOSTS } from "../../scripts/host-run/hosts.mjs";
 import {
   Cleanup,
   applyProfileFile,
@@ -86,8 +86,8 @@ describe("host-run permission profiles", () => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
   });
 
-  it("there is one profile per covered host", () => {
-    expect(Object.keys(PROFILES).sort()).toEqual([...COVERED_HOSTS].sort());
+  it("there is one profile per covered host, and kimi's stays while it is excluded", () => {
+    expect(Object.keys(PROFILES).sort()).toEqual([...COVERED_HOSTS, "kimi"].sort());
   });
 
   it("the AC-04 minimum is the spec's list", () => {
@@ -354,8 +354,9 @@ describe("host-run isolation", () => {
   it("the pane runs env -i with the absolute host binary, its profile args and model/effort", () => {
     const cmd = plan("gemini").pane.command;
     expect(cmd.startsWith("env -i HOME=")).toBe(true);
-    // agy takes its key through its wrapper, so the pane launches the wrapper.
-    expect(cmd).toContain(` ${root}/bin/launch-gemini --model m1 --effort high`);
+    // agy takes no token (it signs in inside its pane): the pane launches agy itself.
+    expect(cmd).toContain(" /opt/bin/gemini --model m1 --effort high");
+    expect(cmd).not.toContain("launch-");
     expect(cmd).not.toContain("accept-edits");
     expect(plan("codex").pane.command).toContain(
       "/opt/bin/codex -m m1 -c model_reasoning_effort=high",
@@ -378,7 +379,9 @@ describe("host-run isolation", () => {
         ...p.steps.filter((s) => "cwd" in s).map((s) => (s as { cwd: string }).cwd),
       ];
       for (const t of targets) expect(t.startsWith(`${root}/`), `${host}: ${t}`).toBe(true);
-      expect(p.steps.map((s) => s.kind)).toContain("auth-probe");
+      // Every host but agy (which signs in inside its pane) has its auth probe.
+      if (HOSTS[host].signInInPane) expect(p.steps.map((s) => s.kind)).not.toContain("auth-probe");
+      else expect(p.steps.map((s) => s.kind)).toContain("auth-probe");
     }
   });
 
@@ -399,7 +402,7 @@ describe("host-run isolation", () => {
     expect(shim).toContain(`exec ${root}/bin/node ${root}/cli/dist/cli/main.js`);
   });
 
-  it("prepareHost writes only through the injected fs, under the root, and stops at the first failure", () => {
+  it("prepareHost writes only through the injected fs, under the root, and stops at the first failure", async () => {
     const writes: string[] = [];
     const fs = {
       mkdir: (p: string) => writes.push(p),
@@ -420,7 +423,7 @@ describe("host-run isolation", () => {
       calls.push(`${cmd} ${args.join(" ")}`);
       return { status: args.includes("setup") ? 1 : 0, stdout: "", stderr: "" };
     };
-    const log = prepareHost(plan("opencode"), {
+    const log = await prepareHost(plan("opencode"), {
       fs,
       run,
       cliMain: "/checkout/dist/cli/main.js",
@@ -431,7 +434,7 @@ describe("host-run isolation", () => {
     for (const w of writes) expect(w.startsWith(`${root}/`), w).toBe(true);
   });
 
-  it("a copied credential that changed during the run is reported, never copied back", () => {
+  it("a copied credential that changed during the run is reported, never copied back", async () => {
     const p = plan("codex");
     const stamps: Record<string, string> = {};
     const writes: string[] = [];
@@ -454,7 +457,7 @@ describe("host-run isolation", () => {
       stamp: (path: string) => stamps[path] ?? "missing",
     };
     const run = () => ({ status: 0, stdout: "", stderr: "" });
-    prepareHost(p, { fs, run, cliMain: "/checkout/dist/cli/main.js", node: "node" });
+    await prepareHost(p, { fs, run, cliMain: "/checkout/dist/cli/main.js", node: "node" });
     expect(rotatedCredentials(p, fs.stamp)).toEqual([]);
     stamps[`${root}/home/.codex/auth.json`] = "12:2";
     expect(rotatedCredentials(p, fs.stamp)).toEqual([

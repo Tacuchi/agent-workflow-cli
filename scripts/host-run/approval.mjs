@@ -7,6 +7,7 @@
 // and pane commands shown.
 
 import { createHash } from "node:crypto";
+import { HOSTS, tokenSpecs } from "./hosts.mjs";
 
 /**
  * Markers of a process running INSIDE an agent host. The catalog's `envMarkers`
@@ -147,6 +148,9 @@ export function parseArgs(argv, hostIds) {
   return out;
 }
 
+/** Every token/key file flag the hosts take (hosts.mjs). */
+const TOKEN_FLAGS = Object.keys(HOSTS).flatMap((id) => tokenSpecs(id).map((t) => t.flag));
+
 const commaList = (value) => value.split(",").filter(Boolean);
 
 function hostValue(out, value, hostIds, flag) {
@@ -169,15 +173,17 @@ const VALUE_FLAGS = {
     out.hosts = list;
   },
   // A repeat of some steps only (F4): the matrix keeps the last observation per cell.
-  // A file holding a host's token: read at launch, never printed or sealed.
-  "--claude-token-file": (out, value) => {
-    if (!value) throw new Error("--claude-token-file expects a path");
-    out.tokenFiles["claude-code"] = value;
-  },
-  "--agy-token-file": (out, value) => {
-    if (!value) throw new Error("--agy-token-file expects a path");
-    out.tokenFiles.gemini = value;
-  },
+  // A file holding a host's token or provider key, keyed by its flag: read at
+  // launch, never printed or sealed.
+  ...Object.fromEntries(
+    TOKEN_FLAGS.map((flag) => [
+      flag,
+      (out, value) => {
+        if (!value) throw new Error(`${flag} expects a path`);
+        out.tokenFiles[flag] = value;
+      },
+    ]),
+  ),
   "--steps": (out, value) => {
     out.steps = commaList(value);
     if (out.steps.length === 0) throw new Error("--steps expects a comma list of surfaces");

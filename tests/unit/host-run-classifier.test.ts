@@ -685,19 +685,19 @@ describe("host-run live — evidence", () => {
     });
     const { matrix, extracts } = evidenceOf(ctx, [
       host("codex", "tools: execute_sql, search_objects (ask person@example.com)"),
-      host("kimi", "tools: execute_sql, search_objects; also qtc-prod"),
+      host("crush", "tools: execute_sql, search_objects; also qtc-prod"),
       host("opencode", "tools: execute_sql, search_objects"),
     ]);
     expect(matrix.hosts.codex.cells.mcp.extract_refused).toContain("contains an email address");
     expect(matrix.hosts.codex.cells.mcp).not.toHaveProperty("extract");
-    expect(matrix.hosts.kimi.cells.mcp.extract_refused).toContain(
+    expect(matrix.hosts.crush.cells.mcp.extract_refused).toContain(
       "names an MCP outside the scenario",
     );
     // Only the category reaches matrix.json, never the foreign name.
     expect(JSON.stringify(matrix)).not.toContain("qtc-prod");
     expect(extracts.map((e) => e.path)).toEqual(["extracts/opencode/mcp.json"]);
     expect(matrix.hosts.opencode.cells.mcp.state).toBe("works");
-    expect(matrix.hosts.crush.cells.mcp.state).toBe("not-run");
+    expect(matrix.hosts.kimi.cells.mcp.state).toBe("not-covered");
   });
 });
 

@@ -57,6 +57,18 @@ function guardList(files, name) {
 
 const allowedTools = [`mcp_${PROBE_MCP.name}_execute_sql`, `mcp_${PROBE_MCP.name}_search_objects`];
 
+/** The variable each provider's key comes from (crush's catalog: `"api_key": "$VAR"`). */
+const KEY_VARS = { gemini: "GEMINI_API_KEY", openai: "OPENAI_API_KEY" };
+
+/** The crush.json part that selects a provider and model; the key stays `$VAR`. */
+export function providerConfig({ provider, model }) {
+  const selected = { provider, model };
+  return {
+    providers: { [provider]: { api_key: `$${KEY_VARS[provider]}` } },
+    models: { large: selected, small: selected },
+  };
+}
+
 export default {
   host: "crush",
   allowsEdit: true,
@@ -66,13 +78,20 @@ export default {
   limitations: [
     "every bash call, read and edit asks you in the pane (crush's tools are not path-scoped)",
     "reads cannot be path-scoped here: this host may read the other hosts' disposable roots (their copied credentials) unasked; a token file there lives only milliseconds, between its write and its wrapper's rm -f before exec",
+    "the provider key is in crush's env: its own children (the bash tool, hooks, stdio MCP servers) inherit it",
+    "CRUSH_CLIENT_SERVER=0 keeps crush in-process (no detached server) and CRUSH_DISABLE_PROVIDER_AUTO_UPDATE=1 keeps its embedded catalog during the run",
   ],
-  files: ({ home, node }) => [
+  // With a provider key (crush 0.96.1 docs in the binary, «crushrc ↔ crush.json
+  // mapping»): `models.large`/`models.small` = {provider, model}, and the
+  // provider's `api_key` as `$VAR`, which crush expands from its env at load.
+  // The key itself is only in the env, through the wrapper; never in a file.
+  files: ({ home, node, providerModel = null }) => [
     { path: GUARD_PATH, kind: "text", mode: 0o700, value: guardSource() },
     {
       path: ".config/crush/crush.json",
       kind: "json",
       value: {
+        ...(providerModel ? providerConfig(providerModel) : {}),
         permissions: { allowed_tools: allowedTools },
         hooks: {
           PreToolUse: [
@@ -96,7 +115,10 @@ export default {
       ...(/process\.stdout|console\.|\bdecision\b/.test(source) ? ["bash"] : []),
     ];
   },
-  effective: () => ({
+  effective: ({ providerModel = null } = {}) => ({
+    provider: providerModel
+      ? `${providerModel.provider}/${providerModel.model} (key from the wrapper's env, value never shown)`
+      : "the person's own crush data (copied)",
     allowed_tools: allowedTools,
     guard_deny: denials.map((d) => `${d.category} ${d.rule}`),
   }),
