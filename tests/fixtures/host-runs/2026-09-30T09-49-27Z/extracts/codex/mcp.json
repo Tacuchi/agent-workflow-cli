@@ -1,0 +1,15 @@
+{
+  "host": "codex",
+  "surface": "mcp",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "works",
+  "expected": "native",
+  "observed": "works",
+  "mode": "interactive",
+  "declared_by_doctor": false,
+  "evidence": {
+    "tools_listed": true,
+    "receipt": false
+  },
+  "fragment": "  Esta elección previa es obligatoria según <home>/.codex/\n  skills/w-quick/SKILL.md: “Size gate BEFORE any session” y “ask first with these verbatim options”. Aplica porque el pedido reúne varios de sus criterios de\n  tamaño.\n\n  04:51\n\n› List the tools the MCP server 'host-run-probe' exposes, by name. Do not call any of them.\n\n• I’ll check the available tool names without calling any host-run-probe tools.\n\n• • execute_sql\n  • search_objects\n\n  04:52\n                                                                                                             Tip: Use /keymap to configure keyboard shortcuts.\n\n› Ask Codex to do anything\n\n  GPT-6-Astra default · <workspace> · Run w-doctor\n  ? for shortcuts"
+}

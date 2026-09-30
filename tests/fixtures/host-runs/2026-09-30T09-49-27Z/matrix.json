@@ -1,0 +1,563 @@
+{
+  "schema": 1,
+  "run_id": "2026-09-30T09-49-27Z",
+  "date": "2026-09-30",
+  "partial": false,
+  "cli": {
+    "version": "28.0.0",
+    "revision": "7ef6aae",
+    "src_sha256": "423a1cbc1b25cbc126ab0996707dc4a33488db93bb3ef4006b2b5c91cb911582",
+    "tree_sha256": "5605397ee137968aac3048e67f0f95b7dbf81ba46bffde975b430b011e0bd136",
+    "deps_sha256": "31f919e81f632fd8dbf12eedddd987be59b98810f804bc9af0e45a8fa91ceb87"
+  },
+  "scenario_digest": "783b6ed317d2",
+  "hosts": {
+    "claude-code": {
+      "covered": true,
+      "launched": true,
+      "version": "2.1.285",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "2.1.285",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/claude-code/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "2.1.285",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/claude-code/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "2.1.285",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/claude-code/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "2.1.285",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/claude-code/mcp.json"
+        },
+        "host-memory": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "2.1.285",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/claude-code/host-memory.json"
+        },
+        "compaction": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "2.1.285",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/claude-code/compaction.json"
+        }
+      }
+    },
+    "codex": {
+      "covered": true,
+      "launched": true,
+      "version": "0.157.1",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "observed": "fails",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "relay",
+          "extract": "extracts/codex/commands.json"
+        },
+        "structured-choice": {
+          "expected": "degraded",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "relay",
+          "not_reached_reason": "the step was never sent",
+          "extract": "extracts/codex/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "fails",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "relay",
+          "extract": "extracts/codex/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "works",
+          "state": "works",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/mcp.json"
+        },
+        "host-memory": {
+          "expected": "degraded",
+          "observed": "fails",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "relay",
+          "extract": "extracts/codex/host-memory.json"
+        },
+        "compaction": {
+          "expected": "degraded",
+          "observed": "fails",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "relay",
+          "extract": "extracts/codex/compaction.json"
+        }
+      }
+    },
+    "oz": {
+      "covered": false,
+      "reason": "oz is Warp's cloud agent orchestrator (a launcher shim inside Warp.app); it runs remotely and has no local interactive session to observe",
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        }
+      }
+    },
+    "warp": {
+      "covered": false,
+      "reason": "Warp ships no CLI a pane can launch: it is a desktop terminal app, so no run can drive it",
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        }
+      }
+    },
+    "gemini": {
+      "covered": true,
+      "launched": true,
+      "version": "1.2.13",
+      "model": null,
+      "effort": null,
+      "agy_without_profile": false,
+      "agy_model_provider": "sign-in-in-pane",
+      "agy_keychain": "real (accepted by the person)",
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "observed": "fails",
+          "state": "broken",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.2.13",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/gemini/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.2.13",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "not_reached_reason": "the step was never sent",
+          "extract_refused": [
+            "contains the user name",
+            "contains an email address"
+          ]
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "fails",
+          "state": "degraded-undeclared",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.2.13",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "cli",
+          "extract": "extracts/gemini/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "fails",
+          "state": "broken",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.2.13",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "extract_refused": [
+            "contains an email address"
+          ]
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "observed": "fails",
+          "state": "degraded-undeclared",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.2.13",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "cli",
+          "extract": "extracts/gemini/host-memory.json"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "observed": "fails",
+          "state": "degraded-undeclared",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.2.13",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": null,
+          "effort": null,
+          "declared_source": "cli",
+          "extract": "extracts/gemini/compaction.json"
+        }
+      }
+    },
+    "opencode": {
+      "covered": true,
+      "launched": true,
+      "version": "1.18.30",
+      "model": "openai/gpt-6-astra",
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "observed": "fails",
+          "state": "broken",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": "openai/gpt-6-astra",
+          "effort": null,
+          "extract": "extracts/opencode/commands.json"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": "openai/gpt-6-astra",
+          "effort": null,
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/opencode/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": "openai/gpt-6-astra",
+          "effort": null,
+          "declared_source": "cli",
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/opencode/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": "openai/gpt-6-astra",
+          "effort": null,
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/opencode/mcp.json"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": "openai/gpt-6-astra",
+          "effort": null,
+          "declared_source": "cli",
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/opencode/host-memory.json"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "observed": "not-reached",
+          "state": "not-reached",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-30T09-49-27Z",
+          "date": "2026-09-30",
+          "host_version": "1.18.30",
+          "cli_version": "28.0.0",
+          "cli_revision": "7ef6aae",
+          "model": "openai/gpt-6-astra",
+          "effort": null,
+          "declared_source": "cli",
+          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
+          "extract": "extracts/opencode/compaction.json"
+        }
+      }
+    },
+    "crush": {
+      "covered": false,
+      "reason": "provider timeout in the auth probe (3 attempts, 2026-09-30); left out by the person to limit cost",
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        }
+      }
+    },
+    "kimi": {
+      "covered": false,
+      "reason": "subscription cancelled by the person (2026-09-29): excluded from every run until they subscribe again",
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "native",
+          "state": "not-covered"
+        }
+      }
+    }
+  }
+}

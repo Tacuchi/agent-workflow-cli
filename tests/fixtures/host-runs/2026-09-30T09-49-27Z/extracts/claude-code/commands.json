@@ -1,0 +1,14 @@
+{
+  "host": "claude-code",
+  "surface": "commands",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "works",
+  "expected": "native",
+  "observed": "works",
+  "mode": "interactive",
+  "declared_by_doctor": false,
+  "evidence": {
+    "ran": true
+  },
+  "fragment": "cps/workspace:host-run-probe — El host no levantará este MCP como Workline lo dejó configurado. Registra la entrada MCP host-run-probe (workspace) en .mcp.json. Efecto: mutate_overwrite.\n  - Compactar — Compacta el contexto y continúa luego, sin reparar nada.\n  - Cerrar — Termina el doctor sin reparar nada.\n\n  Respondé con el id del hallazgo para sellar el lote con prepare y mostrarte la vista previa y su digest, o con Compactar o Cerrar. También podés responder Aceptar recomendaciones. Hasta que respondas, no escribo nada.\n\n✻ Baked for 12s · done 4:50 AM\n\n───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n❯\n───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n  ⏸ manual mode on · ? for shortcuts · ← for agents"
+}

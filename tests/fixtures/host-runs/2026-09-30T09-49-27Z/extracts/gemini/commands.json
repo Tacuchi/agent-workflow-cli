@@ -1,0 +1,14 @@
+{
+  "host": "gemini",
+  "surface": "commands",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "broken",
+  "expected": "native",
+  "observed": "fails",
+  "mode": "interactive",
+  "declared_by_doctor": false,
+  "evidence": {
+    "ran": false
+  },
+  "fragment": "AI coding agents are known to have certain security risks, including autonomous code execution, data exfiltration, prompt injection and supply chain risks.\nEnsure that you monitor and verify all actions taken by the agent.\n\n---------------------------------------------------------------------------------------------------------------------------------------------------------------\n\n  > [x] Yes, I agree to help improve Antigravity CLI by allowing\n      Google to collect and use my Interactions data,\n      subject to the Google Antigravity CLI Terms of Service\n      and Google Privacy Policy. I understand I can\n      choose to opt out later whenever I want via my\n      settings.\n\n      Links:\n      - Terms of Service: https://antigravity.google/terms\n      - Privacy Policy: https://policies.google.com/privacy\n\n    [Previous]      [Done]\n\n  ↑/↓ Navigate · enter Toggle\n                                                                                                                                        Gemini 3.8 Flash · high"
+}

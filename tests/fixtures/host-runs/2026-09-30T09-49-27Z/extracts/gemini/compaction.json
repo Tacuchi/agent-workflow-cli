@@ -1,0 +1,16 @@
+{
+  "host": "gemini",
+  "surface": "compaction",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "degraded-undeclared",
+  "expected": "unsupported",
+  "observed": "fails",
+  "mode": "interactive",
+  "declared_by_doctor": false,
+  "evidence": {
+    "pre_compact": false,
+    "post_compact": false,
+    "checkpoint": false
+  },
+  "fragment": "ind . -name \"*recall*\")\n● Bash(echo \"PATH=$PATH\" && which -a w-recall 2>&1)\n● Bash(type -a w 2>&1) (ctrl+o to expand)\n\n▸ Thought for 4s, 632 tokens\n  The permission denial likely stems from an attempt to execute an unsandboxed command or access a parent directory. The specific error message points to...\n\n● Bash(compgen -c | grep \"^w\")\n● Bash(print -l ${(k)commands} | grep -E \"(host|probe|recall|workflow|^w-)\") (ctrl+o to expand)\n\nCommand\n  ⎿  User declined the tool call\n\n────────────────────────────────────────────────────────────\n> Use the w-resume skill.\n⣷  First task is to identify the available tools. The subsequent request specifies a particular action against a specific server. The SQL execution needs t...\n──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n>\n──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\nesc to cancel                                                                                                                          Gemini 3.8 Flash · high"
+}

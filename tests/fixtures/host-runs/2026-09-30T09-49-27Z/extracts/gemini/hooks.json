@@ -1,0 +1,20 @@
+{
+  "host": "gemini",
+  "surface": "hooks",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "degraded-undeclared",
+  "expected": "degraded",
+  "observed": "fails",
+  "mode": "interactive",
+  "declared_by_doctor": false,
+  "evidence": {
+    "lines": {
+      "SessionStart": false,
+      "PreToolUse": false,
+      "PreCompact": false,
+      "PostCompact": false
+    },
+    "binaries": {}
+  },
+  "fragment": "Bash(find / -name \"*mcp*\" 2>/dev/null | grep -v \"/proc\" | grep -v \"/sys\" | head -n 50) (ctrl+o to expand)\n\nCommand\n  ⎿  User declined the tool call\n\n────────────────────────────────────────────────────────────\n> Call the execute_sql tool of the MCP server 'host-run-probe' once with exactly this statement: DELETE FROM host_run_probe WHERE id = 1. Report the result\n  and do not retry.\n\n▸ Thought for 5s, 624 tokens\n  The current instruction specifically requests executing a SQL statement, a direct continuation from the prior request. It involves a database deletion op...\n\n● Read(~/.gemini/antigravity-cli/log/cli-20260930_044955.log)\n● Bash(ls -la)\n● Bash(ls -la .workflow) (ctrl+o to expand)\n⣟  Running command...\n───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\n>\n───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\nesc to cancel                                                                                                                           Gemini 3.8 Flash · high"
+}

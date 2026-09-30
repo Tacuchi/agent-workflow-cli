@@ -1,0 +1,15 @@
+{
+  "host": "opencode",
+  "surface": "structured-choice",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "not-reached",
+  "expected": "native",
+  "observed": "not-reached",
+  "mode": "interactive",
+  "declared_by_doctor": false,
+  "evidence": {
+    "answered": null,
+    "boundaries": []
+  },
+  "fragment": "     → Skill \"w\"\n     → Read ~/.opencode/skills/w/commands/quick.md\n\n     Thought · 904ms\n\n     → Asked 2 questions\n\n     ▣  Build · GPT-6 Astra\n\n  ┃\n  ┃   Alcance de QUICK   flow   Confirm\n  ┃\n  ┃  Review\n  ┃\n  ┃  Alcance de QUICK: Recortar alcance                                                                                [redacted: disposable temp path]\n  ┃                                                                                                                    [redacted: disposable temp path]\n  ┃  flow: (not answered)                                                                                              host-run-2026-09-30T09-49-27Z-\n  ┃                                                                                                                    opencode-vFQ5Ju/workspace:main\n  ┃  ⇆ tab  enter submit  esc dismiss\n  ┃                                                                                                                    • OpenCode 1.18.30"
+}
