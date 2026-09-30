@@ -299,37 +299,11 @@ async function removeSkill(
     });
   }
   if (includeLegacy) {
-    for (const legacyName of LEGACY_SKILL_NAMES) {
-      const legacy = join(home, ...TARGET_ROOTS[target], legacyName);
-      if (await ctx.fs.exists(legacy)) {
-        if (!dryRun) await rm(legacy, { recursive: true, force: true });
-        out.push({
-          target,
-          kind: "legacy-skill",
-          path: legacy,
-          status: dryRun ? "dry-run" : "removed",
-        });
-      }
-    }
+    out.push(...(await removeLegacySkillNames(ctx, home, target, dryRun)));
   }
   for (const legacyRoot of LEGACY_SKILL_ROOTS_BY_TARGET[target]) {
     const root = join(home, ...legacyRoot);
-    const candidates = [SKILL_DIR_NAME, ...(includeLegacy ? LEGACY_SKILL_NAMES : [])];
-    for (const name of candidates) {
-      const dir = join(root, name);
-      // Legacy roots can be shared namespaces: only the bundle fingerprint
-      // (or the pre-rename names under --legacy) authorizes deletion.
-      if (name === SKILL_DIR_NAME && !(await isOwnedBundleDir(dir, ctx))) continue;
-      if (!(await ctx.fs.exists(dir))) continue;
-      if (!dryRun) await rm(dir, { recursive: true, force: true });
-      out.push({
-        target,
-        kind: name === SKILL_DIR_NAME ? "skill" : "legacy-skill",
-        path: dir,
-        status: dryRun ? "dry-run" : "removed",
-      });
-    }
-    if (!dryRun) await removeDirIfEmpty(root);
+    out.push(...(await removeLegacyRootSkills(ctx, root, target, includeLegacy, dryRun)));
   }
   return out;
 }
@@ -740,4 +714,53 @@ async function persistSettings(
     // best-effort backup
   }
   await writeFile(settingsPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
+}
+
+async function removeLegacySkillNames(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallStep[]> {
+  const out: UninstallStep[] = [];
+  for (const legacyName of LEGACY_SKILL_NAMES) {
+    const legacy = join(home, ...TARGET_ROOTS[target], legacyName);
+    if (await ctx.fs.exists(legacy)) {
+      if (!dryRun) await rm(legacy, { recursive: true, force: true });
+      out.push({
+        target,
+        kind: "legacy-skill",
+        path: legacy,
+        status: dryRun ? "dry-run" : "removed",
+      });
+    }
+  }
+  return out;
+}
+
+async function removeLegacyRootSkills(
+  ctx: CliContext,
+  root: string,
+  target: InstallTarget,
+  includeLegacy: boolean,
+  dryRun: boolean,
+): Promise<UninstallStep[]> {
+  const out: UninstallStep[] = [];
+  const candidates = [SKILL_DIR_NAME, ...(includeLegacy ? LEGACY_SKILL_NAMES : [])];
+  for (const name of candidates) {
+    const dir = join(root, name);
+    // Legacy roots can be shared namespaces: only the bundle fingerprint
+    // (or the pre-rename names under --legacy) authorizes deletion.
+    if (name === SKILL_DIR_NAME && !(await isOwnedBundleDir(dir, ctx))) continue;
+    if (!(await ctx.fs.exists(dir))) continue;
+    if (!dryRun) await rm(dir, { recursive: true, force: true });
+    out.push({
+      target,
+      kind: name === SKILL_DIR_NAME ? "skill" : "legacy-skill",
+      path: dir,
+      status: dryRun ? "dry-run" : "removed",
+    });
+  }
+  if (!dryRun) await removeDirIfEmpty(root);
+  return out;
 }

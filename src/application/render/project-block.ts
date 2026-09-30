@@ -138,15 +138,7 @@ export function blockFromParsed(
       ? { editMode: overrides.editMode ?? parsed.edit_mode }
       : {}),
   };
-  const preserved = overrides.preservedLines ?? parsed.preserved_lines;
-  if (preserved !== undefined) input.preservedLines = preserved;
-  if (overrides.lastActivity !== undefined) {
-    input.lastActivity = overrides.lastActivity;
-  } else if (parsed.last_activity !== null) {
-    input.lastActivity = parsed.last_activity;
-  }
-  if (overrides.markers !== undefined) input.markers = overrides.markers;
-  if (overrides.historicoPath !== undefined) input.historicoPath = overrides.historicoPath;
+  applyBlockMetadata(input, parsed, overrides);
   return renderProjectBlock(input);
 }
 
@@ -212,4 +204,20 @@ function formatQaBranches(branches: Record<string, string> | undefined): string 
     lines.push(`  - ${alias}: ${branch}`);
   }
   return lines.join("\n");
+}
+
+function applyBlockMetadata(
+  input: RenderProjectBlockInput,
+  parsed: ParsedProjectBlock,
+  overrides: Partial<RenderProjectBlockInput>,
+): void {
+  const preserved = overrides.preservedLines ?? parsed.preserved_lines;
+  if (preserved !== undefined) input.preservedLines = preserved;
+  if (overrides.lastActivity !== undefined) {
+    input.lastActivity = overrides.lastActivity;
+  } else if (parsed.last_activity !== null) {
+    input.lastActivity = parsed.last_activity;
+  }
+  if (overrides.markers !== undefined) input.markers = overrides.markers;
+  if (overrides.historicoPath !== undefined) input.historicoPath = overrides.historicoPath;
 }

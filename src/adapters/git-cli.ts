@@ -566,14 +566,7 @@ export class GitCliAdapter implements GitPort {
     for (const change of changes) {
       const files = [change.path, ...(change.from === null ? [] : [change.from])];
       for (const path of files) {
-        const absolute = resolve(repoPath, path);
-        let bytes: Buffer | string = "deleted";
-        try {
-          const stats = await lstat(absolute);
-          bytes = stats.isSymbolicLink() ? await readlink(absolute) : await readFile(absolute);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-        }
+        const bytes = await dirtyPathBytes(repoPath, path);
         const digest = createHash("sha256")
           .update(change.code)
           .update("\0")
@@ -1115,4 +1108,16 @@ function cleanRefName(name: string): string {
       .replace(/^remotes\//, "")
       .replace(/^tags\//, "")
   );
+}
+
+async function dirtyPathBytes(repoPath: string, path: string): Promise<Buffer | string> {
+  const absolute = resolve(repoPath, path);
+  let bytes: Buffer | string = "deleted";
+  try {
+    const stats = await lstat(absolute);
+    bytes = stats.isSymbolicLink() ? await readlink(absolute) : await readFile(absolute);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return bytes;
 }

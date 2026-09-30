@@ -100,18 +100,7 @@ async function removeFromTarget(
   }
 
   if (includeLegacy) {
-    for (const legacyName of LEGACY_SKILL_NAMES) {
-      const legacy = join(home, ...TARGET_ROOTS[target], legacyName);
-      if (await ctx.fs.exists(legacy)) {
-        if (!dryRun) await rm(legacy, { recursive: true, force: true });
-        out.push({
-          target,
-          path: legacy,
-          kind: "legacy",
-          status: dryRun ? "dry-run" : "removed",
-        });
-      }
-    }
+    out.push(...(await removeLegacySkills(ctx, home, target, dryRun)));
   }
   return out;
 }
@@ -158,4 +147,26 @@ export async function updateAgentsLock(
     await writeFile(lockPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
   }
   return { updated: true, path: lockPath };
+}
+
+async function removeLegacySkills(
+  ctx: CliContext,
+  home: string,
+  target: InstallTarget,
+  dryRun: boolean,
+): Promise<UninstallRemoval[]> {
+  const out: UninstallRemoval[] = [];
+  for (const legacyName of LEGACY_SKILL_NAMES) {
+    const legacy = join(home, ...TARGET_ROOTS[target], legacyName);
+    if (await ctx.fs.exists(legacy)) {
+      if (!dryRun) await rm(legacy, { recursive: true, force: true });
+      out.push({
+        target,
+        path: legacy,
+        kind: "legacy",
+        status: dryRun ? "dry-run" : "removed",
+      });
+    }
+  }
+  return out;
 }

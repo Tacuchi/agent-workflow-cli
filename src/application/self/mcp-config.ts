@@ -437,10 +437,7 @@ async function installConnection(
     !setup.dry_run &&
     setup.conflicts.length === 0 &&
     connectionView(ctx, connection).instalado[host] === "si";
-  const verificationNote =
-    installed && (setup.errors.length > 0 || doctor.summary.ok < doctor.reports.length)
-      ? ` Verificación posterior pendiente: ${setup.errors.length > 0 ? `${setup.errors.length} aviso(s) en recibo, arranque o visibilidad` : "el diagnóstico del host no confirmó la conexión"}; consultá data.setup.errors y data.doctor.`
-      : "";
+  const verificationNote = postInstallVerificationNote(installed, setup, doctor);
   const views = connectionViews(ctx);
   if (views.kind === "invalid") return invalidRegistryResult(hostAction(host), views.issue);
   // The hint cites the file actually written (per-platform global path).
@@ -460,13 +457,15 @@ async function installConnection(
       setup,
       doctor,
       ...(warpHint ? { warp_hint: warpHint } : {}),
-      summary: setup.dry_run
-        ? `Previsualización de instalación de '${connection.name}' en ${hostLabel(host)}.`
-        : warpHint
-          ? `Conexión '${connection.name}' escrita en ${warpHint.file}. Activá 'File-based MCP Servers' en Warp Settings para que la spawnee.`
-          : !installed
-            ? `No se instaló '${connection.name}' en ${hostLabel(host)}.${setupProblemNote(setup, ctx.env.homeDir())}`
-            : `Conexión '${connection.name}' instalada en ${hostLabel(host)}.${verificationNote}`,
+      summary: installationSummary(
+        setup,
+        connection,
+        host,
+        installed,
+        warpHint,
+        verificationNote,
+        ctx,
+      ),
     },
     ...(!setup.dry_run && !installed
       ? {
@@ -1281,4 +1280,34 @@ function refusal(
     data: { action, connection, summary: message },
     exitCode: 2,
   };
+}
+
+function installationSummary(
+  setup: McpSetupResult,
+  connection: McpConnection,
+  host: McpHost,
+  installed: boolean,
+  warpHint: ReturnType<typeof buildWarpPostInstallHint> | undefined,
+  verificationNote: string,
+  ctx: CliContext,
+): string {
+  return setup.dry_run
+    ? `Previsualización de instalación de '${connection.name}' en ${hostLabel(host)}.`
+    : warpHint
+      ? `Conexión '${connection.name}' escrita en ${warpHint.file}. Activá 'File-based MCP Servers' en Warp Settings para que la spawnee.`
+      : !installed
+        ? `No se instaló '${connection.name}' en ${hostLabel(host)}.${setupProblemNote(setup, ctx.env.homeDir())}`
+        : `Conexión '${connection.name}' instalada en ${hostLabel(host)}.${verificationNote}`;
+}
+
+function postInstallVerificationNote(
+  installed: boolean,
+  setup: McpSetupResult,
+  doctor: ReturnType<typeof runDoctor>,
+): string {
+  const verificationNote =
+    installed && (setup.errors.length > 0 || doctor.summary.ok < doctor.reports.length)
+      ? ` Verificación posterior pendiente: ${setup.errors.length > 0 ? `${setup.errors.length} aviso(s) en recibo, arranque o visibilidad` : "el diagnóstico del host no confirmó la conexión"}; consultá data.setup.errors y data.doctor.`
+      : "";
+  return verificationNote;
 }

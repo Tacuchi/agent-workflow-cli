@@ -120,15 +120,7 @@ export async function planRenumber(
   const block = git
     ? await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers())
     : null;
-  const workspace = paths.workspaceDir();
-  const branch =
-    git && (await git.isGitRepo(workspace)) ? await git.currentBranch(workspace) : undefined;
-  const upstream = branch ? await git?.upstreamBranch(workspace, branch) : null;
-  const prefix = upstream ? await git?.repoPrefix(workspace) : null;
-  const remoteText =
-    upstream && prefix !== null && prefix !== undefined
-      ? await git?.readAtRef?.(workspace, upstream, `${prefix}.${paths.namespace}/HISTORY.md`)
-      : null;
+  const remoteText = await remoteHistoryText(paths, git);
   const remoteRows = remoteText ? readHistoryRows(remoteText) : [];
   const remoteMax = remoteText ? maxHistoryCorrelativeFromText(remoteText) : null;
   const remoteValue = remoteMax === null ? null : correlativeValue(remoteMax);
@@ -137,79 +129,17 @@ export async function planRenumber(
     next = nextCorrelative(remoteMax);
   for (const folder of folders) {
     const sharing = await sessionsSharingNumber(fs, paths, folder.name);
-    const legacyFolder = folder.name.startsWith("session");
-    const folderNumber = sessionNumericCode(folder.name);
-    const remoteConflict =
-      folderNumber !== null &&
-      remoteRows.some((row) => {
-        const rowNumber = sessionNumericCode(row.key);
-        return (
-          rowNumber !== null && sameCorrelative(folderNumber, rowNumber) && row.key !== folder.name
-        );
-      });
-    if (legacyFolder) {
-      const legacyPeers = sharing.filter((item) => item.folder.startsWith("session"));
-      const orphanRow = sharing.some(
-        (item) =>
-          item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
-      );
-      if (legacyPeers.length < 2 && !orphanRow && !remoteConflict) continue;
-      if (
-        legacyPeers.length >= 2 &&
-        !orphanRow &&
-        !remoteConflict &&
-        folder.name !== legacyPeers.at(-1)?.folder
-      )
-        continue;
-    }
-    if (sharing.length < 2 && !remoteConflict) continue;
-    const legacy = sharing.some((item) => item.folder.startsWith("session"));
-    const remote =
-      remoteConflict ||
-      sharing.some(
-        (item) =>
-          item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
-      );
-    const localPeers = sharing.filter((item) =>
-      folders.some((local) => local.name === item.folder),
-    );
-    if (!legacyFolder && !legacy && !remote && folder.name !== localPeers.at(-1)?.folder) continue;
-    let occupied = false;
-    for (const source of block?.fuentes ?? []) {
-      if (source.path === null) continue;
-      const trees = await git?.worktreeList(source.path);
-      if (
-        trees?.some(
-          (tree) => tree.branch === `aw/${folder.name}` || tree.path.endsWith(`/${folder.name}`),
-        )
-      )
-        occupied = true;
-    }
-    if (occupied) {
-      blocked.push(
-        `${folder.name}: integrá o liberá sus unidades de aislamiento antes de renumerar`,
-      );
-      continue;
-    }
-    if (await fs.exists(join(folder.path, ".flow-run.json.lock"))) {
-      blocked.push(`${folder.name}: la corrida tiene el candado ocupado; reintentá al terminar`);
-      continue;
-    }
-    const run = await readRun(fs, locateRun(paths, folder.name));
-    if (!run.ok && run.failure.code !== "FLOW_RUN_ABSENT") {
-      blocked.push(
-        `${folder.name}: corrida ilegible (${run.failure.code}); reparala antes de renumerar`,
-      );
-      continue;
-    }
-    if (run.ok && (run.state.proposal !== null || run.state.pending_action?.attempted === true)) {
-      blocked.push(`${folder.name}: publicá o cancelá su propuesta pendiente antes de renumerar`);
+    const reason = renumberReason(folder, folders, sharing, remoteRows);
+    if (reason === null) continue;
+    const refusal = await renumberRefusal(fs, paths, git, block, folder);
+    if (refusal !== null) {
+      blocked.push(refusal);
       continue;
     }
     moves.push({
       from: folder.name,
       to: `${next}-${folder.name.replace(/^(?:session)?\d+-/, "")}`,
-      reason: legacy ? "legacy" : remote ? "registro-remoto" : "carpetas",
+      reason,
     });
     next = nextCorrelative(next);
   }
@@ -416,4 +346,106 @@ function recordedState(cell: string): SessionState | null {
   if (value === "closed") return "closed";
   if (value === "active") return "active";
   return null;
+}
+
+async function remoteHistoryText(
+  paths: PathsService,
+  git: GitPort | undefined,
+): Promise<string | null | undefined> {
+  const workspace = paths.workspaceDir();
+  const branch =
+    git && (await git.isGitRepo(workspace)) ? await git.currentBranch(workspace) : undefined;
+  const upstream = branch ? await git?.upstreamBranch(workspace, branch) : null;
+  const prefix = upstream ? await git?.repoPrefix(workspace) : null;
+  const remoteText =
+    upstream && prefix !== null && prefix !== undefined
+      ? await git?.readAtRef?.(workspace, upstream, `${prefix}.${paths.namespace}/HISTORY.md`)
+      : null;
+  return remoteText;
+}
+
+function renumberReason(
+  folder: { name: string },
+  folders: { name: string }[],
+  sharing: Awaited<ReturnType<typeof sessionsSharingNumber>>,
+  remoteRows: HistoryRow[],
+): RenumberMove["reason"] | null {
+  const legacyFolder = folder.name.startsWith("session");
+  const folderNumber = sessionNumericCode(folder.name);
+  const remoteConflict =
+    folderNumber !== null &&
+    remoteRows.some((row) => {
+      const rowNumber = sessionNumericCode(row.key);
+      return (
+        rowNumber !== null && sameCorrelative(folderNumber, rowNumber) && row.key !== folder.name
+      );
+    });
+  if (legacyFolder) {
+    if (!legacyNeedsRenumber(folder, folders, sharing, remoteConflict)) return null;
+  }
+  if (sharing.length < 2 && !remoteConflict) return null;
+  const legacy = sharing.some((item) => item.folder.startsWith("session"));
+  const remote =
+    remoteConflict ||
+    sharing.some(
+      (item) => item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
+    );
+  const localPeers = sharing.filter((item) => folders.some((local) => local.name === item.folder));
+  if (!legacyFolder && !legacy && !remote && folder.name !== localPeers.at(-1)?.folder) return null;
+  return legacy ? "legacy" : remote ? "registro-remoto" : "carpetas";
+}
+
+async function renumberRefusal(
+  fs: FileSystemPort,
+  paths: PathsService,
+  git: GitPort | undefined,
+  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  folder: { name: string; path: string },
+): Promise<string | null> {
+  let occupied = false;
+  for (const source of block?.fuentes ?? []) {
+    if (source.path === null) continue;
+    const trees = await git?.worktreeList(source.path);
+    if (
+      trees?.some(
+        (tree) => tree.branch === `aw/${folder.name}` || tree.path.endsWith(`/${folder.name}`),
+      )
+    )
+      occupied = true;
+  }
+  if (occupied) {
+    return `${folder.name}: integrá o liberá sus unidades de aislamiento antes de renumerar`;
+  }
+  if (await fs.exists(join(folder.path, ".flow-run.json.lock"))) {
+    return `${folder.name}: la corrida tiene el candado ocupado; reintentá al terminar`;
+  }
+  const run = await readRun(fs, locateRun(paths, folder.name));
+  if (!run.ok && run.failure.code !== "FLOW_RUN_ABSENT") {
+    return `${folder.name}: corrida ilegible (${run.failure.code}); reparala antes de renumerar`;
+  }
+  if (run.ok && (run.state.proposal !== null || run.state.pending_action?.attempted === true)) {
+    return `${folder.name}: publicá o cancelá su propuesta pendiente antes de renumerar`;
+  }
+  return null;
+}
+
+function legacyNeedsRenumber(
+  folder: { name: string },
+  folders: { name: string }[],
+  sharing: Awaited<ReturnType<typeof sessionsSharingNumber>>,
+  remoteConflict: boolean,
+): boolean {
+  const legacyPeers = sharing.filter((item) => item.folder.startsWith("session"));
+  const orphanRow = sharing.some(
+    (item) => item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
+  );
+  if (legacyPeers.length < 2 && !orphanRow && !remoteConflict) return false;
+  if (
+    legacyPeers.length >= 2 &&
+    !orphanRow &&
+    !remoteConflict &&
+    folder.name !== legacyPeers.at(-1)?.folder
+  )
+    return false;
+  return true;
 }

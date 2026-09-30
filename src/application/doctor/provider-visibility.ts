@@ -108,29 +108,7 @@ async function prodUpstreamFindings(input: DoctorProviderInput): Promise<DoctorF
     const path = source.path;
     if (path === null || !(await input.ctx.git.isGitRepo(path))) continue;
     const roles = resolveSourceBranches(source, block);
-    for (const branch of await input.ctx.git.localBranches(path)) {
-      if (!isWorkingBranch(branch, roles)) continue;
-      const upstream = await input.ctx.git.upstreamBranch(path, branch);
-      if (!upstream?.startsWith("refs/remotes/")) continue;
-      const [, ...tracked] = upstream.slice("refs/remotes/".length).split("/");
-      if (tracked.join("/") !== roles.prod) continue;
-      findings.push({
-        id: doctorFindingId("workspace", CATEGORY, `upstream:${source.alias}:${branch}`),
-        host: "workspace",
-        category: CATEGORY,
-        resource: { kind: "rama", name: `${source.alias}/${branch}`, locator: path },
-        state: "warning",
-        summary: `${source.alias}: la rama ${branch} rastrea PROD (${upstream})`,
-        impact: "un git pull sin argumentos puede traer PROD a la rama de trabajo",
-        evidence: [`rama de PROD: ${roles.prod}`, `upstream de ${branch}: ${upstream}`],
-        ownership: "n/a",
-        remediation: {
-          kind: "manual",
-          action: null,
-          guidance: [`git -C ${shellQuote(path)} branch --unset-upstream ${shellQuote(branch)}`],
-        },
-      });
-    }
+    findings.push(...(await sourceUpstreamFindings(input, source.alias, path, roles)));
   }
   return findings;
 }
@@ -242,4 +220,37 @@ function dedupe(entries: readonly ReturnType<typeof coverage>[]): ReturnType<typ
     if (held === undefined || held.state === "not-applicable") byHost.set(entry.host, entry);
   }
   return [...byHost.values()];
+}
+
+async function sourceUpstreamFindings(
+  input: DoctorProviderInput,
+  alias: string,
+  path: string,
+  roles: ReturnType<typeof resolveSourceBranches>,
+): Promise<DoctorFinding[]> {
+  const findings: DoctorFinding[] = [];
+  for (const branch of await input.ctx.git.localBranches(path)) {
+    if (!isWorkingBranch(branch, roles)) continue;
+    const upstream = await input.ctx.git.upstreamBranch(path, branch);
+    if (!upstream?.startsWith("refs/remotes/")) continue;
+    const [, ...tracked] = upstream.slice("refs/remotes/".length).split("/");
+    if (tracked.join("/") !== roles.prod) continue;
+    findings.push({
+      id: doctorFindingId("workspace", CATEGORY, `upstream:${alias}:${branch}`),
+      host: "workspace",
+      category: CATEGORY,
+      resource: { kind: "rama", name: `${alias}/${branch}`, locator: path },
+      state: "warning",
+      summary: `${alias}: la rama ${branch} rastrea PROD (${upstream})`,
+      impact: "un git pull sin argumentos puede traer PROD a la rama de trabajo",
+      evidence: [`rama de PROD: ${roles.prod}`, `upstream de ${branch}: ${upstream}`],
+      ownership: "n/a",
+      remediation: {
+        kind: "manual",
+        action: null,
+        guidance: [`git -C ${shellQuote(path)} branch --unset-upstream ${shellQuote(branch)}`],
+      },
+    });
+  }
+  return findings;
 }

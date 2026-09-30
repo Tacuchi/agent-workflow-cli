@@ -170,23 +170,7 @@ export class NodeFileSystem implements FileSystemPort {
       const code = (err as NodeError).code;
       if (code === "EEXIST") return { created: false };
       if (code === "EPERM" || code === "ENOTSUP" || code === "EXDEV") {
-        let handle: Awaited<ReturnType<typeof open>>;
-        try {
-          handle = await open(path, "wx");
-        } catch (fallbackError) {
-          if ((fallbackError as NodeError).code === "EEXIST") return { created: false };
-          throw fallbackError;
-        }
-        try {
-          await handle.writeFile(content);
-        } catch (writeError) {
-          await handle.close();
-          await unlink(path).catch(() => undefined);
-          throw writeError;
-        } finally {
-          await handle.close().catch(() => undefined);
-        }
-        return { created: true };
+        return await writeBytesExclusiveFallback(path, content);
       }
       throw err;
     } finally {
@@ -287,4 +271,27 @@ export class NodeFileSystem implements FileSystemPort {
       throw err;
     }
   }
+}
+
+async function writeBytesExclusiveFallback(
+  path: string,
+  content: Uint8Array,
+): Promise<{ created: boolean }> {
+  let handle: Awaited<ReturnType<typeof open>>;
+  try {
+    handle = await open(path, "wx");
+  } catch (fallbackError) {
+    if ((fallbackError as NodeError).code === "EEXIST") return { created: false };
+    throw fallbackError;
+  }
+  try {
+    await handle.writeFile(content);
+  } catch (writeError) {
+    await handle.close();
+    await unlink(path).catch(() => undefined);
+    throw writeError;
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+  return { created: true };
 }

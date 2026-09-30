@@ -94,14 +94,7 @@ export function hooksTemplateToToml(template: HooksTemplate): HookTransformResul
       });
       continue;
     }
-    for (const group of groups as HookEntry[]) {
-      for (const hook of group.hooks ?? []) {
-        const outcome = convertHook(event, group, hook);
-        if (outcome.skip !== undefined) skipped.push(outcome.skip);
-        if (outcome.degradation !== undefined) degraded.push(outcome.degradation);
-        if (outcome.entry !== undefined) entries.push(outcome.entry);
-      }
-    }
+    appendTomlHooks(event, groups as HookEntry[], { entries, skipped, degraded });
   }
   return { entries, skipped, degraded };
 }
@@ -238,12 +231,9 @@ export function stripOurHookEntries(text: string): HookSweepResult {
     }
 
     // A `[[hooks]]` table: its header plus the key lines that follow it.
-    const block: string[] = [line];
-    let j = i + 1;
-    while (j < lines.length && TOML_KEY_RE.test(lines[j] ?? "")) {
-      block.push(lines[j] ?? "");
-      j += 1;
-    }
+    const table = readHookTable(lines, i);
+    const block = table.block;
+    let j = table.end;
     const ours = block.some((l) => OUR_COMMAND_RE.test(l));
     if (!ours) {
       out.push(...block);
@@ -252,7 +242,7 @@ export function stripOurHookEntries(text: string): HookSweepResult {
     }
     // Ours: drop it, and with it the blank lines that separated it from the next
     // entry, so repeated install→uninstall cycles cannot grow the file.
-    while (j < lines.length && (lines[j] ?? "").trim() === "") j += 1;
+    j = skipHookSeparatorLines(lines, j);
     removed += 1;
     i = j;
   }
@@ -402,4 +392,35 @@ export function upsertManagedHooksBlock(
   const block = renderManagedHooksBlock(entries);
   if (swept.length === 0) return { text: block };
   return { text: swept.endsWith("\n") ? `${swept}${block}` : `${swept}\n${block}` };
+}
+
+function appendTomlHooks(
+  event: string,
+  groups: HookEntry[],
+  { entries, skipped, degraded }: HookTransformResult,
+): void {
+  for (const group of groups) {
+    for (const hook of group.hooks ?? []) {
+      const outcome = convertHook(event, group, hook);
+      if (outcome.skip !== undefined) skipped.push(outcome.skip);
+      if (outcome.degradation !== undefined) degraded.push(outcome.degradation);
+      if (outcome.entry !== undefined) entries.push(outcome.entry);
+    }
+  }
+}
+
+function readHookTable(lines: string[], start: number): { block: string[]; end: number } {
+  const block: string[] = [lines[start] ?? ""];
+  let j = start + 1;
+  while (j < lines.length && TOML_KEY_RE.test(lines[j] ?? "")) {
+    block.push(lines[j] ?? "");
+    j += 1;
+  }
+  return { block, end: j };
+}
+
+function skipHookSeparatorLines(lines: string[], start: number): number {
+  let end = start;
+  while (end < lines.length && (lines[end] ?? "").trim() === "") end += 1;
+  return end;
 }

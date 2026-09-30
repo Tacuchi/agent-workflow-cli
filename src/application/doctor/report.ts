@@ -115,32 +115,7 @@ export async function runDoctor(
   }
   const coverages: DoctorCoverage[] = [];
   for (const provider of deps.providers ?? defaultDoctorProviders(deps.mcps, deps.distRoot)) {
-    try {
-      const output = await provider.run(input);
-      findings.push(...output.findings);
-      // Silencio NO es cobertura: una categoría que desaparece del informe deja
-      // a `doctorVerdict` sin nada que ver y el doctor sale 0 después de no
-      // haber mirado (AC-02, AC-14). Pero el estado del relleno es
-      // `not-applicable`, NO `unavailable`: un proveedor calla cuando la corrida
-      // no le dio ningún host que le corresponda —una máquina sin ningún host de
-      // agente, o un `--only` que no dejó participantes—, y eso es «no había
-      // nada que comprobar», no «no se pudo comprobar». Marcarlo caído ponía en
-      // rojo un entorno sano; lo que sí escala es el proveedor que LANZA, abajo,
-      // y un `--only` que nombra lo que el catálogo no declara, que ya viaja
-      // como hallazgo bloqueante.
-      coverages.push(
-        ...(output.coverage.length > 0
-          ? output.coverage
-          : [coverage(provider.category, "workspace", "not-applicable", silenceReason(selection))]),
-      );
-    } catch (error) {
-      const reason = `el proveedor falló: ${messageOf(error)}`;
-      const scopes =
-        selection.hosts.length > 0 ? selection.hosts.map((h) => h.host) : ["workspace"];
-      for (const host of scopes) {
-        coverages.push(coverage(provider.category, host, "unavailable", reason));
-      }
-    }
+    await collectProviderReport(provider, input, selection, findings, coverages);
   }
 
   const hostOrder = [...DOCTOR_HOST_ORDER, "workspace"];
@@ -225,4 +200,38 @@ function normalizeHost(host: string | null): HarnessId | null {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function collectProviderReport(
+  provider: DoctorProvider,
+  input: DoctorProviderInput,
+  selection: DoctorHostSelection,
+  findings: DoctorFinding[],
+  coverages: DoctorCoverage[],
+): Promise<void> {
+  try {
+    const output = await provider.run(input);
+    findings.push(...output.findings);
+    // Silencio NO es cobertura: una categoría que desaparece del informe deja
+    // a `doctorVerdict` sin nada que ver y el doctor sale 0 después de no
+    // haber mirado (AC-02, AC-14). Pero el estado del relleno es
+    // `not-applicable`, NO `unavailable`: un proveedor calla cuando la corrida
+    // no le dio ningún host que le corresponda —una máquina sin ningún host de
+    // agente, o un `--only` que no dejó participantes—, y eso es «no había
+    // nada que comprobar», no «no se pudo comprobar». Marcarlo caído ponía en
+    // rojo un entorno sano; lo que sí escala es el proveedor que LANZA, abajo,
+    // y un `--only` que nombra lo que el catálogo no declara, que ya viaja
+    // como hallazgo bloqueante.
+    coverages.push(
+      ...(output.coverage.length > 0
+        ? output.coverage
+        : [coverage(provider.category, "workspace", "not-applicable", silenceReason(selection))]),
+    );
+  } catch (error) {
+    const reason = `el proveedor falló: ${messageOf(error)}`;
+    const scopes = selection.hosts.length > 0 ? selection.hosts.map((h) => h.host) : ["workspace"];
+    for (const host of scopes) {
+      coverages.push(coverage(provider.category, host, "unavailable", reason));
+    }
+  }
 }

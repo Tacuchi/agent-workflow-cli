@@ -50,16 +50,7 @@ function retiredReference(
       if (command !== undefined && !known.w.has(command)) return `/w:${command}`;
     }
   }
-  for (const [, skill] of body.matchAll(
-    /\b(agent-workflow:[a-z][a-z0-9-]*|ui-design|ui-spec)\b/g,
-  )) {
-    if (
-      skill !== undefined &&
-      (RETIRED_WORKLINE_SKILLS.has(skill) || skill === "ui-design" || skill === "ui-spec")
-    )
-      return skill;
-  }
-  return null;
+  return retiredSkillReference(body);
 }
 
 /** Sections stop at the next heading or project marker; only whole sections are removed. */
@@ -184,3 +175,16 @@ export const workspaceBlockProvider: DoctorProvider = {
     return { coverage: [coverage(CATEGORY, "workspace", "checked")], findings };
   },
 };
+
+function retiredSkillReference(body: string): string | null {
+  for (const [, skill] of body.matchAll(
+    /\b(agent-workflow:[a-z][a-z0-9-]*|ui-design|ui-spec)\b/g,
+  )) {
+    if (
+      skill !== undefined &&
+      (RETIRED_WORKLINE_SKILLS.has(skill) || skill === "ui-design" || skill === "ui-spec")
+    )
+      return skill;
+  }
+  return null;
+}

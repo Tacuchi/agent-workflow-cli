@@ -45,51 +45,9 @@ export async function resolveWorkspaceDirectory(
   home: string,
   explicit?: string,
 ): Promise<WorklineDirectory> {
-  const namespace = directory.namespace;
   const repo = await repositoryRoot(cwd);
-  if (explicit !== undefined) {
-    const root = resolve(cwd, explicit);
-    try {
-      if (!(await stat(root)).isDirectory()) throw new Error("no es directorio");
-    } catch {
-      throw new WorkspaceResolutionError("WORKSPACE_INVALID", `El workspace ${root} no existe.`);
-    }
-    const marked = await isWorklineRoot(fs, root, namespace);
-    if (
-      root === home ||
-      contains(join(home, `.${namespace}`, "worktrees"), root) ||
-      (repo !== null && contains(repo, root) && root !== repo && !marked)
-    ) {
-      throw new WorkspaceResolutionError(
-        "WORKSPACE_INVALID",
-        `La carpeta ${root} no es una raíz de workspace válida.`,
-      );
-    }
-    const hubs =
-      marked || (await repositoryRoot(root)) === null
-        ? []
-        : await declaringHubs(fs, home, namespace, root);
-    const otherHubs = [...new Set(hubs.map((hub) => hub.root).filter((hub) => hub !== root))];
-    if (otherHubs.length > 0) {
-      throw new WorkspaceResolutionError(
-        "WORKSPACE_INVALID",
-        `${root} es una fuente declarada; indica la raíz del hub, no la fuente.`,
-        otherHubs,
-      );
-    }
-    let parent = dirname(root);
-    while (parent !== dirname(parent)) {
-      if (parent !== home && (await isWorklineRoot(fs, parent, namespace))) {
-        throw new WorkspaceResolutionError(
-          "WORKSPACE_INVALID",
-          `${root} está dentro del workspace ${parent}; --workspace nombra la raíz exacta.`,
-          [parent],
-        );
-      }
-      parent = dirname(parent);
-    }
-    return { ...directory, root: await realpath(root), materialized: marked };
-  }
+  if (explicit !== undefined)
+    return resolveExplicitWorkspace(fs, directory, cwd, home, explicit, repo);
 
   // A marker above the git boundary (particularly ~/.workflow) is not the
   // source's own workspace. A marker within the repository wins over claims.
@@ -100,36 +58,8 @@ export async function resolveWorkspaceDirectory(
   )
     return { ...directory, root: await realpath(directory.root) };
   if (repo !== null && (await gitCommonDirectory(repo)) !== null) {
-    const hubs = await declaringHubs(fs, home, namespace, repo);
-    const first = hubs[0];
-    if (hubs.length === 1 && first) return { ...directory, root: first.root, materialized: true };
-    if (hubs.length > 1) {
-      const roots = [...new Set(hubs.map((hub) => hub.root))];
-      if (roots.length === 1 && roots[0])
-        return { ...directory, root: roots[0], materialized: true };
-      const units = join(home, `.${namespace}`, "worktrees");
-      const unitsRoot = await realpath(units).catch(() => units);
-      const unitRepo = await realpath(repo).catch(() => repo);
-      if (contains(unitsRoot, unitRepo)) {
-        const owners: string[] = [];
-        for (const root of roots) {
-          const owns = await hubUnitPaths(fs, new PathsService(namespace, home, root), unitsRoot);
-          if (owns(unitRepo)) owners.push(root);
-        }
-        if (owners.length === 1 && owners[0])
-          return { ...directory, root: owners[0], materialized: true };
-      }
-      throw new WorkspaceResolutionError(
-        "WORKSPACE_AMBIGUOUS",
-        `El checkout es fuente de ${roots.join(", ")}; indica --workspace <ruta>.`,
-        roots,
-      );
-    }
-    if (directory.root === home || (await isWorklineRoot(fs, home, namespace)))
-      throw new WorkspaceResolutionError(
-        "WORKSPACE_UNRESOLVED",
-        `No hay hub registrado para ${repo}; indica --workspace o ejecuta aw en el hub.`,
-      );
+    const resolved = await resolveDeclaredWorkspace(fs, directory, home, repo);
+    if (resolved !== null) return resolved;
   }
   if (cwd === home)
     throw new WorkspaceResolutionError(
@@ -165,4 +95,108 @@ export async function registerResolvedWorkspace(
   } catch (error) {
     return `No se pudo registrar el hub ${directory.root}: ${String(error)}`;
   }
+}
+
+async function resolveExplicitWorkspace(
+  fs: FileSystemPort,
+  directory: WorklineDirectory,
+  cwd: string,
+  home: string,
+  explicit: string,
+  repo: string | null,
+): Promise<WorklineDirectory> {
+  const namespace = directory.namespace;
+  const root = resolve(cwd, explicit);
+  try {
+    if (!(await stat(root)).isDirectory()) throw new Error("no es directorio");
+  } catch {
+    throw new WorkspaceResolutionError("WORKSPACE_INVALID", `El workspace ${root} no existe.`);
+  }
+  const marked = await isWorklineRoot(fs, root, namespace);
+  if (
+    root === home ||
+    contains(join(home, `.${namespace}`, "worktrees"), root) ||
+    (repo !== null && contains(repo, root) && root !== repo && !marked)
+  ) {
+    throw new WorkspaceResolutionError(
+      "WORKSPACE_INVALID",
+      `La carpeta ${root} no es una raíz de workspace válida.`,
+    );
+  }
+  const hubs =
+    marked || (await repositoryRoot(root)) === null
+      ? []
+      : await declaringHubs(fs, home, namespace, root);
+  const otherHubs = [...new Set(hubs.map((hub) => hub.root).filter((hub) => hub !== root))];
+  if (otherHubs.length > 0) {
+    throw new WorkspaceResolutionError(
+      "WORKSPACE_INVALID",
+      `${root} es una fuente declarada; indica la raíz del hub, no la fuente.`,
+      otherHubs,
+    );
+  }
+  let parent = dirname(root);
+  while (parent !== dirname(parent)) {
+    if (parent !== home && (await isWorklineRoot(fs, parent, namespace))) {
+      throw new WorkspaceResolutionError(
+        "WORKSPACE_INVALID",
+        `${root} está dentro del workspace ${parent}; --workspace nombra la raíz exacta.`,
+        [parent],
+      );
+    }
+    parent = dirname(parent);
+  }
+  return { ...directory, root: await realpath(root), materialized: marked };
+}
+
+async function resolveDeclaredWorkspace(
+  fs: FileSystemPort,
+  directory: WorklineDirectory,
+  home: string,
+  repo: string,
+): Promise<WorklineDirectory | null> {
+  const namespace = directory.namespace;
+  const hubs = await declaringHubs(fs, home, namespace, repo);
+  const first = hubs[0];
+  if (hubs.length === 1 && first) return { ...directory, root: first.root, materialized: true };
+  if (hubs.length > 1) {
+    const roots = [...new Set(hubs.map((hub) => hub.root))];
+    if (roots.length === 1 && roots[0]) return { ...directory, root: roots[0], materialized: true };
+    const owner = await resolveUnitOwner(fs, directory, home, repo, roots);
+    if (owner !== null) return owner;
+    throw new WorkspaceResolutionError(
+      "WORKSPACE_AMBIGUOUS",
+      `El checkout es fuente de ${roots.join(", ")}; indica --workspace <ruta>.`,
+      roots,
+    );
+  }
+  if (directory.root === home || (await isWorklineRoot(fs, home, namespace)))
+    throw new WorkspaceResolutionError(
+      "WORKSPACE_UNRESOLVED",
+      `No hay hub registrado para ${repo}; indica --workspace o ejecuta aw en el hub.`,
+    );
+  return null;
+}
+
+async function resolveUnitOwner(
+  fs: FileSystemPort,
+  directory: WorklineDirectory,
+  home: string,
+  repo: string,
+  roots: string[],
+): Promise<WorklineDirectory | null> {
+  const namespace = directory.namespace;
+  const units = join(home, `.${namespace}`, "worktrees");
+  const unitsRoot = await realpath(units).catch(() => units);
+  const unitRepo = await realpath(repo).catch(() => repo);
+  if (contains(unitsRoot, unitRepo)) {
+    const owners: string[] = [];
+    for (const root of roots) {
+      const owns = await hubUnitPaths(fs, new PathsService(namespace, home, root), unitsRoot);
+      if (owns(unitRepo)) owners.push(root);
+    }
+    if (owners.length === 1 && owners[0])
+      return { ...directory, root: owners[0], materialized: true };
+  }
+  return null;
 }

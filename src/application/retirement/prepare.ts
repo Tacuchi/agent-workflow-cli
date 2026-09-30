@@ -284,40 +284,7 @@ async function collectSession(
   // act on. `declared: 0` is the state the whole notice exists for.
   const restoresBefore = collector.restores.length;
 
-  for (const artifact of custody.artifacts) {
-    if (artifact.role === "output") {
-      // Born inside the session: it goes, in both modes.
-      const absolute = join(deps.paths.workspaceDir(), artifact.path);
-      collector.deletes.push({
-        path: artifact.path,
-        kind: "file",
-        digest: await digestOf(deps.fs, absolute),
-      });
-      continue;
-    }
-    if (collector.mode !== "reset") continue;
-    const absolute = join(deps.paths.workspaceDir(), artifact.path);
-    const previous = artifact.before.content;
-    let eolOnly = false;
-    if (previous !== null) {
-      try {
-        const live = (await deps.fs.exists(absolute)) ? await deps.fs.readText(absolute) : null;
-        eolOnly =
-          live !== null && live !== previous && canonicalEol(live) === canonicalEol(previous);
-      } catch {
-        // The digest read below retains the legacy missing/unreadable behavior.
-      }
-    }
-    collector.restores.push({
-      path: artifact.path,
-      existed: artifact.before.existed,
-      content: artifact.before.content,
-      digest: artifact.before.digest,
-      current_digest: await digestOf(deps.fs, absolute),
-      ...(eolOnly ? { eol_only: true } : {}),
-    });
-    collector.restored.add(artifact.path);
-  }
+  await collectCustodyArtifacts(deps, custody, collector);
 
   collectRestoredMarkers(collector, facts.folder, restoresBefore);
 
@@ -449,4 +416,52 @@ async function digestOf(fs: FileSystemPort, absolute: string): Promise<string | 
   } catch {
     return null;
   }
+}
+
+async function collectCustodyArtifacts(
+  deps: PrepareDeps,
+  custody: NonNullable<NonNullable<GraphNode["session"]>["custody"]>,
+  collector: SessionCollector,
+): Promise<void> {
+  for (const artifact of custody.artifacts) {
+    if (artifact.role === "output") {
+      // Born inside the session: it goes, in both modes.
+      const absolute = join(deps.paths.workspaceDir(), artifact.path);
+      collector.deletes.push({
+        path: artifact.path,
+        kind: "file",
+        digest: await digestOf(deps.fs, absolute),
+      });
+      continue;
+    }
+    if (collector.mode !== "reset") continue;
+    const absolute = join(deps.paths.workspaceDir(), artifact.path);
+    const eolOnly = await hasOnlyEolChange(deps.fs, absolute, artifact.before.content);
+    collector.restores.push({
+      path: artifact.path,
+      existed: artifact.before.existed,
+      content: artifact.before.content,
+      digest: artifact.before.digest,
+      current_digest: await digestOf(deps.fs, absolute),
+      ...(eolOnly ? { eol_only: true } : {}),
+    });
+    collector.restored.add(artifact.path);
+  }
+}
+
+async function hasOnlyEolChange(
+  fs: FileSystemPort,
+  absolute: string,
+  previous: string | null,
+): Promise<boolean> {
+  let eolOnly = false;
+  if (previous !== null) {
+    try {
+      const live = (await fs.exists(absolute)) ? await fs.readText(absolute) : null;
+      eolOnly = live !== null && live !== previous && canonicalEol(live) === canonicalEol(previous);
+    } catch {
+      // The digest read below retains the legacy missing/unreadable behavior.
+    }
+  }
+  return eolOnly;
 }

@@ -29,11 +29,13 @@ const TASK_RE = /^\s*[-*]\s*\[([ xX])\]\s+(.+)$/;
 const DEP_RE = /\(deps?:\s*([^)]+)\)/i;
 const SOURCES_RE = /_\(\s*fuentes\s*:\s*([^)]*)\)_/i;
 
+type TaskDeclaration = { phase: number; sources: string[] | null };
+
 export function parseTasks(text: string, compact = true): ParsedTasks {
   const canonical = canonicalEol(text);
   const items: TaskItem[] = [];
   let n = 0;
-  const declarations = new Map<number, { phase: number; sources: string[] | null }>();
+  const declarations = new Map<number, TaskDeclaration>();
   for (const phase of parsePlanSourceBoundary(canonical).phases) {
     for (const task of phase.tasks) {
       declarations.set(task.line, { phase: phase.n, sources: task.sources });
@@ -51,30 +53,7 @@ export function parseTasks(text: string, compact = true): ParsedTasks {
     const match = line.match(TASK_RE);
     if (!match || !match[1] || !match[2]) continue;
     n += 1;
-    const status: TaskStatus = match[1].toLowerCase() === "x" ? "closed" : "open";
-    let body = match[2].trim();
-    const declared = declarations.get(index + 1);
-    const sourceMatch = SOURCES_RE.exec(body);
-    const sources = declared?.sources ?? readSources(sourceMatch?.[1]);
-    body = body.replace(SOURCES_RE, "").trim();
-
-    let deps: string[] = [];
-    const depMatch = body.match(DEP_RE);
-    if (depMatch?.[1]) {
-      deps = depMatch[1]
-        .split(",")
-        .map((d) => d.trim())
-        .filter((d) => d.length > 0);
-      body = body.replace(DEP_RE, "").trim();
-    }
-
-    const item: TaskItem = { n, status, text: body };
-    if (declared !== undefined) item.phase = declared.phase;
-    if (sources !== null) item.sources = sources;
-    if (deps.length > 0 || !compact) {
-      item.deps = deps;
-    }
-    items.push(item);
+    items.push(parseTaskItem(n, match[1], match[2], declarations.get(index + 1), compact));
   }
 
   const closedItems = items.filter((t) => t.status === "closed");
@@ -97,4 +76,36 @@ function readSources(raw: string | undefined): string[] | null {
     .split(",")
     .map((source) => source.trim())
     .filter((source) => source.length > 0);
+}
+
+function parseTaskItem(
+  n: number,
+  mark: string,
+  text: string,
+  declared: TaskDeclaration | undefined,
+  compact: boolean,
+): TaskItem {
+  const status: TaskStatus = mark.toLowerCase() === "x" ? "closed" : "open";
+  let body = text.trim();
+  const sourceMatch = SOURCES_RE.exec(body);
+  const sources = declared?.sources ?? readSources(sourceMatch?.[1]);
+  body = body.replace(SOURCES_RE, "").trim();
+
+  let deps: string[] = [];
+  const depMatch = body.match(DEP_RE);
+  if (depMatch?.[1]) {
+    deps = depMatch[1]
+      .split(",")
+      .map((d) => d.trim())
+      .filter((d) => d.length > 0);
+    body = body.replace(DEP_RE, "").trim();
+  }
+
+  const item: TaskItem = { n, status, text: body };
+  if (declared !== undefined) item.phase = declared.phase;
+  if (sources !== null) item.sources = sources;
+  if (deps.length > 0 || !compact) {
+    item.deps = deps;
+  }
+  return item;
 }

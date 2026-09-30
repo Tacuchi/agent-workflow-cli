@@ -58,43 +58,10 @@ export async function listGraduatedBundles(
 
   const bundles: GraduatedBundle[] = [];
   for (const entry of dirEntries) {
-    if (await fs.exists(join(entry.path, FOLDER_RESERVATION_MARKER))) continue;
-    const parsed = parseBundleName(entry.name);
-    if (!parsed) continue;
-    // The session filter only applies to legacy bundles (modern ones are cross-session).
-    if (
-      targetCode !== null &&
-      (parsed.session_code === null || !sameCorrelative(parsed.session_code, targetCode))
-    ) {
-      continue;
-    }
-    const sqlFiles = await collectFilesByExt(fs, entry.path, ".sql");
-    if (sqlFiles.length === 0) continue; // a reserved folder with just a marker is not a bundle
-    const rollback = sqlFiles.filter(isRollbackSql);
-    const forward = sqlFiles.filter((f) => !isRollbackSql(f));
-    const manifest = await readBundleManifest(fs, join(entry.path, "bundle.json"));
-    bundles.push({
-      ...parsed,
-      path: entry.path,
-      forward_count: forward.length,
-      rollback_count: rollback.length,
-      metadata: manifest === null ? "absent" : "present",
-      ...(manifest === null
-        ? {}
-        : {
-            supersedes: manifest.supersedes,
-            requires: manifest.requires,
-            origin_standalone_sql: manifest.standalone,
-          }),
-      superseded_by: [],
-    });
+    const bundle = await readGraduatedBundle(fs, entry, targetCode);
+    if (bundle !== null) bundles.push(bundle);
   }
-  for (const bundle of bundles) {
-    for (const name of bundle.supersedes ?? []) {
-      const older = bundles.find((other) => other !== bundle && basename(other.path) === name);
-      older?.superseded_by?.push(basename(bundle.path));
-    }
-  }
+  linkSupersededBundles(bundles);
   return bundles;
 }
 
@@ -205,4 +172,50 @@ export async function listStandaloneSql(
     });
   }
   return items;
+}
+
+function linkSupersededBundles(bundles: GraduatedBundle[]): void {
+  for (const bundle of bundles) {
+    for (const name of bundle.supersedes ?? []) {
+      const older = bundles.find((other) => other !== bundle && basename(other.path) === name);
+      older?.superseded_by?.push(basename(bundle.path));
+    }
+  }
+}
+
+async function readGraduatedBundle(
+  fs: FileSystemPort,
+  entry: { path: string; name: string },
+  targetCode: string | null,
+): Promise<GraduatedBundle | null> {
+  if (await fs.exists(join(entry.path, FOLDER_RESERVATION_MARKER))) return null;
+  const parsed = parseBundleName(entry.name);
+  if (!parsed) return null;
+  // The session filter only applies to legacy bundles (modern ones are cross-session).
+  if (
+    targetCode !== null &&
+    (parsed.session_code === null || !sameCorrelative(parsed.session_code, targetCode))
+  ) {
+    return null;
+  }
+  const sqlFiles = await collectFilesByExt(fs, entry.path, ".sql");
+  if (sqlFiles.length === 0) return null; // a reserved folder with just a marker is not a bundle
+  const rollback = sqlFiles.filter(isRollbackSql);
+  const forward = sqlFiles.filter((f) => !isRollbackSql(f));
+  const manifest = await readBundleManifest(fs, join(entry.path, "bundle.json"));
+  return {
+    ...parsed,
+    path: entry.path,
+    forward_count: forward.length,
+    rollback_count: rollback.length,
+    metadata: manifest === null ? "absent" : "present",
+    ...(manifest === null
+      ? {}
+      : {
+          supersedes: manifest.supersedes,
+          requires: manifest.requires,
+          origin_standalone_sql: manifest.standalone,
+        }),
+    superseded_by: [],
+  };
 }

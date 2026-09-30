@@ -340,20 +340,8 @@ export function parseSemanticArtifacts(
     if (seen.has(path.value)) {
       return { ok: false, failure: invalid(`el artefacto '${path.value}' viene repetido`) };
     }
-    const bytes = Buffer.byteLength(entry.content, "utf8");
-    const maxBytes = request.limits.max_artifact_bytes;
-    if (bytes > maxBytes) {
-      return {
-        ok: false,
-        failure: {
-          code: "SEMANTIC_RESPONSE_INVALID",
-          action: request.operation.startsWith("export-")
-            ? `reducí '${path.value}' por debajo de ${maxBytes} B y volvé a validar; si es divisible, separalo en más archivos del dossier`
-            : "corregí la respuesta según el 'contract' del request y reenviala",
-          message: `'${path.value}' pesa ${bytes} B y el máximo es ${maxBytes} B`,
-        },
-      };
-    }
+    const sizeFailure = checkArtifactSize(path.value, entry.content, request);
+    if (sizeFailure !== null) return sizeFailure;
     seen.add(path.value);
     out.push({ path: path.value, content: entry.content });
   }
@@ -424,4 +412,26 @@ function missing(field: string, expected: string): SemanticFailure {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function checkArtifactSize(
+  path: string,
+  content: string,
+  request: SemanticRequest,
+): Extract<SemanticParse<never>, { ok: false }> | null {
+  const bytes = Buffer.byteLength(content, "utf8");
+  const maxBytes = request.limits.max_artifact_bytes;
+  if (bytes > maxBytes) {
+    return {
+      ok: false,
+      failure: {
+        code: "SEMANTIC_RESPONSE_INVALID",
+        action: request.operation.startsWith("export-")
+          ? `reducí '${path}' por debajo de ${maxBytes} B y volvé a validar; si es divisible, separalo en más archivos del dossier`
+          : "corregí la respuesta según el 'contract' del request y reenviala",
+        message: `'${path}' pesa ${bytes} B y el máximo es ${maxBytes} B`,
+      },
+    };
+  }
+  return null;
 }

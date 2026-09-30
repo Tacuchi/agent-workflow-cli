@@ -92,14 +92,7 @@ export function resolveWorkspaceBlockSources(
     const declared = source.declared_path ?? source.path ?? "";
     const localPath = localSourcePath(local.config, source.alias);
     const legacyLocal = declared === "(local)" || declared === join(workspace, "(local)");
-    const path =
-      local.error !== null
-        ? null
-        : localPath !== undefined
-          ? resolveWorkspaceSourcePath(workspace, localPath)
-          : declared.length === 0 || legacyLocal
-            ? null
-            : resolveWorkspaceSourcePath(workspace, declared);
+    const path = resolvedSourceCoordinate(workspace, declared, localPath, legacyLocal, local.error);
     return {
       ...source,
       declared_path: declared,
@@ -280,21 +273,10 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
   // Aliases first: a Status entry is a branch because it names a DECLARED
   // source, not because of where it sits (see `readNestedRecord`).
   const status = parseStatusBlock(statusText, new Set(fuentes.fuentes.map((f) => f.alias)));
-  const pipeline: ProjectPipeline = {};
-  const pipelinePreserved: PreservedLine[] = [];
-  const pipelineDropped: string[] = [];
-  const known = new Set(fuentes.fuentes.map((f) => f.alias));
-  for (const raw of pipelineText.split("\n")) {
-    if (!raw.trim()) continue;
-    const record = parsePipelineRecord(raw);
-    if (record === null) {
-      pipelinePreserved.push({ slot: "pipeline", text: trimTrailing(raw) });
-    } else if (!known.has(record.alias)) {
-      pipelineDropped.push(trimTrailing(raw));
-    } else {
-      pipeline[record.alias] = { ...pipeline[record.alias], ...record.value };
-    }
-  }
+  const { pipeline, pipelinePreserved, pipelineDropped } = parsePipelineBlock(
+    pipelineText,
+    new Set(fuentes.fuentes.map((f) => f.alias)),
+  );
 
   const block: ParsedProjectBlock = {
     proyecto: stripLegacyModeLine(proyectoText),
@@ -401,22 +383,7 @@ function parseFuentesTable(text: string): FuentesParse {
       header = cells.map((c) => c.toLowerCase());
       continue;
     }
-    const alias = cells[0];
-    const path = cells[1];
-    const mainBranch = cells[2];
-    if (cells.length < 3 || alias === undefined || path === undefined) {
-      // A row the table shape cannot read: keep it rather than swallow it.
-      preserved.push({ slot: "fuentes", text: trimTrailing(raw) });
-      continue;
-    }
-    fuentes.push({
-      alias,
-      path,
-      // Empty cell = undeclared: the workspace default applies at resolution time.
-      main_branch: mainBranch !== undefined && mainBranch.length > 0 ? mainBranch : null,
-    });
-    if (header[3] === "rama de trabajo")
-      workingColumn.push({ alias, value: cells[3] ?? "", raw: trimTrailing(raw) });
+    appendFuenteRow(cells, header, raw, { fuentes, preserved, workingColumn });
   }
   return { fuentes, preserved, workingColumn };
 }
@@ -491,20 +458,16 @@ function parseStatusBlock(text: string, knownAliases: ReadonlySet<string>): Stat
       if (transition.editMode !== undefined) editMode = transition.editMode;
       continue;
     }
-    const record = readNestedRecord(raw, stripped);
-    if (record === null || section === "none") {
-      preserved.push({ slot, text: trimTrailing(raw) });
-      continue;
-    }
-    const out = { defaultBranches, workingBranches, qaBranches, exceptionBranches };
-    if (acceptRecord(section, record, out, knownAliases)) continue;
-    // Shape matched but the block cannot honour the key. Indentation decides
-    // WHERE it goes, and only here: an indented entry is one this CLI wrote, so
-    // a key nobody declares anymore is its own residue — pruned, and declared.
-    // A flush-left one is somebody's note that happens to read like `- k: v`,
-    // and deleting it is the very loss this parser exists to stop.
-    if (/^\s/.test(raw)) dropped.push(trimTrailing(raw));
-    else preserved.push({ slot, text: trimTrailing(raw) });
+    appendStatusRecord(
+      raw,
+      stripped,
+      section,
+      slot,
+      { defaultBranches, workingBranches, qaBranches, exceptionBranches },
+      knownAliases,
+      preserved,
+      dropped,
+    );
   }
 
   return {
@@ -621,4 +584,93 @@ function transitionSection(stripped: string): {
 function stripLegacyModeLine(text: string): string {
   const cleanLines = text.split("\n").filter((line) => !/^\s*Mode:\s*\S/i.test(line));
   return cleanLines.join("\n").trim();
+}
+
+function resolvedSourceCoordinate(
+  workspace: string,
+  declared: string,
+  localPath: string | undefined,
+  legacyLocal: boolean,
+  error: string | null,
+): string | null {
+  const path =
+    error !== null
+      ? null
+      : localPath !== undefined
+        ? resolveWorkspaceSourcePath(workspace, localPath)
+        : declared.length === 0 || legacyLocal
+          ? null
+          : resolveWorkspaceSourcePath(workspace, declared);
+  return path;
+}
+
+function parsePipelineBlock(pipelineText: string, known: ReadonlySet<string>) {
+  const pipeline: ProjectPipeline = {};
+  const pipelinePreserved: PreservedLine[] = [];
+  const pipelineDropped: string[] = [];
+  for (const raw of pipelineText.split("\n")) {
+    if (!raw.trim()) continue;
+    const record = parsePipelineRecord(raw);
+    if (record === null) {
+      pipelinePreserved.push({ slot: "pipeline", text: trimTrailing(raw) });
+    } else if (!known.has(record.alias)) {
+      pipelineDropped.push(trimTrailing(raw));
+    } else {
+      pipeline[record.alias] = { ...pipeline[record.alias], ...record.value };
+    }
+  }
+
+  return { pipeline, pipelinePreserved, pipelineDropped };
+}
+
+function appendFuenteRow(
+  cells: string[],
+  header: string[],
+  raw: string,
+  { fuentes, preserved, workingColumn }: FuentesParse,
+): void {
+  const alias = cells[0];
+  const path = cells[1];
+  const mainBranch = cells[2];
+  if (cells.length < 3 || alias === undefined || path === undefined) {
+    // A row the table shape cannot read: keep it rather than swallow it.
+    preserved.push({ slot: "fuentes", text: trimTrailing(raw) });
+    return;
+  }
+  fuentes.push({
+    alias,
+    path,
+    // Empty cell = undeclared: the workspace default applies at resolution time.
+    main_branch: mainBranch !== undefined && mainBranch.length > 0 ? mainBranch : null,
+  });
+  if (header[3] === "rama de trabajo")
+    workingColumn.push({ alias, value: cells[3] ?? "", raw: trimTrailing(raw) });
+}
+
+function appendStatusRecord(
+  raw: string,
+  stripped: string,
+  section: StatusSection,
+  slot: StatusSlot,
+  out: Pick<
+    StatusBlock,
+    "defaultBranches" | "workingBranches" | "qaBranches" | "exceptionBranches"
+  >,
+  knownAliases: ReadonlySet<string>,
+  preserved: PreservedLine[],
+  dropped: string[],
+): void {
+  const record = readNestedRecord(raw, stripped);
+  if (record === null || section === "none") {
+    preserved.push({ slot, text: trimTrailing(raw) });
+    return;
+  }
+  if (acceptRecord(section, record, out, knownAliases)) return;
+  // Shape matched but the block cannot honour the key. Indentation decides
+  // WHERE it goes, and only here: an indented entry is one this CLI wrote, so
+  // a key nobody declares anymore is its own residue — pruned, and declared.
+  // A flush-left one is somebody's note that happens to read like `- k: v`,
+  // and deleting it is the very loss this parser exists to stop.
+  if (/^\s/.test(raw)) dropped.push(trimTrailing(raw));
+  else preserved.push({ slot, text: trimTrailing(raw) });
 }

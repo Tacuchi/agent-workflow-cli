@@ -243,18 +243,7 @@ async function cleanLegacyArtifacts(
     }
   }
   await cleanLegacySkillRoots(target, home, ctx, tryRemove, removed);
-  if (COMMAND_SKILLS_HOSTS.has(target)) {
-    try {
-      for (const entry of await readdir(skillsRoot, { withFileTypes: true })) {
-        if (entry.isDirectory() && entry.name.startsWith("agent-workflow-")) {
-          const candidate = join(skillsRoot, entry.name);
-          if (await isOwnedSynthesizedDir(candidate, "agent-workflow-")) await tryRemove(candidate);
-        }
-      }
-    } catch {
-      // skills root absent / unreadable — nothing to sweep.
-    }
-  }
+  await cleanLegacyCommandSkills(target, skillsRoot, tryRemove);
   return removed;
 }
 
@@ -371,17 +360,7 @@ export async function selfInstallSkill(
       skipHooks,
       keepLegacy,
     });
-    const roots = [TARGET_ROOTS[t.target], ...LEGACY_SKILL_ROOTS_BY_TARGET[t.target]];
-    entry.retired_design = [];
-    for (const parts of roots) {
-      const root = join(ctx.env.homeDir(), ...parts);
-      let outcome = retired.get(root);
-      if (!outcome) {
-        outcome = await removeRetiredDesignWrapper(root);
-        retired.set(root, outcome);
-      }
-      entry.retired_design.push(outcome);
-    }
+    await retireTargetDesignWrappers(t.target, ctx, entry, retired);
     results.push(entry);
   }
 
@@ -555,17 +534,7 @@ async function installOneTarget(
     files_copied: filesCopied,
   };
   if (!flags.skipCommands) {
-    // Synthesized w-* wrappers ARE the command surface on COMMAND_SKILLS_HOSTS,
-    // so --skill-only / --no-commands skips them exactly like native wrappers.
-    if (COMMAND_SKILLS_HOSTS.has(t.target)) {
-      const synth = await synthesizeCommandSkills(t.target, dest, sourceArg);
-      entry.command_skills = synth.count;
-      if (synth.warnings.length > 0) entry.command_skills_warnings = synth.warnings;
-    }
-    const cmdResult = await installUserCommands(t.target, sourceArg, ctx);
-    if (cmdResult.dest !== null) entry.user_commands_dest = cmdResult.dest;
-    if (cmdResult.installed) entry.user_commands_files = cmdResult.files_copied;
-    if (cmdResult.warning !== undefined) entry.user_commands_warning = cmdResult.warning;
+    await installTargetCommands(t.target, dest, sourceArg, ctx, entry);
   }
   if (!flags.skipHooks) {
     const hookResult = await installHooksForTarget(t.target, ctx);
@@ -624,13 +593,7 @@ export function splitCommandDoc(raw: string): CommandDoc {
   if (!descMatch) return { description: null, body };
   let value = (descMatch[1] ?? "").trim();
   if (/^[>|][+-]?$/.test(value)) {
-    const after = block.slice((descMatch.index ?? 0) + descMatch[0].length).replace(/^\r?\n/, "");
-    const parts: string[] = [];
-    for (const line of after.split(/\r?\n/)) {
-      if (!/^[ \t]+\S/.test(line)) break;
-      parts.push(line.trim());
-    }
-    value = parts.join(" ");
+    value = readFoldedDescription(block, descMatch);
   } else if (
     (value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
     (value.startsWith("'") && value.endsWith("'") && value.length > 1)
@@ -920,4 +883,72 @@ export async function findUpward(rel: string): Promise<string | null> {
 export async function resolveBundledSkillPath(): Promise<string | null> {
   const skillFile = await findUpward(join(BUNDLED_SKILL_REL_PATH, "SKILL.md"));
   return skillFile === null ? null : dirname(skillFile);
+}
+
+async function cleanLegacyCommandSkills(
+  target: InstallTarget,
+  skillsRoot: string,
+  tryRemove: (path: string) => Promise<void>,
+): Promise<void> {
+  if (COMMAND_SKILLS_HOSTS.has(target)) {
+    try {
+      for (const entry of await readdir(skillsRoot, { withFileTypes: true })) {
+        if (entry.isDirectory() && entry.name.startsWith("agent-workflow-")) {
+          const candidate = join(skillsRoot, entry.name);
+          if (await isOwnedSynthesizedDir(candidate, "agent-workflow-")) await tryRemove(candidate);
+        }
+      }
+    } catch {
+      // skills root absent / unreadable — nothing to sweep.
+    }
+  }
+}
+
+async function retireTargetDesignWrappers(
+  target: InstallTarget,
+  ctx: CliContext,
+  entry: SelfInstallTargetResult,
+  retired: Map<string, Awaited<ReturnType<typeof removeRetiredDesignWrapper>>>,
+): Promise<void> {
+  const roots = [TARGET_ROOTS[target], ...LEGACY_SKILL_ROOTS_BY_TARGET[target]];
+  entry.retired_design = [];
+  for (const parts of roots) {
+    const root = join(ctx.env.homeDir(), ...parts);
+    let outcome = retired.get(root);
+    if (!outcome) {
+      outcome = await removeRetiredDesignWrapper(root);
+      retired.set(root, outcome);
+    }
+    entry.retired_design.push(outcome);
+  }
+}
+
+async function installTargetCommands(
+  target: InstallTarget,
+  dest: string,
+  sourceArg: string,
+  ctx: CliContext,
+  entry: SelfInstallTargetResult,
+): Promise<void> {
+  // Synthesized w-* wrappers ARE the command surface on COMMAND_SKILLS_HOSTS,
+  // so --skill-only / --no-commands skips them exactly like native wrappers.
+  if (COMMAND_SKILLS_HOSTS.has(target)) {
+    const synth = await synthesizeCommandSkills(target, dest, sourceArg);
+    entry.command_skills = synth.count;
+    if (synth.warnings.length > 0) entry.command_skills_warnings = synth.warnings;
+  }
+  const cmdResult = await installUserCommands(target, sourceArg, ctx);
+  if (cmdResult.dest !== null) entry.user_commands_dest = cmdResult.dest;
+  if (cmdResult.installed) entry.user_commands_files = cmdResult.files_copied;
+  if (cmdResult.warning !== undefined) entry.user_commands_warning = cmdResult.warning;
+}
+
+function readFoldedDescription(block: string, descMatch: RegExpMatchArray): string {
+  const after = block.slice((descMatch.index ?? 0) + descMatch[0].length).replace(/^\r?\n/, "");
+  const parts: string[] = [];
+  for (const line of after.split(/\r?\n/)) {
+    if (!/^[ \t]+\S/.test(line)) break;
+    parts.push(line.trim());
+  }
+  return parts.join(" ");
 }

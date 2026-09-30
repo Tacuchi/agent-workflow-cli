@@ -92,38 +92,8 @@ export async function runDoctorRepair(
     case "auth.flow":
       return runDoctorAuthFlow(action, ctx);
     case "multiroot.attach":
-    case "multiroot.detach": {
-      if (!action.args.paths || !["claude", "codex"].includes(action.args.host ?? ""))
-        return { status: "failed", detail: "propuesta de rutas sin host ni rutas selladas" };
-      let exact: unknown;
-      try {
-        exact = JSON.parse(action.args.paths);
-      } catch {
-        return { status: "failed", detail: "lista de rutas selladas ilegible" };
-      }
-      if (
-        !Array.isArray(exact) ||
-        exact.length === 0 ||
-        !exact.every((value) => typeof value === "string" && value.startsWith("/"))
-      )
-        return { status: "failed", detail: "lista de rutas selladas inválida" };
-      return multirootOutcome(
-        await runMultiroot(
-          ctx.fs,
-          ctx.env,
-          ctx.paths,
-          action.op === "multiroot.attach" ? "attach" : "detach",
-          {
-            paths: exact as string[],
-            useGlobal: action.args.scope === "global",
-            skipClaude: action.args.host !== "claude",
-            skipCodex: action.args.host !== "codex",
-            skipWarp: true,
-            skipOz: true,
-          },
-        ),
-      );
-    }
+    case "multiroot.detach":
+      return repairMultiroot(action, ctx);
     case "workspace.remove-retired-section": {
       const path = action.locator;
       if (
@@ -259,4 +229,40 @@ function multirootOutcome(result: unknown): DoctorActionOutcome {
         status: "failed",
         detail: `visibilidad multiroot: ${error}${result && typeof result === "object" && "hint" in result ? ` — ${String(result.hint)}` : ""}`,
       };
+}
+
+async function repairMultiroot(
+  action: DoctorBatchAction,
+  ctx: CliContext,
+): Promise<DoctorActionOutcome> {
+  if (!action.args.paths || !["claude", "codex"].includes(action.args.host ?? ""))
+    return { status: "failed", detail: "propuesta de rutas sin host ni rutas selladas" };
+  let exact: unknown;
+  try {
+    exact = JSON.parse(action.args.paths);
+  } catch {
+    return { status: "failed", detail: "lista de rutas selladas ilegible" };
+  }
+  if (
+    !Array.isArray(exact) ||
+    exact.length === 0 ||
+    !exact.every((value) => typeof value === "string" && value.startsWith("/"))
+  )
+    return { status: "failed", detail: "lista de rutas selladas inválida" };
+  return multirootOutcome(
+    await runMultiroot(
+      ctx.fs,
+      ctx.env,
+      ctx.paths,
+      action.op === "multiroot.attach" ? "attach" : "detach",
+      {
+        paths: exact as string[],
+        useGlobal: action.args.scope === "global",
+        skipClaude: action.args.host !== "claude",
+        skipCodex: action.args.host !== "codex",
+        skipWarp: true,
+        skipOz: true,
+      },
+    ),
+  );
 }

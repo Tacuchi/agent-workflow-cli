@@ -440,36 +440,10 @@ async function installClaudeHooks(
     ? (existingData.hooks as Record<string, unknown>)
     : {};
 
-  const eventsInstalled: string[] = [];
-  const eventsAlreadyPresent: string[] = [];
-  const merged: Record<string, unknown> = {};
-  // Reconcile every event, including ones removed from the new template. An old
-  // Git guard must not survive merely because the template no longer names it.
-  for (const [event, value] of Object.entries(existingHooks)) {
-    if (!Array.isArray(value)) {
-      merged[event] = value;
-      continue;
-    }
-    const foreign = value.flatMap((entry) => {
-      const kept = stripOurClaudeHookCommands(entry);
-      return kept === null ? [] : [kept];
-    });
-    if (foreign.length > 0) merged[event] = foreign;
-    if (foreign.length !== value.length && template.hooks[event] === undefined) {
-      eventsInstalled.push(event);
-    }
-  }
-  for (const [event, entries] of Object.entries(template.hooks)) {
-    const existing = existingHooks[event];
-    const foreign = Array.isArray(merged[event]) ? (merged[event] as unknown[]) : [];
-    const next = [...foreign, ...entries];
-    if (isDeepStrictEqual(existing, next)) {
-      eventsAlreadyPresent.push(event);
-    } else {
-      eventsInstalled.push(event);
-    }
-    merged[event] = next;
-  }
+  const { eventsInstalled, eventsAlreadyPresent, merged } = reconcileClaudeHooks(
+    existingHooks,
+    template,
+  );
 
   if (eventsInstalled.length === 0) {
     return {
@@ -747,13 +721,7 @@ async function retireOpencodePlugin(
       events_installed: [],
       events_already_present: [],
       backup_path: null,
-      warning: owned
-        ? dryRun
-          ? "No compatible Workline tool guard remains in OpenCode. An install would retire the generated module and its own config entry."
-          : "No compatible Workline tool guard remains in OpenCode. The generated module and its config entry were retired."
-        : existing === null
-          ? "The SQL MCP matcher cannot be bridged to OpenCode tools; no plugin is installed."
-          : "A foreign plugin at that path is preserved; no Workline hook is installed.",
+      warning: retiredOpencodeWarning(owned, dryRun, existing),
     },
     exitCode: 0,
   };
@@ -781,4 +749,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export async function resolveBundledHookTemplate(): Promise<string | null> {
   return findUpward(join("skills", SKILL_DIR_NAME, "hooks", "hooks.template.json"));
+}
+
+function reconcileClaudeHooks(existingHooks: Record<string, unknown>, template: HooksTemplate) {
+  const eventsInstalled: string[] = [];
+  const eventsAlreadyPresent: string[] = [];
+  const merged: Record<string, unknown> = {};
+  // Reconcile every event, including ones removed from the new template. An old
+  // Git guard must not survive merely because the template no longer names it.
+  for (const [event, value] of Object.entries(existingHooks)) {
+    if (!Array.isArray(value)) {
+      merged[event] = value;
+      continue;
+    }
+    const foreign = value.flatMap((entry) => {
+      const kept = stripOurClaudeHookCommands(entry);
+      return kept === null ? [] : [kept];
+    });
+    if (foreign.length > 0) merged[event] = foreign;
+    if (foreign.length !== value.length && template.hooks[event] === undefined) {
+      eventsInstalled.push(event);
+    }
+  }
+  for (const [event, entries] of Object.entries(template.hooks)) {
+    const existing = existingHooks[event];
+    const foreign = Array.isArray(merged[event]) ? (merged[event] as unknown[]) : [];
+    const next = [...foreign, ...entries];
+    if (isDeepStrictEqual(existing, next)) {
+      eventsAlreadyPresent.push(event);
+    } else {
+      eventsInstalled.push(event);
+    }
+    merged[event] = next;
+  }
+
+  return { eventsInstalled, eventsAlreadyPresent, merged };
+}
+
+function retiredOpencodeWarning(owned: boolean, dryRun: boolean, existing: string | null): string {
+  return owned
+    ? dryRun
+      ? "No compatible Workline tool guard remains in OpenCode. An install would retire the generated module and its own config entry."
+      : "No compatible Workline tool guard remains in OpenCode. The generated module and its config entry were retired."
+    : existing === null
+      ? "The SQL MCP matcher cannot be bridged to OpenCode tools; no plugin is installed."
+      : "A foreign plugin at that path is preserved; no Workline hook is installed.";
 }
