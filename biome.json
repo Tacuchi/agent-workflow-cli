@@ -45,7 +45,7 @@
         "noNonNullAssertion": "error"
       },
       "complexity": {
-        "noExcessiveCognitiveComplexity": "warn"
+        "noExcessiveCognitiveComplexity": "error"
       },
       "correctness": {
         "noUnusedImports": "error",
