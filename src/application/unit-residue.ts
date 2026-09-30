@@ -36,36 +36,39 @@ export async function residueBlockers(
     (rootIgnoreMissing &&
       git.ignoredInSource !== undefined &&
       (await git.ignoredInSource(source, name)));
-  const visit = async (folder: string): Promise<void> => {
-    for (const item of await fs.list(folder)) {
-      const path = item.path;
-      const name = relative(unit, path).split("\\").join("/");
-      const stat = await fs.lstat(path);
-      if (stat === null) continue;
-      if (name === ".git" && stat.type === "file") continue;
+  async function checkTrackedFile(path: string, name: string, isSymlink: boolean): Promise<void> {
+    const expected = tracked.get(name);
+    if (expected !== undefined) {
+      const mode = await worktreeFileMode(path);
+      const hash = await hashWorktreePath(source, path, isSymlink);
+      if (expected.mode !== mode || expected.hash !== hash) blockers.push(name);
+    } else if (!(await ignored(name))) blockers.push(name);
+  }
+  async function visitPath(path: string): Promise<void> {
+    const name = relative(unit, path).split("\\").join("/");
+    const stat = await fs.lstat(path);
+    if (stat === null) return;
+    if (name === ".git" && stat.type === "file") return;
+    if (
+      name === "node_modules" &&
+      stat.isSymlink &&
+      (await fs.realPath(path)) === (await fs.realPath(join(source, "node_modules")))
+    )
+      return;
+    if (stat.type === "dir" && !stat.isSymlink) {
       if (
-        name === "node_modules" &&
-        stat.isSymlink &&
-        (await fs.realPath(path)) === (await fs.realPath(join(source, "node_modules")))
+        (await ignored(name)) &&
+        !trackedPaths.some((trackedPath) => trackedPath.startsWith(`${name}/`))
       )
-        continue;
-      if (stat.type === "dir" && !stat.isSymlink) {
-        if (
-          (await ignored(name)) &&
-          !trackedPaths.some((trackedPath) => trackedPath.startsWith(`${name}/`))
-        )
-          continue;
-        await visit(path);
-        continue;
-      }
-      const expected = tracked.get(name);
-      if (expected !== undefined) {
-        const mode = await worktreeFileMode(path);
-        const hash = await hashWorktreePath(source, path, stat.isSymlink);
-        if (expected.mode !== mode || expected.hash !== hash) blockers.push(name);
-      } else if (!(await ignored(name))) blockers.push(name);
+        return;
+      await visit(path);
+      return;
     }
-  };
+    await checkTrackedFile(path, name, stat.isSymlink);
+  }
+  async function visit(folder: string): Promise<void> {
+    for (const item of await fs.list(folder)) await visitPath(item.path);
+  }
   await visit(unit);
   return blockers;
 }

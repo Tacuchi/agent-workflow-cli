@@ -79,22 +79,7 @@ export function finalValidationOverrides(text: string): FinalValidationOverride[
     const heading = headings.get(index);
     if (heading?.level === 2) inValidations = VALIDATIONS_HEADING.test(foldHeading(heading.title));
     if (!inValidations) continue;
-    const clause = /^\s*[-*]\s+Validaci[oó]n final\s*·\s*(`[^`]+`)\s*·\s*(.*)$/i.exec(raw);
-    if (clause === null) continue;
-    const alias = clause[1]?.slice(1, -1) ?? "";
-    const rest = clause[2] ?? "";
-    if (!/^(?:build|tests) `[^`]+`(?:\s*·\s*(?:build|tests) `[^`]+`)?$/i.test(rest.trim()))
-      continue;
-    const build = /(?:^|\s*·\s*)build\s+`([^`]+)`/i.exec(rest)?.[1];
-    const test = /(?:^|\s*·\s*)tests\s+`([^`]+)`/i.exec(rest)?.[1];
-    if (rest.match(/\bbuild\s+`/gi)?.length === 2 || rest.match(/\btests\s+`/gi)?.length === 2)
-      continue;
-    overrides.push({
-      alias,
-      ...(build ? { build } : {}),
-      ...(test ? { test } : {}),
-      line: index + 1,
-    });
+    appendValidationOverride(raw, index, overrides);
   }
   return overrides;
 }
@@ -245,43 +230,33 @@ export function parsePlanSourceBoundary(text: string): ParsedPlanSourceBoundary 
   const continuation = new ClauseContinuation();
   const markdown = scanMarkdown(text);
 
-  for (const [index, raw] of markdown.lines.entries()) {
-    if (markdown.fenced[index]) {
-      continuation.interrupt();
-      continue;
-    }
-    const line = index + 1;
+  function readHeading(raw: string, line: number): boolean {
     const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(raw);
-    if (heading?.[1] !== undefined && heading[2] !== undefined) {
-      const level = heading[1].length;
-      if (level <= 2) {
-        inTasks = level === 2 && foldHeading(heading[2]) === TASKS_HEADING;
-        current = null;
-        currentTask = null;
-        continue;
-      }
-      if (level === 3) {
-        current = inTasks ? phaseFromHeading(heading[2], line) : null;
-        if (current !== null) phases.push(current);
-        currentTask = null;
-        continue;
-      }
+    if (heading?.[1] === undefined || heading[2] === undefined) return false;
+    const level = heading[1].length;
+    if (level <= 2) {
+      inTasks = level === 2 && foldHeading(heading[2]) === TASKS_HEADING;
+      current = null;
+      currentTask = null;
+      return true;
+    }
+    if (level === 3) {
+      current = inTasks ? phaseFromHeading(heading[2], line) : null;
+      if (current !== null) phases.push(current);
+      currentTask = null;
+      return true;
     }
 
-    const surfaceMatch = SURFACE_LINE.exec(raw.trim());
-    if (surfaceMatch?.[1] !== undefined && surface === null) {
-      surface = readExecutionSurface(surfaceMatch[1]);
-      declaredSurface = surface === null ? surfaceMatch[1].trim() : null;
-      continuation.interrupt();
-      continue;
-    }
+    return false;
+  }
 
-    if (current === null) continue;
+  function readPhaseLine(raw: string, line: number): void {
+    if (current === null) return;
     const sourceMatch = SOURCES_LINE.exec(raw.trim());
     if (sourceMatch !== null && current.sources === null) {
       current.sources = readAliases(sourceMatch[1] ?? "");
       continuation.interrupt();
-      continue;
+      return;
     }
     const taskMatch = TASK_LINE.exec(raw);
     if (taskMatch?.[1] !== undefined) {
@@ -294,9 +269,28 @@ export function parsePlanSourceBoundary(text: string): ParsedPlanSourceBoundary 
       };
       current.tasks.push(currentTask);
       continuation.start();
-      continue;
+      return;
     }
     if (currentTask !== null) currentTask = continueTask(currentTask, continuation, raw);
+  }
+
+  for (const [index, raw] of markdown.lines.entries()) {
+    if (markdown.fenced[index]) {
+      continuation.interrupt();
+      continue;
+    }
+    const line = index + 1;
+    if (readHeading(raw, line)) continue;
+
+    const surfaceMatch = SURFACE_LINE.exec(raw.trim());
+    if (surfaceMatch?.[1] !== undefined && surface === null) {
+      surface = readExecutionSurface(surfaceMatch[1]);
+      declaredSurface = surface === null ? surfaceMatch[1].trim() : null;
+      continuation.interrupt();
+      continue;
+    }
+
+    readPhaseLine(raw, line);
   }
 
   return {
@@ -361,87 +355,9 @@ export function validatePlanSourceBoundary(
     return failures;
   }
 
-  const known = new Set(["workspace", ...declaredSources]);
-  for (const phase of parsed.phases) {
-    if (phase.sources === null || phase.sources.length === 0) {
-      failures.push({
-        code: "PLAN_SOURCE_BOUNDARY_MISSING",
-        message: `F${phase.n} no declara '> Fuentes:'`,
-        line: phase.line,
-      });
-    } else {
-      failures.push(...unknownSources(phase.sources, known, phase.line, `F${phase.n}`));
-    }
-    const phaseSources = new Set(phase.sources ?? []);
-    for (const task of phase.tasks) {
-      if (task.sources === null || task.sources.length === 0) {
-        failures.push({
-          code: "PLAN_SOURCE_BOUNDARY_MISSING",
-          message: `T${phase.n}.${task.n} no declara '_(fuentes: …)_'`,
-          line: task.line,
-        });
-        continue;
-      }
-      failures.push(...unknownSources(task.sources, known, task.line, `T${phase.n}.${task.n}`));
-      const outside = task.sources.filter((source) => !phaseSources.has(source));
-      if (outside.length > 0) {
-        failures.push({
-          code: "PLAN_TASK_SOURCE_OUTSIDE_PHASE",
-          message: `T${phase.n}.${task.n} declara ${outside.join(", ")} fuera de las fuentes de F${phase.n}`,
-          line: task.line,
-        });
-      }
-    }
-  }
-  const scoped = new Set(sourceAliasesOfPlan(text));
-  const overrides = finalValidationOverrides(text);
-  const seen = new Set<string>();
-  for (const override of overrides) {
-    const earlier = overrides.find(
-      (item) => item.alias === override.alias && item.line < override.line,
-    );
-    const split =
-      earlier !== undefined &&
-      ((earlier.build !== undefined && earlier.test === undefined && override.test !== undefined) ||
-        (earlier.test !== undefined &&
-          earlier.build === undefined &&
-          override.build !== undefined));
-    if (
-      !scoped.has(override.alias) ||
-      override.alias === "workspace" ||
-      seen.has(override.alias) ||
-      (!override.build && !override.test)
-    ) {
-      failures.push({
-        code: split ? "PLAN_FINAL_VALIDATION_SPLIT" : "PLAN_SOURCE_UNKNOWN",
-        message: split
-          ? `la validación final de '${override.alias}' está partida entre las líneas ${earlier.line} y ${override.line}: build y tests deben ir en una sola viñeta`
-          : `la validación final de línea ${override.line} debe nombrar una fuente de código del plan una sola vez y declarar build o tests: '${override.alias}'`,
-        line: override.line,
-      });
-    }
-    seen.add(override.alias);
-  }
-  const recognized = new Set(overrides.map((item) => item.line));
-  const markdown = scanMarkdown(text);
-  const headings = new Map(markdown.headings.map((item) => [item.line, item]));
-  let inValidations = false;
-  for (const [index, line] of markdown.lines.entries()) {
-    if (markdown.fenced[index]) continue;
-    const heading = headings.get(index);
-    if (heading?.level === 2) inValidations = VALIDATIONS_HEADING.test(foldHeading(heading.title));
-    if (
-      inValidations &&
-      /^\s*[-*]\s+Validaci[oó]n final\s*·/i.test(line) &&
-      !recognized.has(index + 1)
-    ) {
-      failures.push({
-        code: "PLAN_SOURCE_UNKNOWN",
-        message: `la validación final de línea ${index + 1} requiere alias y comandos entre comillas invertidas`,
-        line: index + 1,
-      });
-    }
-  }
+  validatePhaseSources(parsed, declaredSources, failures);
+  const overrides = validateOverrideSources(text, failures);
+  validateOverrideSyntax(text, overrides, failures);
   failures.push(...validateSourceBoundedSemantics(text));
   return failures;
 }
@@ -516,6 +432,35 @@ function sourceBoundedClauses(text: string): SemanticClause[] {
     return clause;
   };
 
+  function enterClauseSection(heading: { title: string; level: number }, index: number): void {
+    const folded = foldHeading(heading.title);
+    if (heading.level <= 2) {
+      inHandoff = isPlanHandoffHeading(folded);
+      inValidations = VALIDATIONS_HEADING.test(folded);
+      inTasks = folded === TASKS_HEADING;
+      inPhase = false;
+    } else if (heading.level === 3) {
+      inPhase = inTasks && phaseFromHeading(heading.title, index + 1) !== null;
+    }
+  }
+
+  function startClause(raw: string, trimmed: string, index: number): SemanticClause | null {
+    const task = TASK_LINE.exec(raw);
+    if (inTasks && inPhase && task?.[1] !== undefined) {
+      return add("task", index + 1, task[1].replace(TASK_SOURCES, ""));
+    }
+    if (inPhase && PHASE_VALIDATION_LINE.test(raw)) {
+      return add("phase-validation", index + 1, raw);
+    }
+    if (inPhase && PHASE_EXIT_LINE.test(raw)) {
+      return add("phase-exit", index + 1, raw);
+    }
+    if (inValidations && trimmed.length > 0 && /^[-*]\s+/.test(trimmed)) {
+      return add("plan-validation", index + 1, trimmed.replace(/^[-*]\s+/, ""));
+    }
+    return null;
+  }
+
   for (let index = 0; index < markdown.lines.length; index += 1) {
     if (markdown.fenced[index]) {
       active = null;
@@ -525,42 +470,20 @@ function sourceBoundedClauses(text: string): SemanticClause[] {
     const trimmed = raw.trim();
     const heading = headings.get(index);
     if (heading !== undefined) {
-      const folded = foldHeading(heading.title);
-      if (heading.level <= 2) {
-        inHandoff = isPlanHandoffHeading(folded);
-        inValidations = VALIDATIONS_HEADING.test(folded);
-        inTasks = folded === TASKS_HEADING;
-        inPhase = false;
-      } else if (heading.level === 3) {
-        inPhase = inTasks && phaseFromHeading(heading.title, index + 1) !== null;
-      }
+      enterClauseSection(heading, index);
       active = null;
       continue;
     }
     if (inHandoff) continue;
 
-    const task = TASK_LINE.exec(raw);
-    if (inTasks && inPhase && task?.[1] !== undefined) {
-      active = add("task", index + 1, task[1].replace(TASK_SOURCES, ""));
-      continue;
-    }
-    if (inPhase && PHASE_VALIDATION_LINE.test(raw)) {
-      active = add("phase-validation", index + 1, raw);
-      continue;
-    }
-    if (inPhase && PHASE_EXIT_LINE.test(raw)) {
-      active = add("phase-exit", index + 1, raw);
-      continue;
-    }
-    if (inValidations && trimmed.length > 0 && /^[-*]\s+/.test(trimmed)) {
-      active = add("plan-validation", index + 1, trimmed.replace(/^[-*]\s+/, ""));
+    const started = startClause(raw, trimmed, index);
+    if (started !== null) {
+      active = started;
       continue;
     }
     // A wrapped task/validation stays one semantic clause.
     if (active === null) continue;
-    const folds = continuation.read(raw);
-    if (folds === null) active = null;
-    else if (folds) active.text = `${active.text} ${trimmed}`;
+    active = continueClause(active, continuation, raw, trimmed);
   }
   return clauses;
 }
@@ -969,4 +892,140 @@ function remoteLocatorIn(values: readonly string[]): string | null {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function appendValidationOverride(
+  raw: string,
+  index: number,
+  overrides: FinalValidationOverride[],
+): void {
+  const clause = /^\s*[-*]\s+Validaci[oó]n final\s*·\s*(`[^`]+`)\s*·\s*(.*)$/i.exec(raw);
+  if (clause === null) return;
+  const alias = clause[1]?.slice(1, -1) ?? "";
+  const rest = clause[2] ?? "";
+  if (!/^(?:build|tests) `[^`]+`(?:\s*·\s*(?:build|tests) `[^`]+`)?$/i.test(rest.trim())) return;
+  const build = /(?:^|\s*·\s*)build\s+`([^`]+)`/i.exec(rest)?.[1];
+  const test = /(?:^|\s*·\s*)tests\s+`([^`]+)`/i.exec(rest)?.[1];
+  if (rest.match(/\bbuild\s+`/gi)?.length === 2 || rest.match(/\btests\s+`/gi)?.length === 2)
+    return;
+  overrides.push({
+    alias,
+    ...(build ? { build } : {}),
+    ...(test ? { test } : {}),
+    line: index + 1,
+  });
+}
+
+function validatePhaseSources(
+  parsed: ParsedPlanSourceBoundary,
+  declaredSources: readonly string[],
+  failures: SourceBoundaryFailure[],
+): void {
+  const known = new Set(["workspace", ...declaredSources]);
+  for (const phase of parsed.phases) {
+    if (phase.sources === null || phase.sources.length === 0) {
+      failures.push({
+        code: "PLAN_SOURCE_BOUNDARY_MISSING",
+        message: `F${phase.n} no declara '> Fuentes:'`,
+        line: phase.line,
+      });
+    } else {
+      failures.push(...unknownSources(phase.sources, known, phase.line, `F${phase.n}`));
+    }
+    const phaseSources = new Set(phase.sources ?? []);
+    for (const task of phase.tasks) {
+      if (task.sources === null || task.sources.length === 0) {
+        failures.push({
+          code: "PLAN_SOURCE_BOUNDARY_MISSING",
+          message: `T${phase.n}.${task.n} no declara '_(fuentes: …)_'`,
+          line: task.line,
+        });
+        continue;
+      }
+      failures.push(...unknownSources(task.sources, known, task.line, `T${phase.n}.${task.n}`));
+      const outside = task.sources.filter((source) => !phaseSources.has(source));
+      if (outside.length > 0) {
+        failures.push({
+          code: "PLAN_TASK_SOURCE_OUTSIDE_PHASE",
+          message: `T${phase.n}.${task.n} declara ${outside.join(", ")} fuera de las fuentes de F${phase.n}`,
+          line: task.line,
+        });
+      }
+    }
+  }
+}
+
+function validateOverrideSources(
+  text: string,
+  failures: SourceBoundaryFailure[],
+): FinalValidationOverride[] {
+  const scoped = new Set(sourceAliasesOfPlan(text));
+  const overrides = finalValidationOverrides(text);
+  const seen = new Set<string>();
+  for (const override of overrides) {
+    const earlier = overrides.find(
+      (item) => item.alias === override.alias && item.line < override.line,
+    );
+    const split =
+      earlier !== undefined &&
+      ((earlier.build !== undefined && earlier.test === undefined && override.test !== undefined) ||
+        (earlier.test !== undefined &&
+          earlier.build === undefined &&
+          override.build !== undefined));
+    if (
+      !scoped.has(override.alias) ||
+      override.alias === "workspace" ||
+      seen.has(override.alias) ||
+      (!override.build && !override.test)
+    ) {
+      failures.push({
+        code: split ? "PLAN_FINAL_VALIDATION_SPLIT" : "PLAN_SOURCE_UNKNOWN",
+        message: split
+          ? `la validación final de '${override.alias}' está partida entre las líneas ${earlier.line} y ${override.line}: build y tests deben ir en una sola viñeta`
+          : `la validación final de línea ${override.line} debe nombrar una fuente de código del plan una sola vez y declarar build o tests: '${override.alias}'`,
+        line: override.line,
+      });
+    }
+    seen.add(override.alias);
+  }
+  return overrides;
+}
+
+function validateOverrideSyntax(
+  text: string,
+  overrides: FinalValidationOverride[],
+  failures: SourceBoundaryFailure[],
+): void {
+  const recognized = new Set(overrides.map((item) => item.line));
+  const markdown = scanMarkdown(text);
+  const headings = new Map(markdown.headings.map((item) => [item.line, item]));
+  let inValidations = false;
+  for (const [index, line] of markdown.lines.entries()) {
+    if (markdown.fenced[index]) continue;
+    const heading = headings.get(index);
+    if (heading?.level === 2) inValidations = VALIDATIONS_HEADING.test(foldHeading(heading.title));
+    if (
+      inValidations &&
+      /^\s*[-*]\s+Validaci[oó]n final\s*·/i.test(line) &&
+      !recognized.has(index + 1)
+    ) {
+      failures.push({
+        code: "PLAN_SOURCE_UNKNOWN",
+        message: `la validación final de línea ${index + 1} requiere alias y comandos entre comillas invertidas`,
+        line: index + 1,
+      });
+    }
+  }
+}
+
+function continueClause(
+  active: SemanticClause,
+  continuation: ClauseContinuation,
+  raw: string,
+  trimmed: string,
+): SemanticClause | null {
+  const folds = continuation.read(raw);
+  if (folds === null) return null;
+  if (folds) active.text = `${active.text} ${trimmed}`;
+  return active;
 }

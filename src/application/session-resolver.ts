@@ -271,27 +271,7 @@ export async function sessionsSharingNumber(
       state: await readSessionState(fs, folder.path),
     });
   }
-  const history = paths.cwdHistoryFile();
-  if (await fs.exists(history)) {
-    for (const row of readHistoryRows(await fs.readText(history))) {
-      const number = sessionNumericCode(row.key);
-      if (number === null || !sameCorrelative(number, wanted)) continue;
-      if (
-        !row.key.includes("-") ||
-        sharing.some(
-          (candidate) =>
-            candidate.folder === row.key ||
-            candidate.folder.replace(/^session(?=\d)/, "") === row.key,
-        )
-      )
-        continue;
-      sharing.push({
-        folder: row.key,
-        code: wanted,
-        state: row.state === "closed" ? "closed" : "active",
-      });
-    }
-  }
+  await appendHistoricalSharing(fs, paths, wanted, sharing);
   return sharing;
 }
 
@@ -475,30 +455,7 @@ async function resolveExplicit(
   const matches = identityMatches(scanned, code);
   const only = matches.length === 1 ? matches[0] : undefined;
   if (only === undefined) {
-    if (matches.length === 0) {
-      return resolutionError(
-        "SESSION_NOT_FOUND",
-        `no existe una sesión que coincida con '${code}'`,
-        scanned,
-        "revisá `aw sessions` y reintentá con un código o carpeta existente",
-      );
-    }
-
-    const numerical = numericIdentity(code);
-    if (intent === "write" && numerical !== null) {
-      return writeCollisionError(numerical, candidatesOf(matches));
-    }
-
-    return resolutionError(
-      "SESSION_AMBIGUOUS",
-      `'${code}' coincide con ${matches.length} sesiones`,
-      matches,
-      // The names themselves, because the advice has to be runnable: the
-      // exact folder now ends the search, so each of these resolves to one
-      // session and only one.
-      `reintentá con el nombre exacto de la carpeta: ${matches.map((m) => m.name).join(", ")}`,
-      true,
-    );
+    return unresolvedExplicitMatches(scanned, matches, code, intent);
   }
   if (only.state !== "active" && !allowClosed) {
     return resolutionError(
@@ -802,4 +759,65 @@ async function declaredBirthDate(
 ): Promise<string | undefined> {
   const read = await readCustody(fs, sessionPath);
   return read.status === "present" ? read.custody.created : undefined;
+}
+
+async function appendHistoricalSharing(
+  fs: FileSystemPort,
+  paths: PathsService,
+  wanted: string,
+  sharing: SessionCandidate[],
+): Promise<void> {
+  const history = paths.cwdHistoryFile();
+  if (await fs.exists(history)) {
+    for (const row of readHistoryRows(await fs.readText(history))) {
+      const number = sessionNumericCode(row.key);
+      if (number === null || !sameCorrelative(number, wanted)) continue;
+      if (
+        !row.key.includes("-") ||
+        sharing.some(
+          (candidate) =>
+            candidate.folder === row.key ||
+            candidate.folder.replace(/^session(?=\d)/, "") === row.key,
+        )
+      )
+        continue;
+      sharing.push({
+        folder: row.key,
+        code: wanted,
+        state: row.state === "closed" ? "closed" : "active",
+      });
+    }
+  }
+}
+
+function unresolvedExplicitMatches(
+  scanned: ScannedFolder[],
+  matches: ScannedFolder[],
+  code: string,
+  intent: SessionIntent,
+): SessionResolutionError {
+  if (matches.length === 0) {
+    return resolutionError(
+      "SESSION_NOT_FOUND",
+      `no existe una sesión que coincida con '${code}'`,
+      scanned,
+      "revisá `aw sessions` y reintentá con un código o carpeta existente",
+    );
+  }
+
+  const numerical = numericIdentity(code);
+  if (intent === "write" && numerical !== null) {
+    return writeCollisionError(numerical, candidatesOf(matches));
+  }
+
+  return resolutionError(
+    "SESSION_AMBIGUOUS",
+    `'${code}' coincide con ${matches.length} sesiones`,
+    matches,
+    // The names themselves, because the advice has to be runnable: the
+    // exact folder now ends the search, so each of these resolves to one
+    // session and only one.
+    `reintentá con el nombre exacto de la carpeta: ${matches.map((m) => m.name).join(", ")}`,
+    true,
+  );
 }

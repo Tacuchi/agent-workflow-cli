@@ -121,14 +121,8 @@ export async function runSessionCreate(
     };
   }
   if (type === "quick" && input.allowRepeat !== true) {
-    for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
-      if (!folder.name.endsWith(`-${descriptor}`)) continue;
-      if ((await readSessionState(fs, folder.path)) !== "closed") continue;
-      return {
-        error: `la quick '${folder.name}' ya cerró con ese nombre; revisá su trabajo antes de abrir otra y reintentá con --allow-repeat si es intencional`,
-        code: "SESSION_QUICK_REPEAT_CONFIRM",
-      };
-    }
+    const repeated = await repeatedQuick(fs, paths, descriptor);
+    if (repeated !== null) return repeated;
   }
 
   // The session's custody is a lifecycle reader of the core document graph.
@@ -203,18 +197,16 @@ export async function runSessionCreate(
     inputs_from: originOf(declared, derived),
     materialization,
   };
-  if (derived.note !== undefined) record.inputs_note = derived.note;
-  if (origin && origin.length > 0) record.origin = origin;
-  if (registryWarning !== undefined) record.registry_warning = registryWarning;
-
-  const flow = flowOfDescriptor(name);
-  if (flow !== null) {
-    const seeded = await seedRun(fs, paths, folderInfo.folder, flow);
-    if (seeded !== null) return seeded;
-    record.flow = flow;
-  }
-
-  return { sessionCreate: record };
+  return completeCreatedSession(
+    fs,
+    paths,
+    record,
+    derived.note,
+    origin,
+    registryWarning,
+    name,
+    folderInfo.folder,
+  );
 }
 
 async function localRegistryWarning(
@@ -612,4 +604,44 @@ function parentsOf(artifacts: readonly CustodyArtifact[], canon: CoreDocsCanon):
     parents.push(node);
   }
   return parents;
+}
+
+async function repeatedQuick(
+  fs: FileSystemPort,
+  paths: PathsService,
+  descriptor: string,
+): Promise<SessionCreateError | null> {
+  for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    if (!folder.name.endsWith(`-${descriptor}`)) continue;
+    if ((await readSessionState(fs, folder.path)) !== "closed") continue;
+    return {
+      error: `la quick '${folder.name}' ya cerró con ese nombre; revisá su trabajo antes de abrir otra y reintentá con --allow-repeat si es intencional`,
+      code: "SESSION_QUICK_REPEAT_CONFIRM",
+    };
+  }
+  return null;
+}
+
+async function completeCreatedSession(
+  fs: FileSystemPort,
+  paths: PathsService,
+  record: SessionCreateRecordOutput,
+  note: string | undefined,
+  origin: string | undefined,
+  registryWarning: string | undefined,
+  name: string,
+  folder: string,
+): Promise<SessionCreateFullOutput | SessionCreateError> {
+  if (note !== undefined) record.inputs_note = note;
+  if (origin && origin.length > 0) record.origin = origin;
+  if (registryWarning !== undefined) record.registry_warning = registryWarning;
+
+  const flow = flowOfDescriptor(name);
+  if (flow !== null) {
+    const seeded = await seedRun(fs, paths, folder, flow);
+    if (seeded !== null) return seeded;
+    record.flow = flow;
+  }
+
+  return { sessionCreate: record };
 }

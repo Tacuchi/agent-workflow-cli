@@ -217,37 +217,7 @@ export async function ensureWorklineMaterialized(
     root,
     namespace: paths.namespace,
   };
-  const home = typeof paths.userRoot === "function" ? dirname(paths.userRoot()) : homedir();
-  if (resolve(root) === resolve(home) && resolve(root) === resolve(homedir()))
-    throw new WorkspaceResolutionError("WORKSPACE_INVALID", "$HOME no es un workspace.");
-  const fromUnits =
-    typeof paths.userUnitsDir === "function" ? relative(paths.userUnitsDir(), root) : null;
-  if (
-    fromUnits !== null &&
-    (fromUnits === "" ||
-      (fromUnits !== ".." && !fromUnits.startsWith(`..${sep}`) && !isAbsolute(fromUnits)))
-  ) {
-    throw new WorkspaceResolutionError(
-      "WORKSPACE_IN_SOURCE",
-      `${root} cae dentro de una unidad; indica --workspace <ruta> del hub.`,
-    );
-  }
-  // Guard every writer, including commands that create their own PathsService.
-  // Inability to consult the registry must never result in a new workspace.
-  const marked = await fs.exists(paths.cwdMarkerFile());
-  if (!marked && typeof paths.userRoot === "function")
-    await readHubs(hubsFile(home, paths.namespace));
-  const repo = !marked && typeof paths.userRoot === "function" ? await repositoryRoot(root) : null;
-  if (repo !== null) {
-    const claimants = await declaringHubs(fs, home, paths.namespace, repo);
-    const canonical = await fs.realPath(root).catch(() => root);
-    if (claimants.some((hub) => hub.root !== canonical)) {
-      throw new WorkspaceResolutionError(
-        "WORKSPACE_IN_SOURCE",
-        `${root} pertenece a una fuente declarada; usa --workspace <ruta> del hub.`,
-      );
-    }
-  }
+  await validateMaterializationRoot(fs, paths, root);
 
   if (await hasCanonicalSessionsMarker(fs, paths)) {
     // An old sessions-only hub acquires its marker only after the source guard.
@@ -464,4 +434,42 @@ export async function appendGitignoreEntries(
   const body = existing.replace(/\s+$/, "");
   await fs.writeText(file, body.length === 0 ? block : `${body}\n\n${block}`);
   return true;
+}
+
+async function validateMaterializationRoot(
+  fs: FileSystemPort,
+  paths: PathsService,
+  root: string,
+): Promise<void> {
+  const home = typeof paths.userRoot === "function" ? dirname(paths.userRoot()) : homedir();
+  if (resolve(root) === resolve(home) && resolve(root) === resolve(homedir()))
+    throw new WorkspaceResolutionError("WORKSPACE_INVALID", "$HOME no es un workspace.");
+  const fromUnits =
+    typeof paths.userUnitsDir === "function" ? relative(paths.userUnitsDir(), root) : null;
+  if (
+    fromUnits !== null &&
+    (fromUnits === "" ||
+      (fromUnits !== ".." && !fromUnits.startsWith(`..${sep}`) && !isAbsolute(fromUnits)))
+  ) {
+    throw new WorkspaceResolutionError(
+      "WORKSPACE_IN_SOURCE",
+      `${root} cae dentro de una unidad; indica --workspace <ruta> del hub.`,
+    );
+  }
+  // Guard every writer, including commands that create their own PathsService.
+  // Inability to consult the registry must never result in a new workspace.
+  const marked = await fs.exists(paths.cwdMarkerFile());
+  if (!marked && typeof paths.userRoot === "function")
+    await readHubs(hubsFile(home, paths.namespace));
+  const repo = !marked && typeof paths.userRoot === "function" ? await repositoryRoot(root) : null;
+  if (repo !== null) {
+    const claimants = await declaringHubs(fs, home, paths.namespace, repo);
+    const canonical = await fs.realPath(root).catch(() => root);
+    if (claimants.some((hub) => hub.root !== canonical)) {
+      throw new WorkspaceResolutionError(
+        "WORKSPACE_IN_SOURCE",
+        `${root} pertenece a una fuente declarada; usa --workspace <ruta> del hub.`,
+      );
+    }
+  }
 }

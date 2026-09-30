@@ -30,21 +30,34 @@ export async function addSource(
     block?.working_branches[input.alias] ??
     (prior ? null : await git.currentBranch(path)) ??
     null;
+  const branchFailure = await ensureSourceBranch(git, input.alias, path, main, branch);
+  if (branchFailure !== null) return branchFailure;
+  const workingBranch = branch && branch !== main ? branch : null;
+  const result = await runWorkspaceInit(fs, env, paths, {
+    sources: [{ alias: input.alias, path: input.path, ...(main ? { mainBranch: main } : {}) }],
+    ...(workingBranch ? { workingBranches: { [input.alias]: workingBranch } } : {}),
+  });
+  if ("error" in result) return { error: result.hint ?? result.error };
+  if (!result.ok) return { error: "no se pudo declarar la fuente en el bloque o multiroot" };
+  await writeWorkspaceLocalConfig(fs, paths, { [input.alias]: path });
+  return { alias: input.alias, path, working_branch: workingBranch };
+}
+
+async function ensureSourceBranch(
+  git: GitPort,
+  alias: string,
+  path: string,
+  main: string | null | undefined,
+  branch: string | null,
+): Promise<{ error: string } | null> {
   if (branch && branch !== main) {
     const outcome = await ensureWorkingBranch(
       git,
-      { alias: input.alias, path, main_branch: main ?? null },
+      { alias: alias, path, main_branch: main ?? null },
       branch,
       main ?? "",
     );
     if (!outcome.ok) return { error: outcome.reason };
   }
-  const result = await runWorkspaceInit(fs, env, paths, {
-    sources: [{ alias: input.alias, path: input.path, ...(main ? { mainBranch: main } : {}) }],
-    ...(branch && branch !== main ? { workingBranches: { [input.alias]: branch } } : {}),
-  });
-  if ("error" in result) return { error: result.hint ?? result.error };
-  if (!result.ok) return { error: "no se pudo declarar la fuente en el bloque o multiroot" };
-  await writeWorkspaceLocalConfig(fs, paths, { [input.alias]: path });
-  return { alias: input.alias, path, working_branch: branch && branch !== main ? branch : null };
+  return null;
 }

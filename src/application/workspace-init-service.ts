@@ -132,40 +132,12 @@ export async function runWorkspaceInit(
   const mainBranch = input.mainBranch;
   const wsPaths = new PathsService(paths.namespace, env.homeDir(), workspace);
 
-  const metadataRequested =
-    input.proyecto !== undefined ||
-    input.mainBranch !== undefined ||
-    input.workingBranches !== undefined ||
-    input.qaBranches !== undefined ||
-    input.lastActivity !== undefined;
-
   // No sources means no configuration intent.  `workspace-init` is now a
   // convenient early materialization command, not a mandatory gate before
   // status/resume or every flow.  It deliberately does not create skills.toml,
   // a WORKSPACE block, docs/, launch artifacts, HISTORY, or a Git repository.
   if (input.sources.length === 0 && input.proyecto === undefined) {
-    if (metadataRequested) {
-      return {
-        error: "no_sources",
-        hint: "las opciones de rama requieren al menos una fuente (--source alias:path[:rama]); sin fuentes workspace-init sólo materializa el runtime",
-      };
-    }
-    const materialization = await initMaterialization(fs, wsPaths, input.dryRun === true);
-    const untrack = process
-      ? await workspaceUntrack(process, wsPaths, input.untrack === true && input.dryRun !== true)
-      : undefined;
-    return {
-      ok: true,
-      dry_run: input.dryRun === true,
-      workspace,
-      sources: 0,
-      materialization,
-      ...(untrack === undefined ? {} : { untrack }),
-      scaffold: scaffoldFromMaterialization(materialization, wsPaths),
-      skills_toml: (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped",
-      project_md: { skipped: true, reason: "materialization_only" },
-      attach_multiroot: { skipped: true, reason: "materialization_only" },
-    };
+    return materializeWithoutSources(fs, wsPaths, workspace, input, process);
   }
 
   // Source declarations are additive; omitted aliases keep their branches and visibility.
@@ -200,59 +172,18 @@ export async function runWorkspaceInit(
     return { ...preview, source_actions: sourceActions, ...(untrack ? { untrack } : {}) };
   }
 
-  const materialization = await initMaterialization(fs, wsPaths, false);
-  const untrack = process
-    ? await workspaceUntrack(process, wsPaths, input.untrack === true)
-    : undefined;
-  const scaffold = scaffoldFromMaterialization(materialization, wsPaths);
-  // An empty skills.toml has no semantic override.  Leave skill configuration
-  // absent until a real override is requested through its dedicated surface.
-  const skillsToml = (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped";
-
-  // Previous sources (to detach removed ones) come from the same existing block.
-  const updatedAliases = new Set(sources.map((source) => source.alias));
-  const previousPaths = (existing?.fuentes ?? [])
-    .filter((f) => updatedAliases.has(f.alias) && f.path !== null)
-    .map((f) => f.path as string);
-
-  const projectMd = await runProjectMdUpsertWrite(fs, env, wsPaths, upsertInput);
-
-  if ("error" in projectMd || !projectMd.ok) {
-    const cause =
-      "error" in projectMd
-        ? projectMd.error
-        : (projectMd.results?.find((file) => file.error)?.error ?? "el bloque no se publicó");
-    return {
-      ok: false,
-      dry_run: false,
-      workspace,
-      sources: sources.length,
-      source_actions: sourceActions.map((source) => ({ ...source, error: cause })),
-      scaffold,
-      materialization,
-      ...(untrack === undefined ? {} : { untrack }),
-      skills_toml: skillsToml,
-      project_md: projectMd,
-      attach_multiroot: { skipped: true, reason: "project_md_failed" },
-    };
-  }
-
-  const visibility = await reconcileVisibility(fs, env, wsPaths, workspace, sources, previousPaths);
-
-  return {
-    ok: projectMd.ok && visibility.ok,
-    dry_run: false,
+  return applyWorkspaceInit(
+    fs,
+    env,
+    wsPaths,
     workspace,
-    sources: sources.length,
-    source_actions: sourceActions,
-    scaffold,
-    materialization,
-    ...(untrack === undefined ? {} : { untrack }),
-    skills_toml: skillsToml,
-    project_md: projectMd,
-    attach_multiroot: visibility.attach,
-    ...(visibility.detached !== undefined ? { detached_removed: visibility.detached } : {}),
-  };
+    input,
+    process,
+    sources,
+    sourceActions,
+    existing,
+    upsertInput,
+  );
 }
 
 async function initMaterialization(
@@ -488,4 +419,109 @@ function validateSources(sources: WorkspaceSource[]): WorkspaceInitInputError | 
     aliases.add(s.alias);
   }
   return null;
+}
+
+async function materializeWithoutSources(
+  fs: FileSystemPort,
+  wsPaths: PathsService,
+  workspace: string,
+  input: WorkspaceInitInput,
+  process: ProcessPort | undefined,
+): Promise<WorkspaceInitResult | WorkspaceInitInputError> {
+  const metadataRequested =
+    input.proyecto !== undefined ||
+    input.mainBranch !== undefined ||
+    input.workingBranches !== undefined ||
+    input.qaBranches !== undefined ||
+    input.lastActivity !== undefined;
+
+  if (metadataRequested) {
+    return {
+      error: "no_sources",
+      hint: "las opciones de rama requieren al menos una fuente (--source alias:path[:rama]); sin fuentes workspace-init sólo materializa el runtime",
+    };
+  }
+  const materialization = await initMaterialization(fs, wsPaths, input.dryRun === true);
+  const untrack = process
+    ? await workspaceUntrack(process, wsPaths, input.untrack === true && input.dryRun !== true)
+    : undefined;
+  return {
+    ok: true,
+    dry_run: input.dryRun === true,
+    workspace,
+    sources: 0,
+    materialization,
+    ...(untrack === undefined ? {} : { untrack }),
+    scaffold: scaffoldFromMaterialization(materialization, wsPaths),
+    skills_toml: (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped",
+    project_md: { skipped: true, reason: "materialization_only" },
+    attach_multiroot: { skipped: true, reason: "materialization_only" },
+  };
+}
+
+async function applyWorkspaceInit(
+  fs: FileSystemPort,
+  env: EnvPort,
+  wsPaths: PathsService,
+  workspace: string,
+  input: WorkspaceInitInput,
+  process: ProcessPort | undefined,
+  sources: WorkspaceSource[],
+  sourceActions: NonNullable<WorkspaceInitResult["source_actions"]>,
+  existing: Awaited<ReturnType<typeof readExistingBlock>>,
+  upsertInput: ProjectMdUpsertInput,
+): Promise<WorkspaceInitResult> {
+  const materialization = await initMaterialization(fs, wsPaths, false);
+  const untrack = process
+    ? await workspaceUntrack(process, wsPaths, input.untrack === true)
+    : undefined;
+  const scaffold = scaffoldFromMaterialization(materialization, wsPaths);
+  // An empty skills.toml has no semantic override.  Leave skill configuration
+  // absent until a real override is requested through its dedicated surface.
+  const skillsToml = (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped";
+
+  // Previous sources (to detach removed ones) come from the same existing block.
+  const updatedAliases = new Set(sources.map((source) => source.alias));
+  const previousPaths = (existing?.fuentes ?? [])
+    .filter((f) => updatedAliases.has(f.alias) && f.path !== null)
+    .map((f) => f.path as string);
+
+  const projectMd = await runProjectMdUpsertWrite(fs, env, wsPaths, upsertInput);
+
+  if ("error" in projectMd || !projectMd.ok) {
+    const cause =
+      "error" in projectMd
+        ? projectMd.error
+        : (projectMd.results?.find((file) => file.error)?.error ?? "el bloque no se publicó");
+    return {
+      ok: false,
+      dry_run: false,
+      workspace,
+      sources: sources.length,
+      source_actions: sourceActions.map((source) => ({ ...source, error: cause })),
+      scaffold,
+      materialization,
+      ...(untrack === undefined ? {} : { untrack }),
+      skills_toml: skillsToml,
+      project_md: projectMd,
+      attach_multiroot: { skipped: true, reason: "project_md_failed" },
+    };
+  }
+
+  const visibility = await reconcileVisibility(fs, env, wsPaths, workspace, sources, previousPaths);
+
+  return {
+    ok: projectMd.ok && visibility.ok,
+    dry_run: false,
+    workspace,
+    sources: sources.length,
+    source_actions: sourceActions,
+    scaffold,
+    materialization,
+    ...(untrack === undefined ? {} : { untrack }),
+    skills_toml: skillsToml,
+    project_md: projectMd,
+    attach_multiroot: visibility.attach,
+    ...(visibility.detached !== undefined ? { detached_removed: visibility.detached } : {}),
+  };
 }

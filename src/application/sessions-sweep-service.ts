@@ -32,15 +32,7 @@ export async function runSessionsSweep(
       const lock = join(folder.path, ".flow-run.json.lock");
       if (await fs.exists(lock)) locks.push(relative(paths.workspaceDir(), lock));
     }
-    const attempts: string[] = [];
-    if (await fs.exists(paths.cwdFlowAttemptsDir())) {
-      for (const file of await fs.list(paths.cwdFlowAttemptsDir())) {
-        if (file.type !== "file" || !file.name.endsWith(".json")) continue;
-        const folder = file.name.slice(0, -".json".length);
-        if (terminal.has(folder) || !present.has(folder))
-          attempts.push(relative(paths.workspaceDir(), file.path));
-      }
-    }
+    const attempts = await terminalAttempts(fs, paths, terminal, present);
     const registry = await readBindingRegistry(fs, paths);
     if (!registry.ok) throw new Error(registry.reason);
     const bindings = [
@@ -49,16 +41,42 @@ export async function runSessionsSweep(
       ),
     ].sort();
     const refuges = await sweepRefuges(fs, paths, new Date(), apply);
-    if (apply) {
-      for (const file of [...locks, ...attempts]) await fs.remove(join(paths.workspaceDir(), file));
-      for (const folder of bindings) {
-        const cleared = await invalidateBindingsTo(fs, paths, folder);
-        if (!cleared.ok) throw new Error(cleared.reason);
-      }
-    }
+    if (apply) await removeTerminalState(fs, paths, locks, attempts, bindings);
     return { applied: apply, locks, attempts, bindings, refuges };
   };
   const outcome = apply ? await withCwdLock(fs, paths, scan) : await scan();
   if ("error" in outcome) return outcome;
   return outcome;
+}
+
+async function terminalAttempts(
+  fs: FileSystemPort,
+  paths: PathsService,
+  terminal: Set<string>,
+  present: Map<string, string>,
+): Promise<string[]> {
+  const attempts: string[] = [];
+  if (await fs.exists(paths.cwdFlowAttemptsDir())) {
+    for (const file of await fs.list(paths.cwdFlowAttemptsDir())) {
+      if (file.type !== "file" || !file.name.endsWith(".json")) continue;
+      const folder = file.name.slice(0, -".json".length);
+      if (terminal.has(folder) || !present.has(folder))
+        attempts.push(relative(paths.workspaceDir(), file.path));
+    }
+  }
+  return attempts;
+}
+
+async function removeTerminalState(
+  fs: FileSystemPort,
+  paths: PathsService,
+  locks: string[],
+  attempts: string[],
+  bindings: string[],
+): Promise<void> {
+  for (const file of [...locks, ...attempts]) await fs.remove(join(paths.workspaceDir(), file));
+  for (const folder of bindings) {
+    const cleared = await invalidateBindingsTo(fs, paths, folder);
+    if (!cleared.ok) throw new Error(cleared.reason);
+  }
 }

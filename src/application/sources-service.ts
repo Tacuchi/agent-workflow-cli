@@ -104,7 +104,7 @@ export async function runSources(
   const ledger = await readDocBranches(fs, paths);
 
   const enriched: EnrichedSource[] = [];
-  for (const src of sources) {
+  async function enrichSource(src: ProjectFuente): Promise<void> {
     const effective = await resolveDocBranch(fs, paths, src, block, document, ledger);
     const expected = effective.branch;
     const others =
@@ -151,6 +151,9 @@ export async function runSources(
           : {}),
       });
     }
+  }
+  for (const src of sources) {
+    await enrichSource(src);
   }
 
   const { consistent, divergent } = computeCrossSourceConsistency(enriched);

@@ -50,21 +50,7 @@ export async function readSourcePipelines(
     if (!(await fs.exists(file))) continue;
     const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
     if (block === null) continue;
-    for (const { alias } of block.fuentes) {
-      const candidate = sourcePipeline(block, alias, name);
-      const existing = result.get(alias);
-      if (!existing) result.set(alias, candidate);
-      else
-        result.set(alias, {
-          ...existing,
-          build: existing.build.kind === "undeclared" ? candidate.build : existing.build,
-          test: existing.test.kind === "undeclared" ? candidate.test : existing.test,
-          origin:
-            existing.build.kind === "undeclared" && existing.test.kind === "undeclared"
-              ? candidate.origin
-              : existing.origin,
-        });
-    }
+    mergeSourcePipelines(result, block, name);
   }
   return [...result.values()];
 }
@@ -95,4 +81,26 @@ export function resolveFinalValidation(
       };
       return { alias, build: command("build"), test: command("test") };
     });
+}
+
+function mergeSourcePipelines(
+  result: Map<string, SourcePipeline>,
+  block: ParsedProjectBlock,
+  name: string,
+): void {
+  for (const { alias } of block.fuentes) {
+    const candidate = sourcePipeline(block, alias, name);
+    const existing = result.get(alias);
+    if (!existing) result.set(alias, candidate);
+    else
+      result.set(alias, {
+        ...existing,
+        build: existing.build.kind === "undeclared" ? candidate.build : existing.build,
+        test: existing.test.kind === "undeclared" ? candidate.test : existing.test,
+        origin:
+          existing.build.kind === "undeclared" && existing.test.kind === "undeclared"
+            ? candidate.origin
+            : existing.origin,
+      });
+  }
 }

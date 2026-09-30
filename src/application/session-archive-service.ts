@@ -95,19 +95,8 @@ export async function archiveSessionMinimum(
       if (entry.type === "file" && entry.name.toLowerCase().endsWith(".sql"))
         await put(entry.path, entry.name);
     }
-    const walk = async (dir: string, prefix: string, sqlOnly: boolean): Promise<void> => {
-      if (!(await fs.exists(dir))) return;
-      if ((await fs.lstat(dir))?.isSymlink) return;
-      for (const entry of await fs.list(dir)) {
-        const stat = await fs.lstat(entry.path);
-        if (stat?.isSymlink) continue;
-        if (stat?.type === "dir") await walk(entry.path, join(prefix, entry.name), sqlOnly);
-        else if (stat?.type === "file" && (!sqlOnly || entry.name.toLowerCase().endsWith(".sql")))
-          await put(entry.path, join(prefix, entry.name));
-      }
-    };
-    await walk(join(sessionPath, "scripts"), "scripts", true);
-    await walk(join(sessionPath, "evidence"), "evidence", false);
+    await copyArchiveTree(fs, join(sessionPath, "scripts"), "scripts", true, put);
+    await copyArchiveTree(fs, join(sessionPath, "evidence"), "evidence", false, put);
     if (await fs.exists(archive)) await fs.rename(archive, backup);
     try {
       await fs.rename(staging, archive);
@@ -119,5 +108,24 @@ export async function archiveSessionMinimum(
     return copied.map((name) => join(archive, name));
   } finally {
     await fs.remove(staging);
+  }
+}
+
+async function copyArchiveTree(
+  fs: FileSystemPort,
+  dir: string,
+  prefix: string,
+  sqlOnly: boolean,
+  put: (file: string, rel: string) => Promise<void>,
+): Promise<void> {
+  if (!(await fs.exists(dir))) return;
+  if ((await fs.lstat(dir))?.isSymlink) return;
+  for (const entry of await fs.list(dir)) {
+    const stat = await fs.lstat(entry.path);
+    if (stat?.isSymlink) continue;
+    if (stat?.type === "dir")
+      await copyArchiveTree(fs, entry.path, join(prefix, entry.name), sqlOnly, put);
+    else if (stat?.type === "file" && (!sqlOnly || entry.name.toLowerCase().endsWith(".sql")))
+      await put(entry.path, join(prefix, entry.name));
   }
 }

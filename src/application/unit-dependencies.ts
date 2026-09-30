@@ -32,14 +32,7 @@ export async function linkUnitDependencies(
     !(await sameBytes(fs, join(source, "package.json"), join(unit, "package.json"))) ||
     !(await sameBytes(fs, join(source, matchingLock), join(unit, matchingLock)))
   ) {
-    const install =
-      matchingLock === "package-lock.json" || matchingLock === "npm-shrinkwrap.json"
-        ? "npm ci"
-        : matchingLock === "yarn.lock"
-          ? "yarn install --frozen-lockfile"
-          : matchingLock === "pnpm-lock.yaml"
-            ? "pnpm install --frozen-lockfile"
-            : "npm install";
+    const install = installCommand(matchingLock);
     return {
       status: "not_linked",
       message: `manifiesto o lockfile distinto o ausente; quitá cualquier enlace antes de instalar y corré '${install}' en la unidad`,
@@ -57,13 +50,7 @@ export async function linkUnitDependencies(
     await fs.symlink(modules, unitModules);
   }
   try {
-    if (!git.ignoredOutsideIndex || !git.excludePattern)
-      throw new Error("git no permite verificar el ignore de node_modules");
-    if (!(await git.ignoredOutsideIndex(source, unit, "node_modules"))) {
-      await git.excludePattern(source, "/node_modules");
-      if (!(await git.ignoredOutsideIndex(source, unit, "node_modules")))
-        throw new Error("git sigue mostrando node_modules como no rastreado");
-    }
+    await ensureModulesIgnored(git, source, unit);
   } catch (err) {
     if (present === null) await fs.remove(unitModules);
     throw err;
@@ -123,5 +110,27 @@ export async function removeUnitSafely(
     if (removedLink && (await fs.lstat(unit)) !== null)
       await fs.symlink(join(source, "node_modules"), join(unit, "node_modules"));
     throw err;
+  }
+}
+
+function installCommand(matchingLock: string | null): string {
+  const install =
+    matchingLock === "package-lock.json" || matchingLock === "npm-shrinkwrap.json"
+      ? "npm ci"
+      : matchingLock === "yarn.lock"
+        ? "yarn install --frozen-lockfile"
+        : matchingLock === "pnpm-lock.yaml"
+          ? "pnpm install --frozen-lockfile"
+          : "npm install";
+  return install;
+}
+
+async function ensureModulesIgnored(git: GitPort, source: string, unit: string): Promise<void> {
+  if (!git.ignoredOutsideIndex || !git.excludePattern)
+    throw new Error("git no permite verificar el ignore de node_modules");
+  if (!(await git.ignoredOutsideIndex(source, unit, "node_modules"))) {
+    await git.excludePattern(source, "/node_modules");
+    if (!(await git.ignoredOutsideIndex(source, unit, "node_modules")))
+      throw new Error("git sigue mostrando node_modules como no rastreado");
   }
 }

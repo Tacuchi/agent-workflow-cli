@@ -17,6 +17,7 @@
  */
 
 import { join } from "node:path";
+import type { FlowRunState } from "../domain/flow/run-state.js";
 import {
   NARRATIVE_BEGIN,
   type NarrativeFact,
@@ -193,91 +194,7 @@ async function materialTrace(
   const sequence: NarrativeFact[] = [];
   const evidence: NarrativeFact[] = [];
   for (const event of read.state.events) {
-    const source: NarrativeSource = { artifact: ".flow-run.json", locator: event.transition };
-    if (event.kind === "executed") {
-      sequence.push({
-        state: "aplicado",
-        text: event.summary,
-        detail: `${event.transition} · efectos ${event.effects.join(", ")}`,
-        source,
-      });
-      evidence.push({
-        state: "aplicado",
-        // The sentence says WHAT was proven; the ids and the seal that prove it
-        // wait for `--detail`. Both halves are real — only one of them is what a
-        // person reads to decide.
-        text: `quedó registrada la salida real de ${event.operation}`,
-        detail: `${event.evidence.join(", ")} · salida ${event.output_digest.slice(0, 12)} · efectos ${event.effects.join(", ")}`,
-        source,
-      });
-      continue;
-    }
-    if (event.kind === "reconciled") {
-      // A repair nobody was asked about still belongs in the account of what
-      // happened — as something already applied, never as a pending step.
-      sequence.push({
-        state: "aplicado",
-        text: `la corrida reparó su propia contabilidad en ${event.transition}: ${event.repairs
-          .map((repair) => repair.rule)
-          .join(", ")}`,
-        detail: event.repairs
-          .map((repair) => `${repair.field} ${repair.before} → ${repair.after} (${repair.cause})`)
-          .join(" · "),
-        source,
-      });
-      continue;
-    }
-    if (event.kind === "annulled") {
-      sequence.push({
-        state: "aplicado",
-        text: `se anularon ${event.batches.join(", ")}: ${event.phases.map((phase) => `F${phase}`).join(", ")} volvieron a pendiente`,
-        detail: `${event.operation} · tareas ${event.tasks.join(", ")} · aprobado ${event.digest.slice(0, 12)}`,
-        source,
-      });
-      continue;
-    }
-    if (event.kind === "restarted") {
-      sequence.push({
-        state: "aplicado",
-        text: `la corrida se reinició: la anterior quedó archivada en ${event.archive}`,
-        detail: `${event.operation} · ${event.cause}`,
-        source,
-      });
-      continue;
-    }
-    if (event.kind === "aligned") {
-      sequence.push({
-        state: "aplicado",
-        text: `${event.transition} entró omitida al actualizar el CLI`,
-        detail: `${event.operation} · posición ${event.position} · ${event.reason}`,
-        source,
-      });
-      continue;
-    }
-    if (event.kind === "retracted") {
-      sequence.push({
-        state: "aplicado",
-        text: `se retiró la señal '${event.signal}' antes de aplicarla`,
-        detail: `${event.operation} · ${event.observations.length} observación(es) corregidas`,
-        source,
-      });
-      continue;
-    }
-    if (event.kind === "route-refused") {
-      sequence.push({
-        state: "aplicado",
-        text: `${event.transition} se pidió igual: la ruta la había aceptado como '${event.disposition}' y el registro ya no lo admite`,
-        detail: `${event.operation} · ${event.reason}`,
-        source,
-      });
-      continue;
-    }
-    sequence.push({
-      state: "fallido",
-      text: `${event.message} — ${event.recovery}`,
-      detail: `${event.transition} · ${event.code}`,
-      source,
-    });
+    appendMaterialEvent(event, sequence, evidence);
   }
   return { sequence, evidence };
 }
@@ -438,4 +355,96 @@ export async function writeSessionNarrative(
   if (next === document) return false;
   await fs.writeText(file, next);
   return true;
+}
+
+function appendMaterialEvent(
+  event: FlowRunState["events"][number],
+  sequence: NarrativeFact[],
+  evidence: NarrativeFact[],
+): void {
+  const source: NarrativeSource = { artifact: ".flow-run.json", locator: event.transition };
+  if (event.kind === "executed") {
+    sequence.push({
+      state: "aplicado",
+      text: event.summary,
+      detail: `${event.transition} · efectos ${event.effects.join(", ")}`,
+      source,
+    });
+    evidence.push({
+      state: "aplicado",
+      // The sentence says WHAT was proven; the ids and the seal that prove it
+      // wait for `--detail`. Both halves are real — only one of them is what a
+      // person reads to decide.
+      text: `quedó registrada la salida real de ${event.operation}`,
+      detail: `${event.evidence.join(", ")} · salida ${event.output_digest.slice(0, 12)} · efectos ${event.effects.join(", ")}`,
+      source,
+    });
+    return;
+  }
+  if (event.kind === "reconciled") {
+    // A repair nobody was asked about still belongs in the account of what
+    // happened — as something already applied, never as a pending step.
+    sequence.push({
+      state: "aplicado",
+      text: `la corrida reparó su propia contabilidad en ${event.transition}: ${event.repairs
+        .map((repair) => repair.rule)
+        .join(", ")}`,
+      detail: event.repairs
+        .map((repair) => `${repair.field} ${repair.before} → ${repair.after} (${repair.cause})`)
+        .join(" · "),
+      source,
+    });
+    return;
+  }
+  if (event.kind === "annulled") {
+    sequence.push({
+      state: "aplicado",
+      text: `se anularon ${event.batches.join(", ")}: ${event.phases.map((phase) => `F${phase}`).join(", ")} volvieron a pendiente`,
+      detail: `${event.operation} · tareas ${event.tasks.join(", ")} · aprobado ${event.digest.slice(0, 12)}`,
+      source,
+    });
+    return;
+  }
+  if (event.kind === "restarted") {
+    sequence.push({
+      state: "aplicado",
+      text: `la corrida se reinició: la anterior quedó archivada en ${event.archive}`,
+      detail: `${event.operation} · ${event.cause}`,
+      source,
+    });
+    return;
+  }
+  if (event.kind === "aligned") {
+    sequence.push({
+      state: "aplicado",
+      text: `${event.transition} entró omitida al actualizar el CLI`,
+      detail: `${event.operation} · posición ${event.position} · ${event.reason}`,
+      source,
+    });
+    return;
+  }
+  if (event.kind === "retracted") {
+    sequence.push({
+      state: "aplicado",
+      text: `se retiró la señal '${event.signal}' antes de aplicarla`,
+      detail: `${event.operation} · ${event.observations.length} observación(es) corregidas`,
+      source,
+    });
+    return;
+  }
+  if (event.kind === "route-refused") {
+    sequence.push({
+      state: "aplicado",
+      text: `${event.transition} se pidió igual: la ruta la había aceptado como '${event.disposition}' y el registro ya no lo admite`,
+      detail: `${event.operation} · ${event.reason}`,
+      source,
+    });
+    return;
+  }
+  sequence.push({
+    state: "fallido",
+    text: `${event.message} — ${event.recovery}`,
+    detail: `${event.transition} · ${event.code}`,
+    source,
+  });
 }

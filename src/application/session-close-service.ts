@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { leadingCorrelative } from "../domain/correlative.js";
 import { FOLDER_RESERVATION_MARKER, reservationMarker } from "../domain/reservation.js";
 import { stripNarrativeBlock } from "../domain/session/narrative.js";
-import type { FileSystemPort } from "../ports/file-system.js";
+import type { DirEntry, FileSystemPort } from "../ports/file-system.js";
 import type { CommitReceipt, GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
 import {
@@ -203,17 +203,8 @@ export async function runSessionClose(
   process?: ProcessPort,
   release?: IsolationReleaser,
 ): Promise<SessionCloseResult> {
-  if (await fs.exists(join(paths.cwdRoot(), "renumber-pending.json"))) {
-    try {
-      const { recoverRenumberJournal } = await import("./workspace-migrate/apply.js");
-      await recoverRenumberJournal(fs, paths);
-    } catch (error) {
-      return {
-        error: `renumerado pendiente: ${error instanceof Error ? error.message : String(error)}`,
-        code: "SESSION_RENUMBER_PENDING",
-      };
-    }
-  }
+  const recoveryFailure = await recoverPendingRenumber(fs, paths);
+  if (recoveryFailure !== null) return recoveryFailure;
   // Closing is destructive to continuity: it always names its target. Falling
   // back to "the sole active one" would let a conversation close a line it
   // never selected.
@@ -225,34 +216,9 @@ export async function runSessionClose(
   });
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
-  if (session.state === "abandoned" && input.abandon !== true) {
-    return {
-      error: `la sesión ${session.folder} está abandonada; sólo --reopen la reactiva`,
-      code: "SESSION_ABANDONED",
-    };
-  }
-  if (input.force !== true && input.abandon !== true) {
-    const incomplete = await incompleteSessionReason(fs, session.path);
-    if (incomplete !== null) return { error: incomplete, code: "SESSION_INCOMPLETE" };
-  }
-
-  // The record indexes rows by number, so two folders sharing one means this
-  // close could only register by overwriting the other session's row. Asked HERE
-  // rather than only inside the primitive: down there the lock is held and
-  // `.closed` is already on disk, so the refusal came back as a non-fatal
-  // `history_error` on a session that had ALREADY been closed — a half mutation,
-  // with the durable record still calling it active and no way to repair it. The
-  // whole close is refused instead, and the one remedy is named before anything
-  // moves.
-  const sharing = await sessionsSharingNumber(fs, paths, session.folder);
-  if (sharing.length > 1) return { sessionError: sharedNumberError(session.folder, sharing) };
-  let sqlPending: SessionCloseOutput["sql_pending_export"];
-  let sqlPendingError: string | undefined;
-  try {
-    sqlPending = await pendingSqlExport(fs, paths, session);
-  } catch (error) {
-    sqlPendingError = error instanceof Error ? error.message : String(error);
-  }
+  const refusal = await validateSessionClosure(fs, paths, session, input);
+  if (refusal !== null) return refusal;
+  const { sqlPending, sqlPendingError } = await pendingSqlSummary(fs, paths, session);
 
   // Validate before mutating either the checkpoint or the closed marker.
   const checkpointPath = canonicalArtifactPath(session.path, "checkpoint");
@@ -270,35 +236,14 @@ export async function runSessionClose(
       ? "fuentes no verificables (sin adaptador git)"
       : await sourceGitState(fs, paths, git);
 
-  const historyFile = paths.cwdHistoryFile();
-  const registeredClosed =
-    (await fs.exists(historyFile)) &&
-    readHistoryRows(await fs.readText(historyFile)).some(
-      (row) => row.key === session.folder && row.state === "closed",
-    );
-  const needsRefs = !registeredClosed;
-  let published: string | undefined;
-  try {
-    published = needsRefs ? await publishedRefs(fs, session.path) : undefined;
-  } catch (error) {
-    return {
-      error: error instanceof Error ? error.message : String(error),
-      code: "SESSION_CUSTODY_UNREADABLE",
-    };
-  }
-  const run = needsRefs ? await readRun(fs, locateRun(paths, session.folder)) : null;
-  const plan = run?.ok ? run.state.scope?.plan : undefined;
-  const refs =
-    [input.refs?.trim(), published, plan].filter((item) => item && item.length > 0).join(",") ||
-    undefined;
+  const references = await closeReferences(fs, paths, session, input);
+  if ("error" in references) return references;
+  const { refs } = references;
   const closure = await closeUnderLock(
     fs,
     paths,
     session,
-    {
-      code: session.code ?? input.code,
-      ...(refs !== undefined && refs.length > 0 ? { refs } : {}),
-    },
+    closeHistoryRow(session.code ?? input.code, refs),
     checkpointPath,
     gitState,
     input.force === true || input.abandon === true,
@@ -308,39 +253,19 @@ export async function runSessionClose(
   );
   if ("error" in closure) return closure;
 
-  const sessionClose: SessionCloseOutput = {
-    code: session.code ?? input.code,
-    folder: session.folder,
-    closed: true,
-    checkpoint_path: checkpointPath,
-    backlog_path: canonicalArtifactPath(session.path, "backlog"),
-    ...(refs !== undefined && refs.length > 0 ? { refs } : {}),
-    bindings_invalidated: closure.bindings_invalidated,
-    ...(closure.history ? { history: closure.history } : {}),
-    ...(closure.history_error !== undefined ? { history_error: closure.history_error } : {}),
-    ...(sqlPending === undefined ? {} : { sql_pending_export: sqlPending }),
-    ...(sqlPendingError === undefined ? {} : { sql_pending_export_error: sqlPendingError }),
-    ...(closure.archive_paths === undefined ? {} : { archive_paths: closure.archive_paths }),
-    ...(closure.archive_error === undefined ? {} : { archive_error: closure.archive_error }),
-    ...(closure.scratch_references?.length
-      ? { scratch_references: closure.scratch_references }
-      : {}),
-    ...(closure.evidence_copied?.length ? { evidence_copied: closure.evidence_copied } : {}),
-  };
+  const sessionClose = closeOutput(
+    session,
+    session.code ?? input.code,
+    checkpointPath,
+    refs,
+    closure,
+    sqlPending,
+    sqlPendingError,
+  );
   reportHeld(sessionClose, session.folder, units);
-  if (units.released_empty.length > 0) sessionClose.released_empty = units.released_empty;
-  if (units.released_preserved.length > 0)
-    sessionClose.released_preserved = units.released_preserved;
-  if (units.released_integrated.length > 0)
-    sessionClose.released_integrated = units.released_integrated;
-  if (units.empty.length > 0) sessionClose.empty_units = units.empty;
-  if (units.preserved.length > 0) sessionClose.preserved_units = units.preserved;
+  reportReleasedUnits(sessionClose, units);
   reportReservations(sessionClose, closure.reservations);
-  if (git && process) {
-    const offer = await runWorkspaceCommit(fs, git, process, paths, { code: session.folder });
-    if ("proposal" in offer) sessionClose.commit_proposal = offer.proposal;
-    else sessionClose.commit_proposal_error = offer.error;
-  }
+  await offerCloseCommit(fs, paths, session, git, process, sessionClose);
   return { sessionClose };
 }
 
@@ -387,23 +312,7 @@ async function pendingSqlExport(
   const bundles = await listGraduatedBundles(fs, paths.workspaceDir(), paths);
   const exported = new Set<string>();
   for (const bundle of bundles) {
-    const manifest = join(bundle.path, "bundle.json");
-    if (!(await fs.exists(manifest))) continue;
-    try {
-      const parsed: unknown = JSON.parse(await fs.readText(manifest));
-      if (typeof parsed !== "object" || parsed === null) continue;
-      const origin = (
-        parsed as {
-          origin?: { sessions?: Array<{ session: string; files: Array<{ digest: string }> }> };
-        }
-      ).origin;
-      for (const entry of origin?.sessions ?? []) {
-        if (entry.session === session.folder)
-          for (const file of entry.files) exported.add(file.digest);
-      }
-    } catch {
-      /* A bundle without readable metadata cannot claim this SQL. */
-    }
+    await collectExportedSql(fs, bundle.path, session.folder, exported);
   }
   const pending: string[] = [];
   for (const file of scripts) {
@@ -549,55 +458,7 @@ async function heldUnits(
       : {}),
   };
   for (const unit of units.filter((entry) => entry.session === folder)) {
-    const summary: UnitCloseSummary = {
-      alias: unit.alias,
-      branch: unit.branch,
-      path: unit.path,
-      ...(unit.preserved_in ? { preserved_in: unit.preserved_in } : {}),
-    };
-    const kind = unit.classification ?? (unit.dirty === true ? "retained" : "pending");
-    if (kind === "empty" || kind === "preserved") {
-      if (!final) {
-        result[kind === "empty" ? "empty" : "preserved"].push(summary);
-        continue;
-      }
-      if (release !== undefined) {
-        try {
-          const freed = await release(unit.alias, folder);
-          if ("released" in freed && freed.released) {
-            const named = {
-              ...summary,
-              ...(freed.branch_kept ? { branch_kept: freed.branch_kept } : {}),
-            };
-            const collection =
-              kind === "empty"
-                ? result.released_empty
-                : unit.integrated
-                  ? result.released_integrated
-                  : result.released_preserved;
-            collection.push(named);
-            continue;
-          }
-          unit.classification_reason = "error" in freed ? freed.message : "liberación incompleta";
-        } catch (err) {
-          unit.classification_reason = `liberación fallida: ${(err as Error).message}`;
-        }
-      } else unit.classification_reason = "sin operación de liberación verificable";
-    }
-    result.held.push({
-      alias: unit.alias,
-      branch: unit.branch,
-      path: unit.path,
-      ...(unit.dirty === undefined ? {} : { dirty: unit.dirty }),
-      classification: kind === "retained" ? "retained" : "pending",
-      reason: unit.classification_reason ?? "commits no preservados",
-      command:
-        kind === "retained" && unit.dirty === true
-          ? `commiteá el trabajo en ${unit.path} y después aw worktree integrate --source ${unit.alias} --code ${folder}`
-          : kind === "retained" && unit.classification_reason?.includes("operación git")
-            ? `resolvé externamente la operación git en ${unit.path} y después aw worktree integrate --source ${unit.alias} --code ${folder}`
-            : `aw worktree integrate --source ${unit.alias} --code ${folder}`,
-    });
+    await classifyHeldUnit(unit, folder, final, release, result);
   }
   return result;
 }
@@ -634,53 +495,16 @@ async function releaseReservations(
     if (!(await fs.exists(docs))) return { released };
     for (const category of await fs.list(docs)) {
       if (category.type !== "dir") continue;
-      for (const entry of await fs.list(category.path)) {
-        const correlative = leadingCorrelative(entry.name);
-        if (
-          (entry.type !== "file" && entry.type !== "dir") ||
-          correlative === null ||
-          retained.has(entry.path)
-        ) {
-          continue;
-        }
-        if (entry.type === "dir") {
-          const contents = await fs.list(entry.path);
-          if (contents.length !== 1 || contents[0]?.name !== FOLDER_RESERVATION_MARKER) continue;
-        }
-        if (
-          (await fs.readText(
-            entry.type === "dir" ? join(entry.path, FOLDER_RESERVATION_MARKER) : entry.path,
-          )) !== marker
-        )
-          continue;
-        // The record goes in BEFORE the file is removed, and the order is the
-        // whole safety argument. Recording after would leave a window — an I/O
-        // error, a Ctrl-C, a SIGKILL — where the marker is already gone and no
-        // line says the correlative came back: a number freed with zero durable
-        // trace, which is exactly the state this ledger exists to end.
-        //
-        // Reversed, the worst case is a conservative OVER-statement: a `released`
-        // record for a marker still on disk. A retry or a recovery reconciles
-        // that; nothing reconciles a silent deletion. Same doctrine the baseline
-        // seal follows — before, not after, and not only on success.
-        const claim = {
-          category: category.name,
-          correlative,
-          name: entry.name.slice(correlative.length + 1),
-          owner: folder,
-        };
-        if (wasPublished(ledger.events, claim)) continue;
-        if (!releaseAlreadyRecorded(ledger.events, claim)) {
-          await appendClaimEvent(fs, paths, {
-            at: new Date().toISOString(),
-            event: "released",
-            claim,
-            cause: "aw session-close: la reserva seguía intacta al cerrar su sesión",
-          });
-        }
-        await fs.remove(entry.path);
-        released.push(`docs/${category.name}/${entry.name}`);
-      }
+      await releaseCategoryReservations(
+        fs,
+        paths,
+        category,
+        folder,
+        marker,
+        retained,
+        ledger,
+        released,
+      );
     }
   } catch (error) {
     return {
@@ -766,13 +590,7 @@ async function closeUnderLock(
         },
       };
     }
-    let body = checkpoint.replace(/\n+## Closure\n\n- Cierre: [^\n]*\n?/g, "").trimEnd();
-    if (!/^## (?:Completed|Last action|Lo (?:último|ultimo) que hice)\s*$/m.test(body)) {
-      body += "\n\n## Completed";
-    }
-    if (!/^## (?:Pending \/ Next|Pending|Next step|Pr(?:ó|o)ximo paso)\s*$/m.test(body)) {
-      body += "\n\n## Pending / Next";
-    }
+    const body = closeCheckpointBody(checkpoint);
     const invalidated = await invalidateBindingsTo(fs, paths, session.folder);
     if (!invalidated.ok) {
       return { ok: false, failure: { error: invalidated.reason, code: "SESSION_BINDING_INVALID" } };
@@ -787,21 +605,7 @@ async function closeUnderLock(
       bindings_invalidated: invalidated.removed,
       reservations: { released: [] },
     };
-    try {
-      const history = await upsertHistoryRow(
-        fs,
-        paths,
-        historyFields(
-          { ...row, state: abandon ? "abandoned" : "closed", date: localDateIso(new Date()) },
-          session,
-          row.code,
-        ),
-      );
-      closure.history = { action: history.action, state: history.state };
-    } catch (err) {
-      // Non-fatal, as before: the caller re-runs `aw history-update` on this.
-      closure.history_error = err instanceof Error ? err.message : String(err);
-    }
+    await recordCloseHistory(fs, paths, session, row, abandon, closure);
     // The same workspace lock excludes renumbering while checking and releasing
     // the marker; a close must not release a claim another session just acquired.
     closure.reservations = await releaseReservations(
@@ -813,18 +617,7 @@ async function closeUnderLock(
     // The narrative belongs to the same locked identity as the marker, HISTORY
     // and reservation sweep. A concurrent renumber cannot move it in between.
     await writeSessionNarrative(fs, paths, { folder: session.folder, path: session.path });
-    try {
-      closure.scratch_references = await sessionScratchReferences(fs, session.path);
-      if (withEvidence)
-        closure.evidence_copied = await copySessionEvidence(
-          fs,
-          session.path,
-          closure.scratch_references,
-        );
-      closure.archive_paths = await archiveSessionMinimum(fs, paths, session.folder, session.path);
-    } catch (error) {
-      closure.archive_error = `no se pudo archivar el mínimo: ${error instanceof Error ? error.message : String(error)}; reintentá aw session-close --code ${session.folder}`;
-    }
+    await archiveClosedSession(fs, paths, session, withEvidence, closure);
     return { ok: true, closure };
   });
 
@@ -853,30 +646,438 @@ async function sourceGitState(
   if (!block || block.fuentes.length === 0) return "sin fuentes declaradas";
   const result: string[] = [];
   for (const source of block.fuentes) {
-    if (source.path === null) {
-      result.push(`${source.alias}: ruta no disponible`);
-      continue;
-    }
-    try {
-      const branch = await git.currentBranch(source.path);
-      if (!branch) {
-        result.push(`${source.alias}: rama no disponible`);
-        continue;
-      }
-      const upstream = await git.upstreamBranch(source.path, branch);
-      if (upstream === null) {
-        result.push(`${source.alias}: ${branch}, sin upstream, publicada: no`);
-        continue;
-      }
-      const { ahead, behind } = await git.aheadBehind(source.path, branch, upstream);
-      result.push(
-        `${source.alias}: ${branch}, upstream ${upstream}, adelante ${ahead}, atrás ${behind}, publicada: ${upstream.startsWith("refs/remotes/") && upstream.endsWith(`/${branch}`) && ahead === 0 ? "sí" : "no"}`,
-      );
-    } catch (error) {
-      result.push(
-        `${source.alias}: estado git no disponible (${error instanceof Error ? error.message : String(error)})`,
-      );
-    }
+    await appendSourceGitState(git, source, result);
   }
   return result.join("; ");
+}
+
+async function recoverPendingRenumber(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<SessionCloseError | null> {
+  if (await fs.exists(join(paths.cwdRoot(), "renumber-pending.json"))) {
+    try {
+      const { recoverRenumberJournal } = await import("./workspace-migrate/apply.js");
+      await recoverRenumberJournal(fs, paths);
+    } catch (error) {
+      return {
+        error: `renumerado pendiente: ${error instanceof Error ? error.message : String(error)}`,
+        code: "SESSION_RENUMBER_PENDING",
+      };
+    }
+  }
+  return null;
+}
+
+async function closeReferences(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  input: SessionCloseInput,
+): Promise<{ refs: string | undefined } | SessionCloseError> {
+  const historyFile = paths.cwdHistoryFile();
+  const registeredClosed =
+    (await fs.exists(historyFile)) &&
+    readHistoryRows(await fs.readText(historyFile)).some(
+      (row) => row.key === session.folder && row.state === "closed",
+    );
+  const needsRefs = !registeredClosed;
+  let published: string | undefined;
+  try {
+    published = needsRefs ? await publishedRefs(fs, session.path) : undefined;
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+      code: "SESSION_CUSTODY_UNREADABLE",
+    };
+  }
+  const run = needsRefs ? await readRun(fs, locateRun(paths, session.folder)) : null;
+  const plan = run?.ok ? run.state.scope?.plan : undefined;
+  const refs =
+    [input.refs?.trim(), published, plan].filter((item) => item && item.length > 0).join(",") ||
+    undefined;
+  return { refs };
+}
+
+function closeOutput(
+  session: SessionEntry,
+  code: string,
+  checkpointPath: string,
+  refs: string | undefined,
+  closure: Closure,
+  sqlPending: SessionCloseOutput["sql_pending_export"],
+  sqlPendingError: string | undefined,
+): SessionCloseOutput {
+  return {
+    code,
+    folder: session.folder,
+    closed: true,
+    checkpoint_path: checkpointPath,
+    backlog_path: canonicalArtifactPath(session.path, "backlog"),
+    ...(refs !== undefined && refs.length > 0 ? { refs } : {}),
+    bindings_invalidated: closure.bindings_invalidated,
+    ...(closure.history ? { history: closure.history } : {}),
+    ...(closure.history_error !== undefined ? { history_error: closure.history_error } : {}),
+    ...(sqlPending === undefined ? {} : { sql_pending_export: sqlPending }),
+    ...(sqlPendingError === undefined ? {} : { sql_pending_export_error: sqlPendingError }),
+    ...(closure.archive_paths === undefined ? {} : { archive_paths: closure.archive_paths }),
+    ...(closure.archive_error === undefined ? {} : { archive_error: closure.archive_error }),
+    ...(closure.scratch_references?.length
+      ? { scratch_references: closure.scratch_references }
+      : {}),
+    ...(closure.evidence_copied?.length ? { evidence_copied: closure.evidence_copied } : {}),
+  };
+}
+
+function reportReleasedUnits(sessionClose: SessionCloseOutput, units: HeldUnits): void {
+  if (units.released_empty.length > 0) sessionClose.released_empty = units.released_empty;
+  if (units.released_preserved.length > 0)
+    sessionClose.released_preserved = units.released_preserved;
+  if (units.released_integrated.length > 0)
+    sessionClose.released_integrated = units.released_integrated;
+  if (units.empty.length > 0) sessionClose.empty_units = units.empty;
+  if (units.preserved.length > 0) sessionClose.preserved_units = units.preserved;
+}
+
+async function collectExportedSql(
+  fs: FileSystemPort,
+  bundlePath: string,
+  folder: string,
+  exported: Set<string>,
+): Promise<void> {
+  const manifest = join(bundlePath, "bundle.json");
+  if (!(await fs.exists(manifest))) return;
+  try {
+    const parsed: unknown = JSON.parse(await fs.readText(manifest));
+    if (typeof parsed !== "object" || parsed === null) return;
+    const origin = (
+      parsed as {
+        origin?: { sessions?: Array<{ session: string; files: Array<{ digest: string }> }> };
+      }
+    ).origin;
+    for (const entry of origin?.sessions ?? []) {
+      if (entry.session === folder) for (const file of entry.files) exported.add(file.digest);
+    }
+  } catch {
+    /* A bundle without readable metadata cannot claim this SQL. */
+  }
+}
+
+async function classifyHeldUnit(
+  unit: ClassifiedUnit,
+  folder: string,
+  final: boolean,
+  release: IsolationReleaser | undefined,
+  result: HeldUnits,
+): Promise<void> {
+  const summary: UnitCloseSummary = {
+    alias: unit.alias,
+    branch: unit.branch,
+    path: unit.path,
+    ...(unit.preserved_in ? { preserved_in: unit.preserved_in } : {}),
+  };
+  const kind = unit.classification ?? (unit.dirty === true ? "retained" : "pending");
+  if (kind === "empty" || kind === "preserved") {
+    if (!final) {
+      result[kind === "empty" ? "empty" : "preserved"].push(summary);
+      return;
+    }
+    if (await releaseClassifiedUnit(unit, folder, release, result, summary, kind)) return;
+  }
+  result.held.push({
+    alias: unit.alias,
+    branch: unit.branch,
+    path: unit.path,
+    ...(unit.dirty === undefined ? {} : { dirty: unit.dirty }),
+    classification: kind === "retained" ? "retained" : "pending",
+    reason: unit.classification_reason ?? "commits no preservados",
+    command: heldUnitCommand(unit, folder, kind),
+  });
+}
+
+async function releaseClassifiedUnit(
+  unit: ClassifiedUnit,
+  folder: string,
+  release: IsolationReleaser | undefined,
+  result: HeldUnits,
+  summary: UnitCloseSummary,
+  kind: "empty" | "preserved",
+): Promise<boolean> {
+  if (release === undefined) {
+    unit.classification_reason = "sin operación de liberación verificable";
+    return false;
+  }
+  try {
+    const freed = await release(unit.alias, folder);
+    if ("released" in freed && freed.released) {
+      const named = {
+        ...summary,
+        ...(freed.branch_kept ? { branch_kept: freed.branch_kept } : {}),
+      };
+      const collection =
+        kind === "empty"
+          ? result.released_empty
+          : unit.integrated
+            ? result.released_integrated
+            : result.released_preserved;
+      collection.push(named);
+      return true;
+    }
+    unit.classification_reason = "error" in freed ? freed.message : "liberación incompleta";
+  } catch (err) {
+    unit.classification_reason = `liberación fallida: ${(err as Error).message}`;
+  }
+
+  return false;
+}
+
+async function releaseCategoryReservations(
+  fs: FileSystemPort,
+  paths: PathsService,
+  category: DirEntry,
+  folder: string,
+  marker: string,
+  retained: Set<string>,
+  ledger: Awaited<ReturnType<typeof readClaimEvents>>,
+  released: string[],
+): Promise<void> {
+  for (const entry of await fs.list(category.path)) {
+    const correlative = leadingCorrelative(entry.name);
+    if (
+      (entry.type !== "file" && entry.type !== "dir") ||
+      correlative === null ||
+      retained.has(entry.path)
+    ) {
+      continue;
+    }
+    if (!(await isIntactReservation(fs, entry, marker))) continue;
+    await releaseReservationEntry(
+      fs,
+      paths,
+      category,
+      folder,
+      ledger,
+      released,
+      entry,
+      correlative,
+    );
+  }
+}
+
+function closeCheckpointBody(checkpoint: string): string {
+  let body = checkpoint.replace(/\n+## Closure\n\n- Cierre: [^\n]*\n?/g, "").trimEnd();
+  if (!/^## (?:Completed|Last action|Lo (?:último|ultimo) que hice)\s*$/m.test(body)) {
+    body += "\n\n## Completed";
+  }
+  if (!/^## (?:Pending \/ Next|Pending|Next step|Pr(?:ó|o)ximo paso)\s*$/m.test(body)) {
+    body += "\n\n## Pending / Next";
+  }
+  return body;
+}
+
+async function recordCloseHistory(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  row: { code: string; refs?: string },
+  abandon: boolean,
+  closure: Closure,
+): Promise<void> {
+  try {
+    const history = await upsertHistoryRow(
+      fs,
+      paths,
+      historyFields(
+        { ...row, state: abandon ? "abandoned" : "closed", date: localDateIso(new Date()) },
+        session,
+        row.code,
+      ),
+    );
+    closure.history = { action: history.action, state: history.state };
+  } catch (err) {
+    // Non-fatal, as before: the caller re-runs `aw history-update` on this.
+    closure.history_error = err instanceof Error ? err.message : String(err);
+  }
+}
+
+async function archiveClosedSession(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  withEvidence: boolean,
+  closure: Closure,
+): Promise<void> {
+  try {
+    closure.scratch_references = await sessionScratchReferences(fs, session.path);
+    if (withEvidence)
+      closure.evidence_copied = await copySessionEvidence(
+        fs,
+        session.path,
+        closure.scratch_references,
+      );
+    closure.archive_paths = await archiveSessionMinimum(fs, paths, session.folder, session.path);
+  } catch (error) {
+    closure.archive_error = `no se pudo archivar el mínimo: ${error instanceof Error ? error.message : String(error)}; reintentá aw session-close --code ${session.folder}`;
+  }
+}
+
+async function appendSourceGitState(
+  git: GitPort,
+  source: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>["fuentes"][number],
+  result: string[],
+): Promise<void> {
+  if (source.path === null) {
+    result.push(`${source.alias}: ruta no disponible`);
+    return;
+  }
+  try {
+    const branch = await git.currentBranch(source.path);
+    if (!branch) {
+      result.push(`${source.alias}: rama no disponible`);
+      return;
+    }
+    const upstream = await git.upstreamBranch(source.path, branch);
+    if (upstream === null) {
+      result.push(`${source.alias}: ${branch}, sin upstream, publicada: no`);
+      return;
+    }
+    const { ahead, behind } = await git.aheadBehind(source.path, branch, upstream);
+    result.push(
+      `${source.alias}: ${branch}, upstream ${upstream}, adelante ${ahead}, atrás ${behind}, publicada: ${upstream.startsWith("refs/remotes/") && upstream.endsWith(`/${branch}`) && ahead === 0 ? "sí" : "no"}`,
+    );
+  } catch (error) {
+    result.push(
+      `${source.alias}: estado git no disponible (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+}
+
+async function validateSessionClosure(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  input: SessionCloseInput,
+): Promise<SessionCloseResult | null> {
+  if (session.state === "abandoned" && input.abandon !== true) {
+    return {
+      error: `la sesión ${session.folder} está abandonada; sólo --reopen la reactiva`,
+      code: "SESSION_ABANDONED",
+    };
+  }
+  if (input.force !== true && input.abandon !== true) {
+    const incomplete = await incompleteSessionReason(fs, session.path);
+    if (incomplete !== null) return { error: incomplete, code: "SESSION_INCOMPLETE" };
+  }
+
+  // The record indexes rows by number, so two folders sharing one means this
+  // close could only register by overwriting the other session's row. Asked HERE
+  // rather than only inside the primitive: down there the lock is held and
+  // `.closed` is already on disk, so the refusal came back as a non-fatal
+  // `history_error` on a session that had ALREADY been closed — a half mutation,
+  // with the durable record still calling it active and no way to repair it. The
+  // whole close is refused instead, and the one remedy is named before anything
+  // moves.
+  const sharing = await sessionsSharingNumber(fs, paths, session.folder);
+  if (sharing.length > 1) return { sessionError: sharedNumberError(session.folder, sharing) };
+  return null;
+}
+
+async function pendingSqlSummary(fs: FileSystemPort, paths: PathsService, session: SessionEntry) {
+  let sqlPending: SessionCloseOutput["sql_pending_export"];
+  let sqlPendingError: string | undefined;
+  try {
+    sqlPending = await pendingSqlExport(fs, paths, session);
+  } catch (error) {
+    sqlPendingError = error instanceof Error ? error.message : String(error);
+  }
+
+  return { sqlPending, sqlPendingError };
+}
+
+async function offerCloseCommit(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  git: GitPort | undefined,
+  process: ProcessPort | undefined,
+  sessionClose: SessionCloseOutput,
+): Promise<void> {
+  if (git && process) {
+    const offer = await runWorkspaceCommit(fs, git, process, paths, { code: session.folder });
+    if ("proposal" in offer) sessionClose.commit_proposal = offer.proposal;
+    else sessionClose.commit_proposal_error = offer.error;
+  }
+}
+
+function heldUnitCommand(
+  unit: ClassifiedUnit,
+  folder: string,
+  kind: NonNullable<ClassifiedUnit["classification"]>,
+): string {
+  return kind === "retained" && unit.dirty === true
+    ? `commiteá el trabajo en ${unit.path} y después aw worktree integrate --source ${unit.alias} --code ${folder}`
+    : kind === "retained" && unit.classification_reason?.includes("operación git")
+      ? `resolvé externamente la operación git en ${unit.path} y después aw worktree integrate --source ${unit.alias} --code ${folder}`
+      : `aw worktree integrate --source ${unit.alias} --code ${folder}`;
+}
+
+async function releaseReservationEntry(
+  fs: FileSystemPort,
+  paths: PathsService,
+  category: DirEntry,
+  folder: string,
+  ledger: Awaited<ReturnType<typeof readClaimEvents>>,
+  released: string[],
+  entry: DirEntry,
+  correlative: string,
+): Promise<void> {
+  // The record goes in BEFORE the file is removed, and the order is the
+  // whole safety argument. Recording after would leave a window — an I/O
+  // error, a Ctrl-C, a SIGKILL — where the marker is already gone and no
+  // line says the correlative came back: a number freed with zero durable
+  // trace, which is exactly the state this ledger exists to end.
+  //
+  // Reversed, the worst case is a conservative OVER-statement: a `released`
+  // record for a marker still on disk. A retry or a recovery reconciles
+  // that; nothing reconciles a silent deletion. Same doctrine the baseline
+  // seal follows — before, not after, and not only on success.
+  const claim = {
+    category: category.name,
+    correlative,
+    name: entry.name.slice(correlative.length + 1),
+    owner: folder,
+  };
+  if (wasPublished(ledger.events, claim)) return;
+  if (!releaseAlreadyRecorded(ledger.events, claim)) {
+    await appendClaimEvent(fs, paths, {
+      at: new Date().toISOString(),
+      event: "released",
+      claim,
+      cause: "aw session-close: la reserva seguía intacta al cerrar su sesión",
+    });
+  }
+  await fs.remove(entry.path);
+  released.push(`docs/${category.name}/${entry.name}`);
+}
+
+function closeHistoryRow(code: string, refs: string | undefined): { code: string; refs?: string } {
+  return { code, ...(refs !== undefined && refs.length > 0 ? { refs } : {}) };
+}
+
+async function isIntactReservation(
+  fs: FileSystemPort,
+  entry: DirEntry,
+  marker: string,
+): Promise<boolean> {
+  if (entry.type === "dir") {
+    const contents = await fs.list(entry.path);
+    if (contents.length !== 1 || contents[0]?.name !== FOLDER_RESERVATION_MARKER) return false;
+  }
+  if (
+    (await fs.readText(
+      entry.type === "dir" ? join(entry.path, FOLDER_RESERVATION_MARKER) : entry.path,
+    )) !== marker
+  )
+    return false;
+  return true;
 }

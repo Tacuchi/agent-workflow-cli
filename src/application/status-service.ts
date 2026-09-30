@@ -150,31 +150,7 @@ export async function runStatusCommand(
   const index = await buildWorklineIndex(fs, env, paths, input);
   const events = await readEvents(fs, paths);
 
-  const active: StatusSession[] = [];
-  const closed: StatusSession[] = [];
-  const paused: StatusSession[] = [];
-  const abandoned: StatusSession[] = [];
-  for (const session of index.sessions) {
-    const destination =
-      session.state === "closed"
-        ? closed
-        : session.state === "paused"
-          ? paused
-          : session.state === "abandoned"
-            ? abandoned
-            : active;
-    destination.push({
-      code: session.code,
-      folder: session.folder,
-      type: session.type,
-      summary: session.summary,
-      phase: session.phase,
-      date: session.date,
-      relative: session.relative,
-      flow: session.state === "active" ? await projectRun(fs, paths, session.folder) : null,
-      units: session.units,
-    });
-  }
+  const { active, closed, paused, abandoned } = await statusSessions(fs, paths, index);
 
   const historyPath = paths.cwdHistoryFile();
   const rows = (await fs.exists(historyPath))
@@ -187,27 +163,7 @@ export async function runStatusCommand(
   const historyRemoteRows = rows
     .filter((row) => row.state !== "retired" && !sameFolder(row.key))
     .map((row) => row.key);
-  const historyCollisions: StatusOutput["history_collisions"] = [];
-  for (const session of index.sessions) {
-    const number = sessionNumericCode(session.folder);
-    if (number === null) continue;
-    for (const row of rows) {
-      const recorded = sessionNumericCode(row.key);
-      if (
-        recorded === null ||
-        !sameCorrelative(number, recorded) ||
-        row.key === session.folder ||
-        session.folder.replace(/^session(?=\d)/, "") === row.key ||
-        !row.key.includes("-")
-      )
-        continue;
-      historyCollisions.push({
-        local: session.folder,
-        registered: row.key,
-        action: "aw workspace-migrate --renumber",
-      });
-    }
-  }
+  const historyCollisions = findHistoryCollisions(index, rows);
 
   return {
     workspace: index.workspace,
@@ -245,4 +201,67 @@ export async function runStatusCommand(
       pending: index.pipeline.length,
     },
   };
+}
+
+function findHistoryCollisions(
+  index: Awaited<ReturnType<typeof buildWorklineIndex>>,
+  rows: ReturnType<typeof readHistoryRows>,
+): StatusOutput["history_collisions"] {
+  const historyCollisions: StatusOutput["history_collisions"] = [];
+  for (const session of index.sessions) {
+    const number = sessionNumericCode(session.folder);
+    if (number === null) continue;
+    for (const row of rows) {
+      const recorded = sessionNumericCode(row.key);
+      if (
+        recorded === null ||
+        !sameCorrelative(number, recorded) ||
+        row.key === session.folder ||
+        session.folder.replace(/^session(?=\d)/, "") === row.key ||
+        !row.key.includes("-")
+      )
+        continue;
+      historyCollisions.push({
+        local: session.folder,
+        registered: row.key,
+        action: "aw workspace-migrate --renumber",
+      });
+    }
+  }
+
+  return historyCollisions;
+}
+
+async function statusSessions(
+  fs: FileSystemPort,
+  paths: PathsService,
+  index: Awaited<ReturnType<typeof buildWorklineIndex>>,
+): Promise<StatusOutput["sessions"]> {
+  const active: StatusSession[] = [];
+  const closed: StatusSession[] = [];
+  const paused: StatusSession[] = [];
+  const abandoned: StatusSession[] = [];
+  for (const session of index.sessions) {
+    const destination =
+      session.state === "closed"
+        ? closed
+        : session.state === "paused"
+          ? paused
+          : session.state === "abandoned"
+            ? abandoned
+            : active;
+    destination.push({
+      code: session.code,
+      folder: session.folder,
+      type: session.type,
+      summary: session.summary,
+      phase: session.phase,
+      date: session.date,
+      relative: session.relative,
+      flow: session.state === "active" ? await projectRun(fs, paths, session.folder) : null,
+      units: session.units,
+    });
+  }
+
+  return { active, closed, paused, abandoned };
 }

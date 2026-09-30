@@ -79,19 +79,7 @@ export async function runWorkspaceCommit(
     ...subject,
     approval: semanticDigest(subject),
   };
-  if (input.approval === undefined) return { proposal };
-  if (input.approval !== proposal.approval)
-    return { error: "la propuesta cambió de rama, HEAD o rutas; preparala otra vez" };
-  for (const path of pathsToCommit) {
-    if (!(await fs.exists(join(repo, path))))
-      return { error: `la ruta aprobada falta al aplicar el commit: ${path}` };
-  }
-  try {
-    const committed = await git.commitPaths(repo, proposal.message, pathsToCommit);
-    return { proposal, committed };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
-  }
+  return applyWorkspaceCommit(fs, git, proposal, input.approval);
 }
 
 function safeRepoPath(repo: string, workspace: string, workspacePath: string): string | null {
@@ -127,74 +115,14 @@ async function sessionPaths(
   const { folder, path } = resolved.session;
   const custody = await readCustody(fs, path);
   if (custody.status === "unreadable") return { error: custody.reason };
-  const documents = new Set<string>();
-  if (custody.status === "present") {
-    for (const effect of custody.custody.effects) {
-      if (effect.kind !== "artifact_published") continue;
-      for (const artifact of effect.paths) documents.add(artifact);
-    }
-  }
+  const documents = publishedDocuments(custody);
   // A proposal is an intent, not a publication. Custody's artifact_published
   // receipts are the only authority for what this session actually wrote.
-  const pending = new Set<string>();
-  for (const other of await listSessionFolders(fs, paths.cwdSessionsDir())) {
-    if (other.name === folder) continue;
-    const state = await readSessionState(fs, other.path);
-    if (state !== "active" && state !== "paused") continue;
-    const owner = await readCustody(fs, other.path);
-    if (owner.status === "unreadable") return { error: `custodia ajena ilegible: ${other.name}` };
-    if (owner.status === "present") {
-      for (const artifact of owner.custody.artifacts) pending.add(artifact.path);
-    }
-    const otherRun = await readRun(fs, locateRun(paths, other.name));
-    if (otherRun.ok)
-      for (const artifact of otherRun.state.proposal?.artifacts ?? []) pending.add(artifact.path);
-  }
+  const pending = await pendingSessionDocuments(fs, paths, folder);
+  if (!(pending instanceof Set)) return pending;
   const excluded = [...documents].filter((path) => pending.has(path)).sort();
   for (const path of excluded) documents.delete(path);
-  const archive = join(paths.cwdRoot(), "archive", folder);
-  const archived: string[] = [];
-  const currentState = await readSessionState(fs, path);
-  if (currentState === "closed" || currentState === "abandoned") {
-    if (await fs.exists(archive)) {
-      const walk = async (dir: string): Promise<void> => {
-        for (const entry of await fs.list(dir)) {
-          if (entry.type === "dir") await walk(entry.path);
-          else if (entry.type === "file") archived.push(relative(paths.workspaceDir(), entry.path));
-        }
-      };
-      await walk(archive);
-    }
-  } else {
-    // Before finalize, predict the exact allowlisted minimum it will copy.
-    // CHECKPOINT is created by close even when absent at the human gate.
-    const collect = async (dir: string, prefix: string, sqlOnly: boolean): Promise<void> => {
-      if (!(await fs.exists(dir)) || (await fs.lstat(dir))?.isSymlink) return;
-      for (const entry of await fs.list(dir)) {
-        const stat = await fs.lstat(entry.path);
-        if (stat?.isSymlink) continue;
-        if (stat?.type === "dir") await collect(entry.path, join(prefix, entry.name), sqlOnly);
-        else if (stat?.type === "file" && (!sqlOnly || entry.name.toLowerCase().endsWith(".sql")))
-          archived.push(relative(paths.workspaceDir(), join(archive, prefix, entry.name)));
-      }
-    };
-    for (const name of ["CHECKPOINT.md", "DECISION.md", "BACKLOG.md"]) {
-      if (name === "CHECKPOINT.md" || (await fs.exists(join(path, name))))
-        archived.push(relative(paths.workspaceDir(), join(archive, name)));
-    }
-    for (const entry of await fs.list(path)) {
-      if (entry.type === "file" && entry.name.toLowerCase().endsWith(".sql"))
-        archived.push(relative(paths.workspaceDir(), join(archive, entry.name)));
-    }
-    await collect(join(path, "scripts"), "scripts", true);
-    await collect(join(path, "evidence"), "evidence", false);
-    if (withEvidence) {
-      const citations = await sessionScratchReferences(fs, path);
-      for (const { destination } of await sessionEvidencePaths(fs, path, citations)) {
-        archived.push(relative(paths.workspaceDir(), join(archive, relative(path, destination))));
-      }
-    }
-  }
+  const archived = await sessionArchivePaths(fs, paths, folder, path, withEvidence);
   const ledger = await readClaimEvents(fs, paths);
   if (ledger.unreadable)
     return { error: "claims.jsonl ilegible: no se puede decidir la inclusión" };
@@ -233,4 +161,158 @@ async function exportPaths(
     excluded: [],
     message: `Exportar ${value}`,
   };
+}
+
+async function applyWorkspaceCommit(
+  fs: FileSystemPort,
+  git: GitPort,
+  proposal: WorkspaceCommitProposal,
+  approval: string | undefined,
+): Promise<WorkspaceCommitResult> {
+  if (approval === undefined) return { proposal };
+  if (approval !== proposal.approval)
+    return { error: "la propuesta cambió de rama, HEAD o rutas; preparala otra vez" };
+  for (const path of proposal.paths) {
+    if (!(await fs.exists(join(proposal.repo, path))))
+      return { error: `la ruta aprobada falta al aplicar el commit: ${path}` };
+  }
+  try {
+    const committed = await git.commitPaths(proposal.repo, proposal.message, proposal.paths);
+    return { proposal, committed };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function publishedDocuments(custody: Awaited<ReturnType<typeof readCustody>>): Set<string> {
+  const documents = new Set<string>();
+  if (custody.status === "present") {
+    for (const effect of custody.custody.effects) {
+      if (effect.kind !== "artifact_published") continue;
+      for (const artifact of effect.paths) documents.add(artifact);
+    }
+  }
+  return documents;
+}
+
+async function pendingSessionDocuments(
+  fs: FileSystemPort,
+  paths: PathsService,
+  folder: string,
+): Promise<Set<string> | { error: string }> {
+  const pending = new Set<string>();
+  for (const other of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    if (other.name === folder) continue;
+    const state = await readSessionState(fs, other.path);
+    if (state !== "active" && state !== "paused") continue;
+    const owner = await readCustody(fs, other.path);
+    if (owner.status === "unreadable") return { error: `custodia ajena ilegible: ${other.name}` };
+    await appendPendingDocuments(fs, paths, other.name, owner, pending);
+  }
+  return pending;
+}
+
+async function sessionArchivePaths(
+  fs: FileSystemPort,
+  paths: PathsService,
+  folder: string,
+  path: string,
+  withEvidence: boolean,
+): Promise<string[]> {
+  const archive = join(paths.cwdRoot(), "archive", folder);
+  const archived: string[] = [];
+  const currentState = await readSessionState(fs, path);
+  if (currentState === "closed" || currentState === "abandoned") {
+    if (await fs.exists(archive)) {
+      const walk = async (dir: string): Promise<void> => {
+        for (const entry of await fs.list(dir)) {
+          if (entry.type === "dir") await walk(entry.path);
+          else if (entry.type === "file") archived.push(relative(paths.workspaceDir(), entry.path));
+        }
+      };
+      await walk(archive);
+    }
+  } else {
+    await predictArchivePaths(fs, paths, path, archive, archived, withEvidence);
+  }
+  return archived;
+}
+
+async function collectArchivePaths(
+  fs: FileSystemPort,
+  paths: PathsService,
+  archive: string,
+  archived: string[],
+  dir: string,
+  prefix: string,
+  sqlOnly: boolean,
+): Promise<void> {
+  if (!(await fs.exists(dir)) || (await fs.lstat(dir))?.isSymlink) return;
+  for (const entry of await fs.list(dir)) {
+    const stat = await fs.lstat(entry.path);
+    if (stat?.isSymlink) continue;
+    if (stat?.type === "dir")
+      await collectArchivePaths(
+        fs,
+        paths,
+        archive,
+        archived,
+        entry.path,
+        join(prefix, entry.name),
+        sqlOnly,
+      );
+    else if (stat?.type === "file" && (!sqlOnly || entry.name.toLowerCase().endsWith(".sql")))
+      archived.push(relative(paths.workspaceDir(), join(archive, prefix, entry.name)));
+  }
+}
+
+async function appendPendingDocuments(
+  fs: FileSystemPort,
+  paths: PathsService,
+  folder: string,
+  owner: Awaited<ReturnType<typeof readCustody>>,
+  pending: Set<string>,
+): Promise<void> {
+  if (owner.status === "present") {
+    for (const artifact of owner.custody.artifacts) pending.add(artifact.path);
+  }
+  const otherRun = await readRun(fs, locateRun(paths, folder));
+  if (otherRun.ok)
+    for (const artifact of otherRun.state.proposal?.artifacts ?? []) pending.add(artifact.path);
+}
+
+async function predictArchivePaths(
+  fs: FileSystemPort,
+  paths: PathsService,
+  path: string,
+  archive: string,
+  archived: string[],
+  withEvidence: boolean,
+): Promise<void> {
+  // Before finalize, predict the exact allowlisted minimum it will copy.
+  // CHECKPOINT is created by close even when absent at the human gate.
+  for (const name of ["CHECKPOINT.md", "DECISION.md", "BACKLOG.md"]) {
+    if (name === "CHECKPOINT.md" || (await fs.exists(join(path, name))))
+      archived.push(relative(paths.workspaceDir(), join(archive, name)));
+  }
+  for (const entry of await fs.list(path)) {
+    if (entry.type === "file" && entry.name.toLowerCase().endsWith(".sql"))
+      archived.push(relative(paths.workspaceDir(), join(archive, entry.name)));
+  }
+  await collectArchivePaths(fs, paths, archive, archived, join(path, "scripts"), "scripts", true);
+  await collectArchivePaths(
+    fs,
+    paths,
+    archive,
+    archived,
+    join(path, "evidence"),
+    "evidence",
+    false,
+  );
+  if (withEvidence) {
+    const citations = await sessionScratchReferences(fs, path);
+    for (const { destination } of await sessionEvidencePaths(fs, path, citations)) {
+      archived.push(relative(paths.workspaceDir(), join(archive, relative(path, destination))));
+    }
+  }
 }

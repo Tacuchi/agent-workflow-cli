@@ -72,19 +72,11 @@ export async function runSessionResume(
 ): Promise<SessionResumeResult> {
   // Reopening is a selection, not a guess: it reactivates a closed line and
   // associates the conversation with it, so it always names its target.
-  if (input.reopen === true && (input.code ?? "").trim().length === 0) {
+  if (reopenWithoutCode(input)) {
     return { error: "--reopen exige --code <NNN>", code: "INVALID_INPUT" };
   }
 
-  const resolution = await resolveSessionTarget(fs, paths, {
-    intent: input.reopen === true ? "write" : "read",
-    ...(input.code !== undefined ? { code: input.code } : {}),
-    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
-    allowClosed: true,
-    // A plain resume is an inspection. A reopen binds inside its own lock
-    // below, so neither variant delegates a hidden binding write to resolution.
-    bind: false,
-  });
+  const resolution = await resolveResumeTarget(fs, paths, input);
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
 
@@ -98,41 +90,7 @@ export async function runSessionResume(
   let state = session.state;
   let resumesAt: string | null = null;
   if (state === "paused" && input.reopen !== true) {
-    const resumed = await withCwdLock(fs, paths, async () => {
-      if ((await readSessionState(fs, session.path)) !== "paused") {
-        return {
-          error: `la sesión ${session.folder} ya no está pausada`,
-          code: "SESSION_STATE_CHANGED",
-        };
-      }
-      const bindingFile = paths.cwdSessionBindingsFile();
-      const historyFile = paths.cwdHistoryFile();
-      const bindingsBefore = (await fs.exists(bindingFile)) ? await fs.readText(bindingFile) : null;
-      const historyBefore = (await fs.exists(historyFile)) ? await fs.readText(historyFile) : null;
-      try {
-        if (input.contextId) {
-          const binding = await bindContextToSession(fs, paths, input.contextId, session.folder);
-          if (!binding.ok) return { error: binding.reason };
-        }
-        await fs.remove(join(session.path, PAUSED_MARKER));
-        await upsertHistoryRow(fs, paths, {
-          code: session.code ?? session.folder,
-          sesionName: session.name,
-          state: "active",
-        });
-        return { resumed: true };
-      } catch (error) {
-        await fs.writeText(join(session.path, PAUSED_MARKER), "");
-        if (bindingsBefore === null) await fs.remove(bindingFile);
-        else await fs.writeText(bindingFile, bindingsBefore);
-        if (historyBefore === null) await fs.remove(historyFile);
-        else await fs.writeText(historyFile, historyBefore);
-        return {
-          error: `no se pudo retomar ${session.folder}: ${error instanceof Error ? error.message : String(error)}`,
-          code: "SESSION_RESUME_FAILED",
-        };
-      }
-    });
+    const resumed = await withCwdLock(fs, paths, () => unpauseUnderLock(fs, paths, session, input));
     if ("error" in resumed)
       return {
         error: resumed.error,
@@ -148,26 +106,7 @@ export async function runSessionResume(
     state = "active";
   }
 
-  const cwd = paths.workspaceDir();
-  // Dual-read: new-model SESSION.md first, legacy OBJECTIVE.md as fallback.
-  const objetivoPath =
-    (await findArtifact(session.path, "session", fs)) ??
-    (await findArtifact(session.path, "objective", fs));
-  const objetivoText = objetivoPath ? await fs.readText(objetivoPath) : null;
-
-  // Resume context comes from the folder-local CHECKPOINT.md, not the project block.
-  const checkpoint = await readLatestCheckpoint(fs, session.path);
-
-  return {
-    code: session.code,
-    folder: session.folder,
-    path: relpath(session.path, cwd),
-    state,
-    objetivo: objetivoText,
-    objetivo_text: objetivoText,
-    checkpoint,
-    ...(resumesAt !== null ? { run: { resumes_at: resumesAt } } : {}),
-  };
+  return resumedSessionOutput(fs, paths, session, state, resumesAt);
 }
 
 async function reopenSessionAndRun(
@@ -246,10 +185,7 @@ async function reopenUnderLock(
     const wasClosed = await fs.exists(join(session.path, CLOSED_MARKER));
     const wasPaused = await fs.exists(join(session.path, PAUSED_MARKER));
     const wasAbandoned = await fs.exists(join(session.path, ABANDONED_MARKER));
-    const bindingFile = paths.cwdSessionBindingsFile();
-    const historyFile = paths.cwdHistoryFile();
-    const bindingsBefore = (await fs.exists(bindingFile)) ? await fs.readText(bindingFile) : null;
-    const historyBefore = (await fs.exists(historyFile)) ? await fs.readText(historyFile) : null;
+    const snapshot = await resumeSnapshot(fs, paths);
     const previous =
       id.length > 0 ? await lookupBinding(fs, paths, id) : { status: "unbound" as const };
     if (previous.status === "invalid") {
@@ -257,12 +193,8 @@ async function reopenUnderLock(
     }
     const previousBinding = previous.status === "bound" ? previous.folder : null;
     try {
-      if (id.length > 0) {
-        const bound = await bindContextToSession(fs, paths, id, session.folder);
-        if (!bound.ok) {
-          return { ok: false, failure: { error: bound.reason, code: "SESSION_BINDING_INVALID" } };
-        }
-      }
+      const bindingFailure = await bindReopenedSession(fs, paths, id, session);
+      if (bindingFailure !== null) return { ok: false, failure: bindingFailure };
       // `remove` is idempotent — a no-op when the session is already active.
       await fs.remove(join(session.path, CLOSED_MARKER));
       await fs.remove(join(session.path, PAUSED_MARKER));
@@ -274,13 +206,8 @@ async function reopenUnderLock(
       });
       return { ok: true, wasClosed, wasPaused, wasAbandoned, previousBinding };
     } catch (error) {
-      if (wasClosed) await fs.writeText(join(session.path, CLOSED_MARKER), "");
-      if (wasPaused) await fs.writeText(join(session.path, PAUSED_MARKER), "");
-      if (wasAbandoned) await fs.writeText(join(session.path, ABANDONED_MARKER), "");
-      if (bindingsBefore === null) await fs.remove(bindingFile);
-      else await fs.writeText(bindingFile, bindingsBefore);
-      if (historyBefore === null) await fs.remove(historyFile);
-      else await fs.writeText(historyFile, historyBefore);
+      await restoreSessionMarkers(fs, session, wasClosed, wasPaused, wasAbandoned);
+      await restoreResumeSnapshot(fs, snapshot);
       return {
         ok: false,
         failure: {
@@ -332,4 +259,130 @@ async function restoreClosed(
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
   }
+}
+
+async function unpauseUnderLock(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  input: SessionResumeInput,
+): Promise<SessionResumeError | { resumed: true }> {
+  if ((await readSessionState(fs, session.path)) !== "paused") {
+    return {
+      error: `la sesión ${session.folder} ya no está pausada`,
+      code: "SESSION_STATE_CHANGED",
+    };
+  }
+  const snapshot = await resumeSnapshot(fs, paths);
+  try {
+    if (input.contextId) {
+      const binding = await bindContextToSession(fs, paths, input.contextId, session.folder);
+      if (!binding.ok) return { error: binding.reason };
+    }
+    await fs.remove(join(session.path, PAUSED_MARKER));
+    await upsertHistoryRow(fs, paths, {
+      code: session.code ?? session.folder,
+      sesionName: session.name,
+      state: "active",
+    });
+    return { resumed: true };
+  } catch (error) {
+    await fs.writeText(join(session.path, PAUSED_MARKER), "");
+    await restoreResumeSnapshot(fs, snapshot);
+    return {
+      error: `no se pudo retomar ${session.folder}: ${error instanceof Error ? error.message : String(error)}`,
+      code: "SESSION_RESUME_FAILED",
+    };
+  }
+}
+
+async function resumeSnapshot(fs: FileSystemPort, paths: PathsService) {
+  const bindingFile = paths.cwdSessionBindingsFile();
+  const historyFile = paths.cwdHistoryFile();
+  const bindingsBefore = (await fs.exists(bindingFile)) ? await fs.readText(bindingFile) : null;
+  const historyBefore = (await fs.exists(historyFile)) ? await fs.readText(historyFile) : null;
+  return { bindingFile, historyFile, bindingsBefore, historyBefore };
+}
+
+async function restoreResumeSnapshot(
+  fs: FileSystemPort,
+  snapshot: Awaited<ReturnType<typeof resumeSnapshot>>,
+): Promise<void> {
+  const { bindingFile, historyFile, bindingsBefore, historyBefore } = snapshot;
+  if (bindingsBefore === null) await fs.remove(bindingFile);
+  else await fs.writeText(bindingFile, bindingsBefore);
+  if (historyBefore === null) await fs.remove(historyFile);
+  else await fs.writeText(historyFile, historyBefore);
+}
+
+async function restoreSessionMarkers(
+  fs: FileSystemPort,
+  session: SessionEntry,
+  wasClosed: boolean,
+  wasPaused: boolean,
+  wasAbandoned: boolean,
+): Promise<void> {
+  if (wasClosed) await fs.writeText(join(session.path, CLOSED_MARKER), "");
+  if (wasPaused) await fs.writeText(join(session.path, PAUSED_MARKER), "");
+  if (wasAbandoned) await fs.writeText(join(session.path, ABANDONED_MARKER), "");
+}
+
+async function resumedSessionOutput(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: SessionEntry,
+  state: SessionEntry["state"],
+  resumesAt: string | null,
+): Promise<SessionResumeResult> {
+  const cwd = paths.workspaceDir();
+  // Dual-read: new-model SESSION.md first, legacy OBJECTIVE.md as fallback.
+  const objetivoPath =
+    (await findArtifact(session.path, "session", fs)) ??
+    (await findArtifact(session.path, "objective", fs));
+  const objetivoText = objetivoPath ? await fs.readText(objetivoPath) : null;
+
+  // Resume context comes from the folder-local CHECKPOINT.md, not the project block.
+  const checkpoint = await readLatestCheckpoint(fs, session.path);
+
+  return {
+    code: session.code,
+    folder: session.folder,
+    path: relpath(session.path, cwd),
+    state,
+    objetivo: objetivoText,
+    objetivo_text: objetivoText,
+    checkpoint,
+    ...(resumesAt !== null ? { run: { resumes_at: resumesAt } } : {}),
+  };
+}
+
+function resolveResumeTarget(fs: FileSystemPort, paths: PathsService, input: SessionResumeInput) {
+  return resolveSessionTarget(fs, paths, {
+    intent: input.reopen === true ? "write" : "read",
+    ...(input.code !== undefined ? { code: input.code } : {}),
+    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
+    allowClosed: true,
+    // A plain resume is an inspection. A reopen binds inside its own lock
+    // below, so neither variant delegates a hidden binding write to resolution.
+    bind: false,
+  });
+}
+
+async function bindReopenedSession(
+  fs: FileSystemPort,
+  paths: PathsService,
+  id: string,
+  session: SessionEntry,
+): Promise<SessionResumeError | null> {
+  if (id.length > 0) {
+    const bound = await bindContextToSession(fs, paths, id, session.folder);
+    if (!bound.ok) {
+      return { error: bound.reason, code: "SESSION_BINDING_INVALID" };
+    }
+  }
+  return null;
+}
+
+function reopenWithoutCode(input: SessionResumeInput): boolean {
+  return input.reopen === true && (input.code ?? "").trim().length === 0;
 }

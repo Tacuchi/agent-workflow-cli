@@ -29,6 +29,25 @@ export async function hubUnitPaths(
   root: string,
 ): Promise<(path: string) => boolean> {
   const keys = new Set([workspaceKey(paths.workspaceDir())]);
+  await addPreviousWorkspaceKeys(fs, paths, keys);
+  const owned = new Set<string>();
+  for (const session of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    const custody = await readCustody(fs, session.path);
+    if (custody.status !== "present") continue;
+    for (const source of custody.custody.sources) if (source.unit_path) owned.add(source.unit_path);
+  }
+  return (path) => {
+    const unit = parseUnitPath(root, path);
+    if (unit === null) return false;
+    return owned.has(path) || keys.has(unit.workspaceKey);
+  };
+}
+
+async function addPreviousWorkspaceKeys(
+  fs: FileSystemPort,
+  paths: PathsService,
+  keys: Set<string>,
+): Promise<void> {
   try {
     const local: unknown = JSON.parse(await fs.readText(paths.cwdLocalConfigFile()));
     if (
@@ -42,15 +61,4 @@ export async function hubUnitPaths(
   } catch {
     /* legacy hub */
   }
-  const owned = new Set<string>();
-  for (const session of await listSessionFolders(fs, paths.cwdSessionsDir())) {
-    const custody = await readCustody(fs, session.path);
-    if (custody.status !== "present") continue;
-    for (const source of custody.custody.sources) if (source.unit_path) owned.add(source.unit_path);
-  }
-  return (path) => {
-    const unit = parseUnitPath(root, path);
-    if (unit === null) return false;
-    return owned.has(path) || keys.has(unit.workspaceKey);
-  };
 }

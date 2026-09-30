@@ -168,16 +168,7 @@ async function readDeclaredFuentes(
   }
   const unitsRoot = await fs.realPath(paths.userUnitsDir()).catch(() => paths.userUnitsDir());
   const owns = await hubUnitPaths(fs, paths, unitsRoot);
-  for (const session of await listSessionFolders(fs, paths.cwdSessionsDir())) {
-    const custody = await readCustody(fs, session.path);
-    if (custody.status !== "present") continue;
-    for (const source of custody.custody.sources) {
-      const stat = source.unit_path ? await fs.lstat(source.unit_path) : null;
-      if (source.unit_path && owns(source.unit_path) && stat?.type === "dir" && !stat.isSymlink) {
-        pathsFound.push(source.unit_path);
-      }
-    }
-  }
+  await appendOwnedUnitPaths(fs, paths, owns, pathsFound);
   return { paths: pathsFound, errors };
 }
 
@@ -451,4 +442,22 @@ function buildSummary(reports: VisibilityHostReport[]): VisibilityDoctorResult["
     global_pollution: reports.filter((r) => r.status === "global-pollution").length,
     no_project_block: reports.filter((r) => r.status === "no-project-block").length,
   };
+}
+
+async function appendOwnedUnitPaths(
+  fs: FileSystemPort,
+  paths: PathsService,
+  owns: (path: string) => boolean,
+  pathsFound: string[],
+): Promise<void> {
+  for (const session of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+    const custody = await readCustody(fs, session.path);
+    if (custody.status !== "present") continue;
+    for (const source of custody.custody.sources) {
+      const stat = source.unit_path ? await fs.lstat(source.unit_path) : null;
+      if (source.unit_path && owns(source.unit_path) && stat?.type === "dir" && !stat.isSymlink) {
+        pathsFound.push(source.unit_path);
+      }
+    }
+  }
 }
