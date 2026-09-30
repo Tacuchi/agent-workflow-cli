@@ -17,11 +17,11 @@ execution units. The loop re-infers them from live state using
 [`PLAN-EXECUTION-BATCHES`](../modules/PLAN-EXECUTION-BATCHES.md), then updates each phase's
 checkboxes and `> Estado:` line in the living plan.
 
-> **Hard floor — applies even if you read nothing beyond this file:**
+> **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
 > 1. **Session first** — open or resume the run before touching code: `aw flow start --flow plan-exec --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Git/DB** — verify declared branches at each batch's local precondition; the CLI commits exact changed paths once per source
->    after batch checks/review and that batch's approval.
+>    after batch checks and that batch's approval.
 >    DML/DDL stays in `SCRIPTS.sql`.
 > 3. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
@@ -30,7 +30,7 @@ checkboxes and `> Estado:` line in the living plan.
 
 1. Read, in order, the `read_set` entries it returned that are not `loaded`.
 2. Follow it end to end: check executability, infer live batches, execute each without internal
-   validation pauses, then validate/review/commit at its close.
+   validation pauses (compiling after each change), then validate/commit at its close.
 
 Answer each boundary per `aw flow --help`; the CLI fills what it knows. A stuck frontier: `aw flow recover` or `aw flow restart`; `aw flow annul` reopens a miscredited batch.
 

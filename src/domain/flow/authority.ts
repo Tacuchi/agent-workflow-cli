@@ -1736,7 +1736,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "quick.review-precedence",
     scope: "quick",
-    title: "exigir el gate de revisión antes de proponer el commit",
+    title: "compilar y validar antes de proponer el commit",
     authority: "cli",
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
@@ -1745,7 +1745,8 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "quick.review-findings",
     scope: "quick",
-    title: "releer el diff y juzgar sus hallazgos con las convenciones instaladas",
+    title:
+      "repasar el diff con las convenciones instaladas; revisores sólo si la persona los acepta",
     authority: "agent",
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,
@@ -3064,7 +3065,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "plan-exec.review-findings",
     scope: "plan-exec",
-    title: "releer el diff del batch y juzgar sus hallazgos",
+    title: "registrar la revisión del batch, o que nadie la pidió",
     authority: "agent",
     ownership: "cli-owned",
     document: CODE_POLICIES_MD,

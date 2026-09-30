@@ -343,9 +343,7 @@ describe("hard floor — present in the compact profile AND in the fallback", ()
     for (const command of ["quick", "spec-refine", "plan-new", "plan-refine", "plan-exec"]) {
       const core = manifest.commands[command]?.core ?? [];
       const body = await readFile(join(BUNDLE_ROOT, core[0] ?? ""), "utf8");
-      expect(body, command).toContain(
-        "Hard floor — applies even if you read nothing beyond this file",
-      );
+      expect(body, command).toContain("Minimum context — a guide; only Git/DB is fixed.");
       expect(body, command).toContain("--objetivo");
       expect(body, command).toContain("user's language");
     }

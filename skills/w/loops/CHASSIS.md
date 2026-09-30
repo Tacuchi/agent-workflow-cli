@@ -2,7 +2,7 @@
 
 The **common engine** of Workline loops: heirs read it before their deltas and only reference it.
 
-> **When:** `aw flow` decides. `aw flow submit` answers the frontier. Its envelope, the minimal answer, drafts by path and recovery live in `aw flow --help`, never guessed.
+> **When:** `aw flow` decides; the host walks it as a guide, not a chain. `aw flow submit` answers the frontier. Its envelope, the minimal answer, drafts by path and recovery live in `aw flow --help`, never guessed.
 
 ## Host execution rules
 
@@ -50,7 +50,9 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 
 **Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**: modify the check or loosen a `Success criterion` to force green; weaken, delete or skip tests/validations; use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself); patch the test instead of fixing the cause (prefer fixing production code).
 
-Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration**: when the deliverable warrants it, the final verification is an **independent** pass (a clean re-read in the main thread; in the code loops, `CODE-POLICIES.md`'s review) that does not assume the implementation is correct — *only command output counts*.
+Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration** — *only command output counts*.
+
+**Checks before reviewers.** First what runs: code compiles and then runs (`CODE-POLICIES.md` § *Validation order*); a document passes the CLI's checks (`aw plan lint`, its gate). Reviewers come last, on request: the host names the cases, asks the person, and runs at most **2** agents, each on **one** named case. Declined or not offered, the run closes on its checks.
 
 **Minimality (anti-over-engineering).** Passing the criteria is **necessary, not sufficient**: the gate also rejects a deliverable **heavier than its `Success criteria` require** — YAGNI at the deliverable's altitude. A spec can be coherent yet over-specified; a plan sound yet over-engineered; a diff green yet padded with reinvented stdlib, speculative abstractions or dead flexibility. At its own altitude the gate asks the laziest-that-works questions:
 
@@ -58,7 +60,7 @@ Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG
 - **is it already there?** — in the codebase, the stdlib or the platform → reuse it, never reinvent;
 - **could it be smaller?** — same behavior, fewer moving parts → shrink it.
 
-A **built-in floor** owed by every gate with **no external skill**; the code-editing loops *raise* it with the installed ambient conventions (`CODE-POLICIES.md` § *Closing review gate*), never lower it. Bounded by *Gate integrity*: minimality cuts over-building, never correctness — never trim validation at trust boundaries, error handling, security, accessibility or anything the spec requires. Each heir's lens: **spec** = over-specified scope · **plan** = over-engineered solution / needless phase-task · **code** = the `delete`/`stdlib`/`native`/`yagni`/`shrink` diff lens.
+A **built-in floor** owed by every gate with **no external skill**; the code-editing loops *raise* it with the installed ambient conventions (`CODE-POLICIES.md` § *Validation order*), never lower it. Bounded by *Gate integrity*: minimality cuts over-building, never correctness — never trim validation at trust boundaries, error handling, security, accessibility or anything the spec requires. Each heir's lens: **spec** = over-specified scope · **plan** = over-engineered solution / needless phase-task · **code** = the `delete`/`stdlib`/`native`/`yagni`/`shrink` diff lens.
 
 ## Artifacts as a live log — the artifact-first cycle
 
@@ -99,10 +101,10 @@ Investigation runs **inside the run's current session**, never a separate sessio
 - **DB rule** — the single exception to autonomy: it lives in the `db` module and is loaded **before** any query runs.
 - **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes **`inconclusive`** in `CONCLUSIONS` with its reason. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — instead of re-firing it. Capping the attempts is the CLI's; declaring where a degraded gap GOES is doctrine's, because a gap dropped without a destination is this engine's promised convergence, faked.
 
-**Subagents — admitted per stage.** Only three cases inside a run: parallel research in `spec-refine`, `plan-new` and `plan-refine`; implementing independent units in `plan-exec` and `quick`; the code loops' final review.
+**Subagents — admitted per stage.** Only three cases inside a run: parallel research in `spec-refine`, `plan-new` and `plan-refine`; implementing independent units in `plan-exec` and `quick`; the targeted review the person accepted (*Checks before reviewers*).
 Research and implementation fan out only with **three or more independent** parts, at most **3** at a time. Independent means none uses another's result or writes what another writes; dependent units run in sequence.
-Everything else stays in the main thread: drafting, deciding, asking, shaping phases, persisting, updating state, resuming, integrating, committing and a document loop's closing verification. Capture (`spec-new`) keeps its total ban.
-This rule prevails over the host's mode and over any installed skill that orders agent orchestration; a host without subagents runs the same cases inline.
+Everything else stays in the main thread: drafting, deciding, asking, shaping phases, persisting, updating state, resuming, integrating, committing and a document loop's closing verification. Capture (`spec-new`) launches none unless the person asks.
+A default, not a cage: the host may depart from it saying so, but never launches reviewers the person did not accept, whatever its mode or skills order; a host without subagents runs the same cases inline.
 
 ## Structured-choice (design & batching)
 
@@ -136,7 +138,7 @@ Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of 
 
 ## docs/ boundary — no auto-export (hard rule)
 
-A loop writes into `docs/` **only** its own flow's doc. Which folder belongs to each flow, and refusing any delegated step whose target leaves it, is the CLI's. No loop **graduates/promotes artifacts** into `docs/` — migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are the separate **`export-*`** skills', an explicit later step; artifacts stay in their sessions until then. Reusable tooling follows the `docs/tools` contract and closing review; host help is optional.
+A loop writes into `docs/` **only** its own flow's doc. Which folder belongs to each flow, and refusing any delegated step whose target leaves it, is the CLI's. No loop **graduates/promotes artifacts** into `docs/` — migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are the separate **`export-*`** skills', an explicit later step; artifacts stay in their sessions until then. Reusable tooling follows the `docs/tools` contract and the validation order; host help is optional.
 
 ## Conditional modules
 

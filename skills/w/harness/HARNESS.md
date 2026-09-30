@@ -36,7 +36,7 @@ The capabilities the harness layer depends on, with their universal fallback (wh
 | **procedure-loading** | load a loop's/command's doctrine | the AI **reads the `.md`** of the loop and follows it (read-and-follow) |
 | **structured-choice** | ask the human ≤3 content questions **+ always** a `flow` control (`Compactar`/`Cerrar`); every option has a semantic label + one-sentence functional explanation/example | the host's own tool when the turn offers it; else the **`structured_choice`** tool of Workline's own MCP server, which renders the host's native selector by elicitation (only where the catalog declares it with dated evidence); else **labeled markdown** in chat, answered by label or by ratifying all first options with `Aceptar recomendaciones` |
 | **compaction** | shrink the context without losing the thread (+ a context-pressure **signal** for the chassis' self-regulation) | write `CHECKPOINT` and ask the user to restart the context and resume (resume keys off `CHECKPOINT`) |
-| **subagent-dispatch** | *(optional)* run the three stages the chassis admits — parallel research in the refine and planning loops, independent implementation units in the code loops, the code loops' final review — and the on-demand follow-up after close | the same cases **inline, in sequence** in the main thread; `plan-exec`'s review becomes a clean re-read its report declares (optional in `quick`) |
+| **subagent-dispatch** | *(optional)* run the three stages the chassis admits — parallel research in the refine and planning loops, independent implementation units in the code loops, the targeted review the person accepted — and the on-demand follow-up after close | the same cases **inline, in sequence** in the main thread; the targeted review becomes a clean re-read of its named cases |
 | **persistent-context** | the `WORKSPACE` block + conventions always present | the repo's context file (standard **`AGENTS.md`**; `CLAUDE.md` on Claude Code) |
 | **host-memory** | *(optional)* recover state/pending work from the host's accessible history — a **second source** after the workline signals | recent **git** / **`docs/`** signals + (in `/resume`) **ask the user**; plus Workline's own `.workflow/CHECKPOINT` via `aw resume-summary` |
 | **web-research** | *(optional)* search/fetch external online evidence inside a consented ideation round (spec-refine § *Ideation gate*) | **offline ideation** (own knowledge + workspace + repos) — the loop **declares** the web was unavailable |
@@ -59,11 +59,11 @@ own target explicitly; environment detection is the fallback, while a shared
 - A semantic tranche is inline by default. Subagents fit only the three stages
   of the chassis rule (`../loops/CHASSIS.md`, *Subagents — admitted per stage*):
   parallel research in `spec-refine`, `plan-new` and `plan-refine`; independent
-  implementation units in `plan-exec` and `quick`; the code loops' final review.
-  Research and implementation need three or more independent partitions with no
-  dependency and no overlapping writes, capped at **3** (at most **4** model
-  workers including the coordinator); the final review does not depend on that
-  threshold. Human and authorization frontiers never fan out.
+  implementation units in `plan-exec` and `quick`; the targeted review the person
+  accepted. Research and implementation need three or more independent partitions
+  with no dependency and no overlapping writes, capped at **3** (at most **4** model
+  workers including the coordinator); the targeted review does not depend on that
+  threshold and runs at most **2** agents. Human and authorization frontiers never fan out.
 - An execution frontier has one external invocation at a time and returns its
   actual evidence; it is not a request to run more agents.
 - Token usage is recorded only when the host supplies a real count. Bytes,

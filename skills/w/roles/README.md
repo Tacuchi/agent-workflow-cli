@@ -13,4 +13,4 @@ The only Workline-owned binding role is `overview`, fulfilled by the bundled `w`
 
 Code, testing, writing, UI, SQL, Git, research, diagrams and tool authoring may come from whatever the host exposes. Workline does not bind, inventory, install or require that help. A host contribution is ordinary input subject to the flow's existing permissions, destinations, approvals and validation. In SPEC, a functional UI choice and its reason belong in `## Decisions`; observable effects go to criteria and scenarios as appropriate.
 
-The code loops' closing review is a loop step, not a binding role. Minimality is part of the convergence gate even with no installed convention skill.
+The code loops' validation order is a loop step, not a binding role. Minimality is part of the convergence gate even with no installed convention skill.

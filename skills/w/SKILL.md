@@ -54,6 +54,16 @@ USER invokes
 - **Layer 2** — the AI iterates end to end until convergence. No direct human invocation.
 - **Layer 3** — ephemeral, internal, process-only. Nobody invokes it by hand.
 
+### Guide, not chain
+
+Workline proposes a route; the host decides how to walk it. When the host judges a better way, or the person asks for one, it may skip, reorder or merge steps, or leave the flow and keep working natively (the session stays resumable; `aw session-close --code <NNN>` closes it). It owes three things:
+
+- **Safety never bends** — invariants 1-5 below and no secrets in code or logs.
+- **A departure is said** — one line to the person, and in `CHECKPOINT` when a session is open.
+- **The record stays true** — nothing is marked done, validated or reviewed that was not.
+
+*Hard rule*, *never* and *always* in this doctrine describe the default route, except where they guard one of those three.
+
 > **Tools pointer:** reusable auxiliary tooling belongs under `docs/tools/<slug>/` (README, run/output structure, index row in `docs/tools/README.md`); code loops review it at closing (`loops/CODE-POLICIES.md`). Host help is optional, from any origin.
 
 ### The 3 flows
@@ -84,7 +94,7 @@ Before any loop, the AI resolves the **workspace root** on every prompt (closest
 |---|---|
 | **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → materializes if needed, creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
 | **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit its `SCRIPTS.sql` (no new session) |
-| **prompt with no command** (unrelated / no session) | recommend **QUICK**, **SPEC→PLAN** or **PLAN directo** from size and uncertainty; direct no-flow work remains possible only when no workflow is warranted. An explicit flow command keeps authority. `spec-new` is brief capture; deep research belongs to `spec-refine`. |
+| **prompt with no command** (unrelated / no session) | recommend **QUICK**, **SPEC→PLAN** or **PLAN directo** from size and uncertainty; direct no-flow work stays available whenever the host or the person prefers it. An explicit flow command keeps authority. `spec-new` is brief capture; deep research belongs to `spec-refine`. |
 
 **Continuity rule** (single source — the chassis and the loops reference here):
 
@@ -108,7 +118,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 - `/w:spec-refine` — starts `spec-refine-loop` to refine the spec until it is `ready-for-plan`: the blocking functional decisions closed, the architecture/implementation ones declared for PLAN.
 - `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the ready spec.
 - `/w:plan-refine` — starts `plan-refine-loop` to turn the plan, in place, into an executable sequence of functional states (auxiliary, **not mandatory**); it is also the return path when execution hits a structural deviation.
-- `/w:plan-exec` — executes planned states in live-inferred isolated/continuous batches; continuous units validate, review and commit only at batch close.
+- `/w:plan-exec` — executes planned states in live-inferred isolated/continuous batches; continuous units compile as they go and validate and commit only at batch close.
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
 - `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
 
@@ -126,7 +136,7 @@ The flows are **composable with host-native work, never exclusive**. The host is
 
 A loop is a skill that teaches the AI **how to iterate** to a deliverable: detect gaps, resolve them (human via structured-choice, inline research, a small probe/PoC or a composed capability), integrate and repeat until convergence. The 5 loops run the same **common engine** — persistent objective + verification-first, gap-driven convergent, single session per run, structured-choice + `flow` control (`Compactar`/`Cerrar`), compact/resume, artifacts as a live log, convergence gate — whose canon lives in [`loops/CHASSIS.md`](loops/CHASSIS.md); each loop is an **heir** adding only its deltas.
 
-The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply the *code-editing loop policies*: safe git, DB scripts-only (`modules/DB-SCRIPTS-ONLY.md`, under the `db` signal) and the pre-commit **closing review gate** (nothing reaches a proposed commit unreviewed) — see [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (the chassis' sibling doc; document loops do not load it).
+The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply the *code-editing loop policies*: safe git, DB scripts-only (`modules/DB-SCRIPTS-ONLY.md`, under the `db` signal) and the pre-commit **validation order** (compile first, run at the end, a targeted review only when the person accepts it) — see [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (the chassis' sibling doc; document loops do not load it).
 
 `spec-new` has no loop (single-pass): **6 commands / 5 loops**.
 

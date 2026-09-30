@@ -17,8 +17,8 @@ Every new or refined plan carries this core section after `## Tasks`:
 Rows use sequential `B1..Bn` ids and form a complete, disjoint phase partition in order. A batch
 contains consecutive phases and uses one of two exact modes:
 
-- `continuous` — implement every phase first; validate and review the combined diff at batch
-  close; then create one commit per changed Git source.
+- `continuous` — implement every phase first, compiling after each change; validate the combined
+  diff at batch close; then create one commit per changed Git source.
 - `isolated` — the traditional cycle for one phase. It is still a batch, so the same state,
   validation, review and Git rules apply at its close.
 

@@ -122,7 +122,7 @@ Each phase carries proof of behavior, not of structure. Three levels, **chosen**
 
 The primary proof lives **inside its `### Fn` block** (`Validación de fase`); `## Validations` keeps the cross-cutting rules and the evidence derived from the spec's criteria and `## Scenarios`. A simulation gets only the minimum proof that demonstrates the wiring.
 
-> **Necessity gate** (design criterion, not a record to keep): what behavior does the test demonstrate, what unique failure would it catch, is that already demonstrated elsewhere, does it target a stable boundary or an internal detail, does the layer own logic or risk, is it still worth keeping once the simulation is gone? No clear answer → it is not planned. Whatever slips through and only mirrors structure is flagged `overtest` by execution's closing review gate.
+> **Necessity gate** (design criterion, not a record to keep): what behavior does the test demonstrate, what unique failure would it catch, is that already demonstrated elsewhere, does it target a stable boundary or an internal detail, does the layer own logic or risk, is it still worth keeping once the simulation is gone? No clear answer → it is not planned. Whatever slips through and only mirrors structure is flagged `overtest` by execution's validation order.
 
 ## Executability gate
 

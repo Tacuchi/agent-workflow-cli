@@ -14,7 +14,7 @@ allowed-tools:
 
 `spec-refine`'s twin, over the **plan**. An **auxiliary, NOT mandatory** step: `plan-new` already produces a plan from the refined spec, and `plan-exec` runs **any** plan that is already executable. This exists for when changes arise before executing — new requirements, scope adjustments, deps or risks spotted while re-reading — worth incorporating without regenerating from scratch.
 
-> **Hard floor — applies even if you read nothing beyond this file:**
+> **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
 > 1. **Session first** — open or resume the run before working: `aw flow start --flow plan-refine --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).

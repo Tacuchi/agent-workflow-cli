@@ -454,7 +454,8 @@ describe("Doctrine guards — G11 · creativity/ideation gate pins", () => {
 
   it("spec-new keeps its single-pass web prohibition", async () => {
     const specNew = await readSurface("commands/spec-new.md");
-    expect(specNew).toContain("FORBIDDEN");
+    expect(specNew).toContain("Not in this pass");
+    expect(specNew).toContain("unless the person asks for it");
     expect(specNew).toContain("web searches");
   });
 });
@@ -519,7 +520,7 @@ describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
   // on an externally named skill; host help is optional.
   it("CODE-POLICIES' closing review gate keeps the own tooling contract", async () => {
     const policies = await readRel("loops/CODE-POLICIES.md");
-    const section = policies.slice(policies.indexOf("## Closing review gate"));
+    const section = policies.slice(policies.indexOf("## Validation order"));
     const gate = section.slice(0, section.indexOf("\n## "));
     expect(gate).toContain("**Tooling check**");
     expect(gate).toContain("docs/tools/<slug>/");
@@ -1644,7 +1645,7 @@ describe("Doctrine guards — G7 · hard floor inline in the flow commands (info
   it("every loop command carries the hard-floor block (session + language)", async () => {
     for (const rel of LOOP_COMMANDS) {
       const text = await readRel(rel);
-      expect(text, rel).toContain("Hard floor — applies even if you read nothing beyond this file");
+      expect(text, rel).toContain("Minimum context — a guide; only Git/DB is fixed.");
       expect(text, rel).toContain("aw flow start --flow");
       // The signature must be runnable as written: --objetivo is mandatory
       // (flow start → session-create-service rejects a missing objetivo). A hard floor that
@@ -1742,7 +1743,7 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     const policies = await readRel("loops/CODE-POLICIES.md");
     expect(policies).toContain("CLI commits only the batch's approved paths once per source");
     expect(policies).toContain("intentionally co-mingles");
-    expect(policies).toContain("its internal phases in one reviewed commit");
+    expect(policies).toContain("its internal phases in one validated commit");
     // The gating moved: approving is a preference, committing is an effect that
     // comes back as the sources' real git state, and neither can be reached
     // without the delegated validation that precedes them.
@@ -1922,7 +1923,7 @@ describe("Doctrine guards — G23 · subagents admitted per stage (spec 048)", (
     const rule = await chassisRule();
     expect(rule).toContain("parallel research in `spec-refine`, `plan-new` and `plan-refine`");
     expect(rule).toContain("implementing independent units in `plan-exec` and `quick`");
-    expect(rule).toContain("the code loops' final review");
+    expect(rule).toContain("the targeted review the person accepted");
     expect(rule).toContain("**three or more independent** parts, at most **3** at a time");
     expect(rule).toContain(
       "none uses another's result or writes what another writes; dependent units run in sequence",
@@ -1947,22 +1948,26 @@ describe("Doctrine guards — G23 · subagents admitted per stage (spec 048)", (
       expect(rule, step).toContain(step);
     }
     // La cláusula `FORBIDDEN` de `spec-new` ya la fija G11; acá sólo el reenvío.
-    expect(rule).toContain("Capture (`spec-new`) keeps its total ban");
+    expect(rule).toContain("Capture (`spec-new`) launches none unless the person asks");
   });
 
-  it("prevalece sobre el modo del host y las skills, y degrada a inline", async () => {
+  it("es la ruta por defecto: el host puede apartarse, pero no lanza revisores no aceptados", async () => {
     const rule = await chassisRule();
+    expect(rule).toContain("A default, not a cage");
     expect(rule).toContain(
-      "prevails over the host's mode and over any installed skill that orders agent orchestration",
+      "never launches reviewers the person did not accept, whatever its mode or skills order",
     );
     expect(rule).toContain("a host without subagents runs the same cases inline");
   });
 
-  it("la verificación final ya no admite subagente: relectura limpia en el hilo principal", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
+  it("primero los chequeos; revisores al final, pedidos, a lo sumo dos y cada uno a un caso", async () => {
+    const chassis = (await readRel("loops/CHASSIS.md")).replace(/\s+/g, " ");
+    expect(chassis).toContain("**Checks before reviewers.**");
+    expect(chassis).toContain("code compiles and then runs");
     expect(chassis).toContain(
-      "(a clean re-read in the main thread; in the code loops, `CODE-POLICIES.md`'s review)",
+      "asks the person, and runs at most **2** agents, each on **one** named case",
     );
+    expect(chassis).toContain("Declined or not offered, the run closes on its checks");
     expect(chassis).not.toContain("independent-partition rule admits it");
   });
 
@@ -1970,31 +1975,33 @@ describe("Doctrine guards — G23 · subagents admitted per stage (spec 048)", (
     // Normalizado: re-envolver el markdown no cambia lo que dice.
     const harness = (await readRel("harness/HARNESS.md")).replace(/\s+/g, " ");
     expect(harness).toContain("Subagents fit only the three stages");
-    expect(harness).toContain("the final review does not depend on that threshold");
+    expect(harness).toContain(
+      "the targeted review does not depend on that threshold and runs at most **2** agents",
+    );
     expect(harness).toContain("the same cases **inline, in sequence** in the main thread");
   });
 
-  it("plan-exec: revisor distinto del autor en cada cierre de lote y en la ronda de corrección", async () => {
+  it("plan-exec: la revisión se registra, no se impone; se ofrece una vez al final", async () => {
     // Va en el Delta 5 y no en CODE-POLICIES: es exclusivo de plan-exec, y ese
     // archivo no mueve la mediana del presupuesto.
     const exec = (await readRel("loops/plan-exec-loop/LOOP.md")).replace(/\s+/g, " ");
     const delta5 = exec.slice(exec.indexOf("## Delta 5"), exec.indexOf("## Delta 6"));
-    expect(delta5).toContain("**Distinct reviewer (hard rule).**");
-    expect(delta5).toContain("Every batch close is reviewed by a reviewer other than its author");
-    expect(delta5).toContain("neither whoever wrote the diff nor any of its implementers");
-    expect(delta5).toContain(
-      "The round that fixes its findings goes back, before the commit, to a reviewer who wrote neither the diff nor the fix",
-    );
-    expect(delta5).toContain(
-      "A host without subagents runs a clean re-read instead, and the closing report declares it",
-    );
+    expect(delta5).toContain("**Review is recorded, not imposed.**");
+    expect(delta5).toContain('by default `reviewer.kind: "none"`');
+    expect(delta5).toContain("The targeted review is offered **once**, at the last batch close");
+    expect(delta5).toContain("runs at most 2 agents, each on one case");
+    expect(delta5).toContain("the reviewer is never the diff's author");
+    expect(delta5).not.toContain("Distinct reviewer (hard rule)");
   });
 
-  it("CODE-POLICIES: revisor opcional en quick, cerrar primero y seguimiento sólo a pedido", async () => {
+  it("CODE-POLICIES: compilar, correr y revisión puntual pedida; cerrar primero y seguimiento sólo a pedido", async () => {
     const policies = (await readRel("loops/CODE-POLICIES.md")).replace(/\s+/g, " ");
-    expect(policies).toContain("In `quick` a subagent reviewer is optional");
+    expect(policies).toContain("**Compile first**");
+    expect(policies).toContain("**Run at the end**");
+    expect(policies).toContain("**Targeted review — optional, asked first**");
+    expect(policies).toContain("at most **2** reviewer agents, each given **one** named case");
     expect(policies).not.toContain("subagent or clean re-read");
-    expect(policies).toContain("Before the commit run validations and review, not exploration");
+    expect(policies).toContain("Before the commit run the validation order, not exploration");
     expect(policies).toContain("report only what the CHECKPOINT actually owes");
     expect(policies).toContain("optional parallel follow-up");
     expect(policies).toContain("only if the user asks");

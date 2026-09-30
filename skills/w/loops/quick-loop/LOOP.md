@@ -34,7 +34,7 @@ QUICK
 
 ## Internal session
 
-- **ALWAYS** creates a light session with descriptor `<slug>-quick` → `NNN-<slug>-quick` (Type = `quick`, ≈ `exec`): `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (+ `BACKLOG` only if something is deferred). Research stays **inline** (`ANALYSIS-FILE`/`CONCLUSIONS` + read-only `SCRIPTS.sql`). Escalation closes this session before SPEC continues.
+- Creates a light session by default, with descriptor `<slug>-quick` → `NNN-<slug>-quick` (Type = `quick`, ≈ `exec`): `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (+ `BACKLOG` only if something is deferred). Research stays **inline** (`ANALYSIS-FILE`/`CONCLUSIONS` + read-only `SCRIPTS.sql`). Escalation closes this session before SPEC continues.
 
 ## Inherits
 
@@ -49,10 +49,10 @@ Git safety, DB scripts-only and inline research are loop rules. Host-native help
 > **Directed tranche:** `aw flow` decides — it names the boundary in force, its alternatives and the exact invocation when something runs outside. What stays here is the *why*, and every step that is judgment.
 
 - **No phases, no plan-doc**: the prompt **is** the task (a single unit). No roadmap.
-- **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is the run's `SESSION.Success criteria` (see [chassis § *Verification-first*](../CHASSIS.md)).
+- **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: it compiles first, then one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is the run's `SESSION.Success criteria` (see [chassis § *Verification-first*](../CHASSIS.md)).
 - **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, the CLI verifies each source's branch; propose exact-path commits for approval. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql`; fixture/ephemeral checks are local proof and any remote read is research context, never closure.
 - **Fix preview, before executing**: declare the fix you are about to make — files to touch, intent, expected shape of the diff. It is **proportional**: one line for something trivial; approach, files and risks for something complex. Above the same signal threshold that fires the entry size gate (below), a person approves it (`Ejecutar tal cual` · `Ajustar el enfoque` · `Escalar a spec` → *Mid-loop escalation*). **Below the threshold there is no human stop**: the preview stays declared in the session and the task executes.
-- **One session. One commit** proposed at the end (only if there were code changes), **after the proportional closing review gate** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Closing review gate*): diff re-read + ambient conventions; fix or defer; nothing reaches the commit unreviewed.
+- **One session. One commit** proposed at the end (only if there were code changes), **after the validation order** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Validation order*): it compiles, it runs, the author's own pass over the diff; reviewer agents only when the person accepts them (at most 2, one case each).
 - **Entry SIZE GATE** (before implementation): a quick that should have been a spec costs more than the ceremony it saved. Recognize the signals; the threshold, anti-duplicate search and alternatives are the CLI's. A signal resolved by *adopted context* is **not** a signal (chassis § *Adopted context*). A **resume** never re-fires the gate.
   - **`Recortar alcance`**, if chosen: propose the **sub-task that DOES fit** a quick (`SESSION.Objective` = the sub-task; the original prompt goes into `## Origin`) and defer the rest to `BACKLOG` ("trimmed at the gate — may warrant its own spec, `/w:spec-new`").
   - **`Cambiar a SPEC`** closes the existing quick, preserving its request for *Live transition to SPEC*.
@@ -90,8 +90,9 @@ quick-loop(prompt):
                live transition (see delta): draft if missing + spec-refine-loop
   convergence gate: run the Success criteria and hand back their real output
   if there were code changes:
-    closing review gate (proportional):                      # diff re-read + installed ambient conventions
-        findings → fix (re-validate) OR defer justified (BACKLOG)
+    validation order (proportional):                         # compiles · runs · own pass over the diff
+        targeted review only if the person accepts it           # ≤2 agents, one named case each
+        findings → fix (recompile + re-validate) OR defer justified (BACKLOG)
     propose exact-path commit (approve first)                # only after the gate
   structured_choice(content: [Cerrar tarea, Preguntar algo más], flow: [Compactar, Cerrar])
 finalize: CHECKPOINT (AFTER: Pending→Completed) + BACKLOG (only if something is deferred) + close session + report
@@ -100,7 +101,7 @@ finalize: CHECKPOINT (AFTER: Pending→Completed) + BACKLOG (only if something i
 ## Convergence / exit
 
 - Before closing, run `aw amend apply … --check` for each spec/plan line known to be outdated. Propose its returned path; never edit without approval.
-- Closing review gate passed and commit proposed if there was code (or skipping it approved) → `Cerrar`.
+- Validation order passed and commit proposed if there was code (or skipping it approved) → `Cerrar`.
 - `Cerrar`/`Compactar` (`flow` control) → persists `CHECKPOINT` + `BACKLOG` (resumable).
 - **No export**: nothing goes to `docs/` (§ *Writes*); escalating is the only way up.
 

@@ -1,8 +1,11 @@
-/** Declared review evidence. Identity is attributable, not independently authenticated. */
+/**
+ * Declared review evidence. Identity is attributable, not independently authenticated.
+ * `none` records that nobody reviewed the batch: review is offered on request, never imposed.
+ */
 export interface BatchReviewer {
-  kind: "subagent" | "person" | "clean-reread";
+  kind: "subagent" | "person" | "clean-reread" | "none";
   id: string;
-  /** The explicit exception for hosts without subagents. */
+  /** Legacy marker of a host without subagents; still read, no longer required. */
   no_subagents?: true;
 }
 
@@ -20,8 +23,8 @@ export interface BatchReview {
 }
 
 export const BATCH_REVIEW_CONTRACT =
-  "En decisions.review entregá {implementers: [id], reviewer: {kind: subagent|person|clean-reread, id}, detail, findings: [{id, detail, resolution: fixed|deferred, reason?}], corrections: [{findings: [id], implementers: [id], reviewer, detail}]}. " +
-  "Cada hallazgo fixed exige una ronda de corrección revisada; deferred exige reason. El revisor no puede implementar el lote ni sus correcciones. Sólo clean-reread con no_subagents: true admite la relectura propia cuando el host carece de subagentes. Las listas findings y corrections pueden estar vacías.";
+  "En decisions.review entregá {implementers: [id], reviewer: {kind: subagent|person|clean-reread|none, id}, detail, findings: [{id, detail, resolution: fixed|deferred, reason?}], corrections: [{findings: [id], implementers: [id], reviewer, detail}]}. " +
+  "Sin revisión pedida, kind none con findings y corrections vacías y en detail lo que se compiló y validó. Cada hallazgo fixed exige una ronda de corrección revisada; deferred exige reason. Un revisor subagent o person no puede implementar el lote ni sus correcciones; clean-reread es la relectura propia. Las listas findings y corrections pueden estar vacías.";
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -42,11 +45,19 @@ function ids(value: unknown): value is string[] {
 
 function reviewer(value: unknown, authors: readonly string[]): boolean {
   if (!record(value) || !text(value.id)) return false;
-  if (value.kind === "clean-reread") return value.no_subagents === true;
+  if (value.kind === "clean-reread")
+    return value.no_subagents === undefined || value.no_subagents === true;
   return (
     (value.kind === "subagent" || value.kind === "person") &&
     !authors.includes(value.id) &&
     value.no_subagents === undefined
+  );
+}
+
+/** A batch nobody reviewed has nothing reviewed to report: its record carries no findings. */
+function unreviewed(value: unknown): boolean {
+  return (
+    record(value) && value.kind === "none" && text(value.id) && value.no_subagents === undefined
   );
 }
 
@@ -78,6 +89,7 @@ export function isBatchReview(value: unknown): value is BatchReview {
   )
     return false;
   const findings = value.findings;
+  if (unreviewed(value.reviewer)) return findings.length === 0 && value.corrections.length === 0;
   if (new Set(findings.map((entry) => entry.id)).size !== findings.length) return false;
   const authors = [
     ...value.implementers,

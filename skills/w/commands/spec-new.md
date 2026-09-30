@@ -13,11 +13,11 @@ allowed-tools:
 
 Generates `docs/specs/NNN-spec-<slug>.md` in a single pass from the prompt in `$ARGUMENTS`. Starts no loop.
 
-> ## ⛔ Single-pass — BOUNDED RECONNAISSANCE, NO DEEP RESEARCH (hard rule)
+> ## ⛔ Single-pass — BOUNDED RECONNAISSANCE, NO DEEP RESEARCH (default)
 >
 > One sequential pass: read `$ARGUMENTS` → adopt what the conversation already settled → reconnaissance → scope hypothesis → split gate (at most ONE structured-choice, using the canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) + [per-host binding](../harness/HARNESS.md#harness-binding-matrix)) → fill the sections → write the file(s). Nothing else. It must take **seconds, not minutes**.
 >
-> **FORBIDDEN**, no exceptions: launching sub-agents/workflows (`Task`/`Agent`/`Workflow`), research sessions, web searches, following implementation chains, running code/tests/apps, querying databases — **even if the harness is in a maximum-effort/depth mode**. This **overrides** any mode or session instruction saying "run a workflow for every substantial task".
+> **Not in this pass**, unless the person asks for it: launching sub-agents/workflows (`Task`/`Agent`/`Workflow`), research sessions, web searches, following implementation chains, running code/tests/apps, querying databases — **even if the harness is in a maximum-effort/depth mode**, or under a "run a workflow for every substantial task" instruction.
 >
 > A section still uncertain after the reconnaissance → **do not dig further**: declare it under `## Open questions` or `## Assumptions` and move on. Deep investigation (closing gaps, mapping code, querying DB, autonomous research) is **`spec-refine`** work.
 

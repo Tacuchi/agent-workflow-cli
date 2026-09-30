@@ -83,19 +83,27 @@ describe("cada lote exige y conserva su revisión", () => {
   it.each([
     undefined,
     { ...batchReview(), reviewer: { kind: "person", id: "author" } },
-    { ...batchReview(), reviewer: { kind: "clean-reread", id: "author" } },
     { ...batchReview(), findings: [{ id: "R1", detail: "error", resolution: "fixed" }] },
-  ])("rechaza revisión ausente, autor o corrección sin revisión (%j)", async (review) => {
-    expect((await answer(review)).error?.code).toBe("PLAN_EXEC_BATCH_REVIEW_INVALID");
-    expect((await walk.current(RUN.folder)).state.batches?.[0]?.review).toBeUndefined();
-    expect(await readFile(join(root, RUN.plan), "utf8")).not.toContain("[x]");
-  });
-
-  it("admite la relectura limpia explícita sin subagentes", async () => {
-    const review = {
+    {
       ...batchReview(),
-      reviewer: { kind: "clean-reread", id: "author", no_subagents: true },
-    };
+      reviewer: { kind: "none", id: "host" },
+      findings: [{ id: "R1", detail: "error", resolution: "deferred", reason: "después" }],
+    },
+  ])(
+    "rechaza revisión ausente, autor, corrección sin revisión o hallazgos sin revisor (%j)",
+    async (review) => {
+      expect((await answer(review)).error?.code).toBe("PLAN_EXEC_BATCH_REVIEW_INVALID");
+      expect((await walk.current(RUN.folder)).state.batches?.[0]?.review).toBeUndefined();
+      expect(await readFile(join(root, RUN.plan), "utf8")).not.toContain("[x]");
+    },
+  );
+
+  it.each([
+    { kind: "none", id: "host" },
+    { kind: "clean-reread", id: "author" },
+    { kind: "clean-reread", id: "author", no_subagents: true },
+  ])("admite el lote sin revisión pedida y la relectura propia (%j)", async (reviewer) => {
+    const review = { ...batchReview(), reviewer };
     expect((await answer(review)).error).toBeNull();
     expect((await walk.current(RUN.folder)).state.batches?.[0]?.review).toEqual(review);
   });

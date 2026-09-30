@@ -14,7 +14,7 @@ allowed-tools:
 
 Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + resume) — unless the **entry size gate** escalates first.
 
-> **Hard floor — applies even if you read nothing beyond this file:**
+> **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
 > 1. **Size gate BEFORE any session** — if the objective exceeds a quick (≥2 clear signals: needs architecture · ≥2 sources · several deliverables · large feature/refactor · ambiguous requirements), ask first with these verbatim options: `Cambiar a SPEC` *(recommended)* · `Seguir en quick` · `Recortar alcance`. If it escalates, create **no** quick session.
 > 2. **Session first** — otherwise, before touching code, open or resume the run: `aw flow start --flow quick --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).

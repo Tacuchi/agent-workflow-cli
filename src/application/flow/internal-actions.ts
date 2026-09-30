@@ -1114,7 +1114,7 @@ async function closeBatch(
   if (batch.review === undefined && batch.published_plan_digest === undefined) {
     return refusal(
       "plan-exec.batch-close",
-      `el batch ${batch.id} no tiene revisión registrada; completá review-findings con un revisor distinto y las correcciones revisadas`,
+      `el batch ${batch.id} no tiene revisión registrada; completá review-findings (kind none si nadie pidió revisión)`,
       canonicalJson({ code: "PLAN_EXEC_BATCH_REVIEW_MISSING", batch: batch.id }),
     );
   }

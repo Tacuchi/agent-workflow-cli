@@ -12,6 +12,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [Unreleased]
+
+**Workline guía y el host decide; primero se compila y se corre, y los revisores llegan al final, sólo si la persona los acepta.**
+
+### Contrato
+
+Ninguno. `reviewer.kind` de `review-findings` suma `none`, y `clean-reread` ya no exige `no_subagents`; toda respuesta que antes valía sigue valiendo.
+
+### Changed
+
+- La doctrina es una guía y no una cadena. El host puede saltar, reordenar o fusionar pasos, o salir del flujo, cuando juzga un camino mejor o la persona se lo pide. Sólo quedan fijos:
+  - las reglas de seguridad: git propuesto, DB sólo por scripts, fronteras de `docs/` y ningún secreto;
+  - avisar en una línea cuando se aparta de la ruta;
+  - no marcar como hecho nada que no se hizo.
+- Los bloques «Hard floor» de los cinco comandos de flujo pasan a «Minimum context». En ellos sólo la línea de Git/DB es fija.
+- `spec-new` no lanza agentes ni investiga, salvo que la persona lo pida.
+- Hay un orden de validación en los loops de código:
+  1. compilar tras cada cambio;
+  2. al terminar, que compile, levante y pasen las validaciones declaradas;
+  3. recién ahí, una revisión puntual opcional: el host pregunta antes y lanza a lo sumo dos agentes, cada uno con un caso nombrado.
+- En los loops de documentos el equivalente a compilar son los chequeos del CLI.
+- `plan-exec` ya no exige un revisor distinto en cada lote. `review-findings` registra `kind: "none"` por defecto, y la revisión puntual se ofrece una vez, en el cierre del último lote.
+- El chasis ya no lanza agentes revisores que la persona no aceptó, aunque lo ordene el modo del host o una skill instalada.
+
 ## [28.0.0] — 2026-09-29
 
 **El CLI hace lo determinista y el agente pide menos: ayuda en inglés por comando, error con su siguiente comando, respuestas mínimas, fronteras que contesta el propio CLI y una corrida que se abre en una llamada.**

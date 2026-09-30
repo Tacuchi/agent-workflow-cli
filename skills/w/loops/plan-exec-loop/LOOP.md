@@ -85,14 +85,14 @@ Adoption, recovery and the evidence order live in `aw flow --help`.
 
 - Walk the plan's `### Fn` blocks under `## Tasks` in dependency order inside one session. Infer
   effective `continuous`/`isolated` batches first; legacy `## Phases` tables degrade the same way.
-- In-place `branch-precondition`: clean on another branch → offer switch, change document branch or cancel; dirty on another branch → pause; expected branch with user changes → proceed. Switch only with consent; the hook guards edits and the commit fences HEAD/branch against acquisition.
-- **Execution-unit cycle:** seed one batch intent; implement all its phases in order; validate and
-  review at unit close; then update states/`CHECKPOINT` and enter Git. An isolated unit contains
-  one phase. A continuous unit follows `PLAN-EXECUTION-BATCHES`: no proof, runner, build, lint,
-  review or commit between its phases.
+- In-place `branch-precondition`: clean on another branch → offer switch, change document branch or cancel; dirty on another branch → pause; expected branch with user changes → proceed. Switch only with consent; the commit fences HEAD/branch against acquisition.
+- **Execution-unit cycle:** seed one batch intent; implement all its phases in order, compiling
+  after each change; validate at unit close; then update states/`CHECKPOINT` and enter Git. An
+  isolated unit contains one phase. A continuous unit follows `PLAN-EXECUTION-BATCHES`: no proof,
+  runner, lint, review or commit between its phases — compiling is the one check that never waits.
 - Executes the phase's tasks; **skips** the ones already `- [x]` in the plan (the plan-doc is the per-task source of truth). **Micro steps stay internal** (canonical contract): they reach `CHECKPOINT` only when a resume needs them, never the plan.
 - **Marking order (hard rule):** a phase reaches `validada` only with its proof run and passed, its
-  exit condition true and the combined review green; a blocker is never deferred into `validada`.
+  exit condition true and the unit's checks green; a blocker is never deferred into `validada`.
   **Never** because all its checkboxes are ticked.
 - **Intermediate states:** `bloqueada` = the phase is stopped on a live checkout blocker — recorded in `CHECKPOINT` + the plan's `## Open questions`, back to `en ejecución` when it clears; it counts as **not validated**. A proof that cannot run **stays `bloqueada`**. A deferred check never counts as a passed one. A script awaiting real-world application is a **handoff**, not a blocker: local fixture/ephemeral validation can still establish the promised behavior and the phase may become `validada`.
 - **A blocker without a reason is not a blocker (hard rule).** Writing `> Estado: bloqueada` **always** writes its `> Bloqueo:` line in the same edit: a state that says "stopped" without saying on what is a dead end for whoever reads `aw status` next. The runtime tolerates a legacy block that states none (`blocker: null`) — this loop never produces one. `CHECKPOINT.Next` names **the action that unblocks it** in the checkout, never an operator's deployed run.
@@ -197,10 +197,10 @@ Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md), and its gating is t
 - `isolated` remains compatible with literal TDD. A continuous batch may author evidence before
   code, but first runs it at batch close. No phase becomes `validada` before its exit is demonstrated.
 - **Continuous means all checks at batch close.** Do not run its phase proofs, focused/risk tests,
-  build, typecheck, lint or review while implementing internal phases. At close run proofs in phase
-  order, then the justified checks and cross-cutting validations. `isolated` runs the same stack for
-  its single phase.
-- Review each test's value at close (`CODE-POLICIES.md`, `overtest`); over-testing is a finding to fix or justify, never an automatic rejection.
+  lint or review while implementing internal phases; compile after every change. At close run proofs
+  in phase order, then the justified checks and cross-cutting validations. `isolated` runs the same
+  stack for its single phase.
+- Check each test's value at close (`CODE-POLICIES.md`, `overtest`); over-testing is a finding to fix or justify, never an automatic rejection.
 - Run the plan's `## Validations` and `## Solution` Final behavior (legacy: `## Final behavior`). The PLAN's evidence, derived from spec criteria and scenarios, decides closure; a criterion without evidence is a plan gap.
 - A validation that **runs and fails** → back into the phase (gap): no advancing, no `validada`.
 
@@ -210,20 +210,21 @@ Full policy in [`../CODE-POLICIES.md`](../CODE-POLICIES.md), and its gating is t
 
 For each code source, the final-validation directive names its required build and tests and whether each came from the plan's `## Validations` override or the source's versioned pipeline. A missing command leaves the gate open with the action to declare it in either place. Run both commands in the acquired checkout and return each command's real output as its own evidence; a test suite that did not run never counts. The final gate cannot be omitted by the adaptive route.
 
-## Delta 5 — Closing review gate (conventions, pre-commit)
+## Delta 5 — Validation order (pre-commit)
 
-Full gate in [`../CODE-POLICIES.md`](../CODE-POLICIES.md). It covers the execution unit's **whole**
-diff after every phase proof/check and before states or Git advance. Findings are fixed and the
-affected checks rerun, or deferred with justification when they are not blockers.
+Full order in [`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Validation order*: compile after every
+change, run the unit's proofs and checks at its close, and review only on request.
 
-**Distinct reviewer (hard rule).** Every batch close is reviewed by a reviewer other than its
-author: neither whoever wrote the diff nor any of its implementers. The round that fixes its
-findings goes back, before the commit, to a reviewer who wrote neither the diff nor the fix. A host
-without subagents runs a clean re-read instead, and the closing report declares it.
+**Review is recorded, not imposed.** `review-findings` records each batch's review: by default
+`reviewer.kind: "none"` — the batch closes on its checks. The targeted review is offered **once**,
+at the last batch close, once its checks are green — the final build, start and tests run there
+too, before Git: the host names the cases, asks the person, and runs at most 2 agents, each on one case.
+When the person asks for a review of any batch, the reviewer is never the diff's author, and a
+round that fixes its findings is reviewed before the commit by someone who wrote neither.
 
 ## Delta 6 — Completion / close
 
-- A phase closes as `validada` only after its exit, proof and batch review pass. An operative handoff leaves it `bloqueada` and uncommitted.
+- A phase closes as `validada` only after its exit, proof and batch checks pass. An operative handoff leaves it `bloqueada` and uncommitted.
 - Check each known outdated spec/plan line with `aw amend apply … --check` before closing; propose its path, edit only with approval.
 - **The plan stays `open` until final validation.** Every phase `validada` is **not** the plan closed; keep `> Estado: open` under the title (stamp it if absent); never write `done` from the counters (§ *Legacy plans degrade safely*).
 - **Every phase `validada` + final validation passed** unlocks completion, and the mark is written
@@ -259,14 +260,15 @@ plan-exec-loop(PPP-plan-<slug>.md):
           structural/functional deviation → CHECKPOINT + stop → refine destination
           probe whose verdict shapes later work → batch was ineligible; stop/re-infer
         mark Task - [x] after its local work
-      # continuous: advance directly to the next phase; run NO validation/review/commit here
+      # continuous: compile, then advance to the next phase; NO proof/review/commit here
     at Batch close, in phase order:
       run every Validación de fase, then justified focused/risk checks
       run applicable plan Validations; last Batch also runs final validation before Git
       failures → fix + rerun affected checks
       unrun operative check → phase bloqueada + > Bloqueo: + CHECKPOINT + Open questions
-    closing review gate over the WHOLE BATCH diff
-      findings → fix + rerun affected checks OR defer justified if non-blocking
+    record review-findings: kind none by default
+      last Batch, final validation green → offer the targeted review (asked; ≤2 agents, one case each)
+      findings → fix + recompile + rerun affected checks OR defer justified if non-blocking
     if any proof/check/review/exit condition is not green:
       preserve actual states + combined uncommitted diff; record unblocking action; stop
     set every Batch phase > Estado: validada; update CHECKPOINT
@@ -288,8 +290,8 @@ finalize: CHECKPOINT (+ BACKLOG if something is deferred) + close session + repo
 
 ## Convergence / exit
 
-- **Every phase `validada`** + final validation passed + every effective batch reviewed before its
-  commits + every unit integrated → `Marcar plan done`. Any pending/running/blocked phase keeps the
+- **Every phase `validada`** + final validation passed + every effective batch's review recorded
+  before its commits + every unit integrated → `Marcar plan done`. Any pending/running/blocked phase keeps the
   plan open, and so does any unit still holding commits.
 - A **structural deviation** or a **functional change** exits this loop without converging (§ *Deviation gate*): `CHECKPOINT` + `finalize`, and the work continues in `plan-refine` / `spec-refine`. Same exit when the entry gate finds a structural gap.
 - `Cerrar` (`flow` control, at any time) → `finalize` persists `CHECKPOINT` (and `BACKLOG` only if something remained unexecuted / uncommitted / unapplied), closes the session, reports.

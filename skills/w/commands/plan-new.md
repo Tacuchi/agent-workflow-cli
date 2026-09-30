@@ -15,7 +15,7 @@ allowed-tools:
 SPEC → PLAN bridge. Turns the "what" (refined spec) into the "how" (plan). Delegates to `plan-new-loop` (Layer 2).
 An unready or legacy spec is input, never a block.
 
-> **Hard floor — applies even if you read nothing beyond this file:**
+> **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
 > 1. **Session first** — open or resume the run before working: `aw flow start --flow plan-new --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
