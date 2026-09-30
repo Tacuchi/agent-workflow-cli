@@ -94,7 +94,7 @@ Before any loop, the AI resolves the **workspace root** on every prompt (closest
 |---|---|
 | **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → materializes if needed, creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
 | **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit its `SCRIPTS.sql` (no new session) |
-| **prompt with no command** (unrelated / no session) | recommend **QUICK**, **SPEC→PLAN** or **PLAN directo** from size and uncertainty; direct no-flow work stays available whenever the host or the person prefers it. An explicit flow command keeps authority. `spec-new` is brief capture; deep research belongs to `spec-refine`. |
+| **prompt with no command** (unrelated / no session) | recommend **QUICK**, **SPEC→PLAN** or **PLAN directo** from size and uncertainty (§ *Choosing the route*, which also weighs host plan mode); direct no-flow work stays available whenever the host or the person prefers it. An explicit flow command keeps authority. `spec-new` is brief capture; deep research belongs to `spec-refine`. |
 
 **Continuity rule** (single source — the chassis and the loops reference here):
 
@@ -110,6 +110,25 @@ It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+r
 ### Host as producer — adopted context
 
 The flows are **composable with host-native work, never exclusive**. The host is not only the executor of the loops: it is a legitimate **producer** of input. Work products born in the host conversation — an analysis reached with a host feature, a plan built in the host's plan mode, settled conclusions — are first-class flow input via **adoption**: transcribe with provenance (`## Origin` = adopted from the host conversation), verify like any other input (gate integrity), and never re-derive or re-ask what is already settled. Entry points: any loop start (adopted context — `modules/ADOPTED-CONTEXT.md`, loaded under the `adopted` signal), `plan-new` input mode 4 (adopt an external plan), and `/w:persist` (classify + persist finished work into `docs/`).
+
+### Choosing the route — time and usage
+
+With no flow command, recommend the **cheapest route that still covers the risk** and say it in one line. An explicit flow command or the person's preference overrides this table.
+
+| Route | Pick it when | Cost profile |
+|---|---|---|
+| **Direct** (no flow) | One clear, mechanical change; nothing to resume; no record wanted. | Cheapest; nothing outlives the conversation. |
+| **QUICK** | A scoped fix or tweak below the entry size gate, where safe git, the validation order and a session record are worth it. | One session, no `docs/`; escalates live to SPEC if it grows. |
+| **Host plan mode** | The *what* is settled, the *how* needs read-only exploration, and execution fits in this conversation. | Cheap exploration and approval; the plan dies with the conversation unless adopted. |
+| **Plan mode → adopt → `plan-exec`** | As above, but execution spans several batches, compactions or sessions, needs per-batch validation and commits, or will be resumed or delegated. | Research happens once, in the host; adoption (`plan-new` mode 4 or `/w:persist`) adds none. A plan that fails `aw plan lint` needs `/w:plan-refine` before it runs. |
+| **PLAN directo** (`plan-new` mode 3, standalone plan) | The *what* is settled, the design is worth a durable plan, and no host plan exists to adopt. | The plan loop researches the *how*; skip it when a host plan already settled it. |
+| **SPEC→PLAN** | The *what* has open functional decisions, several sources or deliverables, or others need a durable spec. | The most ceremony; it pays back when a wrong *what* would cost more than refining it. |
+
+- **Split the two uncertainties.** An open *what* goes to SPEC; an open *how* with a settled *what* goes to host plan mode or PLAN.
+- **Never pay research twice.** A plan settled in the host is adopted, not re-derived by `plan-new-loop`.
+- **Start low and escalate.** QUICK escalates live to SPEC, and a plan-mode output can still be adopted later; over-provisioning is not recoverable, the tokens are spent.
+- **Preview for free.** A `/w:` command invoked while the host is in plan mode describes and writes nothing (`modules/PLAN-MODE.md`): use it to see a route before paying for it.
+- **Parallel agents.** The independent phases of a plan are the unit to hand to separate agents; the coordination itself is host help, not a Workline route.
 
 ### The commands (`/w:` namespace)
 
