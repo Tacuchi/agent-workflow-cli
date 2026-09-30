@@ -68,6 +68,38 @@ export const SIGN_IN_MARKERS = [
   /\bcompleting authentication\b/i,
 ];
 
+/**
+ * First-run screens a host may still show although the run pre-seeds what it
+ * can (claude: onboarding and trust in ~/.claude.json; codex: trust in
+ * config.toml, --no-daemon): permission-class — notified, never answered.
+ * Wording from claude 2.1.285 and codex 0.157.1 (screens and binary strings).
+ */
+export const FIRST_RUN_MARKERS = {
+  "claude-code": [
+    /\bLet's get started\b/,
+    /\bChoose the text style\b/i,
+    /\bSelect login method\b/i,
+  ],
+  codex: [
+    /\bWelcome to Codex\b/,
+    /\bSign in with ChatGPT\b/,
+    /\bChoose how you want to use Codex\b/,
+    /\bInstalling daemon from CLI version\b/,
+    /\bUpdate available!/,
+  ],
+};
+
+/** claude asking to log in means its token did not take. */
+export const CLAUDE_LOGIN_NOTICE =
+  "claude is asking to log in: the token did not take (check --claude-token-file)";
+
+/** Why a permission-class screen is the person's: a specific notice where one exists. */
+function blockedReason(host, screen, fallback) {
+  if (host === "claude-code" && /\bSelect login method\b/i.test(String(screen ?? "")))
+    return CLAUDE_LOGIN_NOTICE;
+  return fallback;
+}
+
 /** Hosts that sign in inside their pane (hosts.mjs `signInInPane`). */
 const SIGN_IN_HOSTS = new Set(Object.keys(HOSTS).filter((id) => HOSTS[id].signInInPane));
 
@@ -150,9 +182,11 @@ export function isPermissionScreen(screen, explain, { wholeScreen = false, host 
   const region = wholeScreen ? String(screen ?? "") : liveRegion(screen);
   // Sign-in wording only counts on the hosts that sign in inside their pane (agy):
   // elsewhere «Sign in» is just text a host may show.
-  const markers = SIGN_IN_HOSTS.has(host)
-    ? [...PERMISSION_MARKERS, ...SIGN_IN_MARKERS]
-    : PERMISSION_MARKERS;
+  const markers = [
+    ...PERMISSION_MARKERS,
+    ...(SIGN_IN_HOSTS.has(host) ? SIGN_IN_MARKERS : []),
+    ...(FIRST_RUN_MARKERS[host] ?? []),
+  ];
   return markers.some((re) => re.test(region));
 }
 
@@ -284,7 +318,10 @@ export function classify(pane, step) {
   const { host, state, screen = "", explain = null } = pane;
   if (state === "working") return { action: "wait", reason: "the host is working" };
   if (isPermissionScreen(screen, explain, { wholeScreen: pane.screenOnly === true, host })) {
-    return { action: "notify", reason: "permission or approval on screen: it is the person's" };
+    return {
+      action: "notify",
+      reason: blockedReason(host, screen, "permission or approval on screen: it is the person's"),
+    };
   }
   // A known boundary past the step's stop point: the step is done, and that
   // boundary is left unanswered (quick.commit-authorization keeps the session active).
@@ -347,7 +384,14 @@ export function readyForInput(pane) {
       host: pane.host,
     })
   ) {
-    return { ok: false, reason: "permission or trust prompt on screen: it is the person's" };
+    return {
+      ok: false,
+      reason: blockedReason(
+        pane.host,
+        pane.screen,
+        "permission or trust prompt on screen: it is the person's",
+      ),
+    };
   }
   return { ok: true };
 }

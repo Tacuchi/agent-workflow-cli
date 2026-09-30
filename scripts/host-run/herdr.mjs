@@ -94,6 +94,15 @@ export function screenState(hostId, screen, previous = []) {
   return "unknown";
 }
 
+/** A failed herdr call: `what` is its subcommand (`agent get`), never its output. */
+export class HerdrError extends Error {
+  constructor(what, detail) {
+    super(`herdr ${what} failed: ${detail}`);
+    this.name = "HerdrError";
+    this.what = what;
+  }
+}
+
 export class HerdrClient {
   /** `exec(argv)` → {status, stdout, stderr}. */
   constructor(exec) {
@@ -103,9 +112,7 @@ export class HerdrClient {
   call(argv) {
     const r = this.exec(argv);
     if (r.status !== 0) {
-      throw new Error(
-        `herdr ${argv.slice(0, 2).join(" ")} failed: ${r.stderr?.trim() ?? r.status}`,
-      );
+      throw new HerdrError(argv.slice(0, 2).join(" "), r.stderr?.trim() || `exit ${r.status}`);
     }
     return r.stdout;
   }
@@ -139,13 +146,22 @@ export class HerdrClient {
     return { workspace, pane };
   }
   snapshot(hostId, pane, hasKind) {
-    if (!hasKind) {
-      const screen = this.call(herdrArgv.paneRead(pane));
-      const previous = this.history.get(pane) ?? [];
-      const state = screenState(hostId, screen, previous);
-      this.history.set(pane, [...previous, screen].slice(-STABLE_READS));
-      return { host: hostId, state, screen, explain: null, screenOnly: true };
+    if (hasKind) {
+      try {
+        return this.agentSnapshot(hostId, pane);
+      } catch (err) {
+        // Herdr may not recognize the agent yet (still starting, a sign-in or
+        // first-run screen): read the pane's screen instead of failing the run.
+        if (!(err instanceof HerdrError)) throw err;
+      }
     }
+    const screen = this.call(herdrArgv.paneRead(pane));
+    const previous = this.history.get(pane) ?? [];
+    const state = screenState(hostId, screen, previous);
+    this.history.set(pane, [...previous, screen].slice(-STABLE_READS));
+    return { host: hostId, state, screen, explain: null, screenOnly: true };
+  }
+  agentSnapshot(hostId, pane) {
     const state = agentStatus(parse(this.call(herdrArgv.agentGet(pane))));
     const screen = this.call(herdrArgv.agentRead(pane));
     const explain = state === "blocked" ? parse(this.call(herdrArgv.explain(pane))) : null;

@@ -628,38 +628,34 @@ function hostRecords(plan) {
   };
 }
 
-async function openHosts(herdr, plans, cleanup, tokens) {
-  const hosts = [];
-  for (const plan of plans) {
-    const opened = await openWithToken(herdr, plan, tokens, cleanup);
-    const out =
-      hostRead(hostBins[plan.host], ["--version"], {
-        env: plan.env,
-        cwd: plan.workspace,
-        timeout: 30000,
-      }).stdout ?? "";
-    const exposes = HOSTS[plan.host].exposes;
-    hosts.push({
-      id: plan.host,
-      ...opened,
-      root: plan.root,
-      home: plan.home,
-      workspace: plan.workspace,
+async function openHost(herdr, plan, cleanup, tokens) {
+  const opened = await openWithToken(herdr, plan, tokens, cleanup);
+  const out =
+    hostRead(hostBins[plan.host], ["--version"], {
       env: plan.env,
-      // The root's own node and CLI copy, for every read the run makes of the host.
-      nodeBin: plan.node,
-      cliMain: plan.cliMain,
-      version: /\d+\.\d+[\w.\-+]*/.exec(out)?.[0] ?? null,
-      model: exposes.model ? (plan.model ?? null) : null,
-      effort: exposes.effort ? (args.effort[plan.host] ?? null) : null,
-      ...hostRecords(plan),
-      phase: "send",
-      stepIndex: 0,
-      evidence: {},
-      screensBySurface: {},
-    });
-  }
-  return hosts;
+      cwd: plan.workspace,
+      timeout: 30000,
+    }).stdout ?? "";
+  const exposes = HOSTS[plan.host].exposes;
+  return {
+    id: plan.host,
+    ...opened,
+    root: plan.root,
+    home: plan.home,
+    workspace: plan.workspace,
+    env: plan.env,
+    // The root's own node and CLI copy, for every read the run makes of the host.
+    nodeBin: plan.node,
+    cliMain: plan.cliMain,
+    version: /\d+\.\d+[\w.\-+]*/.exec(out)?.[0] ?? null,
+    model: exposes.model ? (plan.model ?? null) : null,
+    effort: exposes.effort ? (args.effort[plan.host] ?? null) : null,
+    ...hostRecords(plan),
+    phase: "send",
+    stepIndex: 0,
+    evidence: {},
+    screensBySurface: {},
+  };
 }
 
 function liveContext(herdr, transcriptsDir, live, secretValues = []) {
@@ -708,16 +704,19 @@ function liveContext(herdr, transcriptsDir, live, secretValues = []) {
   };
 }
 
-function writeEvidence(matrix, extracts, privacy) {
+/** A refusal of ours, with its category: the stop line repeats it. */
+function refused(what, problems) {
+  const category = [...new Set(problems.map(violationCategory))].join("; ");
+  const err = new Error(`${what} not written: ${category}`);
+  err.category = category;
+  return err;
+}
+
+function writeEvidence(matrix, extracts, privacy, dir = join(RUNS_DIR, runId)) {
   // Everything committed goes through the same filter as the extracts.
   const problems = privacyViolations(matrix, privacy);
-  if (problems.length > 0) {
-    throw new Error(
-      `matrix not written: ${[...new Set(problems.map(violationCategory))].join("; ")}`,
-    );
-  }
-  const dir = join(RUNS_DIR, runId);
-  mkdirSync(dir, { recursive: true });
+  if (problems.length > 0) throw refused("matrix", problems);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   writeFileSync(join(dir, "matrix.json"), `${JSON.stringify(matrix, null, 2)}\n`);
   for (const { path, extract } of extracts) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -733,11 +732,7 @@ function writeLedger(privacy) {
   const order = HARNESSES.map((h) => h.id);
   const text = renderLedger(mergeRun(current, mergedRunBlocks(all), order));
   const problems = privacyViolations({ text }, privacy);
-  if (problems.length > 0) {
-    throw new Error(
-      `ledger not written: ${[...new Set(problems.map(violationCategory))].join("; ")}`,
-    );
-  }
+  if (problems.length > 0) throw refused("ledger", problems);
   writeFileSync(LEDGER, text);
 }
 
@@ -823,7 +818,54 @@ async function startLive() {
     },
     log: (m) => console.log(redactSecrets(m, Object.values(tokens))),
   });
+  const ctx = {
+    ...liveContext(herdr, transcriptsDir, live, Object.values(tokens)),
+    secrets: Object.values(tokens),
+  };
+  ctx.notify = live.makeNotifier((line) => process.stdout.write(line), ctx.secrets);
+  const privacy = {
+    realHome,
+    username: userInfo().username,
+    foreignMcp: foreignMcpNames(),
+    secrets: Object.values(tokens),
+  };
+  // Whatever ends the run — a stop before the panes, a pane that cannot be
+  // opened, an exception, Ctrl-C — a matrix is written (unreached cells
+  // not-reached) and one line says why it stopped.
+  const session = { hosts: [], finished: false };
+  let cliEvidence = { ...cli };
+  const finish = (hosts, stop) => {
+    const { matrix, extracts } = live.evidenceOf(
+      {
+        ...ctx,
+        runId,
+        date: new Date().toISOString().slice(0, 10),
+        cli: cliEvidence,
+        digest,
+        ...privacy,
+      },
+      hosts,
+      { launched: args.hosts, stopped: stop },
+    );
+    if (stop) {
+      // A stopped run's evidence stays out of the checkout: in the 0700
+      // transcripts dir, never in tests/fixtures/host-runs, never in the ledger.
+      const dir = writeEvidence(matrix, extracts, privacy, join(transcriptsDir, "stopped-run"));
+      console.log(`stopped run's matrix (local only, not committed): ${join(dir, "matrix.json")}`);
+      return;
+    }
+    const dir = writeEvidence(matrix, extracts, privacy);
+    writeLedger(privacy);
+    reportRegressions(matrix);
+    console.log(`evidence: ${dir}\nfull transcripts (kept, never committed): ${transcriptsDir}`);
+  };
+  const say = (line) => console.error(redactSecrets(line, ctx.secrets));
+  cleanup.addHook(() =>
+    live.finishSession(session, finish, `interrupted by ${cleanup.stoppedBy ?? "exit"}`, say),
+  );
+  stopOnCrash(session, finish, say, cleanup);
   if (plans === null) {
+    live.finishSession(session, finish, "preparation stopped before any pane opened", say);
     cleanup.run();
     return 1;
   }
@@ -832,39 +874,63 @@ async function startLive() {
   // to the checkout (the copy-cli step refuses otherwise).
   const copies = plans.map((p) => p.steps.find((st) => st.kind === "copy-cli"));
   const trees = [...new Set(copies.map((c) => `${c?.treeHash}:${c?.depsHash}`))];
-  if (trees.length !== 1 || !copies[0]?.treeHash)
-    throw new Error("the roots do not all run the same copy of the checkout");
-  const cliEvidence = { ...cli, tree_sha256: copies[0].treeHash, deps_sha256: copies[0].depsHash };
-  const hosts = await openHosts(herdr, plans, cleanup, tokens);
-  const ctx = {
-    ...liveContext(herdr, transcriptsDir, live, Object.values(tokens)),
-    secrets: Object.values(tokens),
-  };
-  ctx.notify = live.makeNotifier((line) => process.stdout.write(line), ctx.secrets);
-  await live.walk(ctx, hosts);
-
-  const date = new Date().toISOString().slice(0, 10);
-  const privacy = {
-    realHome,
-    username: userInfo().username,
-    foreignMcp: foreignMcpNames(),
-    secrets: Object.values(tokens),
-  };
-  const { matrix, extracts } = live.evidenceOf(
-    { ...ctx, runId, date, cli: cliEvidence, digest, ...privacy },
-    hosts,
-  );
-  const dir = writeEvidence(matrix, extracts, privacy);
-  writeLedger(privacy);
-  const ids = listRunIds();
-  if (ids.length >= 2) {
-    const found = regressions(loadMatrix(ids.at(-2)), matrix);
-    const list = found.map((r) => `${r.host}/${r.surface} ${r.from}→${r.to}`).join(", ");
-    console.log(
-      found.length === 0 ? "no regressions against the previous run" : `regressions: ${list}`,
+  if (trees.length !== 1 || !copies[0]?.treeHash) {
+    live.finishSession(
+      session,
+      finish,
+      "the roots do not all run the same copy of the checkout",
+      say,
     );
+    cleanup.run();
+    return 1;
   }
-  console.log(`evidence: ${dir}\nfull transcripts (kept, never committed): ${transcriptsDir}`);
+  cliEvidence = { ...cli, tree_sha256: copies[0].treeHash, deps_sha256: copies[0].depsHash };
+  const stop = await live.runLiveSession({
+    session,
+    plans,
+    open: (plan) => openHost(herdr, plan, cleanup, tokens),
+    ctx,
+    finish,
+    log: say,
+  });
+  if (session.error && !stop?.startsWith("herdr"))
+    writeCrashLog(transcriptsDir, session.error, ctx.secrets, say);
   cleanup.run();
-  return 0;
+  return stop ? 1 : 0;
+}
+
+/** Regressions against the previous run, if there is one. */
+function reportRegressions(matrix) {
+  const ids = listRunIds();
+  if (ids.length < 2) return;
+  const found = regressions(loadMatrix(ids.at(-2)), matrix);
+  const list = found.map((r) => `${r.host}/${r.surface} ${r.from}→${r.to}`).join(", ");
+  console.log(
+    found.length === 0 ? "no regressions against the previous run" : `regressions: ${list}`,
+  );
+}
+
+/**
+ * An internal error's stack, redacted, in a 0600 file of the transcripts dir:
+ * the summary line stays one sanitized category; the detail is local only.
+ */
+function writeCrashLog(dir, err, secrets, say) {
+  const path = join(dir, "run-error.log");
+  writeFileSync(path, redactSecrets(String(err?.stack ?? err), secrets), { mode: 0o600 });
+  say(`detail (redacted, local only): ${path}`);
+}
+
+/**
+ * An exception or a rejection nobody awaited never ends the run silently: the
+ * session is finished (matrix + one line), then cleanup runs and the run exits 1.
+ */
+function stopOnCrash(session, finish, say, cleanup) {
+  const crash = async (err) => {
+    const live = await import("./live.mjs");
+    live.finishSession(session, finish, live.stopReason(err), say);
+    cleanup.run();
+    process.exit(1);
+  };
+  process.on("unhandledRejection", crash);
+  process.on("uncaughtException", crash);
 }

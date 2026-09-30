@@ -359,7 +359,7 @@ describe("host-run isolation", () => {
     expect(cmd).not.toContain("launch-");
     expect(cmd).not.toContain("accept-edits");
     expect(plan("codex").pane.launchLine).toContain(
-      "/opt/bin/codex -m m1 -c model_reasoning_effort=high",
+      "/opt/bin/codex --no-daemon -m m1 -c model_reasoning_effort=high",
     );
   });
 
@@ -795,8 +795,10 @@ Run aw flow start.
       ".claude/**",
     ]) {
       expect(eff.ask, rel).toContain(`Edit(//r/ws/${rel})`);
-      expect(eff.ask, rel).toContain(`Write(//r/ws/${rel})`);
     }
+    // claude 2.1.285 matches file rules only as Edit(path)/Read(path).
+    for (const rule of [...eff.allow, ...eff.ask, ...eff.deny])
+      expect(rule).not.toMatch(/^(Write|NotebookEdit|MultiEdit|Glob)\(/);
     expect(eff.allow).toContain("Edit(//r/ws/**)");
     expect(eff.ask.some((r: string) => r.includes(".workflow/sessions"))).toBe(false);
     expect(eff.deny).toContain("Read(//Users/someone/**)");

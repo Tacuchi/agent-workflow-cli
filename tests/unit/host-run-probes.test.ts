@@ -24,19 +24,31 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AUTH_CHECK_WORD, IN_PANE, authCheck } from "../../scripts/host-run/authcheck.mjs";
-import { classify, isPermissionScreen, readyForInput } from "../../scripts/host-run/classifier.mjs";
+import {
+  CLAUDE_LOGIN_NOTICE,
+  classify,
+  isPermissionScreen,
+  readyForInput,
+} from "../../scripts/host-run/classifier.mjs";
+import { lastObservations, mergedRunBlocks } from "../../scripts/host-run/compare.mjs";
 import {
   SECRET_PATTERNS,
   containsSecret,
   privacyViolations,
   redactSecrets,
 } from "../../scripts/host-run/extract.mjs";
-import { HerdrClient, herdrArgv, leftoverWorkspaces } from "../../scripts/host-run/herdr.mjs";
+import {
+  HerdrClient,
+  HerdrError,
+  herdrArgv,
+  leftoverWorkspaces,
+} from "../../scripts/host-run/herdr.mjs";
 import { COVERED_HOSTS, HOSTS, NOT_COVERED, tokenSpec } from "../../scripts/host-run/hosts.mjs";
 import {
   CAPTURED_SPAWN,
   MAX_TYPED_LAUNCH,
   agyErrorReason,
+  applyProfileFile,
   capturedRun,
   capturedRunSync,
   keptMessage,
@@ -50,10 +62,19 @@ import {
   rootTemplate,
 } from "../../scripts/host-run/isolation.mjs";
 import { renderLedger } from "../../scripts/host-run/ledger.mjs";
-import { crushFields, prepareAll } from "../../scripts/host-run/live.mjs";
-import { buildMatrix, catalogStates } from "../../scripts/host-run/matrix.mjs";
+import {
+  SEND_FAILED_MIDWAY,
+  crushFields,
+  finishSession,
+  prepareAll,
+  runLiveSession,
+  stopReason,
+  tick,
+} from "../../scripts/host-run/live.mjs";
+import { buildMatrix, catalogStates, validateMatrix } from "../../scripts/host-run/matrix.mjs";
+import { validateProfile } from "../../scripts/host-run/profiles/denials.mjs";
 import { PROFILES } from "../../scripts/host-run/profiles/index.mjs";
-import { buildScenario } from "../../scripts/host-run/scenario.mjs";
+import { STEPS, buildScenario } from "../../scripts/host-run/scenario.mjs";
 import { capabilitiesFor } from "../../src/application/self/host-states.js";
 import { HARNESSES } from "../../src/domain/harnesses.js";
 
@@ -1103,5 +1124,347 @@ describe("host-run pane launch: a short typed command, the env -i line in a 0700
     expect(src.indexOf("await offerToCloseLeftovers(herdr);")).toBeLessThan(
       src.indexOf("await live.prepareAll("),
     );
+  });
+});
+
+describe("host-run first-run screens: claude onboarding and trust, codex daemon and trust", () => {
+  const WS = "/private/var/folders/xx/T/aw-host-run-r1-claude-code-A/workspace";
+
+  it("claude's ~/.claude.json skips onboarding and trusts the workspace, merged with what mcp setup wrote", () => {
+    const dir = temp();
+    const home = join(dir, "home");
+    mkdirSync(home);
+    // What `aw mcp setup` may already have registered there.
+    writeFileSync(
+      join(home, ".claude.json"),
+      JSON.stringify({ mcpServers: { "host-run-probe": { command: "aw" } } }),
+    );
+    const file = PROFILES["claude-code"]
+      .files({ workspace: WS, realHome: "/Users/someone" })
+      .find((f: { path: string }) => f.path === ".claude.json");
+    applyProfileFile(nodeFs(), file, home);
+    const cfg = JSON.parse(readFileSync(join(home, ".claude.json"), "utf8"));
+    expect(cfg.mcpServers).toEqual({ "host-run-probe": { command: "aw" } });
+    expect(cfg.hasCompletedOnboarding).toBe(true);
+    expect(cfg.projects[WS].hasTrustDialogAccepted).toBe(true);
+    expect(JSON.stringify(cfg)).not.toMatch(/bypassPermissions/i);
+    expect(statSync(join(home, ".claude.json")).mode & 0o777).toBe(0o600);
+  });
+
+  it("claude writes only Edit(path)/Read(path) file rules; the validator rejects a Write(path) rule", () => {
+    const files = PROFILES["claude-code"].files({
+      workspace: WS,
+      realHome: "/Users/someone",
+      root: "/r",
+      siblingRoots: ["/s"],
+    });
+    expect(JSON.stringify(files)).not.toMatch(/"(Write|NotebookEdit|MultiEdit|Glob)\(/);
+    expect(validateProfile(PROFILES["claude-code"], files)).toEqual([]);
+    const bad = structuredClone(files);
+    bad[0].value.permissions.ask.push(`Write(/${WS}/CLAUDE.md)`);
+    expect(validateProfile(PROFILES["claude-code"], bad).join(" ")).toMatch(
+      /Write\(.*is not matched by claude's file checks/,
+    );
+  });
+
+  it("codex starts with --no-daemon and a trusted workspace in its config.toml", () => {
+    expect(PROFILES.codex.paneArgs).toContain("--no-daemon");
+    const trust = PROFILES.codex
+      .files({ workspace: WS, realHome: "/Users/someone", siblingRoots: [] })
+      .find(
+        (f: { value: string }) => typeof f.value === "string" && f.value.includes("trust_level"),
+      );
+    expect(trust.value).toBe(`[projects.${JSON.stringify(WS)}]\ntrust_level = "trusted"`);
+  });
+
+  it("first-run screens that remain are permission-class on their host only: notified, never answered", () => {
+    const claudeOnboarding =
+      "Welcome to Claude Code v2.1.285\n Let's get started.\n Choose the text style that looks best with your terminal\n ❯ 2. Dark mode";
+    const codexDaemon =
+      "Installing daemon from CLI version 0.157.1 into /r/home/.codex/packages/app-server-daemon...";
+    const codexLogin =
+      "Welcome to Codex, OpenAI's command-line coding agent\n Sign in with ChatGPT";
+    expect(
+      classify({ host: "claude-code", state: "idle", screen: claudeOnboarding }, null).action,
+    ).toBe("notify");
+    expect(readyForInput({ host: "claude-code", state: "idle", screen: claudeOnboarding }).ok).toBe(
+      false,
+    );
+    for (const screen of [codexDaemon, codexLogin]) {
+      expect(classify({ host: "codex", state: "idle", screen }, null).action, screen).toBe(
+        "notify",
+      );
+    }
+    // The same words on another host are only text.
+    expect(isPermissionScreen(codexDaemon, null, { host: "opencode" })).toBe(false);
+  });
+});
+
+describe("host-run: a run that stops early still writes its matrix and says why", () => {
+  const catalog = catalogStates(HARNESSES, capabilitiesFor);
+  const cli = { version: "28.0.0", revision: "0000000" };
+  const plans = COVERED_HOSTS.map((id) => ({
+    host: id,
+    workspace: `/r/${id}/workspace`,
+    pane: { command: `/r/${id}/bin/pane-${id}` },
+  }));
+
+  it("a Herdr that fails on the third workspace create: a matrix whose cells are not-run with the reason, and one summary line", async () => {
+    let creates = 0;
+    const herdr = new HerdrClient((argv: string[]) => {
+      if (argv[0] === "workspace" && argv[1] === "create") {
+        creates += 1;
+        if (creates === 3)
+          return { status: 1, stdout: "", stderr: `secret ${ANTHROPIC} in herdr output` };
+        return {
+          status: 0,
+          stdout: JSON.stringify({
+            result: {
+              workspace: { workspace_id: `w${creates}` },
+              root_pane: { pane_id: `w${creates}:p1` },
+            },
+          }),
+          stderr: "",
+        };
+      }
+      return { status: 0, stdout: "", stderr: "" };
+    });
+    const session = { hosts: [] as { id: string }[], finished: false };
+    const lines: string[] = [];
+    let matrix: ReturnType<typeof buildMatrix> | null = null;
+    const stop = await runLiveSession({
+      session,
+      plans,
+      open: async (plan: { host: string; workspace: string; pane: { command: string } }) => {
+        const opened = herdr.openPane(plan.workspace, `host-run-${plan.host}`, plan.pane.command);
+        return { id: plan.host, ...opened, phase: "done", evidence: {}, screensBySurface: {} };
+      },
+      ctx: { steps: [] },
+      finish: (hosts: { id: string }[], why: string | null) => {
+        matrix = buildMatrix({
+          runId: "r1",
+          date: "2026-09-29",
+          cli,
+          scenarioDigest: "d",
+          catalog,
+          hostRuns: Object.fromEntries(hosts.map((h) => [h.id, { version: null, cells: {} }])),
+          hosts: COVERED_HOSTS,
+          stopped: why,
+        });
+      },
+      log: (l: string) => lines.push(l),
+    });
+    expect(stop).toBe("herdr workspace create failed");
+    expect(session.hosts.map((h) => h.id)).toEqual(COVERED_HOSTS.slice(0, 2));
+    expect(lines).toEqual(["run stopped: herdr workspace create failed"]);
+    expect(lines.join("")).not.toContain(ANTHROPIC);
+    const m = matrix as unknown as ReturnType<typeof buildMatrix>;
+    expect(m.stopped).toEqual({ reason: "herdr workspace create failed" });
+    for (const id of COVERED_HOSTS) {
+      for (const cell of Object.values(m.hosts[id].cells) as {
+        state: string;
+        not_reached_reason?: string;
+      }[]) {
+        // not-run, never not-reached: a stopped run never overrides another run's observation.
+        expect(cell.state).toBe("not-run");
+        expect(cell.not_reached_reason).toBe("herdr workspace create failed");
+      }
+    }
+    // The signal path cannot finish it twice.
+    finishSession(
+      session,
+      () => {
+        throw new Error("twice");
+      },
+      "interrupted by SIGINT",
+      (l: string) => lines.push(l),
+    );
+    expect(lines).toHaveLength(1);
+  });
+
+  it("a failing finish is reported, never thrown; stop reasons are fixed categories", () => {
+    const lines: string[] = [];
+    finishSession(
+      { hosts: [], finished: false },
+      () => {
+        throw new TypeError(`bad ${ANTHROPIC}`);
+      },
+      null,
+      (l: string) => lines.push(l),
+    );
+    expect(lines).toEqual(["run stopped: matrix not written: internal error (TypeError)"]);
+    // Our own refusal keeps its category in the stop line.
+    const refusal = Object.assign(new Error("matrix not written: contains a token"), {
+      category: "contains a token",
+    });
+    const more: string[] = [];
+    finishSession(
+      { hosts: [], finished: false },
+      () => {
+        throw refusal;
+      },
+      "herdr agent get failed",
+      (l: string) => more.push(l),
+    );
+    expect(more).toEqual([
+      "run stopped: herdr agent get failed; matrix not written: contains a token",
+    ]);
+    expect(stopReason(new HerdrError("agent get", `boom ${ANTHROPIC}`))).toBe(
+      "herdr agent get failed",
+    );
+    expect(stopReason(new RangeError("x"))).toBe("internal error (RangeError)");
+    expect(stopReason("interrupted by SIGINT")).toBe("interrupted by SIGINT");
+  });
+
+  it("one pane Herdr cannot read is held after three failures; the other hosts go on", async () => {
+    const notes: string[] = [];
+    let reads = 0;
+    const ctx = {
+      steps: [{ surface: "commands", boundaries: [], hosts: {} }],
+      notify: (id: string, m: string) => notes.push(`${id}: ${m}`),
+      transcript: () => {},
+      herdr: {
+        snapshot: (id: string) => {
+          if (id === "gemini") throw new HerdrError("agent get", "no agent");
+          reads += 1;
+          return { host: id, state: "working", screen: "" };
+        },
+      },
+    };
+    const hosts = [
+      { id: "gemini", phase: "send", pane: "p1", stepIndex: 0, evidence: {} },
+      { id: "codex", phase: "send", pane: "p2", stepIndex: 0, evidence: {} },
+    ];
+    for (let i = 0; i < 3; i++) await tick(ctx, hosts);
+    expect(hosts[0].phase).toBe("held");
+    expect(reads).toBe(3);
+    expect(notes).toContain(
+      "gemini: herdr agent get failed 3 times in a row: this host is left to you; the others go on",
+    );
+  });
+
+  it("a pane whose agent Herdr does not recognize yet is read from its screen", () => {
+    const client = new HerdrClient((argv: string[]) => {
+      if (argv[0] === "agent") return { status: 1, stdout: "", stderr: "no agent in pane" };
+      return { status: 0, stdout: "Choose the text style", stderr: "" };
+    });
+    const snap = client.snapshot("claude-code", "w1:p1", true);
+    expect(snap).toMatchObject({ screen: "Choose the text style", screenOnly: true });
+  });
+
+  it("run.mjs never exits silently: crashes finish the session, and the ledger moves only on a whole run", () => {
+    const src = readFileSync(RUN, "utf8");
+    expect(src).toContain('process.on("unhandledRejection", crash)');
+    expect(src).toContain('process.on("uncaughtException", crash)');
+    // A stopped run writes to the transcripts dir, never to the checkout or the ledger.
+    expect(src).toContain(
+      'writeEvidence(matrix, extracts, privacy, join(transcriptsDir, "stopped-run"))',
+    );
+    expect(src).toContain(
+      'live.finishSession(session, finish, `interrupted by ${cleanup.stoppedBy ?? "exit"}`, say)',
+    );
+  });
+});
+
+describe("host-run: sends are never retried midway; stopped runs never override; claude login", () => {
+  it("send-text reaches the pane and Enter fails: the host is held, the text is never typed again", async () => {
+    const calls: string[][] = [];
+    const client = new HerdrClient((argv: string[]) => {
+      calls.push(argv);
+      if (argv[0] === "pane" && argv[1] === "send-keys")
+        return { status: 1, stdout: "", stderr: "enter failed" };
+      return { status: 0, stdout: "", stderr: "" };
+    });
+    const notes: string[] = [];
+    const [first] = STEPS;
+    const h = {
+      id: "opencode",
+      phase: "send",
+      pane: "w1:p1",
+      stepIndex: 0,
+      evidence: {},
+      screensBySurface: {},
+      home: "/nonexistent",
+    };
+    const ctx = {
+      steps: [first],
+      notify: (id: string, m: string) => notes.push(`${id}: ${m}`),
+      transcript: () => {},
+      sleep: async () => {},
+      herdr: {
+        snapshot: () => ({ host: "opencode", state: "idle", screen: "> ", screenOnly: true }),
+        prompt: (pane: string, text: string) => client.prompt(pane, text, false),
+        keys: (pane: string, keys: string[]) => client.keys(pane, keys, false),
+      },
+    };
+    for (let i = 0; i < 4; i++) await tick(ctx, [h]);
+    const typed = calls.filter((a) => a[0] === "pane" && a[1] === "send-text");
+    expect(typed).toHaveLength(1);
+    expect(h.phase).toBe("held");
+    expect(notes).toContain(`opencode: ${SEND_FAILED_MIDWAY}`);
+    expect(SEND_FAILED_MIDWAY).toBe(
+      "a send to this pane failed midway; check it and continue by hand",
+    );
+  });
+
+  it("a stopped run's unreached cells never override a real observation of an earlier run", () => {
+    const catalog = catalogStates(HARNESSES, capabilitiesFor);
+    const cli = { version: "28.0.0", revision: "0000000" };
+    const earlier = buildMatrix({
+      runId: "2026-09-01T00-00-00Z",
+      date: "2026-09-01",
+      cli,
+      scenarioDigest: "d",
+      catalog,
+      hosts: ["codex"],
+      hostRuns: {
+        codex: {
+          version: "0.157.1",
+          cells: { mcp: { observed: "works", mode: "interactive", declared_by_doctor: false } },
+        },
+      },
+      steps: ["mcp"],
+    });
+    const stopped = buildMatrix({
+      runId: "2026-09-02T00-00-00Z",
+      date: "2026-09-02",
+      cli,
+      scenarioDigest: "d",
+      catalog,
+      hosts: ["codex"],
+      hostRuns: {},
+      steps: ["mcp"],
+      stopped: "herdr agent get failed",
+    });
+    expect(stopped.partial).toBe(true);
+    expect(stopped.hosts.codex.cells.mcp).toMatchObject({
+      state: "not-run",
+      not_reached_reason: "herdr agent get failed",
+    });
+    expect(validateMatrix(stopped)).toEqual([]);
+    const kept = lastObservations([earlier, stopped]);
+    expect(kept.codex.mcp.run_id).toBe("2026-09-01T00-00-00Z");
+    expect(mergedRunBlocks([earlier, stopped]).codex.cells.mcp).toBe(kept.codex.mcp.state);
+  });
+
+  it("claude asking to log in is named: the token did not take", () => {
+    const screen = "Select login method:\n ❯ 1. Claude account with subscription";
+    expect(readyForInput({ host: "claude-code", state: "idle", screen }).reason).toBe(
+      CLAUDE_LOGIN_NOTICE,
+    );
+    expect(classify({ host: "claude-code", state: "idle", screen }, null)).toMatchObject({
+      action: "notify",
+      reason: CLAUDE_LOGIN_NOTICE,
+    });
+    expect(CLAUDE_LOGIN_NOTICE).toBe(
+      "claude is asking to log in: the token did not take (check --claude-token-file)",
+    );
+  });
+
+  it("codex login status takes no --no-daemon; a daemon it might start lies under the root and is reaped", () => {
+    expect(HOSTS.codex.authProbe).toEqual(["login", "status"]);
+    const ps =
+      "  301   301   301 ??       /r/aw-host-run-x/home/.codex/packages/app-server-daemon/codex app-server --managed-daemon";
+    expect(rootProcesses(ps, {}, ["/r/aw-host-run-x"]).kill).toEqual([{ pid: 301, pgid: 301 }]);
   });
 });

@@ -134,15 +134,18 @@ function cellRecord({ expected, seen, run, runId, date, cli }) {
   };
 }
 
-function coveredHost(host, expectedCells, run, launched, { steps, runId, date, cli }) {
+function coveredHost(host, expectedCells, run, launched, { steps, runId, date, cli, stopped }) {
   const cells = Object.fromEntries(
     SURFACES.map((surface) => {
       const expected = expectedCells[surface];
       if (!launched || !steps.includes(surface)) return [surface, { expected, state: "not-run" }];
-      return [
-        surface,
-        cellRecord({ expected, seen: run?.cells?.[surface], run, runId, date, cli }),
-      ];
+      const cell = cellRecord({ expected, seen: run?.cells?.[surface], run, runId, date, cli });
+      if (cell.state !== "not-reached") return [surface, cell];
+      // A stopped run's unreached cell is not-run, so it never overrides a real
+      // observation of another run; it keeps why.
+      if (stopped) return [surface, { expected, state: "not-run", not_reached_reason: stopped }];
+      cell.not_reached_reason = "not observed before the step ended";
+      return [surface, cell];
     }),
   );
   return {
@@ -191,9 +194,10 @@ export function buildMatrix({
   hostRuns,
   steps = SURFACES,
   hosts = null,
+  stopped = null,
 }) {
   const launched = hosts ?? ALL_HOSTS.filter((h) => !(h in NOT_COVERED));
-  const ctx = { steps, runId, date, cli };
+  const ctx = { steps, runId, date, cli, stopped };
   const out = Object.fromEntries(
     ALL_HOSTS.map((host) => {
       const expectedCells = catalog[host] ?? {};
@@ -203,6 +207,7 @@ export function buildMatrix({
     }),
   );
   const partial =
+    Boolean(stopped) ||
     steps.length < SURFACES.length ||
     ALL_HOSTS.some((h) => !(h in NOT_COVERED) && !launched.includes(h));
   return {
@@ -212,6 +217,8 @@ export function buildMatrix({
     partial,
     cli,
     scenario_digest: scenarioDigest,
+    // A run that stopped early says why (one sanitized category).
+    ...(stopped ? { stopped: { reason: stopped } } : {}),
     hosts: out,
   };
 }

@@ -140,6 +140,15 @@ export function validateProfile(profile, files) {
       problems.push(`${profile.host}: pre-approves shell commands ('${rule}')`);
     }
   }
+  // claude matches file rules only as Edit(path) and Read(path); any other file
+  // tool with a path is ignored, with a warning, by 2.1.285.
+  if (profile.host === "claude-code") {
+    const rules = [...(profile.rulesIn?.(files) ?? [...denied, ...allowed])];
+    for (const rule of rules.filter((r) => /^(Write|NotebookEdit|MultiEdit|Glob)\(/.test(r)))
+      problems.push(
+        `${profile.host}: '${rule}' is not matched by claude's file checks (use Edit/Read)`,
+      );
+  }
   if (profile.allowsEdit !== true) problems.push(`${profile.host}: does not allow editing`);
   if (profile.allowsExec !== true) problems.push(`${profile.host}: does not allow executing`);
   return problems;

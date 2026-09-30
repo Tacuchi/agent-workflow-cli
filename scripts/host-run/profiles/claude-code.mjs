@@ -1,7 +1,11 @@
 // Claude Code: `permissions.allow` / `ask` / `deny` in ~/.claude/settings.json,
 // the same file `aw self install` merges its hooks into. Precedence is deny >
 // ask > allow; `Bash(<prefix>:*)` is the prefix form and `*` matches anywhere in
-// the command; `//path` in an Edit/Write rule is an absolute path. Claude Code
+// the command; `//path` in an Edit or Read rule is an absolute path. Only Edit
+// and Read take a path: claude 2.1.285's rule validator maps Write, NotebookEdit
+// and MultiEdit to Edit, and Glob to Read («… is not matched by file permission
+// checks — only Edit(path) rules are … (Edit rules cover all file-editing
+// tools)», binary strings), so no Write(path) rule is written. Claude Code
 // documents that its prefix rules are aware of shell operators: `Bash(safe-cmd:*)`
 // does not allow `safe-cmd && other-cmd`.
 // Source: https://docs.anthropic.com/en/docs/claude-code/iam#tool-specific-permission-rules
@@ -32,7 +36,7 @@ const cliAsk = ["aw", "agent-workflow"].flatMap((cli) => [
 
 const askFor = (workspace) => [
   ...cliAsk,
-  ...STEERING_FILES.flatMap((rel) => [`Edit(/${workspace}/${rel})`, `Write(/${workspace}/${rel})`]),
+  ...STEERING_FILES.map((rel) => `Edit(/${workspace}/${rel})`),
 ];
 
 /**
@@ -50,13 +54,13 @@ const readDenials = ({ realHome, root, siblingRoots = [] }) => [
 /** `workspace` must be a real path (macOS: /private/var, not /var); run.mjs resolves it. */
 const allowFor = (workspace) => [
   `Edit(/${workspace}/**)`,
-  `Write(/${workspace}/**)`,
   ...CLAUDE_SHELL_ALLOW,
   `mcp__${PROBE_MCP.name}__execute_sql`,
   `mcp__${PROBE_MCP.name}__search_objects`,
 ];
 
-const permissionsOf = (files) => files[0]?.value?.permissions ?? {};
+const permissionsOf = (files) =>
+  files.find((f) => f.path === ".claude/settings.json")?.value?.permissions ?? {};
 
 export default {
   host: "claude-code",
@@ -84,8 +88,34 @@ export default {
         },
       },
     },
+    // First-run state in the disposable home's ~/.claude.json, merged with what
+    // `aw mcp setup` registers there. Keys from the 2.1.285 binary: the
+    // onboarding (theme picker) is skipped once `hasCompletedOnboarding` is
+    // true; the trust dialog once `projects[<dir>].hasTrustDialogAccepted` is
+    // («… or set projects[<dir>].hasTrustDialogAccepted: true in <file>»). The
+    // bypass-permissions acceptance is never set.
+    {
+      path: ".claude.json",
+      kind: "json",
+      value: {
+        hasCompletedOnboarding: true,
+        theme: "dark",
+        ...(workspace
+          ? {
+              projects: {
+                [workspace]: { hasTrustDialogAccepted: true, hasCompletedProjectOnboarding: true },
+              },
+            }
+          : {}),
+      },
+    },
   ],
   deniedIn: (files) => permissionsOf(files).deny ?? [],
+  // Every rule, whatever its decision (the validator checks their forms).
+  rulesIn: (files) => {
+    const p = permissionsOf(files);
+    return [...(p.allow ?? []), ...(p.ask ?? []), ...(p.deny ?? [])];
+  },
   // An `ask` entry is not a pre-approval; only `allow` is.
   allowedIn: (files) => permissionsOf(files).allow ?? [],
   effective: ({ workspace, realHome, root, siblingRoots }) => ({

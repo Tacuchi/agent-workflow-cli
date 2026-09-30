@@ -67,13 +67,18 @@ export default {
   allowsEdit: true,
   allowsExec: true,
   denials,
-  paneArgs: [],
+  // `--no-daemon` (codex --help: «Run without the shared background server, even
+  // if it is already running»): no app-server daemon install on first start
+  // («Installing daemon from CLI version … into <home>/.codex/packages/
+  // app-server-daemon», where the s280 run stalled) and none left running.
+  paneArgs: ["--no-daemon"],
   limitations: [
+    "runs with --no-daemon: no shared background server is installed or started in the disposable home",
     "reads and writes of your real HOME are denied through a codex permission profile (default_permissions = hostrun); its config shape loads in codex 0.157.1 (`codex features list`, config-only) but the enforcement is unverified against a live codex run — until then, treat codex as able to read any file your user can",
     "prefix rules cannot match --force anywhere; only its fallback prefixes are denied",
     "the other hosts' disposable roots (copied credentials, token files) are denied to it",
   ],
-  files: ({ realHome, siblingRoots } = {}) => [
+  files: ({ realHome, siblingRoots, workspace } = {}) => [
     {
       path: ".codex/rules/default.rules",
       kind: "text",
@@ -81,6 +86,18 @@ export default {
     },
     { path: ".codex/config.toml", kind: "toml-top", value: TOP_LEVEL },
     { path: ".codex/config.toml", kind: "toml-table", value: profileTable(realHome, siblingRoots) },
+    // The directory-trust onboarding screen is skipped for a trusted project
+    // (codex 0.157.1 strings: tui/src/onboarding/directory_trust.rs, which
+    // persists `projects."<dir>".trust_level`).
+    ...(workspace
+      ? [
+          {
+            path: ".codex/config.toml",
+            kind: "toml-table",
+            value: `[projects.${JSON.stringify(workspace)}]\ntrust_level = "trusted"`,
+          },
+        ]
+      : []),
   ],
   deniedIn: (files) => rulesWith(files, (d) => d === "forbidden"),
   // Anything that is not forbidden or prompt runs without asking: a shell pre-approval.

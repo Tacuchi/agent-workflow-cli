@@ -385,6 +385,8 @@ export class Cleanup {
         // They get up to TERM_GRACE_MS to stop; then run() SIGKILLs what is left.
         stopLiveGroups("SIGTERM");
         awaitGroupsGone(TERM_GRACE_MS);
+        // Hooks can say what stopped the run (the matrix records "interrupted by SIGINT").
+        this.stoppedBy = sig;
         this.run();
         this.onSignal(sig);
       });

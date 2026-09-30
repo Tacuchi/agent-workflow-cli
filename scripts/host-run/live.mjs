@@ -251,6 +251,7 @@ async function openPalette(ctx, h, before) {
 }
 
 function startAwaiting(ctx, h, screen) {
+  h.sending = false;
   Object.assign(h, {
     phase: "await",
     since: ctx.now(),
@@ -293,6 +294,9 @@ export async function sendStep(ctx, h) {
   }
   const step = stepForHost(ctx.steps[h.stepIndex], h.id);
   if (step.surface === "compaction") h.compactStartLog = logText(h.home).length;
+  // From here on something may reach the pane: a failure is never retried (it
+  // would retype text the pane may already hold).
+  h.sending = true;
   if (step.invocation.via === "palette" && !(await openPalette(ctx, h, pane))) {
     ctx.notify(
       h.id,
@@ -305,6 +309,10 @@ export async function sendStep(ctx, h) {
   startAwaiting(ctx, h, pane.screen);
   return true;
 }
+
+/** The notice for a send that failed after part of it may have reached the pane. */
+export const SEND_FAILED_MIDWAY =
+  "a send to this pane failed midway; check it and continue by hand";
 
 function finishStep(ctx, h, observedEvidence, lastScreen = "") {
   const surface = ctx.steps[h.stepIndex].surface;
@@ -350,7 +358,9 @@ async function answerOnce(ctx, h, step, decision, screen) {
   if (holdIfSteeredOut(ctx, h)) return;
   h.answeredSigs.add(key);
   h.reached.push(decision.boundary);
+  h.sending = true;
   const how = await act(ctx, h, step, decision);
+  h.sending = false;
   if (how) h.answered.push(how);
 }
 
@@ -388,11 +398,82 @@ function timeOut(ctx, h, step, pane) {
 }
 
 /** One pass over every host. */
+/** Consecutive failed herdr calls on one pane before that host is left to the person. */
+export const HERDR_FAILURES_BEFORE_HOLD = 3;
+
 export async function tick(ctx, hosts) {
   for (const h of hosts.filter((x) => x.phase !== "done" && x.phase !== "held")) {
-    if (h.phase === "send") await sendStep(ctx, h);
-    else await awaitStep(ctx, h);
+    try {
+      if (h.phase === "send") await sendStep(ctx, h);
+      else await awaitStep(ctx, h);
+      h.herdrFailures = 0;
+    } catch (err) {
+      // One pane Herdr cannot read or drive never ends the whole run.
+      if (err?.name !== "HerdrError") throw err;
+      if (h.sending) {
+        // Part of a send (text, Enter, ctrl+p, a prompt) may be in the pane.
+        h.sending = false;
+        h.phase = "held";
+        h.heldReason = SEND_FAILED_MIDWAY;
+        ctx.notify(h.id, SEND_FAILED_MIDWAY);
+        continue;
+      }
+      h.herdrFailures = (h.herdrFailures ?? 0) + 1;
+      if (h.herdrFailures < HERDR_FAILURES_BEFORE_HOLD) {
+        ctx.notify(h.id, `herdr ${err.what} failed; retrying`);
+      } else {
+        h.phase = "held";
+        h.heldReason = `herdr ${err.what} failed ${h.herdrFailures} times in a row`;
+        ctx.notify(h.id, `${h.heldReason}: this host is left to you; the others go on`);
+      }
+    }
   }
+}
+
+/**
+ * Why a run stopped, as one sanitized category: never an error's own text
+ * (it can carry a pane's output or a path).
+ */
+export function stopReason(err) {
+  if (typeof err === "string") return err;
+  if (err?.name === "HerdrError") return `herdr ${err.what} failed`;
+  if (err?.code === "ETIMEDOUT") return "timeout";
+  return `internal error (${err?.name ?? typeof err})`;
+}
+
+/**
+ * Opens every pane and walks the scenario; whatever happens — a pane that
+ * cannot be opened, an exception — `finish(hosts, stop)` runs exactly once and
+ * writes the matrix (unreached cells not-reached), and ONE line says why the
+ * run stopped. `session` = {hosts: [], finished: false} is shared with the
+ * signal path (Cleanup), which finishes it as interrupted.
+ */
+export async function runLiveSession({ session, plans, open, ctx, finish, log }) {
+  let stop = null;
+  try {
+    for (const plan of plans) session.hosts.push(await open(plan));
+    await walk(ctx, session.hosts);
+  } catch (err) {
+    stop = stopReason(err);
+    session.error = err;
+  }
+  finishSession(session, finish, stop, log);
+  return stop;
+}
+
+/** Finishes a session once: the matrix, then the summary line. */
+export function finishSession(session, finish, stop, log) {
+  if (session.finished) return;
+  session.finished = true;
+  let unwritten = null;
+  try {
+    finish(session.hosts, stop);
+  } catch (err) {
+    // Our own refusals carry their category («matrix not written: contains a token»).
+    unwritten = err?.category ? err.message : `matrix not written: ${stopReason(err)}`;
+  }
+  const why = [stop, unwritten].filter(Boolean).join("; ");
+  log(why ? `run stopped: ${why}` : "run finished: every host walked the scenario");
 }
 
 /** Walks the scenario until every host is done. */
@@ -442,7 +523,7 @@ function hostRunOf(ctx, h) {
  * The matrix and the extracts of this run. An extract that fails the privacy
  * filter is not written: its cell records why instead, and the rest stands.
  */
-export function evidenceOf(ctx, hosts) {
+export function evidenceOf(ctx, hosts, { launched = null, stopped = null } = {}) {
   const hostRuns = Object.fromEntries(hosts.map((h) => [h.id, hostRunOf(ctx, h)]));
   const extracts = [];
   for (const h of hosts) {
@@ -487,7 +568,10 @@ export function evidenceOf(ctx, hosts) {
     catalog: ctx.catalog,
     hostRuns,
     steps: ctx.steps.map((s) => s.surface),
-    hosts: hosts.map((h) => h.id),
+    // Every planned host counts as launched: one the run never opened (it
+    // stopped first) has its cells not-reached, not not-run.
+    hosts: launched ?? hosts.map((h) => h.id),
+    stopped,
   });
   return { matrix, extracts };
 }
