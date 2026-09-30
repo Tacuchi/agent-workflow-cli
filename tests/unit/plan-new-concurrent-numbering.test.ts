@@ -150,6 +150,52 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
     return `docs/plans/${run.claimed}-plan-${run.slug}.md`;
   }
 
+  async function answerExecutionStep(
+    run: Walker,
+    resolved: Awaited<ReturnType<typeof current>>["resolved"],
+    stopped: FlowDecision,
+  ): Promise<FlowDirective> {
+    const action = resolved.action;
+    if (action === null) throw new Error("una frontera de ejecución sin invocación");
+    const declared = resolved.proposal?.effects ?? stopped.effects ?? ["read_only"];
+    let detail = `salida de ${stopped.id}`;
+    if (stopped.id === "plan-new.numbering") {
+      // El reclamo sale de la invocación SELLADA, no de un nombre que la prueba
+      // arma por su cuenta. Armarlo aparte es lo que dejó pasar `plan-<slug>.md`
+      // durante todo un lote: el helper ejecutaba el slug real y reportaba la
+      // plantilla, así que las dos mitades nunca se encontraban.
+      const claimed = await runNextNumber(fs, new FakeEnv(workdir, workdir), paths, {
+        directory: argAfter(action.invocation.args, "next-number"),
+        claim: { name: argAfter(action.invocation.args, "--claim"), owner: run.folder },
+      });
+      run.claimed = claimed.next;
+      detail = JSON.stringify(claimed);
+    }
+    return answer(run, {
+      input_digest: resolved.seal,
+      outcome: "completed",
+      invocation: action.invocation,
+      validations: action.evidence.map((id) => ({
+        id,
+        passed: true,
+        detail,
+        ...(id === "workline.source-bounded"
+          ? {
+              proof: {
+                kind: "inspection" as const,
+                source: "workspace",
+                relative_cwd: ".",
+                checkout_digest: "test-checkout",
+                invocation: { artifact: "tests/unit/plan-new-concurrent-numbering.test.ts" },
+              },
+            }
+          : {}),
+      })),
+      effects: { planned: [...declared], approved: [], applied: [...declared] },
+      output: null,
+    });
+  }
+
   /**
    * Contesta la frontera vigente como lo haría el agente: la numeración corre el
    * reclamo DE VERDAD y devuelve su salida como evidencia; el guardado entrega los
@@ -162,45 +208,7 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
   ): Promise<FlowDirective> {
     const stopped = resolved.stopped as FlowDecision;
     if (resolved.kind === "execution") {
-      const action = resolved.action;
-      if (action === null) throw new Error("una frontera de ejecución sin invocación");
-      const declared = resolved.proposal?.effects ?? stopped.effects ?? ["read_only"];
-      let detail = `salida de ${stopped.id}`;
-      if (stopped.id === "plan-new.numbering") {
-        // El reclamo sale de la invocación SELLADA, no de un nombre que la prueba
-        // arma por su cuenta. Armarlo aparte es lo que dejó pasar `plan-<slug>.md`
-        // durante todo un lote: el helper ejecutaba el slug real y reportaba la
-        // plantilla, así que las dos mitades nunca se encontraban.
-        const claimed = await runNextNumber(fs, new FakeEnv(workdir, workdir), paths, {
-          directory: argAfter(action.invocation.args, "next-number"),
-          claim: { name: argAfter(action.invocation.args, "--claim"), owner: run.folder },
-        });
-        run.claimed = claimed.next;
-        detail = JSON.stringify(claimed);
-      }
-      return answer(run, {
-        input_digest: resolved.seal,
-        outcome: "completed",
-        invocation: action.invocation,
-        validations: action.evidence.map((id) => ({
-          id,
-          passed: true,
-          detail,
-          ...(id === "workline.source-bounded"
-            ? {
-                proof: {
-                  kind: "inspection" as const,
-                  source: "workspace",
-                  relative_cwd: ".",
-                  checkout_digest: "test-checkout",
-                  invocation: { artifact: "tests/unit/plan-new-concurrent-numbering.test.ts" },
-                },
-              }
-            : {}),
-        })),
-        effects: { planned: [...declared], approved: [], applied: [...declared] },
-        output: null,
-      });
+      return answerExecutionStep(run, resolved, stopped);
     }
     if (resolved.kind === "semantic") {
       if (stopped.id === "plan-new.save-proposal") {

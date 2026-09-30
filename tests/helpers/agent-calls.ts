@@ -365,6 +365,30 @@ export async function openMeasuredRun(
     });
   }
 
+  async function executionValidations(
+    evidence: readonly string[],
+    state: FlowRunState,
+    stopped: FlowDecision,
+    detail: string,
+  ) {
+    const validations: Record<string, unknown>[] = [];
+    let proves = 0;
+    for (const id of evidence) {
+      if (id !== SOURCE_BOUNDED_EVIDENCE) {
+        validations.push({ id, passed: true, detail });
+        continue;
+      }
+      for (const source of proofSources(state, stopped)) {
+        const proved = await proveFlowBoundary(fs, paths, { code, source, git: live });
+        if (!proved.ok)
+          throw new Error(`prove de ${source} en ${stopped.id}: ${JSON.stringify(proved)}`);
+        proves += 1;
+        validations.push({ id, passed: true, detail, proof: proved.receipt.proof });
+      }
+    }
+    return { validations, proves };
+  }
+
   async function answerFor(directive: FlowDirective, resolved: Resolved): Promise<AnswerPlan> {
     const stopped = resolved.stopped as FlowDecision;
     const transition = directive.boundary.transition;
@@ -382,21 +406,12 @@ export async function openMeasuredRun(
     if (action === null) throw new Error(`${stopped.id} no nombra ninguna acción`);
     const { state } = await current();
     const detail = judged.detail as string;
-    const validations: Record<string, unknown>[] = [];
-    let proves = 0;
-    for (const id of action.evidence) {
-      if (id !== SOURCE_BOUNDED_EVIDENCE) {
-        validations.push({ id, passed: true, detail });
-        continue;
-      }
-      for (const source of proofSources(state, stopped)) {
-        const proved = await proveFlowBoundary(fs, paths, { code, source, git: live });
-        if (!proved.ok)
-          throw new Error(`prove de ${source} en ${stopped.id}: ${JSON.stringify(proved)}`);
-        proves += 1;
-        validations.push({ id, passed: true, detail, proof: proved.receipt.proof });
-      }
-    }
+    const { validations, proves } = await executionValidations(
+      action.evidence,
+      state,
+      stopped,
+      detail,
+    );
     const declared = [...effectsOfTransition(state, stopped)];
     return {
       raw: {
@@ -472,19 +487,22 @@ export async function countAgentCalls(
       count.proves += plan.proves;
       const result = await run.submit(plan.raw, plan.approval);
       if (!result.ok) throw new Error(`${flow}: ${JSON.stringify(result)}`);
-      if (
-        result.directive.error !== null &&
-        result.directive.boundary.transition === resolved.stopped.id
-      ) {
-        throw new Error(
-          `${flow} se trabó en ${resolved.stopped.id}: ${JSON.stringify(result.directive.error)}`,
-        );
-      }
+      assertBoundaryAdvanced(flow, resolved.stopped.id, result.directive);
       directive = result.directive;
     }
     count.total = count.opening + count.submits + count.commands + count.proves;
     return count;
   } finally {
     await run.dispose();
+  }
+}
+
+function assertBoundaryAdvanced(
+  flow: WorklineFlow,
+  transition: string,
+  directive: FlowDirective,
+): void {
+  if (directive.error !== null && directive.boundary.transition === transition) {
+    throw new Error(`${flow} se trabó en ${transition}: ${JSON.stringify(directive.error)}`);
   }
 }

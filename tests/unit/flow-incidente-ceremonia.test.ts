@@ -187,6 +187,46 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
     };
   }
 
+  async function answerHumanBoundary(
+    resolved: Awaited<ReturnType<typeof state>>["resolved"],
+    transition: string,
+    out: WalkOutcome,
+  ): Promise<boolean> {
+    out.humanBoundaries.push(transition);
+    if (transition !== "plan-exec.unit-acquisition" || resolved.kind !== "authorization")
+      return false;
+    const approval = effectApprovalDigest(transition, resolved.authorization?.planned ?? []);
+    const directive = await answer(
+      { input_digest: resolved.seal, choice: "Autorizar el efecto" },
+      approval,
+    );
+    if (directive.error !== null)
+      out.errors.push({ code: directive.error.code, action: directive.error.action });
+    return true;
+  }
+
+  async function handleTaskBoundary(
+    current: Awaited<ReturnType<typeof state>>,
+    out: WalkOutcome,
+  ): Promise<boolean> {
+    const verdict = verdictOf(current.resolved);
+    if (verdict.kind === "arrived") return true;
+    if (verdict.kind === "blocked") {
+      out.errors.push({ code: verdict.code, action: verdict.action });
+      return true;
+    }
+    if (verdict.kind === "human") {
+      if (!(await answerHumanBoundary(current.resolved, verdict.transition, out))) return true;
+      return false;
+    }
+    const directive = await answer(bodyFor(current.resolved));
+    if (directive.error !== null) {
+      out.errors.push({ code: directive.error.code, action: directive.error.action });
+      return true;
+    }
+    return false;
+  }
+
   /** Contesta hasta la primera frontera que EVALÚA una respuesta. */
   async function walkToFirstSemantic(): Promise<void> {
     for (let step = 0; step < 10; step += 1) {
@@ -230,36 +270,7 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
     const out: WalkOutcome = { humanBoundaries: [], errors: [] };
     for (let step = 0; step < 40; step += 1) {
       const current = await state();
-      const verdict = verdictOf(current.resolved);
-      if (verdict.kind === "arrived") return out;
-      if (verdict.kind === "blocked") {
-        out.errors.push({ code: verdict.code, action: verdict.action });
-        return out;
-      }
-      if (verdict.kind === "human") {
-        out.humanBoundaries.push(verdict.transition);
-        if (
-          verdict.transition !== "plan-exec.unit-acquisition" ||
-          current.resolved.kind !== "authorization"
-        )
-          return out;
-        const approval = effectApprovalDigest(
-          verdict.transition,
-          current.resolved.authorization?.planned ?? [],
-        );
-        const directive = await answer(
-          { input_digest: current.resolved.seal, choice: "Autorizar el efecto" },
-          approval,
-        );
-        if (directive.error !== null)
-          out.errors.push({ code: directive.error.code, action: directive.error.action });
-        continue;
-      }
-      const directive = await answer(bodyFor(current.resolved));
-      if (directive.error !== null) {
-        out.errors.push({ code: directive.error.code, action: directive.error.action });
-        return out;
-      }
+      if (await handleTaskBoundary(current, out)) return out;
     }
     throw new Error("el recorrido nunca llegó a su primera tarea");
   }

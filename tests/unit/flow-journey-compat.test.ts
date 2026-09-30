@@ -56,6 +56,20 @@ function expectPersistedPrefix(
   expect(disk.applied).toEqual(expected);
 }
 
+function expectContinuedBoundary(before: FlowRunState, after: FlowRunState): void {
+  // An obsolete UI gate cannot ask again; every other boundary stays put.
+  if (before.boundary !== null && retired.has(before.boundary)) {
+    expect(after.boundary).not.toBe(before.boundary);
+    expect(after.boundary).toBe(journeyForRun(after)[after.applied.length]?.id ?? null);
+  } else expect(after.boundary).toBe(before.boundary);
+}
+
+function expectWrittenBoundary(before: FlowRunState, after: FlowRunState): void {
+  if (before.boundary !== null && retired.has(before.boundary)) {
+    expect(after.boundary).toBe(journeyForRun(after)[after.applied.length]?.id ?? null);
+  } else expect(after.boundary).toBe(before.boundary);
+}
+
 describe("recorridos congelados — el instalado es el de la última release", () => {
   it("conserva los recorridos históricos junto al gate de cierre nuevo", () => {
     expect(fixtures.map((fixture) => fixture.cli_version)).toEqual([
@@ -139,11 +153,7 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
           const after = read.state;
           expect(after.version).toBe(FLOW_RUN_STATE_VERSION);
           expect(checkAgainstJourney(after, journeyForRun(after))).toBeNull();
-          // An obsolete UI gate cannot ask again; every other boundary stays put.
-          if (before.boundary !== null && retired.has(before.boundary)) {
-            expect(after.boundary).not.toBe(before.boundary);
-            expect(after.boundary).toBe(journeyForRun(after)[after.applied.length]?.id ?? null);
-          } else expect(after.boundary).toBe(before.boundary);
+          expectContinuedBoundary(before, after);
           const kept = after.applied.filter((id) => before.applied.includes(id));
           expect(kept).toEqual(before.applied.filter((id) => !retired.has(id)));
           const inserted = after.applied.filter((id) => !before.applied.includes(id));
@@ -176,11 +186,7 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
         if (!disk.ok) throw new Error(`${flow}: ${disk.failure.code}`);
         expect(disk.state.version).toBe(FLOW_RUN_STATE_VERSION);
         expectPersistedPrefix(before, disk.state, ids);
-        if (before.boundary !== null && retired.has(before.boundary)) {
-          expect(disk.state.boundary).toBe(
-            journeyForRun(disk.state)[disk.state.applied.length]?.id ?? null,
-          );
-        } else expect(disk.state.boundary).toBe(before.boundary);
+        expectWrittenBoundary(before, disk.state);
         expect(disk.state.journey_base).toEqual(journeyOfFlow(flow).map((decision) => decision.id));
       });
     }

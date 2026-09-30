@@ -1449,6 +1449,20 @@ describe("Doctrine guards — G2 · readability caps in the hot path", () => {
   const MAX_LINE_CHARS = 900;
   const MAX_SENTENCE_WORDS = 60;
 
+  function collectReadabilityOffenders(
+    line: string,
+    rel: string,
+    i: number,
+    offenders: string[],
+  ): void {
+    if (line.length > MAX_LINE_CHARS) offenders.push(`${rel}:${i + 1} line ${line.length} chars`);
+    const stripped = line.replace(/^\s*([-*+]\s+|\d+[.)]\s+|>\s?)+/, "");
+    for (const sentence of stripped.split(/(?<=[.!?])\s+/)) {
+      const words = sentence.split(/\s+/).filter(Boolean).length;
+      if (words > MAX_SENTENCE_WORDS) offenders.push(`${rel}:${i + 1} sentence ${words} words`);
+    }
+  }
+
   it("no line > 900 chars and no sentence > 60 words in loops/ and commands/", async () => {
     const targets: string[] = [];
     for (const sub of ["loops", "commands", "modules"]) {
@@ -1465,13 +1479,7 @@ describe("Doctrine guards — G2 · readability caps in the hot path", () => {
           return;
         }
         if (fence || /^\s*\|/.test(line)) return;
-        if (line.length > MAX_LINE_CHARS)
-          offenders.push(`${rel}:${i + 1} line ${line.length} chars`);
-        const stripped = line.replace(/^\s*([-*+]\s+|\d+[.)]\s+|>\s?)+/, "");
-        for (const sentence of stripped.split(/(?<=[.!?])\s+/)) {
-          const words = sentence.split(/\s+/).filter(Boolean).length;
-          if (words > MAX_SENTENCE_WORDS) offenders.push(`${rel}:${i + 1} sentence ${words} words`);
-        }
+        collectReadabilityOffenders(line, rel, i, offenders);
       });
     }
     expect(offenders).toEqual([]);
@@ -1485,6 +1493,26 @@ describe("Doctrine guards — G21 · every relative markdown link resolves", () 
   // which is exactly how `modules/PROMPT-CONTINUITY.md` pointed one level too
   // high (`../../SKILL.md` from `modules/` = `skills/SKILL.md`) and its only
   // pointer to the continuity rule degraded to optional.
+  async function collectBrokenLinks(
+    file: string,
+    rel: string,
+    index: number,
+    line: string,
+    offenders: string[],
+  ): Promise<void> {
+    for (const match of line.matchAll(/\[[^\]]*\]\(([^)\s]+)/g)) {
+      const target = match[1];
+      if (target === undefined) continue;
+      // Absolute URLs and pure anchors resolve elsewhere, not on disk.
+      if (/^(https?:|mailto:|#)/.test(target)) continue;
+      const path = target.split("#")[0];
+      if (path === undefined || path === "") continue;
+      if (!(await new NodeFileSystem().exists(resolve(file, "..", path)))) {
+        offenders.push(`${rel}:${index + 1} → ${target}`);
+      }
+    }
+  }
+
   it("no relative link in skills/w/**.md points at a path the bundle does not carry", async () => {
     const files = await listMdFiles(SKILL_ROOT);
     expect(files.length).toBeGreaterThan(50);
@@ -1493,17 +1521,7 @@ describe("Doctrine guards — G21 · every relative markdown link resolves", () 
       const rel = file.slice(SKILL_ROOT.length + 1);
       const lines = (await readFile(file, "utf8")).split(/\r?\n/);
       for (const [index, line] of lines.entries()) {
-        for (const match of line.matchAll(/\[[^\]]*\]\(([^)\s]+)/g)) {
-          const target = match[1];
-          if (target === undefined) continue;
-          // Absolute URLs and pure anchors resolve elsewhere, not on disk.
-          if (/^(https?:|mailto:|#)/.test(target)) continue;
-          const path = target.split("#")[0];
-          if (path === undefined || path === "") continue;
-          if (!(await new NodeFileSystem().exists(resolve(file, "..", path)))) {
-            offenders.push(`${rel}:${index + 1} → ${target}`);
-          }
-        }
+        await collectBrokenLinks(file, rel, index, line, offenders);
       }
     }
     expect(offenders).toEqual([]);

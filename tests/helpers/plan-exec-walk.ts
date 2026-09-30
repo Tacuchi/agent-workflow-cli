@@ -164,6 +164,16 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
     };
   }
 
+  function semanticDecisions(run: WalkRun, stopped: FlowDecision): Record<string, unknown> {
+    return stopped.scopes_sources === true
+      ? { plan: run.plan, sources: [...sources] }
+      : stopped.answer_contract === "batch-review"
+        ? { review: batchReview() }
+        : stopped.id === "plan-exec.batch-commit-proposal"
+          ? { messages: {} }
+          : { paso: stopped.id };
+  }
+
   /** Whatever the boundary in force admits — the run's own plan where it is asked. */
   function bodyFor(
     run: WalkRun,
@@ -179,14 +189,7 @@ export function planExecWalk(deps: WalkDeps, options: WalkOptions) {
       return {
         input_digest: resolved.seal,
         signals: signals.filter((id) => vocabulary.includes(id)),
-        decisions:
-          stopped.scopes_sources === true
-            ? { plan: run.plan, sources: [...sources] }
-            : stopped.answer_contract === "batch-review"
-              ? { review: batchReview() }
-              : stopped.id === "plan-exec.batch-commit-proposal"
-                ? { messages: {} }
-                : { paso: stopped.id },
+        decisions: semanticDecisions(run, stopped),
       };
     }
     return { input_digest: resolved.seal, choice: resolved.choices[0]?.label ?? "" };

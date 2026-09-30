@@ -112,8 +112,7 @@ it("dos hubs con el mismo checkout y número de sesión conservan unidades y ram
   git(source, "commit", "-m", "base");
   const units = [];
   const contexts: WorktreeDeps[] = [];
-  for (const name of ["hub-a", "hub-b"]) {
-    const hub = join(root, name);
+  async function createHubUnit(hub: string) {
     mkdirSync(hub);
     writeFileSync(
       join(hub, "AGENTS.md"),
@@ -140,7 +139,10 @@ it("dos hubs con el mismo checkout y número de sesión conservan unidades y ram
     const hash = createHash("sha256").update(hub.replaceAll("\\", "/")).digest("hex").slice(0, 8);
     expect(result.branch).toBe(`aw/${hash}/${folder}`);
     expect(readFileSync(join(result.path, "README.md"), "utf8")).toBe("base\n");
-    units.push(result);
+    return result;
+  }
+  for (const name of ["hub-a", "hub-b"]) {
+    units.push(await createHubUnit(join(root, name)));
   }
   expect(units[0]?.branch).not.toBe(units[1]?.branch);
   expect(units[0]?.path).not.toBe(units[1]?.path);

@@ -640,6 +640,28 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     },
   );
 
+  async function corruptIntegratedTip(folder: string): Promise<void> {
+    const sessionPath = join(workspace, ".workflow", "sessions", folder);
+    const read = await readCustody(deps.fs, sessionPath);
+    if (read.status !== "present") throw new Error("custodia ausente");
+    const record = read.custody;
+    await writeCustody(
+      deps.fs,
+      sessionPath,
+      sealCustody({
+        subject: record.subject,
+        subjectPath: record.subject_path,
+        parents: record.parents,
+        created: record.created,
+        artifacts: record.artifacts,
+        sources: record.sources,
+        effects: record.effects.map((effect) =>
+          effect.kind === "unit_integrated" ? { ...effect, unit_tip: "f".repeat(40) } : effect,
+        ),
+      }),
+    );
+  }
+
   it.each([
     ["destino sucio", "cambios locales"],
     ["otra rama", "no está en el checkout"],
@@ -651,25 +673,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (fault === "destino sucio") writeFileSync(join(source, "ajeno.txt"), "otro trabajo local\n");
     if (fault === "otra rama") git(source, "checkout", "-qb", "otra");
     if (fault === "punta registrada ilegible") {
-      const sessionPath = join(workspace, ".workflow", "sessions", folder);
-      const read = await readCustody(deps.fs, sessionPath);
-      if (read.status !== "present") throw new Error("custodia ausente");
-      const record = read.custody;
-      await writeCustody(
-        deps.fs,
-        sessionPath,
-        sealCustody({
-          subject: record.subject,
-          subjectPath: record.subject_path,
-          parents: record.parents,
-          created: record.created,
-          artifacts: record.artifacts,
-          sources: record.sources,
-          effects: record.effects.map((effect) =>
-            effect.kind === "unit_integrated" ? { ...effect, unit_tip: "f".repeat(40) } : effect,
-          ),
-        }),
-      );
+      await corruptIntegratedTip(folder);
     }
     if (fault === "unidad reaparecida") {
       git(source, "branch", ensured.branch, after);

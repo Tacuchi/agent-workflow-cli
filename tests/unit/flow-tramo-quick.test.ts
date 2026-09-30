@@ -1007,6 +1007,29 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     );
   });
 
+  async function walkToCommitAuthorization(): Promise<void> {
+    for (let step = 0; step < 20; step += 1) {
+      const at = await current();
+      if (at.resolved.stopped === null || at.resolved.stopped.id === "quick.commit-authorization")
+        break;
+      await answerReturning(at.resolved);
+    }
+  }
+
+  async function expectReopenedCommitChoice(): Promise<void> {
+    const reopened = await runSessionResume(fs, new FakeEnv(workdir, workdir), paths, {
+      code: CODE,
+      reopen: true,
+    });
+    expect(reopened).toMatchObject({
+      state: "active",
+      run: { resumes_at: "chassis.commit-choice" },
+    });
+    const advance = await advanceFlow(fs, paths, { code: CODE, adopt: false, executor, git });
+    if (!advance.ok) throw new Error(JSON.stringify(advance));
+    expect(advance.directive.boundary.transition).toBe("chassis.commit-choice");
+  }
+
   it.each([
     { analysis: true, files: [], changed: false, commit: false },
     { analysis: false, files: [], changed: false, commit: false },
@@ -1033,29 +1056,14 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       decisions: { preview: { files, intent: "analizar o corregir", diff: "resultado previsto" } },
     });
     if (changed) scoped[workdir] = "contenido-editado";
-    for (let step = 0; step < 20; step += 1) {
-      const at = await current();
-      if (at.resolved.stopped === null || at.resolved.stopped.id === "quick.commit-authorization")
-        break;
-      await answerReturning(at.resolved);
-    }
+    await walkToCommitAuthorization();
     const reached = await current();
     expect(reached.state.skipped.includes("quick.commit-authorization")).toBe(!commit);
     if (commit) expect(reached.resolved.stopped?.id).toBe("quick.commit-authorization");
     else {
       expect(reached.state.applied.at(-1)).toBe("chassis.finalize");
       if (!analysis) {
-        const reopened = await runSessionResume(fs, new FakeEnv(workdir, workdir), paths, {
-          code: CODE,
-          reopen: true,
-        });
-        expect(reopened).toMatchObject({
-          state: "active",
-          run: { resumes_at: "chassis.commit-choice" },
-        });
-        const advance = await advanceFlow(fs, paths, { code: CODE, adopt: false, executor, git });
-        if (!advance.ok) throw new Error(JSON.stringify(advance));
-        expect(advance.directive.boundary.transition).toBe("chassis.commit-choice");
+        await expectReopenedCommitChoice();
       }
     }
   });
@@ -1124,6 +1132,23 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     await answerReturning(resolved);
   }
 
+  async function answerExecutionBoundary(
+    resolved: Awaited<ReturnType<typeof current>>["resolved"],
+  ): Promise<FlowDirective> {
+    const body = resultFor(resolved);
+    if (git !== undefined && resolved.action?.evidence.includes("workline.source-bounded")) {
+      const capture = await proveFlowBoundary(fs, paths, { code: CODE, git });
+      if (!capture.ok) throw new Error(JSON.stringify(capture));
+      body.validations = resolved.action.evidence.map((id) => ({
+        id,
+        passed: true,
+        detail: "salida real del fixture",
+        ...(id === "workline.source-bounded" ? { proof: capture.receipt.proof } : {}),
+      }));
+    }
+    return await answer(body);
+  }
+
   /** Igual que {@link answerBoundary}, devolviendo la directiva recalculada. */
   async function answerReturning(
     resolved: Awaited<ReturnType<typeof current>>["resolved"],
@@ -1133,18 +1158,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
       return answer({ input_digest: resolved.seal, choice: "Seguir en quick" });
     }
     if (resolved.kind === "execution") {
-      const body = resultFor(resolved);
-      if (git !== undefined && resolved.action?.evidence.includes("workline.source-bounded")) {
-        const capture = await proveFlowBoundary(fs, paths, { code: CODE, git });
-        if (!capture.ok) throw new Error(JSON.stringify(capture));
-        body.validations = resolved.action.evidence.map((id) => ({
-          id,
-          passed: true,
-          detail: "salida real del fixture",
-          ...(id === "workline.source-bounded" ? { proof: capture.receipt.proof } : {}),
-        }));
-      }
-      return await answer(body);
+      return answerExecutionBoundary(resolved);
     }
     if (resolved.kind === "authorization") {
       return await answer(

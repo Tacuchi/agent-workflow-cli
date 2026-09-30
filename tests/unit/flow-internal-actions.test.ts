@@ -779,18 +779,27 @@ describe("la escritura del registro falla después del efecto", () => {
         resolved.kind === "authorization"
           ? effectApprovalDigest(resolved.stopped.id, resolved.authorization?.planned ?? [])
           : null;
-      await submitFlow(failing, paths, {
-        code: RUN.code,
-        raw: JSON.stringify(
-          approval === null
-            ? helper.bodyFor(RUN, resolved)
-            : { input_digest: resolved.seal, choice: "Autorizar el efecto" },
-        ),
-        approval,
-        executor,
-        ...(resolved.stopped?.id === "plan-exec.batch-commit-proposal" ? { git: deps.git } : {}),
-      }).catch(swallowOurs);
+      await submitDrivenBoundary(resolved, approval, executor, helper);
     }
+  }
+
+  async function submitDrivenBoundary(
+    resolved: ReturnType<typeof resolveBoundary>,
+    approval: string | null,
+    executor: InternalActionExecutor,
+    helper: ReturnType<typeof walk>,
+  ) {
+    await submitFlow(failing, paths, {
+      code: RUN.code,
+      raw: JSON.stringify(
+        approval === null
+          ? helper.bodyFor(RUN, resolved)
+          : { input_digest: resolved.seal, choice: "Autorizar el efecto" },
+      ),
+      approval,
+      executor,
+      ...(resolved.stopped?.id === "plan-exec.batch-commit-proposal" ? { git: deps.git } : {}),
+    }).catch(swallowOurs);
   }
 
   /** The advance the person runs next, with the ordinary file system. */

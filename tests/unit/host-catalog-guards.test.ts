@@ -348,18 +348,22 @@ describe("cadenas retiradas: no vuelven por la ventana", () => {
     return acc;
   }
 
+  function collectRetiredStrings(file: string, text: string, offenders: string[]): void {
+    for (const [i, line] of text.split("\n").entries()) {
+      const code = line.trim();
+      if (code.startsWith("//") || code.startsWith("*")) continue;
+      for (const needle of RETIRED) {
+        if (code.includes(needle)) offenders.push(`${file}:${i + 1} → ${needle}`);
+      }
+    }
+  }
+
   it("ninguna cadena retirada reaparece en src/ (fuera de los comentarios que las explican)", async () => {
     const files = await sourceFiles(join(process.cwd(), "src"));
     const offenders: string[] = [];
     for (const file of files) {
       const text = await readFile(file, "utf8");
-      for (const [i, line] of text.split("\n").entries()) {
-        const code = line.trim();
-        if (code.startsWith("//") || code.startsWith("*")) continue;
-        for (const needle of RETIRED) {
-          if (code.includes(needle)) offenders.push(`${file}:${i + 1} → ${needle}`);
-        }
-      }
+      collectRetiredStrings(file, text, offenders);
     }
     expect(offenders).toEqual([]);
   });

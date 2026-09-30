@@ -45,13 +45,7 @@ function placeholderActions(): Set<string> {
       const path = join(dir, entry.name);
       if (entry.isDirectory()) walk(path);
       else if (entry.name.endsWith(".ts")) {
-        for (const line of readFileSync(path, "utf8").split("\n")) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith("*") || trimmed.startsWith("//")) continue;
-          for (const match of line.matchAll(pattern)) {
-            found.add(`${relative(REPO, path)} | ${match[0]}`);
-          }
-        }
+        collectPlaceholderActions(path, pattern, found);
       }
     }
   };
@@ -239,3 +233,13 @@ describe("determinable errors name the exact command — through the binary", ()
     expect(out.data?.next_step?.command).toMatch(/^aw status --json --workspace \S+\/ws$/);
   });
 });
+
+function collectPlaceholderActions(path: string, pattern: RegExp, found: Set<string>): void {
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("*") || trimmed.startsWith("//")) continue;
+    for (const match of line.matchAll(pattern)) {
+      found.add(`${relative(REPO, path)} | ${match[0]}`);
+    }
+  }
+}
