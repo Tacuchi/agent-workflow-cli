@@ -12,6 +12,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [28.3.0] — 2026-09-30
+
+**Workline recomienda la ruta más barata que cubre el riesgo, y el modo plan del host entra en esa elección.**
+
+### Contrato
+
+Ninguno.
+
+### Added
+
+- La skill `w` suma la sección *Choosing the route — time and usage*: una tabla con seis rutas (directo, QUICK, modo plan del host, modo plan → adopción → `plan-exec`, PLAN directo y SPEC→PLAN), cuándo conviene cada una y qué cuesta.
+- Reglas para no gastar de más: separar la incertidumbre del *qué* de la del *cómo*, no investigar dos veces un plan que ya se resolvió en el host, empezar por lo más barato y escalar, y usar un comando `/w:` en modo plan como vista previa sin escritura.
+- La regla de los prompts sin comando remite a esa sección.
+
 ## [28.2.1] — 2026-09-30
 
 **Mantenimiento: el código queda dentro de la complejidad cognitiva que pide el repo y la suite deja de vencer por el git de macOS.**
