@@ -191,20 +191,7 @@ export async function proveFlowBoundary(
   if (!captured.ok) return { ok: false, failure: captured.failure };
   const { identity, proof } = captured;
 
-  let warnings: string[] = [];
-  if ((input.platform ?? process.platform) === "win32") {
-    try {
-      const longpaths = await input.git.readConfig?.(identity.root, "core.longpaths");
-      if (longpaths?.toLowerCase() !== "true")
-        warnings = [
-          "git core.longpaths no está activado en Windows: las rutas largas pueden impedir la prueba",
-        ];
-    } catch (error) {
-      warnings = [
-        `no se pudo leer git core.longpaths: ${error instanceof Error ? error.message : String(error)}`,
-      ];
-    }
-  }
+  const warnings = await checkoutPlatformWarnings(input, identity);
   return {
     ok: true,
     receipt: {
@@ -333,4 +320,25 @@ export async function captureCheckoutProof(
     };
   }
   return { ok: true, identity, proof };
+}
+
+async function checkoutPlatformWarnings(
+  input: ProveFlowInput,
+  identity: CheckoutIdentity,
+): Promise<string[]> {
+  let warnings: string[] = [];
+  if ((input.platform ?? process.platform) === "win32") {
+    try {
+      const longpaths = await input.git.readConfig?.(identity.root, "core.longpaths");
+      if (longpaths?.toLowerCase() !== "true")
+        warnings = [
+          "git core.longpaths no está activado en Windows: las rutas largas pueden impedir la prueba",
+        ];
+    } catch (error) {
+      warnings = [
+        `no se pudo leer git core.longpaths: ${error instanceof Error ? error.message : String(error)}`,
+      ];
+    }
+  }
+  return warnings;
 }

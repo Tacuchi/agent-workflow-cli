@@ -354,15 +354,7 @@ export async function answerCliBoundaries(
       // What the CLI itself found is not an attempt the agent made: the boundary
       // stays in force with the finding and the row's remedy, the report travels
       // in `cli_answers`, and the ledger is untouched.
-      current = {
-        ...current,
-        error: {
-          code: "FLOW_EXECUTION_NOT_COMPLETED",
-          message: `la comprobación del CLI no pasó: ${derived.summary}`,
-          action:
-            resolved.action?.recovery ?? "corregí lo que el mensaje nombra y corré aw flow advance",
-        },
-      };
+      current = blockedCliDirective(current, derived.summary, resolved);
       break;
     }
     const next = await submitOnce(fs, paths, {
@@ -376,16 +368,7 @@ export async function answerCliBoundaries(
   }
   // What the CLI answered on the agent's behalf is published, so a value it
   // produced — the claimed plan path, a conflict's files — is never guessed.
-  if (answered.length > 0) {
-    current = {
-      ...current,
-      cli_answers: answered,
-      next_action: `${current.next_action} · el CLI respondió ${answered
-        .map((trace) => `${trace.transition}: ${trace.summary}`)
-        .join("; ")}`,
-    };
-  }
-  return { ok: true, directive: current };
+  return { ok: true, directive: withCliAnswerTrace(current, answered) };
 }
 
 async function submitOnce(
@@ -1408,92 +1391,18 @@ async function commitProposalFrom(
   for (const [alias, base] of Object.entries(batch.snapshot).sort(([a], [b]) =>
     a.localeCompare(b),
   )) {
-    const root = candidates.find((candidate) => candidate.source === alias)?.root;
-    if (root === undefined)
-      return {
-        failure: {
-          code: "PLAN_EXEC_BATCH_COMMIT_UNOBSERVABLE",
-          message: `no se puede ubicar la unidad ${alias}`,
-          action: "restaurá la unidad de esta sesión",
-        },
-      };
-    const dirty = await git.dirtyPaths(root);
-    const changed = dirty
-      .filter(
-        (entry) =>
-          !base.dirty.some(
-            (previous) => previous.path === entry.path && previous.digest === entry.digest,
-          ),
-      )
-      .map((entry) => entry.path);
-    const askedPaths = pathMap[alias];
-    if (
-      inPlace &&
-      (!Array.isArray(askedPaths) ||
-        !askedPaths.length ||
-        askedPaths.some((path) => typeof path !== "string" || !path.trim()) ||
-        new Set(askedPaths).size !== askedPaths.length)
-    )
-      return {
-        failure: {
-          code: "PLAN_EXEC_BATCH_PATHS_REQUIRED",
-          message: `${alias}: declarás decisions.paths[${alias}] como lista exacta de rutas de la corrida`,
-          action: "indicá sólo rutas de la corrida en este checkout",
-        },
-      };
-    const paths = inPlace ? (askedPaths as string[]) : changed;
-    if (inPlace) {
-      for (const path of paths) {
-        const before = base.dirty.find((entry) => entry.path === path);
-        const after = dirty.find((entry) => entry.path === path);
-        if (before && after?.digest !== before.digest)
-          return {
-            failure: {
-              code: "PLAN_EXEC_BATCH_SHARED_PATH",
-              message: `${alias}: ${path} fue tocada por el usuario y por la corrida`,
-              action: "detené el lote sin commitear y acordá la separación de cambios",
-            },
-          };
-        if (before || !after)
-          return {
-            failure: {
-              code: "PLAN_EXEC_BATCH_PATH_NOT_OWNED",
-              message: `${alias}: ${path} ya era del usuario o no está sucia`,
-              action: "declarás únicamente rutas nuevas de la corrida",
-            },
-          };
-      }
-    }
-    if (paths.length === 0) continue;
-    const message = given[alias];
-    if (
-      typeof message !== "string" ||
-      message.trim() !== message ||
-      message.length === 0 ||
-      /[\r\n]/.test(message) ||
-      /\b(?:Co-authored-by|Signed-off-by|Reviewed-by):/i.test(message)
-    ) {
-      return {
-        failure: {
-          code: "PLAN_EXEC_BATCH_COMMIT_MESSAGE_INVALID",
-          message: `${alias}: el mensaje debe ser una sola línea sin trailers`,
-          action: "devolvé decisions.messages por alias con un mensaje de una línea",
-        },
-      };
-    }
-    sources.push({
+    const source = await proposedCommitSource(
+      git,
       alias,
-      paths: paths.sort(),
-      dirty: dirty.filter((entry) => paths.includes(entry.path)),
-      message,
-      ...(inPlace
-        ? {
-            foreign_paths: dirty
-              .filter((entry) => !paths.includes(entry.path))
-              .map((entry) => entry.path),
-          }
-        : {}),
-    });
+      base,
+      candidates,
+      pathMap,
+      given,
+      inPlace,
+    );
+    if (source === null) continue;
+    if ("failure" in source) return source;
+    sources.push(source);
   }
   const digest = semanticDigest({ batch: batch.id, snapshot: batch.snapshot, sources });
   return {
@@ -2313,42 +2222,7 @@ async function prepareDecisionForGate(
       decision: refused.ok ? { ...refused, persist: true } : refused,
     };
   }
-  switch (prepared.kind) {
-    case "settled":
-      return {
-        ok: true,
-        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
-        state: withDecisionPreparation(dated, { kind: "settled", decision: prepared.decision }),
-      };
-    case "reused":
-      return {
-        ok: true,
-        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
-        state: withDecisionPreparation(dated, {
-          kind: "reused",
-          note: prepared.note,
-          decision: prepared.decision,
-          resume_point: prepared.resume_point,
-        }),
-      };
-    case "prepared":
-      return {
-        ok: true,
-        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
-        state: withDecisionPreparation(dated, {
-          kind: "prepared",
-          note: prepared.prepared.note,
-          preview: prepared.prepared.preview,
-          index_path: prepared.indexPath,
-          baseline: {
-            path: prepared.baseline.path,
-            number: prepared.baseline.number,
-            digest: prepared.baseline.digest,
-            criteria: [...prepared.baseline.criteria],
-          },
-        }),
-      };
-  }
+  return preparedGateDecision(dated, prepared);
 }
 
 type StandaloneDecisionPreparation =
@@ -3453,5 +3327,187 @@ function observationFor(state: FlowRunState, transition: string, signals: string
     transition,
     signals,
     ...rowIteration,
+  };
+}
+
+function withCliAnswerTrace(current: FlowDirective, answered: CliAnswerTrace[]): FlowDirective {
+  if (answered.length > 0) {
+    return {
+      ...current,
+      cli_answers: answered,
+      next_action: `${current.next_action} · el CLI respondió ${answered
+        .map((trace) => `${trace.transition}: ${trace.summary}`)
+        .join("; ")}`,
+    };
+  }
+  return current;
+}
+
+function preparedGateDecision(
+  dated: FlowRunState,
+  prepared: Extract<Awaited<ReturnType<typeof preparePlanExecDecision>>, { ok: true }>,
+): GateDecisionPreparation {
+  switch (prepared.kind) {
+    case "settled":
+      return {
+        ok: true,
+        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
+        state: withDecisionPreparation(dated, { kind: "settled", decision: prepared.decision }),
+      };
+    case "reused":
+      return {
+        ok: true,
+        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
+        state: withDecisionPreparation(dated, {
+          kind: "reused",
+          note: prepared.note,
+          decision: prepared.decision,
+          resume_point: prepared.resume_point,
+        }),
+      };
+    case "prepared":
+      return {
+        ok: true,
+        ...(prepared.warnings === undefined ? {} : { warnings: prepared.warnings }),
+        state: withDecisionPreparation(dated, {
+          kind: "prepared",
+          note: prepared.prepared.note,
+          preview: prepared.prepared.preview,
+          index_path: prepared.indexPath,
+          baseline: {
+            path: prepared.baseline.path,
+            number: prepared.baseline.number,
+            digest: prepared.baseline.digest,
+            criteria: [...prepared.baseline.criteria],
+          },
+        }),
+      };
+  }
+}
+
+type ProposedCommitSource = NonNullable<
+  NonNullable<FlowRunState["batches"]>[number]["commit_proposal"]
+>["sources"][number];
+async function proposedCommitSource(
+  git: GitPort,
+  alias: string,
+  base: NonNullable<NonNullable<FlowRunState["batches"]>[number]["snapshot"]>[string],
+  candidates: Awaited<ReturnType<typeof resolveCheckoutCandidates>>,
+  pathMap: Record<string, unknown>,
+  given: Record<string, unknown>,
+  inPlace: boolean,
+): Promise<ProposedCommitSource | { failure: CapabilityFailure } | null> {
+  const root = candidates.find((candidate) => candidate.source === alias)?.root;
+  if (root === undefined)
+    return {
+      failure: {
+        code: "PLAN_EXEC_BATCH_COMMIT_UNOBSERVABLE",
+        message: `no se puede ubicar la unidad ${alias}`,
+        action: "restaurá la unidad de esta sesión",
+      },
+    };
+  const dirty = await git.dirtyPaths(root);
+  const changed = dirty
+    .filter(
+      (entry) =>
+        !base.dirty.some(
+          (previous) => previous.path === entry.path && previous.digest === entry.digest,
+        ),
+    )
+    .map((entry) => entry.path);
+  const askedPaths = pathMap[alias];
+  if (
+    inPlace &&
+    (!Array.isArray(askedPaths) ||
+      !askedPaths.length ||
+      askedPaths.some((path) => typeof path !== "string" || !path.trim()) ||
+      new Set(askedPaths).size !== askedPaths.length)
+  )
+    return {
+      failure: {
+        code: "PLAN_EXEC_BATCH_PATHS_REQUIRED",
+        message: `${alias}: declarás decisions.paths[${alias}] como lista exacta de rutas de la corrida`,
+        action: "indicá sólo rutas de la corrida en este checkout",
+      },
+    };
+  const paths = inPlace ? (askedPaths as string[]) : changed;
+  if (inPlace) {
+    const failure = inPlaceCommitPathFailure(alias, paths, base.dirty, dirty);
+    if (failure !== null) return failure;
+  }
+  if (paths.length === 0) return null;
+  const message = given[alias];
+  if (
+    typeof message !== "string" ||
+    message.trim() !== message ||
+    message.length === 0 ||
+    /[\r\n]/.test(message) ||
+    /\b(?:Co-authored-by|Signed-off-by|Reviewed-by):/i.test(message)
+  ) {
+    return {
+      failure: {
+        code: "PLAN_EXEC_BATCH_COMMIT_MESSAGE_INVALID",
+        message: `${alias}: el mensaje debe ser una sola línea sin trailers`,
+        action: "devolvé decisions.messages por alias con un mensaje de una línea",
+      },
+    };
+  }
+  return {
+    alias,
+    paths: paths.sort(),
+    dirty: dirty.filter((entry) => paths.includes(entry.path)),
+    message,
+    ...(inPlace
+      ? {
+          foreign_paths: dirty
+            .filter((entry) => !paths.includes(entry.path))
+            .map((entry) => entry.path),
+        }
+      : {}),
+  };
+}
+
+function inPlaceCommitPathFailure(
+  alias: string,
+  paths: string[],
+  beforePaths: ProposedCommitSource["dirty"],
+  dirty: ProposedCommitSource["dirty"],
+): { failure: CapabilityFailure } | null {
+  for (const path of paths) {
+    const before = beforePaths.find((entry) => entry.path === path);
+    const after = dirty.find((entry) => entry.path === path);
+    if (before && after?.digest !== before.digest)
+      return {
+        failure: {
+          code: "PLAN_EXEC_BATCH_SHARED_PATH",
+          message: `${alias}: ${path} fue tocada por el usuario y por la corrida`,
+          action: "detené el lote sin commitear y acordá la separación de cambios",
+        },
+      };
+    if (before || !after)
+      return {
+        failure: {
+          code: "PLAN_EXEC_BATCH_PATH_NOT_OWNED",
+          message: `${alias}: ${path} ya era del usuario o no está sucia`,
+          action: "declarás únicamente rutas nuevas de la corrida",
+        },
+      };
+  }
+  return null;
+}
+
+function blockedCliDirective(
+  current: FlowDirective,
+  summary: string,
+  resolved: ResolvedBoundary,
+): FlowDirective {
+  return {
+    ...current,
+    error: {
+      code: "FLOW_EXECUTION_NOT_COMPLETED",
+      message: `la comprobación del CLI no pasó: ${summary}`,
+      action:
+        resolved.action?.recovery ?? "corregí lo que el mensaje nombra y corré aw flow advance",
+    },
   };
 }

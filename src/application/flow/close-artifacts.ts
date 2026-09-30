@@ -31,14 +31,7 @@ export async function preserveBoundaryClose(
   const own = units.filter((unit) => unit.session === state.session);
   for (const unit of own) {
     if (unit.classification === "empty" || unit.classification === "preserved") continue;
-    const status =
-      unit.classification === "retained"
-        ? `retenida: ${unit.classification_reason ?? "estado no verificable"}`
-        : unit.dirty === true
-          ? "sin commitear y sin integrar"
-          : unit.dirty === false
-            ? "sin integrar"
-            : "sin integrar; no se pudo determinar si hay cambios sin commitear";
+    const status = pendingUnitStatus(unit);
     pending.push(`${prefix}${unit.alias}: ${status} en ${unit.path} (${unit.branch}).`);
   }
   for (const source of unreadable.filter((item) => item.code === "SOURCE_PATH_MISSING")) {
@@ -94,23 +87,7 @@ async function uncommittedSources(
       continue;
     }
     if (!(await git.isGitRepo(repo))) continue;
-    if (state.flow === "plan-exec" && state.scope?.isolation === "in-place") {
-      const declared = (state.batches ?? []).flatMap(
-        (batch) =>
-          batch.commit_proposal?.sources.find((item) => item.alias === source.alias)?.paths ?? [],
-      );
-      const own = (await git.dirtyPaths(repo))
-        .filter((entry) => declared.includes(entry.path))
-        .map((entry) => entry.path);
-      if (own.length)
-        pending.push(
-          `${source.alias}: rutas de la corrida sin commitear en ${repo}: ${own.join(", ")}.`,
-        );
-      continue;
-    }
-    if (await git.isDirty(repo)) {
-      pending.push(`${source.alias}: cambios sin commitear en ${repo}.`);
-    }
+    await appendUncommittedSource(git, state, source, repo, pending);
   }
   return pending;
 }
@@ -144,4 +121,42 @@ async function writeCloseBlock(
       ? text.replace(sectionPattern, () => `${section}\n\n${block}`)
       : `${text.trimEnd()}\n\n${section}\n\n${block}\n`,
   );
+}
+
+function pendingUnitStatus(unit: ClassifiedUnit): string {
+  const status =
+    unit.classification === "retained"
+      ? `retenida: ${unit.classification_reason ?? "estado no verificable"}`
+      : unit.dirty === true
+        ? "sin commitear y sin integrar"
+        : unit.dirty === false
+          ? "sin integrar"
+          : "sin integrar; no se pudo determinar si hay cambios sin commitear";
+  return status;
+}
+
+async function appendUncommittedSource(
+  git: GitPort,
+  state: FlowRunState,
+  source: ProjectFuente,
+  repo: string,
+  pending: string[],
+): Promise<void> {
+  if (state.flow === "plan-exec" && state.scope?.isolation === "in-place") {
+    const declared = (state.batches ?? []).flatMap(
+      (batch) =>
+        batch.commit_proposal?.sources.find((item) => item.alias === source.alias)?.paths ?? [],
+    );
+    const own = (await git.dirtyPaths(repo))
+      .filter((entry) => declared.includes(entry.path))
+      .map((entry) => entry.path);
+    if (own.length)
+      pending.push(
+        `${source.alias}: rutas de la corrida sin commitear en ${repo}: ${own.join(", ")}.`,
+      );
+    return;
+  }
+  if (await git.isDirty(repo)) {
+    pending.push(`${source.alias}: cambios sin commitear en ${repo}.`);
+  }
 }

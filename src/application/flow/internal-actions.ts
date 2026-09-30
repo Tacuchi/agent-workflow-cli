@@ -74,7 +74,11 @@ import { sealedPlanPath } from "../plan-exec-plan-diff.js";
 import { readSessionArtifacts } from "../release-data/artifacts.js";
 import { canonicalJson } from "../semantic-operation/protocol.js";
 import { canonicalArtifactPath } from "../session-artifacts.js";
-import { runSessionClose } from "../session-close-service.js";
+import {
+  type SessionCloseInput,
+  type SessionCloseOutput,
+  runSessionClose,
+} from "../session-close-service.js";
 import { recordPublication } from "../session-custody-recorder.js";
 import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
@@ -87,7 +91,7 @@ import { deriveCliAnswer } from "./cli-answers.js";
 import { preserveBoundaryClose } from "./close-artifacts.js";
 import { closeDocumentGuidance } from "./close-document-guidance.js";
 import { projectRun } from "./run-projection.js";
-import { applyUnderLock, locateRun, readRun } from "./run-state-service.js";
+import { type FlowRunMutation, applyUnderLock, locateRun, readRun } from "./run-state-service.js";
 
 /** The run's own coordinates — the only scope an internal operation may touch. */
 export interface InternalActionRun {
@@ -213,27 +217,8 @@ async function ensureUnits(
     // source-bounded proof surface, but never a source repository that needs a
     // per-session Git worktree.
     if (alias === "workspace") continue;
-    const result = await runWorktree(
-      { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
-      { action: "ensure", alias, sessionCode: run.code },
-    );
-    if ("error" in result) {
-      return refusal(
-        "worktree.ensure",
-        `${alias}: ${result.message}${result.hint === undefined ? "" : ` — ${result.hint}`}`,
-        canonicalJson({ alias, failure: result, acquired }),
-      );
-    }
-    // `ensure` answers with the unit; the union's other members belong to verbs
-    // this call never asks for. Narrowed rather than cast: the day one of them
-    // could come back, this is where the compiler says so.
-    if (!("created" in result)) {
-      return refusal(
-        "worktree.ensure",
-        `${alias}: la adquisición no devolvió una unidad`,
-        canonicalJson({ alias, result }),
-      );
-    }
+    const result = await ensureScopedUnit(deps, run, alias, acquired);
+    if (!("created" in result)) return result;
     acquired.push(result);
   }
   const based = await recordBatchBase(deps, run, scope.sources);
@@ -296,51 +281,9 @@ async function recordBatchBase(
   const candidates = legacy
     ? []
     : await resolveCheckoutCandidates(deps.fs, deps.paths, run.session);
-  const snapshot: NonNullable<PlanExecBatch["snapshot"]> = {};
-  for (const alias of legacy ? [] : sources) {
-    if (alias === "workspace") continue;
-    const root = candidates.find((candidate) => candidate.source === alias)?.root;
-    if (root === undefined)
-      return {
-        ok: false,
-        failure: {
-          code: "PLAN_EXEC_BATCH_UNIT_MISSING",
-          message: `falta la unidad de ${alias}`,
-          action: "adquirí la unidad antes de iniciar el lote",
-        },
-      };
-    try {
-      const [head, branch, dirty] = await Promise.all([
-        deps.git.head(root),
-        deps.git.currentBranch(root),
-        deps.git.dirtyPaths(root),
-      ]);
-      if (
-        head === null ||
-        branch === undefined ||
-        (run.scope?.isolation !== "in-place" && dirty.length > 0)
-      ) {
-        return {
-          ok: false,
-          failure: {
-            code: "PLAN_EXEC_BATCH_UNIT_DIRTY",
-            message: `${alias}: no puede iniciar el lote con HEAD/rama ausente o rutas sucias: ${dirty.map((entry) => entry.path).join(", ")}`,
-            action: "cerrá los cambios del lote anterior antes de iniciar éste",
-          },
-        };
-      }
-      snapshot[alias] = { head, branch, dirty };
-    } catch (error) {
-      return {
-        ok: false,
-        failure: {
-          code: "PLAN_EXEC_BATCH_GIT_UNOBSERVABLE",
-          message: `${alias}: ${String(error)}`,
-          action: "restaurá la lectura de git y reintentá la adquisición",
-        },
-      };
-    }
-  }
+  const observedSnapshot = await batchGitSnapshot(deps, run, legacy ? [] : sources, candidates);
+  if (!observedSnapshot.ok) return observedSnapshot;
+  const snapshot = observedSnapshot.snapshot;
   const recorded = await applyUnderLock<null>(
     deps.fs,
     locateRun(deps.paths, run.session),
@@ -814,22 +757,7 @@ async function inferBatch(
         (batch) => batch.published_plan_digest === undefined,
       );
       if (active !== undefined) {
-        if (active.commit_result !== undefined && Object.keys(active.commit_result).length > 0) {
-          return {
-            ok: false,
-            failure: {
-              code: "PLAN_EXEC_BATCH_REINFER_COMMITTED",
-              message: `${active.id} ya tiene recibos de commit y no puede re-inferirse`,
-              action: `revisá los recibos; para reabrir su trabajo usá aw flow annul --session ${run.session} --from ${active.id}`,
-            },
-          };
-        }
-        return {
-          ok: true,
-          state: current,
-          value: { batch: active, created: false, no_work: false },
-          persist: false,
-        };
+        return existingInferredBatch(current, active, run.session);
       }
       let text: string;
       try {
@@ -864,28 +792,8 @@ async function inferBatch(
           value: { batch: null, created: false, no_work: true },
         };
       }
-      // Store the exact plan text BEFORE publishing the inferred state. A retry
-      // either sees the same addressed copy or refuses rather than losing its base.
-      try {
-        const snapshot = sealedPlanPath(location.dir, next.batch.plan_digest);
-        await deps.fs.mkdirp(join(location.dir, ".plan-seals"));
-        const saved = await deps.fs.publishTextExclusive(snapshot, text);
-        if (
-          !saved.created &&
-          canonicalEol(await deps.fs.readText(snapshot)) !== canonicalEol(text)
-        ) {
-          throw new Error("la copia direccionada no coincide con el plan inferido");
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          failure: {
-            code: "PLAN_EXEC_BATCH_SNAPSHOT_UNAVAILABLE",
-            message: `no se pudo guardar la copia sellada: ${String(error)}`,
-            action: "revisá el almacenamiento de la sesión y reintentá la inferencia",
-          },
-        };
-      }
+      const snapshotFailure = await storeInferredPlan(deps.fs, location.dir, next.batch, text);
+      if (snapshotFailure !== null) return { ok: false, failure: snapshotFailure };
       return {
         ok: true,
         state: withPlanExecBatch(current, next.batch),
@@ -1111,30 +1019,8 @@ async function closeBatch(
     );
   }
   const phaseUpdates = phaseUpdatesForClosedBatch(text, batch);
-  if (batch.review === undefined && batch.published_plan_digest === undefined) {
-    return refusal(
-      "plan-exec.batch-close",
-      `el batch ${batch.id} no tiene revisión registrada; completá review-findings (kind none si nadie pidió revisión)`,
-      canonicalJson({ code: "PLAN_EXEC_BATCH_REVIEW_MISSING", batch: batch.id }),
-    );
-  }
-  if (!legacyPlanExecCommits(live.state) && batch.commit_result === undefined) {
-    return refusal(
-      "plan-exec.batch-close",
-      `el batch ${batch.id} no tiene resultado de commits verificado`,
-      canonicalJson({ code: "PLAN_EXEC_BATCH_COMMIT_MISSING", batch: batch.id }),
-    );
-  }
-  if (!legacyPlanExecCommits(live.state)) {
-    const gitFailure = await verifyBatchGitState(
-      deps,
-      run,
-      batch,
-      run.scope?.isolation === "in-place",
-    );
-    if (gitFailure !== null)
-      return refusal("plan-exec.batch-close", gitFailure.message, canonicalJson(gitFailure));
-  }
+  const commitFailure = await batchCloseCommitFailure(deps, run, live.state, batch);
+  if (commitFailure !== null) return commitFailure;
   if (!phaseUpdates.ok) {
     return refusal(
       "plan-exec.batch-close",
@@ -1166,20 +1052,7 @@ async function closeBatch(
   // run that actually executed work. So the closure is told what the plan still
   // owes at the moment its last batch lands.
   const state = await recordSettlementOwed(deps, run, published.state);
-  return {
-    ok: true,
-    summary: published.already_applied
-      ? `batch ${published.batch.id} ya estaba publicado en ${run.scope.plan}`
-      : `batch ${published.batch.id} publicado: ${published.written.join(", ")}${published.notice === undefined ? "" : `; aviso: ${published.notice}`}`,
-    output: canonicalJson({
-      batch: published.batch,
-      written: published.written,
-      already_applied: published.already_applied,
-      ...(published.notice === undefined ? {} : { notice: published.notice }),
-    }),
-    effects: ["mutate_overwrite"],
-    state,
-  };
+  return closedBatchOutcome(published, run.scope.plan, state);
 }
 
 /**
@@ -1285,50 +1158,8 @@ async function sealPlanDone(
       canonicalJson({ expected: run.state_digest, actual: live.state.digest }),
     );
   }
-  const missing = PLAN_DONE_REQUIRED_TRANSITIONS.filter((transition) => {
-    if (transition === "plan-exec.final-validation") {
-      return (
-        !live.state.applied.includes(transition) ||
-        live.state.skipped.includes(transition) ||
-        (live.state.degraded ?? []).some((item) => item.transition === transition) ||
-        dispositionOf(live.state.route_decisions, transition)?.disposition === "substitute"
-      );
-    }
-    if (live.state.applied.includes(transition)) return false;
-    const disposition = dispositionOf(live.state.route_decisions, transition)?.disposition;
-    return disposition !== "omit" && disposition !== "substitute";
-  });
-  if (
-    !legacyPlanExecCommits(live.state) &&
-    (live.state.batches ?? []).some((batch) => batch.commit_result === undefined)
-  ) {
-    return refusal(
-      "plan-exec.plan-done",
-      "hay lotes sin recibo o resultado de commit",
-      canonicalJson({ code: "PLAN_EXEC_DONE_BATCH_COMMIT_MISSING" }),
-    );
-  }
-  if (missing.length > 0) {
-    return refusal(
-      "plan-exec.plan-done",
-      `todavía falta evidencia de ${missing.join(", ")}`,
-      canonicalJson({ code: "PLAN_EXEC_DONE_PREREQUISITE", missing }),
-    );
-  }
-  const activeBatch = (live.state.batches ?? []).find(
-    (batch) => batch.published_plan_digest === undefined,
-  );
-  if (activeBatch !== undefined || live.state.batch_loop?.pending !== false) {
-    return refusal(
-      "plan-exec.plan-done",
-      "la corrida aún tiene un batch abierto o no cerró el ciclo de batches",
-      canonicalJson({
-        code: "PLAN_EXEC_DONE_BATCH_PENDING",
-        active_batch: activeBatch?.id ?? null,
-        batch_loop: live.state.batch_loop ?? null,
-      }),
-    );
-  }
+  const prerequisiteFailure = planDonePrerequisiteFailure(live.state);
+  if (prerequisiteFailure !== null) return prerequisiteFailure;
 
   const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
   let text: string;
@@ -1602,76 +1433,14 @@ async function close(
   const result = await runSessionClose(
     deps.fs,
     deps.paths,
-    {
-      code: run.code,
-      withEvidence:
-        read.ok &&
-        read.state.events.some(
-          (event) => event.kind === "executed" && event.operation === "workspace.evidence-approved",
-        ),
-      // `Cerrar` and a consented QUICK escalation are explicit human exits:
-      // incomplete criteria travel in BACKLOG, not as an invented completion.
-      force:
-        boundaryClose ||
-        (read.ok &&
-          read.state.flow === "quick" &&
-          read.state.applied.includes("quick.escalation-destination") &&
-          !read.state.skipped.includes("quick.escalation-destination")),
-      requireIntegrated: !boundaryClose,
-      final: !boundaryClose,
-      preserveReservations: boundaryClose
-        ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
-        : [],
-    },
+    closeSessionInput(run, read, boundaryClose),
     async () => ({ units: classified, unreadable: listed.unreadable ?? [] }),
     deps.git,
     undefined,
     (alias, folder) => releaseClassifiedUnit(deps, alias, folder),
   );
   if ("sessionClose" in result) {
-    const approval = read.ok
-      ? [...read.state.events]
-          .reverse()
-          .find(
-            (event) => event.kind === "executed" && event.operation === "workspace.commit-approved",
-          )
-      : undefined;
-    if (approval?.kind === "executed") {
-      if (
-        result.sessionClose.archive_error !== undefined ||
-        result.sessionClose.history_error !== undefined
-      ) {
-        result.sessionClose.commit_error = `no se ejecutó el commit: ${result.sessionClose.archive_error ?? result.sessionClose.history_error}`;
-      } else {
-        try {
-          const accepted: unknown = JSON.parse(approval.summary);
-          if (
-            typeof accepted === "object" &&
-            accepted !== null &&
-            "approval" in accepted &&
-            typeof accepted.approval === "string"
-          ) {
-            const commit = await runWorkspaceCommit(deps.fs, deps.git, undefined, deps.paths, {
-              code: run.session,
-              approval: accepted.approval,
-              withEvidence:
-                read.ok &&
-                read.state.events.some(
-                  (event) =>
-                    event.kind === "executed" && event.operation === "workspace.evidence-approved",
-                ),
-            });
-            if ("committed" in commit && commit.committed)
-              result.sessionClose.commit_receipt = commit.committed;
-            else
-              result.sessionClose.commit_error =
-                "error" in commit ? commit.error : "el commit aprobado no se produjo";
-          }
-        } catch (error) {
-          result.sessionClose.commit_error = error instanceof Error ? error.message : String(error);
-        }
-      }
-    }
+    await commitClosedSession(deps, run, read, result.sessionClose);
   }
   if ("sessionHeld" in result) {
     const held = result.sessionHeld;
@@ -1693,7 +1462,7 @@ async function close(
   }
   return {
     ok: closed.closed,
-    summary: `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}${closed.empty_units?.length ? ` · vacías conservadas: ${closed.empty_units.map((item) => item.alias).join(", ")}` : ""}${closed.preserved_units?.length ? ` · preservadas conservadas: ${closed.preserved_units.map((item) => item.alias).join(", ")}` : ""}${closed.released_empty?.length ? ` · vacías liberadas: ${closed.released_empty.map((item) => item.alias).join(", ")}` : ""}${closed.released_preserved?.length ? ` · preservadas liberadas: ${closed.released_preserved.map((item) => item.alias).join(", ")}` : ""}${closed.released_integrated?.length ? ` · integradas liberadas: ${closed.released_integrated.map((item) => item.alias).join(", ")}` : ""}${closed.commit_receipt ? ` · commit ${closed.commit_receipt.after}` : closed.commit_error ? ` · commit pendiente: ${closed.commit_error}` : ""}`,
+    summary: closedSessionSummary(closed, pending, documents, boundaryClose),
     output: canonicalJson(result),
     // Closing ensures the CHECKPOINT exists and rewrites the session's marker plus
     // its HISTORY row: additive and overwriting, both real.
@@ -1716,4 +1485,331 @@ async function releaseClassifiedUnit(
 
 function refusal(operation: string, message: string, output: string): InternalActionOutcome {
   return { ok: false, summary: `${operation}: ${message}`, output, effects: [] };
+}
+
+async function ensureScopedUnit(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  alias: string,
+  acquired: IsolationUnit[],
+): Promise<IsolationUnit | InternalActionOutcome> {
+  const result = await runWorktree(
+    { fs: deps.fs, env: deps.env, git: deps.git, paths: deps.paths },
+    { action: "ensure", alias, sessionCode: run.code },
+  );
+  if ("error" in result) {
+    return refusal(
+      "worktree.ensure",
+      `${alias}: ${result.message}${result.hint === undefined ? "" : ` — ${result.hint}`}`,
+      canonicalJson({ alias, failure: result, acquired }),
+    );
+  }
+  // `ensure` answers with the unit; the union's other members belong to verbs
+  // this call never asks for. Narrowed rather than cast: the day one of them
+  // could come back, this is where the compiler says so.
+  if (!("created" in result)) {
+    return refusal(
+      "worktree.ensure",
+      `${alias}: la adquisición no devolvió una unidad`,
+      canonicalJson({ alias, result }),
+    );
+  }
+  return result;
+}
+
+async function batchGitSnapshot(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  sources: readonly string[],
+  candidates: Awaited<ReturnType<typeof resolveCheckoutCandidates>>,
+): Promise<
+  | { ok: true; snapshot: NonNullable<PlanExecBatch["snapshot"]> }
+  | { ok: false; failure: CapabilityFailure }
+> {
+  const snapshot: NonNullable<PlanExecBatch["snapshot"]> = {};
+  for (const alias of sources) {
+    if (alias === "workspace") continue;
+    const root = candidates.find((candidate) => candidate.source === alias)?.root;
+    if (root === undefined)
+      return {
+        ok: false,
+        failure: {
+          code: "PLAN_EXEC_BATCH_UNIT_MISSING",
+          message: `falta la unidad de ${alias}`,
+          action: "adquirí la unidad antes de iniciar el lote",
+        },
+      };
+    try {
+      const [head, branch, dirty] = await Promise.all([
+        deps.git.head(root),
+        deps.git.currentBranch(root),
+        deps.git.dirtyPaths(root),
+      ]);
+      if (
+        head === null ||
+        branch === undefined ||
+        (run.scope?.isolation !== "in-place" && dirty.length > 0)
+      ) {
+        return {
+          ok: false,
+          failure: {
+            code: "PLAN_EXEC_BATCH_UNIT_DIRTY",
+            message: `${alias}: no puede iniciar el lote con HEAD/rama ausente o rutas sucias: ${dirty.map((entry) => entry.path).join(", ")}`,
+            action: "cerrá los cambios del lote anterior antes de iniciar éste",
+          },
+        };
+      }
+      snapshot[alias] = { head, branch, dirty };
+    } catch (error) {
+      return {
+        ok: false,
+        failure: {
+          code: "PLAN_EXEC_BATCH_GIT_UNOBSERVABLE",
+          message: `${alias}: ${String(error)}`,
+          action: "restaurá la lectura de git y reintentá la adquisición",
+        },
+      };
+    }
+  }
+  return { ok: true, snapshot };
+}
+
+async function storeInferredPlan(
+  fs: FileSystemPort,
+  directory: string,
+  batch: PlanExecBatch,
+  text: string,
+): Promise<CapabilityFailure | null> {
+  // Store the exact plan text BEFORE publishing the inferred state. A retry
+  // either sees the same addressed copy or refuses rather than losing its base.
+  try {
+    const snapshot = sealedPlanPath(directory, batch.plan_digest);
+    await fs.mkdirp(join(directory, ".plan-seals"));
+    const saved = await fs.publishTextExclusive(snapshot, text);
+    if (!saved.created && canonicalEol(await fs.readText(snapshot)) !== canonicalEol(text)) {
+      throw new Error("la copia direccionada no coincide con el plan inferido");
+    }
+  } catch (error) {
+    return {
+      code: "PLAN_EXEC_BATCH_SNAPSHOT_UNAVAILABLE",
+      message: `no se pudo guardar la copia sellada: ${String(error)}`,
+      action: "revisá el almacenamiento de la sesión y reintentá la inferencia",
+    };
+  }
+  return null;
+}
+
+async function batchCloseCommitFailure(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  state: FlowRunState,
+  batch: PlanExecBatch,
+): Promise<InternalActionOutcome | null> {
+  if (batch.review === undefined && batch.published_plan_digest === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      `el batch ${batch.id} no tiene revisión registrada; completá review-findings (kind none si nadie pidió revisión)`,
+      canonicalJson({ code: "PLAN_EXEC_BATCH_REVIEW_MISSING", batch: batch.id }),
+    );
+  }
+  if (!legacyPlanExecCommits(state) && batch.commit_result === undefined) {
+    return refusal(
+      "plan-exec.batch-close",
+      `el batch ${batch.id} no tiene resultado de commits verificado`,
+      canonicalJson({ code: "PLAN_EXEC_BATCH_COMMIT_MISSING", batch: batch.id }),
+    );
+  }
+  if (!legacyPlanExecCommits(state)) {
+    const gitFailure = await verifyBatchGitState(
+      deps,
+      run,
+      batch,
+      run.scope?.isolation === "in-place",
+    );
+    if (gitFailure !== null)
+      return refusal("plan-exec.batch-close", gitFailure.message, canonicalJson(gitFailure));
+  }
+  return null;
+}
+
+function planDonePrerequisiteFailure(state: FlowRunState): InternalActionOutcome | null {
+  const missing = PLAN_DONE_REQUIRED_TRANSITIONS.filter((transition) => {
+    if (transition === "plan-exec.final-validation") {
+      return (
+        !state.applied.includes(transition) ||
+        state.skipped.includes(transition) ||
+        (state.degraded ?? []).some((item) => item.transition === transition) ||
+        dispositionOf(state.route_decisions, transition)?.disposition === "substitute"
+      );
+    }
+    if (state.applied.includes(transition)) return false;
+    const disposition = dispositionOf(state.route_decisions, transition)?.disposition;
+    return disposition !== "omit" && disposition !== "substitute";
+  });
+  if (
+    !legacyPlanExecCommits(state) &&
+    (state.batches ?? []).some((batch) => batch.commit_result === undefined)
+  ) {
+    return refusal(
+      "plan-exec.plan-done",
+      "hay lotes sin recibo o resultado de commit",
+      canonicalJson({ code: "PLAN_EXEC_DONE_BATCH_COMMIT_MISSING" }),
+    );
+  }
+  if (missing.length > 0) {
+    return refusal(
+      "plan-exec.plan-done",
+      `todavía falta evidencia de ${missing.join(", ")}`,
+      canonicalJson({ code: "PLAN_EXEC_DONE_PREREQUISITE", missing }),
+    );
+  }
+  const activeBatch = (state.batches ?? []).find(
+    (batch) => batch.published_plan_digest === undefined,
+  );
+  if (activeBatch !== undefined || state.batch_loop?.pending !== false) {
+    return refusal(
+      "plan-exec.plan-done",
+      "la corrida aún tiene un batch abierto o no cerró el ciclo de batches",
+      canonicalJson({
+        code: "PLAN_EXEC_DONE_BATCH_PENDING",
+        active_batch: activeBatch?.id ?? null,
+        batch_loop: state.batch_loop ?? null,
+      }),
+    );
+  }
+
+  return null;
+}
+
+function existingInferredBatch(
+  current: FlowRunState,
+  active: PlanExecBatch,
+  session: string,
+): FlowRunMutation<{ batch: PlanExecBatch | null; created: boolean; no_work: boolean }> {
+  if (active.commit_result !== undefined && Object.keys(active.commit_result).length > 0) {
+    return {
+      ok: false,
+      failure: {
+        code: "PLAN_EXEC_BATCH_REINFER_COMMITTED",
+        message: `${active.id} ya tiene recibos de commit y no puede re-inferirse`,
+        action: `revisá los recibos; para reabrir su trabajo usá aw flow annul --session ${session} --from ${active.id}`,
+      },
+    };
+  }
+  return {
+    ok: true,
+    state: current,
+    value: { batch: active, created: false, no_work: false },
+    persist: false,
+  };
+}
+
+function closedBatchOutcome(
+  published: Extract<Awaited<ReturnType<typeof publishPlanExecBatch>>, { ok: true }>,
+  plan: string,
+  state: FlowRunState,
+): InternalActionOutcome {
+  return {
+    ok: true,
+    summary: published.already_applied
+      ? `batch ${published.batch.id} ya estaba publicado en ${plan}`
+      : `batch ${published.batch.id} publicado: ${published.written.join(", ")}${published.notice === undefined ? "" : `; aviso: ${published.notice}`}`,
+    output: canonicalJson({
+      batch: published.batch,
+      written: published.written,
+      already_applied: published.already_applied,
+      ...(published.notice === undefined ? {} : { notice: published.notice }),
+    }),
+    effects: ["mutate_overwrite"],
+    state,
+  };
+}
+
+function closeSessionInput(
+  run: InternalActionRun,
+  read: Awaited<ReturnType<typeof readRun>>,
+  boundaryClose: boolean,
+): SessionCloseInput {
+  return {
+    code: run.code,
+    withEvidence:
+      read.ok &&
+      read.state.events.some(
+        (event) => event.kind === "executed" && event.operation === "workspace.evidence-approved",
+      ),
+    // `Cerrar` and a consented QUICK escalation are explicit human exits:
+    // incomplete criteria travel in BACKLOG, not as an invented completion.
+    force:
+      boundaryClose ||
+      (read.ok &&
+        read.state.flow === "quick" &&
+        read.state.applied.includes("quick.escalation-destination") &&
+        !read.state.skipped.includes("quick.escalation-destination")),
+    requireIntegrated: !boundaryClose,
+    final: !boundaryClose,
+    preserveReservations:
+      boundaryClose && read.ok
+        ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
+        : [],
+  };
+}
+
+async function commitClosedSession(
+  deps: InternalActionDeps,
+  run: InternalActionRun,
+  read: Awaited<ReturnType<typeof readRun>>,
+  closed: SessionCloseOutput,
+): Promise<void> {
+  const approval = read.ok
+    ? [...read.state.events]
+        .reverse()
+        .find(
+          (event) => event.kind === "executed" && event.operation === "workspace.commit-approved",
+        )
+    : undefined;
+  if (approval?.kind !== "executed") return;
+  if (closed.archive_error !== undefined || closed.history_error !== undefined) {
+    closed.commit_error = `no se ejecutó el commit: ${closed.archive_error ?? closed.history_error}`;
+    return;
+  }
+  try {
+    const accepted: unknown = JSON.parse(approval.summary);
+    if (!isCommitApproval(accepted)) return;
+    const commit = await runWorkspaceCommit(deps.fs, deps.git, undefined, deps.paths, {
+      code: run.session,
+      approval: accepted.approval,
+      withEvidence:
+        read.ok &&
+        read.state.events.some(
+          (event) => event.kind === "executed" && event.operation === "workspace.evidence-approved",
+        ),
+    });
+    if ("committed" in commit && commit.committed) closed.commit_receipt = commit.committed;
+    else
+      closed.commit_error = "error" in commit ? commit.error : "el commit aprobado no se produjo";
+  } catch (error) {
+    closed.commit_error = error instanceof Error ? error.message : String(error);
+  }
+}
+
+function closedSessionSummary(
+  closed: SessionCloseOutput,
+  pending: string[],
+  documents: string[],
+  boundaryClose: boolean,
+): string {
+  return `sesión ${closed.folder} cerrada${closed.history === undefined ? " (sin fila de HISTORY)" : ` · HISTORY ${closed.history.action}`}${closed.sql_pending_export === undefined ? "" : ` · sql_pending_export: ${closed.sql_pending_export.files.join(", ")} → ${closed.sql_pending_export.command}`}${pending.length === 0 ? "" : ` · ${pending.join(" ")} · ${closed.reopen}`}${documents.length === 0 ? "" : ` · ${documents.join(" · ")}`}${!boundaryClose && closed.unverifiable_sources?.length ? ` · no verificable: ${closed.unverifiable_sources.map((item) => `${item.alias}: ${item.reason}`).join("; ")}` : ""}${closedUnitSummary(closed)}${closed.commit_receipt ? ` · commit ${closed.commit_receipt.after}` : closed.commit_error ? ` · commit pendiente: ${closed.commit_error}` : ""}`;
+}
+
+function closedUnitSummary(closed: SessionCloseOutput): string {
+  return `${closed.empty_units?.length ? ` · vacías conservadas: ${closed.empty_units.map((item) => item.alias).join(", ")}` : ""}${closed.preserved_units?.length ? ` · preservadas conservadas: ${closed.preserved_units.map((item) => item.alias).join(", ")}` : ""}${closed.released_empty?.length ? ` · vacías liberadas: ${closed.released_empty.map((item) => item.alias).join(", ")}` : ""}${closed.released_preserved?.length ? ` · preservadas liberadas: ${closed.released_preserved.map((item) => item.alias).join(", ")}` : ""}${closed.released_integrated?.length ? ` · integradas liberadas: ${closed.released_integrated.map((item) => item.alias).join(", ")}` : ""}`;
+}
+
+function isCommitApproval(value: unknown): value is { approval: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "approval" in value &&
+    typeof value.approval === "string"
+  );
 }

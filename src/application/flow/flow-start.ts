@@ -58,19 +58,7 @@ export async function startFlow(
   let created: SessionCreateRecordOutput | null = null;
   let folder = active;
   if (folder === null) {
-    const made = await runSessionCreate(
-      deps.rawFs ?? deps.fs,
-      deps.paths,
-      {
-        type: typeFromNameSuffix(descriptor) ?? "refine",
-        name: descriptor,
-        objetivo: input.objetivo,
-        ...(input.from === undefined ? {} : { originRaw: input.from }),
-        ...(input.inputs === undefined ? {} : { inputs: input.inputs }),
-        ...(input.contextId === undefined ? {} : { contextId: input.contextId }),
-      },
-      deps.git,
-    );
+    const made = await createFlowSession(deps, input, descriptor);
     if ("error" in made) {
       return {
         ok: false,
@@ -141,4 +129,25 @@ async function activeSession(
     if ((await readSessionState(fs, join(root, name))) === "active") return name;
   }
   return null;
+}
+
+async function createFlowSession(
+  deps: Parameters<typeof startFlow>[0],
+  input: FlowStartInput,
+  descriptor: string,
+) {
+  const made = await runSessionCreate(
+    deps.rawFs ?? deps.fs,
+    deps.paths,
+    {
+      type: typeFromNameSuffix(descriptor) ?? "refine",
+      name: descriptor,
+      objetivo: input.objetivo,
+      ...(input.from === undefined ? {} : { originRaw: input.from }),
+      ...(input.inputs === undefined ? {} : { inputs: input.inputs }),
+      ...(input.contextId === undefined ? {} : { contextId: input.contextId }),
+    },
+    deps.git,
+  );
+  return made;
 }

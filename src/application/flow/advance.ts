@@ -1117,27 +1117,7 @@ export function directiveFor(
   appliedNow: readonly FlowStep[],
   overrides: { outcome?: CapabilityOutcome; nextAction?: string } = {},
 ): AdvanceResult {
-  const boundary: FlowBoundary =
-    resolved.stopped === null
-      ? {
-          kind: "final",
-          transition: null,
-          authority: null,
-          ownership: null,
-          title: null,
-          document: null,
-        }
-      : {
-          kind: resolved.kind,
-          transition: resolved.stopped.id,
-          authority:
-            isRouteEvaluation(resolved.stopped) && state.route_proposal !== null
-              ? "human"
-              : resolved.stopped.authority,
-          ownership: resolved.stopped.ownership,
-          title: validationTitle(state, resolved.stopped),
-          document: resolved.stopped.document,
-        };
+  const boundary = directiveBoundary(state, resolved);
   const planned = resolved.authorization?.planned ?? [];
   const transition = resolved.stopped?.id ?? null;
   const built = buildFlowDirective({
@@ -1164,32 +1144,7 @@ export function directiveFor(
       decisions: state.route_decisions ?? [],
       assurance: state.assurance,
     },
-    expects: {
-      effects: resolved.stopped === null ? [] : [...effectsOfTransition(state, resolved.stopped)],
-      approval: {
-        required: resolved.kind === "authorization",
-        digest:
-          resolved.kind === "authorization" && transition !== null
-            ? effectApprovalDigest(transition, planned)
-            : null,
-      },
-      decisions: decisionFieldsFor(transition),
-      note:
-        transition === "plan-exec.deviation-recognition"
-          ? { schema: NOTE_SCHEMA, fields: { ...NOTE_AUTHOR_FIELDS } }
-          : null,
-      source_scope:
-        transition === "plan-exec.source-scope"
-          ? {
-              aliases: state.plan_exec_entry?.sources ?? null,
-              rule:
-                state.plan_exec_entry?.sources === undefined
-                  ? "derivar la unión de > Fuentes: del plan en decisions.plan"
-                  : null,
-            }
-          : null,
-      proofs_captured: resolved.action?.evidence.includes(SOURCE_BOUNDED_EVIDENCE) ?? false,
-    },
+    expects: directiveExpectations(state, resolved, transition, planned),
     authorizations: resolved.authorization?.covered ?? [],
     // The cause of a block travels with the boundary that declares it: a
     // `blocked` directive without its error is refused at construction.
@@ -1614,4 +1569,63 @@ function nextActionFor(
     default:
       return `resolvé el bloqueo de '${stopped.title}' y volvé a correr 'aw flow advance'`;
   }
+}
+
+function directiveBoundary(state: FlowRunState, resolved: ResolvedBoundary): FlowBoundary {
+  const boundary: FlowBoundary =
+    resolved.stopped === null
+      ? {
+          kind: "final",
+          transition: null,
+          authority: null,
+          ownership: null,
+          title: null,
+          document: null,
+        }
+      : {
+          kind: resolved.kind,
+          transition: resolved.stopped.id,
+          authority:
+            isRouteEvaluation(resolved.stopped) && state.route_proposal !== null
+              ? "human"
+              : resolved.stopped.authority,
+          ownership: resolved.stopped.ownership,
+          title: validationTitle(state, resolved.stopped),
+          document: resolved.stopped.document,
+        };
+  return boundary;
+}
+
+function directiveExpectations(
+  state: FlowRunState,
+  resolved: ResolvedBoundary,
+  transition: string | null,
+  planned: readonly EffectClass[],
+): NonNullable<Parameters<typeof buildFlowDirective>[0]["expects"]> {
+  return {
+    effects: resolved.stopped === null ? [] : [...effectsOfTransition(state, resolved.stopped)],
+    approval: {
+      required: resolved.kind === "authorization",
+      digest:
+        resolved.kind === "authorization" && transition !== null
+          ? effectApprovalDigest(transition, planned)
+          : null,
+    },
+    decisions: decisionFieldsFor(transition),
+    note:
+      transition === "plan-exec.deviation-recognition"
+        ? { schema: NOTE_SCHEMA, fields: { ...NOTE_AUTHOR_FIELDS } }
+        : null,
+    source_scope:
+      transition === "plan-exec.source-scope"
+        ? {
+            aliases: state.plan_exec_entry?.sources ?? null,
+            rule:
+              state.plan_exec_entry?.sources === undefined
+                ? "derivar la unión de > Fuentes: del plan en decisions.plan"
+                : null,
+          }
+        : null,
+    proofs_captured: resolved.action?.evidence.includes(SOURCE_BOUNDED_EVIDENCE) ?? false,
+  };
 }

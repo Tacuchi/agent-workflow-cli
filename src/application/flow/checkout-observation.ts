@@ -18,7 +18,11 @@ import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../../domain/source-boundary.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import { readWorkspaceBlock, requireSourcePath } from "../parsers/project-block.js";
+import {
+  type ProjectFuente,
+  readWorkspaceBlock,
+  requireSourcePath,
+} from "../parsers/project-block.js";
 import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
 import { readCustody } from "../session-custody-service.js";
 import { type CheckoutState, checkoutDigest } from "../source-boundary-policy.js";
@@ -54,44 +58,10 @@ export async function resolveCheckoutCandidates(
     const inPlace =
       live.ok && live.state.flow === "plan-exec" && live.state.scope?.isolation === "in-place";
     if (inPlace) {
-      for (const alias of live.state.scope?.sources ?? []) {
-        const source = block.fuentes.find((item) => item.alias === alias);
-        if (!source) continue;
-        try {
-          candidates.push({ source: alias, root: await requireSourcePath(fs, source) });
-        } catch {
-          // A missing source is never advertised as an eligible checkout.
-        }
-      }
+      await appendInPlaceCandidates(fs, block, live.state.scope?.sources ?? [], candidates);
       return candidates;
     }
-    try {
-      const units = await fs.realPath(paths.userUnitsDir());
-      const key = workspaceKey(paths.workspaceDir());
-      const custody = await readCustody(fs, join(paths.cwdSessionsDir(), session));
-      for (const source of block.fuentes) {
-        try {
-          await requireSourcePath(fs, source);
-        } catch {
-          // A unit on disk is not proof that its declared source resolves on this host.
-          // The caller of observeScopedFingerprints reports the typed reason.
-          continue;
-        }
-        const unit =
-          custody.status === "present"
-            ? (custody.custody.sources.find((entry) => entry.alias === source.alias)?.unit_path ??
-              unitPath(units, { workspaceKey: key, alias: source.alias, session }))
-            : unitPath(units, { workspaceKey: key, alias: source.alias, session });
-        // Only a unit this session actually TOOK is published. Listing every alias
-        // the workspace block declares would advertise roots the validator then
-        // refuses as ineligible — the same divergence between what a run shows and
-        // what it measures that this whole change exists to close.
-        if (await fs.exists(unit)) candidates.push({ source: source.alias, root: unit });
-      }
-    } catch {
-      // A run without isolated units can still prove its documentary checkout.
-      // Any proof naming another source stays invalid because it is absent below.
-    }
+    await appendUnitCandidates(fs, paths, session, block, candidates);
   }
   return candidates;
 }
@@ -172,20 +142,8 @@ export async function observeScopedFingerprints(
   const base: Record<string, string | null> = {};
   for (const source of sources) {
     const declared = block?.fuentes.find((item) => item.alias === source);
-    if (declared !== undefined) {
-      try {
-        await requireSourcePath(fs, declared);
-      } catch (error) {
-        return {
-          ok: false,
-          failure: {
-            code: "SOURCE_PATH_MISSING",
-            message: (error as Error).message,
-            action: `aw add-source ${source}:<ruta>`,
-          },
-        };
-      }
-    }
+    const failure = await declaredSourceFailure(fs, declared, source);
+    if (failure !== null) return { ok: false, failure };
     const root = candidates.find((candidate) => candidate.source === source)?.root;
     if (root === undefined || !(await isObservableRepo(fs, git, root))) {
       base[source] = null;
@@ -274,4 +232,76 @@ export async function publishObservedCheckouts(
     }
   }
   return withObservedCheckouts(directive, observed);
+}
+
+async function appendInPlaceCandidates(
+  fs: FileSystemPort,
+  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  sources: readonly string[],
+  candidates: CheckoutIdentity[],
+): Promise<void> {
+  for (const alias of sources) {
+    const source = block.fuentes.find((item) => item.alias === alias);
+    if (!source) continue;
+    try {
+      candidates.push({ source: alias, root: await requireSourcePath(fs, source) });
+    } catch {
+      // A missing source is never advertised as an eligible checkout.
+    }
+  }
+}
+
+async function appendUnitCandidates(
+  fs: FileSystemPort,
+  paths: PathsService,
+  session: string,
+  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  candidates: CheckoutIdentity[],
+): Promise<void> {
+  try {
+    const units = await fs.realPath(paths.userUnitsDir());
+    const key = workspaceKey(paths.workspaceDir());
+    const custody = await readCustody(fs, join(paths.cwdSessionsDir(), session));
+    for (const source of block.fuentes) {
+      try {
+        await requireSourcePath(fs, source);
+      } catch {
+        // A unit on disk is not proof that its declared source resolves on this host.
+        // The caller of observeScopedFingerprints reports the typed reason.
+        continue;
+      }
+      const unit =
+        custody.status === "present"
+          ? (custody.custody.sources.find((entry) => entry.alias === source.alias)?.unit_path ??
+            unitPath(units, { workspaceKey: key, alias: source.alias, session }))
+          : unitPath(units, { workspaceKey: key, alias: source.alias, session });
+      // Only a unit this session actually TOOK is published. Listing every alias
+      // the workspace block declares would advertise roots the validator then
+      // refuses as ineligible — the same divergence between what a run shows and
+      // what it measures that this whole change exists to close.
+      if (await fs.exists(unit)) candidates.push({ source: source.alias, root: unit });
+    }
+  } catch {
+    // A run without isolated units can still prove its documentary checkout.
+    // Any proof naming another source stays invalid because it is absent below.
+  }
+}
+
+async function declaredSourceFailure(
+  fs: FileSystemPort,
+  declared: ProjectFuente | undefined,
+  source: string,
+): Promise<CapabilityFailure | null> {
+  if (declared !== undefined) {
+    try {
+      await requireSourcePath(fs, declared);
+    } catch (error) {
+      return {
+        code: "SOURCE_PATH_MISSING",
+        message: (error as Error).message,
+        action: `aw add-source ${source}:<ruta>`,
+      };
+    }
+  }
+  return null;
 }

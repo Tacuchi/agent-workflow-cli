@@ -3,6 +3,7 @@ import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import {
   type FlowRunState,
+  type PlanExecBatch,
   checkAgainstJourney,
   withReinferredPlanExecBatch,
 } from "../../domain/flow/run-state.js";
@@ -105,26 +106,8 @@ async function previewOf(
       "restaurá la copia original de la sesión",
     );
   }
-  const prior = taskIds(sealed, batch.phases);
-  const now = taskIds(current, batch.phases);
-  const originallyOpen = parseTasks(sealed)
-    .items.filter(
-      (item) =>
-        item.status === "open" && item.phase !== undefined && batch.phases.includes(item.phase),
-    )
-    .map((item) => /^T\d+\.\d+\b/.exec(item.text)?.[0] ?? "")
-    .sort();
-  if (
-    prior.includes("") ||
-    prior.join("\0") !== now.join("\0") ||
-    originallyOpen.join("\0") !== [...batch.tasks].sort().join("\0")
-  ) {
-    return refuse(
-      "PLAN_EXEC_BATCH_TASK_SET_INVALID",
-      "cambió el conjunto de tareas del lote",
-      "refiná el plan: re-inferir conserva id, fases y tareas",
-    );
-  }
+  const taskFailure = validateReinferredTasks(sealed, current, batch);
+  if (taskFailure !== null) return taskFailure;
   const anchor = [
     "plan-exec.deferred-check",
     "plan-exec.review-findings",
@@ -193,25 +176,8 @@ export async function applyReinferBatch(
         },
       };
     }
-    const copy = sealedPlanPath(location.dir, prepared.preview.new_digest);
-    try {
-      await fs.mkdirp(join(location.dir, ".plan-seals"));
-      const saved = await fs.publishTextExclusive(copy, prepared.text);
-      if (
-        !saved.created &&
-        matchTextSeal(prepared.preview.new_digest, await fs.readText(copy)) === null
-      )
-        throw new Error("la copia nueva difiere del digest");
-    } catch {
-      return {
-        ok: false,
-        failure: {
-          code: "PLAN_EXEC_BATCH_SNAPSHOT_UNAVAILABLE",
-          message: "no se pudo guardar el nuevo plan sellado",
-          action: "revisá la sesión y reintentá la misma aprobación",
-        },
-      };
-    }
+    const snapshotFailure = await publishReinferredPlan(fs, location.dir, prepared);
+    if (snapshotFailure !== null) return snapshotFailure;
     const root = await resolveWorkspaceRootFrom(fs, paths);
     try {
       const live = await fs.readText(join(root, state.scope?.plan ?? ""));
@@ -250,4 +216,59 @@ export async function applyReinferBatch(
   return written.ok
     ? { ok: true, directive: written.value }
     : { ok: false, failure: written.failure };
+}
+
+function validateReinferredTasks(
+  sealed: string,
+  current: string,
+  batch: PlanExecBatch,
+): Prepared | null {
+  const prior = taskIds(sealed, batch.phases);
+  const now = taskIds(current, batch.phases);
+  const originallyOpen = parseTasks(sealed)
+    .items.filter(
+      (item) =>
+        item.status === "open" && item.phase !== undefined && batch.phases.includes(item.phase),
+    )
+    .map((item) => /^T\d+\.\d+\b/.exec(item.text)?.[0] ?? "")
+    .sort();
+  if (
+    prior.includes("") ||
+    prior.join("\0") !== now.join("\0") ||
+    originallyOpen.join("\0") !== [...batch.tasks].sort().join("\0")
+  ) {
+    return refuse(
+      "PLAN_EXEC_BATCH_TASK_SET_INVALID",
+      "cambió el conjunto de tareas del lote",
+      "refiná el plan: re-inferir conserva id, fases y tareas",
+    );
+  }
+  return null;
+}
+
+async function publishReinferredPlan(
+  fs: FileSystemPort,
+  directory: string,
+  prepared: Extract<Prepared, { ok: true }>,
+): Promise<Extract<Prepared, { ok: false }> | null> {
+  const copy = sealedPlanPath(directory, prepared.preview.new_digest);
+  try {
+    await fs.mkdirp(join(directory, ".plan-seals"));
+    const saved = await fs.publishTextExclusive(copy, prepared.text);
+    if (
+      !saved.created &&
+      matchTextSeal(prepared.preview.new_digest, await fs.readText(copy)) === null
+    )
+      throw new Error("la copia nueva difiere del digest");
+  } catch {
+    return {
+      ok: false,
+      failure: {
+        code: "PLAN_EXEC_BATCH_SNAPSHOT_UNAVAILABLE",
+        message: "no se pudo guardar el nuevo plan sellado",
+        action: "revisá la sesión y reintentá la misma aprobación",
+      },
+    };
+  }
+  return null;
 }

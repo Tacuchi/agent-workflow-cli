@@ -2811,19 +2811,7 @@ function checkCommonRecordShape(
   if (!isCounterMap(parsed.attempt_floor) || !isCounterMap(parsed.attempt_grants)) {
     return invalid("trae una contabilidad de intentos que no es un contador por transición");
   }
-  if (!isInheritedBaseArray(parsed.inherited_bases)) {
-    return invalid("hereda una base de batch sin sus fases o sin sus fuentes");
-  }
-  if (!isPlanExecEntry(parsed.plan_exec_entry)) {
-    return invalid("declara una entrada de plan-exec sin plan o con fases inválidas");
-  }
-  if (
-    parsed.decision_date !== undefined &&
-    (typeof parsed.decision_date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(parsed.decision_date))
-  ) {
-    return invalid("declara una fecha de decisión inválida");
-  }
-  return null;
+  return checkPlanRecordShape(parsed, invalid);
 }
 
 function isPlanExecEntry(value: unknown): value is PlanExecEntry | undefined {
@@ -3133,13 +3121,7 @@ function isPlanExecBatchArray(value: unknown): value is PlanExecBatch[] {
       !entry.phases.every(
         (phase) => typeof phase === "number" && Number.isInteger(phase) && phase > 0,
       ) ||
-      !isStringArray(entry.tasks) ||
-      (entry.validation_only !== undefined && typeof entry.validation_only !== "boolean") ||
-      (entry.validation_only === true && entry.tasks.length !== 0) ||
-      (entry.validation_only === false && entry.kind === "validation-only") ||
-      (entry.kind === "validation-only" ? entry.tasks.length !== 0 : entry.tasks.length === 0) ||
-      (entry.kind !== undefined && entry.kind !== "validation-only") ||
-      new Set(entry.tasks).size !== entry.tasks.length ||
+      !isBatchTaskShape(entry) ||
       typeof entry.plan_digest !== "string" ||
       entry.plan_digest.length === 0 ||
       (entry.published_plan_digest !== undefined &&
@@ -3788,5 +3770,36 @@ function isAttemptArray(value: unknown): value is FlowRunAttempt[] {
       typeof entry.transition === "string" &&
       isIterationRecord(entry) &&
       (entry.parent_request_digest === null || typeof entry.parent_request_digest === "string"),
+  );
+}
+
+function checkPlanRecordShape(
+  parsed: Record<string, unknown>,
+  invalid: (why: string) => CapabilityFailure,
+): CapabilityFailure | null {
+  if (!isInheritedBaseArray(parsed.inherited_bases)) {
+    return invalid("hereda una base de batch sin sus fases o sin sus fuentes");
+  }
+  if (!isPlanExecEntry(parsed.plan_exec_entry)) {
+    return invalid("declara una entrada de plan-exec sin plan o con fases inválidas");
+  }
+  if (
+    parsed.decision_date !== undefined &&
+    (typeof parsed.decision_date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(parsed.decision_date))
+  ) {
+    return invalid("declara una fecha de decisión inválida");
+  }
+  return null;
+}
+
+function isBatchTaskShape(entry: Record<string, unknown>): boolean {
+  return !(
+    !isStringArray(entry.tasks) ||
+    (entry.validation_only !== undefined && typeof entry.validation_only !== "boolean") ||
+    (entry.validation_only === true && entry.tasks.length !== 0) ||
+    (entry.validation_only === false && entry.kind === "validation-only") ||
+    (entry.kind === "validation-only" ? entry.tasks.length !== 0 : entry.tasks.length === 0) ||
+    (entry.kind !== undefined && entry.kind !== "validation-only") ||
+    new Set(entry.tasks).size !== entry.tasks.length
   );
 }

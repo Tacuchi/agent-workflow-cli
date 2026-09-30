@@ -158,15 +158,7 @@ async function checkSource(
   ]);
   const recorded = batch.commit_result?.[alias] ?? null;
   if (recorded !== null) {
-    if (
-      source === undefined ||
-      head !== recorded.after ||
-      branch !== base.branch ||
-      (!inPlace && dirty.length !== 0) ||
-      (inPlace && dirty.some((entry) => source.paths.includes(entry.path)))
-    )
-      throw new Error(`${alias}: el recibo ya no coincide con git`);
-    return { source, path, receipt: recorded };
+    return checkRecordedSource(source, path, recorded, alias, base, head, branch, dirty, inPlace);
   }
   if (source === undefined) {
     if (head !== base.head || branch !== base.branch || (!inPlace && dirty.length !== 0))
@@ -182,21 +174,7 @@ async function checkSource(
       receipt: await recognize(deps, path, source, base, head, branch, dirty, inPlace),
     };
   }
-  const proposed = dirty.filter((entry) => source.paths.includes(entry.path));
-  const shared =
-    inPlace &&
-    base.dirty.some(
-      (entry) => dirty.find((now) => now.path === entry.path)?.digest !== entry.digest,
-    );
-  if (
-    branch !== base.branch ||
-    shared ||
-    proposed.map((entry) => `${entry.path}:${entry.digest}`).join("\0") !==
-      source.dirty.map((entry) => `${entry.path}:${entry.digest}`).join("\0") ||
-    (!inPlace && dirty.length !== proposed.length)
-  ) {
-    throw new Error(`${source.alias}: las rutas, sus bytes o la rama cambiaron`);
-  }
+  validateProposedPaths(source, base, branch, dirty, inPlace);
   return { source, path, receipt: null };
 }
 
@@ -298,4 +276,50 @@ export async function commitBatch(
       ),
     );
   }
+}
+
+function validateProposedPaths(
+  source: Source,
+  base: NonNullable<PlanExecBatch["snapshot"]>[string],
+  branch: string | undefined,
+  dirty: DirtyPath[],
+  inPlace: boolean,
+): void {
+  const proposed = dirty.filter((entry) => source.paths.includes(entry.path));
+  const shared =
+    inPlace &&
+    base.dirty.some(
+      (entry) => dirty.find((now) => now.path === entry.path)?.digest !== entry.digest,
+    );
+  if (
+    branch !== base.branch ||
+    shared ||
+    proposed.map((entry) => `${entry.path}:${entry.digest}`).join("\0") !==
+      source.dirty.map((entry) => `${entry.path}:${entry.digest}`).join("\0") ||
+    (!inPlace && dirty.length !== proposed.length)
+  ) {
+    throw new Error(`${source.alias}: las rutas, sus bytes o la rama cambiaron`);
+  }
+}
+
+function checkRecordedSource(
+  source: Source | undefined,
+  path: string,
+  recorded: CommitReceipt,
+  alias: string,
+  base: NonNullable<PlanExecBatch["snapshot"]>[string],
+  head: string | null,
+  branch: string | undefined,
+  dirty: DirtyPath[],
+  inPlace: boolean,
+): CheckedSource {
+  if (
+    source === undefined ||
+    head !== recorded.after ||
+    branch !== base.branch ||
+    (!inPlace && dirty.length !== 0) ||
+    (inPlace && dirty.some((entry) => source.paths.includes(entry.path)))
+  )
+    throw new Error(`${alias}: el recibo ya no coincide con git`);
+  return { source, path, receipt: recorded };
 }

@@ -506,25 +506,7 @@ function semanticAnswer(body: Record<string, unknown>, input: ParseAnswerInput):
     issues.push(
       violation(artifacts.failure, "artifacts", "lista de {path, content}", body.artifacts),
     );
-  for (const signal of signals) {
-    if (declared.has(signal)) continue;
-    const failure = {
-      code: "FLOW_SIGNAL_UNKNOWN",
-      message: `'${signal}' no está en el vocabulario que esta frontera admite`,
-      action: `declarás solo: ${[...declared].join(", ") || "(ninguna señal en esta frontera)"}`,
-    };
-    issues.push(violation(failure, "signals", [...declared].join(" | ") || "ninguna", signal));
-  }
-  if (new Set(signals).size !== signals.length) {
-    issues.push(
-      violation(
-        invalid("la misma señal viene declarada dos veces"),
-        "signals",
-        "identificadores únicos",
-        signals,
-      ),
-    );
-  }
+  appendSignalIssues(signals, declared, issues);
   if (issues.length > 0) return { ok: false, failure: collected(issues) };
   return {
     ok: true,
@@ -797,23 +779,7 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
     issues.push(violation(failure, field, expected, value));
   };
   const outcome = body.outcome;
-  // Absent and out-of-vocabulary are DIFFERENT failures and no longer share a
-  // sentence. They used to, and the sentence described only the second one.
-  if (outcome === undefined) {
-    add(badResult(missingOutcome(body)), "outcome", CAPABILITY_OUTCOMES.join(" | "), outcome);
-  } else if (
-    typeof outcome !== "string" ||
-    !(CAPABILITY_OUTCOMES as readonly string[]).includes(outcome)
-  ) {
-    add(
-      badResult(
-        `'outcome' tiene que ser uno de: ${CAPABILITY_OUTCOMES.join(", ")} — una confirmación booleana o una narración no son un resultado`,
-      ),
-      "outcome",
-      CAPABILITY_OUTCOMES.join(" | "),
-      outcome,
-    );
-  }
+  appendOutcomeIssues(body, outcome, add);
   const invocation = readInvocation(body.invocation);
   if (invocation === null) {
     add(
@@ -850,22 +816,7 @@ function executionAnswer(body: Record<string, unknown>, input: ParseAnswerInput)
     outcome === "completed" ? effectsOf(input.decision) : [],
   );
   if (effects === null) {
-    const ledger = body.effects;
-    const field = isRecord(ledger) && ledger.applied !== undefined ? "effects.applied" : "effects";
-    const unknown =
-      isRecord(ledger) && Array.isArray(ledger.applied)
-        ? ledger.applied.find((effect) => !isEffectClass(effect))
-        : undefined;
-    add(
-      badResult(
-        unknown === undefined
-          ? "'effects' tiene que traer el registro planned/approved/applied del resultado"
-          : `'effects.applied' trae la clase ${JSON.stringify(unknown)}; las válidas son ${EFFECT_CLASSES.join(", ")}`,
-      ),
-      field,
-      "{planned: EffectClass[], approved: EffectClass[], applied: EffectClass[]}",
-      field === "effects" ? ledger : (ledger as Record<string, unknown>).applied,
-    );
+    appendEffectsIssue(body.effects, add);
   }
   const output = readOutput(body.output);
   if (output === undefined) {
@@ -1010,45 +961,7 @@ function readValidations(value: unknown, evidence: readonly string[]): Validatio
     issues.push(violation(failure, field, expected, received));
   };
   for (const [index, entry] of value.entries()) {
-    if (!isRecord(entry)) {
-      add(bad(), `validations[${index}]`, "{id, passed, detail}", entry);
-      continue;
-    }
-    const field = `validations[${index}]`;
-    if (typeof entry.id !== "string") {
-      add(bad(), `${field}.id`, "string", entry.id);
-    }
-    if (typeof entry.passed !== "boolean") {
-      add(bad(), `${field}.passed`, "boolean", entry.passed);
-    }
-    const detail = entry.detail === undefined ? null : entry.detail;
-    if (detail !== null && typeof detail !== "string") {
-      add(bad(), `${field}.detail`, "string | null", detail);
-    }
-    if (entry.proof === undefined || entry.proof === null) {
-      if (
-        typeof entry.id !== "string" ||
-        typeof entry.passed !== "boolean" ||
-        (detail !== null && typeof detail !== "string")
-      )
-        continue;
-      out.push({ id: entry.id, passed: entry.passed, detail });
-      continue;
-    }
-    const read = readCheckoutProof(entry.proof);
-    if (!read.ok) {
-      const failure = proofShapeFailure(read.defect);
-      const suffix = read.defect.where === "proof" ? "" : `.${read.defect.where}`;
-      add(failure, `${field}.proof${suffix}`, read.defect.expected.join(" | "), entry.proof);
-      continue;
-    }
-    if (
-      typeof entry.id !== "string" ||
-      typeof entry.passed !== "boolean" ||
-      (detail !== null && typeof detail !== "string")
-    )
-      continue;
-    out.push({ id: entry.id, passed: entry.passed, detail, proof: read.proof });
+    appendValidationEntry(entry, index, bad, add, out);
   }
   return issues.length === 0 ? { ok: true, validations: out } : { ok: false, issues };
 }
@@ -1294,4 +1207,129 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function appendSignalIssues(
+  signals: string[],
+  declared: Set<string>,
+  issues: { failure: CapabilityFailure; violation: Violation }[],
+): void {
+  for (const signal of signals) {
+    if (declared.has(signal)) continue;
+    const failure = {
+      code: "FLOW_SIGNAL_UNKNOWN",
+      message: `'${signal}' no está en el vocabulario que esta frontera admite`,
+      action: `declarás solo: ${[...declared].join(", ") || "(ninguna señal en esta frontera)"}`,
+    };
+    issues.push(violation(failure, "signals", [...declared].join(" | ") || "ninguna", signal));
+  }
+  if (new Set(signals).size !== signals.length) {
+    issues.push(
+      violation(
+        invalid("la misma señal viene declarada dos veces"),
+        "signals",
+        "identificadores únicos",
+        signals,
+      ),
+    );
+  }
+}
+
+type AddAnswerIssue = (
+  failure: CapabilityFailure,
+  field: string,
+  expected: string,
+  value: unknown,
+) => void;
+function appendOutcomeIssues(
+  body: Record<string, unknown>,
+  outcome: unknown,
+  add: AddAnswerIssue,
+): void {
+  // Absent and out-of-vocabulary are DIFFERENT failures and no longer share a
+  // sentence. They used to, and the sentence described only the second one.
+  if (outcome === undefined) {
+    add(badResult(missingOutcome(body)), "outcome", CAPABILITY_OUTCOMES.join(" | "), outcome);
+  } else if (
+    typeof outcome !== "string" ||
+    !(CAPABILITY_OUTCOMES as readonly string[]).includes(outcome)
+  ) {
+    add(
+      badResult(
+        `'outcome' tiene que ser uno de: ${CAPABILITY_OUTCOMES.join(", ")} — una confirmación booleana o una narración no son un resultado`,
+      ),
+      "outcome",
+      CAPABILITY_OUTCOMES.join(" | "),
+      outcome,
+    );
+  }
+}
+
+function appendEffectsIssue(ledger: unknown, add: AddAnswerIssue): void {
+  const field = isRecord(ledger) && ledger.applied !== undefined ? "effects.applied" : "effects";
+  const unknown =
+    isRecord(ledger) && Array.isArray(ledger.applied)
+      ? ledger.applied.find((effect) => !isEffectClass(effect))
+      : undefined;
+  add(
+    badResult(
+      unknown === undefined
+        ? "'effects' tiene que traer el registro planned/approved/applied del resultado"
+        : `'effects.applied' trae la clase ${JSON.stringify(unknown)}; las válidas son ${EFFECT_CLASSES.join(", ")}`,
+    ),
+    field,
+    "{planned: EffectClass[], approved: EffectClass[], applied: EffectClass[]}",
+    field === "effects" ? ledger : (ledger as Record<string, unknown>).applied,
+  );
+}
+
+function appendValidationEntry(
+  entry: unknown,
+  index: number,
+  bad: () => CapabilityFailure,
+  add: AddAnswerIssue,
+  out: ValidationOutcome[],
+): void {
+  if (!isRecord(entry)) {
+    add(bad(), `validations[${index}]`, "{id, passed, detail}", entry);
+    return;
+  }
+  const field = `validations[${index}]`;
+  if (typeof entry.id !== "string") {
+    add(bad(), `${field}.id`, "string", entry.id);
+  }
+  if (typeof entry.passed !== "boolean") {
+    add(bad(), `${field}.passed`, "boolean", entry.passed);
+  }
+  const detail = entry.detail === undefined ? null : entry.detail;
+  if (detail !== null && typeof detail !== "string") {
+    add(bad(), `${field}.detail`, "string | null", detail);
+  }
+  if (entry.proof === undefined || entry.proof === null) {
+    const outcome = validationFields(entry, detail);
+    if (outcome !== null) out.push(outcome);
+    return;
+  }
+  const read = readCheckoutProof(entry.proof);
+  if (!read.ok) {
+    const failure = proofShapeFailure(read.defect);
+    const suffix = read.defect.where === "proof" ? "" : `.${read.defect.where}`;
+    add(failure, `${field}.proof${suffix}`, read.defect.expected.join(" | "), entry.proof);
+    return;
+  }
+  const outcome = validationFields(entry, detail);
+  if (outcome !== null) out.push({ ...outcome, proof: read.proof });
+}
+
+function validationFields(
+  entry: Record<string, unknown>,
+  detail: unknown,
+): ValidationOutcome | null {
+  if (
+    typeof entry.id !== "string" ||
+    typeof entry.passed !== "boolean" ||
+    (detail !== null && typeof detail !== "string")
+  )
+    return null;
+  return { id: entry.id, passed: entry.passed, detail };
 }
