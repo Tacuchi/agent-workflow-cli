@@ -80,6 +80,11 @@ export const FIRST_RUN_MARKERS = {
     /\bChoose the text style\b/i,
     /\bSelect login method\b/i,
   ],
+  // agy's first start after the sign-in: its terms and data-use screen (s280 run 3).
+  gemini: [/\bTerms of Service & Data Use\b/, /\bI agree to help improve Antigravity\b/],
+  // crush asks to initialize a project that has files and no AGENTS.md; the run
+  // pre-seeds `<workspace>/.crush/init`, and if it still shows it is the person's.
+  crush: [/\bWould you like to initialize now\?/, /\bYep!\s+Nope\b/],
   codex: [
     /\bWelcome to Codex\b/,
     /\bSign in with ChatGPT\b/,
@@ -153,6 +158,32 @@ export function explainRuleText(explain) {
   return parts.filter((p) => typeof p === "string").join(" ");
 }
 
+/**
+ * claude's AskUserQuestion with several questions draws a tab bar above them —
+ * `←  ☐ Alcance  ☐ flow  ✔ Submit  →` (s280 run 3) — and a rule line between the
+ * question's options and its «Chat about this» option. Workline's flow controls
+ * (Compactar, Cerrar) live in their own `flow` tab.
+ */
+const TAB_BAR = /^\s*←\s+(?:[☐☒✔✓]\s+\S.*?\s+)+→\s*$/;
+const RULE_LINE = /^\s*[─━]{8,}\s*$/;
+
+/** The tab bar of a multi-question selector, or null: {tabs, flowTab}. */
+export function tabbedQuestion(screen) {
+  const line = String(screen ?? "")
+    .split("\n")
+    .findLast((l) => TAB_BAR.test(l));
+  if (!line) return null;
+  const tabs = [...line.matchAll(/[☐☒✔✓]\s+(.+?)(?=\s{2,}|\s*→)/g)].map((m) => m[1].trim());
+  return { tabs, flowTab: tabs.some((t) => /^flow$/i.test(t)) };
+}
+
+/** The screen's lines; below a tab bar, the rule lines inside the selector are dropped. */
+function screenLines(screen) {
+  const all = String(screen ?? "").split("\n");
+  const bar = all.findLastIndex((l) => TAB_BAR.test(l));
+  return bar < 0 ? all : all.filter((l, i) => i <= bar || !RULE_LINE.test(l));
+}
+
 /** Lines above the live selector that still belong to its dialog (title, command shown). */
 const DIALOG_CONTEXT = 8;
 /** Without a selector at the bottom, how much of the bottom counts as the live dialog. */
@@ -164,7 +195,7 @@ const LIVE_TAIL = 12;
  * doctor report saying «permission», a relayed log — does not stall later steps.
  */
 export function liveRegion(screen) {
-  const all = String(screen ?? "").split("\n");
+  const all = screenLines(screen);
   const found = bottomBlock(all);
   const from = found
     ? Math.max(0, found.start - DIALOG_CONTEXT)
@@ -226,7 +257,7 @@ function bottomBlock(all) {
  * echoed prompts, earlier answers, stale selectors — is never part of a decision.
  */
 export function currentBlock(screen) {
-  const all = String(screen ?? "").split("\n");
+  const all = screenLines(screen);
   const found = bottomBlock(all);
   return found ? all.slice(found.start, found.end + 1) : [];
 }
@@ -237,7 +268,7 @@ export function currentBlock(screen) {
  * block does not change it; the block reappearing after new output does.
  */
 export function blockSignature(screen) {
-  const all = String(screen ?? "").split("\n");
+  const all = screenLines(screen);
   const found = bottomBlock(all);
   if (!found) return null;
   return all
@@ -273,19 +304,85 @@ function labelIndex(block, label) {
   return -1;
 }
 
-const showsAll = (block, b) =>
-  [...b.labels, ...FLOW_CONTROLS].every((label) => labelIndex(block, label) !== -1);
+/**
+ * Every label of the boundary shows in the block, plus the flow controls — which,
+ * in a tabbed selector with a `flow` tab, sit in that other tab.
+ */
+const showsAll = (block, b, screen = "") => {
+  const flowElsewhere = b.labels.length > 0 && tabbedQuestion(screen)?.flowTab === true;
+  return [...b.labels, ...(flowElsewhere ? [] : FLOW_CONTROLS)].every(
+    (label) => labelIndex(block, label) !== -1,
+  );
+};
 
 /** The boundary of the current step whose labels ALL show in the current block. */
 export function matchBoundary(step, screen) {
   const block = currentBlock(screen);
-  const hits = step.boundaries.filter((b) => showsAll(block, b));
+  const hits = step.boundaries.filter((b) => showsAll(block, b, screen));
   if (hits.length !== 1) return null;
   // With no own labels (doctor, recall, close) the flow controls are all there is:
   // only unambiguous when the step has exactly that one boundary.
   const [hit] = hits;
   if (hit.labels.length === 0 && step.boundaries.length > 1) return null;
   return hit;
+}
+
+/**
+ * The agent's last reply, as the lines after the last echoed prompt (an input
+ * line with text) and before the live input line at the bottom.
+ */
+export function lastReply(screen) {
+  const all = String(screen ?? "").split("\n");
+  // The live input box sits at the bottom, with a status line and key hints under it.
+  let end = all.length;
+  const input = all.findLastIndex((l) => INPUT.test(l));
+  if (input >= 0 && all.length - input <= 6) end = input;
+  while (end > 0 && (isTail(all[end - 1]) || !all[end - 1].trim())) end--;
+  let start = end - 1;
+  while (start >= 0 && !(INPUT.test(all[start]) && all[start].replace(/^[\s│┃]*[>›❯]/, "").trim()))
+    start--;
+  return all.slice(start + 1, end);
+}
+
+const BULLET = /^\s*[-•*]\s+\S/;
+const HEADING = /^\s*[A-ZÁÉÍÓÚÑ][\wáéíóúñ]*(?:\s+[\wáéíóúñ]+){0,3}\s*$/;
+/** Prose allowed after the offer's last bullet (a note such as «presento las opciones en Markdown»). */
+const TRAILING_PROSE = 4;
+
+/**
+ * The labeled-markdown offer that ENDS the agent's last reply: its bullets, with
+ * section headings and blank lines between them, followed by at most a short
+ * note. Numbered selectors, and bullets followed by more options, are not it.
+ */
+function markdownOffer(reply) {
+  const last = reply.findLastIndex((l) => BULLET.test(l));
+  if (last < 0) return [];
+  const after = reply.slice(last + 1).filter((l) => l.trim());
+  if (after.length > TRAILING_PROSE || after.some((l) => OPTION.test(l) || BULLET.test(l)))
+    return [];
+  let start = last;
+  for (let i = last - 1; i >= 0; i--) {
+    const l = reply[i];
+    if (!(BULLET.test(l) || !l.trim() || /^\s{3,}\S/.test(l) || HEADING.test(l))) break;
+    start = i;
+  }
+  return reply.slice(start, last + 1).filter((l) => BULLET.test(l));
+}
+
+/**
+ * A boundary offered as labeled markdown at the end of the agent's last reply
+ * (codex: «• Cambiar a SPEC (recomendado) — …» under «Alcance», «• Compactar — …»
+ * under «Control», s280 run 3): every label and flow control as a bullet line.
+ */
+export function markdownBoundary(step, screen) {
+  if (!step) return null;
+  const offer = markdownOffer(lastReply(screen));
+  const hits = step.boundaries.filter(
+    (b) =>
+      b.labels.length > 0 &&
+      [...b.labels, ...FLOW_CONTROLS].every((label) => labelIndex(offer, label) !== -1),
+  );
+  return hits.length === 1 ? hits[0] : null;
 }
 
 /**
@@ -325,20 +422,26 @@ export function classify(pane, step) {
   }
   // A known boundary past the step's stop point: the step is done, and that
   // boundary is left unanswered (quick.commit-authorization keeps the session active).
-  const stop = (step?.stopAt ?? []).find((b) => showsAll(currentBlock(screen), b));
+  const stop = (step?.stopAt ?? []).find((b) => showsAll(currentBlock(screen), b, screen));
   if (stop)
     return { action: "stop", boundary: stop.id, reason: `stop point reached at ${stop.id}` };
   const hit = step ? matchBoundary(step, screen) : null;
   if (state === "blocked") return classifyBlocked(host, screen, explain, hit);
   if (state === "idle" || state === "done") {
-    if (hit === null) return { action: "idle", reason: "no boundary of this step on screen" };
-    return { action: "prompt", boundary: hit.id, label: hit.answer, text: hit.answer };
+    const offered = hit ?? markdownBoundary(step, screen);
+    if (offered === null) return { action: "idle", reason: "no boundary of this step on screen" };
+    return { action: "prompt", boundary: offered.id, label: offered.answer, text: offered.answer };
   }
   return { action: "notify", reason: `state '${state}' cannot be classified` };
 }
 
+/** The notice when a tabbed selector shows its flow tab: never the run's to answer. */
+export const FLOW_TAB_NOTICE =
+  "the question's flow tab (Compactar/Cerrar) is yours: choose there and submit";
+
 function classifyBlocked(host, screen, explain, hit) {
   if (hit === null) {
+    if (tabbedQuestion(screen)?.flowTab) return { action: "notify", reason: FLOW_TAB_NOTICE };
     return { action: "notify", reason: "blocked on something that is not a boundary of this step" };
   }
   if (!isQuestion(host, screen, explain)) {

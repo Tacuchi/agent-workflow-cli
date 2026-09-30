@@ -104,7 +104,8 @@ describe("host-run scenario", () => {
     if (!doctor) throw new Error("no commands step");
     const text = (h: string) => stepForHost(doctor, h).invocation.text;
     expect(text("claude-code")).toBe("/w:doctor");
-    expect(text("codex")).toBe("$w-doctor");
+    // codex: text after a bare mention, so Enter submits instead of picking the completion.
+    expect(text("codex")).toBe("$w-doctor (no arguments)");
     expect(text("opencode")).toBe("/w/doctor");
     expect(text("kimi")).toBe("/skill:w-doctor");
     expect(text("gemini")).toContain("w-doctor");

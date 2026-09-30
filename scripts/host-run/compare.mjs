@@ -24,6 +24,7 @@ const RANK = {
   works: 0,
   "degraded-declared": 1,
   "catalog-outdated": 1,
+  "degraded-undeclared": 2,
   "not-reached": 2,
   broken: 3,
 };
@@ -97,6 +98,7 @@ function againstCatalog(cell, current) {
     expected: current,
     observed: cell.observed,
     declaredByDoctor: cell.declared_by_doctor === true,
+    declaredSource: cell.declared_source ?? null,
   });
   return { state, drift: current === cell.expected ? null : `${cell.expected} → ${current}` };
 }
@@ -105,10 +107,14 @@ function cellFailures(where, cell, state) {
   const failures = [];
   if (cell.evidence_broken)
     failures.push(`${where}: evidence broken — ${cell.evidence_broken} (run ${cell.run_id})`);
-  if (["broken", "not-reached", "catalog-outdated"].includes(state)) {
+  if (["broken", "not-reached", "catalog-outdated", "degraded-undeclared"].includes(state)) {
     failures.push(`${where}: ${state} (run ${cell.run_id})`);
   }
-  if (state === "degraded-declared" && cell.declared_by_doctor !== true) {
+  // AC-05: the degradation must be the host's own relay of /w:doctor.
+  if (
+    state === "degraded-declared" &&
+    (cell.declared_by_doctor !== true || (cell.declared_source ?? "relay") !== "relay")
+  ) {
     failures.push(`${where}: degradation not declared by /w:doctor (run ${cell.run_id})`);
   }
   if (

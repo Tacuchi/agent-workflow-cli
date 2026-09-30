@@ -26,16 +26,27 @@ const denials = DENIAL_CATEGORIES.flatMap((c) => [
   ...(c.anywhere ? [{ category: c.id, rule: `Bash(*${c.anywhere}*)` }] : []),
 ]);
 
-/** Pre-approved Workline calls that reach outside the workspace or approve effects. */
-const cliAsk = ["aw", "agent-workflow"].flatMap((cli) => [
-  `Bash(${cli} *--workspace*)`,
-  `Bash(${cli} *--root*)`,
-  `Bash(${cli} *--approval*)`,
-  `Bash(${cli} doctor apply:*)`,
-]);
+/**
+ * Pre-approved Workline calls that reach outside the workspace or approve
+ * effects. `--root` itself is not asked: the wrappers pin it on every
+ * context-plan and flow start to the bundle installed in this disposable home
+ * (run 3 asked on each). A `--root` naming the real HOME, `~`, `$HOME`, a parent
+ * directory or another host's root still asks.
+ */
+const cliAsk = (realHome, siblingRoots = []) =>
+  ["aw", "agent-workflow"].flatMap((cli) => [
+    `Bash(${cli} *--workspace*)`,
+    `Bash(${cli} *--approval*)`,
+    `Bash(${cli} doctor apply:*)`,
+    ...["~", "$HOME", "..", ...(realHome ? [realHome] : []), ...siblingRoots].flatMap((p) => [
+      `Bash(${cli} *--root ${p}*)`,
+      `Bash(${cli} *--root "${p}*)`,
+      `Bash(${cli} *--root=${p}*)`,
+    ]),
+  ]);
 
-const askFor = (workspace) => [
-  ...cliAsk,
+const askFor = (workspace, realHome, siblingRoots) => [
+  ...cliAsk(realHome, siblingRoots),
   ...STEERING_FILES.map((rel) => `Edit(/${workspace}/${rel})`),
 ];
 
@@ -70,7 +81,8 @@ export default {
   paneArgs: [],
   limitations: [
     "only the scenario's Workline calls are pre-approved; every other command asks you in the pane",
-    "a Workline call with --workspace, --root or --approval, or `doctor apply`, asks you",
+    "a Workline call with --workspace or --approval, `doctor apply`, or a --root naming your real HOME, ~, $HOME, a parent dir or another host's root, asks you; --root at the disposable bundle does not",
+    "a Workline call piped into another program (`aw flow … | python3 …`) asks you: claude matches every command of a pipeline, and the second one is arbitrary code the run cannot pre-approve",
     "editing the workspace's CLAUDE.md/AGENTS.md, Workline marker, .git or host configs asks you",
     "nothing under your real HOME can be read",
     "the other hosts' disposable roots (copied credentials, token files) are denied to it",
@@ -83,7 +95,7 @@ export default {
       value: {
         permissions: {
           allow: allowFor(workspace),
-          ask: askFor(workspace),
+          ask: askFor(workspace, realHome, siblingRoots),
           deny: [...denials.map((d) => d.rule), ...readDenials({ realHome, root, siblingRoots })],
         },
       },
@@ -120,7 +132,7 @@ export default {
   allowedIn: (files) => permissionsOf(files).allow ?? [],
   effective: ({ workspace, realHome, root, siblingRoots }) => ({
     allow: allowFor(workspace),
-    ask: askFor(workspace),
+    ask: askFor(workspace, realHome, siblingRoots),
     deny: [...denials.map((d) => d.rule), ...readDenials({ realHome, root, siblingRoots })],
   }),
 };

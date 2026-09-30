@@ -6,6 +6,8 @@
 // Catalog → cell (plan 085, «Solution»):
 //   native                  works → works · anything else → broken
 //   degraded | unsupported  degraded or failing AND declared by /w:doctor → degraded-declared
+//                           declared only by the CLI's doctor run by the tool (the host
+//                           never relayed it) → degraded-undeclared, which never closes
 //                           not declared → broken · works whole → catalog-outdated
 //   warp, oz                not-covered, with its reason
 // A cell the run did not reach is not-reached, and that never closes. A cell a
@@ -19,6 +21,7 @@ export const MATRIX_SCHEMA = 1;
 export const CELL_STATES = [
   "works",
   "degraded-declared",
+  "degraded-undeclared",
   "broken",
   "not-reached",
   "catalog-outdated",
@@ -45,12 +48,18 @@ export function catalogStates(harnesses, capabilitiesFor) {
   );
 }
 
-export function classifyCell({ expected, observed, declaredByDoctor }) {
+/**
+ * `declaredByDoctor` is true only for a declaration the host relayed from its own
+ * /w:doctor (AC-05). `declaredSource: "cli"` — the CLI's doctor run by the tool in
+ * that home — is supporting evidence only: the cell is degraded-undeclared.
+ */
+export function classifyCell({ expected, observed, declaredByDoctor, declaredSource = null }) {
   if (!OBSERVATIONS.includes(observed)) throw new Error(`unknown observation '${observed}'`);
   if (observed === "not-reached") return "not-reached";
   if (expected === "native") return observed === "works" ? "works" : "broken";
   if (observed === "works") return "catalog-outdated";
-  return declaredByDoctor ? "degraded-declared" : "broken";
+  if (declaredByDoctor) return "degraded-declared";
+  return declaredSource === "cli" ? "degraded-undeclared" : "broken";
 }
 
 /** Relay decorations a host may add in front of a line: list, quote or table marks. */
@@ -96,8 +105,13 @@ const JUDGES = {
     ).length;
     return seen === 4 ? "works" : seen > 0 ? "degraded" : "fails";
   },
+  // The host listed the tools and its server was reached while the pane ran.
   mcp: (e) =>
-    e.toolsListed && e.receipt ? "works" : e.toolsListed || e.receipt ? "degraded" : "fails",
+    e.toolsListed && e.serverReached
+      ? "works"
+      : e.toolsListed || e.serverReached
+        ? "degraded"
+        : "fails",
   "host-memory": (e) => (e.ran ? (e.destination ? "works" : "degraded") : "fails"),
   compaction: (e) =>
     e.preCompact && e.postCompact ? "works" : e.checkpoint ? "degraded" : "fails",
@@ -118,7 +132,12 @@ function cellRecord({ expected, seen, run, runId, date, cli }) {
   return {
     expected,
     observed,
-    state: classifyCell({ expected, observed, declaredByDoctor: declared }),
+    state: classifyCell({
+      expected,
+      observed,
+      declaredByDoctor: declared,
+      declaredSource: seen?.declared_source ?? null,
+    }),
     declared_by_doctor: declared,
     mode: seen ? (seen.mode ?? "interactive") : null,
     run_id: runId,
@@ -128,6 +147,8 @@ function cellRecord({ expected, seen, run, runId, date, cli }) {
     cli_revision: cli.revision,
     model: run?.model ?? null,
     effort: run?.effort ?? null,
+    ...(seen?.declared_source ? { declared_source: seen.declared_source } : {}),
+    ...(seen?.not_reached_reason ? { not_reached_reason: seen.not_reached_reason } : {}),
     ...(seen?.extract ? { extract: seen.extract } : {}),
     ...(seen?.extract_refused ? { extract_refused: seen.extract_refused } : {}),
     ...(run?.evidence_broken ? { evidence_broken: run.evidence_broken } : {}),
@@ -144,7 +165,7 @@ function coveredHost(host, expectedCells, run, launched, { steps, runId, date, c
       // A stopped run's unreached cell is not-run, so it never overrides a real
       // observation of another run; it keeps why.
       if (stopped) return [surface, { expected, state: "not-run", not_reached_reason: stopped }];
-      cell.not_reached_reason = "not observed before the step ended";
+      cell.not_reached_reason ??= "not observed before the step ended";
       return [surface, cell];
     }),
   );
@@ -277,6 +298,7 @@ function validateCell(where, cell, covered, partial) {
       expected: cell.expected,
       observed: cell.observed,
       declaredByDoctor: cell.declared_by_doctor,
+      declaredSource: cell.declared_source ?? null,
     }) !== cell.state
   ) {
     problems.push(`${where}: state '${cell.state}' does not follow from expected/observed`);

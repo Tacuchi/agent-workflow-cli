@@ -104,10 +104,59 @@ export function launcherSource(launchLine) {
 export const MAX_TYPED_LAUNCH = 256;
 
 /** A shim logs which binary ran and why, then runs the checkout's CLI. */
-export function shimSource({ node, cliMain }) {
+export function shimSource({ node, cliMain, guard = null }) {
   return `#!/bin/sh
 printf '%s %s\\n' "$0" "$*" >> "$HOME/.host-run/shim-calls.log"
-exec ${shellQuote(node)} ${shellQuote(cliMain)} "$@"
+exec ${shellQuote(node)} ${shellQuote(guard ?? cliMain)} "$@"
+`;
+}
+
+/** The flags whose value is a path the CLI reads or writes: it must lie inside the root. */
+export const PATH_FLAGS = ["--root", "--workspace"];
+
+/**
+ * The root's own entry point for `aw`/`agent-workflow`: it refuses, with exit 2
+ * and one line, any --root/--workspace (also `--flag=value`) whose realpath is
+ * not inside the disposable root — whatever quoting, `//`, `..` or symlink the
+ * command used — and then runs the root's copy of the CLI in the same process.
+ * The permission rules of each host are defense in depth; this is the rule.
+ */
+export function guardSource({ root, cliMain }) {
+  return `// host-run: path guard for the root's aw (generated; not the product's code)
+import { realpathSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+const ROOT = realpathSync(${JSON.stringify(root)});
+const CLI = ${JSON.stringify(cliMain)};
+const FLAGS = ${JSON.stringify(PATH_FLAGS)};
+const args = process.argv.slice(2);
+/** The realpath of a path, or of its deepest existing ancestor plus the rest. */
+function real(p) {
+  let cur = resolve(p);
+  const rest = [];
+  for (;;) {
+    try {
+      return join(realpathSync(cur), ...rest.reverse());
+    } catch {
+      const up = dirname(cur);
+      if (up === cur) return resolve(p);
+      rest.push(basename(cur));
+      cur = up;
+    }
+  }
+}
+for (let i = 0; i < args.length; i++) {
+  const [flag, inline] = args[i].split(/=(.*)/s);
+  if (!FLAGS.includes(flag)) continue;
+  const value = inline ?? args[i + 1];
+  const where = value === undefined || value === "" ? null : real(value);
+  if (where === null || !(where === ROOT || where.startsWith(ROOT + "/"))) {
+    process.stderr.write("aw (host-run): " + flag + " outside the disposable root refused\\n");
+    process.exit(2);
+  }
+}
+process.argv = [process.argv[0], CLI, ...args];
+await import(pathToFileURL(CLI).href);
 `;
 }
 
@@ -166,7 +215,7 @@ export function planIsolation({
       }
     : null;
   const launcher = secret ? secret.wrapper : hostBin;
-  const runModel = model;
+  const runModel = paneModel(host, model, providerModel);
   const paneArgs = [...profile.paneArgs, ...host.modelArgs(runModel, effort)];
   // A host that signs in inside its pane (agy): no probe — without a login, a
   // probe would open the OAuth flow.
@@ -179,10 +228,13 @@ export function planIsolation({
     env,
     cliMain,
     node: rootNode,
-    shims: ["aw", "agent-workflow"].map((name) => ({
-      path: join(root, "bin", name),
-      source: shimSource({ node: rootNode, cliMain }),
-    })),
+    shims: [
+      ...["aw", "agent-workflow"].map((name) => ({
+        path: join(root, "bin", name),
+        source: shimSource({ node: rootNode, cliMain, guard: join(root, "bin", "aw-guard.mjs") }),
+      })),
+      { path: join(root, "bin", "aw-guard.mjs"), source: guardSource({ root, cliMain }) },
+    ],
     dsnFile: {
       path: join(home, ".workflow", "dev", "dsn.env"),
       source: `${PROBE_MCP.dsnVar}=${PROBE_DSN}\n`,
@@ -261,7 +313,7 @@ export function planIsolation({
               kind: "auth-probe",
               host: hostId,
               bin: launcher,
-              args: probeArgs(host, { providerModel }),
+              args: probeArgs(host, { providerModel, model: runModel }),
               cwd: workspace,
               timeoutMs: PROBE_TIMEOUT_MS,
               ...(secret ? { secret: { host: hostId, var: secret.var, path: secret.path } } : {}),
@@ -270,10 +322,27 @@ export function planIsolation({
     ],
     secret,
     providerModel,
+    // Files the host needs in the workspace before its first start (crush's init flag).
+    workspaceSeeds: (host.workspaceSeeds ?? []).map((f) => ({
+      path: join(workspace, f.rel),
+      text: f.text,
+    })),
     model: runModel ?? null,
     signInInPane: probeSkipped,
     pane: paneOf(hostId, root, workspace, paneCommand(env, launcher, paneArgs)),
   };
+}
+
+/**
+ * The model the pane (and the probe) runs: the person's --model, a provider
+ * key's model where the host takes it on its command line (opencode), or the
+ * host's named default (opencode's OpenAI model).
+ */
+function paneModel(host, model, providerModel) {
+  if (model) return model;
+  if (providerModel && host.probeModelFlag)
+    return `${providerModel.provider}/${providerModel.model}`;
+  return host.defaultModel;
 }
 
 /**
@@ -294,7 +363,11 @@ function paneOf(hostId, root, workspace, launchLine) {
  * The auth probe's argv: the host's own, plus a provider key's `provider/model`
  * (crush, before the prompt), so the probe runs what the pane will.
  */
-function probeArgs(host, { providerModel }) {
+function probeArgs(host, { providerModel, model }) {
+  if (host.probeModelFlag && model) {
+    const [sub, ...rest] = host.authProbe;
+    return [sub, host.probeModelFlag, model, ...rest];
+  }
   if (!providerModel) return host.authProbe;
   const [sub, ...rest] = host.authProbe;
   return [sub, "-m", `${providerModel.provider}/${providerModel.model}`, ...rest];
@@ -412,6 +485,10 @@ export async function prepareHost(plan, deps) {
     0o600,
   );
   for (const shim of plan.shims) fs.writeFile(shim.path, shim.source, 0o755);
+  for (const seed of plan.workspaceSeeds ?? []) {
+    fs.mkdir(dirname(seed.path));
+    fs.writeFile(seed.path, seed.text, 0o600);
+  }
   // The pane's launcher: only its path is typed into the pane.
   fs.writeFile(plan.pane.launcher.path, plan.pane.launcher.source, 0o700);
   fs.mkdir(join(plan.home, ".workflow", "dev"));

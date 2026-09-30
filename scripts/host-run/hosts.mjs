@@ -93,6 +93,11 @@ export const HOSTS = {
     mcpHost: "codex",
     herdrKind: "codex",
     command: (cmd) => `$w-${cmd}`,
+    // A bare `$w-doctor` leaves codex's skill completion open and Enter picks the
+    // item instead of submitting: in run 3 `$w-doctor` stayed in the input and the
+    // next step's text was appended to it («$w-doctor $w-quick …», «$w-recall
+    // /compact»). With text after the mention, the prompt is submitted.
+    bare: (cmd) => `$w-${cmd} (no arguments)`,
     compact: "/compact",
     credentials: [".codex/auth.json"],
     keychain: false,
@@ -145,7 +150,27 @@ export const HOSTS = {
     compact: "/compact",
     credentials: [".local/share/opencode/auth.json"],
     keychain: false,
-    authProbe: ["auth", "list"],
+    // One model turn with the model the pane runs: `auth list` only proves a file
+    // exists (run 3 started on a default model with no quota).
+    probeSpendsPrompt: true,
+    authProbe: ["run", "Reply with the single word ok."],
+    probeModelFlag: "-m",
+    // The person uses OpenAI in opencode; its opencode.json (with their model) is
+    // not copied, so the run names one from opencode's own catalog (models.dev,
+    // provider `openai`, `env: ["OPENAI_API_KEY"]`, model `gpt-6-luna`, released
+    // 2026-09-22, tool calls). `--model opencode=<provider/model>` overrides it.
+    defaultModel: "openai/gpt-6-luna",
+    tokenChoices: [
+      {
+        env: "OPENAI_API_KEY",
+        flag: "--opencode-openai-key-file",
+        label: "opencode OpenAI API key",
+        provider: "openai",
+        model: "gpt-6-luna",
+        absent:
+          "no OpenAI key: opencode uses your copied sign-in (auth.json) with openai/gpt-6-luna; or give --opencode-openai-key-file / OPENAI_API_KEY",
+      },
+    ],
     modelArgs: (model) => (model ? ["--model", model] : []),
     exposes: { model: true, effort: false },
   },
@@ -163,6 +188,10 @@ export const HOSTS = {
     credentials: [".local/share/crush/crush.json"],
     keychain: false,
     authProbe: ["run", "Reply with the single word ok."],
+    // crush 0.96.1 (internal/config/init.go): a project with files and no context
+    // file asks «Would you like to initialize now?» unless `<data dir>/init`
+    // exists; the project data dir is `<workspace>/.crush`.
+    workspaceSeeds: [{ rel: ".crush/init", text: '{"initialized":true}\n' }],
     // crush 0.96.1 source (internal/cmd/root.go): `useClientServer()` is true
     // only when CRUSH_CLIENT_SERVER parses true; otherwise the app runs
     // in-process and no detached `crush server` (startDetachedServer, Setsid)

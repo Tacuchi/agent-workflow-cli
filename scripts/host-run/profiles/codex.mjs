@@ -43,7 +43,10 @@ function rulesWith(files, keep) {
 
 const TOP_LEVEL = 'approval_policy = "on-request"\ndefault_permissions = "hostrun"';
 
-const profileTable = (realHome, siblingRoots = []) =>
+/** What of `<home>/.workflow` a sandboxed codex command may write: the registry, not logs/. */
+export const CODEX_HOME_WRITES = ["dev", "lib", "agent-workflow", "skills.toml", "user-config.md"];
+
+const profileTable = (realHome, siblingRoots = [], home = null) =>
   [
     "[permissions.hostrun]",
     'description = "host-run: the workspace writable, the real HOME and /tmp denied"',
@@ -60,6 +63,15 @@ const profileTable = (realHome, siblingRoots = []) =>
     // The other hosts' disposable roots: their copied credentials and token files.
     ...siblingRoots.map((sib) => `${JSON.stringify(sib)} = "deny"`),
     '":slash_tmp" = "deny"',
+    // The disposable home's Workline state outside the workspace: `aw` asked to
+    // escalate for it in run 3. Only its registry paths are granted
+    // (src/application/paths-service.ts: dev/, lib/, agent-workflow/,
+    // skills.toml, user-config.md) — never logs/, which a sandboxed command
+    // could otherwise forge: the hook and MCP evidence is read there, and the
+    // CLI's logging is best-effort, so an unwritable log never fails a command.
+    ...(home
+      ? CODEX_HOME_WRITES.map((rel) => `${JSON.stringify(`${home}/.workflow/${rel}`)} = "write"`)
+      : []),
   ].join("\n");
 
 export default {
@@ -74,18 +86,23 @@ export default {
   paneArgs: ["--no-daemon"],
   limitations: [
     "runs with --no-daemon: no shared background server is installed or started in the disposable home",
+    "a sandboxed command may write the disposable home's Workline registry (.workflow/dev, lib, agent-workflow, skills.toml, user-config.md), never .workflow/logs, where the hook and MCP evidence is read",
     "reads and writes of your real HOME are denied through a codex permission profile (default_permissions = hostrun); its config shape loads in codex 0.157.1 (`codex features list`, config-only) but the enforcement is unverified against a live codex run — until then, treat codex as able to read any file your user can",
     "prefix rules cannot match --force anywhere; only its fallback prefixes are denied",
     "the other hosts' disposable roots (copied credentials, token files) are denied to it",
   ],
-  files: ({ realHome, siblingRoots, workspace } = {}) => [
+  files: ({ realHome, siblingRoots, workspace, home } = {}) => [
     {
       path: ".codex/rules/default.rules",
       kind: "text",
       value: `# host-run profile (spec 062 AC-04)\n${denials.map((d) => d.rule).join("\n")}\n`,
     },
     { path: ".codex/config.toml", kind: "toml-top", value: TOP_LEVEL },
-    { path: ".codex/config.toml", kind: "toml-table", value: profileTable(realHome, siblingRoots) },
+    {
+      path: ".codex/config.toml",
+      kind: "toml-table",
+      value: profileTable(realHome, siblingRoots, home),
+    },
     // The directory-trust onboarding screen is skipped for a trusted project
     // (codex 0.157.1 strings: tui/src/onboarding/directory_trust.rs, which
     // persists `projects."<dir>".trust_level`).
@@ -103,8 +120,8 @@ export default {
   // Anything that is not forbidden or prompt runs without asking: a shell pre-approval.
   allowedIn: (files) =>
     rulesWith(files, (d) => d !== "forbidden" && d !== "prompt").map((r) => `bash:${r}`),
-  effective: ({ realHome, siblingRoots = [] } = {}) => ({
-    permissions: `profile hostrun: extends :workspace; network.enabled = false; deny ${realHome ?? "<real HOME>"}, ${siblingRoots.length} sibling root(s) and :slash_tmp`,
+  effective: ({ realHome, siblingRoots = [], home = "<home>" } = {}) => ({
+    permissions: `profile hostrun: extends :workspace; network.enabled = false; deny ${realHome ?? "<real HOME>"}, ${siblingRoots.length} sibling root(s) and :slash_tmp; write ${CODEX_HOME_WRITES.map((r) => `${home}/.workflow/${r}`).join(", ")} (not logs/)`,
     approval: "on-request",
     deny: denials.map((d) => d.rule),
   }),

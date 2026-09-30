@@ -250,6 +250,27 @@ const hostRun = capturedRun(spawn);
 /** The live loop's short reads, with the same isolation. */
 const hostRead = capturedRunSync(spawnSync);
 
+/**
+ * One environment variable feeding two hosts (OPENAI_API_KEY to opencode and
+ * crush, GEMINI_API_KEY): each host still gets it only through its own wrapper,
+ * but the person is told, and pointed at the per-host flags. A host whose flag
+ * file is given never takes the variable.
+ */
+function sharedEnvWarnings() {
+  const byVar = {};
+  for (const id of args.hosts) {
+    const spec = specOf(id);
+    if (!spec || args.tokenFiles[spec.flag] || !(process.env[spec.env] ?? "").trim()) continue;
+    byVar[spec.env] = [...(byVar[spec.env] ?? []), { id, flag: spec.flag }];
+  }
+  return Object.entries(byVar)
+    .filter(([, hosts]) => hosts.length > 1)
+    .map(
+      ([v, hosts]) =>
+        `WARNING: ${v} in this shell feeds ${hosts.map((h) => h.id).join(" and ")}; prefer one file per host: ${hosts.map((h) => h.flag).join(", ")}`,
+    );
+}
+
 /** What crush runs against, disclosed wherever crush is. */
 function crushProvider() {
   const spec = specOf("crush");
@@ -331,6 +352,7 @@ const siblingsOf = (id, rootOf) => args.hosts.filter((h) => h !== id).map(rootOf
 /** What `effective()` needs to show a profile as it would be written. */
 const effectiveCtx = (id, plan, siblingRoots) => ({
   workspace: plan.workspace,
+  home: plan.home,
   realHome,
   root: plan.root,
   siblingRoots,
@@ -351,6 +373,7 @@ function hostView(id) {
     pane_command: plan.pane.command,
     pane_launcher: plan.pane.launcher.source,
     setup: plan.steps.map(describeStep),
+    workspace_seeds: plan.workspaceSeeds,
     credentials: HOSTS[id].credentials,
     model: args.model[id] ?? null,
     effort: args.effort[id] ?? null,
@@ -435,13 +458,15 @@ function showHost(out, id) {
   out(`  home: ${plan.home}`);
   out(`  workspace: ${plan.workspace} (git repo, no remote)`);
   out(
-    `  shims first on PATH: command -v aw → ${join(root, "bin", "aw")}, command -v agent-workflow → ${join(root, "bin", "agent-workflow")} (both exec ${plan.node} ${plan.cliMain}, the root's own copy of the checkout)`,
+    `  shims first on PATH: command -v aw → ${join(root, "bin", "aw")}, command -v agent-workflow → ${join(root, "bin", "agent-workflow")} (both exec ${plan.node} ${plan.cliMain}, the root's own copy of the checkout, through ${join(root, "bin", "aw-guard.mjs")}, which refuses any --root/--workspace whose realpath is outside the root)`,
   );
   out(
     `  without the shims that PATH would resolve: aw → ${commandV("aw", without) ?? "(none)"}, agent-workflow → ${commandV("agent-workflow", without) ?? "(none)"}`,
   );
   out("  setup (env -i, the same clean env as the pane):");
   for (const s of plan.steps) out(`    - ${describeStep(s)}`);
+  for (const seed of plan.workspaceSeeds ?? [])
+    out(`    - seed the workspace: ${seed.path} (${seed.text.trim()})`);
   out(credentialLine(id));
   for (const line of tokenLines(id)) out(line);
   out(
@@ -469,6 +494,7 @@ function show(out = console.log) {
   );
   const uncovered = Object.entries(NOT_COVERED).map(([h, r]) => `${h} (${r})`);
   out(`Hosts: ${args.hosts.join(", ")}; not covered: ${uncovered.join("; ")}`);
+  for (const w of sharedEnvWarnings()) out(w);
   showScenario(out);
   out("\n== Per host ==");
   for (const id of args.hosts) showHost(out, id);
@@ -542,6 +568,7 @@ async function runAuthCheck(authCheck) {
         ? [agyProvider(), `WARNING: ${HOSTS.gemini.keychainNotice}`]
         : []),
       ...(args.hosts.includes("crush") ? [crushProvider()] : []),
+      ...sharedEnvWarnings(),
     ],
     beforePrepare: makeRoots,
     inPane: args.hosts.filter((id) => HOSTS[id].signInInPane),
@@ -692,6 +719,16 @@ function liveContext(herdr, transcriptsDir, live, secretValues = []) {
           ? readFileSync(join(h.workspace, ".kimi-code", "local.toml"), "utf8")
           : null,
       }),
+    // The CLI's own doctor in that home: the declarations when the host folds
+    // its relay (claude). Read once per host, at the end.
+    cliDoctorText: (h) => {
+      h.cliDoctor ??=
+        hostRead(h.nodeBin, [h.cliMain, "doctor", "--host", h.id, "--format", "human"], {
+          env: h.env,
+          cwd: h.workspace,
+        }).stdout ?? "";
+      return h.cliDoctor;
+    },
     readHostMemory: (h) => {
       const argv = [h.cliMain, "host-memory", "--json", "--host", HOSTS[h.id].installTarget];
       const r = hostRead(h.nodeBin, argv, { env: h.env, cwd: h.workspace });

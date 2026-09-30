@@ -658,7 +658,7 @@ describe("host-run live — nothing is typed without a fresh, clean read", () =>
     });
     const ctx = liveCtx(herdr);
     await tick(ctx, [hostState("claude-code", "p1"), hostState("codex", "p2")]);
-    expect(herdr.sent).toEqual(["p2 prompt $w-doctor"]);
+    expect(herdr.sent).toEqual(["p2 prompt $w-doctor (no arguments)"]);
   });
 });
 
@@ -680,7 +680,7 @@ describe("host-run live — evidence", () => {
     const host = (id: string, screen: string) => ({
       id,
       root: `/tmp/aw-host-run-r9-${id}-X`,
-      evidence: { mcp: { toolsListed: true, receipt: true } },
+      evidence: { mcp: { toolsListed: true, serverReached: true } },
       screensBySurface: { mcp: screen },
     });
     const { matrix, extracts } = evidenceOf(ctx, [
@@ -940,7 +940,7 @@ describe("host-run live — fifth review", () => {
         phase,
       ).toEqual([]);
       expect(h.phase, phase).toBe("held");
-      expect(herdr.sent).toContain("p2 prompt $w-doctor");
+      expect(herdr.sent).toContain("p2 prompt $w-doctor (no arguments)");
     }
   });
 });

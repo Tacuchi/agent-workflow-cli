@@ -91,7 +91,11 @@ describe("host-run tokens", () => {
       "GEMINI_API_KEY",
       "OPENAI_API_KEY",
     ]);
-    for (const id of COVERED_HOSTS.filter((h) => !["claude-code", "crush"].includes(h))) {
+    // opencode takes an OpenAI key the same way (its catalog: env OPENAI_API_KEY).
+    expect(tokenSpecs("opencode").map((t: { env: string }) => t.env)).toEqual(["OPENAI_API_KEY"]);
+    for (const id of COVERED_HOSTS.filter(
+      (h) => !["claude-code", "crush", "opencode"].includes(h),
+    )) {
       expect(tokenSpecs(id), id).toEqual([]);
     }
   });
@@ -279,7 +283,7 @@ describe("host-run tokens", () => {
         {
           id: "claude-code",
           root: "/tmp/r",
-          evidence: { mcp: { toolsListed: true, receipt: true } },
+          evidence: { mcp: { toolsListed: true, serverReached: true } },
           screensBySurface: { mcp: `execute_sql search_objects ${FAKE}` },
         },
       ],
@@ -471,7 +475,7 @@ describe("host-run --auth-check", () => {
   });
 
   it("names which probes spend a prompt, and classifies preparation failures by category", () => {
-    expect(PROMPT_PROBES.sort()).toEqual(["crush", "gemini", "kimi"]);
+    expect(PROMPT_PROBES.sort()).toEqual(["crush", "gemini", "kimi", "opencode"]);
     expect(
       authOutcome([{ step: "aw mcp setup --host claude --global", ok: false, detail: "exit 1" }]),
     ).toBe("NOT authenticated (preparation failed at: aw mcp setup)");

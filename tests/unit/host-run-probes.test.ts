@@ -1047,16 +1047,17 @@ describe("host-run pane launch: a short typed command, the env -i line in a 0700
 
   it("a host started through the launcher gets exactly the planned environment", async () => {
     const dir = temp();
-    const root = join(dir, "aw-host-run-r1-opencode-E");
-    // /usr/bin/env as the host: it prints the environment it was started with.
+    const root = join(dir, "aw-host-run-r1-gemini-E");
+    // /usr/bin/env as the host: it prints the environment it was started with
+    // (agy: no wrapper, no pane args, no default model).
     const p = planIsolation({
-      hostId: "opencode",
+      hostId: "gemini",
       root,
       checkout: "/checkout",
       node: process.execPath,
       hostBin: "/usr/bin/env",
       realHome: join(dir, "no-home"),
-      profile: PROFILES.opencode,
+      profile: PROFILES.gemini,
     });
     await prepareHost({ ...p, steps: [] }, { fs: nodeFs(), run: capturedRun(spawn), secrets: {} });
     const r = spawnSync(p.pane.command, [], {

@@ -23,6 +23,7 @@ export type RunSurface =
 export type RunCellState =
   | "works"
   | "degraded-declared"
+  | "degraded-undeclared"
   | "broken"
   | "not-reached"
   | "catalog-outdated";

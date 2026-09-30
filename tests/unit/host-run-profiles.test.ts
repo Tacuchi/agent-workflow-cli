@@ -399,7 +399,11 @@ describe("host-run isolation", () => {
     const shim = plan("claude-code").shims[0]?.source ?? "";
     expect(shim).toContain("shim-calls.log");
     // The root's own node and its own copy of the checkout CLI, never the real HOME's.
-    expect(shim).toContain(`exec ${root}/bin/node ${root}/cli/dist/cli/main.js`);
+    // Through the root's path guard, which then runs that copy in the same process.
+    expect(shim).toContain(`exec ${root}/bin/node ${root}/bin/aw-guard.mjs`);
+    const guard =
+      plan("claude-code").shims.find((s) => s.path.endsWith("aw-guard.mjs"))?.source ?? "";
+    expect(guard).toContain(`${root}/cli/dist/cli/main.js`);
   });
 
   it("prepareHost writes only through the injected fs, under the root, and stops at the first failure", async () => {

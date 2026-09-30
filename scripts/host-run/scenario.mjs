@@ -43,7 +43,7 @@ export const STEPS = [
     surface: "commands",
     command: "doctor",
     goal: "/w:doctor runs through the host's command packaging and relays the per-host degradations",
-    prompt: (h) => h.command("doctor"),
+    prompt: (h) => h.bare?.("doctor") ?? h.command("doctor"),
     // The repair offer lists one option per finding (ids vary) plus the flow slot.
     boundaries: [boundary("doctor.repair-offer", [], "Cerrar")],
     stop: "the doctor report is relayed and its repair offer answered with Cerrar",
@@ -130,7 +130,7 @@ export const STEPS = [
     surface: "host-memory",
     command: "recall",
     goal: "/w:recall reads host memories and its save offer is declined",
-    prompt: (h) => h.command("recall"),
+    prompt: (h) => h.bare?.("recall") ?? h.command("recall"),
     // recall's save offer is authored by the agent, so its labels are not the CLI's;
     // the only literal ones are the flow controls, and Cerrar declines saving.
     boundaries: [boundary("recall.save-offer", [], "Cerrar")],
@@ -141,7 +141,7 @@ export const STEPS = [
     surface: "compaction",
     command: "compact",
     goal: "compacting with the quick session active, then closing it with Cerrar",
-    prompt: (h) => h.compact ?? h.command("resume"),
+    prompt: (h) => h.compact ?? h.bare?.("resume") ?? h.command("resume"),
     // It compacts, and then closes, the quick session structured-choice leaves active.
     requires: ["structured-choice"],
     boundaries: [boundary("flow.close", [], "Cerrar")],

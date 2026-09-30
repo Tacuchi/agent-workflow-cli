@@ -203,7 +203,9 @@ describe("host-run matrix", () => {
     const all = { SessionStart: true, PreToolUse: true, PreCompact: true, PostCompact: true };
     expect(judgeSurface("hooks", { lines: all })).toBe("works");
     expect(judgeSurface("hooks", { lines: { PreToolUse: true } })).toBe("degraded");
-    expect(judgeSurface("mcp", { toolsListed: true, receipt: true })).toBe("works");
+    expect(judgeSurface("mcp", { toolsListed: true, serverReached: true })).toBe("works");
+    // The setup receipt is not evidence any more: only the listing and the server reached.
+    expect(judgeSurface("mcp", { toolsListed: true, receipt: true })).toBe("degraded");
     expect(judgeSurface("compaction", { checkpoint: true })).toBe("degraded");
     expect(judgeSurface("host-memory", { ran: false })).toBe("fails");
     expect(judgeSurface("host-memory", undefined)).toBe("not-reached");

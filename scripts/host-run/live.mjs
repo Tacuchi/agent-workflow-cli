@@ -14,6 +14,7 @@ import {
   classify,
   confirmsSelection,
   isPermissionScreen,
+  lastReply,
   readyForInput,
 } from "./classifier.mjs";
 import {
@@ -132,10 +133,10 @@ function quickCheckpoint(workspace) {
 }
 
 const HOST_WORD = "claude|codex|oz|warp|gemini|antigravity|opencode|crush|kimi";
-const RECALL_ROW = new RegExp(
-  `\\b(${HOST_WORD})\\b.*\\b(read|absent|empty|disabled|unreadable)\\b`,
-  "i",
-);
+/** Row states as the CLI prints them, and as a host relays them in Spanish. */
+const ROW_STATE =
+  "read|absent|empty|disabled|unreadable|le[ií]d[oa]s?|ausente|vac[ií][oa]|desactivad[oa]|ilegible";
+const RECALL_ROW = new RegExp(`\\b(${HOST_WORD})\\b.*\\b(${ROW_STATE})`, "i");
 
 /**
  * /w:recall relayed its rows: the shims saw `host-memory`, and at least two
@@ -155,8 +156,11 @@ function answeredHow(answered) {
 
 /** Evidence of one surface from the host's home, workspace and the step's screens. */
 const COLLECTORS = {
-  commands: (h, { screen }) => ({
-    ran: /\bVeredicto:/.test(screen) && shimRan(shimLog(h.home), "doctor"),
+  // The wrapper ran the CLI's doctor during this step (the shim saw it); the
+  // relay on screen is recorded but not required — claude folds a tool's output.
+  commands: (h, { screen, shimSince }) => ({
+    ran: shimRan(shimSince, "doctor"),
+    relayed: /\bVeredicto:/.test(screen),
     via: HOSTS[h.id].commandsVia,
   }),
   "structured-choice": (_h, { answered, reachedBoundaries }) => ({
@@ -164,11 +168,17 @@ const COLLECTORS = {
     answered: answeredHow(answered),
     boundaries: reachedBoundaries,
   }),
-  mcp: (h, { screen }) => ({
+  // The host listed the tools, and its own server was reached while the pane ran
+  // (the CLI logs `mcp request` whenever the host launches or calls it). The
+  // setup receipt is not evidence: preparation writes it before any pane opens.
+  mcp: (_h, { screen, logSincePane }) => ({
     toolsListed: screen.includes("execute_sql") && screen.includes("search_objects"),
-    receipt: existsSync(join(h.home, ".workflow", "dev", "mcp-host-receipts.json")),
+    serverReached: / INFO mcp request\b/.test(logSincePane) || /READ_ONLY_POLICY/.test(screen),
   }),
-  hooks: (h) => ({ lines: hookLines(logText(h.home)), binaries: hookBinaries(shimLog(h.home)) }),
+  hooks: (h, { logSincePane }) => ({
+    lines: hookLines(logSincePane),
+    binaries: hookBinaries(shimLog(h.home)),
+  }),
   "host-memory": (h, { screen }) => ({
     ran: recallRelayed(screen, shimLog(h.home)),
     destination: h.destination === true,
@@ -191,8 +201,20 @@ export function collectEvidence(surface, host, seen = {}) {
     answered: seen.answered ?? [],
     reachedBoundaries: seen.reachedBoundaries ?? [],
     compactStartLog: seen.compactStartLog ?? 0,
+    // What the host did after its pane opened / after this step was sent.
+    logSincePane: logText(host.home).slice(host.logStart ?? 0),
+    shimSince: shimLog(host.home).slice(seen.shimStart ?? 0),
   });
 }
+
+/**
+ * A host whose model call failed (quota, key, unknown model) did not exercise
+ * the surface: its step is not reached, never broken (s280 run 3: opencode on a
+ * default model with no quota).
+ */
+const MODEL_FAILURE =
+  /\bquota exceeded\b|exceeded your current quota|\binsufficient_quota\b|\brate[- ]limit(ed| exceeded| reached)\b|\b429 too many requests\b|invalid (api )?key|\b401 unauthorized\b|model [^\n]{0,40} not found|no (large )?model selected/i;
+export const MODEL_FAILED = "the host's model call failed (quota, key or model)";
 
 const hasKindOf = (h) => HOSTS[h.id].herdrKind !== null;
 
@@ -257,10 +279,19 @@ function startAwaiting(ctx, h, screen) {
     since: ctx.now(),
     sawWork: false,
     lastScreen: screen,
+    // The screen before the send, and what the logs held then: work is measured
+    // against them.
+    preSend: screen,
+    stepLogStart: logText(h.home).length,
     screens: [],
     answered: [],
     reached: [],
     answeredSigs: new Set(),
+    // Time spent waiting on the person does not count against the step.
+    pausedMs: 0,
+    waitingSince: null,
+    quietNoticed: false,
+    shimStart: shimLog(h.home).length,
   });
 }
 
@@ -278,6 +309,7 @@ function holdIfSteeredOut(ctx, h) {
   const reasons = ctx.guard ? ctx.guard(h) : [];
   if (reasons.length === 0) return false;
   h.phase = "held";
+  h.heldReason = "the workspace pointed outside the disposable root";
   h.evidenceBroken = reasons.join("; ");
   ctx.notify(h.id, `held: ${h.evidenceBroken}. Nothing more is sent to this host.`);
   return true;
@@ -323,6 +355,13 @@ function finishStep(ctx, h, observedEvidence, lastScreen = "") {
 }
 
 function completeStep(ctx, h, step, pane) {
+  // A model call that failed: nothing about the surface was exercised. Only the
+  // end of the reply the step produced counts — never scrollback (a doctor
+  // report may well mention a «rate limit»).
+  if (MODEL_FAILURE.test(newReply(pane.screen, h.preSend))) {
+    finishStep(ctx, h, { reached: false, reason: MODEL_FAILED }, pane.screen);
+    return;
+  }
   if (step.surface === "commands") h.doctorText = h.screens.join("\n");
   if (step.surface === "host-memory") {
     // The rows come from the CLI in that home, not from the agent's retelling.
@@ -334,6 +373,7 @@ function completeStep(ctx, h, step, pane) {
     answered: h.answered,
     reachedBoundaries: h.reached,
     compactStartLog: h.compactStartLog,
+    shimStart: h.shimStart,
   });
   finishStep(ctx, h, evidence, pane.screen);
 }
@@ -364,37 +404,149 @@ async function answerOnce(ctx, h, step, decision, screen) {
   if (how) h.answered.push(how);
 }
 
+/** The step's own input still sits in the pane's input line: it was never submitted. */
+export function inputNotSubmitted(screen, invocation) {
+  // The invocation's first word (`$w-doctor`, `/w:quick`, `/compact`) is enough.
+  const head =
+    String(invocation ?? "")
+      .trim()
+      .split(/\s+/)[0] ?? "";
+  if (!head) return false;
+  const lines = String(screen ?? "")
+    .split("\n")
+    .filter((l) => l.trim());
+  return lines.slice(-4).some((l) => /^[\s│┃]*[>›❯]\s/.test(l) && l.includes(head));
+}
+
+/** The lines of the agent's last reply that were not on screen before the send. */
+function newReply(screen, preSend) {
+  const before = new Set(String(preSend ?? "").split("\n"));
+  return lastReply(screen)
+    .filter((l) => !before.has(l))
+    .slice(-6)
+    .join("\n");
+}
+
+/** Notices the person gets about a step that did not start. */
+export const NOT_SUBMITTED =
+  "the step's input is still in the pane's input box: press Enter there (the run never retypes it)";
+export const NOT_STARTED = "the step did not start: check the pane";
+
 async function awaitStep(ctx, h) {
   const step = stepForHost(ctx.steps[h.stepIndex], h.id);
   const pane = ctx.herdr.snapshot(h.id, h.pane, hasKindOf(h));
   ctx.transcript(h.id, pane.screen);
   h.screens.push(pane.screen);
-  // A screen-only pane (crush) shows work as a changing screen.
-  if (pane.state === "working" || pane.screen !== h.lastScreen) h.sawWork = true;
-  h.lastScreen = pane.screen;
+  noteRelay(h, pane.screen);
+  noteWork(h, pane, step.invocation.text);
   const quietGrace =
     !hasKindOf(h) && pane.state === "unknown" && ctx.now() - h.since < SCREEN_ONLY_GRACE_MS;
   const decision = quietGrace ? { action: "wait" } : classify(pane, step);
+  pauseWhileWaiting(ctx, h, decision);
   if (decision.action === "notify") ctx.notify(h.id, decision.reason);
   else if (decision.action === "send-keys" || decision.action === "prompt") {
     await answerOnce(ctx, h, step, decision, pane.screen);
   } else if (decision.action === "stop") {
     completeStep(ctx, h, step, pane);
-  } else if (decision.action === "idle" && (h.sawWork || ctx.now() - h.since > QUIET_DONE_MS)) {
-    completeStep(ctx, h, step, pane);
+  } else if (decision.action === "idle") {
+    idleStep(ctx, h, step, pane);
   }
-  if (h.phase === "await" && ctx.now() - h.since > STEP_TIMEOUT_MS) timeOut(ctx, h, step, pane);
+  if (h.phase === "await" && activeMs(ctx, h) > STEP_TIMEOUT_MS) timeOut(ctx, h, step, pane);
 }
 
-/** A timeout keeps what was observed; only a step that never progressed is not reached. */
-function timeOut(ctx, h, step, pane) {
-  const progressed = h.sawWork || h.reached.length > 0;
+/**
+ * Work on the step, for every host: Herdr reads the agent working; the CLI saw a
+ * call (new shim or log lines since the send); or the screen differs from the
+ * pre-send screen beyond the input line and the echo of the step's own input.
+ * A step that finished between two ticks is therefore not «never started».
+ */
+function noteWork(h, pane, invocation) {
+  h.lastScreen = pane.screen;
+  if (h.sawWork) return;
+  if (pane.state === "working") h.sawWork = true;
+  else if (shimLog(h.home).length > (h.shimStart ?? 0)) h.sawWork = true;
+  else if (logText(h.home).length > (h.stepLogStart ?? 0)) h.sawWork = true;
+  else if (h.preSend != null && content(pane.screen, invocation) !== content(h.preSend, invocation))
+    h.sawWork = true;
+}
+
+/** A screen minus its input line, key hints and the echo of the step's own input. */
+function content(screen, invocation) {
+  const head =
+    String(invocation ?? "")
+      .trim()
+      .split(/\s+/)[0] ?? "";
+  return String(screen ?? "")
+    .split("\n")
+    .filter((l) => l.trim())
+    .filter((l) => !/^[\s│┃]*[>›❯](\s|$)/.test(l))
+    .filter((l) => !(head && l.includes(head)))
+    .filter((l) => !/(\? for shortcuts|esc to interrupt|enter to (select|confirm))/i.test(l))
+    .join("\n");
+}
+
+/** Keeps every doctor relay the host shows during the run (its Hosts section). */
+function noteRelay(h, screen) {
+  if (!/· runtime /.test(screen)) return;
+  h.relays ??= [];
+  if (h.relays.at(-1) !== screen) h.relays.push(screen);
+  if (h.relays.length > 20) h.relays.shift();
+}
+
+/** A step waiting on the person (permission, first-run, a tab that is theirs) pauses its clock. */
+function pauseWhileWaiting(ctx, h, decision) {
+  const waiting = decision.action === "notify";
+  h.waitingSince ??= null;
+  if (waiting && h.waitingSince === null) h.waitingSince = ctx.now();
+  if (!waiting && h.waitingSince !== null) {
+    h.pausedMs = (h.pausedMs ?? 0) + ctx.now() - h.waitingSince;
+    h.waitingSince = null;
+  }
+}
+
+/** The step's time on the clock: waiting on the person is not counted. */
+function activeMs(ctx, h) {
+  const waiting = h.waitingSince ?? null;
+  const paused = (h.pausedMs ?? 0) + (waiting === null ? 0 : ctx.now() - waiting);
+  return ctx.now() - h.since - paused;
+}
+
+/**
+ * The pane is idle: the step is done only if work was seen. A step that never
+ * started is never completed from files alone: the person is told once, and the
+ * step stays open (its clock runs) until work shows or it times out.
+ */
+function idleStep(ctx, h, step, pane) {
+  if (h.sawWork) {
+    completeStep(ctx, h, step, pane);
+    return;
+  }
+  if (h.quietNoticed || activeMs(ctx, h) < QUIET_DONE_MS) return;
+  h.quietNoticed = true;
   ctx.notify(
     h.id,
-    `step ${step.surface} timed out${progressed ? "" : ": recorded as not reached"}`,
+    inputNotSubmitted(pane.screen, step.invocation.text) ? NOT_SUBMITTED : NOT_STARTED,
+  );
+}
+
+/**
+ * A timeout keeps what was observed; a step that never started, or that ended
+ * waiting on the person, is not reached — with why.
+ */
+function timeOut(ctx, h, step, pane) {
+  const progressed = h.sawWork || h.reached.length > 0;
+  const reason =
+    (h.waitingSince ?? null) !== null
+      ? "waiting for the person"
+      : inputNotSubmitted(pane.screen, step.invocation.text)
+        ? "the step's input was never submitted"
+        : "the step never started";
+  ctx.notify(
+    h.id,
+    `step ${step.surface} timed out${progressed ? "" : `: not reached (${reason})`}`,
   );
   if (progressed) completeStep(ctx, h, step, pane);
-  else finishStep(ctx, h, { reached: false }, pane.screen);
+  else finishStep(ctx, h, { reached: false, reason }, pane.screen);
 }
 
 /** One pass over every host. */
@@ -451,7 +603,12 @@ export function stopReason(err) {
 export async function runLiveSession({ session, plans, open, ctx, finish, log }) {
   let stop = null;
   try {
-    for (const plan of plans) session.hosts.push(await open(plan));
+    for (const plan of plans) {
+      const host = await open(plan);
+      // What the log already holds (preparation's own calls) is not the host's doing.
+      if (host.home) host.logStart = logText(host.home).length;
+      session.hosts.push(host);
+    }
     await walk(ctx, session.hosts);
   } catch (err) {
     stop = stopReason(err);
@@ -484,18 +641,44 @@ export async function walk(ctx, hosts) {
   }
 }
 
+/**
+ * Where a degradation is declared: the host's own relay of /w:doctor, or — when
+ * the host folds the report (claude shows «Ran 1 shell command») — the same
+ * CLI's doctor in that home. null when neither declares it.
+ */
+function declaration(relay, cliDoctor, surface, label) {
+  if (declaredByDoctor(relay, surface, label)) return "relay";
+  if (declaredByDoctor(cliDoctor, surface, label)) return "cli";
+  return null;
+}
+
+/** Why a surface was not reached: the step's own reason, the hold, or the run's end. */
+function unreachedWhy(h, surface) {
+  const own = h.evidence[surface]?.reason;
+  if (own) return own;
+  if (h.phase === "held") return h.heldReason ?? "the host was held";
+  return "the step was never sent";
+}
+
 function hostRunOf(ctx, h) {
   // Hooks are judged after compaction, when Pre/PostCompact had their chance.
   if (h.evidence.hooks && h.evidence.hooks.reached !== false) {
     h.evidence.hooks = collectEvidence("hooks", h);
   }
   const cells = {};
+  const relay = (h.relays ?? []).join("\n");
+  const cliDoctor = ctx.cliDoctorText?.(h) ?? "";
   for (const step of ctx.steps) {
     const surface = step.surface;
+    const observed = judgeSurface(surface, h.evidence[surface]);
+    const declared = declaration(relay, cliDoctor, surface, ctx.labels[h.id]);
     cells[surface] = {
-      observed: judgeSurface(surface, h.evidence[surface]),
+      observed,
       mode: "interactive",
-      declared_by_doctor: declaredByDoctor(h.doctorText, surface, ctx.labels[h.id]),
+      // AC-05: only the host's own relay declares; the CLI's doctor is support.
+      declared_by_doctor: declared === "relay",
+      ...(declared ? { declared_source: declared } : {}),
+      ...(observed === "not-reached" ? { not_reached_reason: unreachedWhy(h, surface) } : {}),
       extract: `extracts/${h.id}/${surface}.json`,
     };
   }
