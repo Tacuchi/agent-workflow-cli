@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
-## [Unreleased]
+## [28.1.0] — 2026-09-30
 
 **Workline guía y el host decide; primero se compila y se corre, y los revisores llegan al final, sólo si la persona los acepta.**
 
