@@ -79,10 +79,7 @@ export function WorkspaceInitForm({
           return;
         }
         const multiroot = fuentes.length > 1 ? " · visibilidad configurada" : "";
-        const migration =
-          "migrated" in result.project_md
-            ? ` · migradas ${(result.project_md.migrated ?? []).join(", ") || "ninguna"} · pendientes ${(result.project_md.not_migrated ?? []).join(", ") || "ninguna"}`
-            : "";
+        const migration = migrationSummary(result.project_md);
         onDone({
           ok: result.ok,
           summary: result.ok
@@ -231,4 +228,14 @@ function FuenteList({ fuentes }: { fuentes: WorkspaceSource[] }) {
       ))}
     </Box>
   );
+}
+
+function migrationSummary(
+  projectMd: Exclude<Awaited<ReturnType<typeof runWorkspaceInit>>, { error: string }>["project_md"],
+): string {
+  const migration =
+    "migrated" in projectMd
+      ? ` · migradas ${(projectMd.migrated ?? []).join(", ") || "ninguna"} · pendientes ${(projectMd.not_migrated ?? []).join(", ") || "ninguna"}`
+      : "";
+  return migration;
 }

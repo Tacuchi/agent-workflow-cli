@@ -84,28 +84,7 @@ export const sessionCloseCommand: CliCommand = {
       });
     }
     if (location === null || intent?.kind !== "marked") {
-      // A repeated close still owns the proposal's bases, even after finalize
-      // was settled and no new close intention is necessary.
-      if (location !== null) {
-        const read = await readRun(ctx.fs, location);
-        if (!read.ok && read.failure.code !== "FLOW_RUN_ABSENT") {
-          return fail(read.failure.code, read.failure.message);
-        }
-        input.preserveReservations = read.ok
-          ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
-          : [];
-      }
-      return rendered(
-        await runSessionClose(
-          ctx.fs,
-          ctx.paths,
-          input,
-          unitsOf(ctx),
-          ctx.git,
-          ctx.process,
-          unitReleaser(ctx),
-        ),
-      );
+      return closeWithoutBoundary(ctx, input, location);
     }
     return closeAtBoundary(ctx, input, location, intent);
   },
@@ -127,17 +106,8 @@ async function closeAtBoundary(
 ): Promise<CommandResult> {
   const { boundary } = intent;
   const withdraw = (refusal: CommandResult) => withdrawn(ctx, location, intent, refusal);
-  const checkpointPath = join(location.dir, "CHECKPOINT.md");
-  if (
-    !input.force &&
-    !input.abandon &&
-    !(await ctx.fs.exists(join(location.dir, ".closed"))) &&
-    (await ctx.fs.exists(checkpointPath))
-  ) {
-    const checkpoint = await ctx.fs.readText(checkpointPath);
-    if (/_\[AI:[^\n]*\]_/.test(checkpoint)) {
-      return withdraw(fail("CHECKPOINT_INCOMPLETE", "CHECKPOINT contiene placeholders sin llenar"));
-    }
+  if (await hasIncompleteCheckpoint(ctx, input, location)) {
+    return withdraw(fail("CHECKPOINT_INCOMPLETE", "CHECKPOINT contiene placeholders sin llenar"));
   }
   let inventory: Awaited<ReturnType<IsolationReader>>;
   try {
@@ -299,4 +269,53 @@ function rendered(data: SessionCloseResult): CommandResult {
     return fail("SESSION_UNITS_PENDING", data.sessionHeld.reason, data.sessionHeld);
   }
   return { ok: true, data: data.sessionClose, exitCode: 0 };
+}
+
+async function closeWithoutBoundary(
+  ctx: CliContext,
+  input: SessionCloseInput,
+  location: FlowRunLocation | null,
+): Promise<CommandResult> {
+  // A repeated close still owns the proposal's bases, even after finalize
+  // was settled and no new close intention is necessary.
+  if (location !== null) {
+    const read = await readRun(ctx.fs, location);
+    if (!read.ok && read.failure.code !== "FLOW_RUN_ABSENT") {
+      return fail(read.failure.code, read.failure.message);
+    }
+    input.preserveReservations = read.ok
+      ? (read.state.proposal?.artifacts.filter((a) => a.reserved).map((a) => a.path) ?? [])
+      : [];
+  }
+  return rendered(
+    await runSessionClose(
+      ctx.fs,
+      ctx.paths,
+      input,
+      unitsOf(ctx),
+      ctx.git,
+      ctx.process,
+      unitReleaser(ctx),
+    ),
+  );
+}
+
+async function hasIncompleteCheckpoint(
+  ctx: CliContext,
+  input: SessionCloseInput,
+  location: FlowRunLocation,
+): Promise<boolean> {
+  const checkpointPath = join(location.dir, "CHECKPOINT.md");
+  if (
+    !input.force &&
+    !input.abandon &&
+    !(await ctx.fs.exists(join(location.dir, ".closed"))) &&
+    (await ctx.fs.exists(checkpointPath))
+  ) {
+    const checkpoint = await ctx.fs.readText(checkpointPath);
+    if (/_\[AI:[^\n]*\]_/.test(checkpoint)) {
+      return true;
+    }
+  }
+  return false;
 }

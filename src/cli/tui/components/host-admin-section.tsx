@@ -3,7 +3,15 @@
 // as its main section; any tab can reuse it via props.
 
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { selfCleanLegacy } from "../../../application/self/clean-legacy.js";
 import {
@@ -225,22 +233,7 @@ export function HostAdminSection({
         kind === "install" ? `installing on ${row.name}…` : `uninstalling from ${row.name}…`;
       setBusy(startLabel);
       try {
-        for (const step of steps) {
-          setBusy(ACTION_DEF[step].busy(row.name));
-          const result = await ACTION_DEF[step].run(buildArgsFor(step, target), ctx);
-          if (!result.ok) {
-            const failMsg = result.error?.message;
-            onToast?.(
-              failMsg !== undefined
-                ? { tone: "err", title: `Step ${step} failed`, body: failMsg }
-                : { tone: "err", title: `Step ${step} failed` },
-            );
-            // The err toast is mirrored to the log by the notification-center
-            // safety net; nothing more to log here.
-            await refresh();
-            return;
-          }
-        }
+        if (!(await runHostSteps(steps, target, row.name, ctx, setBusy, onToast, refresh))) return;
         const finalAction: SkillAction = kind === "install" ? "install-full" : "uninstall-full";
         onToast?.({ tone: "ok", title: ACTION_DEF[finalAction].ok(row.name) });
         void ctx.logger?.info(formatTuiEvent(`skill ${kind} ${row.name}`, "ok"));
@@ -254,6 +247,10 @@ export function HostAdminSection({
     [ctx, refresh, onToast],
   );
 
+  function installFirstVisibleHost() {
+    if (emptyStateTarget) void runComposite("install", emptyStateTarget);
+  }
+
   // input — list mode (↑↓ navigate · ⏎ open detail · Esc no-op · 'i' empty-state install)
   useInput(
     (input, key) => {
@@ -262,7 +259,7 @@ export function HostAdminSection({
         // The first host STILL LISTED, not a hardcoded claude: with claude
         // turned off in [Config] the shortcut used to find nothing and do
         // nothing, while the bar kept offering it.
-        if (emptyStateTarget) void runComposite("install", emptyStateTarget);
+        installFirstVisibleHost();
         return;
       }
       if (key.upArrow) {
@@ -274,16 +271,7 @@ export function HostAdminSection({
         return;
       }
       if (key.return && focused) {
-        if (!BACKED_INSTALL_TARGETS.has(focused.id)) {
-          onToast?.({
-            tone: "info",
-            title: `Target '${focused.name}'`,
-            body: "pending — backend without path mapping yet",
-          });
-          return;
-        }
-        setActionCursor(0);
-        setMode({ kind: "detail" });
+        openHostDetail(focused, onToast, setActionCursor, setMode);
       }
     },
     { isActive },
@@ -306,14 +294,7 @@ export function HostAdminSection({
         return;
       }
       if (key.return) {
-        const action = detailActions[actionCursor];
-        if (!action) return;
-        if (action.danger) {
-          setMode({ kind: "confirm-uninstall", row: focused });
-        } else {
-          void runComposite("install", focused);
-          setMode({ kind: "list" });
-        }
+        runHostDetailAction(detailActions[actionCursor], focused, setMode, runComposite);
       }
     },
     { isActive },
@@ -407,38 +388,16 @@ export function HostAdminSection({
           ) : null}
         </Box>
 
-        {focused && isBackedFocused && detailVisible ? (
-          <DetailPanel
-            bordered
-            header={{
-              name: focused.name,
-              meta: `${focused.path}\n${focused.pill}${
-                focused.hooks_installed && hooksMetaSuffix ? `\n${hooksMetaSuffix}` : ""
-              }${
-                // A declared degradation is shown whether or not the hooks are
-                // armed: "this host cannot carry X" is true before installing too,
-                // and hiding it until then is how a user finds out by surprise.
-                focused.hook_degradations.length > 0
-                  ? `\ndegraded: ${focused.hook_degradations.join(" · ")}`
-                  : ""
-              }`,
-            }}
-            statePill={{
-              label: isInstalled ? "installed" : "missing",
-              tone: isInstalled ? "ok" : "dim",
-            }}
-            actions={detailActions}
-            focusedAction={actionCursor}
-            banner={
-              mode.kind === "confirm-uninstall" ? (
-                <ConfirmBanner
-                  title={`× Uninstall ${mode.row.name}?`}
-                  body={`Removes SKILL + commands + hooks from ${mode.row.path}. Reversible with Reinstall.`}
-                />
-              ) : null
-            }
-          />
-        ) : null}
+        {renderHostDetail(
+          focused,
+          isBackedFocused,
+          detailVisible,
+          hooksMetaSuffix,
+          isInstalled,
+          detailActions,
+          actionCursor,
+          mode,
+        )}
       </Box>
 
       {busy ? (
@@ -548,4 +507,109 @@ function buildArgsFor(action: SkillAction, target: InstallTarget): ParsedArgs {
     values,
     valuesMulti: new Map(),
   };
+}
+
+async function runHostSteps(
+  steps: SkillAction[],
+  target: InstallTarget,
+  name: string,
+  ctx: CliContext,
+  setBusy: Dispatch<SetStateAction<string | null>>,
+  onToast: HostAdminSectionProps["onToast"],
+  refresh: () => Promise<void>,
+): Promise<boolean> {
+  for (const step of steps) {
+    setBusy(ACTION_DEF[step].busy(name));
+    const result = await ACTION_DEF[step].run(buildArgsFor(step, target), ctx);
+    if (!result.ok) {
+      const failMsg = result.error?.message;
+      onToast?.(
+        failMsg !== undefined
+          ? { tone: "err", title: `Step ${step} failed`, body: failMsg }
+          : { tone: "err", title: `Step ${step} failed` },
+      );
+      // The err toast is mirrored to the log by the notification-center
+      // safety net; nothing more to log here.
+      await refresh();
+      return false;
+    }
+  }
+  return true;
+}
+
+function openHostDetail(
+  focused: TargetRow,
+  onToast: HostAdminSectionProps["onToast"],
+  setActionCursor: Dispatch<SetStateAction<number>>,
+  setMode: Dispatch<SetStateAction<Mode>>,
+) {
+  if (!BACKED_INSTALL_TARGETS.has(focused.id)) {
+    onToast?.({
+      tone: "info",
+      title: `Target '${focused.name}'`,
+      body: "pending — backend without path mapping yet",
+    });
+    return;
+  }
+  setActionCursor(0);
+  setMode({ kind: "detail" });
+}
+
+function runHostDetailAction(
+  action: DetailAction | undefined,
+  focused: TargetRow,
+  setMode: Dispatch<SetStateAction<Mode>>,
+  runComposite: (kind: "install" | "uninstall", row: TargetRow) => Promise<void>,
+) {
+  if (!action) return;
+  if (action.danger) {
+    setMode({ kind: "confirm-uninstall", row: focused });
+  } else {
+    void runComposite("install", focused);
+    setMode({ kind: "list" });
+  }
+}
+
+function renderHostDetail(
+  focused: TargetRow | null,
+  isBackedFocused: boolean,
+  detailVisible: boolean,
+  hooksMetaSuffix: string | undefined,
+  isInstalled: boolean,
+  detailActions: DetailAction[],
+  actionCursor: number,
+  mode: Mode,
+) {
+  return focused && isBackedFocused && detailVisible ? (
+    <DetailPanel
+      bordered
+      header={{
+        name: focused.name,
+        meta: `${focused.path}\n${focused.pill}${
+          focused.hooks_installed && hooksMetaSuffix ? `\n${hooksMetaSuffix}` : ""
+        }${
+          // A declared degradation is shown whether or not the hooks are
+          // armed: "this host cannot carry X" is true before installing too,
+          // and hiding it until then is how a user finds out by surprise.
+          focused.hook_degradations.length > 0
+            ? `\ndegraded: ${focused.hook_degradations.join(" · ")}`
+            : ""
+        }`,
+      }}
+      statePill={{
+        label: isInstalled ? "installed" : "missing",
+        tone: isInstalled ? "ok" : "dim",
+      }}
+      actions={detailActions}
+      focusedAction={actionCursor}
+      banner={
+        mode.kind === "confirm-uninstall" ? (
+          <ConfirmBanner
+            title={`× Uninstall ${mode.row.name}?`}
+            body={`Removes SKILL + commands + hooks from ${mode.row.path}. Reversible with Reinstall.`}
+          />
+        ) : null
+      }
+    />
+  ) : null;
 }

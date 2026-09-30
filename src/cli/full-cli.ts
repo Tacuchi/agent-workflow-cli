@@ -244,46 +244,7 @@ async function resolveWorklineDirectory(
       throw error;
     }
   } catch (err) {
-    if (err instanceof WorkspaceResolutionError) {
-      if (parsed.command === "hook") {
-        writeStderr(err.message);
-        return null;
-      }
-      const next = nextStepOfRoots(err.roots, process.argv.slice(2));
-      emitError(
-        { code: err.code, message: err.message, details: { roots: err.roots } },
-        next ?? undefined,
-      );
-      return null;
-    }
-    if (!(err instanceof WorklineDirectoryError)) {
-      if (parsed.command === "tool") {
-        emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
-        return null;
-      }
-      if (isMcpStdioInvocation(parsed)) {
-        process.stderr.write("aw mcp: no se pudo preparar el servidor stdio\n");
-        return null;
-      }
-      throw err;
-    }
-    if (parsed.command === "tool") {
-      emitToolEarlyFailure(
-        "WORKLINE_NAMESPACE_AMBIGUOUS",
-        "No se pudo resolver el namespace de la tool.",
-      );
-      return null;
-    }
-    if (isMcpStdioInvocation(parsed)) {
-      process.stderr.write("aw mcp: no se pudo resolver el namespace del servidor stdio\n");
-      return null;
-    }
-    emitError({
-      code: err.code,
-      message: err.message,
-      details: { root: err.root, namespaces: err.namespaces },
-    });
-    return null;
+    return directoryFailure(err, parsed);
   }
 }
 
@@ -424,27 +385,7 @@ async function executeCommand(
       await command.execute(parsed, commandCtx),
       workspaceFs,
     );
-    if (
-      result.ok &&
-      WORKSPACE_SEALED_COMMANDS.has(command.name) &&
-      result.data &&
-      typeof result.data === "object"
-    ) {
-      const data = result.data as Record<string, unknown>;
-      const digest =
-        data.approval_digest ??
-        data.digest ??
-        (data.proposal && typeof data.proposal === "object"
-          ? (data.proposal as Record<string, unknown>).digest
-          : undefined);
-      if (typeof digest === "string" && digest.length > 0 && parsed.rest[0] !== "apply") {
-        try {
-          await recordPreparation(ctx.rawFs ?? ctx.fs, ctx.paths, command.name, digest);
-        } catch (error) {
-          writeStderr(`No se pudo guardar el recibo de preparación: ${String(error)}`);
-        }
-      }
-    }
+    await recordCommandPreparation(result, command, parsed, ctx);
     await ctx.logger?.log(
       result.ok ? "info" : "error",
       formatCommandOutcome(command.name, result.exitCode),
@@ -692,3 +633,75 @@ void run(process.argv.slice(2))
     process.stderr.write("agent-workflow: fallo fatal no recuperable\n");
     process.exitCode = 1;
   });
+
+function directoryFailure(err: unknown, parsed: ParsedArgs): null {
+  if (err instanceof WorkspaceResolutionError) {
+    if (parsed.command === "hook") {
+      writeStderr(err.message);
+      return null;
+    }
+    const next = nextStepOfRoots(err.roots, process.argv.slice(2));
+    emitError(
+      { code: err.code, message: err.message, details: { roots: err.roots } },
+      next ?? undefined,
+    );
+    return null;
+  }
+  if (!(err instanceof WorklineDirectoryError)) {
+    if (parsed.command === "tool") {
+      emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
+      return null;
+    }
+    if (isMcpStdioInvocation(parsed)) {
+      process.stderr.write("aw mcp: no se pudo preparar el servidor stdio\n");
+      return null;
+    }
+    throw err;
+  }
+  if (parsed.command === "tool") {
+    emitToolEarlyFailure(
+      "WORKLINE_NAMESPACE_AMBIGUOUS",
+      "No se pudo resolver el namespace de la tool.",
+    );
+    return null;
+  }
+  if (isMcpStdioInvocation(parsed)) {
+    process.stderr.write("aw mcp: no se pudo resolver el namespace del servidor stdio\n");
+    return null;
+  }
+  emitError({
+    code: err.code,
+    message: err.message,
+    details: { root: err.root, namespaces: err.namespaces },
+  });
+  return null;
+}
+
+async function recordCommandPreparation(
+  result: CommandResult,
+  command: CliCommand,
+  parsed: ParsedArgs,
+  ctx: CliContext,
+): Promise<void> {
+  if (
+    result.ok &&
+    WORKSPACE_SEALED_COMMANDS.has(command.name) &&
+    result.data &&
+    typeof result.data === "object"
+  ) {
+    const data = result.data as Record<string, unknown>;
+    const digest =
+      data.approval_digest ??
+      data.digest ??
+      (data.proposal && typeof data.proposal === "object"
+        ? (data.proposal as Record<string, unknown>).digest
+        : undefined);
+    if (typeof digest === "string" && digest.length > 0 && parsed.rest[0] !== "apply") {
+      try {
+        await recordPreparation(ctx.rawFs ?? ctx.fs, ctx.paths, command.name, digest);
+      } catch (error) {
+        writeStderr(`No se pudo guardar el recibo de preparación: ${String(error)}`);
+      }
+    }
+  }
+}

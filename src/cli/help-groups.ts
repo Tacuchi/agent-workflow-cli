@@ -260,16 +260,7 @@ export function usageLine(command: HelpSubject, action?: string): string {
   if (args !== undefined) head.push(args);
   const parts: string[] = [];
   for (const { contract, help } of scopesOf(command, selected ? action : undefined)) {
-    const grouped = new Set((contract.exclusive ?? []).flat());
-    for (const group of contract.exclusive ?? []) {
-      parts.push(`(${group.map((name) => flagToken(name, help[name])).join(" | ")})`);
-    }
-    for (const name of contract.known) {
-      if (grouped.has(name)) continue;
-      const token = flagToken(name, help[name]);
-      const repeat = contract.repeatable?.includes(name) ? "..." : "";
-      parts.push(contract.required?.includes(name) ? `${token}${repeat}` : `[${token}]${repeat}`);
-    }
+    parts.push(...scopeUsage({ contract, help }));
   }
   return [...head, ...parts].join(" ");
 }
@@ -411,4 +402,19 @@ export function globalHelpText(
     "",
   ];
   return `${lines.join("\n")}\n`;
+}
+
+function scopeUsage({ contract, help }: HelpScope): string[] {
+  const parts: string[] = [];
+  const grouped = new Set((contract.exclusive ?? []).flat());
+  for (const group of contract.exclusive ?? []) {
+    parts.push(`(${group.map((name) => flagToken(name, help[name])).join(" | ")})`);
+  }
+  for (const name of contract.known) {
+    if (grouped.has(name)) continue;
+    const token = flagToken(name, help[name]);
+    const repeat = contract.repeatable?.includes(name) ? "..." : "";
+    parts.push(contract.required?.includes(name) ? `${token}${repeat}` : `[${token}]${repeat}`);
+  }
+  return parts;
 }

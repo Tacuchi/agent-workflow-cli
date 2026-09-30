@@ -59,19 +59,15 @@ export function ListRow({
   const bg = focused ? colors.bgHighlight : undefined;
   const bgProp = bg ? { backgroundColor: bg } : {};
 
-  const focusBarColor = focused ? colors.accent : colors.faint;
-  const iconColor = dimmed
-    ? colors.faint
-    : focused
-      ? colors.accent
-      : iconActive
-        ? colors.accent
-        : colors.dim;
-  const titleColor = dimmed ? colors.faint : colors.bright;
-  const subColor = dimmed ? colors.faint : focused ? colors.accentSoft : colors.dim;
-  const metaBaseColor = focused ? colors.accentSoft : undefined;
-  const stateColor = dimmed ? colors.faint : focused ? colors.bright : toneColor(state?.tone);
-  const chevronColor = dimmed ? colors.faint : focused ? colors.accent : colors.dim;
+  const {
+    focusBarColor,
+    iconColor,
+    titleColor,
+    subColor,
+    metaBaseColor,
+    stateColor,
+    chevronColor,
+  } = rowColors(dimmed, focused, iconActive, state);
 
   // Available: the parent's widthHint or fallback (termCols - overhead).
   const fallbackOverhead = 36;
@@ -79,11 +75,7 @@ export function ListRow({
     widthHint !== undefined ? widthHint : Math.max(8, (stdout?.columns ?? 100) - fallbackOverhead);
 
   // RightLen — right-aligned content. Always full (never truncate).
-  const rightLen =
-    meta.reduce((a, m) => a + approxWidth(m.label) + 1, 0) +
-    (state ? approxWidth(state.label) + 1 : 0) +
-    (chevron ? 2 : 0) +
-    INNER_PAD;
+  const rightLen = rowRightWidth(meta, state, chevron);
 
   // Pre-truncate subtitle when it exceeds the available width. Title is kept.
   // fixedLeft includes the focus bar (1) + gap (1) outside the bg, + INNER_PAD
@@ -164,4 +156,49 @@ export function ListRow({
       <Text {...bgProp}>{innerPad}</Text>
     </Box>
   );
+}
+
+function rowColors(
+  dimmed: boolean,
+  focused: boolean,
+  iconActive: boolean,
+  state: StatePill | undefined,
+) {
+  const focusBarColor = focused ? colors.accent : colors.faint;
+  const iconColor = rowIconColor(dimmed, focused, iconActive);
+  const titleColor = dimmed ? colors.faint : colors.bright;
+  const subColor = dimmed ? colors.faint : focused ? colors.accentSoft : colors.dim;
+  const metaBaseColor = focused ? colors.accentSoft : undefined;
+  const stateColor = dimmed ? colors.faint : focused ? colors.bright : toneColor(state?.tone);
+  const chevronColor = dimmed ? colors.faint : focused ? colors.accent : colors.dim;
+
+  return {
+    focusBarColor,
+    iconColor,
+    titleColor,
+    subColor,
+    metaBaseColor,
+    stateColor,
+    chevronColor,
+  };
+}
+
+function rowIconColor(dimmed: boolean, focused: boolean, iconActive: boolean) {
+  const iconColor = dimmed
+    ? colors.faint
+    : focused
+      ? colors.accent
+      : iconActive
+        ? colors.accent
+        : colors.dim;
+  return iconColor;
+}
+
+function rowRightWidth(meta: MetaChip[], state: StatePill | undefined, chevron: boolean): number {
+  const rightLen =
+    meta.reduce((a, m) => a + approxWidth(m.label) + 1, 0) +
+    (state ? approxWidth(state.label) + 1 : 0) +
+    (chevron ? 2 : 0) +
+    INNER_PAD;
+  return rightLen;
 }

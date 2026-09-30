@@ -60,13 +60,7 @@ export const releaseDataCommand: CliCommand = {
     } else if (since !== undefined) {
       input.since = since;
     }
-    const source = flagValue(args, "source");
-    if (source !== undefined) input.sourceAlias = source;
-    if (args.flags.has("--include-graduated")) input.includeGraduated = true;
-    if (args.flags.has("--standalone-sql")) input.includeStandaloneSql = true;
-    if (args.flags.has("--no-open")) input.includeOpen = false;
-    if (args.flags.has("--no-closed")) input.includeClosed = false;
-    if (args.flags.has("--verbose")) input.verbose = true;
+    applyReleaseFlags(args, input);
 
     try {
       const data = await runReleaseData(ctx.fs, ctx.env, ctx.paths, input, ctx.runtime);
@@ -84,3 +78,13 @@ export const releaseDataCommand: CliCommand = {
     }
   },
 };
+
+function applyReleaseFlags(args: ParsedArgs, input: Parameters<typeof runReleaseData>[3]): void {
+  const source = flagValue(args, "source");
+  if (source !== undefined) input.sourceAlias = source;
+  if (args.flags.has("--include-graduated")) input.includeGraduated = true;
+  if (args.flags.has("--standalone-sql")) input.includeStandaloneSql = true;
+  if (args.flags.has("--no-open")) input.includeOpen = false;
+  if (args.flags.has("--no-closed")) input.includeClosed = false;
+  if (args.flags.has("--verbose")) input.verbose = true;
+}

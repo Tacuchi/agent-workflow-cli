@@ -1,5 +1,5 @@
-import { Box, Text, useInput } from "ink";
-import { useEffect, useState } from "react";
+import { Box, type Key, Text, useInput } from "ink";
+import { type Dispatch, type SetStateAction, useEffect, useState } from "react";
 import { humanizeRelativeEs } from "../../../application/humanize-es.js";
 import type { LogEntry } from "../data/logs.js";
 import { useInputLock } from "../input-lock.js";
@@ -72,44 +72,9 @@ export function LogsSection({
     (input, key) => {
       if (!focused) return;
       if (appInput !== null) {
-        if (key.return) {
-          const entry = logs[clampedSel];
-          const app = appInput.trim();
-          if (entry && app) onOpenWith(entry, app);
-          setAppInput(null);
-          return;
-        }
-        if (key.escape) {
-          setAppInput(null);
-          return;
-        }
-        if (key.backspace || key.delete) {
-          setAppInput((v) => (v ?? "").slice(0, -1));
-          return;
-        }
-        if (input && !key.ctrl && !key.meta) {
-          setAppInput((v) => (v ?? "") + input);
-        }
-        return;
+        return handleAppInput(input, key, appInput, logs[clampedSel], onOpenWith, setAppInput);
       }
-      if (key.upArrow) {
-        setSel((s) => Math.max(0, s - 1));
-        return;
-      }
-      if (key.downArrow) {
-        setSel((s) => Math.min(logs.length - 1, s + 1));
-        return;
-      }
-      if (key.return) {
-        const entry = logs[clampedSel];
-        if (entry) onOpen(entry);
-        return;
-      }
-      if (input === "a") {
-        if (logs[clampedSel]) setAppInput(lastApp ?? "");
-        return;
-      }
-      if (key.escape) onExit();
+      handleLogListKey(input, key, logs, clampedSel, lastApp, setSel, setAppInput, onOpen, onExit);
     },
     { isActive: focused },
   );
@@ -179,4 +144,63 @@ function formatSize(bytes: number): string {
 /** Contract a leading `/Users/<u>` or `/home/<u>` home dir to `~` for brevity. */
 function contractHome(path: string): string {
   return path.replace(/^(\/Users|\/home)\/[^/]+/, "~");
+}
+
+function handleAppInput(
+  input: string,
+  key: Key,
+  appInput: string,
+  entry: LogEntry | undefined,
+  onOpenWith: LogsSectionProps["onOpenWith"],
+  setAppInput: Dispatch<SetStateAction<string | null>>,
+) {
+  if (key.return) {
+    const app = appInput.trim();
+    if (entry && app) onOpenWith(entry, app);
+    setAppInput(null);
+    return;
+  }
+  if (key.escape) {
+    setAppInput(null);
+    return;
+  }
+  if (key.backspace || key.delete) {
+    setAppInput((v) => (v ?? "").slice(0, -1));
+    return;
+  }
+  if (input && !key.ctrl && !key.meta) {
+    setAppInput((v) => (v ?? "") + input);
+  }
+  return;
+}
+
+function handleLogListKey(
+  input: string,
+  key: Key,
+  logs: LogEntry[],
+  clampedSel: number,
+  lastApp: string | undefined,
+  setSel: Dispatch<SetStateAction<number>>,
+  setAppInput: Dispatch<SetStateAction<string | null>>,
+  onOpen: LogsSectionProps["onOpen"],
+  onExit: () => void,
+) {
+  if (key.upArrow) {
+    setSel((s) => Math.max(0, s - 1));
+    return;
+  }
+  if (key.downArrow) {
+    setSel((s) => Math.min(logs.length - 1, s + 1));
+    return;
+  }
+  if (key.return) {
+    const entry = logs[clampedSel];
+    if (entry) onOpen(entry);
+    return;
+  }
+  if (input === "a") {
+    if (logs[clampedSel]) setAppInput(lastApp ?? "");
+    return;
+  }
+  if (key.escape) onExit();
 }

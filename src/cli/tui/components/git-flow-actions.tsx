@@ -1,5 +1,5 @@
-import { Box, Text, useInput } from "ink";
-import { type ReactNode, useMemo, useState } from "react";
+import { Box, type Key, Text, useInput } from "ink";
+import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from "react";
 import type {
   GitFlowAction,
   GitFlowResult,
@@ -182,14 +182,7 @@ export function FlowResultView({
   useInput(
     (input, key) => {
       if (detailOpen) {
-        // The detail scrolls its own lines and returns; it never changes source,
-        // so selection and both offsets survive the round trip untouched.
-        if (key.escape) return setDetailOpen(false);
-        if (key.upArrow) return setDetailCursor((c) => Math.max(0, c - 1));
-        if (key.downArrow) {
-          return setDetailCursor((c) => Math.min(Math.max(0, detailRows.length - 1), c + 1));
-        }
-        return;
+        return handleFlowDetailKey(key, detailRows.length, setDetailOpen, setDetailCursor);
       }
       const leave = leavingKey(input, key, confirm, onBack, onRerun);
       if (leave !== undefined) return leave();
@@ -272,10 +265,10 @@ export function FlowResultView({
             <Text color={statusColor(r.status)}>
               {SOURCE_STATUS_LABEL[r.status].padEnd(statusWidth)}{" "}
             </Text>
-            <Text color={colors.mute}>{active && offset > 0 ? "‹" : " "}</Text>
+            <Text color={colors.mute}>{chainEdge(active, offset > 0, "‹")}</Text>
             <Text color={colors.text}>{shown}</Text>
             <Text color={colors.mute}>
-              {active && offset + chainInner < selectedChainCells.length ? "›" : " "}
+              {chainEdge(active, offset + chainInner < selectedChainCells.length, "›")}
             </Text>
           </Box>
         );
@@ -447,4 +440,24 @@ function stepGlyph(status: GitFlowSourceResult["steps"][number]["status"]): stri
   if (status === "ok") return icons.check;
   if (status === "conflict") return icons.pending;
   return icons.bullet;
+}
+
+function handleFlowDetailKey(
+  key: Key,
+  length: number,
+  setDetailOpen: Dispatch<SetStateAction<boolean>>,
+  setDetailCursor: Dispatch<SetStateAction<number>>,
+) {
+  // The detail scrolls its own lines and returns; it never changes source,
+  // so selection and both offsets survive the round trip untouched.
+  if (key.escape) return setDetailOpen(false);
+  if (key.upArrow) return setDetailCursor((c) => Math.max(0, c - 1));
+  if (key.downArrow) {
+    return setDetailCursor((c) => Math.min(Math.max(0, length - 1), c + 1));
+  }
+  return;
+}
+
+function chainEdge(active: boolean, overflow: boolean, glyph: string): string {
+  return active && overflow ? glyph : " ";
 }

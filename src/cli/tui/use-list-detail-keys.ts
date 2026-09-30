@@ -1,4 +1,4 @@
-import { useInput } from "ink";
+import { type Key, useInput } from "ink";
 import { type Dispatch, type SetStateAction, useState } from "react";
 
 /** Which key map is live; "off" while a wizard/busy overlay owns the input. */
@@ -32,44 +32,63 @@ export function useListDetailKeys(opts: ListDetailKeysOptions): {
   setCursor: Dispatch<SetStateAction<number>>;
   actionCursor: number;
 } {
-  const { isActive, phase, listLen, actionsLen } = opts;
+  const { isActive, phase } = opts;
   const [cursor, setCursor] = useState(0);
   const [actionCursor, setActionCursor] = useState(0);
 
   useInput(
     (input, key) => {
       if (!isActive) return;
-      if (phase === "list") {
-        if (input === "a" || input === "A") return opts.onAdd();
-        if (key.upArrow) return void setCursor((c) => Math.max(0, c - 1));
-        if (key.downArrow) {
-          return void setCursor((c) => (listLen === 0 ? 0 : Math.min(listLen - 1, c + 1)));
-        }
-        if (key.return && listLen > 0) {
-          setActionCursor(0);
-          opts.onOpenDetail();
-        }
-        return;
-      }
-      if (phase === "detail") {
-        // Mirrors the tabs' `!current` guard: the cursor is clamped to the
-        // list, so no current row ⇔ empty list.
-        if (listLen === 0) return;
-        if (key.upArrow) return void setActionCursor((c) => Math.max(0, c - 1));
-        if (key.downArrow) {
-          return void setActionCursor((c) => Math.min(Math.max(0, actionsLen - 1), c + 1));
-        }
-        if (key.escape) return opts.onCloseDetail();
-        if (key.return) opts.onRunAction(actionCursor);
-        return;
-      }
-      if (phase === "confirm") {
-        if (input === "y" || input === "Y") opts.onConfirm(true);
-        else if (key.escape || input === "n" || input === "N") opts.onConfirm(false);
-      }
+      if (phase === "list") return handleListKey(input, key, opts, setCursor, setActionCursor);
+      if (phase === "detail") return handleDetailKey(key, opts, actionCursor, setActionCursor);
+      if (phase === "confirm") handleConfirmKey(input, key, opts);
     },
     { isActive },
   );
 
   return { cursor, setCursor, actionCursor };
+}
+
+function handleListKey(
+  input: string,
+  key: Key,
+  opts: ListDetailKeysOptions,
+  setCursor: Dispatch<SetStateAction<number>>,
+  setActionCursor: Dispatch<SetStateAction<number>>,
+) {
+  const { listLen } = opts;
+  if (input === "a" || input === "A") return opts.onAdd();
+  if (key.upArrow) return void setCursor((c) => Math.max(0, c - 1));
+  if (key.downArrow) {
+    return void setCursor((c) => (listLen === 0 ? 0 : Math.min(listLen - 1, c + 1)));
+  }
+  if (key.return && listLen > 0) {
+    setActionCursor(0);
+    opts.onOpenDetail();
+  }
+  return;
+}
+
+function handleDetailKey(
+  key: Key,
+  opts: ListDetailKeysOptions,
+  actionCursor: number,
+  setActionCursor: Dispatch<SetStateAction<number>>,
+) {
+  const { listLen, actionsLen } = opts;
+  // Mirrors the tabs' `!current` guard: the cursor is clamped to the
+  // list, so no current row ⇔ empty list.
+  if (listLen === 0) return;
+  if (key.upArrow) return void setActionCursor((c) => Math.max(0, c - 1));
+  if (key.downArrow) {
+    return void setActionCursor((c) => Math.min(Math.max(0, actionsLen - 1), c + 1));
+  }
+  if (key.escape) return opts.onCloseDetail();
+  if (key.return) opts.onRunAction(actionCursor);
+  return;
+}
+
+function handleConfirmKey(input: string, key: Key, opts: ListDetailKeysOptions) {
+  if (input === "y" || input === "Y") opts.onConfirm(true);
+  else if (key.escape || input === "n" || input === "N") opts.onConfirm(false);
 }

@@ -1,6 +1,14 @@
 import { basename } from "node:path";
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   type GitFlowAction,
   type GitFlowInput,
@@ -475,13 +483,7 @@ function Initialized({
       if (key.downArrow) return setActionCursor((c) => Math.min(detailItems.length - 1, c + 1));
       if (key.escape) return setMode({ kind: "list" });
       if (key.return) {
-        const item = detailItems[actionCursor];
-        if (!item) return;
-        if (item.kind === "remove") {
-          if (currentSource) return setMode({ kind: "confirm-remove", alias: currentSource.alias });
-          return;
-        }
-        void runFlow(item.action);
+        runSourceAction(detailItems[actionCursor], currentSource, setMode, runFlow);
       }
     },
     [actionCursor, detailItems, currentSource, runFlow],
@@ -494,10 +496,7 @@ function Initialized({
       if (mode.kind === "list") return handleListKey(input, key);
       if (mode.kind === "detail") return handleDetailKey(key);
       if (mode.kind === "confirm-remove") {
-        // Cancel returns to the detail panel the confirm was launched from
-        // (same as the MCP/Skills tabs), not all the way to the list.
-        if (key.escape || input === "n" || input === "N") setMode({ kind: "detail" });
-        else if (input === "y" || input === "Y") void doRemove(mode.alias);
+        confirmSourceRemoval(input, key, mode.alias, setMode, doRemove);
         return;
       }
       if (mode.kind === "notice") {
@@ -513,100 +512,8 @@ function Initialized({
     { isActive },
   );
 
-  if (mode.kind === "running") {
-    return (
-      <Box flexDirection="column">
-        <SectionHead label="Git flow" hint={mode.label} />
-        <Box marginLeft={2} marginTop={1} flexDirection="column">
-          <Text color={colors.warn}>{icons.spinner} ejecutando…</Text>
-          {/* Not cancellable: git runs without prompts (GIT_TERMINAL_PROMPT=0)
-              → fails fast on credentials instead of hanging. Ctrl+C aborts the TUI. */}
-          <Text color={colors.faint}>git corriendo · no interrumpible — Ctrl+C aborta el TUI</Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (mode.kind === "confirm-prod") {
-    return (
-      <FlowResultView
-        action="to-prod"
-        result={mode.preview}
-        isActive={isActive}
-        confirm={{
-          onPublish: () => publishProd(mode.input, mode.preview),
-          onCancel: () => setMode({ kind: "detail" }),
-        }}
-      />
-    );
-  }
-
-  if (mode.kind === "result") {
-    return (
-      <FlowResultView
-        action={mode.action}
-        result={mode.result}
-        isActive={isActive}
-        onRerun={() => void runFlow(mode.action)}
-        onBack={() => {
-          setMode({ kind: "list" });
-          void onReload?.();
-        }}
-      />
-    );
-  }
-
-  if (mode.kind === "busy") {
-    return (
-      <Box flexDirection="column">
-        <SectionHead label="Workspace" hint={mode.label} />
-        <Box marginLeft={2} marginTop={1}>
-          <Text color={colors.warn}>
-            {icons.spinner} {mode.label}
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (mode.kind === "confirm-remove") {
-    return (
-      <Box flexDirection="column">
-        <SectionHead label="Quitar del workspace" marginTop={0} />
-        <Box marginLeft={2} marginTop={1} flexDirection="column">
-          <Text color={colors.warn}>¿Quitar {mode.alias} del workspace?</Text>
-          <Box marginLeft={2} marginTop={1} flexDirection="column">
-            <Text color={colors.dim}>
-              Sale del bloque WORKSPACE (Fuentes + ramas), de la visibilidad multi-root,
-            </Text>
-            <Text color={colors.dim}>conserva los artefactos y procesos locales anteriores.</Text>
-            <Text color={colors.faint}>El repo en disco NO se borra.</Text>
-          </Box>
-          <Box marginTop={1}>
-            <Text color={colors.faint}>y quitar · n/esc cancelar</Text>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
-
-  if (mode.kind === "notice") {
-    return (
-      <Box flexDirection="column">
-        <SectionHead label={mode.tone === "ok" ? "Listo" : "Atención"} marginTop={0} />
-        <Box marginLeft={2} marginTop={1} flexDirection="column">
-          {mode.lines.map((l, i) => (
-            <Text key={`${i}-${l}`} color={mode.tone === "ok" ? colors.ok : colors.warn}>
-              {l}
-            </Text>
-          ))}
-          <Box marginTop={1}>
-            <Text color={colors.faint}>⏎/esc volver</Text>
-          </Box>
-        </Box>
-      </Box>
-    );
-  }
+  const modeView = renderProjectMode(mode, isActive, publishProd, runFlow, setMode, onReload);
+  if (modeView !== null) return modeView;
 
   const detailActions: DetailAction[] = detailItems.map((it) => {
     if (it.kind === "remove") {
@@ -631,87 +538,27 @@ function Initialized({
       ) : null}
 
       {/* Degraded-data notice: some subfetch failed (see the daily log for detail). */}
-      {data.warnings.length > 0 ? (
-        <Box marginBottom={1} flexDirection="column">
-          <Text color={colors.warn} wrap="truncate-end">
-            {icons.alertDot} {data.warnings.length} advertencia
-            {data.warnings.length > 1 ? "s" : ""} al cargar el workspace (datos parciales)
-          </Text>
-          {data.warnings.slice(0, 3).map((w, i) => (
-            <Text key={`${i}-${w.slice(0, 16)}`} color={colors.faint} wrap="truncate-end">
-              {"  "}
-              {w}
-            </Text>
-          ))}
-        </Box>
-      ) : null}
+      {renderProjectWarnings(data.warnings)}
 
       {/* Health cards */}
-      <Box flexDirection="row" marginBottom={1}>
-        <StatTile label="git" value={data.git?.branch ?? "—"} sub={statGitSub(data)} accent />
-        <StatTile
-          label="working tree"
-          value={`${dirty} dirty`}
-          sub={`${data.git?.staged ?? 0} staged · ${data.git?.untracked ?? 0} untracked`}
-          tone={dirty > 0 ? "warn" : "dim"}
-        />
-        <StatTile
-          label="sources"
-          value={`${totalSources}`}
-          sub={`${dirtySources} dirty`}
-          tone={totalSources > 0 ? "accent" : "dim"}
-        />
-        <StatTile
-          label="working branches"
-          value={`${workingEntries.length}`}
-          sub={workingEntries.length > 0 ? "declared" : "none"}
-          tone={workingEntries.length > 0 ? "accent" : "dim"}
-        />
-      </Box>
+      {renderProjectHealth(data, dirty, totalSources, dirtySources, workingEntries.length)}
 
       {/* Layout with detail panel: the sources list on the left, actions panel
           on the right when a source is selected. */}
       <Box flexDirection="row">
         <Box flexDirection="column" flexGrow={1} paddingRight={2}>
-          {hasSources ? (
-            <>
-              <SectionHead
-                label="Sources"
-                count={totalSources}
-                marginTop={0}
-                // Overflow indicator without spending a terminal row: the range
-                // of the window currently rendered, only when rows hide above
-                // or below.
-                {...(rangeHint ? { hint: rangeHint } : {})}
-                rightAction={detailOpen ? "esc to close detail" : "↑↓ select · ⏎ actions"}
-              />
-              <Box marginLeft={SOURCES_ROWS_INDENT} flexDirection="column">
-                {targets.slice(win.start, winEnd).map((target, offset) => {
-                  const i = win.start + offset;
-                  // The last target is the "all sources" sentinel, not a source.
-                  const source = target === ALL_SOURCES ? undefined : data.sources[i];
-                  return source ? (
-                    <SourceRow
-                      key={source.alias}
-                      source={source}
-                      active={i === cursor}
-                      widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
-                    />
-                  ) : (
-                    <ListRow
-                      key={ALL_SOURCES}
-                      icon={icons.diamond}
-                      title="all sources"
-                      subtitle={`aplica a las ${totalSources} fuentes`}
-                      chevron
-                      active={i === cursor}
-                      widthHint={rowWidth(stdout?.columns, detailOpen, SOURCES_ROWS_INDENT)}
-                    />
-                  );
-                })}
-              </Box>
-            </>
-          ) : null}
+          {renderSourceList(
+            hasSources,
+            totalSources,
+            rangeHint,
+            detailOpen,
+            targets,
+            win.start,
+            winEnd,
+            data,
+            cursor,
+            stdout?.columns,
+          )}
         </Box>
 
         {/* Detail panel — only once a source was selected with ⏎. */}
@@ -817,4 +664,240 @@ function statGitSub(data: ProjectTabData): string {
   if (data.git.ahead > 0) sync.push(`↑${data.git.ahead}`);
   if (data.git.behind > 0) sync.push(`↓${data.git.behind}`);
   return sync.length > 0 ? `${base} · ${sync.join(" ")}` : base;
+}
+
+function runSourceAction(
+  item: DetailItem | undefined,
+  currentSource: ProjectSource | null,
+  setMode: Dispatch<SetStateAction<Mode>>,
+  runFlow: (action: GitFlowAction) => Promise<void>,
+) {
+  if (!item) return;
+  if (item.kind === "remove") {
+    if (currentSource) return setMode({ kind: "confirm-remove", alias: currentSource.alias });
+    return;
+  }
+  void runFlow(item.action);
+}
+
+function confirmSourceRemoval(
+  input: string,
+  key: { escape?: boolean },
+  alias: string,
+  setMode: Dispatch<SetStateAction<Mode>>,
+  doRemove: (alias: string) => Promise<void>,
+) {
+  // Cancel returns to the detail panel the confirm was launched from
+  // (same as the MCP/Skills tabs), not all the way to the list.
+  if (key.escape || input === "n" || input === "N") setMode({ kind: "detail" });
+  else if (input === "y" || input === "Y") void doRemove(alias);
+  return;
+}
+
+function renderProjectMode(
+  mode: Mode,
+  isActive: boolean,
+  publishProd: (input: GitFlowInput, preview: GitFlowResult) => void,
+  runFlow: (action: GitFlowAction) => Promise<void>,
+  setMode: Dispatch<SetStateAction<Mode>>,
+  onReload: InitializedProps["onReload"],
+) {
+  if (mode.kind === "running") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label="Git flow" hint={mode.label} />
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
+          <Text color={colors.warn}>{icons.spinner} ejecutando…</Text>
+          {/* Not cancellable: git runs without prompts (GIT_TERMINAL_PROMPT=0)
+              → fails fast on credentials instead of hanging. Ctrl+C aborts the TUI. */}
+          <Text color={colors.faint}>git corriendo · no interrumpible — Ctrl+C aborta el TUI</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode.kind === "confirm-prod") {
+    return (
+      <FlowResultView
+        action="to-prod"
+        result={mode.preview}
+        isActive={isActive}
+        confirm={{
+          onPublish: () => publishProd(mode.input, mode.preview),
+          onCancel: () => setMode({ kind: "detail" }),
+        }}
+      />
+    );
+  }
+
+  if (mode.kind === "result") {
+    return (
+      <FlowResultView
+        action={mode.action}
+        result={mode.result}
+        isActive={isActive}
+        onRerun={() => void runFlow(mode.action)}
+        onBack={() => {
+          setMode({ kind: "list" });
+          void onReload?.();
+        }}
+      />
+    );
+  }
+
+  if (mode.kind === "busy") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label="Workspace" hint={mode.label} />
+        <Box marginLeft={2} marginTop={1}>
+          <Text color={colors.warn}>
+            {icons.spinner} {mode.label}
+          </Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode.kind === "confirm-remove") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label="Quitar del workspace" marginTop={0} />
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
+          <Text color={colors.warn}>¿Quitar {mode.alias} del workspace?</Text>
+          <Box marginLeft={2} marginTop={1} flexDirection="column">
+            <Text color={colors.dim}>
+              Sale del bloque WORKSPACE (Fuentes + ramas), de la visibilidad multi-root,
+            </Text>
+            <Text color={colors.dim}>conserva los artefactos y procesos locales anteriores.</Text>
+            <Text color={colors.faint}>El repo en disco NO se borra.</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color={colors.faint}>y quitar · n/esc cancelar</Text>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (mode.kind === "notice") {
+    return (
+      <Box flexDirection="column">
+        <SectionHead label={mode.tone === "ok" ? "Listo" : "Atención"} marginTop={0} />
+        <Box marginLeft={2} marginTop={1} flexDirection="column">
+          {mode.lines.map((l, i) => (
+            <Text key={`${i}-${l}`} color={mode.tone === "ok" ? colors.ok : colors.warn}>
+              {l}
+            </Text>
+          ))}
+          <Box marginTop={1}>
+            <Text color={colors.faint}>⏎/esc volver</Text>
+          </Box>
+        </Box>
+      </Box>
+    );
+  }
+
+  return null;
+}
+
+function renderProjectHealth(
+  data: ProjectTabData,
+  dirty: number,
+  totalSources: number,
+  dirtySources: number,
+  workingCount: number,
+) {
+  return (
+    <Box flexDirection="row" marginBottom={1}>
+      <StatTile label="git" value={data.git?.branch ?? "—"} sub={statGitSub(data)} accent />
+      <StatTile
+        label="working tree"
+        value={`${dirty} dirty`}
+        sub={`${data.git?.staged ?? 0} staged · ${data.git?.untracked ?? 0} untracked`}
+        tone={dirty > 0 ? "warn" : "dim"}
+      />
+      <StatTile
+        label="sources"
+        value={`${totalSources}`}
+        sub={`${dirtySources} dirty`}
+        tone={totalSources > 0 ? "accent" : "dim"}
+      />
+      <StatTile
+        label="working branches"
+        value={`${workingCount}`}
+        sub={workingCount > 0 ? "declared" : "none"}
+        tone={workingCount > 0 ? "accent" : "dim"}
+      />
+    </Box>
+  );
+}
+
+function renderSourceList(
+  hasSources: boolean,
+  totalSources: number,
+  rangeHint: string | undefined,
+  detailOpen: boolean,
+  targets: string[],
+  start: number,
+  winEnd: number,
+  data: ProjectTabData,
+  cursor: number,
+  columns: number | undefined,
+) {
+  return hasSources ? (
+    <>
+      <SectionHead
+        label="Sources"
+        count={totalSources}
+        marginTop={0}
+        // Overflow indicator without spending a terminal row: the range
+        // of the window currently rendered, only when rows hide above
+        // or below.
+        {...(rangeHint ? { hint: rangeHint } : {})}
+        rightAction={detailOpen ? "esc to close detail" : "↑↓ select · ⏎ actions"}
+      />
+      <Box marginLeft={SOURCES_ROWS_INDENT} flexDirection="column">
+        {targets.slice(start, winEnd).map((target, offset) => {
+          const i = start + offset;
+          // The last target is the "all sources" sentinel, not a source.
+          const source = target === ALL_SOURCES ? undefined : data.sources[i];
+          return source ? (
+            <SourceRow
+              key={source.alias}
+              source={source}
+              active={i === cursor}
+              widthHint={rowWidth(columns, detailOpen, SOURCES_ROWS_INDENT)}
+            />
+          ) : (
+            <ListRow
+              key={ALL_SOURCES}
+              icon={icons.diamond}
+              title="all sources"
+              subtitle={`aplica a las ${totalSources} fuentes`}
+              chevron
+              active={i === cursor}
+              widthHint={rowWidth(columns, detailOpen, SOURCES_ROWS_INDENT)}
+            />
+          );
+        })}
+      </Box>
+    </>
+  ) : null;
+}
+
+function renderProjectWarnings(warnings: string[]) {
+  return warnings.length > 0 ? (
+    <Box marginBottom={1} flexDirection="column">
+      <Text color={colors.warn} wrap="truncate-end">
+        {icons.alertDot} {warnings.length} advertencia
+        {warnings.length > 1 ? "s" : ""} al cargar el workspace (datos parciales)
+      </Text>
+      {warnings.slice(0, 3).map((w, i) => (
+        <Text key={`${i}-${w.slice(0, 16)}`} color={colors.faint} wrap="truncate-end">
+          {"  "}
+          {w}
+        </Text>
+      ))}
+    </Box>
+  ) : null;
 }

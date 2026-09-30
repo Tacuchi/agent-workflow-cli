@@ -50,28 +50,7 @@ export const sessionArtifactsCommand: CliCommand = {
     const dumpCsv = args.values.get("dump");
     const wantsDump = dumpCsv !== undefined || args.flags.has("--dump");
 
-    if (wantsDump) {
-      if (code === undefined) {
-        return fail("INVALID_INPUT", "--dump requiere --code <NNN>");
-      }
-      let kinds: string[] | undefined;
-      if (dumpCsv !== undefined) {
-        kinds = dumpCsv.split(",").map((k) => k.trim().toLowerCase());
-        const invalid = kinds.filter((k) => !DUMP_KINDS.has(k));
-        if (invalid.length > 0) {
-          return fail(
-            "INVALID_INPUT",
-            `--dump kinds inválidos: ${invalid.join(", ")}. Válidos: ${[...DUMP_KINDS].join(", ")}`,
-          );
-        }
-      }
-      const dump = await readSessionArtifacts(ctx.fs, ctx.paths, code, kinds, ctx.runtime);
-      if (dump.sessionError !== undefined) return failSessionResolution(dump.sessionError);
-      if (dump.error !== undefined) {
-        return fail("LEGACY_FORMAT", String(dump.hint ?? dump.error), dump);
-      }
-      return { ok: true, data: dump, exitCode: 0 };
-    }
+    if (wantsDump) return dumpSessionArtifacts(ctx, code, dumpCsv);
 
     const input: ArtifactsInput = {};
     if (code !== undefined) input.code = code;
@@ -139,4 +118,31 @@ function block(
     const technical = fact.detail === null ? "" : ` · ${fact.detail}`;
     lines.push(`  · ${fact.text} [${fact.state} · ${where}${technical}]`);
   }
+}
+
+async function dumpSessionArtifacts(
+  ctx: CliContext,
+  code: string | undefined,
+  dumpCsv: string | undefined,
+): Promise<CommandResult> {
+  if (code === undefined) {
+    return fail("INVALID_INPUT", "--dump requiere --code <NNN>");
+  }
+  let kinds: string[] | undefined;
+  if (dumpCsv !== undefined) {
+    kinds = dumpCsv.split(",").map((k) => k.trim().toLowerCase());
+    const invalid = kinds.filter((k) => !DUMP_KINDS.has(k));
+    if (invalid.length > 0) {
+      return fail(
+        "INVALID_INPUT",
+        `--dump kinds inválidos: ${invalid.join(", ")}. Válidos: ${[...DUMP_KINDS].join(", ")}`,
+      );
+    }
+  }
+  const dump = await readSessionArtifacts(ctx.fs, ctx.paths, code, kinds, ctx.runtime);
+  if (dump.sessionError !== undefined) return failSessionResolution(dump.sessionError);
+  if (dump.error !== undefined) {
+    return fail("LEGACY_FORMAT", String(dump.hint ?? dump.error), dump);
+  }
+  return { ok: true, data: dump, exitCode: 0 };
 }

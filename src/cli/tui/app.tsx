@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, type Key, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatTuiEvent } from "../../application/logging/log-events.js";
 import type { DefaultBranches } from "../../application/parsers/project-block.js";
@@ -303,19 +303,14 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
       // Notif keys take priority: with active notifs, `x` dismisses the top
       // one and action keys (i/r/o/d/…) trigger the action of the newest item
       // carrying them.
-      if (notifications.length > 0 && !key.ctrl && !key.meta) {
-        if (input === "x" || input === "X") {
-          if (dismissTop()) return;
-        } else if (input) {
-          if (triggerAction(input)) return;
-        }
-      }
+      if (handleNotificationKey(input, key, notifications.length, dismissTop, triggerAction))
+        return;
 
       if (key.tab) {
         rotateTab(key.shift ? -1 : 1);
         return;
       }
-      if (input === "q" || input === "Q") {
+      if (["q", "Q"].includes(input)) {
         onResult({ kind: "exit", exitCode: 0 });
         exit();
         return;
@@ -324,7 +319,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
       // shell. If a notif claims `r` (update-banner recheck), it wins above.
       // In the Config tab, `r` is consumed by that tab (reset all) → no
       // refresh here.
-      if ((input === "r" || input === "R") && activeTab !== "config") {
+      if (isShellRefresh(input, activeTab)) {
         setRefreshNonce((n) => n + 1);
         void loadShellData();
         pushToast({ tone: "info", title: "Refreshing…", duration: 1200 });
@@ -463,4 +458,25 @@ async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> 
   }
 
   return { branchLabel, sessionsLabel: "— sessions" };
+}
+
+function handleNotificationKey(
+  input: string,
+  key: Key,
+  count: number,
+  dismissTop: () => boolean,
+  triggerAction: (key: string) => boolean,
+): boolean {
+  if (count > 0 && !key.ctrl && !key.meta) {
+    if (input === "x" || input === "X") {
+      if (dismissTop()) return true;
+    } else if (input) {
+      if (triggerAction(input)) return true;
+    }
+  }
+  return false;
+}
+
+function isShellRefresh(input: string, activeTab: TabId): boolean {
+  return (input === "r" || input === "R") && activeTab !== "config";
 }

@@ -387,47 +387,12 @@ export const flowCommand: CliCommand<FlowResult> = {
     // Before the executor, and without stdin: recovery is not a walk. It returns
     // the boundary to an answerable state and stops there, so whatever runs next
     // is decided by whoever answers it — never by the command that unblocked it.
-    if (verb === "recover") {
-      if (args.flags.has("--reinfer-batch")) {
-        if (args.values.has("transition"))
-          return failSemantic({
-            code: "ARGS_INVALID",
-            message: "--reinfer-batch no admite --transition",
-            ...usageAction(verb),
-          });
-        return reinferVerb(args, ctx, session);
-      }
-      if (args.values.has("approval"))
-        return failSemantic({
-          code: "ARGS_INVALID",
-          message: "--approval en recover exige --reinfer-batch",
-          ...usageAction(verb),
-        });
-      const transition = args.values.get("transition");
-      return project(
-        await recoverFlowBoundary(ctx.fs, ctx.paths, {
-          ...session,
-          git: ctx.git,
-          ...(transition !== undefined ? { transition } : {}),
-        }),
-      );
-    }
+    if (verb === "recover") return recoverVerb(args, ctx, session);
 
     // Also before the executor, and for the same reason as `recover`: proving is
     // not a walk. It reads the boundary, captures its proof and stops — nothing is
     // applied, no attempt is spent, and the tree it measures is left untouched.
-    if (verb === "prove") {
-      const source = flagValue(args, "source");
-      const artifact = args.values.get("artifact");
-      return projectProof(
-        await proveFlowBoundary(ctx.fs, ctx.paths, {
-          ...session,
-          ...(source !== undefined ? { source } : {}),
-          ...(artifact !== undefined ? { artifact } : {}),
-          git: ctx.git,
-        }),
-      );
-    }
+    if (verb === "prove") return proveVerb(args, ctx, session);
 
     // Only `submit` reads stdin: an `advance` that waited on a pipe would hang a
     // caller that has nothing to send yet — the same split `capability` makes
@@ -733,4 +698,51 @@ async function projectWithCommit(
       next_action: `${directive.next_action} · para aprobar incluí decisions.commit_approval: ${proposal.approval}`,
     },
   });
+}
+
+async function recoverVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+  session: { code?: string; contextId?: string },
+): Promise<CommandResult<FlowResult>> {
+  if (args.flags.has("--reinfer-batch")) {
+    if (args.values.has("transition"))
+      return failSemantic({
+        code: "ARGS_INVALID",
+        message: "--reinfer-batch no admite --transition",
+        ...usageAction("recover"),
+      });
+    return reinferVerb(args, ctx, session);
+  }
+  if (args.values.has("approval"))
+    return failSemantic({
+      code: "ARGS_INVALID",
+      message: "--approval en recover exige --reinfer-batch",
+      ...usageAction("recover"),
+    });
+  const transition = args.values.get("transition");
+  return project(
+    await recoverFlowBoundary(ctx.fs, ctx.paths, {
+      ...session,
+      git: ctx.git,
+      ...(transition !== undefined ? { transition } : {}),
+    }),
+  );
+}
+
+async function proveVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+  session: { code?: string; contextId?: string },
+): Promise<CommandResult<FlowResult>> {
+  const source = flagValue(args, "source");
+  const artifact = args.values.get("artifact");
+  return projectProof(
+    await proveFlowBoundary(ctx.fs, ctx.paths, {
+      ...session,
+      ...(source !== undefined ? { source } : {}),
+      ...(artifact !== undefined ? { artifact } : {}),
+      git: ctx.git,
+    }),
+  );
 }

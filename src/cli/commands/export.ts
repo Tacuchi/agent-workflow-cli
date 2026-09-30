@@ -211,14 +211,7 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
       const raw = stage === "prepare" ? "" : await readRequiredStdin();
       const scope = resolveStageScope(stage, raw, args);
       if (!scope.ok) return failSemantic(scope.failure);
-      const catalog: CatalogLookup | undefined =
-        category === "scripts" && scope.selection.catalog !== undefined
-          ? new DatabaseToolCatalog({
-              paths: ctx.paths,
-              env: ctx.env,
-              postgres: new PostgresReadonlyTools(),
-            })
-          : undefined;
+      const catalog = exportCatalog(category, scope.selection, ctx);
 
       // Each stage rebuilds the request from the workspace: stateless, and the
       // corpus digest is what detects a session that moved meanwhile.
@@ -246,21 +239,7 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
       if (data === undefined) return "";
       if (data.stage === "prepare") return renderPrepare(category, data.prepared, context);
       if (data.stage === "validate") {
-        const lines = [
-          `export-${category} · propuesta validada — falta tu aprobación`,
-          `  Destino    ${data.preview.destination}`,
-        ];
-        for (const file of data.preview.files) lines.push(`    ${file.path} (${file.bytes} B)`);
-        for (const path of data.preview.replacements ??
-          (data.preview.overwrites === null ? [] : [data.preview.overwrites])) {
-          lines.push(`  REEMPLAZA  ${path} — exige --overwrite`);
-        }
-        for (const item of data.preview.unverified ?? []) lines.push(`  Sin verificar ${item}`);
-        lines.push(
-          `  Aprobación aw export-${category} apply --approval ${data.approval_digest}`,
-          "",
-        );
-        return lines.join("\n");
+        return renderValidatedExport(category, data);
       }
       const lines = [
         `export-${category} · publicados ${data.written.length} archivo(s):`,
@@ -489,3 +468,37 @@ export const exportDiagramsCommand = exportCommand("diagrams");
 export const exportManualsCommand = exportCommand("manuals");
 export const exportReportsCommand = exportCommand("reports");
 export const exportScriptsCommand = exportCommand("scripts");
+
+function exportCatalog(
+  category: ExportCategory,
+  selection: ExportSelection,
+  ctx: CliContext,
+): CatalogLookup | undefined {
+  const catalog: CatalogLookup | undefined =
+    category === "scripts" && selection.catalog !== undefined
+      ? new DatabaseToolCatalog({
+          paths: ctx.paths,
+          env: ctx.env,
+          postgres: new PostgresReadonlyTools(),
+        })
+      : undefined;
+  return catalog;
+}
+
+function renderValidatedExport(
+  category: ExportCategory,
+  data: Extract<ExportData, { stage: "validate" }>,
+): string {
+  const lines = [
+    `export-${category} · propuesta validada — falta tu aprobación`,
+    `  Destino    ${data.preview.destination}`,
+  ];
+  for (const file of data.preview.files) lines.push(`    ${file.path} (${file.bytes} B)`);
+  for (const path of data.preview.replacements ??
+    (data.preview.overwrites === null ? [] : [data.preview.overwrites])) {
+    lines.push(`  REEMPLAZA  ${path} — exige --overwrite`);
+  }
+  for (const item of data.preview.unverified ?? []) lines.push(`  Sin verificar ${item}`);
+  lines.push(`  Aprobación aw export-${category} apply --approval ${data.approval_digest}`, "");
+  return lines.join("\n");
+}

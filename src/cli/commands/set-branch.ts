@@ -54,11 +54,7 @@ function makeSetBranchCommand(
       const branches = { [alias]: rama };
       const data = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
         op: "init",
-        ...(key === "workingBranches"
-          ? { workingBranches: branches }
-          : key === "qaBranches"
-            ? { qaBranches: branches }
-            : { exceptionBranches: branches }),
+        ...branchUpdate(key, branches),
         verbose: args.flags.has("--verbose"),
       });
       if ("error" in data) {
@@ -153,3 +149,12 @@ export const setExceptionBranchCommand = makeSetBranchCommand(
   "exceptionBranches",
   checkExceptionBranch,
 );
+
+function branchUpdate(
+  key: "workingBranches" | "qaBranches" | "exceptionBranches",
+  branches: Record<string, string>,
+) {
+  if (key === "workingBranches") return { workingBranches: branches };
+  if (key === "qaBranches") return { qaBranches: branches };
+  return { exceptionBranches: branches };
+}

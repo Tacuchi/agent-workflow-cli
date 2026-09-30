@@ -129,14 +129,7 @@ export function NotificationCenterProvider({ children, logger }: NotificationCen
   const push = useCallback(
     (input: NotificationInput): string => {
       const id = input.id ?? `n${++seq.current}`;
-      const item: NotificationItem = {
-        id,
-        tone: input.tone ?? "info",
-        title: input.title,
-        ...(input.body !== undefined ? { body: input.body } : {}),
-        ...(input.actions !== undefined ? { actions: input.actions } : {}),
-        ...(input.duration !== undefined ? { duration: input.duration } : {}),
-      };
+      const item = notificationItem(id, input);
       setItems((prev) => {
         const existingIdx = prev.findIndex((i) => i.id === id);
         if (existingIdx === -1) return [...prev, item];
@@ -230,4 +223,15 @@ export function useNotifications(): NotificationCenterApi {
  */
 export function useNotificationItems(): NotificationItem[] {
   return useContext(NotificationCenterContext)?.items ?? [];
+}
+
+function notificationItem(id: string, input: NotificationInput): NotificationItem {
+  return {
+    id,
+    tone: input.tone ?? "info",
+    title: input.title,
+    ...(input.body !== undefined ? { body: input.body } : {}),
+    ...(input.actions !== undefined ? { actions: input.actions } : {}),
+    ...(input.duration !== undefined ? { duration: input.duration } : {}),
+  };
 }

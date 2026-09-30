@@ -109,16 +109,19 @@ export function StatusTab({
     setTileCursor(
       (c) => TILE_IDS[(TILE_IDS.indexOf(c) + dir + TILE_IDS.length) % TILE_IDS.length] ?? "cli",
     );
+  function activateTile() {
+    // Host administration lives in [Workline].
+    if (tileCursor === "hosts") onActivateTab?.("workflow");
+    if (tileCursor === "mcp") onActivateTab?.("mcp");
+    if (tileCursor === "logs") setLogsMode(true);
+  }
   useInput(
     (_input, key) => {
       if (!isActive) return;
       if (key.upArrow || key.leftArrow) return move(-1);
       if (key.downArrow || key.rightArrow) return move(1);
       if (key.return) {
-        // Host administration lives in [Workline].
-        if (tileCursor === "hosts") onActivateTab?.("workflow");
-        if (tileCursor === "mcp") onActivateTab?.("mcp");
-        if (tileCursor === "logs") setLogsMode(true);
+        activateTile();
       }
     },
     { isActive: isActive && !logsMode },

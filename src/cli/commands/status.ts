@@ -47,24 +47,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
         "",
       );
     }
-    if (data.history_remote_rows.length > 0 || data.history_collisions.length > 0) {
-      lines.push("HISTORY: sesiones de otra máquina o números compartidos");
-      for (const row of data.history_remote_rows) lines.push(`  sin carpeta local: ${row}`);
-      for (const collision of data.history_collisions) {
-        lines.push(
-          `  ${collision.local} comparte número con ${collision.registered} → ${collision.action}`,
-        );
-      }
-      lines.push("");
-    }
-    if (data.unreadable_sources?.length || data.isolation_error) {
-      lines.push("Fuentes sin ruta o unidades no verificables");
-      for (const source of data.unreadable_sources ?? []) {
-        lines.push(`  ${source.alias}: ${source.error}`);
-      }
-      if (data.isolation_error) lines.push(`  ${data.isolation_error}`);
-      lines.push("");
-    }
+    appendWorkspaceAlerts(lines, data);
     // A held correlative is not pending work — nobody should weigh it against an
     // open plan — but it must be VISIBLE. Leaving it out of the human view took
     // the board from wrong (it used to offer `/w:plan-exec` on a bare marker) to
@@ -270,4 +253,25 @@ function renderDetail(data: StatusOutput): string[] {
     lines.push(`Planes sin spec demostrada: ${unproven.map((p) => p.number).join(", ")}`);
   }
   return lines;
+}
+
+function appendWorkspaceAlerts(lines: string[], data: StatusOutput): void {
+  if (data.history_remote_rows.length > 0 || data.history_collisions.length > 0) {
+    lines.push("HISTORY: sesiones de otra máquina o números compartidos");
+    for (const row of data.history_remote_rows) lines.push(`  sin carpeta local: ${row}`);
+    for (const collision of data.history_collisions) {
+      lines.push(
+        `  ${collision.local} comparte número con ${collision.registered} → ${collision.action}`,
+      );
+    }
+    lines.push("");
+  }
+  if (data.unreadable_sources?.length || data.isolation_error) {
+    lines.push("Fuentes sin ruta o unidades no verificables");
+    for (const source of data.unreadable_sources ?? []) {
+      lines.push(`  ${source.alias}: ${source.error}`);
+    }
+    if (data.isolation_error) lines.push(`  ${data.isolation_error}`);
+    lines.push("");
+  }
 }

@@ -134,21 +134,7 @@ function DetailActionRow({
   action: DetailAction;
   focused: boolean;
 }) {
-  const nameColor = focused
-    ? action.danger
-      ? colors.err
-      : colors.bright
-    : action.danger
-      ? colors.err
-      : colors.text;
-  const descColor = focused
-    ? action.danger
-      ? colors.err
-      : colors.accentSoft
-    : action.danger
-      ? colors.faint
-      : colors.dim;
-  const focusBarColor = focused ? (action.danger ? colors.err : colors.accent) : colors.faint;
+  const { nameColor, descColor, focusBarColor } = actionColors(action, focused);
   const bg = focused ? colors.bgHighlight : undefined;
   const bgProp = bg ? { backgroundColor: bg } : {};
   const innerPad = " ".repeat(ACTION_INNER_PAD);
@@ -213,4 +199,23 @@ function DetailFooter({ entries }: { entries: DetailFooterEntry[] }) {
       ))}
     </Box>
   );
+}
+
+function actionColors(action: DetailAction, focused: boolean) {
+  const nameColor = focused
+    ? action.danger
+      ? colors.err
+      : colors.bright
+    : action.danger
+      ? colors.err
+      : colors.text;
+  const descColor = focused
+    ? action.danger
+      ? colors.err
+      : colors.accentSoft
+    : action.danger
+      ? colors.faint
+      : colors.dim;
+  const focusBarColor = focused ? (action.danger ? colors.err : colors.accent) : colors.faint;
+  return { nameColor, descColor, focusBarColor };
 }

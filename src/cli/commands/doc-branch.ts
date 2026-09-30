@@ -101,113 +101,10 @@ export const docBranchCommand: CliCommand = {
       return fail("NO_SOURCES_DECLARED", "el workspace no declara fuentes");
     const read = await readDocBranches(ctx.fs, ctx.paths);
     if (action === "show") {
-      const sources = await Promise.all(
-        block.fuentes.map(async (source) => {
-          const effective = await resolveDocBranch(
-            ctx.fs,
-            ctx.paths,
-            source,
-            block,
-            identity,
-            read,
-          );
-          const proposed = await proposedName(identity, ctx);
-          let repo: string;
-          try {
-            repo = await requireSourcePath(ctx.fs, source);
-          } catch (err) {
-            return {
-              source: source.alias,
-              ...effective,
-              proposed,
-              local: false,
-              remote: false,
-              error_code: "SOURCE_PATH_MISSING",
-              error: (err as Error).message,
-            };
-          }
-          const local = proposed === null ? false : await ctx.git.branchExists(repo, proposed);
-          // The locally fetched refs only: show must never contact origin.
-          const remote =
-            proposed === null
-              ? false
-              : (await ctx.git.refValue(repo, `refs/remotes/origin/${proposed}`)) !== null;
-          return { source: source.alias, ...effective, proposed, local, remote };
-        }),
-      );
-      return {
-        ok: true,
-        exitCode: 0,
-        data: {
-          doc: formatNodeId(identity.doc),
-          sources,
-          unreadable: read.unreadable,
-          next: `Confirmá con la persona el nombre propuesto (o cambialo) antes de aw doc-branch set --doc ${formatNodeId(identity.doc)} --source <alias> --rama <nombre>`,
-        },
-      };
+      return showDocumentBranches(ctx, block, identity, read);
     }
 
-    const alias = flagValue(args, "source");
-    const source = block.fuentes.find((item) => item.alias === alias);
-    if (!source)
-      return fail("INVALID_SOURCE", `la fuente ${alias ?? "(ausente)"} no está declarada`);
-    let repo: string;
-    try {
-      repo = await requireSourcePath(ctx.fs, source);
-    } catch (err) {
-      return fail("SOURCE_PATH_MISSING", (err as Error).message);
-    }
-    const from = flagValue(args, "from");
-    const rama = args.values.get("rama");
-    if ((from === undefined) === (rama === undefined)) return fail("INVALID_INPUT", USAGE);
-    let branch = rama;
-    if (from !== undefined) {
-      const origin = await parseDoc(from, ctx);
-      if (origin.status !== "resolved")
-        return fail("DOC_BRANCH_IDENTITY", "el documento de origen no existe");
-      branch = ownDocBranch(read, origin.doc, source.alias) ?? undefined;
-      if (branch === undefined)
-        return fail("DOC_BRANCH_ABSENT", `${from} no tiene rama propia en ${alias}`);
-    }
-    if (
-      !branch ||
-      !isPlainBranchName(branch) ||
-      branch.startsWith("aw/") ||
-      !isWorkingBranch(branch, resolveSourceBranches(source, block))
-    ) {
-      return fail(
-        "INVALID_BRANCH",
-        `${branch ?? "(ausente)"} no es una rama de trabajo simple para ${alias}`,
-      );
-    }
-    const result = await ensureWorkingBranch(
-      ctx.git,
-      { ...source, path: repo },
-      branch,
-      resolveSourceBranches(source, block).prod,
-    );
-    if (!result.ok) return fail("WORKING_BRANCH_UNRESOLVED", result.reason, result);
-    await appendDocBranch(ctx.fs, ctx.paths, {
-      version: 1,
-      at: new Date().toISOString(),
-      doc: identity.doc,
-      source: source.alias,
-      branch,
-      by: session.code ?? `aw doc-branch set --doc ${formatNodeId(identity.doc)}`,
-      outcome: result.outcome,
-    });
-    return {
-      ok: true,
-      exitCode: 0,
-      data: {
-        doc: formatNodeId(identity.doc),
-        source: alias,
-        branch,
-        outcome: result.outcome,
-        ...(result.start_point ? { start_point: result.start_point } : {}),
-        unreadable: read.unreadable,
-      },
-    };
+    return setDocumentBranch(args, ctx, block, identity, read, session.code);
   },
 };
 
@@ -261,4 +158,127 @@ async function proposedName(
   const slug = basename(path, ".md").replace(new RegExp(`^${doc.key}-${doc.kind}-`), "");
   const proposed = `feature/${doc.kind}-${doc.key}-${slug}`;
   return isPlainBranchName(proposed) ? proposed : null;
+}
+
+async function showDocumentBranches(
+  ctx: CliContext,
+  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  identity: Extract<DocIdentity, { status: "resolved" }>,
+  read: Awaited<ReturnType<typeof readDocBranches>>,
+): Promise<CommandResult> {
+  const sources = await Promise.all(
+    block.fuentes.map(async (source) => {
+      const effective = await resolveDocBranch(ctx.fs, ctx.paths, source, block, identity, read);
+      const proposed = await proposedName(identity, ctx);
+      let repo: string;
+      try {
+        repo = await requireSourcePath(ctx.fs, source);
+      } catch (err) {
+        return {
+          source: source.alias,
+          ...effective,
+          proposed,
+          local: false,
+          remote: false,
+          error_code: "SOURCE_PATH_MISSING",
+          error: (err as Error).message,
+        };
+      }
+      const local = proposed === null ? false : await ctx.git.branchExists(repo, proposed);
+      // The locally fetched refs only: show must never contact origin.
+      const remote =
+        proposed === null
+          ? false
+          : (await ctx.git.refValue(repo, `refs/remotes/origin/${proposed}`)) !== null;
+      return { source: source.alias, ...effective, proposed, local, remote };
+    }),
+  );
+  return {
+    ok: true,
+    exitCode: 0,
+    data: {
+      doc: formatNodeId(identity.doc),
+      sources,
+      unreadable: read.unreadable,
+      next: `Confirmá con la persona el nombre propuesto (o cambialo) antes de aw doc-branch set --doc ${formatNodeId(identity.doc)} --source <alias> --rama <nombre>`,
+    },
+  };
+}
+
+async function setDocumentBranch(
+  args: ParsedArgs,
+  ctx: CliContext,
+  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  identity: Extract<DocIdentity, { status: "resolved" }>,
+  read: Awaited<ReturnType<typeof readDocBranches>>,
+  code: string | undefined,
+): Promise<CommandResult> {
+  const alias = flagValue(args, "source");
+  const source = block.fuentes.find((item) => item.alias === alias);
+  if (!source) return fail("INVALID_SOURCE", `la fuente ${alias ?? "(ausente)"} no está declarada`);
+  let repo: string;
+  try {
+    repo = await requireSourcePath(ctx.fs, source);
+  } catch (err) {
+    return fail("SOURCE_PATH_MISSING", (err as Error).message);
+  }
+  const from = flagValue(args, "from");
+  const rama = args.values.get("rama");
+  if ((from === undefined) === (rama === undefined)) return fail("INVALID_INPUT", USAGE);
+  let branch = rama;
+  if (from !== undefined) {
+    const origin = await parseDoc(from, ctx);
+    if (origin.status !== "resolved")
+      return fail("DOC_BRANCH_IDENTITY", "el documento de origen no existe");
+    branch = ownDocBranch(read, origin.doc, source.alias) ?? undefined;
+    if (branch === undefined)
+      return fail("DOC_BRANCH_ABSENT", `${from} no tiene rama propia en ${alias}`);
+  }
+  if (!isDocumentWorkingBranch(branch, source, block)) {
+    return fail(
+      "INVALID_BRANCH",
+      `${branch ?? "(ausente)"} no es una rama de trabajo simple para ${alias}`,
+    );
+  }
+  const result = await ensureWorkingBranch(
+    ctx.git,
+    { ...source, path: repo },
+    branch,
+    resolveSourceBranches(source, block).prod,
+  );
+  if (!result.ok) return fail("WORKING_BRANCH_UNRESOLVED", result.reason, result);
+  await appendDocBranch(ctx.fs, ctx.paths, {
+    version: 1,
+    at: new Date().toISOString(),
+    doc: identity.doc,
+    source: source.alias,
+    branch,
+    by: code ?? `aw doc-branch set --doc ${formatNodeId(identity.doc)}`,
+    outcome: result.outcome,
+  });
+  return {
+    ok: true,
+    exitCode: 0,
+    data: {
+      doc: formatNodeId(identity.doc),
+      source: alias,
+      branch,
+      outcome: result.outcome,
+      ...(result.start_point ? { start_point: result.start_point } : {}),
+      unreadable: read.unreadable,
+    },
+  };
+}
+
+function isDocumentWorkingBranch(
+  branch: string | undefined,
+  source: Parameters<typeof resolveSourceBranches>[0],
+  block: Parameters<typeof resolveSourceBranches>[1],
+): branch is string {
+  return !(
+    !branch ||
+    !isPlainBranchName(branch) ||
+    branch.startsWith("aw/") ||
+    !isWorkingBranch(branch, resolveSourceBranches(source, block))
+  );
 }

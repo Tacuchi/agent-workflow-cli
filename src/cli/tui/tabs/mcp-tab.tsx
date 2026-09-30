@@ -1,5 +1,5 @@
 import { Box, Text, useInput, useStdout } from "ink";
-import { useCallback, useMemo, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useMemo, useState } from "react";
 import { homeRelative } from "../../../application/display-path.js";
 import { formatTuiEvent } from "../../../application/logging/log-events.js";
 import { testMcpConnection } from "../../../application/mcp-test-connection-service.js";
@@ -401,181 +401,24 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
                 : {})}
           />
 
-          {connections.length === 0 && mode.kind === "list" ? (
-            <Box marginLeft={2} marginTop={1} flexDirection="column">
-              {registryIssue ? (
-                <>
-                  <Text color={colors.err}>MCP registry needs repair.</Text>
-                  <Text color={colors.dim}>{registryIssue}</Text>
-                </>
-              ) : (
-                <>
-                  <Text color={colors.dim}>No MCP connections yet.</Text>
-                  <Text color={colors.dim}>
-                    Register a DSN to let skills query your DB. Press{" "}
-                    <Text color={colors.accent} bold>
-                      a
-                    </Text>{" "}
-                    to start.
-                  </Text>
-                </>
-              )}
-            </Box>
-          ) : (
-            <Box marginTop={0} flexDirection="column">
-              {connections
-                .slice(listWindow.start, listWindow.start + listWindow.visible)
-                .map((connection, i) => {
-                  const states = hostRuntimeStates(connection);
-                  return (
-                    <ListRow
-                      key={connection.nombre}
-                      icon={icons.diamond}
-                      iconActive={true}
-                      title={connection.nombre}
-                      subtitle={`${connection.dsn_var} · ${connection.server_name} · ${mcpRuntimeStateSummary(states)}`}
-                      state={mcpRuntimeAggregatePill(states)}
-                      chevron
-                      active={listWindow.start + i === cursor}
-                      dimmed={inWizard}
-                      widthHint={rowWidth(stdout?.columns, overlayOpen)}
-                    />
-                  );
-                })}
-            </Box>
+          {renderConnections(
+            connections,
+            mode,
+            registryIssue,
+            listWindow,
+            cursor,
+            inWizard,
+            stdout?.columns,
+            overlayOpen,
           )}
 
           {/* Inline wizard — just a clean SectionHead + InputPrompt (no
               duplication with a decorative input box). */}
-          {mode.kind === "wizard-name" ? (
-            <Box flexDirection="column" marginTop={1}>
-              <SectionHead
-                label={
-                  mode.editingName
-                    ? `Edit connection · ${mode.editingName}`
-                    : "Register new connection"
-                }
-                hint="Step 1 of 2 · Alias"
-                rightAction="⏎ next · esc cancel"
-              />
-              <Box marginLeft={2} marginTop={0}>
-                <InputPrompt
-                  message="alias (slug-kebab):"
-                  onSubmit={(value) => {
-                    const trimmed = value.trim() || mode.editingName || "";
-                    if (!trimmed) {
-                      onToast?.({ tone: "err", title: "Empty alias" });
-                      setMode({ kind: "list" });
-                      return;
-                    }
-                    setMode({
-                      kind: "wizard-dsn",
-                      name: trimmed,
-                      ...(mode.editingName ? { editingExisting: mode.editingName } : {}),
-                      ...(mode.prefillDsn ? { prefillDsn: mode.prefillDsn } : {}),
-                    });
-                  }}
-                  isActive={isActive}
-                />
-              </Box>
-            </Box>
-          ) : null}
-          {mode.kind === "wizard-dsn" ? (
-            <Box flexDirection="column" marginTop={1}>
-              <SectionHead
-                label={`Register new connection · ${mode.name}`}
-                hint="Step 2 of 2 · DSN env var"
-                rightAction="⏎ register · esc cancel"
-              />
-              <Box marginLeft={2} marginTop={0}>
-                <InputPrompt
-                  message="DSN env var (UPPER_SNAKE_CASE):"
-                  defaultValue={mode.prefillDsn ?? suggestDsnVar(mode.name)}
-                  onSubmit={(value) => {
-                    const dsnVar = value.trim().toUpperCase();
-                    if (!dsnVar) {
-                      onToast?.({ tone: "err", title: "Empty DSN var" });
-                      setMode({ kind: "list" });
-                      return;
-                    }
-                    setMode({
-                      kind: "wizard-review",
-                      name: mode.name,
-                      dsnVar,
-                      visible: safeDsnVisible(ctx, dsnVar),
-                      ...(mode.editingExisting ? { editingExisting: mode.editingExisting } : {}),
-                    });
-                  }}
-                  isActive={isActive}
-                />
-              </Box>
-            </Box>
-          ) : null}
-          {mode.kind === "wizard-review" ? (
-            <Box flexDirection="column" marginTop={1}>
-              <SectionHead
-                label={`${mode.editingExisting ? "Edit" : "Register"} connection · ${mode.name}`}
-                hint="Step 3 of 3 · Review · test · install"
-                rightAction="⏎ save+install · esc cancel"
-              />
-              <Box marginLeft={2} marginTop={1} flexDirection="column">
-                <Box>
-                  <Text color={colors.dim}>alias </Text>
-                  <Text color={colors.bright} bold>
-                    {mode.name}
-                  </Text>
-                </Box>
-                <Box>
-                  <Text color={colors.dim}>DSN </Text>
-                  <Text color={colors.bright} bold>
-                    {mode.dsnVar}
-                  </Text>
-                  <Text> </Text>
-                  {mode.visible ? (
-                    <Text color={colors.ok}>{icons.check} visible</Text>
-                  ) : (
-                    <Text color={colors.warn}>{icons.cross} not in env — export it first</Text>
-                  )}
-                </Box>
-                {mode.test ? (
-                  <Box marginTop={1}>
-                    <Text color={mode.test.ok ? colors.ok : colors.err}>
-                      {mode.test.ok ? icons.check : icons.cross} {mode.test.msg}
-                    </Text>
-                  </Box>
-                ) : null}
-                <Box marginTop={1} flexDirection="column">
-                  <Text color={colors.borderFaint}>{"─".repeat(40)}</Text>
-                  <Text color={colors.faint}>
-                    [⏎] save + install · [s] save only · [t] test · esc cancel
-                  </Text>
-                </Box>
-              </Box>
-            </Box>
-          ) : null}
+          {renderNameWizard(mode, isActive, onToast, setMode)}
+          {renderDsnWizard(mode, isActive, onToast, setMode, ctx)}
+          {renderReviewWizard(mode)}
 
-          {mode.kind === "select-host" ? (
-            <Box marginTop={1} flexDirection="column">
-              <SectionHead label={`Install ${mode.name} into…`} count={hostChoices.length} />
-              {hostChoices.length === 0 ? (
-                <Text color={colors.warn}>
-                  {`${icons.alertDot} every MCP host is off in [Config] — re-enable one to install`}
-                </Text>
-              ) : null}
-              {hostChoices.map((host, i) => (
-                <ListRow
-                  key={host}
-                  icon={icons.diamond}
-                  iconActive={mode.cursor === i}
-                  title={mcpHostLabel(host)}
-                  subtitle={installDestination(host)}
-                  active={mode.cursor === i}
-                  widthHint={rowWidth(stdout?.columns, false)}
-                />
-              ))}
-              <Text color={colors.faint}>[⏎] install here · esc cancel</Text>
-            </Box>
-          ) : null}
+          {renderHostPicker(mode, hostChoices, stdout?.columns)}
 
           {mode.kind === "busy" ? (
             <Box marginTop={1}>
@@ -587,85 +430,7 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
         </Box>
 
         {/* Right: detail panel (only after a row was selected with Enter) */}
-        {current && (mode.kind === "detail" || mode.kind === "confirm-delete") ? (
-          <DetailPanel
-            bordered
-            header={{
-              name: current.nombre,
-              meta: connectionDetailMeta(current, ctx.env.homeDir()),
-            }}
-            statePill={mcpRuntimeAggregatePill(hostRuntimeStates(current))}
-            actions={detailActions}
-            focusedAction={actionCursor}
-            banner={
-              mode.kind === "confirm-delete" ? (
-                <ConfirmBanner
-                  title={`× Remove ${mode.name}?`}
-                  body={`This removes '${mode.name}' (Workline PostgreSQL entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Same-named entries Workline did not write stay untouched. Not reversible.`}
-                />
-              ) : null
-            }
-          />
-        ) : inWizard ? (
-          <Box flexDirection="column">
-            <Text color={colors.borderFaint}>{"│"}</Text>
-            <Box flexDirection="column" width={38} paddingLeft={1}>
-              <Box>
-                <Text color={colors.accent} bold>
-                  {mode.kind === "wizard-review" && mode.editingExisting
-                    ? "✎ Edit connection"
-                    : "+ New connection"}
-                </Text>
-              </Box>
-              <Text color={colors.dim} wrap="truncate-end">
-                guided · test · install
-              </Text>
-
-              <Box marginTop={1} flexDirection="column">
-                <Text color={colors.mute}>STEPS</Text>
-                <WizardStep
-                  index={1}
-                  label="Alias"
-                  active={mode.kind === "wizard-name"}
-                  completed={mode.kind === "wizard-dsn" || mode.kind === "wizard-review"}
-                  value={
-                    mode.kind === "wizard-dsn" || mode.kind === "wizard-review"
-                      ? mode.name
-                      : undefined
-                  }
-                />
-                <WizardStep
-                  index={2}
-                  label="DSN env var"
-                  active={mode.kind === "wizard-dsn"}
-                  completed={mode.kind === "wizard-review"}
-                  value={mode.kind === "wizard-review" ? mode.dsnVar : undefined}
-                />
-                <WizardStep
-                  index={3}
-                  label="Test (optional)"
-                  active={mode.kind === "wizard-review"}
-                  completed={mode.kind === "wizard-review" && mode.test?.ok === true}
-                />
-                <WizardStep
-                  index={4}
-                  label="Install → user scope"
-                  active={false}
-                  completed={false}
-                />
-              </Box>
-
-              <Box marginTop={1} flexDirection="column">
-                <Text color={colors.borderFaint}>{"─".repeat(36)}</Text>
-                <Text color={colors.faint}>
-                  {mode.kind === "wizard-review"
-                    ? "⏎ save · choose host · s save · t test"
-                    : "⏎ next · esc cancel"}
-                </Text>
-              </Box>
-            </Box>
-          </Box>
-        ) : null}
+        {renderConnectionDetail(current, mode, ctx, detailActions, actionCursor, inWizard)}
       </Box>
 
       <Box marginTop={1}>
@@ -875,6 +640,302 @@ function WizardStep({
           <Text color={colors.ok}>{value}</Text>
         </Box>
       ) : null}
+    </Box>
+  );
+}
+
+function renderNameWizard(
+  mode: Mode,
+  isActive: boolean,
+  onToast: McpTabProps["onToast"],
+  setMode: Dispatch<SetStateAction<Mode>>,
+) {
+  return mode.kind === "wizard-name" ? (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionHead
+        label={
+          mode.editingName ? `Edit connection · ${mode.editingName}` : "Register new connection"
+        }
+        hint="Step 1 of 2 · Alias"
+        rightAction="⏎ next · esc cancel"
+      />
+      <Box marginLeft={2} marginTop={0}>
+        <InputPrompt
+          message="alias (slug-kebab):"
+          onSubmit={(value) => {
+            const trimmed = value.trim() || mode.editingName || "";
+            if (!trimmed) {
+              onToast?.({ tone: "err", title: "Empty alias" });
+              setMode({ kind: "list" });
+              return;
+            }
+            setMode({
+              kind: "wizard-dsn",
+              name: trimmed,
+              ...(mode.editingName ? { editingExisting: mode.editingName } : {}),
+              ...(mode.prefillDsn ? { prefillDsn: mode.prefillDsn } : {}),
+            });
+          }}
+          isActive={isActive}
+        />
+      </Box>
+    </Box>
+  ) : null;
+}
+
+function renderDsnWizard(
+  mode: Mode,
+  isActive: boolean,
+  onToast: McpTabProps["onToast"],
+  setMode: Dispatch<SetStateAction<Mode>>,
+  ctx: CliContext,
+) {
+  return mode.kind === "wizard-dsn" ? (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionHead
+        label={`Register new connection · ${mode.name}`}
+        hint="Step 2 of 2 · DSN env var"
+        rightAction="⏎ register · esc cancel"
+      />
+      <Box marginLeft={2} marginTop={0}>
+        <InputPrompt
+          message="DSN env var (UPPER_SNAKE_CASE):"
+          defaultValue={mode.prefillDsn ?? suggestDsnVar(mode.name)}
+          onSubmit={(value) => {
+            const dsnVar = value.trim().toUpperCase();
+            if (!dsnVar) {
+              onToast?.({ tone: "err", title: "Empty DSN var" });
+              setMode({ kind: "list" });
+              return;
+            }
+            setMode({
+              kind: "wizard-review",
+              name: mode.name,
+              dsnVar,
+              visible: safeDsnVisible(ctx, dsnVar),
+              ...(mode.editingExisting ? { editingExisting: mode.editingExisting } : {}),
+            });
+          }}
+          isActive={isActive}
+        />
+      </Box>
+    </Box>
+  ) : null;
+}
+
+function renderReviewWizard(mode: Mode) {
+  return mode.kind === "wizard-review" ? (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionHead
+        label={`${mode.editingExisting ? "Edit" : "Register"} connection · ${mode.name}`}
+        hint="Step 3 of 3 · Review · test · install"
+        rightAction="⏎ save+install · esc cancel"
+      />
+      <Box marginLeft={2} marginTop={1} flexDirection="column">
+        <Box>
+          <Text color={colors.dim}>alias </Text>
+          <Text color={colors.bright} bold>
+            {mode.name}
+          </Text>
+        </Box>
+        <Box>
+          <Text color={colors.dim}>DSN </Text>
+          <Text color={colors.bright} bold>
+            {mode.dsnVar}
+          </Text>
+          <Text> </Text>
+          {mode.visible ? (
+            <Text color={colors.ok}>{icons.check} visible</Text>
+          ) : (
+            <Text color={colors.warn}>{icons.cross} not in env — export it first</Text>
+          )}
+        </Box>
+        {mode.test ? (
+          <Box marginTop={1}>
+            <Text color={mode.test.ok ? colors.ok : colors.err}>
+              {mode.test.ok ? icons.check : icons.cross} {mode.test.msg}
+            </Text>
+          </Box>
+        ) : null}
+        <Box marginTop={1} flexDirection="column">
+          <Text color={colors.borderFaint}>{"─".repeat(40)}</Text>
+          <Text color={colors.faint}>
+            [⏎] save + install · [s] save only · [t] test · esc cancel
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  ) : null;
+}
+
+function renderHostPicker(
+  mode: Mode,
+  hostChoices: readonly McpHost[],
+  columns: number | undefined,
+) {
+  return mode.kind === "select-host" ? (
+    <Box marginTop={1} flexDirection="column">
+      <SectionHead label={`Install ${mode.name} into…`} count={hostChoices.length} />
+      {hostChoices.length === 0 ? (
+        <Text color={colors.warn}>
+          {`${icons.alertDot} every MCP host is off in [Config] — re-enable one to install`}
+        </Text>
+      ) : null}
+      {hostChoices.map((host, i) => (
+        <ListRow
+          key={host}
+          icon={icons.diamond}
+          iconActive={mode.cursor === i}
+          title={mcpHostLabel(host)}
+          subtitle={installDestination(host)}
+          active={mode.cursor === i}
+          widthHint={rowWidth(columns, false)}
+        />
+      ))}
+      <Text color={colors.faint}>[⏎] install here · esc cancel</Text>
+    </Box>
+  ) : null;
+}
+
+function renderConnectionDetail(
+  current: SelfMcpConnectionView | null,
+  mode: Mode,
+  ctx: CliContext,
+  detailActions: DetailAction[],
+  actionCursor: number,
+  inWizard: boolean,
+) {
+  return current && (mode.kind === "detail" || mode.kind === "confirm-delete") ? (
+    <DetailPanel
+      bordered
+      header={{
+        name: current.nombre,
+        meta: connectionDetailMeta(current, ctx.env.homeDir()),
+      }}
+      statePill={mcpRuntimeAggregatePill(hostRuntimeStates(current))}
+      actions={detailActions}
+      focusedAction={actionCursor}
+      banner={
+        mode.kind === "confirm-delete" ? (
+          <ConfirmBanner
+            title={`× Remove ${mode.name}?`}
+            body={`This removes '${mode.name}' (Workline PostgreSQL entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Same-named entries Workline did not write stay untouched. Not reversible.`}
+          />
+        ) : null
+      }
+    />
+  ) : inWizard ? (
+    renderWizardSteps(mode)
+  ) : null;
+}
+
+function renderWizardSteps(mode: Mode) {
+  return (
+    <Box flexDirection="column">
+      <Text color={colors.borderFaint}>{"│"}</Text>
+      <Box flexDirection="column" width={38} paddingLeft={1}>
+        <Box>
+          <Text color={colors.accent} bold>
+            {mode.kind === "wizard-review" && mode.editingExisting
+              ? "✎ Edit connection"
+              : "+ New connection"}
+          </Text>
+        </Box>
+        <Text color={colors.dim} wrap="truncate-end">
+          guided · test · install
+        </Text>
+
+        <Box marginTop={1} flexDirection="column">
+          <Text color={colors.mute}>STEPS</Text>
+          <WizardStep
+            index={1}
+            label="Alias"
+            active={mode.kind === "wizard-name"}
+            completed={mode.kind === "wizard-dsn" || mode.kind === "wizard-review"}
+            value={
+              mode.kind === "wizard-dsn" || mode.kind === "wizard-review" ? mode.name : undefined
+            }
+          />
+          <WizardStep
+            index={2}
+            label="DSN env var"
+            active={mode.kind === "wizard-dsn"}
+            completed={mode.kind === "wizard-review"}
+            value={mode.kind === "wizard-review" ? mode.dsnVar : undefined}
+          />
+          <WizardStep
+            index={3}
+            label="Test (optional)"
+            active={mode.kind === "wizard-review"}
+            completed={mode.kind === "wizard-review" && mode.test?.ok === true}
+          />
+          <WizardStep index={4} label="Install → user scope" active={false} completed={false} />
+        </Box>
+
+        <Box marginTop={1} flexDirection="column">
+          <Text color={colors.borderFaint}>{"─".repeat(36)}</Text>
+          <Text color={colors.faint}>
+            {mode.kind === "wizard-review"
+              ? "⏎ save · choose host · s save · t test"
+              : "⏎ next · esc cancel"}
+          </Text>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function renderConnections(
+  connections: SelfMcpConnectionView[],
+  mode: Mode,
+  registryIssue: string | null,
+  listWindow: ReturnType<typeof useListWindow>,
+  cursor: number,
+  inWizard: boolean,
+  columns: number | undefined,
+  overlayOpen: boolean,
+) {
+  return connections.length === 0 && mode.kind === "list" ? (
+    <Box marginLeft={2} marginTop={1} flexDirection="column">
+      {registryIssue ? (
+        <>
+          <Text color={colors.err}>MCP registry needs repair.</Text>
+          <Text color={colors.dim}>{registryIssue}</Text>
+        </>
+      ) : (
+        <>
+          <Text color={colors.dim}>No MCP connections yet.</Text>
+          <Text color={colors.dim}>
+            Register a DSN to let skills query your DB. Press{" "}
+            <Text color={colors.accent} bold>
+              a
+            </Text>{" "}
+            to start.
+          </Text>
+        </>
+      )}
+    </Box>
+  ) : (
+    <Box marginTop={0} flexDirection="column">
+      {connections
+        .slice(listWindow.start, listWindow.start + listWindow.visible)
+        .map((connection, i) => {
+          const states = hostRuntimeStates(connection);
+          return (
+            <ListRow
+              key={connection.nombre}
+              icon={icons.diamond}
+              iconActive={true}
+              title={connection.nombre}
+              subtitle={`${connection.dsn_var} · ${connection.server_name} · ${mcpRuntimeStateSummary(states)}`}
+              state={mcpRuntimeAggregatePill(states)}
+              chevron
+              active={listWindow.start + i === cursor}
+              dimmed={inWizard}
+              widthHint={rowWidth(columns, overlayOpen)}
+            />
+          );
+        })}
     </Box>
   );
 }
