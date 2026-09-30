@@ -1,0 +1,15 @@
+{
+  "host": "codex",
+  "surface": "structured-choice",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "not-reached",
+  "expected": "degraded",
+  "observed": "not-reached",
+  "mode": "interactive",
+  "declared_by_doctor": true,
+  "evidence": {
+    "answered": null,
+    "boundaries": []
+  },
+  "fragment": "\n  El selector estructurado no está disponible en este modo; presento todas las opciones en Markdown. ¿Cómo querés continuar?\n\n  • Cambiar a SPEC — Recomendado: definir el rediseño completo, sus entregables y la migración antes de implementarlos.\n  • Seguir en quick — Mantener el objetivo completo en el flujo quick.\n  • Recortar alcance — Crear únicamente NOTES.md en la raíz del workspace con la línea host-run.\n  • Compactar — Resumir el contexto para retomarlo después.\n  • Cerrar — Terminar sin cambios.\n\n  Esta elección previa es obligatoria según <home>/.codex/\n  skills/w-quick/SKILL.md: “Size gate BEFORE any session” y “ask first with these verbatim options”. Aplica porque el pedido reúne varios de sus criterios de\n  tamaño.\n\n  04:51\n                                                                                               Tip: Coming back to a conversation? Use /recap to summarize it.\n\n› Ask Codex to do anything\n\n  GPT-6-Astra default · <workspace> · Run w-doctor\n  ? for shortcuts"
+}

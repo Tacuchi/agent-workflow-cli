@@ -1,0 +1,338 @@
+{
+  "schema": 1,
+  "run_id": "2026-09-17T10-00-00Z",
+  "date": "2026-09-17",
+  "partial": true,
+  "cli": {
+    "version": "28.0.0",
+    "revision": "0000000"
+  },
+  "scenario_digest": "sample000004",
+  "hosts": {
+    "claude-code": {
+      "covered": true,
+      "launched": false,
+      "version": null,
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "hooks": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "host-memory": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "compaction": {
+          "expected": "native",
+          "state": "not-run"
+        }
+      }
+    },
+    "codex": {
+      "covered": true,
+      "launched": true,
+      "version": "0.157.1",
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-17T10-00-00Z",
+          "date": "2026-09-17",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/commands.json"
+        },
+        "structured-choice": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-17T10-00-00Z",
+          "date": "2026-09-17",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/structured-choice.json"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-17T10-00-00Z",
+          "date": "2026-09-17",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/hooks.json"
+        },
+        "mcp": {
+          "expected": "native",
+          "observed": "fails",
+          "state": "broken",
+          "declared_by_doctor": false,
+          "mode": "interactive",
+          "run_id": "2026-09-17T10-00-00Z",
+          "date": "2026-09-17",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/mcp.json"
+        },
+        "host-memory": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-17T10-00-00Z",
+          "date": "2026-09-17",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/host-memory.json"
+        },
+        "compaction": {
+          "expected": "degraded",
+          "observed": "degraded",
+          "state": "degraded-declared",
+          "declared_by_doctor": true,
+          "mode": "interactive",
+          "run_id": "2026-09-17T10-00-00Z",
+          "date": "2026-09-17",
+          "host_version": "0.157.1",
+          "cli_version": "28.0.0",
+          "cli_revision": "0000000",
+          "model": null,
+          "effort": null,
+          "extract": "extracts/codex/compaction.json"
+        }
+      }
+    },
+    "oz": {
+      "covered": false,
+      "reason": "oz is Warp's cloud agent orchestrator (a launcher shim inside Warp.app); it runs remotely and has no local interactive session to observe",
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        }
+      }
+    },
+    "warp": {
+      "covered": false,
+      "reason": "Warp ships no CLI a pane can launch: it is a desktop terminal app, so no run can drive it",
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-covered"
+        },
+        "structured-choice": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "hooks": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-covered"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-covered"
+        }
+      }
+    },
+    "gemini": {
+      "covered": true,
+      "launched": false,
+      "version": null,
+      "model": null,
+      "effort": null,
+      "agy_without_profile": false,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "state": "not-run"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-run"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-run"
+        }
+      }
+    },
+    "opencode": {
+      "covered": true,
+      "launched": false,
+      "version": null,
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "state": "not-run"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-run"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-run"
+        }
+      }
+    },
+    "crush": {
+      "covered": true,
+      "launched": false,
+      "version": null,
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "state": "not-run"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-run"
+        },
+        "compaction": {
+          "expected": "unsupported",
+          "state": "not-run"
+        }
+      }
+    },
+    "kimi": {
+      "covered": true,
+      "launched": false,
+      "version": null,
+      "model": null,
+      "effort": null,
+      "cells": {
+        "commands": {
+          "expected": "degraded",
+          "state": "not-run"
+        },
+        "structured-choice": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "hooks": {
+          "expected": "degraded",
+          "state": "not-run"
+        },
+        "mcp": {
+          "expected": "native",
+          "state": "not-run"
+        },
+        "host-memory": {
+          "expected": "unsupported",
+          "state": "not-run"
+        },
+        "compaction": {
+          "expected": "native",
+          "state": "not-run"
+        }
+      }
+    }
+  }
+}

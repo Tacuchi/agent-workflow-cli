@@ -1,0 +1,47 @@
+{
+  "host": "codex",
+  "surface": "host-memory",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "degraded-declared",
+  "expected": "degraded",
+  "observed": "fails",
+  "mode": "interactive",
+  "declared_by_doctor": true,
+  "rows": [
+    {
+      "host": "claude-code",
+      "state": "absent",
+      "reason": "no existe <home>/.claude/projects"
+    },
+    {
+      "host": "oz",
+      "state": "absent",
+      "reason": "Oz no está en esta máquina"
+    },
+    {
+      "host": "warp",
+      "state": "absent",
+      "reason": "Warp Terminal no está en esta máquina"
+    },
+    {
+      "host": "gemini",
+      "state": "absent",
+      "reason": "Gemini CLI / Antigravity no está en esta máquina"
+    },
+    {
+      "host": "opencode",
+      "state": "absent",
+      "reason": "OpenCode no está en esta máquina"
+    },
+    {
+      "host": "crush",
+      "state": "absent",
+      "reason": "Crush no está en esta máquina"
+    },
+    {
+      "host": "kimi",
+      "state": "absent",
+      "reason": "Kimi Code no está en esta máquina"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "host": "codex",
+  "surface": "compaction",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "degraded-declared",
+  "expected": "degraded",
+  "observed": "fails",
+  "mode": "interactive",
+  "declared_by_doctor": true,
+  "evidence": {
+    "pre_compact": false,
+    "post_compact": false,
+    "checkpoint": false
+  },
+  "fragment": "  ──────────────────────────  ─────────  ──────────────────────────────\n   Crush                       Ausente    No está en esta máquina\n  ──────────────────────────  ─────────  ──────────────────────────────\n   Kimi Code                   Ausente    No está en esta máquina\n\n  Codex no tiene un destino para guardar aprendizajes: su configuración no tiene [features] memories = true. No se guardó nada.\n\n  La consulta terminó con salida 0, aunque el lanzador reportó un error de permisos al escribir shim-calls.log.\n\n  04:53\n\n• Context compacted · 1m 08s\n\n  Worked for 1m 8s · 04:54\n                                                                                           Tip: Use /rename to rename your threads for easier thread resuming.\n\n› Ask Codex to do anything\n\n  GPT-6-Astra default · <workspace> · Run w-doctor\n  ? for shortcuts"
+}

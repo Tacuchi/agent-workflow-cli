@@ -704,7 +704,9 @@ function renderCommandSkill(
 ): string {
   const { description, body } = splitCommandDoc(materializeBundleRoot(raw, bundleDest));
   const desc = description ?? `agent-workflow command ${skillName} (see body).`;
-  const rewired = bindHostInvocations(body.split("../").join("../w/"), target);
+  // Oz installs into ~/.agents/skills, which other hosts also read.
+  const bindingTarget = target === "oz" ? "agents" : target;
+  const rewired = bindHostInvocations(body.split("../").join("../w/"), bindingTarget);
   return [
     "---",
     `name: ${skillName}`,
@@ -714,7 +716,7 @@ function renderCommandSkill(
     "",
     `> ${COMMAND_SKILL_MARKER}. Treat the text accompanying this invocation as \`$ARGUMENTS\`. The full \`w\` bundle lives in the sibling directory \`../w/\`.`,
     "",
-    stampForInstallTarget(target),
+    stampForInstallTarget(bindingTarget),
     "",
     rewired,
   ].join("\n");

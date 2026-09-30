@@ -1,0 +1,15 @@
+{
+  "host": "opencode",
+  "surface": "hooks",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "not-reached",
+  "expected": "degraded",
+  "observed": "not-reached",
+  "mode": "interactive",
+  "declared_by_doctor": false,
+  "evidence": {
+    "lines": {},
+    "binaries": {}
+  },
+  "fragment": ""
+}

@@ -1,0 +1,14 @@
+{
+  "host": "codex",
+  "surface": "commands",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "degraded-declared",
+  "expected": "degraded",
+  "observed": "fails",
+  "mode": "interactive",
+  "declared_by_doctor": true,
+  "evidence": {
+    "ran": false
+  },
+  "fragment": "       efectos: mutate_overwrite\n\n  Seleccioná con: aw doctor prepare --select <id> [--select <id> …]\n\n  El selector estructurado no está disponible en este modo; presento las opciones en Markdown. Respondé con una etiqueta:\n\n  • codex/mcps/workspace:host-run-probe — Falta la entrada MCP del workspace; preparar su registro mediante mcp.setup para revisar el lote.\n  • Compactar — Conservar el punto pendiente para continuar después.\n  • Cerrar — Terminar el diagnóstico sin aplicar reparaciones.\n\n  La selección sigue <home>/.codex/skills/w-doctor/\n  SKILL.md: “One option per listed finding”. Después de preparar el lote, la skill exige “ask for its digest” antes de aplicarlo.\n\n  Worked for 1m 33s · 04:51\n                                                                                           Tip: Press ctrl+g to edit your current draft in an external editor.\n\n› Ask Codex to do anything\n\n  GPT-6-Astra default · <workspace> · Run w-doctor\n  ? for shortcuts"
+}

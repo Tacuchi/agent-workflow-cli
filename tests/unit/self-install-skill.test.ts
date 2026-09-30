@@ -951,7 +951,7 @@ describe("selfInstallSkill · /w:recall reaches every host bound to it (plan 062
   }
 
   it.each([...HOST_INSTALL_TARGETS])(
-    "%s receives the command with `aw host-memory` bound to its host",
+    "%s recibe recall con host explícito sólo en su carpeta exclusiva",
     async (target) => {
       const source = join(workdir, "source");
       const home = join(workdir, `home-${target}`);
@@ -974,6 +974,12 @@ describe("selfInstallSkill · /w:recall reaches every host bound to it (plan 062
       const surfaces = await recallSurfaces(home);
       expect(surfaces.length, target).toBeGreaterThan(0);
       for (const surface of surfaces) {
+        if (target === "oz") {
+          const content = await readFile(surface, "utf8");
+          expect(content, surface).toContain("aw host-memory --json");
+          expect(content, surface).not.toContain("--host");
+          continue;
+        }
         expect(await readFile(surface, "utf8"), surface).toContain(
           `aw host-memory --host ${host} --json`,
         );

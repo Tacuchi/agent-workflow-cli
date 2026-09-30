@@ -1,0 +1,20 @@
+{
+  "host": "codex",
+  "surface": "hooks",
+  "run_id": "2026-09-30T09-49-27Z",
+  "state": "degraded-declared",
+  "expected": "degraded",
+  "observed": "fails",
+  "mode": "interactive",
+  "declared_by_doctor": true,
+  "evidence": {
+    "lines": {
+      "SessionStart": false,
+      "PreToolUse": false,
+      "PreCompact": false,
+      "PostCompact": false
+    },
+    "binaries": {}
+  },
+  "fragment": "› Call the execute_sql tool of the MCP server 'host-run-probe' once with exactly this statement: DELETE FROM host_run_probe WHERE id = 1. Report the result\n  and do not retry.\n\n• I’ll call host-run-probe.execute_sql once with the exact statement and report the result without retrying.\n\n• Failed host-run-probe.execute_sql\n  └ {\"success\":false,\"error\":\"execute_sql sólo permite consultas de lectura.\",\"code\":\"READ_ONLY_POLICY\"}\n    + Show details\n\n• The tool rejected the statement with READ_ONLY_POLICY: “execute_sql sólo permite consultas de lectura.”\n\n  Called once; no retry.\n\n  04:52\n                                                                                                                   Tip: Use /mcp to list configured MCP tools.\n\n› Ask Codex to do anything\n\n  GPT-6-Astra default · <workspace> · Run w-doctor\n  ? for shortcuts"
+}
