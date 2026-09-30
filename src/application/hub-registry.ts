@@ -87,13 +87,7 @@ export async function gitCommonDirectory(start: string): Promise<string | null> 
         ? dotGit
         : resolve(dir, /^gitdir:\s*(.+)$/m.exec(await readFile(dotGit, "utf8"))?.[1] ?? "");
       if (gitDir === dir) return null;
-      let common = gitDir;
-      try {
-        common = resolve(gitDir, (await readFile(join(gitDir, "commondir"), "utf8")).trim());
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-      return await realpath(common);
+      return await resolveCommonDirectory(gitDir);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
     }
@@ -137,4 +131,14 @@ export async function declaringHubs(
     }
   }
   return result;
+}
+
+async function resolveCommonDirectory(gitDir: string): Promise<string> {
+  let common = gitDir;
+  try {
+    common = resolve(gitDir, (await readFile(join(gitDir, "commondir"), "utf8")).trim());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  return await realpath(common);
 }

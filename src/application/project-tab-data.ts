@@ -116,76 +116,7 @@ export async function buildProjectTabData(deps: ProjectTabDataDeps): Promise<Pro
           null,
         );
 
-  const sources: ProjectSource[] = [];
-  if (block) {
-    for (const f of block.fuentes) {
-      let repoPath: string;
-      try {
-        repoPath = await requireSourcePath(fs, f);
-      } catch (err) {
-        const error = (err as Error).message;
-        warnings.push(error);
-        sources.push({
-          alias: f.alias,
-          path: null,
-          error,
-          branch: null,
-          mainBranch: resolveSourceBranches(f, block).prod,
-          commitCount: null,
-          dirty: false,
-          changedFiles: 0,
-        });
-        continue;
-      }
-      const isRepo = await safeRun(
-        `is-repo:${f.alias}`,
-        () => git.isGitRepo(repoPath),
-        warnings,
-        false,
-      );
-      if (!isRepo) {
-        warnings.push(`${f.alias}: no es un repositorio git (${repoPath})`);
-        sources.push({
-          alias: f.alias,
-          path: repoPath,
-          branch: null,
-          mainBranch: resolveSourceBranches(f, block).prod,
-          commitCount: null,
-          dirty: false,
-          changedFiles: 0,
-        });
-        continue;
-      }
-      const branch = await safeRun(
-        `branch:${f.alias}`,
-        () => git.currentBranch(repoPath),
-        warnings,
-        undefined,
-      );
-      const changed = await safeRun(
-        `dirty:${f.alias}`,
-        () => git.changedFiles(repoPath),
-        warnings,
-        [] as string[],
-      );
-      const roles = resolveSourceBranches(f, block);
-      const commitCount = await safeRun(
-        `commits:${f.alias}`,
-        () => countOwnCommits(proc, repoPath, branch ?? null, roles.prod),
-        warnings,
-        null,
-      );
-      sources.push({
-        alias: f.alias,
-        path: repoPath,
-        branch: branch ?? null,
-        mainBranch: roles.prod,
-        commitCount,
-        dirty: changed.length > 0,
-        changedFiles: changed.length,
-      });
-    }
-  }
+  const sources = await buildProjectSources(fs, git, proc, block, warnings);
 
   return {
     workspaceName,
@@ -231,22 +162,7 @@ async function buildGitData(
   }
 
   const status = await runProc(proc, "git", ["status", "--porcelain=v1"], repoPath);
-  let dirty = 0;
-  let staged = 0;
-  let untracked = 0;
-  if (status.ok) {
-    for (const line of status.stdout.split("\n")) {
-      if (line.length === 0) continue;
-      const x = line[0];
-      const y = line[1];
-      if (x === "?" && y === "?") {
-        untracked++;
-      } else {
-        dirty++;
-        if (x !== " " && x !== "?") staged++;
-      }
-    }
-  }
+  const { dirty, staged, untracked } = countGitStatus(status);
 
   return {
     branch,
@@ -338,4 +254,107 @@ export function resolveDefinedWorkingBranch(block: ParsedProjectBlock | null): s
   const primaryAlias = block.fuentes[0]?.alias;
   if (primaryAlias === undefined) return undefined;
   return block.working_branches[primaryAlias];
+}
+
+async function buildProjectSources(
+  fs: FileSystemPort,
+  git: GitPort,
+  proc: ProcessPort,
+  block: ParsedProjectBlock | null,
+  warnings: string[],
+): Promise<ProjectSource[]> {
+  const sources: ProjectSource[] = [];
+  if (block) {
+    for (const f of block.fuentes) {
+      let repoPath: string;
+      try {
+        repoPath = await requireSourcePath(fs, f);
+      } catch (err) {
+        const error = (err as Error).message;
+        warnings.push(error);
+        sources.push({
+          alias: f.alias,
+          path: null,
+          error,
+          branch: null,
+          mainBranch: resolveSourceBranches(f, block).prod,
+          commitCount: null,
+          dirty: false,
+          changedFiles: 0,
+        });
+        continue;
+      }
+      const isRepo = await safeRun(
+        `is-repo:${f.alias}`,
+        () => git.isGitRepo(repoPath),
+        warnings,
+        false,
+      );
+      if (!isRepo) {
+        warnings.push(`${f.alias}: no es un repositorio git (${repoPath})`);
+        sources.push({
+          alias: f.alias,
+          path: repoPath,
+          branch: null,
+          mainBranch: resolveSourceBranches(f, block).prod,
+          commitCount: null,
+          dirty: false,
+          changedFiles: 0,
+        });
+        continue;
+      }
+      const branch = await safeRun(
+        `branch:${f.alias}`,
+        () => git.currentBranch(repoPath),
+        warnings,
+        undefined,
+      );
+      const changed = await safeRun(
+        `dirty:${f.alias}`,
+        () => git.changedFiles(repoPath),
+        warnings,
+        [] as string[],
+      );
+      const roles = resolveSourceBranches(f, block);
+      const commitCount = await safeRun(
+        `commits:${f.alias}`,
+        () => countOwnCommits(proc, repoPath, branch ?? null, roles.prod),
+        warnings,
+        null,
+      );
+      sources.push({
+        alias: f.alias,
+        path: repoPath,
+        branch: branch ?? null,
+        mainBranch: roles.prod,
+        commitCount,
+        dirty: changed.length > 0,
+        changedFiles: changed.length,
+      });
+    }
+  }
+
+  return sources;
+}
+
+function countGitStatus(
+  status: Awaited<ReturnType<typeof runProc>>,
+): Pick<ProjectGitData, "dirty" | "staged" | "untracked"> {
+  let dirty = 0;
+  let staged = 0;
+  let untracked = 0;
+  if (!status.ok) return { dirty, staged, untracked };
+  for (const line of status.stdout.split("\n")) {
+    if (line.length === 0) continue;
+    const x = line[0];
+    const y = line[1];
+    if (x === "?" && y === "?") {
+      untracked++;
+    } else {
+      dirty++;
+      if (x !== " " && x !== "?") staged++;
+    }
+  }
+
+  return { dirty, staged, untracked };
 }

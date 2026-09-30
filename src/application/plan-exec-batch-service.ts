@@ -159,21 +159,7 @@ export function inferNextPlanExecBatch(text: string, state: FlowRunState): Batch
   const openPhase = pending[0];
   if (openPhase === undefined)
     return fail("PLAN_EXEC_BATCH_INVALID", "no hay una fase inicial legible");
-  const declared = parseExecutionBatches(text);
-  const row = declared.rows.find((batch) => batch.phases.includes(openPhase));
-  let effective =
-    declared.status === "invalid"
-      ? { mode: "isolated" as const, phases: [openPhase] }
-      : {
-          mode: row?.mode ?? ("continuous" as const),
-          phases: (row?.phases ?? pending).filter((phase) => pending.includes(phase)),
-        };
-  let reason =
-    declared.status === "invalid"
-      ? `sección ilegible: ${declared.reason}`
-      : row === undefined
-        ? "sin sección: rango máximo pendiente"
-        : `fila declarada ${row.id}`;
+  let { declared, effective, reason } = declaredBatchPartition(text, openPhase, pending);
   const transition = "plan-exec.batch-eligibility-signal";
   const observation = [...state.observations]
     .reverse()
@@ -276,30 +262,8 @@ export function preparePlanExecBatchPublication(
   input: PreparePlanExecBatchPublicationInput,
 ): BatchPreparation {
   const before = baseDigest(text);
-  if (
-    input.sealed_text != null &&
-    matchTextSeal(input.batch.plan_digest, input.sealed_text) === null
-  ) {
-    return fail(
-      "PLAN_EXEC_BATCH_SNAPSHOT_INVALID",
-      "la copia sellada no corresponde al digest del lote",
-      "restaurá la copia original de la sesión; no se compara el plan contra texto no autenticado",
-    );
-  }
-  if (
-    matchTextSeal(input.batch.plan_digest, text) === null &&
-    (input.sealed_text === undefined ||
-      input.sealed_text === null ||
-      !batchMarksOnly(input.sealed_text, text, input.batch, input.phase_updates))
-  ) {
-    return fail(
-      "PLAN_EXEC_BATCH_STALE",
-      "el plan cambió desde que se infirió el batch",
-      input.sealed_text == null
-        ? `no hay copia del texto sellado para este lote anterior (sello ${input.batch.plan_digest}, vigente ${before}); no se acreditan tareas contra un plan movido`
-        : `diferencias del plan sellado y vigente:\n${planLineDiff(input.sealed_text, text)}`,
-    );
-  }
+  const sealFailure = checkBatchPlanSeal(text, input, before);
+  if (sealFailure !== null) return sealFailure;
   const completed = uniqueStrings(input.completed_tasks);
   if (!sameSet(completed, input.batch.tasks)) {
     return fail(
@@ -1092,4 +1056,55 @@ function failure(
   action = "revisá el batch y reintentá",
 ): CapabilityFailure {
   return { code, message, action };
+}
+
+function declaredBatchPartition(text: string, openPhase: number, pending: number[]) {
+  const declared = parseExecutionBatches(text);
+  const row = declared.rows.find((batch) => batch.phases.includes(openPhase));
+  const effective =
+    declared.status === "invalid"
+      ? { mode: "isolated" as const, phases: [openPhase] }
+      : {
+          mode: row?.mode ?? ("continuous" as const),
+          phases: (row?.phases ?? pending).filter((phase) => pending.includes(phase)),
+        };
+  const reason =
+    declared.status === "invalid"
+      ? `sección ilegible: ${declared.reason}`
+      : row === undefined
+        ? "sin sección: rango máximo pendiente"
+        : `fila declarada ${row.id}`;
+  return { declared, effective, reason };
+}
+
+function checkBatchPlanSeal(
+  text: string,
+  input: PreparePlanExecBatchPublicationInput,
+  before: string,
+): BatchPreparation | null {
+  if (
+    input.sealed_text != null &&
+    matchTextSeal(input.batch.plan_digest, input.sealed_text) === null
+  ) {
+    return fail(
+      "PLAN_EXEC_BATCH_SNAPSHOT_INVALID",
+      "la copia sellada no corresponde al digest del lote",
+      "restaurá la copia original de la sesión; no se compara el plan contra texto no autenticado",
+    );
+  }
+  if (
+    matchTextSeal(input.batch.plan_digest, text) === null &&
+    (input.sealed_text === undefined ||
+      input.sealed_text === null ||
+      !batchMarksOnly(input.sealed_text, text, input.batch, input.phase_updates))
+  ) {
+    return fail(
+      "PLAN_EXEC_BATCH_STALE",
+      "el plan cambió desde que se infirió el batch",
+      input.sealed_text == null
+        ? `no hay copia del texto sellado para este lote anterior (sello ${input.batch.plan_digest}, vigente ${before}); no se acreditan tareas contra un plan movido`
+        : `diferencias del plan sellado y vigente:\n${planLineDiff(input.sealed_text, text)}`,
+    );
+  }
+  return null;
 }

@@ -141,51 +141,7 @@ function analyzeStatement(tokens: readonly string[], file: string, analysis: Ana
       continue;
     }
     analyzed = true;
-    const ref = { schema: table.schema, table: table.table, file };
-    if (
-      word === "TABLE" &&
-      tokens[0] === "DROP" &&
-      tokens.includes("IF") &&
-      tokens.includes("EXISTS")
-    )
-      continue;
-    if (word === "TABLE" && tokens.includes("CREATE") && !tokens.includes("ALTER")) {
-      analysis.created.set(keyOf(ref), new Set(columnList(tokens, table.after)));
-      continue;
-    }
-    if (
-      word === "TABLE" &&
-      tokens.includes("ALTER") &&
-      tokens.includes("ADD") &&
-      tokens.includes("COLUMN")
-    ) {
-      const column = tokens[tokens.indexOf("COLUMN") + 1];
-      if (column !== undefined) {
-        const key = keyOf(ref);
-        const columns = analysis.created.get(key) ?? analysis.added.get(key) ?? new Set<string>();
-        columns.add(nameOf(column));
-        if (!analysis.created.has(key)) analysis.added.set(key, columns);
-      }
-    }
-    const localTable = analysis.created.has(keyOf(ref));
-    analysis.refs.push({ ...ref, localTable });
-    const expressionIndex =
-      word === "ON" && tokens[table.after] === "(" && tokens[table.after + 2] === "(";
-    if (expressionIndex)
-      analysis.unverified.push(`${file}: columnas de índice por expresión sin verificar`);
-    for (const column of expressionIndex
-      ? []
-      : referencedColumns(tokens, word ?? "", table.after)) {
-      analysis.refs.push({
-        ...ref,
-        column,
-        localTable,
-        localColumn: Boolean(
-          analysis.created.get(keyOf(ref))?.has(column) ||
-            analysis.added.get(keyOf(ref))?.has(column),
-        ),
-      });
-    }
+    analyzeTableReference(tokens, word, table, file, analysis);
   }
   return analyzed;
 }
@@ -201,15 +157,7 @@ function afterOptionalModifiers(tokens: readonly string[], initial: number): num
 function referencedColumns(tokens: readonly string[], word: string, after: number): string[] {
   const columns = ["INTO", "ON", "REFERENCES"].includes(word) ? columnList(tokens, after) : [];
   if (word === "UPDATE") {
-    const setAt = tokens.indexOf("SET", after);
-    let depth = 0;
-    for (let j = setAt + 1; setAt >= 0 && j < tokens.length; j++) {
-      const token = tokens[j] ?? "";
-      if (depth === 0 && ["WHERE", "FROM", "RETURNING"].includes(token)) break;
-      if (depth === 0 && (j === setAt + 1 || tokens[j - 1] === ",")) columns.push(nameOf(token));
-      if (token === "(") depth++;
-      if (token === ")") depth--;
-    }
+    appendUpdateColumns(tokens, after, columns);
   }
   if (
     word === "TABLE" &&
@@ -241,4 +189,72 @@ function missingFromCatalog(
       cols === undefined || (ref.column !== undefined && !ref.localColumn && !cols.has(ref.column))
     );
   });
+}
+
+function analyzeTableReference(
+  tokens: readonly string[],
+  word: string | undefined,
+  table: { schema: string; table: string; after: number },
+  file: string,
+  analysis: Analysis,
+): void {
+  const ref = { schema: table.schema, table: table.table, file };
+  if (
+    word === "TABLE" &&
+    tokens[0] === "DROP" &&
+    tokens.includes("IF") &&
+    tokens.includes("EXISTS")
+  )
+    return;
+  if (word === "TABLE" && tokens.includes("CREATE") && !tokens.includes("ALTER")) {
+    analysis.created.set(keyOf(ref), new Set(columnList(tokens, table.after)));
+    return;
+  }
+  if (
+    word === "TABLE" &&
+    tokens.includes("ALTER") &&
+    tokens.includes("ADD") &&
+    tokens.includes("COLUMN")
+  ) {
+    recordAddedColumn(tokens, ref, analysis);
+  }
+  const localTable = analysis.created.has(keyOf(ref));
+  analysis.refs.push({ ...ref, localTable });
+  const expressionIndex =
+    word === "ON" && tokens[table.after] === "(" && tokens[table.after + 2] === "(";
+  if (expressionIndex)
+    analysis.unverified.push(`${file}: columnas de índice por expresión sin verificar`);
+  for (const column of expressionIndex ? [] : referencedColumns(tokens, word ?? "", table.after)) {
+    analysis.refs.push({
+      ...ref,
+      column,
+      localTable,
+      localColumn: Boolean(
+        analysis.created.get(keyOf(ref))?.has(column) ||
+          analysis.added.get(keyOf(ref))?.has(column),
+      ),
+    });
+  }
+}
+
+function appendUpdateColumns(tokens: readonly string[], after: number, columns: string[]): void {
+  const setAt = tokens.indexOf("SET", after);
+  let depth = 0;
+  for (let j = setAt + 1; setAt >= 0 && j < tokens.length; j++) {
+    const token = tokens[j] ?? "";
+    if (depth === 0 && ["WHERE", "FROM", "RETURNING"].includes(token)) break;
+    if (depth === 0 && (j === setAt + 1 || tokens[j - 1] === ",")) columns.push(nameOf(token));
+    if (token === "(") depth++;
+    if (token === ")") depth--;
+  }
+}
+
+function recordAddedColumn(tokens: readonly string[], ref: Ref, analysis: Analysis): void {
+  const column = tokens[tokens.indexOf("COLUMN") + 1];
+  if (column !== undefined) {
+    const key = keyOf(ref);
+    const columns = analysis.created.get(key) ?? analysis.added.get(key) ?? new Set<string>();
+    columns.add(nameOf(column));
+    if (!analysis.created.has(key)) analysis.added.set(key, columns);
+  }
 }

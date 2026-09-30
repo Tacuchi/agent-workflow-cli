@@ -85,55 +85,11 @@ export async function runMergeState(
     }
     repos.push(repo);
     if (t.alias === null || !repo.is_repo || (!input.all && input.source === undefined)) continue;
-    let trees: WorktreeEntry[];
-    try {
-      trees = await git.worktreeList(t.path);
-    } catch {
-      unreadable.push({
-        alias: t.alias,
-        path: t.path,
-        code: "UNIT_LIST_FAILED",
-        action: `no se pudieron listar las unidades de ${t.alias}: revisá git worktree list`,
-      });
-      continue;
-    }
-    const root = await fs.realPath(paths.userUnitsDir()).catch(() => paths.userUnitsDir());
-    for (const tree of trees) {
-      const identity = parseUnitPath(root, tree.path);
-      if (
-        identity?.workspaceKey !== workspaceKey(paths.workspaceDir()) ||
-        identity.alias !== t.alias
-      )
-        continue;
-      if (tree.prunable) {
-        notes.push(`Unidad ${identity.session} de ${t.alias} omitida: prunable (${tree.path})`);
-        continue;
-      }
-      if (!(await fs.exists(tree.path))) {
-        unreadable.push({
-          alias: t.alias,
-          path: tree.path,
-          code: "SOURCE_PATH_MISSING",
-          action: `la unidad ${identity.session} no existe en esta máquina`,
-        });
-        continue;
-      }
-      const unitRepo = await inspectRepo(git, t.alias, tree.path);
-      if (unitRepo === null) {
-        unreadable.push({
-          alias: t.alias,
-          path: tree.path,
-          code: "SOURCE_UNREADABLE",
-          action: `no se pudo consultar git en la unidad ${identity.session}`,
-        });
-      } else {
-        repos.push({ ...unitRepo, unit: identity.session });
-      }
-    }
+    await inspectSourceUnits(fs, git, paths, t, repos, unreadable, notes);
   }
   return {
     repos,
-    any_merging: repos.some((r) => r.is_merging) ? true : unreadable.length ? null : false,
+    any_merging: mergeSummary(repos, unreadable),
     unreadable,
     ...(notes.length ? { notes } : {}),
   };
@@ -152,54 +108,7 @@ async function resolveTargets(
     return [{ alias: null, path: p }];
   }
   if (input.source !== undefined || input.all) {
-    let fuentes: ProjectFuente[] | undefined;
-    try {
-      const block = await readWorkspaceBlock(
-        fs,
-        cwd,
-        paths.blockMarkers(),
-        (b) => b.fuentes.length > 0,
-      );
-      fuentes = block?.fuentes;
-    } catch {
-      fuentes = undefined;
-    }
-    if (fuentes === undefined) {
-      unreadable.push({
-        alias: input.source ?? null,
-        path: cwd,
-        code: "SOURCES_BLOCK_MISSING",
-        action: "declará las fuentes en el bloque WORKSPACE de AGENTS.md o CLAUDE.md",
-      });
-      return [];
-    }
-    if (input.source !== undefined) {
-      const f = fuentes.find((x) => x.alias === input.source);
-      if (f === undefined) {
-        unreadable.push({
-          alias: input.source,
-          path: null,
-          code: "SOURCE_UNKNOWN",
-          action: `la fuente ${input.source} no está declarada; alias disponibles: ${fuentes.map((s) => s.alias).join(", ")}`,
-        });
-        return [];
-      }
-    }
-    const targets: Array<{ alias: string; path: string }> = [];
-    for (const fuente of fuentes) {
-      if (input.source !== undefined && fuente.alias !== input.source) continue;
-      try {
-        targets.push({ alias: fuente.alias, path: await requireSourcePath(fs, fuente) });
-      } catch (err) {
-        unreadable.push({
-          alias: fuente.alias,
-          path: fuente.path,
-          code: "SOURCE_PATH_MISSING",
-          action: (err as Error).message,
-        });
-      }
-    }
-    return targets;
+    return resolveSourceTargets(fs, paths, input, unreadable);
   }
   return [{ alias: null, path: cwd }];
 }
@@ -255,4 +164,130 @@ async function inspectRepo(
     conflicted_files,
     dirty,
   };
+}
+
+async function inspectSourceUnits(
+  fs: FileSystemPort,
+  git: GitPort,
+  paths: PathsService,
+  t: { alias: string | null; path: string },
+  repos: RepoMergeState[],
+  unreadable: MergeStateOutput["unreadable"],
+  notes: string[],
+): Promise<void> {
+  let trees: WorktreeEntry[];
+  try {
+    trees = await git.worktreeList(t.path);
+  } catch {
+    unreadable.push({
+      alias: t.alias,
+      path: t.path,
+      code: "UNIT_LIST_FAILED",
+      action: `no se pudieron listar las unidades de ${t.alias}: revisá git worktree list`,
+    });
+    return;
+  }
+  const root = await fs.realPath(paths.userUnitsDir()).catch(() => paths.userUnitsDir());
+  for (const tree of trees) {
+    const identity = parseUnitPath(root, tree.path);
+    if (identity?.workspaceKey !== workspaceKey(paths.workspaceDir()) || identity.alias !== t.alias)
+      continue;
+    if (tree.prunable) {
+      notes.push(`Unidad ${identity.session} de ${t.alias} omitida: prunable (${tree.path})`);
+      continue;
+    }
+    if (!(await fs.exists(tree.path))) {
+      unreadable.push({
+        alias: t.alias,
+        path: tree.path,
+        code: "SOURCE_PATH_MISSING",
+        action: `la unidad ${identity.session} no existe en esta máquina`,
+      });
+      continue;
+    }
+    const unitRepo = await inspectRepo(git, t.alias, tree.path);
+    if (unitRepo === null) {
+      unreadable.push({
+        alias: t.alias,
+        path: tree.path,
+        code: "SOURCE_UNREADABLE",
+        action: `no se pudo consultar git en la unidad ${identity.session}`,
+      });
+    } else {
+      repos.push({ ...unitRepo, unit: identity.session });
+    }
+  }
+}
+
+async function resolveSourceTargets(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: MergeStateInput,
+  unreadable: MergeStateOutput["unreadable"],
+): Promise<{ alias: string | null; path: string }[]> {
+  const cwd = paths.workspaceDir();
+  let fuentes: ProjectFuente[] | undefined;
+  try {
+    const block = await readWorkspaceBlock(
+      fs,
+      cwd,
+      paths.blockMarkers(),
+      (b) => b.fuentes.length > 0,
+    );
+    fuentes = block?.fuentes;
+  } catch {
+    fuentes = undefined;
+  }
+  if (fuentes === undefined) {
+    unreadable.push({
+      alias: input.source ?? null,
+      path: cwd,
+      code: "SOURCES_BLOCK_MISSING",
+      action: "declará las fuentes en el bloque WORKSPACE de AGENTS.md o CLAUDE.md",
+    });
+    return [];
+  }
+  if (input.source !== undefined) {
+    const f = fuentes.find((x) => x.alias === input.source);
+    if (f === undefined) {
+      unreadable.push({
+        alias: input.source,
+        path: null,
+        code: "SOURCE_UNKNOWN",
+        action: `la fuente ${input.source} no está declarada; alias disponibles: ${fuentes.map((s) => s.alias).join(", ")}`,
+      });
+      return [];
+    }
+  }
+  return sourcePaths(fs, fuentes, input, unreadable);
+}
+
+async function sourcePaths(
+  fs: FileSystemPort,
+  fuentes: ProjectFuente[],
+  input: MergeStateInput,
+  unreadable: MergeStateOutput["unreadable"],
+): Promise<{ alias: string; path: string }[]> {
+  const targets: Array<{ alias: string; path: string }> = [];
+  for (const fuente of fuentes) {
+    if (input.source !== undefined && fuente.alias !== input.source) continue;
+    try {
+      targets.push({ alias: fuente.alias, path: await requireSourcePath(fs, fuente) });
+    } catch (err) {
+      unreadable.push({
+        alias: fuente.alias,
+        path: fuente.path,
+        code: "SOURCE_PATH_MISSING",
+        action: (err as Error).message,
+      });
+    }
+  }
+  return targets;
+}
+
+function mergeSummary(
+  repos: RepoMergeState[],
+  unreadable: MergeStateOutput["unreadable"],
+): boolean | null {
+  return repos.some((r) => r.is_merging) ? true : unreadable.length ? null : false;
 }

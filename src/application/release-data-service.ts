@@ -70,20 +70,7 @@ export async function runReleaseData(
     return { error: (e as Error).message };
   }
 
-  const sinceOpts: {
-    since?: string;
-    includeOpen?: boolean;
-    includeClosed?: boolean;
-    sessions?: string[];
-  } = {
-    includeOpen: input.includeOpen ?? true,
-    includeClosed: input.includeClosed ?? true,
-  };
-  if (input.sessions !== undefined && input.sessions.length > 0) {
-    sinceOpts.sessions = input.sessions;
-  } else if (input.since !== undefined) {
-    sinceOpts.since = input.since;
-  }
+  const sinceOpts = releaseSessionOptions(input);
   const sessions = await listSessionsForRelease(fs, cwd, paths, sinceOpts);
   const { enriched, legacy } = enrichSessionsWithLegacyMeta(sessions, cwd, runtime);
 
@@ -107,4 +94,22 @@ export async function runReleaseData(
     payload.standalone_sql = await listStandaloneSql(fs, cwd, paths, scanOpts);
   }
   return payload;
+}
+
+function releaseSessionOptions(input: ReleaseDataInput) {
+  const sinceOpts: {
+    since?: string;
+    includeOpen?: boolean;
+    includeClosed?: boolean;
+    sessions?: string[];
+  } = {
+    includeOpen: input.includeOpen ?? true,
+    includeClosed: input.includeClosed ?? true,
+  };
+  if (input.sessions !== undefined && input.sessions.length > 0) {
+    sinceOpts.sessions = input.sessions;
+  } else if (input.since !== undefined) {
+    sinceOpts.since = input.since;
+  }
+  return sinceOpts;
 }

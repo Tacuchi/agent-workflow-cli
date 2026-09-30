@@ -407,13 +407,7 @@ function normalizeSessionTable(text: string): string {
     // here. A table under Notas/Retiros is independently authored material.
     if (/^#{1,6}\s+/.test(line)) break;
     if (!line.startsWith("|")) continue;
-    const cells = dataCells(line);
-    if (
-      cells.length === SLIM_COLUMNS &&
-      historyCorrelative(cells[0] ?? "") !== null &&
-      /^\s*(?:session)?\d+(?:-|$)/.test(cells[0] ?? "") &&
-      /^(?:active|closed|abierta|activa|cerrada|pausada|abandonada|retirada)$/i.test(cells[2] ?? "")
-    ) {
+    if (isStraySessionRow(line)) {
       stray.push(index);
       rows.push(line);
     }
@@ -568,4 +562,14 @@ async function persistMigration(
 ): Promise<void> {
   if (lossy) await snapshotLegacy(fs, historyFile, previous);
   await fs.writeText(historyFile, migrated);
+}
+
+function isStraySessionRow(line: string): boolean {
+  const cells = dataCells(line);
+  return (
+    cells.length === SLIM_COLUMNS &&
+    historyCorrelative(cells[0] ?? "") !== null &&
+    /^\s*(?:session)?\d+(?:-|$)/.test(cells[0] ?? "") &&
+    /^(?:active|closed|abierta|activa|cerrada|pausada|abandonada|retirada)$/i.test(cells[2] ?? "")
+  );
 }

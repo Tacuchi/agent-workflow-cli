@@ -70,31 +70,7 @@ export async function runMultiroot(
 
   let result: MultirootResult;
   try {
-    result = {
-      scope,
-      scope_dir: scopeDir,
-      paths_input: paths,
-      claude: input.skipClaude
-        ? { skipped: true }
-        : mode === "attach"
-          ? attachClaude(paths, scopeDir, { dryRun: input.dryRun === true })
-          : detachClaude(paths, scopeDir, { dryRun: input.dryRun === true }),
-      codex: input.skipCodex
-        ? { skipped: true }
-        : mode === "attach"
-          ? attachCodex(paths, scopeDir, { dryRun: input.dryRun === true })
-          : detachCodex(paths, scopeDir, { dryRun: input.dryRun === true }),
-      warp: input.skipWarp
-        ? { skipped: true }
-        : mode === "attach"
-          ? attachWarp(paths, scopeDir)
-          : detachWarp(paths, scopeDir),
-      oz: input.skipOz
-        ? { skipped: true }
-        : mode === "attach"
-          ? attachOz(paths, scopeDir)
-          : detachOz(paths, scopeDir),
-    };
+    result = updateHosts(paths, scopeDir, scope, mode, input);
   } catch (err) {
     const target = String(
       (err as { target?: string; path?: string }).target ?? (err as { path?: string }).path ?? "",
@@ -168,4 +144,38 @@ async function readSourcesFromProject(
     (b) => b.fuentes.length > 0,
   );
   return block ? Promise.all(block.fuentes.map((f) => requireSourcePath(fs, f))) : [];
+}
+
+function updateHosts(
+  paths: string[],
+  scopeDir: string,
+  scope: MultirootResult["scope"],
+  mode: Mode,
+  input: MultirootInput,
+): MultirootResult {
+  return {
+    scope,
+    scope_dir: scopeDir,
+    paths_input: paths,
+    claude: input.skipClaude
+      ? { skipped: true }
+      : mode === "attach"
+        ? attachClaude(paths, scopeDir, { dryRun: input.dryRun === true })
+        : detachClaude(paths, scopeDir, { dryRun: input.dryRun === true }),
+    codex: input.skipCodex
+      ? { skipped: true }
+      : mode === "attach"
+        ? attachCodex(paths, scopeDir, { dryRun: input.dryRun === true })
+        : detachCodex(paths, scopeDir, { dryRun: input.dryRun === true }),
+    warp: input.skipWarp
+      ? { skipped: true }
+      : mode === "attach"
+        ? attachWarp(paths, scopeDir)
+        : detachWarp(paths, scopeDir),
+    oz: input.skipOz
+      ? { skipped: true }
+      : mode === "attach"
+        ? attachOz(paths, scopeDir)
+        : detachOz(paths, scopeDir),
+  };
 }

@@ -139,23 +139,7 @@ export async function runGitFlow(
   }
 
   const dryRun = input.dryRun === true;
-  const entries: PlannedSource[] = [];
-  for (const source of selected.sources) {
-    try {
-      const path = await requireSourcePath(fs, source);
-      entries.push(planSource({ ...source, path }, resolveSourceBranches(source, block), input));
-    } catch (err) {
-      entries.push({
-        source,
-        ops: null,
-        result: {
-          ...sourceError(source.alias, (err as Error).message),
-          ...(err instanceof SourcePathMissingError ? { error_code: err.code } : {}),
-        },
-        publishesProd: false,
-      });
-    }
-  }
+  const entries = await planSelectedSources(fs, selected.sources, block, input);
 
   const gated = dryRun ? null : prodPublicationGate(input, entries);
   if (gated !== null) return gated;
@@ -720,4 +704,31 @@ function errorResult(action: string, message: string): GitFlowResult {
     results: [],
     error: message,
   };
+}
+
+async function planSelectedSources(
+  fs: FileSystemPort,
+  sources: ProjectFuente[],
+  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  input: GitFlowInput,
+): Promise<PlannedSource[]> {
+  const entries: PlannedSource[] = [];
+  for (const source of sources) {
+    try {
+      const path = await requireSourcePath(fs, source);
+      entries.push(planSource({ ...source, path }, resolveSourceBranches(source, block), input));
+    } catch (err) {
+      entries.push({
+        source,
+        ops: null,
+        result: {
+          ...sourceError(source.alias, (err as Error).message),
+          ...(err instanceof SourcePathMissingError ? { error_code: err.code } : {}),
+        },
+        publishesProd: false,
+      });
+    }
+  }
+
+  return entries;
 }

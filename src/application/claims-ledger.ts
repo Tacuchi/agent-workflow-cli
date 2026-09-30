@@ -190,32 +190,7 @@ export async function readClaimEvents(
   }
   const read = await readClaimEventsRaw(fs, paths);
   if (pendingClaimTransfers(read.events).length === 0) return read;
-  const settled = async () => {
-    const current = await readClaimEventsRaw(fs, paths);
-    for (const intent of pendingClaimTransfers(current.events)) {
-      const transfer = intent.transfer;
-      if (!transfer) continue;
-      const safe = checkSafeRelativePath(transfer.marker);
-      if (!safe.ok || !safe.path.startsWith("docs/")) {
-        return { ...current, unreadable: current.unreadable + 1 };
-      }
-      const path = join(paths.workspaceDir(), safe.path);
-      if (!(await fs.exists(path))) return { ...current, unreadable: current.unreadable + 1 };
-      const owner = reservationOwnerOf(await fs.readText(path));
-      if (owner !== transfer.from && owner !== transfer.to) {
-        return { ...current, unreadable: current.unreadable + 1 };
-      }
-      await appendClaimEvent(fs, paths, {
-        at: new Date().toISOString(),
-        event: owner === transfer.to ? "transfer-confirmed" : "transfer-cancelled",
-        claim: intent.claim,
-        transfer,
-        cause:
-          owner === transfer.to ? "marcador ya transferido" : "marcador aún del dueño anterior",
-      });
-    }
-    return readClaimEventsRaw(fs, paths);
-  };
+  const settled = () => settleClaimTransfers(fs, paths);
   if (options.lockHeld) return settled();
   const result = await withCwdLock(fs, paths, settled, { waitMs: 2000 });
   if ("error" in result) {
@@ -563,4 +538,41 @@ export function eligibleCorrelatives(events: readonly ClaimEvent[], category: st
   // so it stays correct past the width where `parseInt` loses precision — and a
   // second ordering rule for the same domain type is a second thing to keep true.
   return eligible.sort(compareCorrelatives);
+}
+
+async function settleClaimTransfers(fs: FileSystemPort, paths: PathsService): Promise<LedgerRead> {
+  const current = await readClaimEventsRaw(fs, paths);
+  for (const intent of pendingClaimTransfers(current.events)) {
+    if (!(await settleClaimTransfer(fs, paths, intent))) {
+      return { ...current, unreadable: current.unreadable + 1 };
+    }
+  }
+  return readClaimEventsRaw(fs, paths);
+}
+
+async function settleClaimTransfer(
+  fs: FileSystemPort,
+  paths: PathsService,
+  intent: ClaimEvent,
+): Promise<boolean> {
+  const transfer = intent.transfer;
+  if (!transfer) return true;
+  const safe = checkSafeRelativePath(transfer.marker);
+  if (!safe.ok || !safe.path.startsWith("docs/")) {
+    return false;
+  }
+  const path = join(paths.workspaceDir(), safe.path);
+  if (!(await fs.exists(path))) return false;
+  const owner = reservationOwnerOf(await fs.readText(path));
+  if (owner !== transfer.from && owner !== transfer.to) {
+    return false;
+  }
+  await appendClaimEvent(fs, paths, {
+    at: new Date().toISOString(),
+    event: owner === transfer.to ? "transfer-confirmed" : "transfer-cancelled",
+    claim: intent.claim,
+    transfer,
+    cause: owner === transfer.to ? "marcador ya transferido" : "marcador aún del dueño anterior",
+  });
+  return true;
 }

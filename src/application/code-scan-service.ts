@@ -230,20 +230,7 @@ async function scanSingleFile(
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    for (const { pattern, regex } of compiled) {
-      if (!regex) continue;
-      if ((counts[pattern.id] ?? 0) >= maxPerPattern) continue;
-      if (!regex.test(line)) continue;
-      counts[pattern.id] = (counts[pattern.id] ?? 0) + 1;
-      matches.push({
-        pattern_id: pattern.id,
-        severity: pattern.severity,
-        file: filePath,
-        line: i + 1,
-        snippet: line.trim().slice(0, 200),
-        recommendation: pattern.recommendation,
-      });
-    }
+    scanLine(line, i + 1, filePath, compiled, counts, maxPerPattern, matches);
   }
 }
 
@@ -290,5 +277,30 @@ async function* walkFiles(
         yield entry.path;
       }
     }
+  }
+}
+
+function scanLine(
+  line: string,
+  lineNumber: number,
+  filePath: string,
+  compiled: CompiledPattern[],
+  counts: Record<string, number>,
+  maxPerPattern: number,
+  matches: ScanMatch[],
+): void {
+  for (const { pattern, regex } of compiled) {
+    if (!regex) continue;
+    if ((counts[pattern.id] ?? 0) >= maxPerPattern) continue;
+    if (!regex.test(line)) continue;
+    counts[pattern.id] = (counts[pattern.id] ?? 0) + 1;
+    matches.push({
+      pattern_id: pattern.id,
+      severity: pattern.severity,
+      file: filePath,
+      line: lineNumber,
+      snippet: line.trim().slice(0, 200),
+      recommendation: pattern.recommendation,
+    });
   }
 }

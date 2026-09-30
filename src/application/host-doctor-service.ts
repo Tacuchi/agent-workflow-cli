@@ -90,16 +90,7 @@ async function detectPluginsRequiringJq(
     const marketplaceName = basename(mp.path).toLowerCase();
     const pluginsDir = join(mp.path, "plugins");
     if (!(await fs.exists(pluginsDir))) continue;
-    const plugins = await safeList(fs, pluginsDir);
-    for (const plug of plugins) {
-      if (plug.type !== "dir") continue;
-      const pluginJson = join(plug.path, ".claude-plugin", "plugin.json");
-      if (!(await fs.exists(pluginJson))) continue;
-      const name = (await readPluginName(fs, pluginJson)) ?? basename(plug.path);
-      if (matchesKnownList(name) || matchesKnownList(marketplaceName)) {
-        detected.push({ name, path: dirname(dirname(pluginJson)) });
-      }
-    }
+    await collectPluginsRequiringJq(fs, pluginsDir, marketplaceName, detected);
   }
   return detected;
 }
@@ -129,4 +120,22 @@ async function safeList(fs: FileSystemPort, path: string): Promise<DirEntry[]> {
 
 function dedupe<T>(items: T[]): T[] {
   return Array.from(new Set(items));
+}
+
+async function collectPluginsRequiringJq(
+  fs: FileSystemPort,
+  pluginsDir: string,
+  marketplaceName: string,
+  detected: DetectedPlugin[],
+): Promise<void> {
+  const plugins = await safeList(fs, pluginsDir);
+  for (const plug of plugins) {
+    if (plug.type !== "dir") continue;
+    const pluginJson = join(plug.path, ".claude-plugin", "plugin.json");
+    if (!(await fs.exists(pluginJson))) continue;
+    const name = (await readPluginName(fs, pluginJson)) ?? basename(plug.path);
+    if (matchesKnownList(name) || matchesKnownList(marketplaceName)) {
+      detected.push({ name, path: dirname(dirname(pluginJson)) });
+    }
+  }
 }

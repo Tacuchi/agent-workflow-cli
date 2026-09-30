@@ -159,37 +159,8 @@ export async function resolveDocBranch(
   if (identity.status === "resolved") {
     const own = ownDocBranch(read, identity.doc, source.alias);
     if (own !== null) return { ...base, own, branch: own, origin: "own" };
-    if (identity.doc.kind === "plan") {
-      const path = identity.path ?? (await findDocument(fs, paths, identity.doc));
-      if (path !== null) {
-        const plan = await fs.readText(join(paths.workspaceDir(), path));
-        const specPath = parseDerivedFromPath(plan);
-        const specExists =
-          specPath !== null && (await fs.exists(join(paths.workspaceDir(), specPath)));
-        if (specExists && specPath !== null) {
-          const spec = nodeFromDocPath(specPath);
-          if (spec?.kind === "spec") {
-            const inherited = ownDocBranch(read, spec, source.alias);
-            if (inherited !== null) {
-              return {
-                ...base,
-                branch: inherited,
-                origin: "inherited",
-                inherited_from: formatNodeId(spec),
-              };
-            }
-          }
-        }
-        if (specPath !== null && !specExists) {
-          return {
-            ...base,
-            branch: registered,
-            origin: registered === null ? "none" : "registered",
-            reason: `no se resolvió la spec '${specPath}' para heredar su rama`,
-          };
-        }
-      }
-    }
+    const inherited = await inheritedDocBranch(fs, paths, source, identity, read, registered, base);
+    if (inherited !== null) return inherited;
   }
   return { ...base, branch: registered, origin: registered === null ? "none" : "registered" };
 }
@@ -209,4 +180,44 @@ export async function findDocument(
       entry.name.endsWith(".md"),
   );
   return file ? `${directory}/${file.name}` : null;
+}
+
+async function inheritedDocBranch(
+  fs: FileSystemPort,
+  paths: PathsService,
+  source: ProjectFuente,
+  identity: Extract<DocIdentity, { status: "resolved" }>,
+  read: DocBranchRead,
+  registered: string | null,
+  base: Pick<EffectiveDocBranch, "own" | "doc" | "unreadable_lines">,
+): Promise<EffectiveDocBranch | null> {
+  if (identity.doc.kind !== "plan") return null;
+  const path = identity.path ?? (await findDocument(fs, paths, identity.doc));
+  if (path === null) return null;
+  const plan = await fs.readText(join(paths.workspaceDir(), path));
+  const specPath = parseDerivedFromPath(plan);
+  const specExists = specPath !== null && (await fs.exists(join(paths.workspaceDir(), specPath)));
+  if (specExists && specPath !== null) {
+    const spec = nodeFromDocPath(specPath);
+    if (spec?.kind === "spec") {
+      const inherited = ownDocBranch(read, spec, source.alias);
+      if (inherited !== null) {
+        return {
+          ...base,
+          branch: inherited,
+          origin: "inherited",
+          inherited_from: formatNodeId(spec),
+        };
+      }
+    }
+  }
+  if (specPath !== null && !specExists) {
+    return {
+      ...base,
+      branch: registered,
+      origin: registered === null ? "none" : "registered",
+      reason: `no se resolvió la spec '${specPath}' para heredar su rama`,
+    };
+  }
+  return null;
 }

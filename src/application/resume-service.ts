@@ -138,19 +138,8 @@ export async function runResume(
       : input.target !== undefined
         ? resumeTarget(index, input.target)
         : resumePipeline(index);
-  const readyToClose: Array<{ session: string; command: string }> = [];
-  for (const session of index.sessions.filter((item) => item.state === "active")) {
-    const document = await fs.readText(`${session.path}/SESSION.md`).catch(() => "");
-    const criteria = parseMdSectionBilingual(document, "Success criteria") ?? "";
-    const checked = (criteria.match(/^\s*[-*]\s*\[[xX]\]/gm) ?? []).length;
-    const open = (criteria.match(/^\s*[-*]\s*\[\s\]/gm) ?? []).length;
-    if (checked > 0 && open === 0) {
-      readyToClose.push({
-        session: session.folder,
-        command: `aw session-close --code ${session.folder}`,
-      });
-    }
-  }
+  const readyToClose = await sessionsReadyToClose(fs, index);
+
   return {
     ...outcome,
     ...(readyToClose.length > 0 ? { ready_to_close: readyToClose } : {}),
@@ -387,15 +376,7 @@ async function sessionProposal(
     ...(session?.code !== undefined ? { code: session.code } : {}),
   });
   const run = await projectRun(fs, paths, folder);
-  const directed = run !== null && run.boundary !== "final";
-  const command =
-    narrative.phase === "pausada"
-      ? `aw session-resume --code ${folder}`
-      : narrative.phase === "abandonada" || narrative.phase === "cerrada"
-        ? `aw session-resume --code ${folder} --reopen`
-        : directed
-          ? run.command
-          : `aw session-resume --code ${folder} --reopen`;
+  const command = sessionResumeCommand(narrative.phase, run, folder);
   const [result] = narrative.results;
   return {
     kind: "session",
@@ -416,4 +397,41 @@ async function sessionProposal(
     ...(session !== undefined && session.units.length > 0 ? { units: session.units } : {}),
     ...(run !== null && run.scope !== null ? { scope: run.scope } : {}),
   };
+}
+
+async function sessionsReadyToClose(
+  fs: FileSystemPort,
+  index: WorklineIndex,
+): Promise<Array<{ session: string; command: string }>> {
+  const readyToClose: Array<{ session: string; command: string }> = [];
+  for (const session of index.sessions.filter((item) => item.state === "active")) {
+    const document = await fs.readText(`${session.path}/SESSION.md`).catch(() => "");
+    const criteria = parseMdSectionBilingual(document, "Success criteria") ?? "";
+    const checked = (criteria.match(/^\s*[-*]\s*\[[xX]\]/gm) ?? []).length;
+    const open = (criteria.match(/^\s*[-*]\s*\[\s\]/gm) ?? []).length;
+    if (checked > 0 && open === 0) {
+      readyToClose.push({
+        session: session.folder,
+        command: `aw session-close --code ${session.folder}`,
+      });
+    }
+  }
+  return readyToClose;
+}
+
+function sessionResumeCommand(
+  phase: string,
+  run: Awaited<ReturnType<typeof projectRun>>,
+  folder: string,
+): string {
+  const directed = run !== null && run.boundary !== "final";
+  const command =
+    phase === "pausada"
+      ? `aw session-resume --code ${folder}`
+      : phase === "abandonada" || phase === "cerrada"
+        ? `aw session-resume --code ${folder} --reopen`
+        : directed
+          ? run.command
+          : `aw session-resume --code ${folder} --reopen`;
+  return command;
 }

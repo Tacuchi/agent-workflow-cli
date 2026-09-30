@@ -227,29 +227,7 @@ async function portableSources(
   const migrated: string[] = [];
   const notMigrated: string[] = [];
   const fuentes: ProjectFuente[] = [];
-  for (const source of sources) {
-    const declared = source.declared_path ?? source.path ?? "";
-    if (explicitAliases.has(source.alias) && local.config === null)
-      throw new Error(`local.json ilegible: ${local.error}`);
-    if (!absoluteOnAnyHost(declared)) {
-      if (
-        explicitAliases.has(source.alias) &&
-        localSourcePath(local.config, source.alias) !== undefined
-      )
-        changes[source.alias] = null;
-      fuentes.push({ ...source, declared_path: declared });
-      continue;
-    }
-    // A foreign-host absolute coordinate stays byte-for-byte until its own host migrates it.
-    if ((!isAbsolute(declared) && !/^\\\\/.test(declared)) || !(await fs.exists(declared))) {
-      if (!existingAliases.has(source.alias))
-        throw new Error(
-          `la ruta de la fuente ${source.alias} no existe en este host: ${declared}; declárala con aw add-source ${source.alias}:<ruta>`,
-        );
-      notMigrated.push(source.alias);
-      fuentes.push({ ...source, declared_path: declared });
-      continue;
-    }
+  function migrateLocalSource(source: ProjectFuente, declared: string): void {
     const relativePath = relative(cwd, declared);
     const inside =
       relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath);
@@ -268,6 +246,34 @@ async function portableSources(
       changes[source.alias] = declared;
     migrated.push(source.alias);
     fuentes.push({ ...source, declared_path: inside ? relativePath || "." : "(local)" });
+  }
+  async function migrateSource(source: ProjectFuente): Promise<void> {
+    const declared = source.declared_path ?? source.path ?? "";
+    if (explicitAliases.has(source.alias) && local.config === null)
+      throw new Error(`local.json ilegible: ${local.error}`);
+    if (!absoluteOnAnyHost(declared)) {
+      if (
+        explicitAliases.has(source.alias) &&
+        localSourcePath(local.config, source.alias) !== undefined
+      )
+        changes[source.alias] = null;
+      fuentes.push({ ...source, declared_path: declared });
+      return;
+    }
+    // A foreign-host absolute coordinate stays byte-for-byte until its own host migrates it.
+    if (!(await sourceExistsOnHost(fs, declared))) {
+      if (!existingAliases.has(source.alias))
+        throw new Error(
+          `la ruta de la fuente ${source.alias} no existe en este host: ${declared}; declárala con aw add-source ${source.alias}:<ruta>`,
+        );
+      notMigrated.push(source.alias);
+      fuentes.push({ ...source, declared_path: declared });
+      return;
+    }
+    migrateLocalSource(source, declared);
+  }
+  for (const source of sources) {
+    await migrateSource(source);
   }
   return { fuentes, changes, migrated, notMigrated };
 }
@@ -294,12 +300,7 @@ async function readMirroredExtras(
     for (const [alias, declaration] of Object.entries(block.pipeline ?? {})) {
       pipeline[alias] = { ...declaration, ...pipeline[alias] };
     }
-    for (const line of block.preserved_lines ?? []) {
-      const key = `${line.slot}\u0000${line.text}`;
-      if (seenPreserved.has(key)) continue;
-      seenPreserved.add(key);
-      preserved.push(line);
-    }
+    collectPreservedLines(block.preserved_lines ?? [], seenPreserved, preserved);
     for (const line of block.dropped_lines ?? []) {
       if (seenDropped.has(line)) continue;
       seenDropped.add(line);
@@ -363,31 +364,8 @@ async function buildRenderInput(
   const remove = new Set(input.removeAliases ?? []);
   const fuentes = mergeFuentes(existing?.fuentes ?? [], input).filter((f) => !remove.has(f.alias));
   const stack = await detectStackFromSources(fs, fuentes, cwd, existing?.stack ?? {});
-  const defaultBranches: DefaultBranches = {
-    ...(existing?.default_branches ?? {}),
-    ...(input.defaultBranches ?? {}),
-  };
-  const workingBranches: Record<string, string> = {
-    ...(existing?.working_branches ?? {}),
-    ...(input.workingBranches ?? {}),
-  };
-  const qaBranches: Record<string, string> = {
-    ...(existing?.qa_branches ?? {}),
-    ...(input.qaBranches ?? {}),
-  };
-  const exceptionBranches = {
-    ...(existing?.exception_branches ?? {}),
-    ...(input.exceptionBranches ?? {}),
-  };
-  const pipeline: ProjectPipeline = { ...(existing?.pipeline ?? {}) };
-  for (const [alias, value] of Object.entries(input.pipeline ?? {})) {
-    pipeline[alias] = { ...pipeline[alias], ...value };
-  }
-  for (const alias of remove) {
-    delete workingBranches[alias];
-    delete qaBranches[alias];
-    delete exceptionBranches[alias];
-  }
+  const { defaultBranches, workingBranches, qaBranches, exceptionBranches, pipeline } =
+    renderBranchSettings(input, existing, remove);
   const editMode = input.editMode ?? existing?.edit_mode;
   return {
     proyecto,
@@ -446,20 +424,10 @@ async function detectStackFromSources(
       continue;
     }
     const detected = await detectStackDict(fs, path);
-    for (const key of ["language", "framework", "build"] as const) {
-      const value = detected[key];
-      if (value === undefined) continue;
-      const values = stack[key]?.split(", ") ?? [];
-      if (!values.includes(value)) stack[key] = [...values, value].join(", ");
-    }
+    mergeDetectedStack(stack, detected);
   }
   if (missing) {
-    for (const key of ["language", "framework", "build"] as const) {
-      for (const value of previous[key]?.split(", ") ?? []) {
-        const values = stack[key]?.split(", ") ?? [];
-        if (!values.includes(value)) stack[key] = [...values, value].join(", ");
-      }
-    }
+    retainPreviousStack(stack, previous);
   }
   return stack;
 }
@@ -595,4 +563,73 @@ function appendedText(text: string, block: string): string {
   if (appended.length > 0 && !appended.endsWith("\n")) appended += "\n";
   if (appended.length > 0 && !appended.endsWith("\n\n")) appended += "\n";
   return `${appended}${block}\n`;
+}
+
+function collectPreservedLines(
+  lines: PreservedLine[],
+  seenPreserved: Set<string>,
+  preserved: PreservedLine[],
+): void {
+  for (const line of lines) {
+    const key = `${line.slot}\u0000${line.text}`;
+    if (seenPreserved.has(key)) continue;
+    seenPreserved.add(key);
+    preserved.push(line);
+  }
+}
+
+function renderBranchSettings(
+  input: ProjectMdUpsertInput,
+  existing: ParsedProjectBlock | null,
+  remove: Set<string>,
+) {
+  const defaultBranches: DefaultBranches = {
+    ...(existing?.default_branches ?? {}),
+    ...(input.defaultBranches ?? {}),
+  };
+  const workingBranches: Record<string, string> = {
+    ...(existing?.working_branches ?? {}),
+    ...(input.workingBranches ?? {}),
+  };
+  const qaBranches: Record<string, string> = {
+    ...(existing?.qa_branches ?? {}),
+    ...(input.qaBranches ?? {}),
+  };
+  const exceptionBranches = {
+    ...(existing?.exception_branches ?? {}),
+    ...(input.exceptionBranches ?? {}),
+  };
+  const pipeline: ProjectPipeline = { ...(existing?.pipeline ?? {}) };
+  for (const [alias, value] of Object.entries(input.pipeline ?? {})) {
+    pipeline[alias] = { ...pipeline[alias], ...value };
+  }
+  for (const alias of remove) {
+    delete workingBranches[alias];
+    delete qaBranches[alias];
+    delete exceptionBranches[alias];
+  }
+  return { defaultBranches, workingBranches, qaBranches, exceptionBranches, pipeline };
+}
+
+function mergeDetectedStack(stack: ProjectStack, detected: ProjectStack): void {
+  for (const key of ["language", "framework", "build"] as const) {
+    const value = detected[key];
+    if (value === undefined) continue;
+    const values = stack[key]?.split(", ") ?? [];
+    if (!values.includes(value)) stack[key] = [...values, value].join(", ");
+  }
+}
+
+function retainPreviousStack(stack: ProjectStack, previous: ProjectStack): void {
+  for (const key of ["language", "framework", "build"] as const) {
+    for (const value of previous[key]?.split(", ") ?? []) {
+      const values = stack[key]?.split(", ") ?? [];
+      if (!values.includes(value)) stack[key] = [...values, value].join(", ");
+    }
+  }
+}
+
+async function sourceExistsOnHost(fs: FileSystemPort, declared: string): Promise<boolean> {
+  if (!isAbsolute(declared) && !/^\\\\/.test(declared)) return false;
+  return fs.exists(declared);
 }

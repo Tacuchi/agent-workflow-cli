@@ -458,80 +458,22 @@ async function mintUnderLock(
   // one, and an abandoned reservation is the empty document nobody is coming
   // back for. A publication has no slot to re-enter — it never left one open.
   if (mint.kind === "claim") {
-    if (mint.folder) {
-      for (const file of state.files) {
-        const number = leadingCorrelative(file);
-        if (number === null || file.slice(number.length + 1) !== mint.name) continue;
-        const directory = join(target, file);
-        const markerPath = join(directory, FOLDER_RESERVATION_MARKER);
-        if (!(await fs.exists(markerPath)) || (await fs.list(directory)).length !== 1) continue;
-        const held = await fs.readText(markerPath);
-        if (held === mint.bytes || reservationOwnerOf(held) !== mint.owner) continue;
-        const claim = {
-          category: basename(target),
-          correlative: number,
-          name: mint.name,
-          owner: mint.owner,
-        };
-        const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
-        if (
-          ledger.unreadable > 0 ||
-          isRevoked(ledger.events, claim) ||
-          wasPublished(ledger.events, claim)
-        ) {
-          throw new Error(
-            `la reserva ${number}-${mint.name} no puede liberarse con el ledger actual`,
-          );
-        }
-        if (!releaseAlreadyRecorded(ledger.events, claim)) {
-          await appendClaimEvent(fs, paths, {
-            at: new Date().toISOString(),
-            event: "released",
-            claim,
-            cause: "aw next-number: nuevo material de la misma sesión liberó la reserva anterior",
-          });
-        }
-        await fs.remove(directory);
-        state = await scan(fs, target, false, paths);
-      }
-    }
-    const held = await heldReservation(fs, target, state.files, mint.name, mint.bytes, mint.folder);
-    if (held !== null) {
-      const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
-      if (ledger.unreadable > 0) throw new Error("claims.jsonl no permite confirmar esta reserva");
-      const claim = {
-        category: basename(target),
-        correlative: held.nnn,
-        name: mint.name,
-        owner: mint.owner,
-      };
-      if (isRevoked(ledger.events, claim) || wasPublished(ledger.events, claim)) {
-        throw new Error(`la reserva ${held.nnn}-${mint.name} ya fue revocada o publicada`);
-      }
-      if (
-        !openClaimsOf(ledger.events, mint.owner).some(
-          (item) =>
-            item.correlative === held.nnn &&
-            item.name === mint.name &&
-            item.category === claim.category,
-        )
-      ) {
-        await appendClaimEvent(fs, paths, {
-          at: new Date().toISOString(),
-          event: "claimed",
-          claim,
-          cause: "reintento recuperó un marcador intacto anterior al append de claimed",
-        });
-      }
-      return {
-        ...state,
-        next: held.nnn,
-        claimed_path: normalize(held.path),
-        claimed_owner: mint.owner,
-        claim_reused: true,
-      };
-    }
+    state = await releaseChangedFolderReservations(fs, paths, target, mint, state);
+    const reused = await reuseReservation(fs, paths, target, mint, state);
+    if (reused !== null) return reused;
   }
+  return mintAvailableNumber(fs, paths, target, mint, state, published, minimum);
+}
+
+async function mintAvailableNumber(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: string,
+  mint: Mint,
+  state: NextNumberOutput,
+  published: Set<string>,
+  minimum: string | undefined,
+): Promise<NextNumberOutput> {
   // Correlatives the ledger says came back, lowest first, BEFORE `max + 1`.
   //
   // The old mint computed `max + 1` and probed forward only, so a number released
@@ -682,22 +624,7 @@ export async function runNextNumber(
 
   const mint = mintOf(claim, publish, dryRun);
   if (mint === null) {
-    const state = await scan(fs, target, dryRun, paths);
-    const next =
-      minimum !== undefined && compareCorrelatives(state.next, minimum) < 0 ? minimum : state.next;
-    if (dryRun && publish !== undefined) {
-      const matched = await matchingPublication(
-        fs,
-        target,
-        state.files,
-        publish.name,
-        publish.content,
-      );
-      const path = matched?.path ?? `${normalize(target)}/${next}-${publish.name}`;
-      const { published_path: _previous, ...rest } = state;
-      return { published_path: normalize(path), ...rest, next: matched?.number ?? next };
-    }
-    return { ...state, next };
+    return previewNextNumber(fs, paths, target, dryRun, publish, minimum);
   }
   // The mint becomes a real filesystem write, so it is a name and never a path:
   // a separator would let `../…` land outside the directory the caller named —
@@ -853,4 +780,133 @@ function hasCorrelative(name: string, wanted: string): boolean {
 
 function normalize(path: string): string {
   return path.split("\\").join("/");
+}
+
+async function releaseChangedFolderReservations(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: string,
+  mint: Extract<Mint, { kind: "claim" }>,
+  initialState: NextNumberOutput,
+): Promise<NextNumberOutput> {
+  let state = initialState;
+  if (!mint.folder) return state;
+  for (const file of state.files) {
+    const number = leadingCorrelative(file);
+    if (number === null || file.slice(number.length + 1) !== mint.name) continue;
+    const directory = join(target, file);
+    const markerPath = join(directory, FOLDER_RESERVATION_MARKER);
+    if (!(await fs.exists(markerPath)) || (await fs.list(directory)).length !== 1) continue;
+    const held = await fs.readText(markerPath);
+    if (held === mint.bytes || reservationOwnerOf(held) !== mint.owner) continue;
+    await releaseFolderReservation(fs, paths, target, mint, number, directory);
+    state = await scan(fs, target, false, paths);
+  }
+
+  return state;
+}
+
+async function releaseFolderReservation(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: string,
+  mint: Extract<Mint, { kind: "claim" }>,
+  number: string,
+  directory: string,
+): Promise<void> {
+  const claim = {
+    category: basename(target),
+    correlative: number,
+    name: mint.name,
+    owner: mint.owner,
+  };
+  const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
+  if (
+    ledger.unreadable > 0 ||
+    isRevoked(ledger.events, claim) ||
+    wasPublished(ledger.events, claim)
+  ) {
+    throw new Error(`la reserva ${number}-${mint.name} no puede liberarse con el ledger actual`);
+  }
+  if (!releaseAlreadyRecorded(ledger.events, claim)) {
+    await appendClaimEvent(fs, paths, {
+      at: new Date().toISOString(),
+      event: "released",
+      claim,
+      cause: "aw next-number: nuevo material de la misma sesión liberó la reserva anterior",
+    });
+  }
+  await fs.remove(directory);
+}
+
+async function reuseReservation(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: string,
+  mint: Extract<Mint, { kind: "claim" }>,
+  state: NextNumberOutput,
+): Promise<NextNumberOutput | null> {
+  const held = await heldReservation(fs, target, state.files, mint.name, mint.bytes, mint.folder);
+  if (held !== null) {
+    const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
+    if (ledger.unreadable > 0) throw new Error("claims.jsonl no permite confirmar esta reserva");
+    const claim = {
+      category: basename(target),
+      correlative: held.nnn,
+      name: mint.name,
+      owner: mint.owner,
+    };
+    if (isRevoked(ledger.events, claim) || wasPublished(ledger.events, claim)) {
+      throw new Error(`la reserva ${held.nnn}-${mint.name} ya fue revocada o publicada`);
+    }
+    if (
+      !openClaimsOf(ledger.events, mint.owner).some(
+        (item) =>
+          item.correlative === held.nnn &&
+          item.name === mint.name &&
+          item.category === claim.category,
+      )
+    ) {
+      await appendClaimEvent(fs, paths, {
+        at: new Date().toISOString(),
+        event: "claimed",
+        claim,
+        cause: "reintento recuperó un marcador intacto anterior al append de claimed",
+      });
+    }
+    return {
+      ...state,
+      next: held.nnn,
+      claimed_path: normalize(held.path),
+      claimed_owner: mint.owner,
+      claim_reused: true,
+    };
+  }
+  return null;
+}
+
+async function previewNextNumber(
+  fs: FileSystemPort,
+  paths: PathsService,
+  target: string,
+  dryRun: boolean,
+  publish: NextNumberInput["publish"],
+  minimum: string | undefined,
+): Promise<NextNumberOutput> {
+  const state = await scan(fs, target, dryRun, paths);
+  const next =
+    minimum !== undefined && compareCorrelatives(state.next, minimum) < 0 ? minimum : state.next;
+  if (dryRun && publish !== undefined) {
+    const matched = await matchingPublication(
+      fs,
+      target,
+      state.files,
+      publish.name,
+      publish.content,
+    );
+    const path = matched?.path ?? `${normalize(target)}/${next}-${publish.name}`;
+    const { published_path: _previous, ...rest } = state;
+    return { published_path: normalize(path), ...rest, next: matched?.number ?? next };
+  }
+  return { ...state, next };
 }

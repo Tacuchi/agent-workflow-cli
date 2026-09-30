@@ -34,7 +34,7 @@ import { join } from "node:path";
 import { leadingCorrelative } from "../domain/correlative.js";
 import { FOLDER_RESERVATION_MARKER } from "../domain/reservation.js";
 import { reservationOwnerOf } from "../domain/reservation.js";
-import type { FileSystemPort } from "../ports/file-system.js";
+import type { DirEntry, FileSystemPort } from "../ports/file-system.js";
 import {
   type ClaimEvent,
   type ClaimIdentity,
@@ -196,30 +196,7 @@ async function walkSlots(
 ): Promise<void> {
   for (const category of await fs.list(docs)) {
     if (category.type !== "dir") continue;
-    for (const entry of await fs.list(category.path)) {
-      // The filename decides whether the bytes are worth reading at all. Reading
-      // every file in every docs/ subdirectory to then discard most of them on the
-      // first line of `slotOf` made a scan that runs on EVERY board projection pay
-      // for the whole corpus.
-      if (leadingCorrelative(entry.name) === null) continue;
-      let markerPath = entry.path;
-      if (entry.type === "dir") {
-        const contents = await fs.list(entry.path);
-        if (contents.length !== 1 || contents[0]?.name !== FOLDER_RESERVATION_MARKER) continue;
-        markerPath = join(entry.path, FOLDER_RESERVATION_MARKER);
-      } else if (entry.type !== "file") continue;
-      const slot = slotOf(
-        category.name,
-        entry.name,
-        await fs.readText(markerPath),
-        events,
-        liveOwners,
-      );
-      if (slot === null) continue;
-      const claim = claimOfSlot(slot);
-      slot.revoked = claim !== null && isRevoked(events, claim);
-      into.push(slot);
-    }
+    await walkCategorySlots(fs, category, events, liveOwners, into);
   }
 }
 
@@ -524,4 +501,37 @@ export function sanctionedActionFor(slot: SlotState): string {
   }
   const confirm = slot.intact ? "" : " --confirm-no-producer";
   return `aw claims recover ${slot.path}${confirm}`;
+}
+
+async function walkCategorySlots(
+  fs: FileSystemPort,
+  category: DirEntry,
+  events: readonly ClaimEvent[],
+  liveOwners: ReadonlyMap<string, "active" | "paused">,
+  into: SlotState[],
+): Promise<void> {
+  for (const entry of await fs.list(category.path)) {
+    // The filename decides whether the bytes are worth reading at all. Reading
+    // every file in every docs/ subdirectory to then discard most of them on the
+    // first line of `slotOf` made a scan that runs on EVERY board projection pay
+    // for the whole corpus.
+    if (leadingCorrelative(entry.name) === null) continue;
+    let markerPath = entry.path;
+    if (entry.type === "dir") {
+      const contents = await fs.list(entry.path);
+      if (contents.length !== 1 || contents[0]?.name !== FOLDER_RESERVATION_MARKER) continue;
+      markerPath = join(entry.path, FOLDER_RESERVATION_MARKER);
+    } else if (entry.type !== "file") continue;
+    const slot = slotOf(
+      category.name,
+      entry.name,
+      await fs.readText(markerPath),
+      events,
+      liveOwners,
+    );
+    if (slot === null) continue;
+    const claim = claimOfSlot(slot);
+    slot.revoked = claim !== null && isRevoked(events, claim);
+    into.push(slot);
+  }
 }

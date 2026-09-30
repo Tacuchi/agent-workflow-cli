@@ -28,26 +28,36 @@ export async function reconcileHistory(
         contradictory.push({ session: row.key, state: row.state, reason: "sin carpeta local" });
       continue;
     }
-    const state = await readSessionState(fs, path);
-    if (row.state === "active" && state !== "active")
-      contradictory.push({
-        session: row.key,
-        state: row.state,
-        reason: "activa con marcador de cierre",
-      });
-    if (row.state === "closed" && state !== "closed")
-      contradictory.push({
-        session: row.key,
-        state: row.state,
-        reason: "cerrada sin marcador de cierre",
-      });
-    if ((row.state === "paused" || row.state === "abandoned") && row.state !== state) {
-      contradictory.push({
-        session: row.key,
-        state: row.state,
-        reason: `registro ${row.state}, carpeta ${state}`,
-      });
-    }
+    contradictory.push(...(await contradictoryHistoryRow(fs, path, row)));
   }
   return { missing_rows: missingRows, contradictory_rows: contradictory };
+}
+
+async function contradictoryHistoryRow(
+  fs: FileSystemPort,
+  path: string,
+  row: ReturnType<typeof readHistoryRows>[number],
+): Promise<Array<{ session: string; state: string; reason: string }>> {
+  const contradictory: Array<{ session: string; state: string; reason: string }> = [];
+  const state = await readSessionState(fs, path);
+  if (row.state === "active" && state !== "active")
+    contradictory.push({
+      session: row.key,
+      state: row.state,
+      reason: "activa con marcador de cierre",
+    });
+  if (row.state === "closed" && state !== "closed")
+    contradictory.push({
+      session: row.key,
+      state: row.state,
+      reason: "cerrada sin marcador de cierre",
+    });
+  if ((row.state === "paused" || row.state === "abandoned") && row.state !== state) {
+    contradictory.push({
+      session: row.key,
+      state: row.state,
+      reason: `registro ${row.state}, carpeta ${state}`,
+    });
+  }
+  return contradictory;
 }

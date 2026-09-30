@@ -62,10 +62,7 @@ export function scanMarkdown(text: string): MarkdownScan {
         fenced[i] = true;
         continue;
       }
-      const match = HEADING_LINE_RE.exec(line);
-      if (match?.[1] && match[2]) {
-        headings.push({ level: match[1].length, title: match[2].trim(), line: i });
-      }
+      appendHeading(line, i, headings);
       continue;
     }
     fenced[i] = true;
@@ -279,4 +276,11 @@ export function parseMdSectionBilingual(
     if (value !== undefined) return value;
   }
   return undefined;
+}
+
+function appendHeading(line: string, index: number, headings: MarkdownHeading[]): void {
+  const match = HEADING_LINE_RE.exec(line);
+  if (match?.[1] && match[2]) {
+    headings.push({ level: match[1].length, title: match[2].trim(), line: index });
+  }
 }

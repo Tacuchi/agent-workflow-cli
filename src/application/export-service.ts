@@ -299,12 +299,7 @@ export async function prepareExport(
     };
   }
   const policy = resolvePolicy(category, canon.canon[category]);
-  const existingManuals =
-    category === "manuals" && (await fs.exists(join(paths.workspaceDir(), policy.dir)))
-      ? (await fs.list(join(paths.workspaceDir(), policy.dir)))
-          .filter((entry) => entry.type === "file" && entry.name.endsWith(".md"))
-          .map((entry) => `${policy.dir}/${entry.name}`)
-      : [];
+  const existingManuals = await listExistingManuals(fs, paths, category, policy.dir);
   const resolved = await resolveMaterial(fs, env, paths, category, selection);
   if (!resolved.ok) return resolved;
   const material = resolved.value;
@@ -331,27 +326,8 @@ export async function prepareExport(
       },
     };
   }
-  if (selection.catalog !== undefined) {
-    if (catalog === undefined)
-      return {
-        ok: false,
-        failure: {
-          code: "EXPORT_CATALOG_UNAVAILABLE",
-          message: `--catalog ${selection.catalog} no tiene catálogo de sólo lectura disponible`,
-          action: "revisá la conexión y repetí prepare",
-        },
-      };
-    const read = await catalog.lookupColumns(selection.catalog, ["public"]);
-    if (!read.ok)
-      return {
-        ok: false,
-        failure: {
-          code: "EXPORT_CATALOG_UNAVAILABLE",
-          message: `no se pudo consultar '${selection.catalog}' (${read.code}): ${read.message}`,
-          action: "revisá la conexión de sólo lectura y repetí prepare",
-        },
-      };
-  }
+  const catalogFailure = await checkSelectedCatalog(selection, catalog);
+  if (catalogFailure !== null) return catalogFailure;
   const scriptsMaterial = category === "scripts" ? await sqlMaterial(fs, paths, material) : null;
   const reservationOwner = await exportReservationOwner(
     fs,
@@ -366,161 +342,172 @@ export async function prepareExport(
   const owner = selection.reservationOwner ?? reservationOwner.owner;
   const materialDigest = selection.reservationMaterialDigest ?? semanticDigest(scriptsMaterial);
   const marker = owner === null ? null : reservationMarker(owner, materialDigest);
-  if (category === "scripts" && selection.next !== undefined) {
-    const markerPath = join(
-      paths.workspaceDir(),
-      policy.dir,
-      `${selection.next}-export-scripts-${date}`,
-      FOLDER_RESERVATION_MARKER,
-    );
-    if (!(await fs.exists(markerPath)) || (await fs.readText(markerPath)) !== marker) {
-      return {
-        ok: false,
-        failure: {
-          code: "EXPORT_NUMBER_TAKEN",
-          message: `la reserva ${selection.next} no está intacta`,
-          action: "volvé a correr prepare sobre el material vigente",
-        },
-      };
+  async function checkReservation(): Promise<SemanticParse<never> | null> {
+    if (category === "scripts" && selection.next !== undefined) {
+      const markerPath = join(
+        paths.workspaceDir(),
+        policy.dir,
+        `${selection.next}-export-scripts-${date}`,
+        FOLDER_RESERVATION_MARKER,
+      );
+      if (!(await fs.exists(markerPath)) || (await fs.readText(markerPath)) !== marker) {
+        return {
+          ok: false,
+          failure: {
+            code: "EXPORT_NUMBER_TAKEN",
+            message: `la reserva ${selection.next} no está intacta`,
+            action: "volvé a correr prepare sobre el material vigente",
+          },
+        };
+      }
     }
+    return null;
   }
-  const next =
-    selection.next ??
-    (
-      await runNextNumber(fs, env, paths, {
-        directory: policy.dir,
-        ...(owner === null
-          ? { dryRun: true }
-          : {
-              claim: {
-                name: `export-scripts-${date}`,
-                owner,
-                folder: true,
-                material: materialDigest,
-              },
-            }),
-      })
-    ).next;
+  const reservationFailure = await checkReservation();
+  if (reservationFailure !== null) return reservationFailure;
+  async function reserveExportNumber(): Promise<string> {
+    return (
+      selection.next ??
+      (
+        await runNextNumber(fs, env, paths, {
+          directory: policy.dir,
+          ...(owner === null
+            ? { dryRun: true }
+            : {
+                claim: {
+                  name: `export-scripts-${date}`,
+                  owner,
+                  folder: true,
+                  material: materialDigest,
+                },
+              }),
+        })
+      ).next
+    );
+  }
+  const next = await reserveExportNumber();
   const unit =
     policy.shape === "dossier" ? `${policy.dir}/${next}-export-${category}-${date}` : policy.dir;
-  const scope: ExportScope = {
-    ...(selection.code !== undefined ? { code: selection.code } : {}),
-    ...(selection.catalog !== undefined ? { catalog: selection.catalog } : {}),
-    ...(owner === null
-      ? {}
-      : { reservationOwner: owner, reservationMaterialDigest: materialDigest }),
-    ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
-    ...(selection.since !== undefined ? { since: selection.since } : {}),
-    ...(selection.source !== undefined ? { source: selection.source } : {}),
-    ...(selection.from !== undefined ? { from: selection.from } : {}),
-    ...(selection.exclude !== undefined ? { exclude: selection.exclude } : {}),
-    ...(selection.environment !== undefined ? { environment: selection.environment } : {}),
-    date,
-    next,
-  };
+  const scope = buildExportScope(selection, owner, materialDigest, date, next);
+
   scope.seal = Object.fromEntries(
     Object.entries(scope).map(([key, value]) => [key, baseDigest(JSON.stringify(value))]),
   );
 
-  const bundleOrigin =
-    category === "scripts" ? await manifestOrigin(fs, paths, material) : undefined;
-  const allBundles =
-    category === "scripts" ? await listGraduatedBundles(fs, paths.workspaceDir(), paths) : [];
-  const availableBundles =
-    category === "scripts" ? allBundles.map((bundle) => basename(bundle.path)) : undefined;
-  const looseSql =
-    category === "scripts" ? await listStandaloneSql(fs, paths.workspaceDir(), paths) : [];
-  const coveredSql = new Set(allBundles.flatMap((bundle) => bundle.origin_standalone_sql ?? []));
-  const unbundledSql = looseSql.filter(
-    (file) => !coveredSql.has(relative(paths.workspaceDir(), file.path).split(sep).join("/")),
-  );
-  const bundleWarnings =
-    category === "scripts" && selection.environment !== undefined
-      ? await environmentWarnings(fs, paths, selection.environment, material.bundles)
-      : [];
+  async function buildInventory() {
+    const bundleOrigin =
+      category === "scripts" ? await manifestOrigin(fs, paths, material) : undefined;
+    const allBundles =
+      category === "scripts" ? await listGraduatedBundles(fs, paths.workspaceDir(), paths) : [];
+    const availableBundles =
+      category === "scripts" ? allBundles.map((bundle) => basename(bundle.path)) : undefined;
+    const looseSql =
+      category === "scripts" ? await listStandaloneSql(fs, paths.workspaceDir(), paths) : [];
+    const coveredSql = new Set(allBundles.flatMap((bundle) => bundle.origin_standalone_sql ?? []));
+    const unbundledSql = looseSql.filter(
+      (file) => !coveredSql.has(relative(paths.workspaceDir(), file.path).split(sep).join("/")),
+    );
+    const bundleWarnings =
+      category === "scripts" && selection.environment !== undefined
+        ? await environmentWarnings(fs, paths, selection.environment, material.bundles)
+        : [];
 
-  const inventory = {
-    category,
-    destination: unit,
-    shape: policy.shape,
-    required: policy.required,
-    extensions: policy.extensions,
-    overwritable: policy.overwritable,
-    // What the material was composed from, and what stayed in and out of it —
-    // declared BEFORE anything is composed, which is the only moment at which
-    // the person can still disagree with the origin.
-    origins: material.origins,
-    sessions: material.sessions,
-    bundles: material.bundles,
-    standalone_sql: material.standalone,
-    excluded: material.excluded,
-    exclude_unmatched: material.unmatched,
-    environment: material.environment,
-    ...(bundleOrigin === undefined
-      ? {}
-      : {
-          bundle_origin: bundleOrigin,
-          available_bundles: availableBundles,
-          unbundled_sql: unbundledSql,
-          bundle_warnings: bundleWarnings,
-        }),
-    date,
-  };
-
-  const readSet = materialPaths(material);
-  const request = buildSemanticRequest({
-    operation: `export-${category}`,
-    // What the seal defends is workspace state: the MATERIAL the scope covers —
-    // sessions, loose SQL and previously published bundles alike, since any of
-    // them appearing or changing changes what the dossier should have contained
-    // — and the folder this workspace publishes to. The scope rides along so an
-    // altered echo cannot pass as the original one.
-    inputs: {
-      ...(scriptsMaterial === null
-        ? { corpus: material.sessions, bundles: material.bundles, standalone: material.standalone }
-        : { sql: scriptsMaterial }),
-      dir: policy.dir,
-      ...(category === "manuals" ? { existing_manuals: existingManuals } : {}),
-      scope,
-      workspace: paths.workspaceDir(),
-    },
-    sealed: "el material del alcance o el destino declarado de la categoría",
-    scope,
-    contract: `${policy.contract} Cada pieza divisible (incluidos forwards) admite ${FORWARD_MAX_BYTES} B y se divide en más archivos; un informe, README.md, RUNBOOK.md o rollback/00-global/00-ROLLBACK.sql admite hasta ${LIMITS.max_artifact_bytes} B. Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN aprobado es el número publicado: nunca se reasigna en apply. Copiá 'scope' TAL CUAL, incluido scope.seal, en tu respuesta.${category === "scripts" ? " Declará decisions.supersedes y decisions.requires como listas de nombres de bundles existentes; NO incluyas bundle.json: lo genera el CLI con los digests del origen y lo sella en validate." : ""}`,
-    inventory,
-    allowedDestinations: [
-      unit,
-      ...(category === "manuals"
-        ? [policy.dir]
-        : policy.overwritable === null
-          ? []
-          : [policy.overwritable]),
-    ],
-    limits: LIMITS,
-    readSet,
-    readSetBytes: readSet.length,
-  });
-
-  return {
-    ok: true,
-    value: {
+    const inventory = {
       category,
-      request,
-      dir: policy.dir,
-      scope,
-      next,
-      unit,
-      ...(category === "manuals" ? { existingManuals } : {}),
+      destination: unit,
+      shape: policy.shape,
+      required: policy.required,
+      extensions: policy.extensions,
+      overwritable: policy.overwritable,
+      // What the material was composed from, and what stayed in and out of it —
+      // declared BEFORE anything is composed, which is the only moment at which
+      // the person can still disagree with the origin.
+      origins: material.origins,
+      sessions: material.sessions,
+      bundles: material.bundles,
+      standalone_sql: material.standalone,
+      excluded: material.excluded,
+      exclude_unmatched: material.unmatched,
+      environment: material.environment,
       ...(bundleOrigin === undefined
         ? {}
         : {
-            bundleOrigin,
-            availableBundles: availableBundles ?? [],
-            reservationOwner: owner ?? "",
-            reservationMaterialDigest: materialDigest,
+            bundle_origin: bundleOrigin,
+            available_bundles: availableBundles,
+            unbundled_sql: unbundledSql,
+            bundle_warnings: bundleWarnings,
           }),
-    },
-  };
+      date,
+    };
+
+    return { inventory, bundleOrigin, availableBundles };
+  }
+  const { inventory, bundleOrigin, availableBundles } = await buildInventory();
+
+  function buildExportRequest() {
+    const readSet = materialPaths(material);
+    return buildSemanticRequest({
+      operation: `export-${category}`,
+      // What the seal defends is workspace state: the MATERIAL the scope covers —
+      // sessions, loose SQL and previously published bundles alike, since any of
+      // them appearing or changing changes what the dossier should have contained
+      // — and the folder this workspace publishes to. The scope rides along so an
+      // altered echo cannot pass as the original one.
+      inputs: {
+        ...(scriptsMaterial === null
+          ? {
+              corpus: material.sessions,
+              bundles: material.bundles,
+              standalone: material.standalone,
+            }
+          : { sql: scriptsMaterial }),
+        dir: policy.dir,
+        ...(category === "manuals" ? { existing_manuals: existingManuals } : {}),
+        scope,
+        workspace: paths.workspaceDir(),
+      },
+      sealed: "el material del alcance o el destino declarado de la categoría",
+      scope,
+      contract: `${policy.contract} Cada pieza divisible (incluidos forwards) admite ${FORWARD_MAX_BYTES} B y se divide en más archivos; un informe, README.md, RUNBOOK.md o rollback/00-global/00-ROLLBACK.sql admite hasta ${LIMITS.max_artifact_bytes} B. Respondé artifacts con paths dentro de ${unit}${policy.overwritable === null ? "" : ` (o exactamente ${policy.overwritable})`}. El NNN aprobado es el número publicado: nunca se reasigna en apply. Copiá 'scope' TAL CUAL, incluido scope.seal, en tu respuesta.${category === "scripts" ? " Declará decisions.supersedes y decisions.requires como listas de nombres de bundles existentes; NO incluyas bundle.json: lo genera el CLI con los digests del origen y lo sella en validate." : ""}`,
+      inventory,
+      allowedDestinations: [
+        unit,
+        ...(category === "manuals"
+          ? [policy.dir]
+          : policy.overwritable === null
+            ? []
+            : [policy.overwritable]),
+      ],
+      limits: LIMITS,
+      readSet,
+      readSetBytes: readSet.length,
+    });
+  }
+  const request = buildExportRequest();
+
+  function preparedResult(): SemanticParse<ExportPrepared> {
+    return {
+      ok: true,
+      value: {
+        category,
+        request,
+        dir: policy.dir,
+        scope,
+        next,
+        unit,
+        ...(category === "manuals" ? { existingManuals } : {}),
+        ...(bundleOrigin === undefined
+          ? {}
+          : {
+              bundleOrigin,
+              availableBundles: availableBundles ?? [],
+              reservationOwner: owner ?? "",
+              reservationMaterialDigest: materialDigest,
+            }),
+      },
+    };
+  }
+  return preparedResult();
 }
 
 async function exportReservationOwner(
@@ -1002,25 +989,7 @@ export function readExportScope(raw: string): SemanticParse<ExportScope | null> 
   if (why !== null) return malformedScope(why);
   return {
     ok: true,
-    value: {
-      ...(scope.code !== undefined ? { code: scope.code as string } : {}),
-      ...(scope.catalog !== undefined ? { catalog: scope.catalog as string } : {}),
-      ...(scope.reservationOwner !== undefined
-        ? { reservationOwner: scope.reservationOwner as string }
-        : {}),
-      ...(scope.reservationMaterialDigest !== undefined
-        ? { reservationMaterialDigest: scope.reservationMaterialDigest as string }
-        : {}),
-      ...(scope.sessions !== undefined ? { sessions: scope.sessions as string[] } : {}),
-      ...(scope.since !== undefined ? { since: scope.since as string } : {}),
-      ...(scope.source !== undefined ? { source: scope.source as string } : {}),
-      ...(scope.from !== undefined ? { from: scope.from as ExportBase } : {}),
-      ...(scope.exclude !== undefined ? { exclude: scope.exclude as string[] } : {}),
-      ...(scope.environment !== undefined ? { environment: scope.environment as string } : {}),
-      date: scope.date as string,
-      next: scope.next as string,
-      ...(scope.seal !== undefined ? { seal: scope.seal as Record<string, string> } : {}),
-    },
+    value: scopeFromRecord(scope),
   };
 }
 
@@ -1043,22 +1012,8 @@ function scopeShapeError(scope: Record<string, unknown>): string | null {
   ];
   const unknown = Object.keys(scope).find((key) => !allowed.includes(key));
   if (unknown !== undefined) return `'${unknown}' no es una clave de scope`;
-  if (scope.seal !== undefined) {
-    if (typeof scope.seal !== "object" || scope.seal === null || Array.isArray(scope.seal))
-      return "'seal' debe contener los sellos por clave";
-    const seals = scope.seal as Record<string, unknown>;
-    for (const key of new Set([
-      ...Object.keys(scope).filter((k) => k !== "seal"),
-      ...Object.keys(seals),
-    ])) {
-      if (
-        !(key in scope) ||
-        typeof seals[key] !== "string" ||
-        seals[key] !== baseDigest(JSON.stringify(scope[key]))
-      )
-        return `'${key}' no coincide con scope.seal`;
-    }
-  }
+  const sealError = scopeSealError(scope);
+  if (sealError !== null) return sealError;
   if (typeof scope.date !== "string" || !DATE_RE.test(scope.date)) {
     return "'date' tiene que ser YYYY-MM-DD";
   }
@@ -1074,20 +1029,7 @@ function scopeShapeError(scope: Record<string, unknown>): string | null {
   if (scope.from !== undefined && !EXPORT_BASES.includes(scope.from as ExportBase)) {
     return `'from' tiene que ser ${EXPORT_BASES.join(", ")}`;
   }
-  for (const key of [
-    "since",
-    "source",
-    "environment",
-    "code",
-    "catalog",
-    "reservationOwner",
-    "reservationMaterialDigest",
-  ] as const) {
-    if (scope[key] !== undefined && typeof scope[key] !== "string") {
-      return `'${key}' tiene que ser texto`;
-    }
-  }
-  return null;
+  return scopeTextFieldError(scope);
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -1143,36 +1085,8 @@ export function validateExport(
   raw: string,
   prepared: ExportPrepared,
 ): SemanticParse<ExportValidation> {
-  const echoed = readExportScope(raw);
-  if (!echoed.ok) return echoed;
-  if (echoed.value === null && prepared.scope.seal !== undefined) {
-    return {
-      ok: false,
-      failure: {
-        code: "EXPORT_SCOPE_MISMATCH",
-        message: "falta 'scope' en el sobre",
-        action: "copiá el scope completo del request",
-      },
-    };
-  }
-  if (echoed.value !== null) {
-    const keys = new Set([...Object.keys(prepared.scope), ...Object.keys(echoed.value)]);
-    for (const key of keys) {
-      if (
-        JSON.stringify(prepared.scope[key as keyof ExportScope]) !==
-        JSON.stringify(echoed.value[key as keyof ExportScope])
-      ) {
-        return {
-          ok: false,
-          failure: {
-            code: "EXPORT_SCOPE_MISMATCH",
-            message: `el alcance cambió en '${key}'`,
-            action: "copiá scope y scope.seal del request original sin modificar ninguna clave",
-          },
-        };
-      }
-    }
-  }
+  const scopeFailure = validateEchoedScope(raw, prepared);
+  if (scopeFailure !== null) return scopeFailure;
   const parsed = parseSemanticResponse(raw, prepared.request);
   if (!parsed.ok) return parsed;
 
@@ -1192,23 +1106,19 @@ export function validateExport(
       : artifacts
           .filter((artifact) => (prepared.existingManuals ?? []).includes(artifact.path))
           .map((artifact) => artifact.path);
-  const overwrites =
-    manual === null
+  function overwrittenPath(): string | null {
+    return manual === null
       ? artifacts.some((a) => a.path === policy.overwritable)
         ? policy.overwritable
         : null
       : replacements.includes(policy.overwritable ?? "")
         ? policy.overwritable
         : null;
+  }
+  const overwrites = overwrittenPath();
   const shape = manual === null ? checkShape(inUnit, policy, prepared.unit) : manual.failure;
   if (shape !== null) return { ok: false, failure: shape };
-  if (
-    policy.shape === "document" &&
-    !(
-      inUnit[0]?.path.startsWith(`${policy.dir}/${prepared.next}-`) &&
-      /^[^/]+\.md$/.test(inUnit[0].path.slice(`${policy.dir}/${prepared.next}-`.length))
-    )
-  ) {
+  if (invalidReportPath(policy, inUnit, prepared.next)) {
     return {
       ok: false,
       failure: reject(`el informe debe estar en ${policy.dir}/${prepared.next}-<slug>.md`),
@@ -1312,30 +1222,9 @@ function assembleExportArtifacts(
       failure: reject("bundle.json lo genera el CLI; no lo incluyas en artifacts"),
     };
   }
-  const decisions = response.decisions ?? {};
-  const bundles = new Set(prepared.availableBundles ?? []);
-  const lists: Record<"supersedes" | "requires", string[]> = { supersedes: [], requires: [] };
-  for (const key of ["supersedes", "requires"] as const) {
-    const value = decisions[key];
-    if (!Array.isArray(value) || !value.every((name) => typeof name === "string")) {
-      return {
-        ok: false,
-        failure: reject(`decisions.${key} debe ser una lista de nombres de bundles`),
-      };
-    }
-    const names = value as string[];
-    if (names.includes(basename(prepared.unit)))
-      return { ok: false, failure: reject(`${key} incluye el bundle que se está publicando`) };
-    const missing = names.filter((name) => !bundles.has(name));
-    if (missing.length > 0)
-      return {
-        ok: false,
-        failure: reject(`${key}: bundle(s) inexistente(s): ${missing.join(", ")}`),
-      };
-    if (new Set(names).size !== names.length)
-      return { ok: false, failure: reject(`${key} repite un bundle`) };
-    lists[key] = [...names].sort();
-  }
+  const decisions = readBundleDecisions(response, prepared);
+  if (!decisions.ok) return decisions;
+  const lists = decisions.value;
   const overlap = lists.supersedes.filter((name) => lists.requires.includes(name));
   if (overlap.length > 0)
     return {
@@ -1369,28 +1258,8 @@ function checkShape(
 
   const names = artifacts.map((a) => a.path.slice(unit.length + 1));
   for (const artifact of artifacts) {
-    const name = artifact.path.slice(unit.length + 1);
-    const indivisible =
-      policy.shape === "document" ||
-      ["README.md", "RUNBOOK.md", "00-ROLLBACK.sql", "rollback/00-global/00-ROLLBACK.sql"].includes(
-        name,
-      );
-    const bytes = Buffer.byteLength(artifact.content, "utf8");
-    if (!indivisible && bytes > FORWARD_MAX_BYTES) {
-      return {
-        code: "EXPORT_LIMIT_EXCEEDED",
-        message: `'${artifact.path}' pesa ${bytes} B y el máximo por pieza divisible es ${FORWARD_MAX_BYTES} B`,
-        action: "partí el forward en archivos NN-<nombre>.sql consecutivos y repetí validate",
-      };
-    }
-    if (!policy.extensions.some((ext) => artifact.path.endsWith(ext))) {
-      return reject(
-        `'${artifact.path}' no usa una extensión permitida (${policy.extensions.join(", ")})`,
-      );
-    }
-    if (artifact.content.trim().length === 0) {
-      return reject(`'${artifact.path}' está vacío`);
-    }
+    const failure = checkArtifactShape(artifact, policy, unit);
+    if (failure !== null) return failure;
   }
   if (policy.required.includes("rollback/00-global/00-ROLLBACK.sql")) {
     return checkScriptsStructure(artifacts, unit);
@@ -1567,6 +1436,7 @@ export async function applyExport(
   const assembled = assembleExportArtifacts(parsed.value, input.prepared);
   if (!assembled.ok) return assembled;
 
+  const preview = validated.value.preview;
   const policy = resolvePolicy(input.prepared.category, input.prepared.dir);
   const result = await withCwdLock(fs, paths, async () => {
     const number = input.prepared.next;
@@ -1594,37 +1464,35 @@ export async function applyExport(
         },
       };
     }
-    const entries = (await fs.exists(join(paths.workspaceDir(), policy.dir)))
-      ? await fs.list(join(paths.workspaceDir(), policy.dir))
-      : [];
-    const usedNumbers = await publishedCorrelatives(fs, paths.cwdHistoryFile(), policy.dir);
-    for (const pass of (await readReleasePasses(fs, paths)).events) {
-      if (pass.event !== "linked" || !pass.artifact.startsWith(`${policy.dir}/`)) continue;
-      const recorded = leadingCorrelative(
-        pass.artifact.slice(policy.dir.length + 1).split("/")[0] ?? "",
-      );
-      if (recorded !== null) usedNumbers.add(recorded);
+    async function checkNumberAvailability(): Promise<SemanticParse<never> | null> {
+      const entries = (await fs.exists(join(paths.workspaceDir(), policy.dir)))
+        ? await fs.list(join(paths.workspaceDir(), policy.dir))
+        : [];
+      const usedNumbers = await exportUsedNumbers(fs, paths, policy.dir);
+      const occupant = entries.find((entry) => {
+        const found = leadingCorrelative(entry.name);
+        return found !== null && sameCorrelative(found, number);
+      });
+      if (
+        preview.mode !== "complement" &&
+        preview.mode !== "flat" &&
+        ((occupant !== undefined &&
+          (folderMarker === null || occupant.name !== basename(input.prepared.unit))) ||
+          [...usedNumbers].some((n) => sameCorrelative(n, number)))
+      ) {
+        return {
+          ok: false as const,
+          failure: {
+            code: "EXPORT_NUMBER_TAKEN",
+            message: `el correlativo ${number} ya está ocupado por '${occupant?.name ?? "una publicación registrada"}'`,
+            action: "volvé a correr prepare y validate con un número nuevo",
+          },
+        };
+      }
+      return null;
     }
-    const occupant = entries.find((entry) => {
-      const found = leadingCorrelative(entry.name);
-      return found !== null && sameCorrelative(found, number);
-    });
-    if (
-      validated.value.preview.mode !== "complement" &&
-      validated.value.preview.mode !== "flat" &&
-      ((occupant !== undefined &&
-        (folderMarker === null || occupant.name !== basename(input.prepared.unit))) ||
-        [...usedNumbers].some((n) => sameCorrelative(n, number)))
-    ) {
-      return {
-        ok: false as const,
-        failure: {
-          code: "EXPORT_NUMBER_TAKEN",
-          message: `el correlativo ${number} ya está ocupado por '${occupant?.name ?? "una publicación registrada"}'`,
-          action: "volvé a correr prepare y validate con un número nuevo",
-        },
-      };
-    }
+    const numberFailure = await checkNumberAvailability();
+    if (numberFailure !== null) return numberFailure;
     const artifacts = assembled.value.map((artifact) => ({
       ...artifact,
       overwrite: input.allowOverwrite === true && replacing.includes(artifact.path),
@@ -1651,24 +1519,14 @@ export async function applyExport(
     // Under the SAME lock as the write, for the same reason as in `persist`: two
     // concurrent publications outside it would lose one of the two rows.
     if (published.ok) {
-      if (folderMarker !== null && input.prepared.reservationOwner !== undefined) {
-        await appendClaimEvent(fs, paths, {
-          at: new Date().toISOString(),
-          event: "published",
-          claim: {
-            category: basename(policy.dir),
-            correlative: number,
-            name: basename(input.prepared.unit).slice(number.length + 1),
-            owner: input.prepared.reservationOwner,
-          },
-          cause: "aw export-scripts apply: dossier aprobado publicado",
-        });
-        await fs.remove(folderMarker);
-      }
-      await appendPublications(
+      await recordExportPublication(
         fs,
-        paths.cwdHistoryFile(),
-        publicationRows(published.value.written, `export-${input.prepared.category}`),
+        paths,
+        input.prepared,
+        policy,
+        number,
+        folderMarker,
+        published.value.written,
       );
     }
     return published;
@@ -1694,4 +1552,281 @@ function reject(message: string): SemanticFailure {
     message,
     action: "corregí la propuesta según el 'contract' del request y reenviala",
   };
+}
+
+async function checkSelectedCatalog(
+  selection: ExportSelection,
+  catalog: CatalogLookup | undefined,
+): Promise<SemanticParse<never> | null> {
+  if (selection.catalog !== undefined) {
+    if (catalog === undefined)
+      return {
+        ok: false,
+        failure: {
+          code: "EXPORT_CATALOG_UNAVAILABLE",
+          message: `--catalog ${selection.catalog} no tiene catálogo de sólo lectura disponible`,
+          action: "revisá la conexión y repetí prepare",
+        },
+      };
+    const read = await catalog.lookupColumns(selection.catalog, ["public"]);
+    if (!read.ok)
+      return {
+        ok: false,
+        failure: {
+          code: "EXPORT_CATALOG_UNAVAILABLE",
+          message: `no se pudo consultar '${selection.catalog}' (${read.code}): ${read.message}`,
+          action: "revisá la conexión de sólo lectura y repetí prepare",
+        },
+      };
+  }
+  return null;
+}
+
+function scopeFromRecord(scope: Record<string, unknown>): ExportScope {
+  return {
+    ...(scope.code !== undefined ? { code: scope.code as string } : {}),
+    ...(scope.catalog !== undefined ? { catalog: scope.catalog as string } : {}),
+    ...(scope.reservationOwner !== undefined
+      ? { reservationOwner: scope.reservationOwner as string }
+      : {}),
+    ...(scope.reservationMaterialDigest !== undefined
+      ? { reservationMaterialDigest: scope.reservationMaterialDigest as string }
+      : {}),
+    ...(scope.sessions !== undefined ? { sessions: scope.sessions as string[] } : {}),
+    ...(scope.since !== undefined ? { since: scope.since as string } : {}),
+    ...(scope.source !== undefined ? { source: scope.source as string } : {}),
+    ...(scope.from !== undefined ? { from: scope.from as ExportBase } : {}),
+    ...(scope.exclude !== undefined ? { exclude: scope.exclude as string[] } : {}),
+    ...(scope.environment !== undefined ? { environment: scope.environment as string } : {}),
+    date: scope.date as string,
+    next: scope.next as string,
+    ...(scope.seal !== undefined ? { seal: scope.seal as Record<string, string> } : {}),
+  };
+}
+
+function scopeSealError(scope: Record<string, unknown>): string | null {
+  if (scope.seal !== undefined) {
+    if (typeof scope.seal !== "object" || scope.seal === null || Array.isArray(scope.seal))
+      return "'seal' debe contener los sellos por clave";
+    const seals = scope.seal as Record<string, unknown>;
+    for (const key of new Set([
+      ...Object.keys(scope).filter((k) => k !== "seal"),
+      ...Object.keys(seals),
+    ])) {
+      if (
+        !(key in scope) ||
+        typeof seals[key] !== "string" ||
+        seals[key] !== baseDigest(JSON.stringify(scope[key]))
+      )
+        return `'${key}' no coincide con scope.seal`;
+    }
+  }
+  return null;
+}
+
+function validateEchoedScope(raw: string, prepared: ExportPrepared): SemanticParse<never> | null {
+  const echoed = readExportScope(raw);
+  if (!echoed.ok) return echoed;
+  if (echoed.value === null && prepared.scope.seal !== undefined) {
+    return {
+      ok: false,
+      failure: {
+        code: "EXPORT_SCOPE_MISMATCH",
+        message: "falta 'scope' en el sobre",
+        action: "copiá el scope completo del request",
+      },
+    };
+  }
+  if (echoed.value !== null) {
+    const keys = new Set([...Object.keys(prepared.scope), ...Object.keys(echoed.value)]);
+    for (const key of keys) {
+      if (
+        JSON.stringify(prepared.scope[key as keyof ExportScope]) !==
+        JSON.stringify(echoed.value[key as keyof ExportScope])
+      ) {
+        return {
+          ok: false,
+          failure: {
+            code: "EXPORT_SCOPE_MISMATCH",
+            message: `el alcance cambió en '${key}'`,
+            action: "copiá scope y scope.seal del request original sin modificar ninguna clave",
+          },
+        };
+      }
+    }
+  }
+  return null;
+}
+
+function readBundleDecisions(
+  response: { decisions?: Record<string, unknown> },
+  prepared: ExportPrepared,
+): SemanticParse<Record<"supersedes" | "requires", string[]>> {
+  const decisions = response.decisions ?? {};
+  const bundles = new Set(prepared.availableBundles ?? []);
+  const lists: Record<"supersedes" | "requires", string[]> = { supersedes: [], requires: [] };
+  for (const key of ["supersedes", "requires"] as const) {
+    const value = decisions[key];
+    if (!Array.isArray(value) || !value.every((name) => typeof name === "string")) {
+      return {
+        ok: false,
+        failure: reject(`decisions.${key} debe ser una lista de nombres de bundles`),
+      };
+    }
+    const names = value as string[];
+    if (names.includes(basename(prepared.unit)))
+      return { ok: false, failure: reject(`${key} incluye el bundle que se está publicando`) };
+    const missing = names.filter((name) => !bundles.has(name));
+    if (missing.length > 0)
+      return {
+        ok: false,
+        failure: reject(`${key}: bundle(s) inexistente(s): ${missing.join(", ")}`),
+      };
+    if (new Set(names).size !== names.length)
+      return { ok: false, failure: reject(`${key} repite un bundle`) };
+    lists[key] = [...names].sort();
+  }
+  return { ok: true, value: lists };
+}
+
+function checkArtifactShape(
+  artifact: SemanticArtifact,
+  policy: ResolvedPolicy,
+  unit: string,
+): SemanticFailure | null {
+  const name = artifact.path.slice(unit.length + 1);
+  const indivisible =
+    policy.shape === "document" ||
+    ["README.md", "RUNBOOK.md", "00-ROLLBACK.sql", "rollback/00-global/00-ROLLBACK.sql"].includes(
+      name,
+    );
+  const bytes = Buffer.byteLength(artifact.content, "utf8");
+  if (!indivisible && bytes > FORWARD_MAX_BYTES) {
+    return {
+      code: "EXPORT_LIMIT_EXCEEDED",
+      message: `'${artifact.path}' pesa ${bytes} B y el máximo por pieza divisible es ${FORWARD_MAX_BYTES} B`,
+      action: "partí el forward en archivos NN-<nombre>.sql consecutivos y repetí validate",
+    };
+  }
+  if (!policy.extensions.some((ext) => artifact.path.endsWith(ext))) {
+    return reject(
+      `'${artifact.path}' no usa una extensión permitida (${policy.extensions.join(", ")})`,
+    );
+  }
+  if (artifact.content.trim().length === 0) {
+    return reject(`'${artifact.path}' está vacío`);
+  }
+  return null;
+}
+
+async function exportUsedNumbers(
+  fs: FileSystemPort,
+  paths: PathsService,
+  dir: string,
+): Promise<Set<string>> {
+  const usedNumbers = await publishedCorrelatives(fs, paths.cwdHistoryFile(), dir);
+  for (const pass of (await readReleasePasses(fs, paths)).events) {
+    if (pass.event !== "linked" || !pass.artifact.startsWith(`${dir}/`)) continue;
+    const recorded = leadingCorrelative(pass.artifact.slice(dir.length + 1).split("/")[0] ?? "");
+    if (recorded !== null) usedNumbers.add(recorded);
+  }
+  return usedNumbers;
+}
+
+function buildExportScope(
+  selection: ExportSelection,
+  owner: string | null,
+  materialDigest: string,
+  date: string,
+  next: string,
+): ExportScope {
+  return {
+    ...(selection.code !== undefined ? { code: selection.code } : {}),
+    ...(selection.catalog !== undefined ? { catalog: selection.catalog } : {}),
+    ...(owner === null
+      ? {}
+      : { reservationOwner: owner, reservationMaterialDigest: materialDigest }),
+    ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
+    ...(selection.since !== undefined ? { since: selection.since } : {}),
+    ...(selection.source !== undefined ? { source: selection.source } : {}),
+    ...(selection.from !== undefined ? { from: selection.from } : {}),
+    ...(selection.exclude !== undefined ? { exclude: selection.exclude } : {}),
+    ...(selection.environment !== undefined ? { environment: selection.environment } : {}),
+    date,
+    next,
+  };
+}
+
+async function listExistingManuals(
+  fs: FileSystemPort,
+  paths: PathsService,
+  category: ExportCategory,
+  dir: string,
+): Promise<string[]> {
+  return category === "manuals" && (await fs.exists(join(paths.workspaceDir(), dir)))
+    ? (await fs.list(join(paths.workspaceDir(), dir)))
+        .filter((entry) => entry.type === "file" && entry.name.endsWith(".md"))
+        .map((entry) => `${dir}/${entry.name}`)
+    : [];
+}
+
+function scopeTextFieldError(scope: Record<string, unknown>): string | null {
+  for (const key of [
+    "since",
+    "source",
+    "environment",
+    "code",
+    "catalog",
+    "reservationOwner",
+    "reservationMaterialDigest",
+  ] as const) {
+    if (scope[key] !== undefined && typeof scope[key] !== "string") {
+      return `'${key}' tiene que ser texto`;
+    }
+  }
+  return null;
+}
+
+function invalidReportPath(
+  policy: ResolvedPolicy,
+  inUnit: SemanticArtifact[],
+  next: string,
+): boolean {
+  return (
+    policy.shape === "document" &&
+    !(
+      inUnit[0]?.path.startsWith(`${policy.dir}/${next}-`) &&
+      /^[^/]+\.md$/.test(inUnit[0].path.slice(`${policy.dir}/${next}-`.length))
+    )
+  );
+}
+
+async function recordExportPublication(
+  fs: FileSystemPort,
+  paths: PathsService,
+  prepared: ExportPrepared,
+  policy: ResolvedPolicy,
+  number: string,
+  folderMarker: string | null,
+  written: string[],
+): Promise<void> {
+  if (folderMarker !== null && prepared.reservationOwner !== undefined) {
+    await appendClaimEvent(fs, paths, {
+      at: new Date().toISOString(),
+      event: "published",
+      claim: {
+        category: basename(policy.dir),
+        correlative: number,
+        name: basename(prepared.unit).slice(number.length + 1),
+        owner: prepared.reservationOwner,
+      },
+      cause: "aw export-scripts apply: dossier aprobado publicado",
+    });
+    await fs.remove(folderMarker);
+  }
+  await appendPublications(
+    fs,
+    paths.cwdHistoryFile(),
+    publicationRows(written, `export-${prepared.category}`),
+  );
 }
