@@ -18,10 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Contrato
 
-Ninguno. `reviewer.kind` de `review-findings` suma `none`, y `clean-reread` ya no exige `no_subagents`; toda respuesta que antes valía sigue valiendo.
+Ninguno.
 
 ### Changed
 
+- `reviewer.kind` de `review-findings` suma `none`, y `clean-reread` ya no exige `no_subagents`; toda respuesta que antes valía sigue valiendo.
 - La doctrina es una guía y no una cadena. El host puede saltar, reordenar o fusionar pasos, o salir del flujo, cuando juzga un camino mejor o la persona se lo pide. Sólo quedan fijos:
   - las reglas de seguridad: git propuesto, DB sólo por scripts, fronteras de `docs/` y ningún secreto;
   - avisar en una línea cuando se aparta de la ruta;
