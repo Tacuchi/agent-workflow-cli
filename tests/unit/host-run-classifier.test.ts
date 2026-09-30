@@ -685,12 +685,12 @@ describe("host-run live — evidence", () => {
     });
     const { matrix, extracts } = evidenceOf(ctx, [
       host("codex", "tools: execute_sql, search_objects (ask person@example.com)"),
-      host("crush", "tools: execute_sql, search_objects; also qtc-prod"),
+      host("gemini", "tools: execute_sql, search_objects; also qtc-prod"),
       host("opencode", "tools: execute_sql, search_objects"),
     ]);
     expect(matrix.hosts.codex.cells.mcp.extract_refused).toContain("contains an email address");
     expect(matrix.hosts.codex.cells.mcp).not.toHaveProperty("extract");
-    expect(matrix.hosts.crush.cells.mcp.extract_refused).toContain(
+    expect(matrix.hosts.gemini.cells.mcp.extract_refused).toContain(
       "names an MCP outside the scenario",
     );
     // Only the category reaches matrix.json, never the foreign name.

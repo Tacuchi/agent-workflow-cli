@@ -105,7 +105,7 @@ describe("verification ledger renderer", () => {
     );
     const smoke = [{ id: "codex", version: "0.158.0", at: "2026-10-01", depth: "install" }];
     const merged = Object.fromEntries(mergeSmoke(smoke, current, order));
-    expect(merged.crush).toEqual(current.crush);
+    expect(merged.opencode).toEqual(current.opencode);
     expect(merged.codex.run).toEqual(current.codex.run);
     // A host with no run block and no smoke result drops out, as before.
     expect(merged.warp).toBeUndefined();

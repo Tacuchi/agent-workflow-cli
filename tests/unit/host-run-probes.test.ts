@@ -84,7 +84,6 @@ const REFRESH = fake("1//", "0", "TEST-not-a-real-refresh-token-0000");
 const ANTHROPIC = fake("sk-", "ant-oat01-", "TEST-not-a-real-token-0000000000000000");
 const GEMINI_PREFIX = fake("AI", "za");
 const GEMINI_KEY = fake(GEMINI_PREFIX, "TEST-not-a-real-gemini-key-0000000000");
-const OTHER_GEMINI_KEY = fake(GEMINI_PREFIX, "TEST-another-fake-key-for-crush-0000");
 const OPENAI_KEY = fake("s", "k-proj-", "TEST-not-a-real-openai-key");
 const RUN = join(__dirname, "..", "..", "scripts", "host-run", "run.mjs");
 
@@ -428,7 +427,8 @@ describe("host-run crush provider key", () => {
         crush: { version: "0.96.1", ...crushFields({ provider: "gemini", model: "m" }), cells: {} },
       },
     });
-    expect(m.hosts.crush).toMatchObject({ crush_provider: "gemini", crush_model: "m" });
+    // crush is excluded by the person: not covered, with its reason, whatever a run recorded.
+    expect(m.hosts.crush).toMatchObject({ covered: false, reason: NOT_COVERED.crush });
     const text = renderLedger([
       [
         "crush",
@@ -452,42 +452,30 @@ describe("host-run crush provider key", () => {
     expect(text).toContain('crush_model: "m"');
   });
 
-  it("the dry-run names crush's provider and model and its key's presence, never a value; agy never gets the key", () => {
-    const dir = temp();
-    const crushFile = join(dir, "crush");
-    writeFileSync(crushFile, `${OTHER_GEMINI_KEY}\n`, { mode: 0o600 });
+  it("the dry-run refuses crush as not covered and gives agy no key, even with GEMINI_API_KEY set", () => {
     const env: Record<string, string | undefined> = { ...process.env };
     for (const v of [
       "CLAUDE_CODE_OAUTH_TOKEN",
-      "GEMINI_API_KEY",
       "OPENAI_API_KEY",
       "ANTHROPIC_API_KEY",
       "GOOGLE_API_KEY",
     ])
       delete env[v];
-    const dry = (extra: string[], more: Record<string, string> = {}) =>
-      spawnSync(process.execPath, [RUN, "--dry-run", "--hosts", "gemini,crush", ...extra], {
+    const dry = (hosts: string) =>
+      spawnSync(process.execPath, [RUN, "--dry-run", "--hosts", hosts], {
         encoding: "utf8",
-        env: { ...env, ...more },
+        env: { ...env, GEMINI_API_KEY: GEMINI_KEY },
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 120_000,
       });
-    const r = dry(["--crush-gemini-key-file", crushFile]);
-    expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain("crush Gemini API key: present (from --crush-gemini-key-file");
-    expect(r.stdout).toContain("crush → gemini/gemini-3-flash-preview");
-    expect(r.stdout).toContain("agy → sign-in in the pane (you sign in when the run starts)");
-    expect(r.stdout).not.toContain(fake(GEMINI_PREFIX, "TEST"));
-    // Only crush has a wrapper and a token file; agy has none.
-    expect(r.stdout).toMatch(/crush-X+\/secrets\/crush\.env/);
-    expect(r.stdout).not.toMatch(/secrets\/gemini\.env|launch-agy/);
-    // A GEMINI_API_KEY in the shell feeds crush, never agy; with both keys, Gemini is used.
-    const both = dry([], { GEMINI_API_KEY: GEMINI_KEY, OPENAI_API_KEY: OPENAI_KEY });
-    expect(both.status, both.stderr).toBe(0);
-    expect(both.stdout).toContain("both keys given: Gemini (free) is used");
-    expect(both.stdout).toContain("go to crush only, never to agy");
-    expect(both.stdout).not.toContain(OPENAI_KEY);
-    expect(both.stdout).not.toContain(fake(GEMINI_PREFIX, "TEST"));
+    const refused = dry("crush");
+    expect(refused.status).toBe(2);
+    expect(refused.stderr.trim()).toBe(`crush: not covered: ${NOT_COVERED.crush}`);
+    const agy = dry("gemini");
+    expect(agy.status, agy.stderr).toBe(0);
+    expect(agy.stdout).toContain("agy → sign-in in the pane (you sign in when the run starts)");
+    expect(agy.stdout).not.toMatch(/secrets\/gemini\.env|launch-agy/);
+    expect(agy.stdout).not.toContain(fake(GEMINI_PREFIX, "TEST"));
   }, 240_000);
 });
 
@@ -1000,7 +988,7 @@ describe("host-run pane launch: a short typed command, the env -i line in a 0700
     });
 
   it(`every command typed to launch a pane is at most ${MAX_TYPED_LAUNCH} bytes, for all ${COVERED_HOSTS.length} hosts`, () => {
-    expect(COVERED_HOSTS).toHaveLength(5);
+    expect(COVERED_HOSTS).toHaveLength(4);
     for (const tmp of TMPDIRS) {
       for (const id of COVERED_HOSTS) {
         const p = planAt(id, tmp, { model: "some-long-model-name-v9", effort: "high" });

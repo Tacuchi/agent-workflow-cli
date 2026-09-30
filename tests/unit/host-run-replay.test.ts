@@ -450,13 +450,13 @@ describe("host-run replay: the profiles and invocations the run needed", () => {
       profile: PROFILES.opencode,
     };
     const own = planIsolation(base);
-    expect(own.model).toBe("openai/gpt-6-luna");
-    expect(own.pane.launchLine).toContain("--model openai/gpt-6-luna");
+    expect(own.model).toBe("openai/gpt-6-astra");
+    expect(own.pane.launchLine).toContain("--model openai/gpt-6-astra");
     const probe = own.steps.find((s: { kind: string }) => s.kind === "auth-probe");
     expect(probe.args).toEqual([
       "run",
       "-m",
-      "openai/gpt-6-luna",
+      "openai/gpt-6-astra",
       "Reply with the single word ok.",
     ]);
     const keyed = planIsolation({
@@ -639,22 +639,22 @@ describe("host-run review AC1–AC6", () => {
     expect(h.evidence.commands).toMatchObject({ relayed: true });
   });
 
-  it("AC6: one env var feeding two hosts is warned about, with the per-host flags", async () => {
+  it("AC6: one env var feeding two covered hosts would be warned about; with crush excluded, none does", async () => {
     const { spawnSync } = await import("node:child_process");
     const RUN = join(__dirname, "..", "..", "scripts", "host-run", "run.mjs");
     const env: Record<string, string | undefined> = { ...process.env };
     for (const v of ["GEMINI_API_KEY", "GOOGLE_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]) delete env[v];
     const key = ["s", "k-proj-", "TEST-not-a-real-openai-key"].join("");
-    const r = spawnSync(process.execPath, [RUN, "--dry-run", "--hosts", "opencode,crush"], {
+    const r = spawnSync(process.execPath, [RUN, "--dry-run", "--hosts", "opencode,gemini"], {
       encoding: "utf8",
       env: { ...env, OPENAI_API_KEY: key },
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 120_000,
     });
     expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain(
-      "WARNING: OPENAI_API_KEY in this shell feeds opencode and crush; prefer one file per host: --opencode-openai-key-file, --crush-openai-key-file",
-    );
+    // Only opencode takes OPENAI_API_KEY now: no warning, and the value never shows.
+    expect(r.stdout).not.toContain("WARNING: OPENAI_API_KEY");
+    expect(r.stdout).toContain("opencode OpenAI API key: present (from OPENAI_API_KEY");
     expect(r.stdout).not.toContain(key);
   }, 240_000);
 });

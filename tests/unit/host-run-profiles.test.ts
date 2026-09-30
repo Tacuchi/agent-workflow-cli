@@ -87,7 +87,7 @@ describe("host-run permission profiles", () => {
   });
 
   it("there is one profile per covered host, and kimi's stays while it is excluded", () => {
-    expect(Object.keys(PROFILES).sort()).toEqual([...COVERED_HOSTS, "kimi"].sort());
+    expect(Object.keys(PROFILES).sort()).toEqual([...COVERED_HOSTS, "kimi", "crush"].sort());
   });
 
   it("the AC-04 minimum is the spec's list", () => {

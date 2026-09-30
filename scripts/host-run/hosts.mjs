@@ -37,6 +37,8 @@ export const NOT_COVERED = {
   warp: "Warp ships no CLI a pane can launch: it is a desktop terminal app, so no run can drive it",
   oz: "oz is Warp's cloud agent orchestrator (a launcher shim inside Warp.app); it runs remotely and has no local interactive session to observe",
   kimi: "subscription cancelled by the person (2026-09-29): excluded from every run until they subscribe again",
+  crush:
+    "provider timeout in the auth probe (3 attempts, 2026-09-30); left out by the person to limit cost",
 };
 
 /**
@@ -157,18 +159,20 @@ export const HOSTS = {
     probeModelFlag: "-m",
     // The person uses OpenAI in opencode; its opencode.json (with their model) is
     // not copied, so the run names one from opencode's own catalog (models.dev,
-    // provider `openai`, `env: ["OPENAI_API_KEY"]`, model `gpt-6-luna`, released
-    // 2026-09-22, tool calls). `--model opencode=<provider/model>` overrides it.
-    defaultModel: "openai/gpt-6-luna",
+    // provider `openai`, `env: ["OPENAI_API_KEY"]`, model `gpt-6-astra`, «GPT-6
+    // Astra», released 2026-09-04, tool calls): the model this account's codex
+    // runs and the one opencode authenticated with (`gpt-6-luna` answered
+    // «Unexpected server error»). `--model opencode=<provider/model>` overrides it.
+    defaultModel: "openai/gpt-6-astra",
     tokenChoices: [
       {
         env: "OPENAI_API_KEY",
         flag: "--opencode-openai-key-file",
         label: "opencode OpenAI API key",
         provider: "openai",
-        model: "gpt-6-luna",
+        model: "gpt-6-astra",
         absent:
-          "no OpenAI key: opencode uses your copied sign-in (auth.json) with openai/gpt-6-luna; or give --opencode-openai-key-file / OPENAI_API_KEY",
+          "no OpenAI key: opencode uses your copied sign-in (auth.json) with openai/gpt-6-astra; or give --opencode-openai-key-file / OPENAI_API_KEY",
       },
     ],
     modelArgs: (model) => (model ? ["--model", model] : []),

@@ -59,12 +59,12 @@ describe("host-run compare", () => {
 
   it("structured-choice observed only non-interactively does not close", () => {
     const worse = sample(WORSE);
-    worse.hosts.crush.cells["structured-choice"].mode = "non-interactive";
+    worse.hosts.opencode.cells["structured-choice"].mode = "non-interactive";
     expect(closureFailures([worse])).toContain(
-      "crush/structured-choice: only observed non-interactively (run 2026-09-15T10-00-00Z)",
+      "opencode/structured-choice: only observed non-interactively (run 2026-09-15T10-00-00Z)",
     );
     // An earlier interactive observation is kept over a later non-interactive one.
-    expect(lastObservations([sample(BASE), worse]).crush["structured-choice"].mode).toBe(
+    expect(lastObservations([sample(BASE), worse]).opencode["structured-choice"].mode).toBe(
       "interactive",
     );
   });
@@ -81,11 +81,13 @@ describe("host-run compare", () => {
     const m = sample(BASE);
     m.hosts.codex.cells.mcp.state = "not-reached";
     m.hosts.opencode.cells.commands.state = "catalog-outdated";
-    m.hosts.crush.cells.hooks.declared_by_doctor = false;
+    m.hosts.opencode.cells.hooks.declared_by_doctor = false;
     const failures = closureFailures([m]);
     expect(failures).toContain(`codex/mcp: not-reached (run ${BASE})`);
     expect(failures).toContain(`opencode/commands: catalog-outdated (run ${BASE})`);
-    expect(failures).toContain(`crush/hooks: degradation not declared by /w:doctor (run ${BASE})`);
+    expect(failures).toContain(
+      `opencode/hooks: degradation not declared by /w:doctor (run ${BASE})`,
+    );
   });
 
   it("the merged ledger view takes the latest run id and the last state per cell", () => {
