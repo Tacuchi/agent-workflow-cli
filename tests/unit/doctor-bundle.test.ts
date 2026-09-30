@@ -10,6 +10,7 @@ import {
   selfInstallSkill,
   splitCommandDoc,
 } from "../../src/application/self/install-skill.js";
+import { selfCommand } from "../../src/cli/commands/self.js";
 import { type ParsedArgs, parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
@@ -310,12 +311,6 @@ describe("instalación · `aw doctor` recibe --host en cada wrapper", () => {
   });
 
   it("el destino compartido `agents` no instala wrapper de comando: no hay nada que atar", async () => {
-    // `agents` es un destino, no un host, y no sintetiza comandos: instala el
-    // bundle y nada más. Así que la rama «compartido queda sin atar» de
-    // `bindHostInvocations` no tiene caso alcanzable por acá — se deja dicho en
-    // vez de afirmar una exención que ningún archivo demuestra. Ojo con
-    // confundirlo con `oz`, que instala EN `~/.agents/skills` pero sí es un host
-    // del catálogo y por lo tanto sí se ata.
     const fs = new RealFs();
     await selfInstallSkill(buildArgs({ from: source, target: "agents" }), buildCtx(home, fs));
 
@@ -323,12 +318,22 @@ describe("instalación · `aw doctor` recibe --host en cada wrapper", () => {
     expect(await fs.exists(join(home, ".agents/skills/w-doctor"))).toBe(false);
   });
 
-  it("`oz` sí se ata, aunque comparta el directorio con el destino compartido", async () => {
+  it("self install --target oz deja neutrales las skills del directorio compartido", async () => {
     const fs = new RealFs();
-    await selfInstallSkill(buildArgs({ from: source, target: "oz" }), buildCtx(home, fs));
+    const result = await selfCommand.execute(
+      { ...buildArgs({ from: source, target: "oz" }), rest: ["install"] },
+      buildCtx(home, fs),
+    );
 
     const synth = await readFile(join(home, ".agents/skills/w-doctor/SKILL.md"), "utf8");
 
-    expect(synth).toContain("aw doctor --host oz");
+    expect(result.ok).toBe(true);
+    expect(synth).toContain("aw doctor prepare --select x");
+    expect(synth).toContain("aw flow advance");
+    expect(synth).not.toContain("--host");
+    expect(synth).toContain("shared skills dir");
+    expect(synth).toContain("Harness binding matrix");
+    expect(synth).not.toContain("`oz`");
+    expect(synth).not.toContain("exposes no native selection surface");
   });
 });

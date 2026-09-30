@@ -320,10 +320,7 @@
           "model": null,
           "effort": null,
           "not_reached_reason": "the step was never sent",
-          "extract_refused": [
-            "contains the user name",
-            "contains an email address"
-          ]
+          "extract_refused": ["contains the user name", "contains an email address"]
         },
         "hooks": {
           "expected": "degraded",
@@ -354,9 +351,7 @@
           "cli_revision": "7ef6aae",
           "model": null,
           "effort": null,
-          "extract_refused": [
-            "contains an email address"
-          ]
+          "extract_refused": ["contains an email address"]
         },
         "host-memory": {
           "expected": "unsupported",
