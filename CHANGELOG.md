@@ -12,6 +12,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [28.2.0] — 2026-09-30
+
+**La corrida multihost real (plan 085) queda registrada: qué hace cada host cubierto con cada superficie, y las skills compartidas de Oz sin host estampado.**
+
+### Contrato
+
+Ninguno.
+
+### Added
+
+- `HOST_VERIFICATIONS` suma un bloque `run` opcional por host, con lo que observó la corrida `2026-09-30T09-49-27Z`: versión del host, versión y revisión del CLI, y estado de cada superficie (`commands`, `structured-choice`, `hooks`, `mcp`, `host-memory`, `compaction`). Hosts cubiertos: Claude Code, Codex, Gemini/Antigravity y OpenCode. El smoke conserva ese bloque, y ningún test depende de la última corrida.
+- En el README, la sección *Host run* explica cómo el mantenedor corre la verificación multihost en paneles de Herdr, con un home desechable por host. La herramienta vive en `scripts/host-run/` y no viaja en el paquete.
+- El README también documenta el cierre acotado de esa corrida: 18 celdas cubiertas quedan como «no verificadas por la corrida», cada una con su motivo, en `unverified.json` junto a la matriz.
+
+### Fixed
+
+- `self install --target oz` escribe en `~/.agents/skills`, que también leen otros hosts. Sus wrappers ya no estampan `--host oz` y usan la indicación neutral de esa carpeta. Las instalaciones en carpetas exclusivas mantienen el host explícito.
+
 ## [28.1.0] — 2026-09-30
 
 **Workline guía y el host decide; primero se compila y se corre, y los revisores llegan al final, sólo si la persona los acepta.**
