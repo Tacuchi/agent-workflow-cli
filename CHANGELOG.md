@@ -12,6 +12,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [28.2.1] — 2026-09-30
+
+**Mantenimiento: el código queda dentro de la complejidad cognitiva que pide el repo y la suite deja de vencer por el git de macOS.**
+
+### Contrato
+
+Ninguno.
+
+### Changed
+
+- 184 funciones pasaban la complejidad cognitiva máxima de 15. Se refactorizaron sin cambiar el comportamiento: helpers con nombre, retornos tempranos y tablas en vez de cadenas de condiciones. Salidas, mensajes, códigos de error y comandos quedan idénticos, y la suite completa pasa sin tocar ninguna aserción.
+- La regla `noExcessiveCognitiveComplexity` pasa de aviso a error, así que una función nueva por encima de 15 ya no pasa el lint.
+
+### Fixed
+
+- En macOS los tests llaman al git real y no al shim de `/usr/bin/git`. El shim pasa por xcrun y duplicaba cada proceso, y como las suites de git hacen miles de llamadas en paralelo, vencían por tiempo con la máquina cargada. La suite baja de ~110 s a ~53 s. No afecta al paquete publicado.
+
 ## [28.2.0] — 2026-09-30
 
 **La corrida multihost real (plan 085) queda registrada: qué hace cada host cubierto con cada superficie, y las skills compartidas de Oz sin host estampado.**

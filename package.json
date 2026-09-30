@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-workflow-cli",
-  "version": "28.2.0",
+  "version": "28.2.1",
   "description": "Runtime CLI for Workline — the stages + loops + artifacts system for agent work. Bundles its own flow skills under `skills/w/` (slash commands `/w:*`: spec-new/spec-refine, plan-new/plan-exec, quick, persist, workspace-init, export-*); `self install --target <host>` copies SKILL + commands + hooks into the host. Installs and diagnoses only Workline skills; uses host-provided help without requiring it. Namespace auto-detected from any `.<ns>/sessions/` dir in CWD; default `workflow`.",
   "type": "module",
   "bin": {
