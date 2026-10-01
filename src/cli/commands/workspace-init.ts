@@ -51,10 +51,10 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
       untrack: { effect: "Remove the runtime paths Git still tracks from its index." },
     },
     output:
-      "{ok, dry_run, workspace, sources, source_actions[]? {alias, action, error?}, scaffold, materialization, untrack?, skills_toml (created|exists|skipped), project_md, attach_multiroot, detached_removed?}.",
+      "{ok, dry_run, hub, sources, source_actions[]? {alias, action, error?}, scaffold, materialization, untrack?, skills_toml (created|exists|skipped), hub_block_files, attach_multiroot, detached_removed?}.",
     notes: [
       "Without sources it creates only the sessions marker and, in a Git repository, the runtime ignore block. With sources it reconciles the hub block, the branches and the multi-root visibility; re-running is idempotent.",
-      "A partial failure returns ok:false with error code WORKSPACE_INIT_FAILED and the full data.",
+      "A partial failure returns ok:false with error code HUB_INIT_FAILED and the full data.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<WorkspaceInitResult>> {
@@ -103,7 +103,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
         ? {}
         : {
             error: {
-              code: "WORKSPACE_INIT_FAILED",
+              code: "HUB_INIT_FAILED",
               message: workspaceInitFailureMessage(data),
             },
           }),
@@ -118,7 +118,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     const data = result.data;
     if (data === undefined) return "";
     const lines = [
-      `hub-init${data.dry_run ? " · dry-run (no escribe)" : ""} · ${data.workspace}`,
+      `hub-init${data.dry_run ? " · dry-run (no escribe)" : ""} · ${data.hub}`,
       `  Fuentes    ${data.sources}`,
       `  skills.toml ${data.skills_toml}`,
     ];
@@ -134,7 +134,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     // Unconditional, and never behind `--detail`: a line the rewrite could not
     // carry is the one thing here a person has to know, and declaring it only in
     // a JSON field this projection replaces is not declaring it at all.
-    const projectMd = data.project_md;
+    const projectMd = data.hub_block_files;
     appendProjectFiles(lines, projectMd);
     for (const source of data.source_actions ?? [])
       lines.push(
@@ -147,14 +147,14 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
 
 function workspaceInitFailureMessage(data: WorkspaceInitResult): string {
   const lines = ["hub-init no completó exitosamente"];
-  if ("results" in data.project_md) {
-    for (const file of data.project_md.results ?? []) {
+  if ("results" in data.hub_block_files) {
+    for (const file of data.hub_block_files.results ?? []) {
       lines.push(
         `${file.file}: ${file.error ? `revertido (${file.error})` : (file.action ?? "sin cambio")} · ${file.path}`,
       );
     }
-  } else if ("error" in data.project_md) {
-    lines.push(`bloque: ${data.project_md.error}`);
+  } else if ("error" in data.hub_block_files) {
+    lines.push(`bloque: ${data.hub_block_files.error}`);
   }
   for (const source of data.source_actions ?? []) {
     lines.push(`fuente ${source.alias}: ${source.error ?? source.action}`);
@@ -171,7 +171,10 @@ function toWorkspaceSource(spec: FuenteSpec): WorkspaceSource {
   };
 }
 
-function appendProjectFiles(lines: string[], projectMd: WorkspaceInitResult["project_md"]): void {
+function appendProjectFiles(
+  lines: string[],
+  projectMd: WorkspaceInitResult["hub_block_files"],
+): void {
   if ("results" in projectMd) {
     for (const file of projectMd.results ?? []) {
       lines.push(
@@ -183,7 +186,7 @@ function appendProjectFiles(lines: string[], projectMd: WorkspaceInitResult["pro
 
 function appendProjectMigration(
   lines: string[],
-  projectMd: WorkspaceInitResult["project_md"],
+  projectMd: WorkspaceInitResult["hub_block_files"],
 ): void {
   if ("migrated" in projectMd) {
     for (const alias of projectMd.migrated ?? []) lines.push(`  fuente ${alias}: ruta migrada`);

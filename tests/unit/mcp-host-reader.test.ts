@@ -16,11 +16,11 @@ import {
 const TEST_NODE = "/opt/workline/node";
 const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
 
-function entryCommand(scope: "workspace" | "global" = "workspace") {
+function entryCommand(scope: "hub" | "global" = "hub") {
   return scope === "global" ? TEST_NODE : "agent-workflow";
 }
 
-function entryArgs(host: McpHost, instance: string, scope: "workspace" | "global" = "workspace") {
+function entryArgs(host: McpHost, instance: string, scope: "hub" | "global" = "hub") {
   const serveArgs = [
     "mcp",
     "serve-db",
@@ -49,7 +49,7 @@ function priorGenerationEntry(host: McpHost) {
   });
 }
 
-function testEntry(host: McpHost, scope: "workspace" | "global" = "workspace") {
+function testEntry(host: McpHost, scope: "hub" | "global" = "hub") {
   return buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
     nodePath: TEST_NODE,
     entrypoint: TEST_ENTRYPOINT,
@@ -342,6 +342,43 @@ describe("classifyMcpEntry — descriptor de otra generación, contra el writer 
   }
 });
 
+describe("classifyMcpEntry — el descriptor de hub que escribió 28.x (`--scope workspace`)", () => {
+  let scopeDir: string;
+  beforeEach(() => {
+    scopeDir = mkdtempSync(join(tmpdir(), "mcp-scope-spelling-"));
+  });
+  afterEach(() => {
+    rmSync(scopeDir, { recursive: true, force: true });
+  });
+
+  for (const host of ["claude", "codex"] as McpHost[]) {
+    it(`${host}: es propio y el writer lo reescribe con --scope hub`, () => {
+      const current = testEntry(host, "hub");
+      const flag = current.args.indexOf("--scope");
+      const written28 = {
+        ...current,
+        args: current.args.map((arg, index) => (index === flag + 1 ? "workspace" : arg)),
+      };
+      writeMcpEntry(host, written28, { scopeDir, kind: "hub" }, {});
+
+      const connection = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
+      const snapshot = readMcpEntry(host, scopeDir, current.name, "hub");
+      const classified = classifyMcpEntry(host, snapshot, current, connection);
+      expect(classified).toMatchObject({ state: "known-legacy", legacy: written28 });
+
+      const replaced = writeMcpEntry(
+        host,
+        current,
+        { scopeDir, kind: "hub" },
+        { replaceLegacy: classified.legacy },
+      );
+      expect(replaced.action).toBe("written");
+      const after = readMcpEntry(host, scopeDir, current.name, "hub");
+      expect(classifyMcpEntry(host, after, current, connection).state).toBe("current");
+    });
+  }
+});
+
 describe("readMcpEntry — Codex", () => {
   let scopeDir: string;
   beforeEach(() => {
@@ -358,7 +395,7 @@ describe("readMcpEntry — Codex", () => {
       `
 [mcp_servers.beta]
 command = "agent-workflow"
-args = ["mcp", "serve-db", "--namespace", "workflow", "--instance", "beta", "--host", "codex", "--scope", "workspace"]
+args = ["mcp", "serve-db", "--namespace", "workflow", "--instance", "beta", "--host", "codex", "--scope", "hub"]
 required = false
 
 [mcp_servers.beta.env]

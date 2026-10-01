@@ -6,7 +6,7 @@ export const historyCommand: CliCommand = {
   name: "history",
   flags: { known: [], actions: { reconcile: { known: [] } } },
   help: {
-    purpose: "Check the workspace history file against the local session folders.",
+    purpose: "Check the hub history file against the local session folders.",
     actions: {
       reconcile: {
         purpose:

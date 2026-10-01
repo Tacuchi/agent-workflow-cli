@@ -40,7 +40,7 @@ describe("aw desde $HOME", { timeout: 60_000 }, () => {
       });
       const result = runFromHome([command], payload);
       expect(result.status).toBe(0);
-      expect(result.stdout + result.stderr).not.toContain("WORKSPACE_INVALID");
+      expect(result.stdout + result.stderr).not.toContain("HUB_INVALID");
     },
   );
 
@@ -49,12 +49,12 @@ describe("aw desde $HOME", { timeout: 60_000 }, () => {
     ["mcp", "setup", "--host", "kimi", "--global", "--dry-run"],
   ])("'%s' corre sin exigir workspace", (...args) => {
     const result = runFromHome(args);
-    expect(result.stdout + result.stderr).not.toContain("WORKSPACE_INVALID");
+    expect(result.stdout + result.stderr).not.toContain("HUB_INVALID");
   });
 
   it("un comando del workspace sigue rechazado", () => {
     const result = runFromHome(["mcp", "setup", "--host", "kimi", "--dry-run"]);
     expect(result.status).not.toBe(0);
-    expect(result.stdout + result.stderr).toContain("WORKSPACE_INVALID");
+    expect(result.stdout + result.stderr).toContain("HUB_INVALID");
   });
 });

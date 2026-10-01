@@ -88,7 +88,7 @@ export interface ScaffoldSummary {
 export interface WorkspaceInitResult {
   ok: boolean;
   dry_run: boolean;
-  workspace: string;
+  hub: string;
   sources: number;
   source_actions?: { alias: string; action: "added" | "updated"; error?: string }[];
   scaffold: ScaffoldSummary;
@@ -96,7 +96,7 @@ export interface WorkspaceInitResult {
   materialization: WorklineMaterialization;
   untrack?: WorkspaceUntrack;
   skills_toml: "created" | "exists" | "skipped";
-  project_md:
+  hub_block_files:
     | ProjectMdUpsertOutput
     | ProjectMdUpsertError
     | { skipped: true; reason: "materialization_only" };
@@ -256,12 +256,12 @@ async function buildDryRunResult(
   return {
     ok: true,
     dry_run: true,
-    workspace,
+    hub: workspace,
     sources: sources.length,
     materialization,
     scaffold: scaffoldFromMaterialization(materialization, wsPaths),
     skills_toml: (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped",
-    project_md: await previewProjectMdUpsert(fs, env, wsPaths, upsertInput),
+    hub_block_files: await previewProjectMdUpsert(fs, env, wsPaths, upsertInput),
     attach_multiroot: anyExternal
       ? { skipped: true, reason: "dry_run" }
       : { skipped: true, reason: "no_external_sources" },
@@ -448,13 +448,13 @@ async function materializeWithoutSources(
   return {
     ok: true,
     dry_run: input.dryRun === true,
-    workspace,
+    hub: workspace,
     sources: 0,
     materialization,
     ...(untrack === undefined ? {} : { untrack }),
     scaffold: scaffoldFromMaterialization(materialization, wsPaths),
     skills_toml: (await fs.exists(wsPaths.cwdSkillsToml())) ? "exists" : "skipped",
-    project_md: { skipped: true, reason: "materialization_only" },
+    hub_block_files: { skipped: true, reason: "materialization_only" },
     attach_multiroot: { skipped: true, reason: "materialization_only" },
   };
 }
@@ -496,14 +496,14 @@ async function applyWorkspaceInit(
     return {
       ok: false,
       dry_run: false,
-      workspace,
+      hub: workspace,
       sources: sources.length,
       source_actions: sourceActions.map((source) => ({ ...source, error: cause })),
       scaffold,
       materialization,
       ...(untrack === undefined ? {} : { untrack }),
       skills_toml: skillsToml,
-      project_md: projectMd,
+      hub_block_files: projectMd,
       attach_multiroot: { skipped: true, reason: "project_md_failed" },
     };
   }
@@ -513,14 +513,14 @@ async function applyWorkspaceInit(
   return {
     ok: projectMd.ok && visibility.ok,
     dry_run: false,
-    workspace,
+    hub: workspace,
     sources: sources.length,
     source_actions: sourceActions,
     scaffold,
     materialization,
     ...(untrack === undefined ? {} : { untrack }),
     skills_toml: skillsToml,
-    project_md: projectMd,
+    hub_block_files: projectMd,
     attach_multiroot: visibility.attach,
     ...(visibility.detached !== undefined ? { detached_removed: visibility.detached } : {}),
   };

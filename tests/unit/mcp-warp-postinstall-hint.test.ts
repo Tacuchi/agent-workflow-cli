@@ -6,7 +6,7 @@ import {
 
 describe("buildWarpPostInstallHint", () => {
   it("incluye el path y nombre del MCP en la primera línea (scope workspace)", () => {
-    const hint = buildWarpPostInstallHint("alpha", "workspace", "/repo/.warp/.mcp.json");
+    const hint = buildWarpPostInstallHint("alpha", "hub", "/repo/.warp/.mcp.json");
     expect(hint.lines[0]).toContain("alpha");
     expect(hint.lines[0]).toContain("/repo/.warp/.mcp.json");
     expect(hint.lines[0]).toContain("project");
@@ -20,20 +20,20 @@ describe("buildWarpPostInstallHint", () => {
   });
 
   it("para scope workspace recuerda reabrir el tab del repo", () => {
-    const hint = buildWarpPostInstallHint("alpha", "workspace", "/repo/.warp/.mcp.json");
+    const hint = buildWarpPostInstallHint("alpha", "hub", "/repo/.warp/.mcp.json");
     const last = hint.lines[hint.lines.length - 1] ?? "";
     expect(last).toMatch(/reabr/i);
     expect(last).toContain("/repo/.warp/.mcp.json");
   });
 
   it("siempre menciona el toggle 'File-based MCP Servers'", () => {
-    const hint = buildWarpPostInstallHint("alpha", "workspace", "/repo/.warp/.mcp.json");
+    const hint = buildWarpPostInstallHint("alpha", "hub", "/repo/.warp/.mcp.json");
     const allText = hint.lines.join("\n");
     expect(allText).toContain("File-based MCP Servers");
   });
 
   it("expone doc_url estable hacia docs.warp.dev", () => {
-    const hint = buildWarpPostInstallHint("alpha", "workspace", "/repo/.warp/.mcp.json");
+    const hint = buildWarpPostInstallHint("alpha", "hub", "/repo/.warp/.mcp.json");
     expect(hint.doc_url).toMatch(/^https:\/\/docs\.warp\.dev\//);
   });
 
@@ -47,7 +47,7 @@ describe("buildWarpPostInstallHint", () => {
 
 describe("formatWarpPostInstallHint", () => {
   it("numera los pasos a partir del segundo elemento de lines", () => {
-    const hint = buildWarpPostInstallHint("alpha", "workspace", "/repo/.warp/.mcp.json");
+    const hint = buildWarpPostInstallHint("alpha", "hub", "/repo/.warp/.mcp.json");
     const formatted = formatWarpPostInstallHint(hint);
     expect(formatted).toMatch(/ {2}1\. /);
     expect(formatted).toMatch(/ {2}2\. /);
@@ -56,7 +56,7 @@ describe("formatWarpPostInstallHint", () => {
   });
 
   it("incluye la URL de documentación al final", () => {
-    const hint = buildWarpPostInstallHint("alpha", "workspace", "/repo/.warp/.mcp.json");
+    const hint = buildWarpPostInstallHint("alpha", "hub", "/repo/.warp/.mcp.json");
     const formatted = formatWarpPostInstallHint(hint);
     expect(formatted).toContain(`Doc: ${hint.doc_url}`);
   });

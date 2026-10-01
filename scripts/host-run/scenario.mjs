@@ -87,9 +87,9 @@ export const STEPS = [
         id: "chassis.commit-choice",
         labels: [
           "Cerrar sin commit",
-          "Aprobar commit del workspace",
+          "Aprobar commit del hub",
           "Copiar evidencia y cerrar",
-          "Copiar evidencia y aprobar commit del workspace",
+          "Copiar evidencia y aprobar commit del hub",
         ],
       },
     ],

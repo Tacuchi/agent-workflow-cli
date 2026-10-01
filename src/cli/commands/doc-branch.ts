@@ -98,7 +98,7 @@ export const docBranchCommand: CliCommand = {
       ctx.paths.blockMarkers(),
     );
     if (!block || block.fuentes.length === 0)
-      return fail("NO_SOURCES_DECLARED", "el workspace no declara fuentes");
+      return fail("NO_SOURCES_DECLARED", "el hub no declara fuentes");
     const read = await readDocBranches(ctx.fs, ctx.paths);
     if (action === "show") {
       return showDocumentBranches(ctx, block, identity, read);

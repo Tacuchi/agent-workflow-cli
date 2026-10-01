@@ -214,7 +214,7 @@ export interface FlowDirective {
   /** Non-empty exactly at a human or authorization boundary. */
   choices: FlowChoice[];
   /** Host-local preview of the pathspec being approved at the closing gate. */
-  workspace_commit_preview?: {
+  hub_commit_preview?: {
     repo: string;
     branch: string;
     head: string;

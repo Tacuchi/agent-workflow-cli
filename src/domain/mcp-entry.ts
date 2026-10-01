@@ -31,7 +31,7 @@ export interface McpEntryLaunchOptions {
   /** The host writes its own name into the descriptor for observable diagnostics. */
   host?: McpHost;
   /** Receipt identity for host-specific reload and load observations. */
-  scope?: "workspace" | "global";
+  scope?: "hub" | "global";
   /** Test/embedded launcher override. Production uses the running Node binary. */
   nodePath?: string;
   /** Test/embedded entrypoint override. Production is the installed CLI entrypoint. */
@@ -131,7 +131,7 @@ export type McpDriftStatus =
 export interface McpDriftReport {
   host: McpHost;
   instance: McpInstance;
-  scope: "workspace" | "global";
+  scope: "hub" | "global";
   target: string;
   dsn: { path: string; exists: boolean; key: string; present: boolean };
   mcp: { name: string; present: boolean; matches: boolean };
@@ -221,7 +221,7 @@ export function buildMcpEntry(
   const launch = normalizeMcpEntryOptions(options);
   const namespace = launch.namespace ?? "workflow";
   const host = launch.host ?? "codex";
-  const scope = launch.scope ?? "workspace";
+  const scope = launch.scope ?? "hub";
   const platform = launch.platform ?? process.platform;
   const nodePath = launch.nodePath ?? process.execPath;
   const entrypoint = launch.entrypoint ?? fileURLToPath(new URL("../cli/main.js", import.meta.url));
@@ -242,7 +242,7 @@ export function buildMcpEntry(
 
 /** Global registrations must remain independently launchable after a host reload. */
 function requireAbsoluteGlobalDescriptor(
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   nodePath: string,
   entrypoint: string,
 ): void {
@@ -257,10 +257,10 @@ function normalizeMcpEntryOptions(options: McpEntryLaunchOptions | string): McpE
 }
 
 function descriptorGenerationFor(
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   launch: McpEntryLaunchOptions,
 ): string | undefined {
-  if (scope === "workspace") return undefined;
+  if (scope === "hub") return undefined;
   return launch.descriptorGeneration ?? readPackageVersion();
 }
 
@@ -268,7 +268,7 @@ function databaseServeArgs(
   namespace: string,
   instance: string,
   host: McpHost,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   generation: string | undefined,
 ): string[] {
   return [
@@ -287,7 +287,7 @@ function databaseServeArgs(
 }
 
 function descriptorCommand(
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   platform: NodeJS.Platform,
   nodePath: string,
 ): string {
@@ -296,7 +296,7 @@ function descriptorCommand(
 }
 
 function descriptorArgs(
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   platform: NodeJS.Platform,
   entrypoint: string,
   serveArgs: string[],
@@ -345,6 +345,42 @@ export function generationVariantMcpEntry(
   // Built from `entry`, never from the observation: name, command, env and
   // `optional` must stay this install's own, and the prefix is already proven equal.
   return { ...entry, args: [...entry.args.slice(0, -1), generation] };
+}
+
+/**
+ * The descriptor 28.x wrote for this same entry: identical but for spelling the
+ * hub scope `--scope workspace`.
+ *
+ * Without it, 29.0.0 would read every hub descriptor it installed before the
+ * rename as somebody else's server and never replace it. It is recognized only
+ * to be rewritten; no reader accepts that spelling as a scope.
+ */
+function legacyScopeSpelling(entry: McpEntry): McpEntry | undefined {
+  const flag = entry.args.indexOf("--scope");
+  if (flag < 0 || entry.args[flag + 1] !== "hub") return undefined;
+  return {
+    ...entry,
+    args: entry.args.map((arg, index) => (index === flag + 1 ? "workspace" : arg)),
+  };
+}
+
+/**
+ * This installation's own descriptor as another release wrote it — a different
+ * generation, the 28.x scope spelling, or both — in the exact shape it sits on
+ * disk, or `undefined` when anything else differs.
+ */
+export function ownReleaseVariantMcpEntry(
+  entry: McpEntry,
+  observed: readonly string[],
+): McpEntry | undefined {
+  const variant = generationVariantMcpEntry(entry, observed);
+  if (variant !== undefined) return variant;
+  const legacy = legacyScopeSpelling(entry);
+  if (legacy === undefined) return undefined;
+  const same =
+    legacy.args.length === observed.length && legacy.args.every((arg, i) => arg === observed[i]);
+  if (same) return legacy;
+  return generationVariantMcpEntry(legacy, observed);
 }
 
 /**

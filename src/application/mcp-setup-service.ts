@@ -5,7 +5,7 @@ import {
   type McpWriteOpts,
   type McpWriteResult,
   buildMcpEntry,
-  generationVariantMcpEntry,
+  ownReleaseVariantMcpEntry,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import { type McpEntryClassification, classifyMcpEntry } from "./mcp-entry-classification.js";
@@ -31,7 +31,7 @@ export type McpSetupInput = McpScopeInput & {
 };
 
 export interface McpSetupResult {
-  scope: "workspace" | "global";
+  scope: "hub" | "global";
   scope_dir: string;
   dry_run: boolean;
   applied: McpWriteResult[];
@@ -146,7 +146,7 @@ function setupWriteOptions(
     return opts;
   }
   if (classification.state !== "known-legacy" || classification.legacy === undefined) return opts;
-  return generationVariantMcpEntry(entry, classification.legacy.args) === undefined
+  return ownReleaseVariantMcpEntry(entry, classification.legacy.args) === undefined
     ? opts
     : { ...opts, replaceLegacy: classification.legacy };
 }

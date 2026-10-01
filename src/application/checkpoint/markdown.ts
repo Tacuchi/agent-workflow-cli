@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import {
   CONTEXTUAL_LIMIT,
   type FilesTouched,
+  HUB_UNIT,
   type TouchedFile,
-  WORKSPACE_UNIT,
 } from "./files-touched.js";
 import type { SessionState } from "./state-reader.js";
 
@@ -230,7 +230,7 @@ function scopeLine(touched: FilesTouched): string {
 
 /** A path from another unit is spelled with its alias: two units can share one. */
 function labelOf(file: TouchedFile): string {
-  return file.unit === WORKSPACE_UNIT ? file.path : `${file.unit}:${file.path}`;
+  return file.unit === HUB_UNIT ? file.path : `${file.unit}:${file.path}`;
 }
 
 function countsOf(file: TouchedFile): string {

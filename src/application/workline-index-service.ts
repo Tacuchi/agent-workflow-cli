@@ -870,7 +870,7 @@ function postponementOf(
   const missing =
     absent.length === 0
       ? ""
-      : ` (la intención también nombra ${absent.map(formatNodeId).join(", ")}, que no está en el workspace: no se espera por lo que no existe)`;
+      : ` (la intención también nombra ${absent.map(formatNodeId).join(", ")}, que no está en el hub: no se espera por lo que no existe)`;
   return {
     reason: `la intención declarada lo reservó para un pase posterior: ${held}${missing}`,
     waiting_on: names,
@@ -1323,7 +1323,7 @@ function describeUnprovenBaseline(plan: IndexedPlan): string {
     return `BASELINE ILEGIBLE — ${baseline.why}: ${baseline.action}`;
   }
   if (baseline.status === "unresolved") {
-    return `BASELINE SIN SPEC — ${baseline.path} no está en el workspace: no hay contrato contra el que validar`;
+    return `BASELINE SIN SPEC — ${baseline.path} no está en el hub: no hay contrato contra el que validar`;
   }
   return "SIN SELLO DE BASELINE — el plan no dice de qué versión de su spec deriva: no se puede afirmar que esté alineado";
 }

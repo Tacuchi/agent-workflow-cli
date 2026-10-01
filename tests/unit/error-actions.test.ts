@@ -227,9 +227,9 @@ describe("determinable errors name the exact command — through the binary", ()
     expect(exported.data?.action).toContain("aw export-scripts <action>");
   });
 
-  it("WORKSPACE_INVALID inside a workspace: the same invocation on its root", async () => {
+  it("HUB_INVALID inside a workspace: the same invocation on its root", async () => {
     const out = await aw(root, "status", "--hub", join(ws, "sub"));
-    expect(out.error?.code).toBe("WORKSPACE_INVALID");
+    expect(out.error?.code).toBe("HUB_INVALID");
     expect(out.data?.next_step?.command).toMatch(/^aw status --json --hub \S+\/ws$/);
   });
 });

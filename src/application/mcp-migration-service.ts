@@ -67,7 +67,7 @@ export interface McpMigrationDescriptorPreview {
 }
 
 export interface McpMigrationResult {
-  scope: "workspace" | "global";
+  scope: "hub" | "global";
   scope_dir: string;
   preview: boolean;
   items: McpMigrationItem[];
@@ -118,7 +118,7 @@ interface MigrationApplyResult {
  */
 export function runMcpMigration(
   env: EnvPort,
-  input: McpMigrationInput & { scope: "workspace" },
+  input: McpMigrationInput & { scope: "hub" },
 ): McpMigrationResult;
 export function runMcpMigration(
   env: EnvPort,

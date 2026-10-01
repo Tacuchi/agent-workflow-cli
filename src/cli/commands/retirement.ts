@@ -147,7 +147,7 @@ function helpOf(mode: RetirementMode): CommandHelp {
         notes: ["Read-only."],
       },
       apply: {
-        purpose: `Recompute the ${mode} under the workspace lock and converge it all-or-nothing.`,
+        purpose: `Recompute the ${mode} under the hub lock and converge it all-or-nothing.`,
         args: targets,
         output:
           "{action: apply, digest, mode, target, removed[], restored[], bindings_invalidated, published, pending_remote_publication[], units_released[], pending_reconciliation[], reservations_released[], reservations_held[], already_applied}.",

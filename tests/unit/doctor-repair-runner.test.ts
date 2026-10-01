@@ -135,17 +135,17 @@ const WIRING: ReadonlyArray<{
   {
     op: "mcp.setup",
     delegate: "runMcpSetup",
-    args: { host: "claude", instance: "cert", scope: "workspace" },
+    args: { host: "claude", instance: "cert", scope: "hub" },
   },
   {
     op: "mcp.remove",
     delegate: "runMcpRemove",
-    args: { host: "claude", instance: "cert", scope: "workspace" },
+    args: { host: "claude", instance: "cert", scope: "hub" },
   },
   {
     op: "mcp.migrate",
     delegate: "runMcpMigration",
-    args: { host: "claude", instance: "cert", scope: "workspace" },
+    args: { host: "claude", instance: "cert", scope: "hub" },
   },
   {
     op: "auth.flow",
@@ -156,15 +156,15 @@ const WIRING: ReadonlyArray<{
   {
     op: "multiroot.attach",
     delegate: "runMultiroot",
-    args: { scope: "workspace", host: "claude", paths: '["/tmp/alpha"]' },
+    args: { scope: "hub", host: "claude", paths: '["/tmp/alpha"]' },
   },
   {
     op: "multiroot.detach",
     delegate: "runMultiroot",
-    args: { scope: "workspace", host: "claude", paths: '["/tmp/alpha"]' },
+    args: { scope: "hub", host: "claude", paths: '["/tmp/alpha"]' },
   },
   {
-    op: "workspace.remove-retired-section",
+    op: "hub.remove-retired-section",
     delegate: "applyRetiredSectionRemoval",
     args: { file: "CLAUDE.md" },
   },
@@ -192,7 +192,7 @@ describe("el cableado entre una operación y la función que escribe", () => {
 
   it("desvincula sólo las rutas sobrantes de la propuesta sellada, sin fromSources", async () => {
     const action = actionFor("multiroot.detach", {
-      scope: "workspace",
+      scope: "hub",
       host: "claude",
       paths: '["/ws/intrusa"]',
     });
@@ -267,7 +267,7 @@ describe("el cableado entre una operación y la función que escribe", () => {
     overrides.set("runMcpSetup", { applied: [], conflicts: [{}], errors: [] });
 
     const outcome = await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "workspace" }),
+      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "hub" }),
       ctx,
     );
 
@@ -295,11 +295,11 @@ describe("el cableado entre una operación y la función que escribe", () => {
 
     invocations.length = 0;
     await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "workspace" }),
+      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "hub" }),
       ctx,
     );
     const workspaceCall = invocations.find((call) => call.name === "runMcpSetup");
-    expect(workspaceCall?.args[1]).toMatchObject({ scope: "workspace", workspace: "/ws" });
+    expect(workspaceCall?.args[1]).toMatchObject({ scope: "hub", workspace: "/ws" });
     expect(workspaceCall?.args[1]).not.toHaveProperty("globalApproval");
   });
 
@@ -308,7 +308,7 @@ describe("el cableado entre una operación y la función que escribe", () => {
     // filtro, reparar `cert` pasaría TODAS las conexiones registradas y el
     // servicio escribiría entradas que nadie aprobó en la vista previa.
     await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "workspace" }),
+      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "hub" }),
       ctx,
     );
     const call = invocations.find((entry) => entry.name === "runMcpSetup");
@@ -316,7 +316,7 @@ describe("el cableado entre una operación y la función que escribe", () => {
 
     invocations.length = 0;
     await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "no-registrada", scope: "workspace" }),
+      actionFor("mcp.setup", { host: "claude", instance: "no-registrada", scope: "hub" }),
       ctx,
     );
     const missing = invocations.find((entry) => entry.name === "runMcpSetup");

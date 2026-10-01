@@ -27,10 +27,10 @@ export const planCommand: CliCommand<PlanLintReport> = {
           "Report every plan grammar violation at once: sources, closing clauses, execution limit and lineage.",
         args: "<plan-path|number>",
         output:
-          "{plan, workspace_block, violations[] ({code, line, message, rule, moment: publication|execution-entry|both})}.",
+          "{plan, hub_block, violations[] ({code, line, message, rule, moment: publication|execution-entry|both})}.",
         exit_codes: { "2": "The plan has violations; the report is still printed." },
         notes: [
-          "Read-only: opens no flow, creates no session and writes nothing. Without a readable WORKSPACE block (workspace_block false) publication judges the clauses only.",
+          "Read-only: opens no flow, creates no session and writes nothing. Without a readable hub block (hub_block false) publication judges the clauses only.",
         ],
       },
     },
@@ -65,8 +65,8 @@ export const planCommand: CliCommand<PlanLintReport> = {
         `  → ${violation.rule}`,
       );
     }
-    if (!report.workspace_block) {
-      lines.push("", "sin bloque WORKSPACE: la publicación juzga sólo las cláusulas");
+    if (!report.hub_block) {
+      lines.push("", "sin bloque del hub: la publicación juzga sólo las cláusulas");
     }
     return `${lines.join("\n")}\n`;
   },

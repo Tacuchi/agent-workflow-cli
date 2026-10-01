@@ -41,7 +41,7 @@ export const workspaceMoveCommand: CliCommand<WorkspaceMoveResult> = {
       });
       return { ok: true, data: result, exitCode: 0 };
     } catch (error) {
-      return fail("WORKSPACE_MOVE_FAILED", error instanceof Error ? error.message : String(error));
+      return fail("HUB_MOVE_FAILED", error instanceof Error ? error.message : String(error));
     }
   },
   renderHuman(result) {

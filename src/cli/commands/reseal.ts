@@ -85,8 +85,7 @@ export const resealCommand: CliCommand<ResealOutput> = {
         notes: ["Read-only."],
       },
       apply: {
-        purpose:
-          "Recompute the preparation under the workspace lock and rewrite the seal line only.",
+        purpose: "Recompute the preparation under the hub lock and rewrite the seal line only.",
         args: "<plan-path|number>",
         output: "{action: apply, status: applied|already, preview, written[], already_applied}.",
         notes: ["A missing digest fails with APPROVAL_REQUIRED."],

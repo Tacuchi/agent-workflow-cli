@@ -10,7 +10,7 @@ export const sourcesCommand: CliCommand = {
   name: "sources",
   flags: { known: ["code", "session", "scope", "no-git", "verbose"] },
   help: {
-    purpose: "List the workspace's declared sources with their Git state and expected branches.",
+    purpose: "List the hub's declared sources with their Git state and expected branches.",
     flags: {
       code: {
         value: "<code>",

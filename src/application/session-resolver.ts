@@ -603,7 +603,7 @@ function refuseUnbound(actives: ScannedFolder[]): SessionResolutionError {
 function noActiveSessions(scanned: ScannedFolder[]): SessionResolutionError {
   return resolutionError(
     "SESSION_NOT_FOUND",
-    "no hay sesiones activas en el workspace",
+    "no hay sesiones activas en el hub",
     scanned,
     "creá una con `aw session-create` o indicá una existente con --code",
   );

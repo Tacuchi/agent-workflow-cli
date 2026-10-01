@@ -33,8 +33,7 @@ export const sessionCreateCommand: CliCommand = {
       },
       input: {
         value: "<relative-path>",
-        effect:
-          "Workspace-relative artifact the run receives and may modify; its bytes are sealed.",
+        effect: "Hub-relative artifact the run receives and may modify; its bytes are sealed.",
       },
       "allow-repeat": {
         effect: "Open a quick again although a closed quick with the same name exists.",

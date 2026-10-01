@@ -19,7 +19,7 @@ import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "
 import { coverage } from "./types.js";
 
 const CATEGORY = "plugins-hooks" as const;
-const SCOPE_HOST = "workspace";
+const SCOPE_HOST = "hub";
 
 export const pluginsHooksProvider: DoctorProvider = {
   category: CATEGORY,

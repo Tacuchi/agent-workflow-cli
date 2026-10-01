@@ -216,7 +216,7 @@ async function readBases(
       failures.push({
         code: "DECISION_BASE_ABSENT",
         message: `'${path}' no está: la decisión se calcula sobre documentos que existen`,
-        action: "verificá el linaje de la nota contra el workspace y volvé a preparar la decisión",
+        action: "verificá el linaje de la nota contra el hub y volvé a preparar la decisión",
       });
       continue;
     }

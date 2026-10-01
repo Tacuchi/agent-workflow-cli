@@ -103,7 +103,7 @@ describe("NamespaceResolver", () => {
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
     expect(result.namespace).toBe("workflow");
-    expect(result.source).toBe("workspace");
+    expect(result.source).toBe("hub");
   });
 
   it("ignores .git/ in workspace detect (no sessions/ subdir)", async () => {
@@ -149,7 +149,7 @@ describe("NamespaceResolver", () => {
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
     expect(result.namespace).toBe("workflow");
-    expect(result.source).toBe("workspace");
+    expect(result.source).toBe("hub");
   });
 
   it("user config used when workspace cannot be determined (e.g., from $HOME)", async () => {
@@ -178,7 +178,7 @@ describe("NamespaceResolver", () => {
     const fs = makeFs(mark("/cwd/.legacy/workline.json"), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
-    expect(result.source).toBe("workspace");
+    expect(result.source).toBe("hub");
     expect(result.namespace).toBe("legacy");
   });
 
@@ -195,7 +195,7 @@ describe("NamespaceResolver", () => {
     await expect(r.resolveDirectory(undefined)).resolves.toEqual({
       root: "/repo",
       namespace: "workflow",
-      namespaceSource: "workspace",
+      namespaceSource: "hub",
       materialized: true,
     });
   });
@@ -301,7 +301,7 @@ describe("NamespaceResolver", () => {
     await expect(r.resolveDirectory(undefined)).resolves.toEqual({
       root: "/viejo",
       namespace: "workflow",
-      namespaceSource: "workspace",
+      namespaceSource: "hub",
       materialized: true,
     });
   });
@@ -317,7 +317,7 @@ describe("NamespaceResolver", () => {
 
     await expect(r.resolveDirectory(undefined)).resolves.toMatchObject({
       root: "/repo",
-      namespaceSource: "workspace",
+      namespaceSource: "hub",
     });
   });
 });

@@ -33,10 +33,10 @@ it("--hub nombra la raíz exacta desde otro cwd y rechaza una subcarpeta", () =>
   expect(valid.stdout).toContain("sessions");
   const invalid = run(join(hub, "docs"));
   expect(invalid.status).not.toBe(0);
-  expect(invalid.stdout + invalid.stderr).toContain("WORKSPACE_INVALID");
+  expect(invalid.stdout + invalid.stderr).toContain("HUB_INVALID");
   const userHome = run(home);
   expect(userHome.status).not.toBe(0);
-  expect(userHome.stdout + userHome.stderr).toContain("WORKSPACE_INVALID");
+  expect(userHome.stdout + userHome.stderr).toContain("HUB_INVALID");
   const legacy = join(root, "legacy");
   mkdirSync(join(legacy, ".workflow", "sessions"), { recursive: true });
   writeFileSync(join(legacy, ".workflow", "HISTORY.md"), "# Historia\n");

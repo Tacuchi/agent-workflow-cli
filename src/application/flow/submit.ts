@@ -1066,11 +1066,11 @@ async function decide(
   // mark work, validate or commit; a decision selection is durably recorded
   // even while its registration is handled by the decision bridge below.
   const selected = choiceOutcomeOf(resolved.stopped, parsed.answer.choice);
-  const withEvidence = parsed.answer.choice === "Copiar evidencia y aprobar commit del workspace";
+  const withEvidence = parsed.answer.choice === "Copiar evidencia y aprobar commit del hub";
   let approvedWorkspaceCommit: { approval: string; message: string; paths: string[] } | null = null;
   if (
     resolved.stopped.id === "chassis.commit-choice" &&
-    (parsed.answer.choice === "Aprobar commit del workspace" || withEvidence)
+    (parsed.answer.choice === "Aprobar commit del hub" || withEvidence)
   ) {
     if (!input.git || !input.process)
       return reject(
@@ -1078,7 +1078,7 @@ async function decide(
         resolved,
         "no se puede observar Git para aprobar el commit",
         {
-          code: "WORKSPACE_COMMIT_UNAVAILABLE",
+          code: "HUB_COMMIT_UNAVAILABLE",
           action: "cerrá sin commit o reintentá con un repositorio Git legible",
         },
         cost,
@@ -1093,7 +1093,7 @@ async function decide(
         resolved,
         prepared.error,
         {
-          code: "WORKSPACE_COMMIT_UNAVAILABLE",
+          code: "HUB_COMMIT_UNAVAILABLE",
           action: "cerrá sin commit o repará la propuesta y volvé a prepararla",
         },
         cost,
@@ -1105,7 +1105,7 @@ async function decide(
         resolved,
         "la aprobación no coincide con la lista de rutas y el mensaje",
         {
-          code: "WORKSPACE_COMMIT_APPROVAL_INVALID",
+          code: "HUB_COMMIT_APPROVAL_INVALID",
           action: `revisá ${command} y contestá con decisions.commit_approval: ${prepared.proposal.approval}`,
         },
         cost,
@@ -1777,7 +1777,7 @@ function scopeFrom(
     return {
       failure: invalidScope(
         `decisions.plan espera una ruta de texto no vacía; recibió ${typeof answer.decisions.plan}`,
-        `devolvé en 'decisions.plan' la ruta del plan dentro del workspace (${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md)`,
+        `devolvé en 'decisions.plan' la ruta del plan dentro del hub (${DEFAULT_CORE_DOCS_CANON.plan}/PPP-plan-<slug>.md)`,
       ),
     };
   }
@@ -1795,8 +1795,8 @@ function scopeFrom(
     return {
       failure: {
         code: "FLOW_SCOPE_UNKNOWN_SOURCE",
-        message: "el workspace no declara ninguna fuente contra la cual validar el scope",
-        action: "declará las fuentes en la tabla Fuentes del bloque WORKSPACE y volvé a contestar",
+        message: "el hub no declara ninguna fuente contra la cual validar el scope",
+        action: "declará las fuentes en la tabla Fuentes del bloque del hub y volvé a contestar",
       },
     };
   }
@@ -1808,7 +1808,7 @@ function scopeFrom(
     return {
       failure: {
         code: "FLOW_SCOPE_UNKNOWN_SOURCE",
-        message: `el workspace no declara ${unknown.join(", ")}`,
+        message: `el hub no declara ${unknown.join(", ")}`,
         action: `las fuentes declaradas son: ${declaredAliases.join(", ")}`,
       },
     };
@@ -1819,7 +1819,7 @@ function scopeFrom(
         code: "FLOW_SCOPE_PLAN_UNREADABLE",
         message: `no se pudo leer el plan '${plan}' contra el cual se valida el scope`,
         action:
-          "devolvé en 'decisions.plan' la ruta relativa de un plan existente del workspace: el scope no se fija contra un documento que nadie puede mostrar",
+          "devolvé en 'decisions.plan' la ruta relativa de un plan existente del hub: el scope no se fija contra un documento que nadie puede mostrar",
       },
     };
   }
@@ -2481,7 +2481,7 @@ function sealFrom(
       failure: {
         code: "FLOW_PROPOSAL_DESTINATION_UNOBSERVED",
         message: `no se pudo mirar el estado vigente de ${unseen.map((a) => a.path).join(", ")}`,
-        action: "volvé a enviar la propuesta con destinos relativos dentro del workspace",
+        action: "volvé a enviar la propuesta con destinos relativos dentro del hub",
       },
     };
   }

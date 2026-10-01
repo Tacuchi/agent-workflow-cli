@@ -208,6 +208,8 @@ describe("aw reseal — cerrar una divergencia de baseline sin plan-refine", () 
     await seed(original, SPEC_EDITED);
     const prepared = await prepare();
     if (prepared.status !== "prepared") throw new Error(`esperaba prepared: ${prepared.status}`);
+    // La propuesta sella la raíz del hub como `hub_root` (29.0.0) y aplica ahí.
+    expect(prepared.proposal.scope.hub_root).toBe(paths.workspaceDir());
 
     const applied = await apply(prepared.proposal.digest);
     expect(applied).toMatchObject({ status: "applied", already_applied: false });

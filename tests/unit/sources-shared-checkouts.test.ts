@@ -57,7 +57,7 @@ it("aw sources informa el otro hub y avisa cuando el checkout usa la rama ajena"
     new PathsService(namespace, home, a),
     {},
   );
-  expect(output.sources[0]?.other_workspaces).toMatchObject([{ working_branch: "main" }]);
+  expect(output.sources[0]?.other_hubs).toMatchObject([{ working_branch: "main" }]);
   expect(output.sources[0]?.shared_branch_warning).toContain(
     "checkout está en la rama de trabajo de otro workspace",
   );

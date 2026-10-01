@@ -247,7 +247,7 @@ export interface HarnessHostMemory {
 const NO_CURATED_MEMORY: HarnessHostMemory = {
   state: "unsupported",
   detail:
-    "the host keeps no curated memory of its own; AGENTS.md and the workspace docs are the fallback",
+    "the host keeps no curated memory of its own; AGENTS.md and the hub docs are the fallback",
 };
 
 /**

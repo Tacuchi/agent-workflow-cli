@@ -172,7 +172,7 @@ const CATALOG: readonly CatalogRow[] = [
     verb: "aw detach-multiroot --path '/tmp/extra'",
   },
   {
-    op: "workspace.remove-retired-section",
+    op: "hub.remove-retired-section",
     module: "../../src/application/doctor/provider-workspace-block.js",
     delegates: "applyRetiredSectionRemoval",
     effects: ["destructive"],

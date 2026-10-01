@@ -68,7 +68,7 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
       renumber: { effect: "Instead, renumber colliding session folders (preview unless --apply)." },
     },
     output:
-      "{action: preview, workspace, markers[], sentinels[], rows[], conflicts[], legacy[], next_correlative, pending, next} | {action: apply, workspace, markers_renamed[], duplicates_dropped[], sentinels_seeded[], rows_seeded[], rows_without_date[], conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
+      "{action: preview, hub, markers[], sentinels[], rows[], conflicts[], legacy[], next_correlative, pending, next} | {action: apply, hub, markers_renamed[], duplicates_dropped[], sentinels_seeded[], rows_seeded[], rows_without_date[], conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
     notes: [
       "Renames the hub block markers to the current namespace, seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
     ],

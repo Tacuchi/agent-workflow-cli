@@ -16,13 +16,13 @@ export type VisibilityDriftStatus =
   | "missing-paths"
   | "extra-paths"
   | "no-settings"
-  | "no-project-block"
+  | "no-hub-block"
   | "source-path-missing"
   | "global-pollution";
 
 export interface VisibilityHostReport {
   host: McpHost;
-  scope: "workspace" | "global";
+  scope: "hub" | "global";
   /**
    * Single-path pointer kept for consumers that read one file name: the FIRST
    * file the registered paths were actually read from. `targets` carries the
@@ -67,7 +67,7 @@ export interface VisibilityDoctorInput {
 }
 
 export interface VisibilityDoctorResult {
-  workspace_dir: string;
+  hub_dir: string;
   unreadable_sources?: string[];
   reports: VisibilityHostReport[];
   global_reports: VisibilityHostReport[];
@@ -77,7 +77,7 @@ export interface VisibilityDoctorResult {
     extra_paths: number;
     no_settings: number;
     global_pollution: number;
-    no_project_block: number;
+    no_hub_block: number;
   };
 }
 
@@ -92,8 +92,8 @@ export async function runVisibilityDoctor(
   const sourceReading = await readDeclaredFuentes(fs, scoped, workspace);
   const initial = sourceReading.paths;
   const visible = [
-    inspectClaude(workspace, initial, "workspace"),
-    inspectCodex(workspace, initial, "workspace"),
+    inspectClaude(workspace, initial, "hub"),
+    inspectCodex(workspace, initial, "hub"),
   ];
   const unitsRoot = await fs.realPath(scoped.userUnitsDir()).catch(() => scoped.userUnitsDir());
   const owns = await hubUnitPaths(fs, scoped, unitsRoot);
@@ -111,9 +111,9 @@ export async function runVisibilityDoctor(
   }
   const declared = initial === null ? null : [...new Set([...initial, ...livingUnits])];
   const reports: VisibilityHostReport[] = [
-    inspectClaude(workspace, declared, "workspace"),
-    inspectCodex(workspace, declared, "workspace"),
-    inspectWarp(workspace, declared, "workspace"),
+    inspectClaude(workspace, declared, "hub"),
+    inspectCodex(workspace, declared, "hub"),
+    inspectWarp(workspace, declared, "hub"),
   ];
 
   const globalReports: VisibilityHostReport[] = [];
@@ -137,7 +137,7 @@ export async function runVisibilityDoctor(
   }
 
   return {
-    workspace_dir: workspace,
+    hub_dir: workspace,
     ...(sourceReading.errors.length > 0 ? { unreadable_sources: sourceReading.errors } : {}),
     reports,
     global_reports: globalReports,
@@ -175,7 +175,7 @@ async function readDeclaredFuentes(
 function inspectClaude(
   scopeDir: string,
   declared: string[] | null,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
 ): VisibilityHostReport {
   const claudeDir = join(scopeDir, ".claude");
   // The file a fix has to create when neither settings file exists yet.
@@ -202,7 +202,7 @@ function inspectClaude(
 function inspectCodex(
   scopeDir: string,
   declared: string[] | null,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
 ): VisibilityHostReport {
   const target = join(scopeDir, ".codex", "config.toml");
   const targets = oneTarget(target);
@@ -233,7 +233,7 @@ function inspectCodexGlobal(home: string, declared: string[] | null): Visibility
 /** Declared sources with no host config file to compare them against. */
 function noSettingsReport(
   host: McpHost,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   targets: HostTargets,
   declared: string[],
   detail: string,
@@ -255,7 +255,7 @@ function noSettingsReport(
 function inspectWarp(
   _scopeDir: string,
   _declared: string[] | null,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
 ): VisibilityHostReport {
   // Warp Terminal does not have a workspace additionalDirectories concept.
   // Report is always ok — workspace path management is not applicable for Warp.
@@ -270,13 +270,13 @@ function inspectWarp(
     missing: [],
     extra: [],
     status: "ok",
-    detail: "Warp Terminal does not require workspace path registration (noop)",
+    detail: "Warp Terminal does not require hub path registration (noop)",
   };
 }
 
 function diffReport(
   host: McpHost,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   targets: HostTargets,
   declared: string[],
   rawRegistered: string[],
@@ -361,7 +361,7 @@ function describeTargets(targets: HostTargets): string {
 
 function baseNoBlock(
   host: McpHost,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   targets: HostTargets,
 ): VisibilityHostReport {
   return {
@@ -373,7 +373,7 @@ function baseNoBlock(
     registered_paths: [],
     missing: [],
     extra: [],
-    status: "no-project-block",
+    status: "no-hub-block",
     detail: "<NS>-PROJECT no encontrado o sin fuentes en CLAUDE.md/AGENTS.md",
   };
 }
@@ -440,7 +440,7 @@ function buildSummary(reports: VisibilityHostReport[]): VisibilityDoctorResult["
     extra_paths: reports.filter((r) => r.status === "extra-paths").length,
     no_settings: reports.filter((r) => r.status === "no-settings").length,
     global_pollution: reports.filter((r) => r.status === "global-pollution").length,
-    no_project_block: reports.filter((r) => r.status === "no-project-block").length,
+    no_hub_block: reports.filter((r) => r.status === "no-hub-block").length,
   };
 }
 

@@ -76,6 +76,6 @@ export async function preparationMismatch(
   if (receipts.some((r) => r.root === paths.workspaceDir())) return null;
   const receipt = receipts.at(-1);
   return receipt
-    ? `WORKSPACE_MISMATCH: preparado en ${receipt.root}; workspace actual ${paths.workspaceDir()}.`
+    ? `HUB_MISMATCH: preparado en ${receipt.root}; hub actual ${paths.workspaceDir()}.`
     : null;
 }

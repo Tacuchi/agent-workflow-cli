@@ -255,7 +255,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
     // rather than silently trimmed out of somebody's declaration.
     expect(held?.detail.postponed?.waiting_on).toEqual(["plan:091"]);
     expect(held?.detail.postponed?.reason).toContain("plan:777");
-    expect(held?.detail.postponed?.reason).toContain("no está en el workspace");
+    expect(held?.detail.postponed?.reason).toContain("no está en el hub");
   });
 
   it("la posición declarada se lee en una sola escala entre cortes, y el orden es consistente", async () => {

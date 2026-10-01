@@ -45,7 +45,7 @@ export async function runWorkspaceCommit(
   const root = paths.workspaceDir();
   const canonicalRoot = await fs.realPath(root);
   const prefix = await git.repoPrefix(root);
-  if (prefix === null) return { error: "el workspace no pertenece a un repositorio Git" };
+  if (prefix === null) return { error: "el hub no pertenece a un repositorio Git" };
   const repo = process
     ? await (async () => {
         const location = await process.run("git", ["rev-parse", "--show-toplevel"], { cwd: root });

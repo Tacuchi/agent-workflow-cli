@@ -202,7 +202,7 @@ async function buildProposal(
   return {
     ok: true,
     proposal: sealRetirementProposal({
-      workspace_root: deps.paths.workspaceDir(),
+      hub_root: deps.paths.workspaceDir(),
       mode: closure.mode,
       target: closure.target.id,
       closure: closure.entries.map(

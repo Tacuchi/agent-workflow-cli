@@ -53,7 +53,7 @@ export const persistCommand: CliCommand<PersistData> = {
       },
     },
     notes: [
-      "The CLI owns inventory, duplicates, numbering, destination and the write; the agent only classifies and drafts. Each stage rebuilds the request from the workspace, so a docs/ that moved changes the digest. validate and apply read the response JSON on stdin; binary attachments go in decisions.attachments [{source, path}] and their byte digest is part of the approval.",
+      "The CLI owns inventory, duplicates, numbering, destination and the write; the agent only classifies and drafts. Each stage rebuilds the request from the hub, so a docs/ that moved changes the digest. validate and apply read the response JSON on stdin; binary attachments go in decisions.attachments [{source, path}] and their byte digest is part of the approval.",
     ],
   },
 

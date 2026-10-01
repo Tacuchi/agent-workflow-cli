@@ -10,7 +10,7 @@ import {
 import { resolveWarpGlobalMcpPath } from "./multiroot/warp.js";
 import { parseToml } from "./parsers/toml.js";
 
-export type ReaderScopeKind = "workspace" | "global";
+export type ReaderScopeKind = "hub" | "global";
 
 export interface McpEntrySnapshot {
   host: McpHost;
@@ -61,7 +61,7 @@ interface McpEntryContainer {
 function mcpEntryContainers(
   host: McpHost,
   scopeDir: string,
-  kind: ReaderScopeKind = "workspace",
+  kind: ReaderScopeKind = "hub",
 ): McpEntryContainer[] {
   const spec = harnessForMcpHost(host);
   if (spec?.projectMcpPath === undefined) return [];
@@ -108,7 +108,7 @@ export function readMcpEntry(
   host: McpHost,
   scopeDir: string,
   name: string,
-  kind: ReaderScopeKind = "workspace",
+  kind: ReaderScopeKind = "hub",
 ): McpEntrySnapshot {
   const containers = mcpEntryContainers(host, scopeDir, kind);
   const first = containers[0];
@@ -174,7 +174,7 @@ export interface McpEntryScan {
 export function scanMcpEntries(
   host: McpHost,
   scopeDir: string,
-  kind: ReaderScopeKind = "workspace",
+  kind: ReaderScopeKind = "hub",
 ): McpEntryScan {
   const names = new Set<string>();
   const unreadable: string[] = [];

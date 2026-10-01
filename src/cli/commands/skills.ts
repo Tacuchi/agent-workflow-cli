@@ -7,7 +7,7 @@ import type { CliContext } from "../types.js";
 
 interface SkillsData {
   skills: ResolvedSkills;
-  sources: { global: boolean; workspace: boolean };
+  sources: { global: boolean; hub: boolean };
   warnings: string[];
 }
 
@@ -17,7 +17,7 @@ export const skillsCommand: CliCommand<SkillsData> = {
   help: {
     purpose: "Show which skill each role is bound to after the skills.toml cascade.",
     output:
-      "{skills {<role>: {skill, enabled, source}}, sources {global, workspace}, warnings[]}. Read-only.",
+      "{skills {<role>: {skill, enabled, source}}, sources {global, hub}, warnings[]}. Read-only.",
   },
 
   async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult<SkillsData>> {

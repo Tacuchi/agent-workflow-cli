@@ -59,8 +59,8 @@ function finding(
   evidence: string[],
 ): DoctorFinding {
   return {
-    id: doctorFindingId("workspace", CATEGORY, "dist-integrity"),
-    host: "workspace",
+    id: doctorFindingId("hub", CATEGORY, "dist-integrity"),
+    host: "hub",
     category: CATEGORY,
     resource: { kind: "dist", name: "integridad del CLI", locator: root },
     state,

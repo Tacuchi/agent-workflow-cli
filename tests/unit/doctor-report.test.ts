@@ -396,7 +396,7 @@ describe("runDoctor", () => {
     expect(report.hosts_absent).toEqual([]);
     expect(
       report.coverage.map((entry) => `${entry.category}/${entry.host}/${entry.state}`),
-    ).toEqual(["skills/workspace/unavailable"]);
+    ).toEqual(["skills/hub/unavailable"]);
     expect(report.coverage[0]?.reason).toContain("EACCES al leer el índice de skills");
     expect(report.verdict.exit_code).toBe(1);
   });
@@ -422,7 +422,7 @@ describe("runDoctor", () => {
 
     expect(report.hosts).toEqual([]);
     const denounced = report.findings.find(
-      (finding) => finding.id === "workspace/installation-hosts/--only=claude",
+      (finding) => finding.id === "hub/installation-hosts/--only=claude",
     );
     expect(denounced?.state).toBe("blocking");
     // La sugerencia sale del CATÁLOGO: este módulo no cablea ninguna tabla de
@@ -437,7 +437,7 @@ describe("runDoctor", () => {
     // filtro inexistente, que es la causa verdadera.
     expect(
       report.coverage.map((entry) => `${entry.category}/${entry.host}/${entry.state}`),
-    ).toEqual(["mcps/workspace/not-applicable"]);
+    ).toEqual(["mcps/hub/not-applicable"]);
     expect(report.coverage[0]?.reason).toContain("claude");
     expect(report.verdict.exit_code).toBe(1);
     expect(report.verdict.reason).toContain("--only=claude");
@@ -679,7 +679,7 @@ describe("runDoctor", () => {
     const workspace = join(home, "proyecto");
     let seen: DoctorProviderInput | null = null;
     const capturing: DoctorProvider = {
-      category: "workspace-visibility",
+      category: "hub-visibility",
       async run(input) {
         seen = input;
         return { coverage: [], findings: [] };
@@ -700,7 +700,7 @@ describe("runDoctor", () => {
     expect(seen?.workspaceDir).toBe(workspace);
     expect(seen?.skipNative).toBe(false);
     // El mismo workspace que el proveedor recibió es el que el informe declara.
-    expect(report.scope.workspace_dir).toBe(workspace);
+    expect(report.scope.hub_dir).toBe(workspace);
   });
 
   /**
@@ -754,9 +754,9 @@ describe("runDoctor", () => {
       category: "tools-auth",
       async run() {
         return {
-          coverage: [coverage("tools-auth", "workspace", "checked")],
+          coverage: [coverage("tools-auth", "hub", "checked")],
           findings: [
-            findingFor("workspace", "tools-auth", "conexion", {
+            findingFor("hub", "tools-auth", "conexion", {
               state: "warning",
               evidence: [`la entrada declara ${leak}`],
             }),

@@ -28,7 +28,7 @@ describe("cascada de capacidades propias", () => {
 
   it("sin configuración sólo resuelve skills del bundle", async () => {
     const result = await resolveSkills(fs, paths);
-    expect(result.sources).toEqual({ global: false, workspace: false });
+    expect(result.sources).toEqual({ global: false, hub: false });
     expect(result.warnings).toEqual([]);
     expect(result.skills).toEqual({
       overview: { role: "overview", skill: "w", source: "default", enabled: true },
@@ -44,7 +44,7 @@ describe("cascada de capacidades propias", () => {
     expect(result.skills).toEqual({
       overview: { role: "overview", skill: "w", source: "default", enabled: true },
     });
-    expect(result.sources).toEqual({ global: true, workspace: true });
+    expect(result.sources).toEqual({ global: true, hub: true });
     expect(readFileSync(paths.userSkillsToml(), "utf8")).toBe(global);
     expect(readFileSync(paths.cwdSkillsToml(), "utf8")).toBe(local);
   });

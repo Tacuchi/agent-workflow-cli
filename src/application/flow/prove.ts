@@ -92,7 +92,7 @@ function notEligible(wanted: string, candidates: readonly CheckoutIdentity[]): C
       code: "WORKLINE_CHECKOUT_PROOF_INVALID",
       message: `esta corrida no pudo resolver ninguna frontera elegible, así que '${wanted}' no se puede probar`,
       action:
-        "el límite del workspace no se pudo leer: comprobá que el marcador de Workline y su bloque de fuentes existan y sean legibles desde este directorio",
+        "el límite del hub no se pudo leer: comprobá que el marcador de Workline y su bloque de fuentes existan y sean legibles desde este directorio",
     };
   }
   return {

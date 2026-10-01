@@ -20,7 +20,7 @@ import type { VisibilityHostReport } from "../visibility-doctor-service.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
 import { coverage } from "./types.js";
 
-const CATEGORY = "workspace-visibility" as const;
+const CATEGORY = "hub-visibility" as const;
 
 /**
  * The visibility engine speaks `McpHost` ids and the report speaks catalog ids.
@@ -55,13 +55,13 @@ export const visibilityProvider: DoctorProvider = {
     for (const report of reports) {
       const host = catalogHost(report.host);
       if (!participants.has(host)) continue;
-      if (report.status === "no-project-block") {
+      if (report.status === "no-hub-block") {
         coverages.push(
           coverage(
             CATEGORY,
             host,
             "not-applicable",
-            `no hay bloque de proyecto para ${report.host} en ${input.workspaceDir}`,
+            `no hay bloque del hub para ${report.host} en ${input.workspaceDir}`,
           ),
         );
         continue;
@@ -85,7 +85,7 @@ export const visibilityProvider: DoctorProvider = {
           CATEGORY,
           host.host,
           "not-applicable",
-          `la visibilidad multiroot no se declara para ${host.label}: sólo Claude Code, Codex y Warp registran rutas del workspace`,
+          `la visibilidad multiroot no se declara para ${host.label}: sólo Claude Code, Codex y Warp registran rutas del hub`,
         ),
       );
 
@@ -166,7 +166,7 @@ function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
       id: doctorFindingId(host, CATEGORY, `${resource}:sobrantes`),
       state: "warning",
       summary: `${host} tiene registradas ${report.extra.length} ruta(s) que nadie declaró`,
-      impact: "el host ve directorios fuera del workspace declarado",
+      impact: "el host ve directorios fuera del hub declarado",
       evidence: report.extra.map((path) => `sobra: ${path}`),
       remediation: { kind: "manual", action: null, guidance: ["aw detach-multiroot"] },
       proposal: {
@@ -181,7 +181,7 @@ function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
       id: doctorFindingId(host, CATEGORY, `${resource}:sin-config`),
       state: "warning",
       summary: `${host} no tiene el archivo de configuración que declara sus rutas`,
-      impact: "el host no ve ninguna fuente declarada del workspace",
+      impact: "el host no ve ninguna fuente declarada del hub",
       evidence: [`archivo esperado: ${report.target}`],
       remediation: { kind: "manual", action: null, guidance: ["aw attach-multiroot"] },
       proposal: {
@@ -200,7 +200,7 @@ function driftFindings(report: VisibilityHostReport): DoctorFinding[] {
       id: doctorFindingId(host, CATEGORY, resource),
       state: "healthy",
       summary: `${host} tiene registradas exactamente las rutas declaradas (${report.scope})`,
-      impact: "el host ve el workspace completo y nada más",
+      impact: "el host ve el hub completo y nada más",
       evidence: [
         `archivo: ${report.target}`,
         `rutas registradas: ${report.registered_paths.length}`,
@@ -236,8 +236,8 @@ async function sourceUpstreamFindings(
     const [, ...tracked] = upstream.slice("refs/remotes/".length).split("/");
     if (tracked.join("/") !== roles.prod) continue;
     findings.push({
-      id: doctorFindingId("workspace", CATEGORY, `upstream:${alias}:${branch}`),
-      host: "workspace",
+      id: doctorFindingId("hub", CATEGORY, `upstream:${alias}:${branch}`),
+      host: "hub",
       category: CATEGORY,
       resource: { kind: "rama", name: `${alias}/${branch}`, locator: path },
       state: "warning",

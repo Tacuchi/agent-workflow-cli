@@ -4,7 +4,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { NAMESPACE_REGEX, type Namespace, normalizeNamespace } from "./namespace.js";
 import { isWorklineRoot } from "./workline-marker.js";
 
-export type NamespaceSource = "flag" | "env" | "config" | "workspace" | "default";
+export type NamespaceSource = "flag" | "env" | "config" | "hub" | "default";
 
 export interface ResolvedNamespace {
   namespace: Namespace;
@@ -103,7 +103,7 @@ export class NamespaceResolver {
       return {
         root: workspace.root,
         namespace: workspace.namespace,
-        namespaceSource: "workspace",
+        namespaceSource: "hub",
         materialized: true,
       };
     }

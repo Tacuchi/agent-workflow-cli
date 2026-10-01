@@ -63,7 +63,7 @@ export function readPlanLineage(text: string, specDir: string): PlanLineageReadi
   const safe = checkSafeRelativePath(path);
   if (!safe.ok) {
     return refused(
-      `la etiqueta de linaje de la línea ${declared.line} apunta a '${path}', que sale del workspace: ${safe.why}`,
+      `la etiqueta de linaje de la línea ${declared.line} apunta a '${path}', que sale del hub: ${safe.why}`,
       declared.line,
     );
   }

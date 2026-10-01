@@ -139,7 +139,7 @@ describe("frontera humana de commit del workspace", () => {
   });
 
   it("aprobar digest del pathspec cierra y ejecuta exactamente un commit", async () => {
-    const result = await close("Aprobar commit del workspace", true);
+    const result = await close("Aprobar commit del hub", true);
     expect(result.after).not.toBe(result.before);
     expect(await result.fs.exists(join(result.dir, ".closed"))).toBe(true);
     expect(result.git("show", "--pretty=format:", "--name-only", "HEAD")).toContain(
@@ -148,12 +148,7 @@ describe("frontera humana de commit del workspace", () => {
   });
 
   it("la misma aprobación copia evidencia efímera y la incluye en el commit final", async () => {
-    const result = await close(
-      "Copiar evidencia y aprobar commit del workspace",
-      true,
-      false,
-      true,
-    );
+    const result = await close("Copiar evidencia y aprobar commit del hub", true, false, true);
     expect(result.after).not.toBe(result.before);
     expect(result.directive.applied.some((item) => item.transition === "chassis.finalize")).toBe(
       true,
@@ -167,7 +162,7 @@ describe("frontera humana de commit del workspace", () => {
   });
 
   it("una fila HISTORY que no se pudo cerrar impide el commit aprobado", async () => {
-    const result = await close("Aprobar commit del workspace", true, true);
+    const result = await close("Aprobar commit del hub", true, true);
     expect(result.after).toBe(result.before);
     expect(await result.fs.exists(join(result.dir, ".closed"))).toBe(true);
     expect(result.directive.applied.some((item) => item.transition === "chassis.finalize")).toBe(

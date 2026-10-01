@@ -49,7 +49,7 @@ export async function moveWorkspace(
   const root = paths.workspaceDir();
   const home = dirname(paths.userRoot());
   if (!(await fs.exists(paths.cwdMarkerFile())) && !(await fs.exists(paths.cwdSessionsDir()))) {
-    throw new Error(`${root} no es un workspace materializado`);
+    throw new Error(`${root} no es un hub materializado`);
   }
   const next = options.repair ? root : resolve(root, "..", options.destination ?? "");
   await validateMoveDestination(fs, paths, options, root, home, next);
@@ -113,7 +113,7 @@ async function validateMoveDestination(
     next === home ||
     (!options.repair && (within(root, next) || within(paths.userUnitsDir(), next)))
   )
-    throw new Error(`Destino de workspace inválido: ${next}`);
+    throw new Error(`Destino de hub inválido: ${next}`);
   if (!options.repair) await rejectNestedWorkspace(fs, paths, next);
   const journal = join(paths.cwdRoot(), ".retirement");
   if ((await fs.exists(journal)) && (await readdir(journal)).length > 0)
@@ -347,7 +347,7 @@ function repairOrigin(
       return null;
     }
     throw new Error(
-      "El workspace ya está en su ubicación registrada; indica --from si necesitas reparar otra ruta.",
+      "El hub ya está en su ubicación registrada; indica --from si necesitas reparar otra ruta.",
     );
   }
   return oldRoot;
@@ -398,7 +398,7 @@ async function rejectNestedWorkspace(
   let ancestor = dirname(next);
   while (ancestor !== dirname(ancestor)) {
     if (await isWorklineRoot(fs, ancestor, paths.namespace))
-      throw new Error(`El destino ${next} cae dentro del workspace ${ancestor}.`);
+      throw new Error(`El destino ${next} cae dentro del hub ${ancestor}.`);
     ancestor = dirname(ancestor);
   }
 }

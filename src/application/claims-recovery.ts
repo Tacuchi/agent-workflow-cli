@@ -272,7 +272,7 @@ export async function scanSlots(
 
 interface RecoveryProposal {
   version: 1;
-  workspace_root?: string;
+  hub_root?: string;
   target: string;
   kind: SlotKind;
   claim: ClaimIdentity | null;
@@ -318,7 +318,7 @@ export async function previewRecovery(
   const slot = scan.slots.find((candidate) => candidate.path === target);
   if (slot === undefined) {
     return {
-      error: `'${target}' no es una reserva ni un placeholder legacy de este workspace`,
+      error: `'${target}' no es una reserva ni un placeholder legacy de este hub`,
       action:
         scan.error ??
         "corré 'aw claims' para ver los correlativos recuperables; un documento publicado no se recupera",
@@ -336,7 +336,7 @@ export async function previewRecovery(
   return {
     proposal: sealRecovery({
       version: 1,
-      workspace_root: paths.workspaceDir(),
+      hub_root: paths.workspaceDir(),
       target: slot.path,
       kind: slot.kind,
       claim: claimOfSlot(slot),
@@ -379,7 +379,7 @@ export async function applyRecovery(
   if ("error" in outcome && "action" in outcome) return outcome;
   if ("error" in outcome) {
     return {
-      error: `no se pudo tomar el candado del workspace: ${outcome.error}`,
+      error: `no se pudo tomar el candado del hub: ${outcome.error}`,
       action: "esperá a que otro flujo lo libere y volvé a aplicar la recuperación",
     };
   }

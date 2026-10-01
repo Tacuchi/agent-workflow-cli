@@ -83,7 +83,7 @@ async function humanSamples(): Promise<Array<[string, CliCommand, CommandResult]
       {
         ok: true,
         data: {
-          workspace_dir: "/cwd",
+          hub_dir: "/cwd",
           reports: [],
           global_reports: [],
           summary: {
@@ -92,7 +92,7 @@ async function humanSamples(): Promise<Array<[string, CliCommand, CommandResult]
             extra_paths: 0,
             no_settings: 0,
             global_pollution: 0,
-            no_project_block: 0,
+            no_hub_block: 0,
           },
         },
         exitCode: 0,

@@ -116,7 +116,7 @@ const ENVELOPE_NOTES = [
   "semantic boundary: signals[] (only ids from the vocabulary that boundary declares) and/or decisions (an object with at least one key); one of the two suffices. artifacts [{path, content}] is mandatory when the boundary proposes local effects and rejected when it proposes none.",
   "human boundary: choice, the literal label of one of the choices the directive emitted.",
   "authorization boundary: --approval <digest> is required only here; the digest is expects.approval.digest and is NOT the state_digest. semantic, human and execution boundaries ignore --approval. The close and compact choices need no approval.",
-  "At the workspace commit gate the directive carries workspace_commit_preview; to approve it include decisions.commit_approval with that preview's approval digest.",
+  "At the hub commit gate the directive carries hub_commit_preview; to approve it include decisions.commit_approval with that preview's approval digest.",
 ] as const;
 
 /**
@@ -260,8 +260,7 @@ export const flowCommand: CliCommand<FlowResult> = {
           objetivo: { value: "<text>", effect: "One-line objective of the session." },
           input: {
             value: "<path>",
-            effect:
-              "Workspace-relative document the run may modify; derived from the slug when absent.",
+            effect: "Hub-relative document the run may modify; derived from the slug when absent.",
           },
           from: { value: "<origin>", effect: "Who or what the run comes from, for its Origin." },
           root: {
@@ -283,7 +282,7 @@ export const flowCommand: CliCommand<FlowResult> = {
         },
         output: DIRECTIVE_OUTPUT,
         notes: [
-          "Reads no stdin. At the closing commit gate the directive adds workspace_commit_preview {repo, branch, head, message, paths[], excluded[], approval}.",
+          "Reads no stdin. At the closing commit gate the directive adds hub_commit_preview {repo, branch, head, message, paths[], excluded[], approval}.",
         ],
       },
       submit: {
@@ -689,9 +688,9 @@ async function projectWithCommit(
     ...result,
     directive: {
       ...directive,
-      workspace_commit_preview: proposal,
+      hub_commit_preview: proposal,
       choices: directive.choices.map((choice) =>
-        choice.label === "Aprobar commit del workspace"
+        choice.label === "Aprobar commit del hub"
           ? { ...choice, consequence: `${choice.consequence}. ${detail}` }
           : choice,
       ),

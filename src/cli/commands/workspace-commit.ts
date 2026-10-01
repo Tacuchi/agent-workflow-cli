@@ -79,7 +79,7 @@ export const workspaceCommitCommand: CliCommand<WorkspaceCommitResult> = {
     if ("error" in result)
       return {
         ok: false,
-        error: { code: "WORKSPACE_COMMIT_BLOCKED", message: result.error },
+        error: { code: "HUB_COMMIT_BLOCKED", message: result.error },
         exitCode: 1,
       };
     return { ok: true, data: result, exitCode: 0 };

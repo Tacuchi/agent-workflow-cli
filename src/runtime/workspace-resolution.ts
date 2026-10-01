@@ -62,14 +62,11 @@ export async function resolveWorkspaceDirectory(
     if (resolved !== null) return resolved;
   }
   if (cwd === home)
-    throw new WorkspaceResolutionError(
-      "WORKSPACE_INVALID",
-      "$HOME no es un hub; indica --hub <ruta>.",
-    );
+    throw new WorkspaceResolutionError("HUB_INVALID", "$HOME no es un hub; indica --hub <ruta>.");
   if (directory.root === home) {
     if (repo !== null)
       throw new WorkspaceResolutionError(
-        "WORKSPACE_UNRESOLVED",
+        "HUB_UNRESOLVED",
         `No hay hub registrado para ${repo}; indica --hub o ejecuta aw en el hub.`,
       );
     return { ...directory, root: cwd, materialized: false };
@@ -110,7 +107,7 @@ async function resolveExplicitWorkspace(
   try {
     if (!(await stat(root)).isDirectory()) throw new Error("no es directorio");
   } catch {
-    throw new WorkspaceResolutionError("WORKSPACE_INVALID", `El workspace ${root} no existe.`);
+    throw new WorkspaceResolutionError("HUB_INVALID", `El hub ${root} no existe.`);
   }
   const marked = await isWorklineRoot(fs, root, namespace);
   if (
@@ -119,8 +116,8 @@ async function resolveExplicitWorkspace(
     (repo !== null && contains(repo, root) && root !== repo && !marked)
   ) {
     throw new WorkspaceResolutionError(
-      "WORKSPACE_INVALID",
-      `La carpeta ${root} no es una raíz de workspace válida.`,
+      "HUB_INVALID",
+      `La carpeta ${root} no es una raíz de hub válida.`,
     );
   }
   const hubs =
@@ -130,7 +127,7 @@ async function resolveExplicitWorkspace(
   const otherHubs = [...new Set(hubs.map((hub) => hub.root).filter((hub) => hub !== root))];
   if (otherHubs.length > 0) {
     throw new WorkspaceResolutionError(
-      "WORKSPACE_INVALID",
+      "HUB_INVALID",
       `${root} es una fuente declarada; indica la raíz del hub, no la fuente.`,
       otherHubs,
     );
@@ -139,7 +136,7 @@ async function resolveExplicitWorkspace(
   while (parent !== dirname(parent)) {
     if (parent !== home && (await isWorklineRoot(fs, parent, namespace))) {
       throw new WorkspaceResolutionError(
-        "WORKSPACE_INVALID",
+        "HUB_INVALID",
         `${root} está dentro del hub ${parent}; --hub nombra la raíz exacta.`,
         [parent],
       );
@@ -165,14 +162,14 @@ async function resolveDeclaredWorkspace(
     const owner = await resolveUnitOwner(fs, directory, home, repo, roots);
     if (owner !== null) return owner;
     throw new WorkspaceResolutionError(
-      "WORKSPACE_AMBIGUOUS",
+      "HUB_AMBIGUOUS",
       `El checkout es fuente de ${roots.join(", ")}; indica --hub <ruta>.`,
       roots,
     );
   }
   if (directory.root === home || (await isWorklineRoot(fs, home, namespace)))
     throw new WorkspaceResolutionError(
-      "WORKSPACE_UNRESOLVED",
+      "HUB_UNRESOLVED",
       `No hay hub registrado para ${repo}; indica --hub o ejecuta aw en el hub.`,
     );
   return null;

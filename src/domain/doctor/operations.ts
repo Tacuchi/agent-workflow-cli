@@ -127,7 +127,7 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     delegates: "runMultiroot",
     effects: ["mutate_overwrite"],
     expected: "healthy",
-    summary: "registra en el host las rutas del workspace que faltaban",
+    summary: "registra en el host las rutas del hub que faltaban",
     verb: () => "aw attach-multiroot --from-sources",
   },
   {
@@ -148,7 +148,7 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     },
   },
   {
-    op: "workspace.remove-retired-section",
+    op: "hub.remove-retired-section",
     delegates: "applyRetiredSectionRemoval",
     effects: ["destructive"],
     expected: "healthy",

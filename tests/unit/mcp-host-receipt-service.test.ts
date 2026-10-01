@@ -171,6 +171,30 @@ describe("McpHostReceiptService", () => {
     expect(second.last_host_load_observed).toBeUndefined();
   });
 
+  it("lee como hub un recibo que 28.x guardó con scope workspace", () => {
+    const book = JSON.stringify({
+      schema_version: 1,
+      receipts: [
+        {
+          schema_version: 1,
+          ...IDENTITY,
+          scope: "workspace",
+          workline_version: "28.3.1",
+          descriptor_digest: digestMcpReceiptDescriptor(FIRST_DESCRIPTOR),
+          registered_at: "2026-08-31T12:00:00.000Z",
+          reload_required: true,
+        },
+      ],
+    });
+    expect(parseMcpHostReceiptBook(book).receipts).toEqual([
+      expect.objectContaining({
+        host: IDENTITY.host,
+        scope: "hub",
+        connection: IDENTITY.connection,
+      }),
+    ]);
+  });
+
   it("rechaza libros malformados y una carga sin evidencia de host", () => {
     expect(receiptError(() => parseMcpHostReceiptBook("{ no es json"))).toMatchObject({
       code: "MCP_RECEIPT_MALFORMED",

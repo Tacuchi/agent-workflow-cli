@@ -133,7 +133,7 @@ export async function applyDoctorBatch(
         code: "LOCK_BUSY",
         message: locked.error,
         candidates: [],
-        action: "esperá a que se libere el lock del workspace y volvé a aplicar",
+        action: "esperá a que se libere el lock del hub y volvé a aplicar",
       },
     };
   }
@@ -304,7 +304,7 @@ function coverageFor(
     return { ok: false, why: `el id '${id}' no nombra host y categoría` };
   }
   const entries = report.coverage.filter(
-    (entry) => entry.category === category && (entry.host === host || entry.host === "workspace"),
+    (entry) => entry.category === category && (entry.host === host || entry.host === "hub"),
   );
   const checked = entries.find((entry) => entry.state === "checked");
   if (checked !== undefined) return { ok: true, where: `${category} en ${checked.host}` };

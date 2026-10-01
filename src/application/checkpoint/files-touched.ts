@@ -32,7 +32,7 @@ import type { GitPort } from "../../ports/git.js";
 import { readCustody } from "../session-custody-service.js";
 
 /** The reserved alias of the workspace itself, the one unit always in scope. */
-export const WORKSPACE_UNIT = "workspace";
+export const HUB_UNIT = "workspace";
 
 /**
  * Readable ceiling for the CONTEXTUAL half alone.
@@ -46,7 +46,7 @@ export const CONTEXTUAL_LIMIT = 20;
 
 /** One entry, spelled the way the operator will read it. */
 export interface TouchedFile {
-  /** Unit it belongs to: {@link WORKSPACE_UNIT} or a source alias. */
+  /** Unit it belongs to: {@link HUB_UNIT} or a source alias. */
   unit: string;
   /** Path relative to that unit's boundary. */
   path: string;
@@ -239,7 +239,7 @@ function unitsInScope(
   workspaceRoot: string,
   unobserved: UnobservedUnit[],
 ): ScopedUnit[] {
-  const units: ScopedUnit[] = [{ alias: WORKSPACE_UNIT, boundary: workspaceRoot }];
+  const units: ScopedUnit[] = [{ alias: HUB_UNIT, boundary: workspaceRoot }];
   for (const source of sources) {
     // The isolation unit is where this session's own edits live; a session that
     // took none could only have touched the source checkout itself.
@@ -252,12 +252,12 @@ function unitsInScope(
         boundary: "(sin ruta)",
         reason: "la custodia no declara unit_path ni path",
       });
-    } else if (alias === WORKSPACE_UNIT) {
+    } else if (alias === HUB_UNIT) {
       // Two units answering to one name would read each other's counts.
       unobserved.push({
         alias,
         boundary,
-        reason: `una unidad fuente no puede llamarse ${WORKSPACE_UNIT}`,
+        reason: `una unidad fuente no puede llamarse ${HUB_UNIT}`,
       });
     } else {
       units.push({ alias, boundary });
@@ -287,7 +287,7 @@ async function observeUnit(
       untracked: change.untracked,
       // Only the workspace unit can match: custody spells its artifacts
       // relative to the workspace and nothing else.
-      linked: unit.alias === WORKSPACE_UNIT && claimed.has(path),
+      linked: unit.alias === HUB_UNIT && claimed.has(path),
     });
   }
   return entries;
@@ -337,8 +337,8 @@ async function fillCounts(
 /** A total order, so two readings of the same tree cannot disagree. */
 function byUnitThenPath(a: TouchedFile, b: TouchedFile): number {
   if (a.unit !== b.unit) {
-    if (a.unit === WORKSPACE_UNIT) return -1;
-    if (b.unit === WORKSPACE_UNIT) return 1;
+    if (a.unit === HUB_UNIT) return -1;
+    if (b.unit === HUB_UNIT) return 1;
     return a.unit < b.unit ? -1 : 1;
   }
   if (a.path === b.path) return 0;

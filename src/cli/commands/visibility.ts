@@ -27,7 +27,7 @@ export const visibilityCommand: CliCommand<VisibilityDoctorResult> = {
         purpose:
           "Report, host by host, the multi-root paths that are missing or left over against the declared sources.",
         output:
-          "{workspace_dir, unreadable_sources[]?, reports[] {host, scope, target, targets[], declared_paths[], registered_paths[], missing[], extra[], status, detail?}, global_reports[], summary {ok, missing_paths, extra_paths, no_settings, global_pollution, no_project_block}}.",
+          "{hub_dir, unreadable_sources[]?, reports[] {host, scope, target, targets[], declared_paths[], registered_paths[], missing[], extra[], status, detail?}, global_reports[], summary {ok, missing_paths, extra_paths, no_settings, global_pollution, no_hub_block}}.",
         notes: [
           "Any drift returns the error envelope VISIBILITY_DRIFT with the same data and the per-host diagnosis in action.",
         ],
@@ -88,7 +88,7 @@ const STATUS_MARK: Record<VisibilityDriftStatus, string> = {
   "missing-paths": "✗",
   "extra-paths": "✗",
   "no-settings": "✗",
-  "no-project-block": "✗",
+  "no-hub-block": "✗",
   "source-path-missing": "✗",
   "global-pollution": "✗",
 };
@@ -107,8 +107,8 @@ const REDUNDANT_DETAIL: ReadonlySet<VisibilityDriftStatus> = new Set([
 const STATUS_WIDTH = Math.max(...Object.keys(STATUS_MARK).map((s) => s.length));
 
 function renderDoctor(data: VisibilityDoctorResult, detail: boolean): string {
-  const lines = [`Visibilidad multi-root · ${data.workspace_dir}`, ""];
-  lines.push(...renderScope("workspace", data.reports, detail));
+  const lines = [`Visibilidad multi-root · ${data.hub_dir}`, ""];
+  lines.push(...renderScope("hub", data.reports, detail));
   if (data.global_reports.length > 0) {
     lines.push("", ...renderScope("global", data.global_reports, detail));
   }
@@ -153,13 +153,13 @@ function renderFixes(reports: VisibilityHostReport[]): string[] {
   }
   // Global leftovers are the hub's own sources leaking into ~/: a different
   // command, and `--path` on the workspace scope would not touch them.
-  if (reports.some((r) => r.scope === "workspace" && r.extra.length > 0)) {
+  if (reports.some((r) => r.scope === "hub" && r.extra.length > 0)) {
     fixes.push("  aw detach-multiroot --path <dir>            quita las rutas que sobran");
   }
   if (reports.some((r) => r.status === "global-pollution")) {
     fixes.push("  aw detach-multiroot --global --from-sources limpia el scope global");
   }
-  if (reports.some((r) => r.status === "no-project-block")) {
+  if (reports.some((r) => r.status === "no-hub-block")) {
     fixes.push("  aw hub-init --source <alias>:<path>         declara las fuentes del hub");
   }
   return fixes.length === 0 ? [] : ["", "Para corregir:", ...fixes];

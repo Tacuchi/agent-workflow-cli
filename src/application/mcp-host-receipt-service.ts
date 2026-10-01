@@ -15,7 +15,7 @@ export const MCP_HOST_RECEIPT_SCHEMA_VERSION = 1;
 
 const MCP_HOSTS = ["claude", "codex", "warp", "gemini", "opencode", "crush", "kimi"] as const;
 
-export type McpReceiptScope = "workspace" | "global";
+export type McpReceiptScope = "hub" | "global";
 
 export type McpLaunchProbePhase =
   | "spawn"
@@ -399,7 +399,7 @@ function parseReceipt(value: unknown): McpHostReceipt {
   }
   const identity = normalizeIdentity({
     host: value.host as McpHost,
-    scope: value.scope as McpReceiptScope,
+    scope: storedScope(value.scope),
     connection: value.connection as string,
   });
   const worklineVersion = requireVersion(value.workline_version);
@@ -443,6 +443,15 @@ function parseReceipt(value: unknown): McpHostReceipt {
       ? {}
       : { last_native_check_failure: parseNativeHostCheckFailure(nativeFailure) }),
   };
+}
+
+/**
+ * A book 28.x wrote spells the hub scope `workspace`. Read it as `hub`, or
+ * every receipt of an upgraded installation would fail as malformed; the next
+ * write stores the current spelling.
+ */
+function storedScope(value: unknown): McpReceiptScope {
+  return value === "workspace" ? "hub" : (value as McpReceiptScope);
 }
 
 function parseHostLoadObservation(value: unknown): McpHostLoadObservation {
@@ -496,7 +505,7 @@ function normalizeIdentity(input: McpReceiptIdentity): McpReceiptIdentity {
   if (!MCP_HOSTS.includes(input.host)) {
     throw new McpHostReceiptError("MCP_RECEIPT_INVALID", "El host MCP indicado no es compatible.");
   }
-  if (input.scope !== "workspace" && input.scope !== "global") {
+  if (input.scope !== "hub" && input.scope !== "global") {
     throw new McpHostReceiptError("MCP_RECEIPT_INVALID", "El scope del recibo MCP es inválido.");
   }
   if (typeof input.connection !== "string") {

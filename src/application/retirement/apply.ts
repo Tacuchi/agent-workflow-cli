@@ -113,7 +113,7 @@ export async function applyRetirement(deps: ApplyDeps, input: ApplyInput): Promi
         code: "EVIDENCE_MISSING",
         message: locked.error,
         candidates: [],
-        action: "esperá a que se libere el lock del workspace y volvé a aplicar",
+        action: "esperá a que se libere el lock del hub y volvé a aplicar",
       },
     };
   }

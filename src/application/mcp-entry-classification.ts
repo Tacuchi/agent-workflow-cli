@@ -4,9 +4,9 @@ import {
   type McpEntry,
   type McpEntryState,
   type McpHost,
-  generationVariantMcpEntry,
   knownLegacyMcpEntries,
   mcpEntryShapeForHost,
+  ownReleaseVariantMcpEntry,
   previousReliableMcpEntry,
 } from "../domain/mcp-entry.js";
 import { WORKLINE_MCP_ENTRY_NAME, worklineMcpEntry } from "../domain/workline-mcp-entry.js";
@@ -87,7 +87,7 @@ function classifyShape(
   // identical but for the generation value. It is ours and replaceable — the
   // release binding exists so a stale binary cannot confirm a host load, which
   // the argv check on that path still enforces, not to disown our own entries.
-  const variant = generationVariantMcpEntry(current, snapshot.args);
+  const variant = ownReleaseVariantMcpEntry(current, snapshot.args);
   if (
     variant !== undefined &&
     isDeepStrictEqual(snapshot.raw, mcpEntryShapeForHost(host, variant))

@@ -3,7 +3,7 @@
 // in Settings. This service builds the educational hint delivered to the user
 // from the CLI and the TUI to close that UX gap.
 
-export type WarpHintScope = "workspace" | "global";
+export type WarpHintScope = "hub" | "global";
 
 export interface WarpPostInstallHint {
   scope: WarpHintScope;
@@ -22,7 +22,7 @@ export function buildWarpPostInstallHint(
 ): WarpPostInstallHint {
   const scopeLabel = scope === "global" ? "global" : "project";
   const reloadHint =
-    scope === "workspace"
+    scope === "hub"
       ? `Si Warp ya estaba abierto, reabrí la ventana o el tab cuyo cwd sea el repo (${file}).`
       : "Si Warp ya estaba abierto, reiniciá la aplicación para que detecte el archivo.";
 

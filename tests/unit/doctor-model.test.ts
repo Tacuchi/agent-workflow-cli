@@ -108,7 +108,7 @@ describe("contrato del esquema del doctor", () => {
       "skills",
       "tools-auth",
       "plugins-hooks",
-      "workspace-visibility",
+      "hub-visibility",
     ]);
   });
 });
@@ -197,11 +197,11 @@ describe("sortDoctorFindings", () => {
 
   it("las categorías NO se ordenan alfabéticamente", () => {
     // Alfabéticamente sería installation-hosts, mcps, plugins-hooks, skills,
-    // tools-auth, workspace-visibility. El contrato pone plugins-hooks
+    // tools-auth, hub-visibility. El contrato pone plugins-hooks
     // ANTEÚLTIMO. Un `localeCompare` sobre la categoría —el atajo obvio— pasa
     // la prueba de arriba a medias y muere acá.
     const unSoloHost = [
-      finding("claude-code", "workspace-visibility", "skills"),
+      finding("claude-code", "hub-visibility", "skills"),
       finding("claude-code", "plugins-hooks", "hooks"),
       finding("claude-code", "tools-auth", "dsn-alpha"),
       finding("claude-code", "skills", "w-plan-exec"),
@@ -214,7 +214,7 @@ describe("sortDoctorFindings", () => {
       "claude-code/skills/w-plan-exec",
       "claude-code/tools-auth/dsn-alpha",
       "claude-code/plugins-hooks/hooks",
-      "claude-code/workspace-visibility/skills",
+      "claude-code/hub-visibility/skills",
     ]);
   });
 
@@ -409,7 +409,7 @@ describe("summarizeDoctorFindings", () => {
       }),
       finding("gemini", "skills", "w-quick", { state: "unverified", remediation: "manual" }),
       finding("warp", "plugins-hooks", "hooks", { state: "unverified" }),
-      finding("claude-code", "workspace-visibility", "skills", { state: "unverified" }),
+      finding("claude-code", "hub-visibility", "skills", { state: "unverified" }),
     ]);
     expect(resumen).toEqual({
       healthy: 3,

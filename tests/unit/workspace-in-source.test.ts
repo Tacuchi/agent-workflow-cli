@@ -95,7 +95,7 @@ it("un repo sin hub con marcador en HOME no funda runtime ni edita .gitignore", 
     },
   );
   expect(result.status).not.toBe(0);
-  expect(result.stdout + result.stderr).toContain("WORKSPACE_UNRESOLVED");
+  expect(result.stdout + result.stderr).toContain("HUB_UNRESOLVED");
   expect(readdirSync(repo)).not.toContain(".workflow");
   expect(readdirSync(repo)).not.toContain(".gitignore");
 });

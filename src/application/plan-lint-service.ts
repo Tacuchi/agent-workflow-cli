@@ -41,7 +41,7 @@ export interface PlanLintViolation {
 export interface PlanLintReport {
   plan: string;
   /** `false` when the WORKSPACE block could not be read: publication then judges semantics only. */
-  workspace_block: boolean;
+  hub_block: boolean;
   violations: PlanLintViolation[];
 }
 
@@ -96,7 +96,7 @@ function actionFor(
     case "PLAN_ISOLATION_INVALID":
       return `'> Aislamiento:' sólo admite unidad; corregí la cabecera — ${then}`;
     case "PLAN_SOURCE_UNKNOWN":
-      return `ese alias no está en la tabla Fuentes del bloque WORKSPACE: declaralo ahí, o usá uno de los que ya están — ${then}`;
+      return `ese alias no está en la tabla Fuentes del bloque del hub: declaralo ahí, o usá uno de los que ya están — ${then}`;
     case "PLAN_TASK_SOURCE_OUTSIDE_PHASE":
       return `la fuente de una tarea es un subconjunto de la de su fase: ajustá una de las dos — ${then}`;
     case "PLAN_SOURCE_EXTERNAL_CLOSURE":
@@ -185,7 +185,7 @@ export async function lintPlan(
     ok: true,
     report: {
       plan: located.path,
-      workspace_block: declared !== null,
+      hub_block: declared !== null,
       violations: mergeMoments(publication.failures, entry),
     },
   };

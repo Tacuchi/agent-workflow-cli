@@ -106,7 +106,7 @@ describe("buildMcpEntry — descriptor fiable", () => {
     const workspaceEntry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "win32");
     expect(workspaceEntry.command).toBe("cmd");
     expect(workspaceEntry.args).toEqual(
-      expect.arrayContaining(["/c", "agent-workflow", "mcp", "serve-db", "--scope", "workspace"]),
+      expect.arrayContaining(["/c", "agent-workflow", "mcp", "serve-db", "--scope", "hub"]),
     );
     expect(workspaceEntry.args[0]).not.toBe(TEST_ENTRYPOINT);
   });

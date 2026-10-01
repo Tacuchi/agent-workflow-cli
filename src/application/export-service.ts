@@ -751,7 +751,7 @@ async function resolveMaterial(
       failure: {
         code: "EXPORT_CORPUS_UNAVAILABLE",
         message: material.error,
-        action: "revisá el workspace y los filtros --sessions/--since/--source",
+        action: "revisá el hub y los filtros --sessions/--since/--source",
       },
     };
   }

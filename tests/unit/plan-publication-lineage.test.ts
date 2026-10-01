@@ -429,14 +429,14 @@ describe("cada causa de un sello ausente tiene su mensaje", () => {
     );
   });
 
-  it("una etiqueta sin ruta, con dos rutas o con una ruta que sale del workspace", () => {
+  it("una etiqueta sin ruta, con dos rutas o con una ruta que sale del hub", () => {
     const cases: Array<[string, string]> = [
       ["> Derivado de la spec 033", "no nombra la ruta de su spec"],
       [
         "> Derived from docs/specs/033-spec-a.md y docs/specs/034-spec-b.md",
         "nombra más de una spec",
       ],
-      ["> Derived from docs/specs/033-spec-../../fuera.md", "sale del workspace"],
+      ["> Derived from docs/specs/033-spec-../../fuera.md", "sale del hub"],
     ];
     for (const [label, expected] of cases) {
       const reading = readPlanLineage(header(label), SPECS);

@@ -32,7 +32,7 @@ export interface EnrichedSource extends ProjectFuente {
   is_repo: boolean;
   error: string | null;
   error_code?: "SOURCE_PATH_MISSING";
-  other_workspaces?: Array<{ root: string; working_branch: string | null }>;
+  other_hubs?: Array<{ root: string; working_branch: string | null }>;
   shared_branch_warning?: string;
 }
 
@@ -126,7 +126,7 @@ export async function runSources(
               working_branch_notice: `rama de trabajo no declarada para ${src.alias}; usá 'aw set-working-branch ${src.alias} <rama>'`,
             }
           : {}),
-        other_workspaces: others,
+        other_hubs: others,
       } as EnrichedSource);
     } else {
       const checked = await checkSourceBranch(fs, git, src, expected);
@@ -138,7 +138,7 @@ export async function runSources(
               working_branch_notice: `rama de trabajo no declarada para ${src.alias}; usá 'aw set-working-branch ${src.alias} <rama>'`,
             }
           : {}),
-        other_workspaces: others,
+        other_hubs: others,
         ...(others.some(
           (hub) => hub.working_branch !== null && hub.working_branch === checked.current_branch,
         )

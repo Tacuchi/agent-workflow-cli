@@ -29,7 +29,7 @@ export interface MultirootError {
 }
 
 export interface MultirootResult {
-  scope: "global" | "workspace";
+  scope: "global" | "hub";
   scope_dir: string;
   paths_input: string[];
   claude: ClaudeResult | { skipped: true };
@@ -103,7 +103,7 @@ async function resolveScopeAndPaths(
   fs: FileSystemPort,
   pathsService: PathsService,
   input: MultirootInput,
-): Promise<{ paths: string[]; scopeDir: string; scope: "global" | "workspace" }> {
+): Promise<{ paths: string[]; scopeDir: string; scope: "global" | "hub" }> {
   let paths: string[] = [];
   if (input.paths) paths.push(...input.paths);
   if (input.pathsCsv) {
@@ -119,16 +119,16 @@ async function resolveScopeAndPaths(
   }
 
   let scopeDir: string;
-  let scope: "global" | "workspace";
+  let scope: "global" | "hub";
   if (input.useGlobal) {
     scopeDir = homedir();
     scope = "global";
   } else if (input.workspace) {
     scopeDir = resolve(input.workspace);
-    scope = "workspace";
+    scope = "hub";
   } else {
     scopeDir = pathsService.workspaceDir();
-    scope = "workspace";
+    scope = "hub";
   }
   return { paths, scopeDir, scope };
 }

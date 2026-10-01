@@ -24,11 +24,11 @@ import {
 const TEST_NODE = "/opt/workline/node";
 const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
 
-function entryCommand(scope: "workspace" | "global" = "workspace") {
+function entryCommand(scope: "hub" | "global" = "hub") {
   return scope === "global" ? TEST_NODE : "agent-workflow";
 }
 
-function entryArgs(host: McpHost, instance: string, scope: "workspace" | "global" = "workspace") {
+function entryArgs(host: McpHost, instance: string, scope: "hub" | "global" = "hub") {
   const serveArgs = [
     "mcp",
     "serve-db",
@@ -45,7 +45,7 @@ function entryArgs(host: McpHost, instance: string, scope: "workspace" | "global
   return scope === "global" ? [TEST_ENTRYPOINT, ...serveArgs] : serveArgs;
 }
 
-function alphaEntry(host: McpHost, scope: "workspace" | "global" = "workspace") {
+function alphaEntry(host: McpHost, scope: "hub" | "global" = "hub") {
   return buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
     nodePath: TEST_NODE,
     entrypoint: TEST_ENTRYPOINT,
@@ -56,7 +56,7 @@ function alphaEntry(host: McpHost, scope: "workspace" | "global" = "workspace") 
   });
 }
 
-function betaEntry(host: McpHost, scope: "workspace" | "global" = "workspace") {
+function betaEntry(host: McpHost, scope: "hub" | "global" = "hub") {
   return buildMcpEntry("beta", "BETA_DATABASE_URL", {
     nodePath: TEST_NODE,
     entrypoint: TEST_ENTRYPOINT,

@@ -59,7 +59,7 @@ const RUNTIME: ResolvedRuntime = {
 const SUBJECT = { id: "fixture:uno", label: "DB_FIXTURE_DSN" };
 /** El archivo donde el doble dice que vive su credencial. */
 const SUBJECT_LOCATOR = "/tmp/workline-fixture-credenciales.env";
-const FINDING_ID = `workspace/tools-auth/${SUBJECT.id}`;
+const FINDING_ID = `hub/tools-auth/${SUBJECT.id}`;
 /** Valor inventado con forma de DSN: la premisa de las aserciones de redacción. */
 const FAKE_DSN = "postgres://usuario:CLAVE-INVENTADA-9f3a@localhost:5432/fixture";
 const ARGV = ["login-de-fixture", "--sujeto", "uno"];
@@ -436,7 +436,7 @@ describe("el ejecutor de flujos, en sus bordes", () => {
   function actionOf(argv?: readonly string[]) {
     return {
       finding_id: FINDING_ID,
-      host: "workspace",
+      host: "hub",
       resource: SUBJECT.label,
       op: "auth.flow",
       args: { provider: "doble", subject: SUBJECT.id },
@@ -714,7 +714,7 @@ describe("la custodia bloquea antes de que exista un lote", () => {
     // custodia del secreto pasa a ser suya.
     const base: DoctorFinding = {
       id: FINDING_ID,
-      host: "workspace",
+      host: "hub",
       category: "tools-auth",
       resource: { kind: "credential", name: SUBJECT.label, locator: null },
       state: "warning",

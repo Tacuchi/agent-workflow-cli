@@ -30,7 +30,7 @@ export type McpRemoveInput = McpScopeInput & {
 };
 
 export interface McpRemoveResult {
-  scope: "workspace" | "global";
+  scope: "hub" | "global";
   scope_dir: string;
   dry_run: boolean;
   removed: McpWriteResult[];

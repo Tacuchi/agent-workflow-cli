@@ -402,7 +402,7 @@ describe("runWorkspaceInit", () => {
       expect(text).toContain("- a: build `npm run build`");
       expect(text).toContain("- b: test `npm test`");
     }
-    const projectMd = second.project_md;
+    const projectMd = second.hub_block_files;
     if ("error" in projectMd) throw new Error(projectMd.error);
     expect(projectMd.working_branches).toEqual({ a: "feature/a", b: "feature/b" });
     expect(projectMd.qa_branches).toEqual({ a: "desarrollo", b: "qa/b" });
@@ -467,7 +467,7 @@ describe("runWorkspaceInit", () => {
     expect(virgin.scaffold.created).toEqual([sessionsDir]);
     expect(virgin.scaffold.existing).toEqual([]);
     expect(virgin.skills_toml).toBe("skipped");
-    const virginMd = virgin.project_md;
+    const virginMd = virgin.hub_block_files;
     if ("error" in virginMd) throw new Error(virginMd.error);
     expect(virginMd.results?.map((r) => r.action)).toEqual(["created", "created"]);
 
@@ -476,7 +476,7 @@ describe("runWorkspaceInit", () => {
     expect(initialized.scaffold.created).toEqual([]);
     expect(initialized.scaffold.existing).toEqual([sessionsDir]);
     expect(initialized.skills_toml).toBe("skipped");
-    const initializedMd = initialized.project_md;
+    const initializedMd = initialized.hub_block_files;
     if ("error" in initializedMd) throw new Error(initializedMd.error);
     // Mismo input → el bloque ya está escrito: la vista previa no lo llama creación.
     expect(initializedMd.results?.map((r) => r.action)).toEqual(["unchanged", "unchanged"]);
@@ -485,7 +485,7 @@ describe("runWorkspaceInit", () => {
   it("--dry-run anuncia 'updated' cuando el bloque existe pero cambiaría", async () => {
     await init();
     const preview = await init({ dryRun: true, proyecto: "Otro nombre" });
-    const projectMd = preview.project_md;
+    const projectMd = preview.hub_block_files;
     if ("error" in projectMd) throw new Error(projectMd.error);
     expect(projectMd.results?.map((r) => r.action)).toEqual(["updated", "updated"]);
     // Sigue siendo una vista previa: el nombre no llegó al disco.
@@ -537,7 +537,7 @@ describe("runWorkspaceInit", () => {
     const result = await runWorkspaceInit(fs, env, paths, { sources: [], workspace });
     if ("error" in result) throw new Error(result.error);
     expect(result.sources).toBe(0);
-    expect(result.project_md).toEqual({ skipped: true, reason: "materialization_only" });
+    expect(result.hub_block_files).toEqual({ skipped: true, reason: "materialization_only" });
     expect(existsSync(join(workspace, ".workflow", "sessions"))).toBe(true);
     expect(existsSync(join(workspace, "CLAUDE.md"))).toBe(false);
   });
@@ -732,7 +732,7 @@ describe("lo que la reescritura no pudo conservar llega al humano", () => {
     skills_toml: "exists",
     scaffold: {},
     attach_multiroot: {},
-    project_md: { dropped_lines: ["  - b: feature/b"] },
+    hub_block_files: { dropped_lines: ["  - b: feature/b"] },
   };
 
   it("las nombra sin --detail, que es el modo por defecto", () => {
@@ -742,7 +742,7 @@ describe("lo que la reescritura no pudo conservar llega al humano", () => {
   });
 
   it("y no inventa la sección cuando no se retiró nada", () => {
-    const text = humanOf({ ...withDropped, project_md: {} }, false);
+    const text = humanOf({ ...withDropped, hub_block_files: {} }, false);
     expect(text).not.toMatch(/retiraron/);
   });
 });

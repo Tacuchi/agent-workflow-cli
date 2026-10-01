@@ -120,12 +120,11 @@ export const settleCommand: CliCommand<SettleOutput> = {
         notes: ["Writes nothing."],
       },
       apply: {
-        purpose:
-          "Re-derive everything from the live workspace and publish the approved settlement.",
+        purpose: "Re-derive everything from the live hub and publish the approved settlement.",
         args: "<plan-path|number>",
         output: "{action: apply, status: applied, listing, published[], settled[], closable}.",
         notes: [
-          "Pass the same declarations as prepare. Publishes under the workspace lock; a missing digest fails with APPROVAL_REQUIRED.",
+          "Pass the same declarations as prepare. Publishes under the hub lock; a missing digest fails with APPROVAL_REQUIRED.",
         ],
       },
     },

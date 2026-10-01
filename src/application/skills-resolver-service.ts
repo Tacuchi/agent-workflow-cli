@@ -11,7 +11,7 @@ import type { PathsService } from "./paths-service.js";
 export interface SkillsResolution {
   skills: ResolvedSkills;
   /** Which skills.toml files were present in the cascade. */
-  sources: { global: boolean; workspace: boolean };
+  sources: { global: boolean; hub: boolean };
   warnings: string[];
 }
 
@@ -31,11 +31,11 @@ export async function resolveSkills(
 ): Promise<SkillsResolution> {
   const warnings: string[] = [];
   const skills = buildDefaultSkills();
-  const sources = { global: false, workspace: false };
+  const sources = { global: false, hub: false };
 
-  const levels: { source: "global" | "workspace"; path: string }[] = [
+  const levels: { source: "global" | "hub"; path: string }[] = [
     { source: "global", path: paths.userSkillsToml() },
-    { source: "workspace", path: paths.cwdSkillsToml() },
+    { source: "hub", path: paths.cwdSkillsToml() },
   ];
 
   for (const level of levels) {
@@ -81,7 +81,7 @@ async function readSkillsTable(
 function applyLevel(
   skills: ResolvedSkills,
   table: Record<string, unknown>,
-  source: "global" | "workspace",
+  source: "global" | "hub",
   path: string,
   warnings: string[],
 ): void {

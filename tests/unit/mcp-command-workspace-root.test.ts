@@ -106,7 +106,7 @@ describe("mcp commands use the resolved Workline root", () => {
     expect(rootStatus.data).toEqual(
       expect.objectContaining({
         reports: expect.arrayContaining([
-          expect.objectContaining({ scope: "workspace", file: rootFile }),
+          expect.objectContaining({ scope: "hub", file: rootFile }),
         ]),
       }),
     );
@@ -115,7 +115,7 @@ describe("mcp commands use the resolved Workline root", () => {
     expect(overridden.data).toEqual(
       expect.objectContaining({
         reports: expect.arrayContaining([
-          expect.objectContaining({ scope: "workspace", file: overrideFile }),
+          expect.objectContaining({ scope: "hub", file: overrideFile }),
         ]),
       }),
     );

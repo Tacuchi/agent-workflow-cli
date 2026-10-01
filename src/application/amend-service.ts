@@ -351,7 +351,7 @@ async function resolveTarget(
       failure: {
         code: "AMEND_TARGET_UNKNOWN",
         message: canon.error,
-        action: "corregí el canon documental del workspace y volvé a intentar",
+        action: "corregí el canon documental del hub y volvé a intentar",
       },
     };
   }
@@ -360,7 +360,7 @@ async function resolveTarget(
     return {
       failure: {
         code: "AMEND_TARGET_UNKNOWN",
-        message: `no se pudo resolver '${target}' a una spec o un plan del workspace`,
+        message: `no se pudo resolver '${target}' a una spec o un plan del hub`,
         action: `pasá la ruta relativa del documento (${canon.canon.spec}/… o ${canon.canon.plan}/…) o su correlativo`,
       },
     };
@@ -380,7 +380,7 @@ async function resolveTarget(
     return {
       failure: {
         code: "AMEND_TARGET_UNKNOWN",
-        message: `'${relative}' no existe en el workspace`,
+        message: `'${relative}' no existe en el hub`,
         action: "corregí la ruta: no se corrige un documento que nadie puede mostrar",
       },
     };

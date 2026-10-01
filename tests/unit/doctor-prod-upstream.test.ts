@@ -59,7 +59,7 @@ Ejemplo
     } as DoctorProviderInput;
     const report = await visibilityProvider.run(input);
     expect(report.findings.map((finding) => finding.id)).toEqual([
-      "workspace/workspace-visibility/upstream:app:feature/w",
+      "hub/hub-visibility/upstream:app:feature/w",
     ]);
     expect(report.findings[0]?.remediation.guidance).toEqual([
       `git -C '${source}' branch --unset-upstream 'feature/w'`,

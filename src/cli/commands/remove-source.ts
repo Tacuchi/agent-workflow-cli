@@ -10,7 +10,7 @@ export const removeSourceCommand: CliCommand = {
   flags: { known: [] },
   help: {
     purpose:
-      "Remove a source from the workspace: detach its multi-root visibility and prune it from the WORKSPACE block.",
+      "Remove a source from the hub: detach its multi-root visibility and prune it from the hub block.",
     args: "<alias>",
     output: "{alias, path, materialization?}.",
     notes: ["It never deletes the repository nor alters its local artifacts."],

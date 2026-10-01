@@ -19,7 +19,7 @@ export const historyUpdateCommand: CliCommand = {
   name: "history-update",
   flags: FLAGS,
   help: {
-    purpose: "Insert or update one session's row in the workspace history file.",
+    purpose: "Insert or update one session's row in the hub history file.",
     flags: {
       code: { value: "<code>", effect: "Session whose row is written." },
       state: {

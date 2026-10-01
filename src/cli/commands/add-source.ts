@@ -6,7 +6,7 @@ export const addSourceCommand: CliCommand = {
   name: "add-source",
   flags: { known: ["working-branch"] },
   help: {
-    purpose: "Declare or update one source of the workspace without removing any other.",
+    purpose: "Declare or update one source of the hub without removing any other.",
     args: "<alias>:<path>[:<main-branch>]",
     flags: {
       "working-branch": { value: "<branch>", effect: "Working branch to record for the source." },

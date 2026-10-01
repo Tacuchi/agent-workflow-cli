@@ -120,7 +120,7 @@ export const releasePassCommand: CliCommand = {
         output: "{reverted: true, at, version, pass, path}.",
       },
       link: {
-        purpose: "Attach a workspace document to a pass by its relative path.",
+        purpose: "Attach a hub document to a pass by its relative path.",
         flags: {
           artifact: {
             value: "<relative-path>",
@@ -134,7 +134,7 @@ export const releasePassCommand: CliCommand = {
       },
     },
     notes: [
-      "The book is append-only under the workspace namespace. Nothing checks the world: an arrival is a declared fact. Writing against an undeclared version fails with RELEASE_PASS_UNKNOWN.",
+      "The book is append-only under the hub namespace. Nothing checks the world: an arrival is a declared fact. Writing against an undeclared version fails with RELEASE_PASS_UNKNOWN.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

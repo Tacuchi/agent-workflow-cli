@@ -343,7 +343,7 @@ function reportOf(findings: DoctorFinding[], coverages: DoctorCoverage[] = []): 
   return {
     schema_version: DOCTOR_SCHEMA_VERSION,
     cli_version: "0.0.0-test",
-    scope: { workspace_dir: "/w", current_host: "claude-code", only: [] },
+    scope: { hub_dir: "/w", current_host: "claude-code", only: [] },
     hosts: [],
     hosts_absent: [],
     coverage: orderedCoverage,

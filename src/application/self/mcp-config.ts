@@ -8,9 +8,9 @@ import {
   type McpHost,
   type McpInstance,
   buildMcpEntry,
-  generationVariantMcpEntry,
   mcpEntryNameFor,
   normalizeDsnVarName,
+  ownReleaseVariantMcpEntry,
   validateDsnVarName,
   validateMcpInstance,
 } from "../../domain/mcp-entry.js";
@@ -846,7 +846,7 @@ function legacyKindOf(
   if (classification.state !== "known-legacy" || classification.legacy === undefined) {
     return undefined;
   }
-  return generationVariantMcpEntry(entry, classification.legacy.args) === undefined
+  return ownReleaseVariantMcpEntry(entry, classification.legacy.args) === undefined
     ? "historic"
     : "generation";
 }

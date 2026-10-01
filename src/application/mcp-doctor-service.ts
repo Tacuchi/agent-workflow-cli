@@ -20,7 +20,7 @@ export type McpDoctorInput = McpScopeInput & {
 };
 
 export interface McpDoctorResult {
-  scope: "workspace" | "global";
+  scope: "hub" | "global";
   scope_dir: string;
   reports: McpDriftReport[];
   summary: {
@@ -70,7 +70,7 @@ function buildReport(
   connection: McpConnectionRef,
   scopeDir: string,
   dsn: ReturnType<typeof readDsnFile>,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   namespace: string | undefined,
 ): McpDriftReport {
   const entry = buildMcpEntry(connection.name, connection.dsnVar, {
@@ -95,8 +95,7 @@ function buildReport(
     present: snapshot.exists || Boolean(snapshot.present),
     matches: classification.state === "current",
   };
-  const launchMode: McpDriftReport["launch_mode"] =
-    scope === "workspace" ? "path-dependent" : "absolute";
+  const launchMode: McpDriftReport["launch_mode"] = scope === "hub" ? "path-dependent" : "absolute";
   const base = {
     host,
     instance: connection.name,

@@ -443,7 +443,7 @@ async function validateMaterializationRoot(
 ): Promise<void> {
   const home = typeof paths.userRoot === "function" ? dirname(paths.userRoot()) : homedir();
   if (resolve(root) === resolve(home) && resolve(root) === resolve(homedir()))
-    throw new WorkspaceResolutionError("WORKSPACE_INVALID", "$HOME no es un workspace.");
+    throw new WorkspaceResolutionError("HUB_INVALID", "$HOME no es un hub.");
   const fromUnits =
     typeof paths.userUnitsDir === "function" ? relative(paths.userUnitsDir(), root) : null;
   if (
@@ -452,7 +452,7 @@ async function validateMaterializationRoot(
       (fromUnits !== ".." && !fromUnits.startsWith(`..${sep}`) && !isAbsolute(fromUnits)))
   ) {
     throw new WorkspaceResolutionError(
-      "WORKSPACE_IN_SOURCE",
+      "HUB_IN_SOURCE",
       `${root} cae dentro de una unidad; indica --hub <ruta> del hub.`,
     );
   }
@@ -467,7 +467,7 @@ async function validateMaterializationRoot(
     const canonical = await fs.realPath(root).catch(() => root);
     if (claimants.some((hub) => hub.root !== canonical)) {
       throw new WorkspaceResolutionError(
-        "WORKSPACE_IN_SOURCE",
+        "HUB_IN_SOURCE",
         `${root} pertenece a una fuente declarada; usa --hub <ruta> del hub.`,
       );
     }

@@ -143,7 +143,7 @@ function exportHelp(category: ExportCategory): CommandHelp {
         : {}),
     },
     notes: [
-      "Stages: prepare returns the request; the agent answers it; validate checks the answer and returns the approval digest; apply publishes with that digest. Each stage rebuilds the request from the workspace, so a session that moved meanwhile makes the answer stale. It writes ONLY to its own folder and never creates a session.",
+      "Stages: prepare returns the request; the agent answers it; validate checks the answer and returns the approval digest; apply publishes with that digest. Each stage rebuilds the request from the hub, so a session that moved meanwhile makes the answer stale. It writes ONLY to its own folder and never creates a session.",
     ],
     actions: {
       prepare: {

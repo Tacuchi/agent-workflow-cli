@@ -33,7 +33,7 @@ export interface PreviewRow {
 }
 
 export interface WorkspaceMigrationPreview {
-  workspace: string;
+  hub: string;
   markers: PreviewMarker[];
   sentinels: PreviewSentinel[];
   rows: PreviewRow[];
@@ -46,7 +46,7 @@ export interface WorkspaceMigrationPreview {
 
 export function migrationPreview(plan: WorkspaceMigrationPlan): WorkspaceMigrationPreview {
   return {
-    workspace: plan.workspace,
+    hub: plan.workspace,
     markers: plan.markers.map((hub) => ({
       file: relpath(hub.path, plan.workspace),
       from: hub.from,
@@ -71,12 +71,12 @@ export function migrationPreview(plan: WorkspaceMigrationPlan): WorkspaceMigrati
 
 export function renderMigrationPreview(preview: WorkspaceMigrationPreview): string {
   const lines = [
-    `Workspace: ${preview.workspace}`,
+    `Hub: ${preview.hub}`,
     `Serie legacy: ${countOf(preview.legacy.length, "carpeta", "carpetas")} · próximo correlativo: ${preview.next_correlative}`,
   ];
 
   if (preview.markers.length > 0) {
-    lines.push("", "Marcadores del bloque de proyecto:");
+    lines.push("", "Marcadores del bloque del hub:");
     for (const marker of preview.markers) {
       const duplicate = marker.drops_duplicate
         ? " (y elimina el bloque vacío que el CLI había agregado aparte)"
@@ -100,7 +100,7 @@ export function renderMigrationPreview(preview: WorkspaceMigrationPreview): stri
   }
 
   if (preview.pending === 0) {
-    lines.push("", "Nada que migrar: el workspace ya opera con el modelo actual.");
+    lines.push("", "Nada que migrar: el hub ya opera con el modelo actual.");
   }
   lines.push(...conflictLines(preview.conflicts));
   if (preview.pending > 0) {
@@ -110,13 +110,13 @@ export function renderMigrationPreview(preview: WorkspaceMigrationPreview): stri
 }
 
 export function renderMigrationApplied(applied: WorkspaceMigrationApplied): string {
-  const lines = [`Workspace migrado: ${applied.workspace}`];
+  const lines = [`Hub migrado: ${applied.hub}`];
   if (applied.markers_renamed.length > 0) {
-    const files = applied.markers_renamed.map((path) => relpath(path, applied.workspace));
+    const files = applied.markers_renamed.map((path) => relpath(path, applied.hub));
     lines.push(`Marcadores renombrados: ${files.join(", ")}`);
   }
   if (applied.duplicates_dropped.length > 0) {
-    const files = applied.duplicates_dropped.map((path) => relpath(path, applied.workspace));
+    const files = applied.duplicates_dropped.map((path) => relpath(path, applied.hub));
     lines.push(`Bloques duplicados eliminados: ${files.join(", ")}`);
   }
   if (applied.sentinels_seeded.length > 0) {

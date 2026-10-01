@@ -398,10 +398,10 @@ async function executeCommand(
   if (gate.notice !== undefined) writeStderr(gate.notice);
   try {
     const approval = parsed.values.get("approval");
-    if (approval && WORKSPACE_SEALED_COMMANDS.has(command.name)) {
+    if (approval && HUB_SEALED_COMMANDS.has(command.name)) {
       const mismatch = await preparationMismatch(ctx.paths, command.name, approval);
       if (mismatch) {
-        const refused = fail("WORKSPACE_MISMATCH", mismatch);
+        const refused = fail("HUB_MISMATCH", mismatch);
         emit(refused, command, output);
         return refused.exitCode;
       }
@@ -432,7 +432,7 @@ async function executeCommand(
   }
 }
 
-const WORKSPACE_SEALED_COMMANDS = new Set([
+const HUB_SEALED_COMMANDS = new Set([
   "persist",
   "export-scripts",
   "export-diagrams",
@@ -471,7 +471,7 @@ function adoptionNotice(
   if (commandOwnsMaterializationReceipt(command.name)) return undefined;
   const materialization = fs.materialization();
   if (materialization === undefined || !materialization.materialized) return undefined;
-  return `Workline adoptó ${materialization.root} como workspace (namespace ${materialization.namespace}).`;
+  return `Workline adoptó ${materialization.root} como hub (namespace ${materialization.namespace}).`;
 }
 
 /**
@@ -713,7 +713,7 @@ async function recordCommandPreparation(
 ): Promise<void> {
   if (
     result.ok &&
-    WORKSPACE_SEALED_COMMANDS.has(command.name) &&
+    HUB_SEALED_COMMANDS.has(command.name) &&
     result.data &&
     typeof result.data === "object"
   ) {

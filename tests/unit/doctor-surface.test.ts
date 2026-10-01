@@ -146,7 +146,7 @@ function reportOf(findings: DoctorFinding[], coverage: DoctorCoverage[]): Doctor
   return {
     schema_version: DOCTOR_SCHEMA_VERSION,
     cli_version: "0.0.0-test",
-    scope: { workspace_dir: "/w", current_host: "claude-code", only: [] },
+    scope: { hub_dir: "/w", current_host: "claude-code", only: [] },
     hosts: [hostView("claude-code", true, true), hostView("codex", false, false)],
     hosts_absent: ["kimi"],
     coverage: orderedCoverage,
@@ -466,7 +466,7 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
       "    (sin cobertura declarada en esta corrida)",
       "  plugins-hooks",
       "    (sin cobertura declarada en esta corrida)",
-      "  workspace-visibility",
+      "  hub-visibility",
       "    (sin cobertura declarada en esta corrida)",
     ]);
     // Ni una fila de más ni una de menos respecto del JSON.

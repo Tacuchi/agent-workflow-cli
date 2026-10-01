@@ -103,17 +103,14 @@ export async function applyLocalProposal(
   paths: PathsService,
   input: ApplyProposalInput,
 ): Promise<ProposalApply> {
-  if (
-    input.proposal.scope.workspace_root &&
-    input.proposal.scope.workspace_root !== paths.workspaceDir()
-  ) {
+  if (input.proposal.scope.hub_root && input.proposal.scope.hub_root !== paths.workspaceDir()) {
     return {
       ok: false,
       applied: [],
       failure: {
-        code: "WORKSPACE_MISMATCH",
-        message: `Propuesta preparada en ${input.proposal.scope.workspace_root}; workspace actual ${paths.workspaceDir()}.`,
-        action: "vuelve al workspace de preparación o prepara una propuesta nueva aquí",
+        code: "HUB_MISMATCH",
+        message: `Propuesta preparada en ${input.proposal.scope.hub_root}; hub actual ${paths.workspaceDir()}.`,
+        action: "vuelve al hub de preparación o prepara una propuesta nueva aquí",
       },
     };
   }
@@ -133,7 +130,7 @@ export async function applyLocalProposal(
       failure: {
         code: "PROPOSAL_LOCKED",
         message: outcome.error,
-        action: "esperá a que se libere el lock del workspace y volvé a aplicar",
+        action: "esperá a que se libere el lock del hub y volvé a aplicar",
       },
       applied: [],
     };

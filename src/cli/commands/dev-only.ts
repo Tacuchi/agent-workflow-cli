@@ -155,7 +155,7 @@ export const nextNumberCommand: CliCommand = {
     output:
       "{directory, exists, created, current_max, next, files[], claimed_path, claimed_owner, published_path, claim_reused}.",
     notes: [
-      "Without --claim or --publish it is a pure query. --claim and --publish exclude each other. --publish needs a materialized Workline workspace (.workflow/sessions/) and the final content on stdin; zero bytes are refused.",
+      "Without --claim or --publish it is a pure query. --claim and --publish exclude each other. --publish needs a materialized Workline hub (.workflow/sessions/) and the final content on stdin; zero bytes are refused.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
@@ -202,10 +202,10 @@ export const nextNumberCommand: CliCommand = {
     if (publish !== undefined) {
       if (!(await ctx.fs.exists(ctx.paths.cwdSessionsDir()))) {
         return fail(
-          "WORKSPACE_ABSENT",
-          "--publish necesita un workspace Workline materializado; no se creó ninguno",
+          "HUB_ABSENT",
+          "--publish necesita un hub Workline materializado; no se creó ninguno",
           {
-            action: "invocá el comando desde un workspace con .workflow/sessions/ existente",
+            action: "invocá el comando desde un hub con .workflow/sessions/ existente",
           },
         );
       }

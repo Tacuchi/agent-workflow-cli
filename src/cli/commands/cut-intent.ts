@@ -65,7 +65,7 @@ export const cutIntentCommand: CliCommand = {
         purpose: "Record the intent for one spec; declaring again is how it is corrected.",
         output: "{declared: true, at, intent {spec, order[], deferred[]}, path, supersedes}.",
         notes: [
-          "The book is append-only under the workspace namespace: the superseded record is kept, never rewritten. It constrains nothing; executing out of the declared order is only warned about.",
+          "The book is append-only under the hub namespace: the superseded record is kept, never rewritten. It constrains nothing; executing out of the declared order is only warned about.",
         ],
       },
     },
@@ -222,5 +222,5 @@ function nodeList(raw: string): WorklineNodeId[] | null {
 }
 
 function refusal(reference: string, kind: "spec" | "plan"): string {
-  return `'${reference}' no nombra ${kind === "spec" ? "una spec" : "un plan"}: usá su correlativo (por ejemplo 045) o su ruta en el workspace`;
+  return `'${reference}' no nombra ${kind === "spec" ? "una spec" : "un plan"}: usá su correlativo (por ejemplo 045) o su ruta en el hub`;
 }

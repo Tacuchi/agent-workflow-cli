@@ -116,7 +116,7 @@ describe("runStatusCommand — full dashboard", () => {
       "# HISTORY\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 002-plan-exec | 2026-06-22 | cerrada | — |\n",
     );
     const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
-    expect(out.workspace.name).toBe("Nombre");
+    expect(out.hub.name).toBe("Nombre");
     expect(out.last_activity).toBe("2026-06-22");
     const rendered = statusCommand.renderHuman?.({ ok: true, data: out, exitCode: 0 }, {
       detail: false,
@@ -136,7 +136,7 @@ describe("runStatusCommand — full dashboard", () => {
   it("aggregates workspace, specs, plans, sessions, discarded", async () => {
     const out = await runStatusCommand(fullWorkspace(), fakeEnv, paths(), { now: NOW });
 
-    expect(out.workspace).toEqual({
+    expect(out.hub).toEqual({
       name: "mi-workspace",
       root: "/cwd",
       path: "/cwd",
@@ -795,7 +795,7 @@ describe("runStatusCommand — what blocks a phase", () => {
 describe("runStatusCommand — edge cases", () => {
   it("implicit workspace: mode/root are explicit and collections stay empty", async () => {
     const out = await runStatusCommand(new FakeFs(), fakeEnv, paths(), { now: NOW });
-    expect(out.workspace).toEqual({
+    expect(out.hub).toEqual({
       name: "cwd",
       root: "/cwd",
       path: "/cwd",
@@ -814,7 +814,7 @@ describe("runStatusCommand — edge cases", () => {
     fs.file("/cwd/.workflow/sessions/.keep", ""); // initialized, no sessions
     fs.file("/cwd/docs/plans/001-plan-empty.md", "# Plan\n\n## Tasks\n(none yet)\n", NOW);
     const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
-    expect(out.workspace.initialized).toBe(true);
+    expect(out.hub.initialized).toBe(true);
     expect(out.specs).toEqual([]);
     expect(out.plans).toHaveLength(1);
     expect(out.plans[0]).toMatchObject({ tasks_total: 0, tasks_done: 0, progress_pct: 0 });
@@ -1015,7 +1015,7 @@ describe("status human — un root implícito sigue siendo Workline", () => {
     const data = await board(new FakeFs({ lenient: true }));
     const text = render(data);
 
-    expect(data.workspace.initialized).toBe(false);
+    expect(data.hub.initialized).toBe(false);
     expect(text).toContain("sin pendientes");
     expect(text).not.toContain("/w:hub-init");
   });

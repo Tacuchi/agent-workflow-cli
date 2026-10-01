@@ -25,21 +25,21 @@ export const worktreeCommand: CliCommand = {
       code: {
         value: "<code>",
         effect:
-          "Session whose units to act on; defaults to the conversation's session (list and reclaim default to the whole workspace).",
+          "Session whose units to act on; defaults to the conversation's session (list and reclaim default to the whole hub).",
       },
       session: { value: "<code>", effect: "Alias of --code." },
       source: { value: "<alias>", effect: "Source whose unit to act on." },
     },
     output:
-      "ensure: {alias, source_path, session, path, branch, created, visibility, base, dependencies, longpaths_enabled}. list: {workspace_key, units[] (with session_active, dirty, head), orphans[], unreadable[], session?}. release: {alias, session, path, branch, released, visibility, branch_kept?, residue_completed?}. integrate with --source: {alias, source_path, session, into, branch, integrated, conflicted[], released, next, unit_path?, merge_path?}; without it: {session, plan, results[], integrated[], pending[], reclaimed[], retained[], next}. reclaim: {workspace_key, session?, reclaimed[], retained[], unreadable[], next}. Refusal: {error, message, hint?, occupant?}.",
+      "ensure: {alias, source_path, session, path, branch, created, visibility, base, dependencies, longpaths_enabled}. list: {hub_key, units[] (with session_active, dirty, head), orphans[], unreadable[], session?}. release: {alias, session, path, branch, released, visibility, branch_kept?, residue_completed?}. integrate with --source: {alias, source_path, session, into, branch, integrated, conflicted[], released, next, unit_path?, merge_path?}; without it: {session, plan, results[], integrated[], pending[], reclaimed[], retained[], next}. reclaim: {hub_key, session?, reclaimed[], retained[], unreadable[], next}. Refusal: {error, message, hint?, occupant?}.",
     exit_codes: {
       "2": "The unit is occupied by another live flow or the action was refused; data is {error, message, hint?, occupant?}.",
     },
     notes: [
-      "The unit lives at ~/<ns>/worktrees/<workspace>/<alias>/<session> on branch aw/<session>; the path IS the registry and `git worktree list` its live view.",
+      "The unit lives at ~/<ns>/worktrees/<hub>/<alias>/<session> on branch aw/<session>; the path IS the registry and `git worktree list` its live view.",
       "integrate moves the work to the unit's sealed base without switching the checkout and gives the unit back: one source with --source, or every unit of the session in alias order with only --code. A conflict is reported with its plan, files and the path where the merge stopped; resolve it externally and retry, it is never resolved or aborted automatically.",
-      "list shows every unit and orphan of the workspace, or one session's with --code, each with its branch, dirty state and HEAD.",
-      "reclaim collects the residue in one act (every orphan of the workspace, or one session's units with --code), reaching closed or gone sessions without reopening any. A unit that still holds work SURVIVES: uncommitted changes, a half-resolved git operation, commits outside its sealed base, or a read that could not complete. It reports what it collected and retained, with the reason and next step per retention; it never uses --force and keeps the document and base branches.",
+      "list shows every unit and orphan of the hub, or one session's with --code, each with its branch, dirty state and HEAD.",
+      "reclaim collects the residue in one act (every orphan of the hub, or one session's units with --code), reaching closed or gone sessions without reopening any. A unit that still holds work SURVIVES: uncommitted changes, a half-resolved git operation, commits outside its sealed base, or a read that could not complete. It reports what it collected and retained, with the reason and next step per retention; it never uses --force and keeps the document and base branches.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

@@ -90,10 +90,10 @@ describe("runVisibilityDoctor", () => {
     rmSync(workspace, { recursive: true, force: true });
   });
 
-  it("status=no-project-block cuando no hay CLAUDE.md", async () => {
+  it("status=no-hub-block cuando no hay CLAUDE.md", async () => {
     const result = await runVisibilityDoctor(fs, env, paths, { workspace });
-    expect(result.summary.no_project_block).toBe(2);
-    expect(result.reports[0]?.status).toBe("no-project-block");
+    expect(result.summary.no_hub_block).toBe(2);
+    expect(result.reports[0]?.status).toBe("no-hub-block");
   });
 
   it("status=no-settings cuando hay fuentes pero falta .claude/settings.json", async () => {

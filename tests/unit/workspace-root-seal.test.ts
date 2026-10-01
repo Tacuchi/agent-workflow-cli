@@ -33,7 +33,7 @@ it("un recibo de preparación nombra la raíz ajena sin autorizar el apply ahí"
   await recordPreparation(fs, a, "persist", "sello-aprobado");
   expect(await preparationMismatch(a, "persist", "sello-aprobado")).toBeNull();
   expect(await preparationMismatch(b, "persist", "sello-aprobado")).toContain(
-    `preparado en ${hubA}; workspace actual ${hubB}`,
+    `preparado en ${hubA}; hub actual ${hubB}`,
   );
   expect(await preparationMismatch(b, "persist", "sello-desconocido")).toBeNull();
 });
@@ -78,7 +78,7 @@ it("persist validado en A no aplica en B aun si ambos tienen docs idénticos", a
   expect(validated.status).toBe(0);
   const refusal = run(hubB, "apply", answer, validated.body.approval_digest as string);
   expect(refusal.status).not.toBe(0);
-  expect(JSON.stringify(refusal.body)).toContain("WORKSPACE_MISMATCH");
+  expect(JSON.stringify(refusal.body)).toContain("HUB_MISMATCH");
   expect(JSON.stringify(refusal.body)).toContain(hubA);
   expect(JSON.stringify(refusal.body)).toContain(hubB);
   await expect(

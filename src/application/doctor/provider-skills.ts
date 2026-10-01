@@ -19,8 +19,8 @@ export const skillsProvider: DoctorProvider = {
     for (const [index, warning] of bindings.warnings.entries()) {
       if (!warning.includes("no aplicable")) continue;
       findings.push({
-        id: doctorFindingId("workspace", CATEGORY, `binding:${index}`),
-        host: "workspace",
+        id: doctorFindingId("hub", CATEGORY, `binding:${index}`),
+        host: "hub",
         category: CATEGORY,
         resource: { kind: "binding", name: `skills.toml:${index}`, locator: null },
         state: "warning",
@@ -38,7 +38,7 @@ export const skillsProvider: DoctorProvider = {
       });
     }
     if (bindings.warnings.some((warning) => warning.includes("no aplicable"))) {
-      covered.push(coverage(CATEGORY, "workspace", "checked"));
+      covered.push(coverage(CATEGORY, "hub", "checked"));
     }
 
     for (const host of input.hosts) {

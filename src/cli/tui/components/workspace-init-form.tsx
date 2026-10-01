@@ -79,7 +79,7 @@ export function WorkspaceInitForm({
           return;
         }
         const multiroot = fuentes.length > 1 ? " · visibilidad configurada" : "";
-        const migration = migrationSummary(result.project_md);
+        const migration = migrationSummary(result.hub_block_files);
         onDone({
           ok: result.ok,
           summary: result.ok
@@ -231,7 +231,10 @@ function FuenteList({ fuentes }: { fuentes: WorkspaceSource[] }) {
 }
 
 function migrationSummary(
-  projectMd: Exclude<Awaited<ReturnType<typeof runWorkspaceInit>>, { error: string }>["project_md"],
+  projectMd: Exclude<
+    Awaited<ReturnType<typeof runWorkspaceInit>>,
+    { error: string }
+  >["hub_block_files"],
 ): string {
   const migration =
     "migrated" in projectMd

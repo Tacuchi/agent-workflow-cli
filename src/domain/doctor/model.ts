@@ -26,7 +26,7 @@ export const DOCTOR_CATEGORIES = [
   "skills",
   "tools-auth",
   "plugins-hooks",
-  "workspace-visibility",
+  "hub-visibility",
 ] as const;
 
 export type DoctorCategory = (typeof DOCTOR_CATEGORIES)[number];
@@ -207,7 +207,7 @@ export interface DoctorVerdict {
 }
 
 export interface DoctorScope {
-  workspace_dir: string;
+  hub_dir: string;
   current_host: string | null;
   only: string[];
 }

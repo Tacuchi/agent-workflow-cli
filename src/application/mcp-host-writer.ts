@@ -30,7 +30,7 @@ import { parseToml } from "./parsers/toml.js";
 
 export interface ScopeInput {
   scopeDir: string;
-  kind?: "workspace" | "global";
+  kind?: "hub" | "global";
 }
 
 // Atomic replace: stage to a tmp sibling and rename over the target. At global

@@ -153,7 +153,7 @@ describe("runNextNumber --publish", () => {
       parseArgv(["next-number", "docs/specs", "--publish", "spec-nueva.md"]),
       { fs, env, paths } as CliContext,
     );
-    expect(result.error?.code).toBe("WORKSPACE_ABSENT");
+    expect(result.error?.code).toBe("HUB_ABSENT");
     expect(() => readdirSync(join(workspace, ".workflow"))).toThrow();
   });
 

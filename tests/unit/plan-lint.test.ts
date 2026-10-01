@@ -306,7 +306,7 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
           .sort();
       expect(lintAt("publication"), String(declared)).toEqual(publication.failures.map(key).sort());
       expect(lintAt("execution-entry"), String(declared)).toEqual(entry.map(key).sort());
-      expect(report.report.workspace_block).toBe(declared !== null);
+      expect(report.report.hub_block).toBe(declared !== null);
     }
   });
 

@@ -97,8 +97,8 @@ export async function runDoctor(
   const findings: DoctorFinding[] = selection.unknownOnly.map(unknownOnlyFinding);
   if (!selection.states.some((state) => state.workline.installed)) {
     findings.push({
-      id: doctorFindingId("workspace", "installation-hosts", "sin-workline"),
-      host: "workspace",
+      id: doctorFindingId("hub", "installation-hosts", "sin-workline"),
+      host: "hub",
       category: "installation-hosts",
       resource: { kind: "instalación", name: "Workline en hosts", locator: null },
       state: "blocking",
@@ -118,7 +118,7 @@ export async function runDoctor(
     await collectProviderReport(provider, input, selection, findings, coverages);
   }
 
-  const hostOrder = [...DOCTOR_HOST_ORDER, "workspace"];
+  const hostOrder = [...DOCTOR_HOST_ORDER, "hub"];
   // El gate de propiedad, en un solo lugar y sobre el conjunto consolidado: acá
   // es donde una sugerencia de proveedor se vuelve acción, o no. También es
   // donde `proposal` se consume: el informe emitido no la lleva.
@@ -128,7 +128,7 @@ export async function runDoctor(
   const report: DoctorReport = {
     schema_version: DOCTOR_SCHEMA_VERSION,
     cli_version: readPackageVersion(),
-    scope: { workspace_dir: workspaceDir, current_host: currentHost, only },
+    scope: { hub_dir: workspaceDir, current_host: currentHost, only },
     hosts: selection.hosts.map(({ mcp_host: _mcpHost, ...view }) => view),
     hosts_absent: selection.absent,
     coverage: orderedCoverage,
@@ -172,8 +172,8 @@ function unknownOnlyFinding(name: string): DoctorFinding {
   const evidence = [`el catálogo declara: ${DOCTOR_HOST_ORDER.join(", ")}`];
   if (near.length > 0) evidence.push(`el nombre más parecido del catálogo: ${near.join(", ")}`);
   return {
-    id: doctorFindingId("workspace", "installation-hosts", `--only=${name}`),
-    host: "workspace",
+    id: doctorFindingId("hub", "installation-hosts", `--only=${name}`),
+    host: "hub",
     category: "installation-hosts",
     resource: { kind: "filtro", name: `--only=${name}`, locator: null },
     state: "blocking",
@@ -225,11 +225,11 @@ async function collectProviderReport(
     coverages.push(
       ...(output.coverage.length > 0
         ? output.coverage
-        : [coverage(provider.category, "workspace", "not-applicable", silenceReason(selection))]),
+        : [coverage(provider.category, "hub", "not-applicable", silenceReason(selection))]),
     );
   } catch (error) {
     const reason = `el proveedor falló: ${messageOf(error)}`;
-    const scopes = selection.hosts.length > 0 ? selection.hosts.map((h) => h.host) : ["workspace"];
+    const scopes = selection.hosts.length > 0 ? selection.hosts.map((h) => h.host) : ["hub"];
     for (const host of scopes) {
       coverages.push(coverage(provider.category, host, "unavailable", reason));
     }

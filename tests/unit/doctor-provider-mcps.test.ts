@@ -114,7 +114,7 @@ function dbDescriptor(instance: string): Record<string, unknown> {
     "--host",
     "claude",
     "--scope",
-    "workspace",
+    "hub",
   ];
   return process.platform === "win32"
     ? { command: "cmd", args: ["/c", "agent-workflow", ...serve], env: {} }
@@ -322,7 +322,7 @@ function registerConnections(
   );
 }
 
-function entryId(host: HarnessId, scope: "workspace" | "global", name: string): string {
+function entryId(host: HarnessId, scope: "hub" | "global", name: string): string {
   return doctorFindingId(host, "mcps", `${scope}:${name}`);
 }
 
@@ -336,7 +336,7 @@ function entryId(host: HarnessId, scope: "workspace" | "global", name: string): 
  * conectar nunca se reconocía como propia y volvía como advertencia ajena en vez
  * del bloqueo que la spec promete. Esta prueba fija el id corregido.
  */
-function connectionId(scope: "workspace" | "global", name: string): string {
+function connectionId(scope: "hub" | "global", name: string): string {
   return doctorFindingId(CLAUDE_HOST, "mcps", `${scope}:${name}`);
 }
 
@@ -413,10 +413,10 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
     const ours = output.findings
       .filter((finding) => finding.ownership === "ours")
       .map((finding) => finding.id);
-    expect(ours).toContain(entryId(CLAUDE_HOST, "workspace", WORKLINE_MCP_ENTRY_NAME));
+    expect(ours).toContain(entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
     expect(ours).toContain(nativeId(CLAUDE_HOST, WORKLINE_MCP_ENTRY_NAME));
     for (const connection of OWN_CONNECTIONS) {
-      expect(ours).toContain(connectionId("workspace", connection.name));
+      expect(ours).toContain(connectionId("hub", connection.name));
       expect(ours).toContain(connectionId("global", connection.name));
     }
 
@@ -424,15 +424,15 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
     // archivo: es lo que evita adjudicarle a otra persona una conexión propia.
     const foreignIds = foreign.map((finding) => finding.id);
     for (const connection of OWN_CONNECTIONS) {
-      expect(foreignIds).not.toContain(connectionId("workspace", connection.name));
-      expect(foreignIds).not.toContain(entryId(CLAUDE_HOST, "workspace", connection.name));
+      expect(foreignIds).not.toContain(connectionId("hub", connection.name));
+      expect(foreignIds).not.toContain(entryId(CLAUDE_HOST, "hub", connection.name));
     }
   });
 
   it("una entrada ajena cuyo binario stdio no resuelve sale warning y la evidencia dice cuál falta", async () => {
     const finding = findingAt(
       await runOverEntries(),
-      entryId(CLAUDE_HOST, "workspace", FOREIGN_BROKEN_BINARY),
+      entryId(CLAUDE_HOST, "hub", FOREIGN_BROKEN_BINARY),
     );
 
     expect(finding.state).toBe("warning");
@@ -443,7 +443,7 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
 
   it("una entrada ajena con credencial embebida sale warning sin filtrar el valor del secreto", async () => {
     const output = await runOverEntries();
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "workspace", FOREIGN_WITH_CREDENTIAL));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", FOREIGN_WITH_CREDENTIAL));
 
     expect(finding.state).toBe("warning");
     expect(finding.evidence.join(" | ")).toContain("credencial");
@@ -454,10 +454,7 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
   });
 
   it("una entrada ajena bien formada sale healthy y sin remediación", async () => {
-    const finding = findingAt(
-      await runOverEntries(),
-      entryId(CLAUDE_HOST, "workspace", FOREIGN_HEALTHY),
-    );
+    const finding = findingAt(await runOverEntries(), entryId(CLAUDE_HOST, "hub", FOREIGN_HEALTHY));
 
     expect(finding.state).toBe("healthy");
     expect(finding.ownership).toBe("foreign");
@@ -477,7 +474,7 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "workspace", WORKLINE_MCP_ENTRY_NAME));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
 
     expect(finding.ownership).toBe("ours");
     expect(finding.state).toBe("healthy");
@@ -493,7 +490,7 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "workspace", WORKLINE_MCP_ENTRY_NAME));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
 
     expect(finding.ownership).toBe("ours");
     expect(finding.state).toBe("warning");
@@ -517,7 +514,7 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "workspace", WORKLINE_MCP_ENTRY_NAME));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
 
     expect(finding.ownership).toBe("foreign");
     expect(finding.state).toBe("warning");
@@ -544,13 +541,13 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
     writeClaudeWorkspaceConfig({ [CERT.name]: dbDescriptor(CERT.name) });
 
     const output = await runWithConnections();
-    const finding = findingAt(output, connectionId("workspace", CERT.name));
+    const finding = findingAt(output, connectionId("hub", CERT.name));
 
     expect(finding.state).toBe("healthy");
     expect(finding.ownership).toBe("ours");
     expect(finding.evidence).toContain("drift: ok");
     expect(finding.remediation.kind).toBe("none");
-    expect(findingsAbout(output, `${CERT.name} (workspace)`)).toHaveLength(1);
+    expect(findingsAbout(output, `${CERT.name} (hub)`)).toHaveLength(1);
   });
 
   it("una conexión registrada sin su entrada en ese scope sale warning propio con la guía de setup", async () => {
@@ -574,7 +571,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
     registerConnections([CERT], { dsn: false });
     writeClaudeWorkspaceConfig({ [CERT.name]: dbDescriptor(CERT.name) });
 
-    const finding = findingAt(await runWithConnections(), connectionId("workspace", CERT.name));
+    const finding = findingAt(await runWithConnections(), connectionId("hub", CERT.name));
 
     expect(finding.state).toBe("warning");
     expect(finding.ownership).toBe("ours");
@@ -593,7 +590,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
       [CERT.name]: { command: "npx", args: ["-y", "otro-servidor-de-base"], env: {} },
     });
 
-    const finding = findingAt(await runWithConnections(), connectionId("workspace", CERT.name));
+    const finding = findingAt(await runWithConnections(), connectionId("hub", CERT.name));
 
     expect(finding.ownership).toBe("foreign");
     expect(finding.state).toBe("warning");
@@ -668,7 +665,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
 
     // La entrada homónima existe de verdad en el archivo y es ajena: sin esto la
     // prueba sería vacua, porque el hallazgo nativo no tendría a quién mirar.
-    const entry = findingAt(output, entryId(CLAUDE_HOST, "workspace", FOREIGN_UNCONNECTED));
+    const entry = findingAt(output, entryId(CLAUDE_HOST, "hub", FOREIGN_UNCONNECTED));
     expect(entry.ownership).toBe("foreign");
 
     const server = findingAt(output, nativeId(CLAUDE_HOST, FOREIGN_UNCONNECTED));
@@ -706,7 +703,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     );
 
     // La conexión se reconoce como propia por el registro, no por el nombre.
-    const owner = findingAt(output, connectionId("workspace", registered.name));
+    const owner = findingAt(output, connectionId("hub", registered.name));
     expect(owner.ownership).toBe("ours");
 
     const server = findingAt(output, nativeId(CLAUDE_HOST, registered.name));
@@ -810,9 +807,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     }
     expect(output.findings.filter((finding) => finding.id.includes("native:"))).toEqual([]);
     // El resto del informe sigue siendo el informe: saltear lo nativo no apaga la categoría.
-    expect(findingAt(output, entryId(CLAUDE_HOST, "workspace", FOREIGN_HEALTHY)).state).toBe(
-      "healthy",
-    );
+    expect(findingAt(output, entryId(CLAUDE_HOST, "hub", FOREIGN_HEALTHY)).state).toBe("healthy");
   });
 
   it("un host con Workline cuyo binario no está deja cobertura skipped con razón y sin exit 1", async () => {
@@ -829,7 +824,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     expect(coverageAt(output, CODEX_HOST).reason ?? "").toContain("falta el binario");
     expect(coverageAt(output, CLAUDE_HOST).state).toBe("checked");
     // El lector caído no se lleva puesto lo que sí se pudo leer del archivo.
-    expect(findingAt(output, entryId(CLAUDE_HOST, "workspace", FOREIGN_BROKEN_BINARY)).state).toBe(
+    expect(findingAt(output, entryId(CLAUDE_HOST, "hub", FOREIGN_BROKEN_BINARY)).state).toBe(
       "warning",
     );
     expect(doctorVerdict(output.findings, output.coverage).exit_code).toBe(0);
@@ -900,7 +895,7 @@ describe("proveedor de MCPs — entradas remotas, que no tienen binario ni lo ne
     });
 
     for (const name of ["linear", "sentry"]) {
-      const finding = findingAt(output, entryId(CLAUDE_HOST, "workspace", name));
+      const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", name));
       expect(finding.state, `${name} salió ${finding.state}`).toBe("healthy");
       expect(finding.ownership).toBe("foreign");
       expect(finding.remediation.kind).toBe("none");
@@ -915,7 +910,7 @@ describe("proveedor de MCPs — entradas remotas, que no tienen binario ni lo ne
     // sana, una entrada que no declara servidor alguno pasaría en silencio.
     const finding = findingAt(
       await runOverRemote({ "a-medias": { type: "http" } }),
-      entryId(CLAUDE_HOST, "workspace", "a-medias"),
+      entryId(CLAUDE_HOST, "hub", "a-medias"),
     );
 
     expect(finding.state).toBe("warning");
@@ -957,7 +952,7 @@ describe("proveedor de MCPs — el informe pasa por el redactor y no puede salir
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = redacted(findingAt(output, connectionId("workspace", CERT.name)));
+    const finding = redacted(findingAt(output, connectionId("hub", CERT.name)));
 
     // La negación sigue siendo una negación después de redactar.
     const evidence = finding.evidence.join(" | ");
@@ -986,7 +981,7 @@ describe("proveedor de MCPs — el informe pasa por el redactor y no puede salir
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = redacted(findingAt(output, connectionId("workspace", CERT.name)));
+    const finding = redacted(findingAt(output, connectionId("hub", CERT.name)));
 
     expect(finding.evidence.join(" | ")).not.toContain("***");
   });
@@ -1000,7 +995,7 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
    * veredicto—, y el id dejaba de ser un token que se pueda escribir en una
    * línea de comandos.
    */
-  const FORGED = `inocente\n  ✔ ${CLAUDE_HOST}/mcps/workspace:qtc-cert — la conexion esta sana\n      impacto: ninguno`;
+  const FORGED = `inocente\n  ✔ ${CLAUDE_HOST}/mcps/hub:qtc-cert — la conexion esta sana\n      impacto: ninguno`;
 
   it("un nombre con saltos de línea se sanea para mostrarse, y el id conserva el nombre entero", async () => {
     writeClaudeWorkspaceConfig({ [FORGED]: { command: ghostBinary, args: [], env: {} } });
@@ -1060,14 +1055,14 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
     // La misma puerta con otra llave: sanear el nombre y dejar crudo el
     // `command` —que lo escribió la misma persona ajena y también viaja a la
     // evidencia— deja el forjado abierto igual.
-    const comando = `/no/existe\n  ✔ ${CLAUDE_HOST}/mcps/workspace:qtc-prod — todo sano`;
+    const comando = `/no/existe\n  ✔ ${CLAUDE_HOST}/mcps/hub:qtc-prod — todo sano`;
     writeClaudeWorkspaceConfig({ "vendor-mcp": { command: comando, args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "workspace", "vendor-mcp"));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", "vendor-mcp"));
 
     expect(finding.state).toBe("warning");
     expect(JSON.stringify(finding)).not.toMatch(/\\n|\\r/);
@@ -1130,9 +1125,9 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
       inputFor([targetHost(CLAUDE_HOST)]),
     );
     expect(
-      output.findings.find((finding) => finding.id === connectionId("workspace", "qtc-cert")),
+      output.findings.find((finding) => finding.id === connectionId("hub", "qtc-cert")),
     ).toBeUndefined();
-    expect(findingAt(output, entryId(CLAUDE_HOST, "workspace", "ajeno")).state).toBe("healthy");
+    expect(findingAt(output, entryId(CLAUDE_HOST, "hub", "ajeno")).state).toBe("healthy");
   });
 
   /** Un host cuyo directorio de configuración quedó sin runtime que lo use. */
@@ -1220,7 +1215,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     );
 
     expect(coverageAt(output, CLAUDE_HOST).state).toBe("checked");
-    expect(findingAt(output, entryId(CLAUDE_HOST, "workspace", "ajeno")).state).toBe("healthy");
+    expect(findingAt(output, entryId(CLAUDE_HOST, "hub", "ajeno")).state).toBe("healthy");
   });
 
   it("la ruta absoluta de un binario se resuelve por el puerto de archivos, no por el disco de la máquina", async () => {
@@ -1237,7 +1232,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "workspace", "vendor-mcp"));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", "vendor-mcp"));
 
     expect(finding.state).toBe("warning");
     expect(finding.evidence.join(" | ")).toContain("no existe en esa ruta");

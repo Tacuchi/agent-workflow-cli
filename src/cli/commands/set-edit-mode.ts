@@ -6,7 +6,7 @@ export const setEditModeCommand: CliCommand = {
   name: "set-edit-mode",
   flags: { known: [] },
   help: {
-    purpose: "Declare whether the workspace edits sources in place or in isolation units.",
+    purpose: "Declare whether the hub edits sources in place or in isolation units.",
     args: "<in-place|unit>",
     output:
       "{ok, action, results[] {file, path, action?, error?}, working_branches?, qa_branches?, dropped_lines[]?, migrated[]?, not_migrated[]?}.",

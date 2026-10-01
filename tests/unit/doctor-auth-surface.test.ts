@@ -30,7 +30,7 @@ vi.mock("../../src/application/doctor/report.js", async (importOriginal) => {
       return {
         schema_version: DOCTOR_SCHEMA_VERSION,
         cli_version: "0.0.0-test",
-        scope: { workspace_dir: "/ws", current_host: null, only: [] },
+        scope: { hub_dir: "/ws", current_host: null, only: [] },
         hosts: [],
         hosts_absent: [],
         coverage: [],

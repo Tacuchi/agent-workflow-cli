@@ -48,7 +48,7 @@ import {
 } from "./plan.js";
 
 export interface WorkspaceMigrationApplied {
-  workspace: string;
+  hub: string;
   /** Hub files whose block markers now carry the running namespace. */
   markers_renamed: string[];
   /** Hub files that also lost the empty block the CLI had appended. */
@@ -332,7 +332,7 @@ async function writePlan(
 
 function summarize(plan: WorkspaceMigrationPlan): WorkspaceMigrationApplied {
   return {
-    workspace: plan.workspace,
+    hub: plan.workspace,
     markers_renamed: plan.markers.map((hub) => hub.path),
     duplicates_dropped: plan.markers.filter((h) => h.drops_duplicate).map((hub) => hub.path),
     sentinels_seeded: plan.sentinels.map((seed) => seed.folder),
@@ -368,7 +368,7 @@ async function readRenumberJournal(
     journal.files.some(([file]) => !file.startsWith(`${workspace}/`)) ||
     journal.transfers.some((transfer) => !transfer.path.startsWith(`${workspace}/docs/`))
   ) {
-    throw new Error("el registro de renumerado apunta fuera del workspace");
+    throw new Error("el registro de renumerado apunta fuera del hub");
   }
   return journal;
 }

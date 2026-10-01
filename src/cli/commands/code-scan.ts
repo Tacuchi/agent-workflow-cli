@@ -13,7 +13,7 @@ export const codeScanCommand: CliCommand = {
   help: {
     purpose: "Scan files for release patterns such as localhost URLs, secrets and TODOs.",
     flags: {
-      root: { value: "<dir>", effect: "Directory to scan; defaults to the workspace." },
+      root: { value: "<dir>", effect: "Directory to scan; defaults to the hub." },
       pattern: {
         value: "<id:regex[:severity]>",
         effect: "Inline pattern; replaces the built-in and file patterns.",

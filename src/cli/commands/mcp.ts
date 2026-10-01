@@ -124,7 +124,7 @@ const SCOPE_FLAGS = {
 const SERVE_DB_FLAGS = {
   host: { value: "<host>", effect: "Host whose descriptor launched the server." },
   scope: {
-    value: "<workspace|global>",
+    value: "<hub|global>",
     effect: "Scope of that descriptor; with --host, lets a global launch be recorded as observed.",
   },
   "descriptor-generation": {
@@ -370,7 +370,7 @@ function resolveHostLoadObservation(
   const rawScope = args.values.get("scope");
   if (rawHost === undefined || rawScope === undefined) return undefined;
   if (!FILE_HOSTS.includes(rawHost as McpHost)) return undefined;
-  if (rawScope !== "workspace" && rawScope !== "global") return undefined;
+  if (rawScope !== "hub" && rawScope !== "global") return undefined;
   const host = rawHost as McpHost;
   const scope = rawScope as McpReceiptScope;
   if (scope !== "global") return undefined;
@@ -429,7 +429,7 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
   const scopeInput = args.flags.has("--global")
     ? ({ scope: "global" } as const)
-    : ({ scope: "workspace", workspace } as const);
+    : ({ scope: "hub", workspace } as const);
   const result = await runMcpSetupWithMaterialization(ctx, {
     hosts: hosts.value,
     connections: connections.value,
@@ -478,7 +478,7 @@ async function runMcpSetupWithMaterialization(
   ctx: CliContext,
   input: McpSetupInput,
 ): Promise<McpSetupResult | McpScopeRefusal> {
-  if (input.scope !== "workspace") {
+  if (input.scope !== "hub") {
     const result = runMcpSetup(ctx.env, input);
     return "ok" in result ? result : await attachSetupReceipts(ctx, input, result);
   }
@@ -550,7 +550,7 @@ async function runMcpRemoveWithMaterialization(
   ctx: CliContext,
   input: McpRemoveInput,
 ): Promise<McpRemoveResult | McpScopeRefusal> {
-  if (input.scope !== "workspace") {
+  if (input.scope !== "hub") {
     const result = runMcpRemove(ctx.env, input);
     return "ok" in result ? result : await attachRemoveReceipts(ctx, input, result);
   }
@@ -609,7 +609,7 @@ async function materializeMcpWorkspace(
 function buildWarpHintsFor(
   hosts: McpHost[],
   instances: McpInstance[],
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   workspace: string,
 ): WarpPostInstallHint[] {
   if (!hosts.includes("warp")) return [];
@@ -627,7 +627,7 @@ async function runWarpStatusSub(args: ParsedArgs, ctx: CliContext): Promise<Comm
   const projectFile = resolveWarpProjectMcpPath(resolve(workspace));
   const globalFile = resolveWarpGlobalMcpPath() ?? `${homedir()}/.warp/.mcp.json`;
   const sources = [
-    { scope: "workspace" as const, file: projectFile },
+    { scope: "hub" as const, file: projectFile },
     { scope: "global" as const, file: globalFile },
   ];
   const reports = sources.map(({ scope, file }) => {
@@ -670,7 +670,7 @@ async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
   const scopeInput = args.flags.has("--global")
     ? ({ scope: "global" } as const)
-    : ({ scope: "workspace", workspace } as const);
+    : ({ scope: "hub", workspace } as const);
   const result = await runMcpRemoveWithMaterialization(ctx, {
     hosts: hosts.value,
     connections: connections.value,
@@ -719,7 +719,7 @@ interface DoctorInput {
   hosts: McpHost[];
   connections: StoredMcpConnection[];
   probeMode: "launch" | "data" | undefined;
-  scope: { scope: "global" } | { scope: "workspace"; workspace: string };
+  scope: { scope: "global" } | { scope: "hub"; workspace: string };
 }
 
 interface ReadableMcpDescriptor {
@@ -744,7 +744,7 @@ function resolveDoctorInput(
       hosts: hosts.value,
       connections: connections.value,
       probeMode: probeMode.value,
-      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "workspace", workspace },
+      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "hub", workspace },
     },
   };
 }
@@ -901,7 +901,7 @@ function resolveDoctorProbeMode(
 
 async function recordReceiptProbeBestEffort(
   service: ReturnType<typeof openMcpHostReceiptService>,
-  report: { host: McpHost; scope: "workspace" | "global"; instance: string },
+  report: { host: McpHost; scope: "hub" | "global"; instance: string },
   descriptor: Pick<ReadableMcpDescriptor, "command" | "args">,
   outcome: "passed" | "failed",
   phase: "spawn" | "initialize" | "initialized" | "tools/list" | "tools/call",
@@ -976,7 +976,7 @@ interface MigrationInput {
   apply: boolean;
   hosts: McpHost[];
   connections: StoredMcpConnection[];
-  scope: { scope: "global" } | { scope: "workspace"; workspace: string };
+  scope: { scope: "global" } | { scope: "hub"; workspace: string };
 }
 
 interface MigrationFinalization {
@@ -1023,7 +1023,7 @@ function resolveMigrationInput(
       apply,
       hosts: hosts.value,
       connections: connections.value,
-      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "workspace", workspace },
+      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "hub", workspace },
     },
   };
 }

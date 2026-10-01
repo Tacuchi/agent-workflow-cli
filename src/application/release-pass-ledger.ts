@@ -209,7 +209,7 @@ export async function linkArtifact(
   if (!(await fs.exists(absolute))) {
     return {
       linked: false,
-      reason: `'${input.artifact}' no existe en el workspace: un pase enlaza artefactos por ruta, y una ruta que no está no es un artefacto`,
+      reason: `'${input.artifact}' no existe en el hub: un pase enlaza artefactos por ruta, y una ruta que no está no es un artefacto`,
     };
   }
   await append(fs, paths, {

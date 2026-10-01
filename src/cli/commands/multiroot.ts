@@ -68,7 +68,7 @@ export const attachMultirootCommand: CliCommand = {
       "skip-oz": { effect: "Leave Oz untouched." },
     },
     output:
-      "{scope (global|workspace), scope_dir, paths_input[], claude, codex, warp, oz, dry_run?, materialization?}; each host entry is its result or {skipped: true}. An unusable input returns {error, hint?} with ok true.",
+      "{scope (global|hub), scope_dir, paths_input[], claude, codex, warp, oz, dry_run?, materialization?}; each host entry is its result or {skipped: true}. An unusable input returns {error, hint?} with ok true.",
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     return await runPublicMultiroot(ctx, "attach", buildInput(args));
@@ -93,7 +93,7 @@ export const detachMultirootCommand: CliCommand = {
       "skip-oz": { effect: "Leave Oz untouched." },
     },
     output:
-      "{scope (global|workspace), scope_dir, paths_input[], claude, codex, warp, oz, dry_run?, materialization?}; each host entry is its result or {skipped: true}. An unusable input returns {error, hint?} with ok true.",
+      "{scope (global|hub), scope_dir, paths_input[], claude, codex, warp, oz, dry_run?, materialization?}; each host entry is its result or {skipped: true}. An unusable input returns {error, hint?} with ok true.",
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     return await runPublicMultiroot(ctx, "detach", buildInput(args));

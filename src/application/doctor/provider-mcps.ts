@@ -33,7 +33,7 @@ import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "
 import { coverage } from "./types.js";
 
 const CATEGORY = "mcps" as const;
-const SCOPES = ["workspace", "global"] as const;
+const SCOPES = ["hub", "global"] as const;
 type Scope = (typeof SCOPES)[number];
 
 export interface McpsProviderDeps {
@@ -113,7 +113,7 @@ async function configuredEntries(
   };
 
   for (const scope of SCOPES) {
-    for (const report of scope === "workspace" && !materialized
+    for (const report of scope === "hub" && !materialized
       ? []
       : driftReports(input, mcpHosts, connections, scope)) {
       // `runMcpDoctor` reports by MCP host id (`claude`) and the report is

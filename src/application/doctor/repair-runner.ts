@@ -94,13 +94,13 @@ export async function runDoctorRepair(
     case "multiroot.attach":
     case "multiroot.detach":
       return repairMultiroot(action, ctx);
-    case "workspace.remove-retired-section": {
+    case "hub.remove-retired-section": {
       const path = action.locator;
       if (
         path === null ||
         !["CLAUDE.md", "AGENTS.md"].some((file) => path === `${ctx.paths.workspaceDir()}/${file}`)
       )
-        return { status: "failed", detail: "archivo de proyecto fuera del workspace" };
+        return { status: "failed", detail: "archivo de proyecto fuera del hub" };
       const removed = await applyRetiredSectionRemoval(ctx.fs, path, ctx.paths.blockMarkers());
       return {
         status: removed ? "applied" : "failed",
@@ -133,13 +133,13 @@ function mcpInput(ctx: CliContext, action: DoctorBatchAction) {
   const connections = readMcpConnections(ctx.paths, ctx.env).filter(
     (connection) => connection.name === instance,
   );
-  const scope = action.args.scope === "global" ? "global" : "workspace";
+  const scope = action.args.scope === "global" ? "global" : "hub";
   return {
     hosts: [host],
     connections,
     ...(scope === "global"
       ? { scope: "global" as const, globalApproval: "explicit-self-action" as const }
-      : { scope: "workspace" as const, workspace: ctx.paths.workspaceDir() }),
+      : { scope: "hub" as const, workspace: ctx.paths.workspaceDir() }),
   };
 }
 
@@ -196,7 +196,7 @@ function migrateOutcome(action: DoctorBatchAction, ctx: CliContext): DoctorActio
           globalApproval: true,
         })
       : runMcpMigration(ctx.env, {
-          scope: "workspace",
+          scope: "hub",
           workspace: ctx.paths.workspaceDir(),
           hosts: [host],
           connections,

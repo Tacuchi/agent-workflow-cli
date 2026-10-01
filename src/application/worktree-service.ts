@@ -183,7 +183,7 @@ export async function classifyListedUnits(
 }
 
 export interface WorktreeListOutput {
-  workspace_key: string;
+  hub_key: string;
   units: ListedUnit[];
   orphans: OrphanUnit[];
   /** Sources whose worktrees could not be read; their units are NOT in the lists. */
@@ -328,7 +328,7 @@ export interface RetainedUnit {
 }
 
 export interface WorktreeReclaimOutput {
-  workspace_key: string;
+  hub_key: string;
   /** The session the sweep was narrowed to, when the caller named one. */
   session?: string;
   reclaimed: ReclaimedUnit[];
@@ -928,7 +928,7 @@ async function reclaimUnits(
   if (sources.length === 0) {
     return {
       error: "no_sources_declared",
-      message: "el bloque WORKSPACE no declara ninguna fuente",
+      message: "el bloque del hub no declara ninguna fuente",
       hint: "declará la fuente con aw add-source <alias>:<ruta>:<rama> antes de pedir una recogida",
     };
   }
@@ -963,7 +963,7 @@ async function reclaimUnits(
     retained.push(...swept.retained);
   }
   return {
-    workspace_key: key,
+    hub_key: key,
     ...(only !== null ? { session: only } : {}),
     reclaimed,
     retained,
@@ -1387,7 +1387,7 @@ async function listUnits(
     orphans.push(...scanned.orphans);
   }
   return {
-    workspace_key: key,
+    hub_key: key,
     units,
     orphans,
     unreadable,
@@ -1677,7 +1677,7 @@ function targetSource(
   if (sources.length === 0) {
     return {
       error: "no_sources_declared",
-      message: "el bloque WORKSPACE no declara ninguna fuente",
+      message: "el bloque del hub no declara ninguna fuente",
       hint: "declará la fuente con aw add-source <alias>:<ruta>:<rama> antes de pedir una unidad",
     };
   }

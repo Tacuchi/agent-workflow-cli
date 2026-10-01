@@ -112,14 +112,14 @@ const ensureDeclaredWorkingBranch: PrepareBranch = async (alias, rama, ctx) => {
 
 export const setWorkingBranchCommand = makeSetBranchCommand(
   "set-working-branch",
-  "Set a source's working branch in the WORKSPACE block, creating it from PROD when missing.",
+  "Set a source's working branch in the hub block, creating it from PROD when missing.",
   "workingBranches",
   ensureDeclaredWorkingBranch,
 );
 
 export const setQaBranchCommand = makeSetBranchCommand(
   "set-qa-branch",
-  "Set a source's QA branch in the WORKSPACE block.",
+  "Set a source's QA branch in the hub block.",
   "qaBranches",
 );
 

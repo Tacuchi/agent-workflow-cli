@@ -7,7 +7,7 @@ import { resolveBundledSkillPath } from "../self/install-skill.js";
 import type { DoctorProvider, DoctorProviderInput } from "./types.js";
 import { coverage } from "./types.js";
 
-const CATEGORY = "workspace-visibility" as const;
+const CATEGORY = "hub-visibility" as const;
 const MIRRORS = ["CLAUDE.md", "AGENTS.md"] as const;
 const OWNED_SECTIONS = new Set(["proyecto", "fuentes", "stack", "status", "pipeline"]);
 
@@ -115,7 +115,7 @@ export const workspaceBlockProvider: DoctorProvider = {
     );
     if (files.every((file) => file.text === null))
       return {
-        coverage: [coverage(CATEGORY, "workspace", "not-applicable", "sin archivos de proyecto")],
+        coverage: [coverage(CATEGORY, "hub", "not-applicable", "sin archivos de proyecto")],
         findings: [],
       };
     const findings: DoctorFinding[] = [];
@@ -129,17 +129,17 @@ export const workspaceBlockProvider: DoctorProvider = {
     const right = block(files[1]?.text ?? null);
     if (left !== right && (left !== null || right !== null)) {
       findings.push({
-        id: doctorFindingId("workspace", CATEGORY, "bloques-divergentes"),
-        host: "workspace",
+        id: doctorFindingId("hub", CATEGORY, "bloques-divergentes"),
+        host: "hub",
         category: CATEGORY,
         resource: {
-          kind: "project-block",
+          kind: "hub-block",
           name: "CLAUDE.md / AGENTS.md",
           locator: input.workspaceDir,
         },
         state: "warning",
-        summary: "los bloques de proyecto de CLAUDE.md y AGENTS.md divergen",
-        impact: "dos hosts leen declaraciones distintas del mismo workspace",
+        summary: "los bloques del hub de CLAUDE.md y AGENTS.md divergen",
+        impact: "dos hosts leen declaraciones distintas del mismo hub",
         evidence: ["los contenidos entre marcadores no coinciden"],
         ownership: "ours",
         remediation: {
@@ -155,8 +155,8 @@ export const workspaceBlockProvider: DoctorProvider = {
       const sections = retiredSections(file.text, markers, known);
       if (sections.length === 0) continue;
       findings.push({
-        id: doctorFindingId("workspace", CATEGORY, `${file.file}:secciones-retiradas`),
-        host: "workspace",
+        id: doctorFindingId("hub", CATEGORY, `${file.file}:secciones-retiradas`),
+        host: "hub",
         category: CATEGORY,
         resource: { kind: "project-file", name: file.file, locator: file.path },
         state: "warning",
@@ -169,10 +169,10 @@ export const workspaceBlockProvider: DoctorProvider = {
           action: null,
           guidance: ["aw doctor prepare --select <id> y aw doctor apply --approval <digest>"],
         },
-        proposal: { op: "workspace.remove-retired-section", args: { file: file.file } },
+        proposal: { op: "hub.remove-retired-section", args: { file: file.file } },
       });
     }
-    return { coverage: [coverage(CATEGORY, "workspace", "checked")], findings };
+    return { coverage: [coverage(CATEGORY, "hub", "checked")], findings };
   },
 };
 

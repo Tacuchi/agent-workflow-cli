@@ -31,7 +31,7 @@ export function createInstallationProvider(distRoot = installedDistRoot()): Doct
 
       return {
         coverage: [
-          coverage(CATEGORY, "workspace", "checked"),
+          coverage(CATEGORY, "hub", "checked"),
           ...input.hosts.map((host) => coverage(CATEGORY, host.host, "checked")),
         ],
         findings,

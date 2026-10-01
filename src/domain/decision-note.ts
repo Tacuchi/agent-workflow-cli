@@ -598,7 +598,7 @@ function readAnchor(value: unknown, side: "spec" | "plan", fail: Fail): NoteAnch
     fail(
       "NOTE_LINEAGE_INVALID",
       `'lineage.${side}' necesita 'path' y 'number'`,
-      "el linaje nombra documentos reales del workspace",
+      "el linaje nombra documentos reales del hub",
     );
     return null;
   }

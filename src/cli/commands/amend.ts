@@ -96,7 +96,7 @@ export const amendCommand: CliCommand<AmendOutput> = {
         output:
           "{action: apply, status: applied, amendment {id, document, origin, declaration, from, to, before_digest, after_digest}, written[]}; with --check: {action: check, status: checked, document, line, classification, reason, next, written: []}.",
         notes: [
-          "Writing needs the declaration; checking does not. The write runs under the workspace lock with the document's digest as compare-and-swap base, and the pre-image goes to an append-only ledger. What touches the contract (a spec's functional content, a plan's header, phase/task graph, closing clauses or batches) is refused and the refinement is named instead.",
+          "Writing needs the declaration; checking does not. The write runs under the hub lock with the document's digest as compare-and-swap base, and the pre-image goes to an append-only ledger. What touches the contract (a spec's functional content, a plan's header, phase/task graph, closing clauses or batches) is refused and the refinement is named instead.",
         ],
       },
       revert: {
@@ -105,7 +105,7 @@ export const amendCommand: CliCommand<AmendOutput> = {
         output: "{action: revert, status: reverted, amendment, written[]}.",
       },
       list: {
-        purpose: "List the recorded corrections, of one document or of the whole workspace.",
+        purpose: "List the recorded corrections, of one document or of the whole hub.",
         args: "[<document>]",
         output:
           "{action: list, document, events[] ({version, at, event: amended|reverted, amendment, cause?})}. Read-only.",
@@ -201,7 +201,7 @@ export const amendCommand: CliCommand<AmendOutput> = {
 };
 
 function renderList(data: AmendListOutput): string {
-  const scope = data.document === null ? "el workspace" : data.document;
+  const scope = data.document === null ? "el hub" : data.document;
   if (data.events.length === 0) return `Sin correcciones directas registradas en ${scope}.`;
   const rows = data.events.map((event) => {
     const mark = event.event === "reverted" ? "revertida" : "vigente";

@@ -11,7 +11,7 @@ import { McpWriterError } from "./mcp-host-writer.js";
  * subdirectory rather than the workspace root).
  */
 export type McpScopeInput =
-  | { scope: "workspace"; workspace: string }
+  | { scope: "hub"; workspace: string }
   | { scope: "global"; workspace?: string };
 
 export interface McpScopeRefusal {

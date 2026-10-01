@@ -12,8 +12,8 @@ export const mergeStateCommand: CliCommand = {
       "Inspect the in-progress merge of each repository: origin, destination and conflicted files.",
     args: "[<repo-path>]",
     flags: {
-      source: { value: "<alias>", effect: "Inspect this workspace source." },
-      all: { effect: "Inspect every workspace source." },
+      source: { value: "<alias>", effect: "Inspect this hub source." },
+      all: { effect: "Inspect every hub source." },
     },
     output:
       "{repos[] {alias, unit?, path, is_repo, is_merging, current_branch, merge_origin, conflicted_files[], dirty, error?}, any_merging, unreadable[] {alias, path, code, action}, notes[]?}.",
@@ -21,7 +21,7 @@ export const mergeStateCommand: CliCommand = {
       "1": "A source or unit could not be read and no merge was found; ok is still true and data lists unreadable.",
       "2": "A merge is in progress.",
     },
-    notes: ["Read-only. With a path, or none, it works on any repository without a workspace."],
+    notes: ["Read-only. With a path, or none, it works on any repository without a hub."],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const input: MergeStateInput = {};

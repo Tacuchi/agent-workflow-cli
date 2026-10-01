@@ -49,10 +49,10 @@ it("desde una fuente resuelve al único hub, se niega con dos y --workspace no s
   );
   await expect(
     resolveWorkspaceDirectory(fs, directory, source, home, join(hubA, "docs")),
-  ).rejects.toMatchObject({ code: "WORKSPACE_INVALID" });
+  ).rejects.toMatchObject({ code: "HUB_INVALID" });
   await registerHub(fs, new PathsService(namespace, home, hubB), hubB);
   await expect(resolveWorkspaceDirectory(fs, directory, source, home)).rejects.toMatchObject({
-    code: "WORKSPACE_AMBIGUOUS",
+    code: "HUB_AMBIGUOUS",
     roots: await Promise.all(hubs.map((hub) => realpath(hub))),
   });
   expect((await resolveWorkspaceDirectory(fs, directory, source, home, hubB)).root).toBe(

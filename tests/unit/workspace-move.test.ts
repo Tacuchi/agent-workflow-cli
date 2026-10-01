@@ -274,7 +274,7 @@ it("se niega antes del rename cuando el destino cae dentro de otro hub o de una 
   ]) {
     await expect(
       moveWorkspace(fs, paths, { repair: false, destination, dryRun: true }),
-    ).rejects.toThrow(/Destino de workspace inválido|cae dentro del workspace/);
+    ).rejects.toThrow(/Destino de hub inválido|cae dentro del hub/);
     expect(await fs.exists(hub)).toBe(true);
   }
 });

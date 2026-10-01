@@ -413,7 +413,7 @@ function formatBlockMessage(
     "",
     "Sólo pasan lecturas: SELECT sin INTO, WITH de lecturas, EXPLAIN de una lectura, SHOW, VALUES y TABLE.",
     "Las mutaciones a BD (DML/DDL) NO se ejecutan desde una sesión.",
-    "Materializá el cambio como script SQL en docs/scripts/ del workspace",
+    "Materializá el cambio como script SQL en docs/scripts/ del hub",
     "de la fuente y pedile al usuario que lo aplique manualmente.",
     "",
     "Para excepciones puntuales delegadas por el usuario, usar:",

@@ -157,7 +157,7 @@ describe("Workline implicit materialization", () => {
 
     if ("error" in result) throw new Error(result.error);
     expect(result.sources).toBe(0);
-    expect(result.project_md).toEqual({ skipped: true, reason: "materialization_only" });
+    expect(result.hub_block_files).toEqual({ skipped: true, reason: "materialization_only" });
     expect(result.skills_toml).toBe("skipped");
     expect(await fs.exists("/cwd/.workflow/sessions")).toBe(true);
     expect(await fs.exists("/cwd/CLAUDE.md")).toBe(false);

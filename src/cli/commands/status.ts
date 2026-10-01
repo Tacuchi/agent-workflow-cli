@@ -13,9 +13,9 @@ export const statusCommand: CliCommand<StatusOutput> = {
   name: "status",
   flags: { known: [] },
   help: {
-    purpose: "Show what is pending in the workspace: specs, plans, sessions and discarded work.",
+    purpose: "Show what is pending in the hub: specs, plans, sessions and discarded work.",
     output:
-      "{workspace, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], ...}. Read-only.",
+      "{hub, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], ...}. Read-only.",
     notes: [
       "The human view lists pending work only; --detail adds finished history, sessions and discarded items.",
     ],
@@ -36,7 +36,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
     const data = result.data;
     if (data === undefined) return "";
 
-    const header = `${data.workspace.name} · ${data.workspace.path}`;
+    const header = `${data.hub.name} · ${data.hub.path}`;
     const lines = [header, ""];
     if (data.last_activity !== null) lines.push(`Última actividad: ${data.last_activity}`, "");
     lines.push(...renderPipeline(data.pipeline, context.detail));

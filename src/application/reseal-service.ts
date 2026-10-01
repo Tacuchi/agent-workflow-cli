@@ -175,7 +175,7 @@ export async function prepareReseal(
   if (!(await fs.exists(specAbsolute))) {
     return fail(
       "RESEAL_SPEC_ABSENT",
-      `'${derived}' no está en el workspace: no hay contrato vigente contra el que sellar`,
+      `'${derived}' no está en el hub: no hay contrato vigente contra el que sellar`,
       `restaurá la spec en '${canon.canon.spec}/' o corregí el '> Derived from …' del plan`,
     );
   }
@@ -242,7 +242,7 @@ export async function prepareReseal(
       // The plan's CURRENT digest, so the write lands on the bytes the preview
       // was computed from and on no others.
       bases: [{ path: planPath, digest: baseDigest(planText) }],
-      scope: { workspace_root: paths.workspaceDir() },
+      scope: { hub_root: paths.workspaceDir() },
       effects: ["mutate_overwrite"],
       requiresApproval: ["mutate_overwrite"],
     }),
@@ -349,7 +349,7 @@ function sealableSpec(
   if (!safe.ok) {
     return fail(
       "RESEAL_SPEC_PATH_INVALID",
-      `el '> Derived from' de '${planPath}' apunta a '${derived}', que no es una ruta del workspace: ${safe.why}`,
+      `el '> Derived from' de '${planPath}' apunta a '${derived}', que no es una ruta del hub: ${safe.why}`,
       `corregí el '> Derived from ${specDir}/NNN-spec-<slug>.md' del plan y volvé a preparar el re-sello: el sello se digiere de la spec que el tablero resuelve por número, y un archivo fuera de esa carpeta dejaría sello y tablero digiriendo dos documentos distintos`,
     );
   }

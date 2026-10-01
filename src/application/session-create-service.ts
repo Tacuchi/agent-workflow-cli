@@ -442,7 +442,7 @@ async function readBaselines(
     const safe = checkSafeRelativePath(raw);
     if (!safe.ok) {
       return {
-        error: `--input '${raw}' tiene que ser una ruta relativa al workspace: ${safe.why}`,
+        error: `--input '${raw}' tiene que ser una ruta relativa al hub: ${safe.why}`,
         code: "INVALID_INPUT",
       };
     }

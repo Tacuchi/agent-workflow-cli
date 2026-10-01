@@ -1265,7 +1265,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "chassis.commit-choice",
     scope: CHASSIS,
-    title: "aprobar el commit del workspace por rutas explícitas o cerrar sin él",
+    title: "aprobar el commit del hub por rutas explícitas o cerrar sin él",
     authority: "human",
     ownership: "cli-owned",
     document: CHASSIS_MD,
@@ -1275,12 +1275,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       {
         label: "Cerrar sin commit",
         consequence:
-          "se archiva el mínimo y se cierra la sesión; el trabajo del workspace queda sin commitear",
+          "se archiva el mínimo y se cierra la sesión; el trabajo del hub queda sin commitear",
         recommended: true,
         outcome: { kind: "continue" },
       },
       {
-        label: "Aprobar commit del workspace",
+        label: "Aprobar commit del hub",
         consequence:
           "se cierra y luego el CLI commitea solamente el pathspec y mensaje mostrados en la propuesta; nunca hace push",
         recommended: false,
@@ -1294,7 +1294,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
         outcome: { kind: "continue" },
       },
       {
-        label: "Copiar evidencia y aprobar commit del workspace",
+        label: "Copiar evidencia y aprobar commit del hub",
         consequence:
           "se copia la evidencia efímera a la sesión, se archiva y entra en el commit aprobado del cierre; nunca hace push",
         recommended: false,
@@ -1549,7 +1549,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       execution: {
         kind: "external",
         reason:
-          "la rama esperada de cada fuente es un veredicto sobre git, y un workspace sin fuentes declaradas no lo tiene: leerlo desde adentro diría 'verificada' donde no hay nada que verificar",
+          "la rama esperada de cada fuente es un veredicto sobre git, y un hub sin fuentes declaradas no lo tiene: leerlo desde adentro diría 'verificada' donde no hay nada que verificar",
       },
       evidence: ["quick.rama-verificada"],
       idempotent: true,
@@ -2186,7 +2186,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       execution: {
         kind: "external",
         reason:
-          "la reserva la materializa el comando bajo el candado del workspace y devuelve su claimed_path: el motor nombra el reclamo pero no lo mintea",
+          "la reserva la materializa el comando bajo el candado del hub y devuelve su claimed_path: el motor nombra el reclamo pero no lo mintea",
       },
       evidence: ["plan.numero-reclamado"],
       // Asking again returns the SAME slot: the claim recognizes a reservation this
@@ -3416,7 +3416,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "status.board-projection",
     scope: cmd("status"),
-    title: "proyectar el tablero del workspace desde el índice documental",
+    title: "proyectar el tablero del hub desde el índice documental",
     authority: "cli",
     ownership: "cli-owned",
     document: "commands/status.md",
@@ -3664,7 +3664,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
   {
     id: "hub-init.materialize-or-configure",
     scope: cmd("hub-init"),
-    title: "materializar el runtime mínimo o configurar fuentes explícitas del workspace",
+    title: "materializar el runtime mínimo o configurar fuentes explícitas del hub",
     authority: "cli",
     ownership: "cli-owned",
     document: "modules/WORKSPACE-SCAFFOLD.md",
@@ -3710,7 +3710,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
     command: "hub-commit",
     reason:
-      "comando transversal sin corrida propia: prepare sella mensaje y pathspec del workspace y apply exige ese digest; el cierre del chasis también lo invoca sólo después del consentimiento humano",
+      "comando transversal sin corrida propia: prepare sella mensaje y pathspec del hub y apply exige ese digest; el cierre del chasis también lo invoca sólo después del consentimiento humano",
   },
   {
     command: "hub-move",
@@ -3725,7 +3725,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
     command: "discard",
     reason:
-      "comando transversal de retiro: no abre WorklineFlow ni sesión a propósito, porque puede terminar borrando la sesión que lo dirigiera. Su autoridad es su propio contrato: `prepare` read-only y `apply` con el digest exacto, recomputado bajo el lock del workspace",
+      "comando transversal de retiro: no abre WorklineFlow ni sesión a propósito, porque puede terminar borrando la sesión que lo dirigiera. Su autoridad es su propio contrato: `prepare` read-only y `apply` con el digest exacto, recomputado bajo el lock del hub",
   },
   {
     command: "reset",
@@ -3740,27 +3740,27 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
     command: "cut-intent",
     reason:
-      "comando declarativo de estado del workspace: registra la intención con que un corte de planes se pensó ejecutar y la relee, sin corrida propia porque no hay recorrido que dirigir —declarar un orden es UN acto, no un tramo con fronteras—. No lleva `prepare`/`apply` porque no ejerce ningún efecto sobre el trabajo: agrega un evento a un libro append-only bajo el namespace del workspace, y corregir es declarar de nuevo, con el registro anterior conservado y legible. Su autoridad es lo que NO hace: no impone el orden que registra, así que ejecutar fuera de él se avisa y nunca se rechaza",
+      "comando declarativo de estado del hub: registra la intención con que un corte de planes se pensó ejecutar y la relee, sin corrida propia porque no hay recorrido que dirigir —declarar un orden es UN acto, no un tramo con fronteras—. No lleva `prepare`/`apply` porque no ejerce ningún efecto sobre el trabajo: agrega un evento a un libro append-only bajo el namespace del hub, y corregir es declarar de nuevo, con el registro anterior conservado y legible. Su autoridad es lo que NO hace: no impone el orden que registra, así que ejecutar fuera de él se avisa y nunca se rechaza",
   },
   {
     command: "release-pass",
     reason:
-      "comando declarativo de estado del workspace, hermano de `cut-intent`: declara un pase a producción, registra la llegada de cada fuente y su reversión, sin corrida propia por la misma razón —registrar un hecho que ya ocurrió no es un tramo con fronteras—. Su autoridad también es lo que se niega a hacer: una llegada se DECLARA y no se comprueba contra un registro de paquetes ni contra un host desplegado, porque el registro no puede depender de alcanzar la red para decir lo que alguien ya sabe; y enlazar un artefacto sólo comprueba que la ruta existe, sin abrirlo, moverlo, renumerarlo ni ejecutarlo",
+      "comando declarativo de estado del hub, hermano de `cut-intent`: declara un pase a producción, registra la llegada de cada fuente y su reversión, sin corrida propia por la misma razón —registrar un hecho que ya ocurrió no es un tramo con fronteras—. Su autoridad también es lo que se niega a hacer: una llegada se DECLARA y no se comprueba contra un registro de paquetes ni contra un host desplegado, porque el registro no puede depender de alcanzar la red para decir lo que alguien ya sabe; y enlazar un artefacto sólo comprueba que la ruta existe, sin abrirlo, moverlo, renumerarlo ni ejecutarlo",
   },
   {
     command: "reseal",
     reason:
-      "comando transversal de mantenimiento documental: mismo contrato que `discard`, `reset` y `claims` —`prepare` read-only y `apply` con el digest exacto recomputado bajo el lock del workspace— y sin corrida propia porque no hay recorrido que dirigir: re-sellar es UNA afirmación humana sobre un plan que sigue valiendo, no un tramo con fronteras. La divergencia que sí exige rediseñar el plan sigue entregándose a `/w:plan-refine`",
+      "comando transversal de mantenimiento documental: mismo contrato que `discard`, `reset` y `claims` —`prepare` read-only y `apply` con el digest exacto recomputado bajo el lock del hub— y sin corrida propia porque no hay recorrido que dirigir: re-sellar es UNA afirmación humana sobre un plan que sigue valiendo, no un tramo con fronteras. La divergencia que sí exige rediseñar el plan sigue entregándose a `/w:plan-refine`",
   },
   {
     command: "amend",
     reason:
-      "comando transversal de mantenimiento documental, un escalón por debajo de `reseal`: corrige la REDACCIÓN de una spec o un plan ya cerrados en un solo acto, sin corrida propia porque no hay recorrido que dirigir —una frase que se lee mal no es un tramo con fronteras—. No lleva `prepare`/`apply` porque ese molde existe para que una persona decida entre los dos pasos, y acá el candado del workspace más el compare-and-swap sobre el digest del documento dan la misma seguridad en una invocación. Lo que sí toca el contrato se rechaza estructuralmente y se entrega a `/w:spec-refine` o `/w:plan-refine`",
+      "comando transversal de mantenimiento documental, un escalón por debajo de `reseal`: corrige la REDACCIÓN de una spec o un plan ya cerrados en un solo acto, sin corrida propia porque no hay recorrido que dirigir —una frase que se lee mal no es un tramo con fronteras—. No lleva `prepare`/`apply` porque ese molde existe para que una persona decida entre los dos pasos, y acá el candado del hub más el compare-and-swap sobre el digest del documento dan la misma seguridad en una invocación. Lo que sí toca el contrato se rechaza estructuralmente y se entrega a `/w:spec-refine` o `/w:plan-refine`",
   },
   {
     command: "settle",
     reason:
-      "comando transversal de mantenimiento documental, hermano de `reseal`: salda o reconoce las obligaciones que una nota de decisión dejó vivas sobre un plan cuya corrida de ejecución ya cerró. Sin corrida propia por la misma razón que `reseal` —lo que ocurre entre sus dos pasos es UNA afirmación humana, que el trabajo compensatorio se hizo o que era de otra gente, no un tramo con fronteras— y con el mismo contrato: `prepare` read-only y `apply` con el digest recomputado sobre el árbol vivo bajo el lock del workspace. Mientras una corrida de ejecución tenga ese plan, se niega y la nombra: el cierre de esa corrida salda sus propias obligaciones",
+      "comando transversal de mantenimiento documental, hermano de `reseal`: salda o reconoce las obligaciones que una nota de decisión dejó vivas sobre un plan cuya corrida de ejecución ya cerró. Sin corrida propia por la misma razón que `reseal` —lo que ocurre entre sus dos pasos es UNA afirmación humana, que el trabajo compensatorio se hizo o que era de otra gente, no un tramo con fronteras— y con el mismo contrato: `prepare` read-only y `apply` con el digest recomputado sobre el árbol vivo bajo el lock del hub. Mientras una corrida de ejecución tenga ese plan, se niega y la nombra: el cierre de esa corrida salda sus propias obligaciones",
   },
   {
     command: "plan",
@@ -3783,7 +3783,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   { command: "auto-compact-on-close", reason: "gatillo de cierre del host, sin regla propia" },
   { command: "resume-summary", reason: "resumen post-compactación sin decisión de recorrido" },
   { command: "stack", reason: "detección de stack informativa" },
-  { command: "sources", reason: "inventario de fuentes del workspace" },
+  { command: "sources", reason: "inventario de fuentes del hub" },
   { command: "set-working-branch", reason: "configuración declarativa de rama" },
   {
     command: "doc-branch",
@@ -3792,10 +3792,10 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   },
   { command: "set-qa-branch", reason: "configuración declarativa de rama" },
   { command: "set-exception-branch", reason: "configuración declarativa de rama" },
-  { command: "set-edit-mode", reason: "configuración declarativa del workspace" },
+  { command: "set-edit-mode", reason: "configuración declarativa del hub" },
   { command: "set-pipeline", reason: "configuración declarativa de build y test por fuente" },
-  { command: "remove-source", reason: "operación de configuración del workspace" },
-  { command: "add-source", reason: "operación de configuración del workspace" },
+  { command: "remove-source", reason: "operación de configuración del hub" },
+  { command: "add-source", reason: "operación de configuración del hub" },
   { command: "git-flow", reason: "utilidad de ramas sin recorrido de flow" },
   { command: "merge-state", reason: "lectura del estado de una fusión" },
   { command: "attach-multiroot", reason: "configuración de multiroot" },
@@ -3835,7 +3835,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
     command: "doctor",
     reason:
-      "misma clasificación que los doctores que compone: diagnóstico sin recorrido propio, y el veredicto viaja en el código de salida sin decidir nada por la persona. Sus subverbos de reparación no abren corrida por la misma razón que `discard`, `reset` y `claims`: su autoridad es el orden que aplican —`prepare` sin escribir, y `apply` recomputando la propuesta bajo el lock del workspace para comparar el digest exacto que la persona aprobó—",
+      "misma clasificación que los doctores que compone: diagnóstico sin recorrido propio, y el veredicto viaja en el código de salida sin decidir nada por la persona. Sus subverbos de reparación no abren corrida por la misma razón que `discard`, `reset` y `claims`: su autoridad es el orden que aplican —`prepare` sin escribir, y `apply` recomputando la propuesta bajo el lock del hub para comparar el digest exacto que la persona aprobó—",
   },
   { command: "release-data", reason: "datos de release del paquete" },
   { command: "hook", reason: "punto de entrada de los hooks del host" },

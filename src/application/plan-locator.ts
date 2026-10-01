@@ -58,8 +58,8 @@ export async function locatePlanDocument(
       return {
         ok: false,
         reason: "invalid",
-        message: `'${target}' no es una ruta del workspace: ${safe.why}`,
-        action: `pasá la ruta del plan relativa al workspace ('${planDir}/NNN-plan-<slug>.md') o su correlativo`,
+        message: `'${target}' no es una ruta del hub: ${safe.why}`,
+        action: `pasá la ruta del plan relativa al hub ('${planDir}/NNN-plan-<slug>.md') o su correlativo`,
       };
     }
     const expected = planDir.split("/");

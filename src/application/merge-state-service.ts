@@ -243,7 +243,7 @@ async function resolveSourceTargets(
       alias: input.source ?? null,
       path: cwd,
       code: "SOURCES_BLOCK_MISSING",
-      action: "declará las fuentes en el bloque WORKSPACE de AGENTS.md o CLAUDE.md",
+      action: "declará las fuentes en el bloque del hub de AGENTS.md o CLAUDE.md",
     });
     return [];
   }

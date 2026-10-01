@@ -16,7 +16,7 @@ export const BUILTIN_DEFAULT_SKILLS: Record<SkillRole, string> = {
   overview: "w",
 };
 
-export type SkillBindingSource = "default" | "global" | "workspace";
+export type SkillBindingSource = "default" | "global" | "hub";
 
 export interface ResolvedSkill {
   role: SkillRole;

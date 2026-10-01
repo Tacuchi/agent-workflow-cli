@@ -136,7 +136,7 @@ function inputFor(hosts: HarnessId[]): DoctorProviderInput {
 
 /** Sólo el ámbito workspace: el ámbito global aporta sus propias filas. */
 function delWorkspace<T extends { id: string }>(items: readonly T[]): T[] {
-  return items.filter((item) => item.id.includes("/workspace:visibilidad"));
+  return items.filter((item) => item.id.includes("/hub:visibilidad"));
 }
 
 describe("proveedor de visibilidad del workspace", () => {
@@ -144,7 +144,7 @@ describe("proveedor de visibilidad del workspace", () => {
     // El motor devuelve claude, codex y warp pase lo que pase. Acá sólo codex
     // participa: warp y claude-code fueron declarados ausentes por el agregador,
     // y un host ausente se enumera «sin hallazgo ni advertencia». Sin el filtro
-    // el informe traía cobertura `workspace-visibility/warp/checked` y el
+    // el informe traía cobertura `hub-visibility/warp/checked` y el
     // hallazgo sano de warp junto a la línea «warp: sin rastro en esta máquina».
     declararFuentes(fuenteA);
     registrarEnClaude(fuenteA);
@@ -182,8 +182,8 @@ describe("proveedor de visibilidad del workspace", () => {
     const findings = delWorkspace(output.findings);
 
     expect(findings.map((finding) => finding.id)).toEqual([
-      "claude-code/workspace-visibility/workspace:visibilidad:faltantes",
-      "claude-code/workspace-visibility/workspace:visibilidad:sobrantes",
+      "claude-code/hub-visibility/hub:visibilidad:faltantes",
+      "claude-code/hub-visibility/hub:visibilidad:sobrantes",
     ]);
     expect(findings.map((finding) => finding.state)).toEqual(["warning", "warning"]);
     expect(findings[0]?.evidence).toEqual([`falta: ${fuenteB}`]);
@@ -191,7 +191,7 @@ describe("proveedor de visibilidad del workspace", () => {
     expect(findings[0]?.remediation.guidance).toEqual(["aw attach-multiroot"]);
     expect(findings[1]?.remediation.guidance).toEqual(["aw detach-multiroot"]);
     expect(findings[1]?.proposal?.args).toEqual({
-      scope: "workspace",
+      scope: "hub",
       host: "claude",
       paths: JSON.stringify([intrusa]),
     });
@@ -209,7 +209,7 @@ describe("proveedor de visibilidad del workspace", () => {
     const findings = delWorkspace(output.findings);
 
     const ids = findings.map((finding) => finding.id);
-    expect(ids).toContain("codex/workspace-visibility/workspace:visibilidad:sin-config");
+    expect(ids).toContain("codex/hub-visibility/hub:visibilidad:sin-config");
     expect(findings.every((finding) => finding.state === "warning")).toBe(true);
     expect(
       findings.find((finding) => finding.id.endsWith(":sin-config"))?.evidence.join(" | "),
@@ -224,7 +224,7 @@ describe("proveedor de visibilidad del workspace", () => {
     const [finding] = delWorkspace(output.findings);
 
     expect(finding?.state).toBe("healthy");
-    expect(finding?.id).toBe("claude-code/workspace-visibility/workspace:visibilidad");
+    expect(finding?.id).toBe("claude-code/hub-visibility/hub:visibilidad");
     expect(finding?.remediation.kind).toBe("none");
     // Lo sano se declara sólo dentro de lo comprobado.
     expect(output.coverage.find((entry) => entry.host === "claude-code")?.state).toBe("checked");
@@ -240,8 +240,8 @@ describe("proveedor de visibilidad del workspace", () => {
     expect(delWorkspace(output.findings)).toEqual([]);
     expect(output.findings.filter((finding) => finding.state === "warning")).toEqual([]);
     expect(output.findings.map((finding) => finding.id)).toEqual([
-      "claude-code/workspace-visibility/global:visibilidad",
-      "codex/workspace-visibility/global:visibilidad",
+      "claude-code/hub-visibility/global:visibilidad",
+      "codex/hub-visibility/global:visibilidad",
     ]);
   });
 });

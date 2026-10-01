@@ -230,7 +230,7 @@ export const DEFAULT_PROJECT_BLOCK_MARKERS: ProjectBlockMarkers = {
  * the CLI, never to a person: preserving one would duplicate it on the next
  * write (the render re-emits it AND the carried copy would come back too).
  */
-export const BLOCK_PLACEHOLDER_PROYECTO = "_Describe el proyecto aquí: qué es y por qué existe._";
+export const BLOCK_PLACEHOLDER_PROYECTO = "_Describe el hub aquí: qué es y por qué existe._";
 export const BLOCK_PLACEHOLDER_FUENTES =
   "_Sin fuentes declaradas. Usa `aw add-source <alias>:<ruta>:<rama>`._";
 const LEGACY_FUENTES_PLACEHOLDER =

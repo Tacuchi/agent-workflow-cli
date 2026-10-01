@@ -132,7 +132,7 @@ export async function probePersistedMcpSetupEntries(
 function readProbeSnapshot(
   target: McpReceiptProbeTarget,
   scopeDir: string,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
 ): ReturnType<typeof readMcpEntry> | undefined {
   try {
     return readMcpEntry(target.host, scopeDir, target.instance, scope);
@@ -169,7 +169,7 @@ function dedupeProbeTargets(targets: readonly McpReceiptProbeTarget[]): McpRecei
 async function recordProbe(
   receipts: ReturnType<typeof openMcpHostReceiptService>,
   scopeDir: string,
-  scope: "workspace" | "global",
+  scope: "hub" | "global",
   target: McpReceiptProbeTarget,
   descriptorDigest: string,
   outcome: "passed" | "failed",

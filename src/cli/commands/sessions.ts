@@ -12,7 +12,7 @@ export const sessionsCommand: CliCommand<ListSessionsOutput | SessionSweepOutput
   name: "sessions",
   flags: { known: ["all", "state", "include-legacy", "verbose", "sweep", "apply"] },
   help: {
-    purpose: "List the workspace sessions with their counts and the next session correlative.",
+    purpose: "List the hub sessions with their counts and the next session correlative.",
     flags: {
       all: { effect: "List sessions in every state; same as --state all." },
       state: {
