@@ -31,7 +31,10 @@ export async function readPublicStatus(ctx: CliContext): Promise<PublicStatusSum
     });
     if (result.code !== 0) return UNAVAILABLE;
     const body: unknown = JSON.parse(result.stdout);
-    if (!record(body) || !record(body.counts) || !Array.isArray(body.pipeline)) return UNAVAILABLE;
+    if (!record(body) || !record(body.counts)) return UNAVAILABLE;
+    // The default JSON leaves an empty pipeline out: absent means nothing pending.
+    const pipeline = body.pipeline === undefined ? [] : body.pipeline;
+    if (!Array.isArray(pipeline)) return UNAVAILABLE;
     const counts = body.counts;
     if (
       !count(counts.sessions_active) ||
@@ -42,8 +45,8 @@ export async function readPublicStatus(ctx: CliContext): Promise<PublicStatusSum
     )
       return UNAVAILABLE;
     let next: string | null = counts.pending === 0 ? "sin trabajo pendiente" : null;
-    if (body.pipeline.length > 0) {
-      const first: unknown = body.pipeline[0];
+    if (pipeline.length > 0) {
+      const first: unknown = pipeline[0];
       if (!record(first) || !record(first.detail) || typeof first.detail.next !== "string")
         return UNAVAILABLE;
       next = `${typeof first.file === "string" ? `${first.file}: ` : ""}${first.detail.next}`;

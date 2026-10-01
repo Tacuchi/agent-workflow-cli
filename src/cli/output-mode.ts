@@ -12,8 +12,9 @@ import type { ParsedArgs } from "./parser.js";
  * 1. `--format human|json` — the explicit declaration always wins.
  * 2. `--json` — shorthand for `--format json`; contradicting both is an error,
  *    not a silent precedence rule.
- * 3. `--detail` with no format — asking for the wide view IS asking for the
- *    human projection (the JSON model is already complete).
+ * 3. `--detail` with no format — asking for the wide view in a terminal-less
+ *    invocation still means the human projection; with `--json` it widens the
+ *    JSON projection of the commands that narrow theirs by default.
  * 4. TTY autodetect — a terminal reads human, a pipe keeps the JSON that
  *    current automation already parses.
  *
@@ -31,7 +32,7 @@ export type OutputFormat = "human" | "json";
 
 export interface OutputMode {
   format: OutputFormat;
-  /** Widens the human projection only. Never reaches the JSON model. */
+  /** Widens the projection: the human view, and the JSON of a command that projects it. */
   detail: boolean;
   /** Human text (and help, and hook notices) in ASCII only. Never reaches the JSON model. */
   ascii: boolean;
@@ -53,13 +54,6 @@ export function resolveOutputMode(
   if (!declared.ok) return declared;
 
   const detail = args.flags.has("--detail");
-  if (detail && declared.format === "json") {
-    return {
-      ok: false,
-      message: "--detail solo aplica a la salida humana: el modelo JSON ya es completo",
-    };
-  }
-
   const asciiFlag = args.flags.has("--ascii");
   if (asciiFlag && declared.format === "json") {
     return {

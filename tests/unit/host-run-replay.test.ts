@@ -489,10 +489,14 @@ describe("host-run replay: the profiles and invocations the run needed", () => {
   });
 
   it("codex's bare invocations carry text after the mention, so Enter submits them", () => {
-    for (const surface of ["commands", "host-memory"]) {
-      const step = STEPS.find((s: { surface: string }) => s.surface === surface);
-      expect(stepForHost(step, "codex").invocation.text).toMatch(/^\$w-\w+ \(no arguments\)$/);
-    }
+    const text = (surface: string) =>
+      stepForHost(
+        STEPS.find((s: { surface: string }) => s.surface === surface),
+        "codex",
+      ).invocation.text;
+    // doctor carries its own argument (`detalle`); the rest say there is none.
+    expect(text("commands")).toBe("$w-doctor detalle");
+    expect(text("host-memory")).toMatch(/^\$w-\w+ \(no arguments\)$/);
     // /compact stays alone (codex's own compaction command).
     const compact = STEPS.find((s: { surface: string }) => s.surface === "compaction");
     expect(stepForHost(compact, "codex").invocation.text).toBe("/compact");

@@ -106,11 +106,12 @@ describe("host-run scenario", () => {
     const doctor = STEPS.find((s) => s.surface === "commands");
     if (!doctor) throw new Error("no commands step");
     const text = (h: string) => stepForHost(doctor, h).invocation.text;
-    expect(text("claude-code")).toBe("/w:doctor");
-    // codex: text after a bare mention, so Enter submits instead of picking the completion.
-    expect(text("codex")).toBe("$w-doctor (no arguments)");
-    expect(text("opencode")).toBe("/w/doctor");
-    expect(text("kimi")).toBe("/skill:w-doctor");
+    // `detalle` asks for the full report, whose host lines the matrix reads.
+    expect(text("claude-code")).toBe("/w:doctor detalle");
+    // codex: text after the mention, so Enter submits instead of picking the completion.
+    expect(text("codex")).toBe("$w-doctor detalle");
+    expect(text("opencode")).toBe("/w/doctor detalle");
+    expect(text("kimi")).toBe("/skill:w-doctor detalle");
     expect(text("gemini")).toContain("w-doctor");
     expect(stepForHost(doctor, "crush").invocation).toEqual({
       text: "user:w:doctor",

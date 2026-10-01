@@ -39,12 +39,12 @@ export const statusCommand: CliCommand<StatusCommandOutput> = {
       },
     },
     output:
-      "{hub, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], ...}; with --plan or --spec, {hub, last_activity, plan|spec}. Read-only.",
+      "Default: {hub, last_activity, pipeline[]?, notices[]? {kind, message, next}, counts}, empty collections left out. --detail: {hub, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], pipeline[], counts, ...}. --plan or --spec: {hub, last_activity, plan|spec}. Read-only.",
     exit_codes: {
       "1": "STATUS_DOCUMENT_NOT_FOUND: no document has that number; STATUS_FILTER_CONFLICT: --plan and --spec together.",
     },
     notes: [
-      "The human view lists pending work only; --detail adds finished history, sessions and discarded items.",
+      "By default the human view and the JSON carry the same scope: pending work, notices and counts, so their size follows what is pending and not the hub's history. --detail, in either format, is the full inventory with finished history, sessions and discarded items.",
       "--plan and --spec compare the number by value (87 and 087 are the same plan); their size does not depend on the hub's history.",
     ],
   },
@@ -62,8 +62,18 @@ export const statusCommand: CliCommand<StatusCommandOutput> = {
   },
 
   /**
+   * The default JSON is the same scope as the default human view: what is
+   * pending, the notices, and the counts. `--detail` is the whole model, and a
+   * single document (`--plan`/`--spec`) is already narrow, so neither is touched.
+   */
+  projectJson(data: StatusCommandOutput, context: HumanRenderContext): unknown {
+    if (context.detail || !("pipeline" in data)) return data;
+    return compactStatus(data);
+  },
+
+  /**
    * The human view shows PENDING work only. Finished history, sessions and
-   * discarded items are real and stay in the JSON model — they just stop
+   * discarded items are real and stay in the `--detail` model — they just stop
    * competing for attention with what is actually left to do. `--detail`
    * brings them back; the filter never removes anything from the domain.
    */
@@ -71,35 +81,213 @@ export const statusCommand: CliCommand<StatusCommandOutput> = {
     const data = result.data;
     if (data === undefined) return "";
     if (!("pipeline" in data)) return renderDocument(data);
-
-    const header = `${data.hub.name} · ${data.hub.path}`;
-    const lines = [header, ""];
-    if (data.last_activity !== null) lines.push(`Última actividad: ${data.last_activity}`, "");
-    lines.push(...renderPipeline(data.pipeline, context.detail));
-    lines.push(...renderLooseSessions(data, lines.at(-1)));
-    if (data.counts.sessions_paused || data.counts.sessions_abandoned) {
-      lines.push(
-        `Sesiones apartadas: ${data.counts.sessions_paused} pausada(s), ${data.counts.sessions_abandoned} abandonada(s)`,
-        "",
-      );
-    }
-    appendHubAlerts(lines, data);
-    // A held correlative is not pending work — nobody should weigh it against an
-    // open plan — but it must be VISIBLE. Leaving it out of the human view took
-    // the board from wrong (it used to offer `/w:plan-exec` on a bare marker) to
-    // silent, and the one case that actually needs a person to decide — an
-    // ownerless legacy placeholder — had no trace outside `aw claims`.
-    lines.push(...renderReservations(data, lines.at(-1)));
-    lines.push(...renderAssuranceAlerts(data, lines.at(-1)));
-    // An implicit Workline root is still a valid read-only hub.  Empty
-    // means exactly no pending work; it never suggests a mandatory init gate.
-    if (lines.length === 2 && !context.detail) {
-      return `${header} — sin pendientes\n`;
-    }
-    if (context.detail) lines.push("", ...renderDetail(data));
-    return `${lines.join("\n").trimEnd()}\n`;
+    return context.detail ? renderFull(data) : renderCompact(data);
   },
 };
+
+/** One thing on the board that is not pending work but must stay visible. */
+export interface StatusNotice {
+  kind: StatusNoticeKind;
+  message: string;
+  next: string;
+}
+
+type StatusNoticeKind =
+  | "loose-sessions"
+  | "sessions-set-aside"
+  | "reservation"
+  | "reservations-unreadable"
+  | "history-remote"
+  | "history-collision"
+  | "source-unreadable"
+  | "isolation-error"
+  | "docs-canon"
+  | "orphan-unit"
+  | "pending-retirement"
+  | "unverified-closure";
+
+const NOTICE_TITLES: Record<StatusNoticeKind, string> = {
+  "loose-sessions": "Sesiones con trabajo y sin documento",
+  "sessions-set-aside": "Sesiones apartadas",
+  reservation: "Correlativos reservados",
+  "reservations-unreadable": "docs/ ilegible",
+  "history-remote": "HISTORY: sesiones de otra máquina",
+  "history-collision": "HISTORY: números compartidos",
+  "source-unreadable": "Fuentes sin ruta",
+  "isolation-error": "Unidades no verificables",
+  "docs-canon": "Configuración [docs] inválida",
+  "orphan-unit": "Unidades huérfanas",
+  "pending-retirement": "Retiros a medias",
+  "unverified-closure": "Planes cerrados sin verificación completa",
+};
+
+/** The default board: pending work, notices and counts; empty collections left out. */
+function compactStatus(data: StatusOutput): Record<string, unknown> {
+  const notices = statusNotices(data);
+  return {
+    hub: data.hub,
+    last_activity: data.last_activity,
+    ...(data.pipeline.length > 0 ? { pipeline: data.pipeline } : {}),
+    ...(notices.length > 0 ? { notices } : {}),
+    counts: data.counts,
+  };
+}
+
+/** Every notice of the board, each with the one action that addresses it. */
+export function statusNotices(data: StatusOutput): StatusNotice[] {
+  return [...sessionNotices(data), ...hubNotices(data), ...workNotices(data)];
+}
+
+const notice = (kind: StatusNoticeKind, message: string, next: string): StatusNotice => ({
+  kind,
+  message,
+  next,
+});
+
+function sessionNotices(data: StatusOutput): StatusNotice[] {
+  const notices: StatusNotice[] = [];
+  if (data.loose_sessions.length > 0) {
+    notices.push(
+      notice(
+        "loose-sessions",
+        `${data.loose_sessions.length} sesión(es) con trabajo y sin documento asociado`,
+        "aw status --detail",
+      ),
+    );
+  }
+  if (data.counts.sessions_paused || data.counts.sessions_abandoned) {
+    notices.push(
+      notice(
+        "sessions-set-aside",
+        `${data.counts.sessions_paused} pausada(s), ${data.counts.sessions_abandoned} abandonada(s)`,
+        "aw status --detail",
+      ),
+    );
+  }
+  return notices;
+}
+
+/** What is wrong with the hub itself: history, sources, isolation and configuration. */
+function hubNotices(data: StatusOutput): StatusNotice[] {
+  return [
+    ...data.history_remote_rows.map((row) =>
+      notice(
+        "history-remote",
+        `sin carpeta local: ${row}`,
+        "ninguna: la sesión vive en otra máquina",
+      ),
+    ),
+    ...data.history_collisions.map((collision) =>
+      notice(
+        "history-collision",
+        `${collision.local} comparte número con ${collision.registered}`,
+        collision.action,
+      ),
+    ),
+    ...(data.unreadable_sources ?? []).map((source) =>
+      notice("source-unreadable", `${source.alias}: ${source.error}`, "aw sources --verbose"),
+    ),
+    ...(data.isolation_error === undefined
+      ? []
+      : [notice("isolation-error", data.isolation_error, "aw worktree list")]),
+    ...(data.docs_canon_error === undefined
+      ? []
+      : [
+          notice(
+            "docs-canon",
+            data.docs_canon_error,
+            "corregí la sección [docs] de la configuración",
+          ),
+        ]),
+    ...(data.reservations_error === undefined
+      ? []
+      : [
+          notice(
+            "reservations-unreadable",
+            data.reservations_error,
+            "revisá los permisos de docs/",
+          ),
+        ]),
+  ];
+}
+
+/** Work that is held, left behind or closed without full evidence. */
+function workNotices(data: StatusOutput): StatusNotice[] {
+  return [
+    ...data.reservations.map((slot) =>
+      notice(
+        "reservation",
+        `${slot.correlative} · ${slot.file} — ${reservationState(slot)}; no es un documento`,
+        slot.next,
+      ),
+    ),
+    ...data.orphan_units.map((unit) =>
+      notice("orphan-unit", `${unit.alias} · ${unit.session} — ${unit.reason}`, unit.release),
+    ),
+    ...data.pending_retirements.map((retirement) =>
+      notice(
+        "pending-retirement",
+        `${retirement.command} ${retirement.target} quedó a medias (${retirement.phase})`,
+        retirement.next,
+      ),
+    ),
+    ...data.plans
+      .filter(
+        (plan) =>
+          plan.plan_state === "done" && plan.assurance !== null && plan.assurance !== "verified",
+      )
+      .map((plan) =>
+        notice(
+          "unverified-closure",
+          `plan ${plan.number} — done · no verificado (${plan.assurance})`,
+          `aw status --plan ${plan.number}`,
+        ),
+      ),
+  ];
+}
+
+/** The default human board: the same scope as the default JSON. */
+function renderCompact(data: StatusOutput): string {
+  const header = `${data.hub.name} · ${data.hub.path}`;
+  const notices = statusNotices(data);
+  if (data.pipeline.length === 0 && notices.length === 0) return `${header} — sin pendientes\n`;
+  const lines = [header, ""];
+  if (data.last_activity !== null) lines.push(`Última actividad: ${data.last_activity}`, "");
+  lines.push(...renderPipeline(data.pipeline, false));
+  for (const kind of Object.keys(NOTICE_TITLES) as StatusNoticeKind[]) {
+    const group = notices.filter((notice) => notice.kind === kind);
+    if (group.length === 0) continue;
+    lines.push(`${NOTICE_TITLES[kind]} (${group.length})`);
+    for (const notice of group) lines.push(`  ${notice.message}`, `    → ${notice.next}`);
+    lines.push("");
+  }
+  return `${lines.join("\n").trimEnd()}\n`;
+}
+
+/** The `--detail` board: everything the model holds, as it always rendered. */
+function renderFull(data: StatusOutput): string {
+  const header = `${data.hub.name} · ${data.hub.path}`;
+  const lines = [header, ""];
+  if (data.last_activity !== null) lines.push(`Última actividad: ${data.last_activity}`, "");
+  lines.push(...renderPipeline(data.pipeline, true));
+  lines.push(...renderLooseSessions(data, lines.at(-1)));
+  if (data.counts.sessions_paused || data.counts.sessions_abandoned) {
+    lines.push(
+      `Sesiones apartadas: ${data.counts.sessions_paused} pausada(s), ${data.counts.sessions_abandoned} abandonada(s)`,
+      "",
+    );
+  }
+  appendHubAlerts(lines, data);
+  // A held correlative is not pending work — nobody should weigh it against an
+  // open plan — but it must be VISIBLE. Leaving it out of the human view took
+  // the board from wrong (it used to offer `/w:plan-exec` on a bare marker) to
+  // silent, and the one case that actually needs a person to decide — an
+  // ownerless legacy placeholder — had no trace outside `aw claims`.
+  lines.push(...renderReservations(data, lines.at(-1)));
+  lines.push(...renderAssuranceAlerts(data, lines.at(-1)));
+  lines.push("", ...renderDetail(data));
+  return `${lines.join("\n").trimEnd()}\n`;
+}
 
 /**
  * The board narrowed to one document, picked out of the model the service already

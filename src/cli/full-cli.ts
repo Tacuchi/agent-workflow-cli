@@ -585,7 +585,7 @@ function emit(
       return;
     }
   }
-  emitJson(result);
+  emitJson(result, command, mode);
 }
 
 /** A failed result with the typed next step its error knows, in `data.next_step`. */
@@ -595,9 +595,13 @@ function withNextStep(result: CommandResult): CommandResult {
   return { ...result, data: { ...(result.data as object | undefined), ...next } };
 }
 
-function emitJson(result: CommandResult): void {
+function emitJson(result: CommandResult, command: CliCommand, mode: OutputMode): void {
   if (result.ok) {
-    writeStdout(renderRaw(result.data));
+    const data =
+      command.projectJson === undefined
+        ? result.data
+        : command.projectJson(result.data, { detail: mode.detail });
+    writeStdout(renderRaw(data));
     return;
   }
   const payload: { ok: boolean; error: typeof result.error; data?: unknown } = {

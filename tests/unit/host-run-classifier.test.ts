@@ -540,7 +540,7 @@ describe("host-run live — nothing is typed without a fresh, clean read", () =>
     const ctx = liveCtx(herdr);
     const h = hostState("claude-code", "p1");
     await tick(ctx, [h]);
-    expect(herdr.sent).toEqual(["p1 prompt /w:doctor"]);
+    expect(herdr.sent).toEqual(["p1 prompt /w:doctor detalle"]);
     expect(h.phase).toBe("await");
   });
 
@@ -658,7 +658,7 @@ describe("host-run live — nothing is typed without a fresh, clean read", () =>
     });
     const ctx = liveCtx(herdr);
     await tick(ctx, [hostState("claude-code", "p1"), hostState("codex", "p2")]);
-    expect(herdr.sent).toEqual(["p2 prompt $w-doctor (no arguments)"]);
+    expect(herdr.sent).toEqual(["p2 prompt $w-doctor detalle"]);
   });
 });
 
@@ -940,7 +940,7 @@ describe("host-run live — fifth review", () => {
         phase,
       ).toEqual([]);
       expect(h.phase, phase).toBe("held");
-      expect(herdr.sent).toContain("p2 prompt $w-doctor (no arguments)");
+      expect(herdr.sent).toContain("p2 prompt $w-doctor detalle");
     }
   });
 });

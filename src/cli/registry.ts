@@ -92,6 +92,12 @@ export interface CliCommand<O = unknown> {
    */
   renderHuman?(result: CommandResult<O>, context: HumanRenderContext): string;
   /**
+   * Optional JSON projection of a successful result's `data`. A command that
+   * omits it emits the same model with or without `--detail`; one that narrows
+   * its default JSON keeps the whole model for `--detail`.
+   */
+  projectJson?(data: O, context: HumanRenderContext): unknown;
+  /**
    * Optional machine projection for a command whose public contract is not the
    * CLI-wide `{ ok, error }` envelope. It receives both success and failure so
    * a transport-neutral encoder can remain byte-identical to an MCP response.

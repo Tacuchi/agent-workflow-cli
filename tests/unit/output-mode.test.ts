@@ -70,12 +70,21 @@ describe("resolveOutputMode — contradictions fail instead of picking a winner"
 });
 
 describe("resolveOutputMode — --detail belongs to the human projection", () => {
-  it("rejects --detail with an explicit --json", () => {
-    expect(failure(["status", "--detail", "--json"], TTY)).toContain("salida humana");
+  // A command that narrows its default JSON keeps the full model for --detail.
+  it("carries --detail through an explicit --json", () => {
+    expect(mode(["status", "--detail", "--json"], TTY)).toEqual({
+      format: "json",
+      detail: true,
+      ascii: false,
+    });
   });
 
-  it("rejects --detail with an explicit --format json", () => {
-    expect(failure(["status", "--detail", "--format", "json"], PIPE)).toContain("salida humana");
+  it("carries --detail through an explicit --format json", () => {
+    expect(mode(["status", "--detail", "--format", "json"], PIPE)).toEqual({
+      format: "json",
+      detail: true,
+      ascii: false,
+    });
   });
 
   // Asking for the wide view IS asking for the human projection; erroring here

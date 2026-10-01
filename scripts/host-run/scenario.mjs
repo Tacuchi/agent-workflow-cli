@@ -43,7 +43,10 @@ export const STEPS = [
     surface: "commands",
     command: "doctor",
     goal: "/w:doctor runs through the host's command packaging and relays the per-host degradations",
-    prompt: (h) => h.bare?.("doctor") ?? h.command("doctor"),
+    // `detalle` asks for --detail: the default report only counts each host's
+    // degradations, and the matrix reads them line by line under its host. A
+    // palette filters by name, so it gets the bare command.
+    prompt: (h) => (h.palette ? h.command("doctor") : `${h.command("doctor")} detalle`),
     // The repair offer lists one option per finding (ids vary) plus the flow slot.
     boundaries: [boundary("doctor.repair-offer", [], "Cerrar")],
     stop: "the doctor report is relayed and its repair offer answered with Cerrar",

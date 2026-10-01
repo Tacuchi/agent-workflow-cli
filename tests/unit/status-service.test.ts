@@ -979,8 +979,9 @@ describe("status human — las sesiones dejan de ser trabajo del usuario", () =>
 
     const text = render(await board(fs));
     expect(text).toContain("Planes abiertos (1)");
-    expect(text).toContain("Aviso: 1 sesión(es) con trabajo y sin documento asociado");
-    expect(text).toContain("aw status --detail");
+    expect(text).toContain("Sesiones con trabajo y sin documento (1)");
+    expect(text).toContain("1 sesión(es) con trabajo y sin documento asociado");
+    expect(text).toContain("→ aw status --detail");
     // La carpeta no se enumera en la vista por defecto; --detail ya las lista.
     expect(text).not.toContain("013-suelta-quick");
     expect(render(await board(fs), true)).toContain("013-suelta-quick");
@@ -990,7 +991,7 @@ describe("status human — las sesiones dejan de ser trabajo del usuario", () =>
     const fs = pending();
     fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n", NOW);
 
-    expect(render(await board(fs))).not.toContain("Aviso:");
+    expect(render(await board(fs))).not.toContain("Sesiones con trabajo y sin documento");
   });
 });
 
@@ -1008,7 +1009,7 @@ describe("status human — un root implícito sigue siendo Workline", () => {
     expect(text.trimEnd().split("\n")).toHaveLength(1);
     expect(text).toContain("sin pendientes");
     expect(text).not.toContain("Planes abiertos");
-    expect(text).not.toContain("Aviso:");
+    expect(text).not.toContain("→ ");
   });
 
   it("sin marcador ni pendientes responde sin pendientes", async () => {

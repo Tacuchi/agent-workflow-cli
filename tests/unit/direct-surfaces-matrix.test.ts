@@ -88,6 +88,7 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     [["--format", "human"], false, "human", false], // explicit human, through a pipe
     [["--detail"], false, "human", true], // detail implies the human projection
     [["--detail", "--format", "human"], true, "human", true],
+    [["--detail", "--json"], true, "json", true], // detail widens a projected JSON too
   ];
 
   it.each(matrix)("argv %j on TTY=%s → %s (detail=%s)", (argv, isTTY, format, detail) => {
@@ -99,7 +100,6 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
   it("rejects the contradictions instead of picking a winner", () => {
     for (const argv of [
       ["--json", "--format", "human"],
-      ["--detail", "--json"],
       ["--format", "yaml"],
     ]) {
       expect(resolveOutputMode(parseArgv(["status", ...argv]), true).ok, argv.join(" ")).toBe(

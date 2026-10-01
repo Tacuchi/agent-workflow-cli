@@ -74,4 +74,15 @@ describe("TUI lee sólo la superficie pública de estado", () => {
       "sin trabajo pendiente",
     );
   });
+
+  it("el JSON compacto sin pipeline también dice que no hay trabajo pendiente", async () => {
+    const run = vi.fn(async () => ({
+      code: 0,
+      stdout: JSON.stringify({ counts: { ...counts, pending: 0 } }),
+      stderr: "",
+    }));
+    const summary = await readPublicStatus(context(run as CliContext["process"]["run"]));
+    expect(summary.state).toBe("available");
+    expect(summary.next).toBe("sin trabajo pendiente");
+  });
 });

@@ -106,13 +106,14 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
       },
     },
     output:
-      "{schema_version, cli_version, scope {hub_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, workline_installed, degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
+      "Default (schema_version 3): {schema_version, cli_version, verdict {exit_code, reason}, summary, scope, hosts[] {host, label, status, version, degradations_count?}, hosts_absent[]?, findings[]? (not healthy, with a supported or manual remediation; no evidence) {id, host, category, state, summary, remediation}, collapsed? {count, by_state} (not healthy, remediation none), coverage[]? (rows that are not checked)}; empty collections left out. --detail (schema_version 2): {schema_version, cli_version, scope {hub_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, workline_installed, degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
     exit_codes: {
       "1": "The verdict is not healthy: a blocking finding or an unavailable coverage. ok is still true and data is the full report.",
     },
     notes: [
       "Without an action it runs the read-only diagnosis and returns the report; the action is optional.",
-      `Categories: ${DOCTOR_CATEGORIES.join(", ")}. schema_version 2 is the published shape of the report.`,
+      `Categories: ${DOCTOR_CATEGORIES.join(", ")}. schema_version 2 is the shape of the full report (--detail); schema_version 3 is the default compact one.`,
+      "By default the human view and the JSON open with the verdict and show only what asks for an action: one line per host, the actionable findings, a count of the ones without a safe action, and the coverage that was not checked. --detail is the full report: degradations, every coverage row, the healthy findings and the evidence.",
       "hosts[].degradations lists the host's non-native surfaces from the catalog; it adds no finding and does not change the verdict.",
       "Repairs go in two steps: prepare lists the actionable findings or, with --select, seals a batch and returns its digest; apply runs that batch only with the approval digest the person approved.",
     ],
@@ -169,13 +170,23 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
     const report = await runDoctor(ctx, options);
     return { ok: true, data: report, exitCode: report.verdict.exit_code };
   },
-  renderHuman(result: CommandResult<DoctorCommandData>, _context): string {
+  /**
+   * The default JSON has the scope of the default human view (schema 3): the
+   * verdict first, one entry per host, the findings that ask for an action and
+   * the coverage that was not checked. `--detail` is the full report (schema 2).
+   */
+  projectJson(data: DoctorCommandData, context): unknown {
+    if (context.detail || isSubverb(data)) return data;
+    return compactReport(data);
+  },
+  renderHuman(result: CommandResult<DoctorCommandData>, context): string {
     const data = result.data;
     if (data === undefined) return "el diagnóstico no produjo informe.";
     if (isSubverb(data)) {
       if (data.kind === "applied") return appliedLines(data);
       return data.kind === "prepare-sealed" ? sealedLines(data) : listingLines(data);
     }
+    if (!context.detail) return compactLines(data).join("\n");
     return [
       ...hostLines(data),
       "",
@@ -187,6 +198,130 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
     ].join("\n");
   },
 };
+
+/** The schema of the default (compact) JSON; `--detail` keeps the report's own. */
+export const DOCTOR_COMPACT_SCHEMA_VERSION = 3;
+
+type ReportFinding = DoctorReport["findings"][number];
+
+/** A finding asks for an action when it is not healthy and has a repair or a guide. */
+function actionable(finding: ReportFinding): boolean {
+  return finding.state !== "healthy" && finding.remediation.kind !== "none";
+}
+
+/** Non-healthy findings nobody may repair safely: counted, never listed by default. */
+function collapsed(report: DoctorReport): { count: number; by_state: Record<string, number> } {
+  const by_state: Record<string, number> = {};
+  for (const finding of report.findings) {
+    if (finding.state === "healthy" || finding.remediation.kind !== "none") continue;
+    by_state[finding.state] = (by_state[finding.state] ?? 0) + 1;
+  }
+  return { count: Object.values(by_state).reduce((sum, n) => sum + n, 0), by_state };
+}
+
+function compactReport(report: DoctorReport): Record<string, unknown> {
+  const findings = report.findings.filter(actionable).map((finding) => ({
+    id: finding.id,
+    host: finding.host,
+    category: finding.category,
+    state: finding.state,
+    summary: finding.summary,
+    remediation: finding.remediation,
+  }));
+  const rest = collapsed(report);
+  const coverage = report.coverage.filter((entry) => entry.state !== "checked");
+  return {
+    schema_version: DOCTOR_COMPACT_SCHEMA_VERSION,
+    cli_version: report.cli_version,
+    verdict: report.verdict,
+    summary: report.summary,
+    scope: report.scope,
+    hosts: report.hosts.map((host) => ({
+      host: host.host,
+      label: host.label,
+      status: host.status,
+      version: host.runtime.version,
+      ...(host.degradations.length > 0 ? { degradations_count: host.degradations.length } : {}),
+    })),
+    ...(report.hosts_absent.length > 0 ? { hosts_absent: report.hosts_absent } : {}),
+    ...(findings.length > 0 ? { findings } : {}),
+    ...(rest.count > 0 ? { collapsed: rest } : {}),
+    ...(coverage.length > 0 ? { coverage } : {}),
+  };
+}
+
+/** The default human report, verdict first; the full one is `--detail`. */
+function compactLines(report: DoctorReport): string[] {
+  return [
+    `Veredicto: salida ${report.verdict.exit_code} — ${flat(report.verdict.reason)}`,
+    summaryLines(report)[0] ?? "",
+    "",
+    ...compactHostLines(report),
+    ...actionableLines(report),
+    ...collapsedLines(report),
+    ...uncheckedCoverageLines(report),
+  ];
+}
+
+/** `label · status · version`, with the count of its degradations when it has any. */
+function compactHostLines(report: DoctorReport): string[] {
+  const lines = ["Hosts"];
+  for (const host of report.hosts) {
+    const mark = host.current ? "→" : " ";
+    const version = host.runtime.version === null ? "" : ` · ${host.runtime.version}`;
+    const degraded =
+      host.degradations.length > 0 ? ` · ${host.degradations.length} degradaciones` : "";
+    lines.push(`${mark} ${host.label} · ${host.status}${version}${degraded}`);
+  }
+  if (report.hosts_absent.length > 0) {
+    lines.push(`  sin rastro en esta máquina: ${report.hosts_absent.join(", ")}`);
+  }
+  return lines;
+}
+
+/** Each finding that asks for an action, in two lines: what it is and what to do. */
+function actionableLines(report: DoctorReport): string[] {
+  const findings = report.findings.filter(actionable);
+  if (findings.length === 0) return [];
+  const lines = ["", "Hallazgos accionables"];
+  for (const finding of findings) {
+    lines.push(
+      `  ${STATE_MARK[finding.state] ?? "·"} ${flat(finding.id)} — ${flat(finding.summary)}`,
+      `      ${remedyLine(finding.remediation)}`,
+    );
+  }
+  return lines;
+}
+
+function remedyLine(remediation: ReportFinding["remediation"]): string {
+  if (remediation.kind === "supported" && remediation.action !== null) {
+    return `${REMEDIATION_LABEL.supported} · acción: ${flat(remediation.action.op)}`;
+  }
+  const guidance = remediation.guidance.join(" · ") || "sin guía escrita";
+  return `${REMEDIATION_LABEL[remediation.kind] ?? remediation.kind} · guía: ${flat(guidance)}`;
+}
+
+function collapsedLines(report: DoctorReport): string[] {
+  const rest = collapsed(report);
+  if (rest.count === 0) return [];
+  const states = Object.entries(rest.by_state)
+    .map(([state, n]) => `${n} ${state}`)
+    .join(" · ");
+  return ["", `${rest.count} hallazgo(s) sin acción segura (${states}) — detalle con --detail`];
+}
+
+function uncheckedCoverageLines(report: DoctorReport): string[] {
+  const unchecked = report.coverage.filter((entry) => entry.state !== "checked");
+  if (unchecked.length === 0) return [];
+  return [
+    "",
+    "Cobertura sin comprobar",
+    ...unchecked.map(
+      (entry) =>
+        `  ${entry.category} · ${entry.host}: ${COVERAGE_LABEL[entry.state] ?? entry.state}${entry.reason === null ? "" : ` — ${flat(entry.reason)}`}`,
+    ),
+  ];
+}
 
 async function runPrepare(
   args: ParsedArgs,

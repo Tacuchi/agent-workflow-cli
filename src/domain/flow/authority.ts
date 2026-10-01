@@ -1407,7 +1407,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["quick.board-listed"],
       idempotent: true,
       recovery:
-        "volvé a correr 'aw status --json' y devolvé su salida real; si el tablero no se puede leer, resolvé eso antes de seguir",
+        "volvé a correr 'aw status --json --detail' y devolvé su salida real; si el tablero no se puede leer, resolvé eso antes de seguir",
     },
   },
   {
