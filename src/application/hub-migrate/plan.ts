@@ -81,6 +81,7 @@ export type ConflictReason =
   | "numero_compartido"
   | "estado_divergente"
   | "estado_ilegible"
+  | "commit_de_lote_pendiente"
   | HubMarkerRefusal["reason"];
 
 /** Something the migration deliberately left exactly as it found it. */
@@ -168,6 +169,8 @@ export function pendingChanges(plan: HubMigrationPlan): number {
 export async function planHubMigration(
   fs: FileSystemPort,
   paths: PathsService,
+  /** The sessions whose run lock `--apply` holds; only those runs are rewritten. */
+  lockedRuns?: ReadonlySet<string>,
 ): Promise<HubMigrationPlan> {
   const hub = await resolveHubRootFrom(fs, paths);
   const local = await readHubLocalConfig(fs, join(hub, `.${paths.namespace}`, "local.json"));
@@ -199,11 +202,20 @@ export async function planHubMigration(
     if (outcome.kind === "conflict") conflicts.push(outcome.conflict);
   }
 
+  const runs = await runScopeRewrites(fs, paths, lockedRuns);
+  for (const conflict of runs.conflicts) {
+    conflicts.push({
+      subject: conflict.path,
+      reason: "commit_de_lote_pendiente",
+      detail: `${conflict.session} ${conflict.detail}`,
+    });
+  }
+
   return {
     hub,
     markers: markers.rewrites,
     aliases: await planAliasRewrites(fs, paths, hub),
-    runs: await runScopeRewrites(fs, paths),
+    runs: runs.rewrites,
     sentinels,
     rows,
     conflicts,

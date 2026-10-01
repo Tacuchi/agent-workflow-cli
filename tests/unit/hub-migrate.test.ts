@@ -816,6 +816,207 @@ describe("hub-migrate lleva el bloque, el encabezado y el alias a hub", () => {
   });
 });
 
+describe("hub-migrate reescribe el alias sólo donde el lector lo lee (revisión del plan 086)", () => {
+  const PLAN = "/cwd/docs/plans/001-plan-abierto.md";
+  const RUN = `${SESSIONS}/003-abierta-plan-exec/.flow-run.json`;
+
+  function openPlan(lines: string[], eol = "\n"): string {
+    return ["# Plan 001 — abierto", "", "> Estado: open", "", "## Tasks", "", ...lines, ""].join(
+      eol,
+    );
+  }
+
+  function runWith(extra: Record<string, unknown>): string {
+    const { digest: _seal, ...state } = newRunState("plan-exec", "003-abierta-plan-exec");
+    return serializeRunState(
+      sealRunState({
+        ...state,
+        scope: { plan: "docs/plans/001-plan-abierto.md", sources: ["workspace", "cli"] },
+        ...extra,
+      } as typeof state),
+    );
+  }
+
+  function batch(extra: Record<string, unknown>): Record<string, unknown> {
+    return {
+      id: "batch-1",
+      iteration: 1,
+      mode: "isolated",
+      phases: [1],
+      tasks: ["T1.1"],
+      plan_digest: "d",
+      stage: "closed",
+      ...extra,
+    };
+  }
+
+  it("un bloque cercado y la prosa fuera de una tarea no se tocan", async () => {
+    const text = openPlan([
+      "### F1 — algo",
+      "> Fuentes: workspace",
+      "- [ ] T1.1 — tarea _(fuentes: workspace)_",
+      "La nota cita `_(fuentes: workspace)_` sin ser tarea.",
+      "```",
+      "> Fuentes: workspace",
+      "- [ ] T9.9 — ejemplo _(fuentes: workspace)_",
+      "```",
+    ]);
+    const fs = hub({});
+    fs.file(PLAN, text);
+    await applyHubMigration(fs, paths);
+    const after = (await fs.readText(PLAN)).split("\n");
+    expect(after[7]).toBe("> Fuentes: hub");
+    expect(after[8]).toBe("- [ ] T1.1 — tarea _(fuentes: hub)_");
+    expect(after.slice(9)).toEqual(text.split("\n").slice(9));
+  });
+
+  it("acepta lo mismo que el lector: mayúsculas, espacios y CRLF", async () => {
+    const text = openPlan(
+      ["### F1 — algo", "> fuentes : workspace", "- [ ] T1.1 — tarea _( Fuentes: workspace )_"],
+      "\r\n",
+    );
+    const fs = hub({});
+    fs.file(PLAN, text);
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(PLAN)).toBe(
+      text
+        .replace("> fuentes : workspace", "> fuentes : hub")
+        .replace("Fuentes: workspace )", "Fuentes: hub )"),
+    );
+  });
+
+  it("una corrida abierta renombra también las claves por alias de sus lotes y su validación final", async () => {
+    const fs = hub({});
+    fs.file(`${SESSIONS}/003-abierta-plan-exec/SESSION.md`, "# SESSION\n");
+    fs.file(
+      RUN,
+      runWith({
+        batches: [
+          batch({
+            base: { workspace: "sha256:w", cli: "sha256:c" },
+            credit: { workspace: "d-w" },
+            snapshot: { workspace: { head: "h", branch: "main", dirty: [] } },
+            commit_result: {},
+          }),
+        ],
+      }),
+    );
+    await applyHubMigration(fs, paths);
+    const run = await readRun(fs, locateRun(paths, "003-abierta-plan-exec"));
+    if (!run.ok) throw new Error(run.failure.message);
+    const migrated = run.state.batches?.[0];
+    expect(run.state.scope?.sources).toEqual(["hub", "cli"]);
+    expect(migrated?.base).toEqual({ hub: "sha256:w", cli: "sha256:c" });
+    expect(migrated?.credit).toEqual({ hub: "d-w" });
+    expect(Object.keys(migrated?.snapshot ?? {})).toEqual(["hub"]);
+  });
+
+  it("una corrida con un commit de lote sin aterrizar queda intacta y se informa", async () => {
+    const fs = hub({});
+    fs.file(`${SESSIONS}/003-abierta-plan-exec/SESSION.md`, "# SESSION\n");
+    const text = runWith({
+      batches: [
+        batch({
+          stage: "batch-committing",
+          commit_proposal: {
+            sources: [
+              {
+                alias: "workspace",
+                paths: ["a.md"],
+                dirty: [{ path: "a.md", digest: "d" }],
+                message: "m",
+              },
+            ],
+            digest: "x",
+            approved_digest: "x",
+          },
+        }),
+      ],
+    });
+    fs.file(RUN, text);
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.runs).toEqual([]);
+    expect(plan.conflicts.map((conflict) => conflict.reason)).toEqual(["commit_de_lote_pendiente"]);
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(RUN)).toBe(text);
+  });
+
+  it("con el candado de una corrida abierta tomado no escribe nada", async () => {
+    const fs = hub({});
+    fs.file(PLAN, openPlan(["### F1 — algo", "> Fuentes: workspace"]));
+    fs.file(`${SESSIONS}/003-abierta-plan-exec/SESSION.md`, "# SESSION\n");
+    fs.file(RUN, runWith({}));
+    fs.file(`${RUN}.lock`, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
+    const before = [await fs.readText(PLAN), await fs.readText(RUN)];
+    expect(await applyHubMigration(fs, paths)).toEqual({
+      error: expect.stringContaining("003-abierta-plan-exec"),
+    });
+    expect([await fs.readText(PLAN), await fs.readText(RUN)]).toEqual(before);
+  });
+
+  it("la marca de fuentes en la línea de continuación de una tarea también migra", async () => {
+    const text = openPlan([
+      "### F1 — algo",
+      "- [ ] T1.1 — una tarea larga",
+      "  que sigue acá _(fuentes: workspace)_",
+    ]);
+    const fs = hub({});
+    fs.file(PLAN, text);
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(PLAN)).toBe(text.replace("(fuentes: workspace)", "(fuentes: hub)"));
+  });
+
+  it("una corrida que todavía no fijó su scope migra las fuentes de su entrada", async () => {
+    const fs = hub({});
+    fs.file(`${SESSIONS}/003-abierta-plan-exec/SESSION.md`, "# SESSION\n");
+    fs.file(
+      RUN,
+      runWith({
+        scope: null,
+        plan_exec_entry: {
+          plan: "docs/plans/001-plan-abierto.md",
+          phases_without_open_tasks: [],
+          sources: ["cli", "workspace"],
+        },
+      }),
+    );
+    await applyHubMigration(fs, paths);
+    const run = await readRun(fs, locateRun(paths, "003-abierta-plan-exec"));
+    if (!run.ok) throw new Error(run.failure.message);
+    expect(run.state.plan_exec_entry?.sources).toEqual(["cli", "hub"]);
+  });
+
+  it("un lote parado en batch-committing con sus commits ya aterrizados también queda intacto", async () => {
+    const fs = hub({});
+    fs.file(`${SESSIONS}/003-abierta-plan-exec/SESSION.md`, "# SESSION\n");
+    const text = runWith({
+      batches: [
+        batch({
+          stage: "batch-committing",
+          commit_proposal: {
+            sources: [
+              {
+                alias: "workspace",
+                paths: ["a.md"],
+                dirty: [{ path: "a.md", digest: "d" }],
+                message: "m",
+              },
+            ],
+            digest: "x",
+            approved_digest: "x",
+          },
+          commit_result: {
+            workspace: { branch: "main", before: "a", after: "b", parents: ["a"] },
+          },
+        }),
+      ],
+    });
+    fs.file(RUN, text);
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(RUN)).toBe(text);
+  });
+});
+
 // ─── ante duda, no se adivina ────────────────────────────────────────────────
 
 describe("cuando el histórico y el disco se contradicen, la sesión no se toca", () => {

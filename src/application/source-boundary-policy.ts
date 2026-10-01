@@ -753,6 +753,79 @@ export function validateRemoteContextSnapshot(value: unknown): RemoteContextSnap
   };
 }
 
+/**
+ * The 0-based lines where a plan declares sources — a phase's `> Fuentes:` and
+ * its task lines — found with the same walk {@link parsePlanSourceBoundary}
+ * reads them with: inside `## Tasks`, under a `### Fn` heading, never fenced.
+ * A rewriter that touches only these lines can never move a byte the reader
+ * does not see.
+ */
+export function sourceDeclarationLines(text: string): number[] {
+  const markdown = scanMarkdown(text);
+  const found: number[] = [];
+  const position = { inTasks: false, inPhase: false, inTask: false, taskDeclared: false };
+  const continuation = new ClauseContinuation();
+  for (const [index, raw] of markdown.lines.entries()) {
+    if (markdown.fenced[index]) {
+      continuation.interrupt();
+      continue;
+    }
+    if (followHeading(raw, position)) {
+      position.inTask = false;
+      continue;
+    }
+    if (position.inPhase && isDeclarationLine(raw, position, continuation)) found.push(index);
+  }
+  return found;
+}
+
+/**
+ * A phase line the reader takes sources from: `> Fuentes:`, a task, or the
+ * folded mark of a task whose own line declared none (the reader keeps the first).
+ */
+function isDeclarationLine(
+  raw: string,
+  position: { inTask: boolean; taskDeclared: boolean },
+  continuation: ClauseContinuation,
+): boolean {
+  if (SOURCES_LINE.test(raw.trim())) {
+    continuation.interrupt();
+    return true;
+  }
+  if (TASK_LINE.test(raw)) {
+    position.inTask = true;
+    position.taskDeclared = TASK_SOURCES.test(raw);
+    continuation.start();
+    return true;
+  }
+  if (!position.inTask) return false;
+  const folds = continuation.read(raw);
+  if (folds === null) {
+    position.inTask = false;
+    return false;
+  }
+  if (!folds || position.taskDeclared || !TASK_SOURCES.test(raw)) return false;
+  position.taskDeclared = true;
+  return true;
+}
+
+/** Advance the Tasks/phase position on a heading line; `true` when `raw` was one. */
+function followHeading(raw: string, position: { inTasks: boolean; inPhase: boolean }): boolean {
+  const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(raw);
+  if (heading?.[1] === undefined || heading[2] === undefined) return false;
+  const level = heading[1].length;
+  if (level <= 2) {
+    position.inTasks = level === 2 && foldHeading(heading[2]) === TASKS_HEADING;
+    position.inPhase = false;
+    return true;
+  }
+  if (level === 3) {
+    position.inPhase = position.inTasks && PHASE_HEADING.test(heading[2].trim());
+    return true;
+  }
+  return false;
+}
+
 function phaseFromHeading(title: string, line: number): PlanPhaseSources | null {
   const match = PHASE_HEADING.exec(title.trim());
   if (match?.[1] === undefined) return null;

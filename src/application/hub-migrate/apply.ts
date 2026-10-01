@@ -31,13 +31,13 @@ import { docBranchLedgerPath } from "../doc-branch-ledger.js";
 import { locateRun, readRun } from "../flow/run-state-service.js";
 import { readHistoryRows, upsertRow } from "../history-table.js";
 import { upsertHistoryRow } from "../history-update-service.js";
-import { type LockHandle, acquireLock, withCwdLock } from "../lock-service.js";
+import { LockBusyError, type LockHandle, acquireLock, withCwdLock } from "../lock-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { publishArtifacts } from "../semantic-operation/publish.js";
 import { renameBindingsTo } from "../session-binding-service.js";
 import { readCustody, writeCustody } from "../session-custody-service.js";
-import { CLOSED_MARKER } from "../session-resolver.js";
+import { CLOSED_MARKER, listSessionFolders } from "../session-resolver.js";
 import {
   type HubMigrationPlan,
   type MigrationConflict,
@@ -291,11 +291,51 @@ export async function applyHubMigration(
   fs: FileSystemPort,
   paths: PathsService,
 ): Promise<HubMigrationApplied | { error: string }> {
-  return withCwdLock(fs, paths, async () => {
-    const plan = await planHubMigration(fs, paths);
-    await writePlan(fs, paths, plan);
-    return summarize(plan);
-  });
+  return withCwdLock(fs, paths, async () =>
+    withOpenRunLocks(fs, paths, async (locked) => {
+      const plan = await planHubMigration(fs, paths, locked);
+      await writePlan(fs, paths, plan);
+      return summarize(plan);
+    }),
+  );
+}
+
+/**
+ * Run `body` holding the lock of every open run of the hub.
+ *
+ * `aw flow submit` and a batch close take only their run's lock, never the hub's,
+ * so without these a run could advance — and a batch close rewrite its plan —
+ * between the moment the migration reads it and the moment it writes it back,
+ * and the migration would put the older state back. The plan is derived inside,
+ * so what gets written is what the locked state says. A busy lock aborts before
+ * the first write.
+ */
+async function withOpenRunLocks<T>(
+  fs: FileSystemPort,
+  paths: PathsService,
+  body: (locked: ReadonlySet<string>) => Promise<T>,
+): Promise<T | { error: string }> {
+  const held: LockHandle[] = [];
+  const locked = new Set<string>();
+  try {
+    for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
+      const location = locateRun(paths, folder.name);
+      if (await fs.exists(join(folder.path, CLOSED_MARKER))) continue;
+      if (!(await fs.exists(location.statePath))) continue;
+      try {
+        held.push(await acquireLock(location.lockPath, fs));
+      } catch (error) {
+        if (!(error instanceof LockBusyError)) throw error;
+        return {
+          error: `la corrida ${folder.name} tiene el candado ocupado; reintentá cuando termine`,
+        };
+      }
+      locked.add(folder.name);
+    }
+    return await body(locked);
+  } finally {
+    for (const lock of held.reverse()) await lock.release();
+  }
 }
 
 async function writePlan(
