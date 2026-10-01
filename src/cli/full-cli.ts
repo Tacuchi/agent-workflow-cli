@@ -272,9 +272,12 @@ async function resolveCliDirectory(
 
 // A host runs these on its own events, $HOME included: a non-zero exit would
 // hold that event back, so without a hub they only report on stderr.
-const HOOK_COMMANDS: ReadonlySet<string> = new Set(
-  ALL_COMMANDS.filter((command) => command.hook === true).map((command) => command.name),
-);
+// `checkpoint-write` is no hook target since 29.0.0, but hosts not yet
+// reinstalled still run it on PreCompact, so it keeps the same exit.
+const HOOK_COMMANDS: ReadonlySet<string> = new Set([
+  ...ALL_COMMANDS.filter((command) => command.hook === true).map((command) => command.name),
+  "checkpoint-write",
+]);
 
 function isHookCommand(parsed: ParsedArgs): boolean {
   return parsed.command !== undefined && HOOK_COMMANDS.has(parsed.command);

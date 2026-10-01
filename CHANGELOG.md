@@ -12,6 +12,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [29.0.0] — sin publicar
+
+**Parte 2 de 29.0.0: `status` y `doctor` emiten por defecto sólo lo pendiente, `status` lee un solo documento, y los «resume» y los hooks tienen nombres que dicen quién los usa.** La parte 1 (término único «hub», plan 086) suma sus viñetas al publicar.
+
+### Contrato
+
+- **Deja de valer:** el JSON por defecto de `aw status` con el inventario completo (`specs[]`, `plans[]`, `sessions`, `discarded[]`, …). **Lo reemplaza:** `{hub, last_activity, pipeline?, notices?, counts}`, el mismo alcance que la vista humana, con las colecciones vacías omitidas y cada aviso como `{kind, message, next}`. **Qué hacer:** quien lea el inventario pide `aw status --json --detail`; quien juzgue un documento, `aw status --plan <PPP>` o `--spec <NNN>`.
+- **Deja de valer:** el JSON por defecto de `aw doctor` con el informe completo (`schema_version: 2`). **Lo reemplaza:** `schema_version: 3`, con el veredicto, el resumen, una entrada por host (`degradations_count`), los hallazgos accionables sin evidencia, `collapsed {count, by_state}` y la cobertura no comprobada; la vista humana abre con el veredicto. **Qué hacer:** para el informe completo, `aw doctor --json --detail` (sigue en `schema_version: 2`).
+- **Deja de valer:** el rechazo de `--detail` junto a `--json`. **Lo reemplaza:** `--detail` vale en los dos formatos y, en JSON, trae el modelo completo de los comandos que proyectan el suyo. **Qué hacer:** nada; `--ascii` con JSON sigue rechazado.
+- **Deja de valer:** `aw session-resume`. **Lo reemplaza:** `aw session-load`, con `--code` y `--reopen` iguales; el nombre viejo sale con exit 1 y `RENAMED`. **Qué hacer:** cambiá `session-resume` por `session-load` en scripts y mensajes propios.
+- **Deja de valer:** los objetivos de hook `agent-workflow checkpoint-write`, `resume-summary` y `auto-compact-on-close`. **Lo reemplaza:** `agent-workflow hook pre-compact`, `hook post-compact` y `hook session-end`; `resume-summary` y `auto-compact-on-close` salen con exit 1 y `RENAMED`, y `aw checkpoint-write --code <NNN>` sigue como comando de los agentes. **Qué hacer:** corré `aw self install` justo después de `npm i -g`, para que los hooks de Claude Code, Kimi y el bundle de Codex llamen a los nombres nuevos. Mientras tanto `aw doctor` bloquea con un hallazgo automatizable por host (`<host>/plugins-hooks/hooks:comandos-retirados`) y la continuidad tras compactar se pierde.
+- **Deja de valer:** la ayuda raíz con la sección «Hook targets» y el grupo «Dev-only». **Lo reemplaza:** `aw --help` sin esas dos partes y una línea que nombra `--all`; `aw --help --all` es la ayuda completa. **Qué hacer:** nada; `aw <comando> --help` sigue para todo comando.
+
+### Added
+
+- `aw status --plan <PPP>` y `aw status --spec <NNN>` emiten sólo `{hub, last_activity, plan|spec}`, el mismo registro que `--detail`, en humano y en JSON. El número se compara por valor (`87` y `087`), un número sin documento sale con exit 1 y `STATUS_DOCUMENT_NOT_FOUND`, y su tamaño no depende del historial del hub.
+- El gate de entrada y la validación final de `plan-exec` leen `aw status --plan <PPP> --json` con el número del plan de la corrida; sin un plan único leen el tablero completo, como antes.
+- `aw doctor` bloquea un hook nuestro que llama a un comando que la plantilla vigente ya no tiene, y `aw doctor prepare` lo ofrece como automatizable (`self.install-hooks` sobre el archivo de hooks de ese host).
+
+### Fixed
+
+- El commit aprobado de un lote ya no falla cuando un renombre está preparado con `git mv`: `git add` sólo recibe las rutas que git conoce, y la ruta vieja entra en el commit por HEAD. `hub-commit` usa el mismo camino.
+
 ## [28.3.1] — 2026-09-30
 
 **Workline deja de fallar cuando el host corre en `$HOME` y vuelve a estar disponible en Antigravity (`agy` 1.2.x).**

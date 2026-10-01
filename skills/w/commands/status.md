@@ -24,7 +24,7 @@ Read-only single pass: no loop, no session, no writes. Transversal.
 
 > **Sessions are not the user's work.** One carrying work with no document of its own is a **notice** — count and how to look — never a pending row.
 
-> **Automation reads JSON.** Piped or with `--json` / `--format json` it emits its envelope; `--detail` is human-only.
+> **Automation reads JSON** (piped or `--json`): the human view's scope; `--detail` the full inventory; `--plan`/`--spec` one record.
 
 Nothing pending → one line, no empty section. In an implicit hub that is genuinely "nothing pending"; this read creates no marker or other file.
 

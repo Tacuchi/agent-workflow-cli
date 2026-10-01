@@ -493,9 +493,11 @@ function runBinding(state: FlowRunState): RunBinding {
   };
 }
 
-/** `docs/plans/087-plan-<slug>.md` → `087`; anything else binds to nothing. */
+/** `docs/plans/087-plan-<slug>.md` (or `087-plan.md`) → `087`; anything else binds to nothing. */
 function planNumber(plan: string | null): string | null {
-  return plan === null ? null : (/(?:^|\/)(\d{3,})-plan-[^/]+\.md$/.exec(plan)?.[1] ?? null);
+  return plan === null
+    ? null
+    : (/(?:^|[\\/])(\d{3,})-plan(?:-[^\\/]+)?\.md$/i.exec(plan)?.[1] ?? null);
 }
 
 /**
@@ -512,7 +514,8 @@ function emittedAction(
 ): { action: DelegatedAction | null; unbound: string | null; outside: string | null } {
   const declared = stopped === null ? null : actionOf(stopped);
   if (declared === null) return { action: null, unbound: null, outside: null };
-  const bound = bindAction(declared, runBinding(state));
+  const binding = runBinding(state);
+  const bound = bindAction(binding.plan === null ? withoutPlanFilter(declared) : declared, binding);
   if (!bound.ok) return { action: null, unbound: bound.unbound, outside: null };
   const action =
     stopped?.id === "plan-exec.final-validation"
@@ -524,6 +527,26 @@ function emittedAction(
   return outside === null
     ? { action, unbound: null, outside: null }
     : { action: null, unbound: null, outside };
+}
+
+/**
+ * A run with no single plan yet reads the whole board instead of `--plan {plan}`.
+ *
+ * Refusing the boundary left that run nowhere to go: `flow start` resumes the
+ * same session, and the plan is only named later, at `source-scope`.
+ */
+function withoutPlanFilter(action: DelegatedAction): DelegatedAction {
+  const args = action.invocation.args;
+  const at = args.indexOf("{plan}");
+  if (at < 1 || args[at - 1] !== "--plan") return action;
+  return {
+    ...action,
+    invocation: {
+      ...action.invocation,
+      args: [...args.slice(0, at - 1), ...args.slice(at + 1), "--detail"],
+    },
+    recovery: action.recovery.split("--plan {plan} --json").join("--json --detail"),
+  };
 }
 
 function finalValidationAction(action: DelegatedAction, state: FlowRunState): DelegatedAction {
@@ -582,13 +605,6 @@ function blockedCause(
       message: `'${stopped.id}' no declara propiedad del CLI y ya no queda doctrina a la que devolverlo`,
       action:
         "declarála en el registro de autoridad: desde el cierre de la migración toda transición de un recorrido público es 'cli-owned', y la ausencia es un error, no un fallback",
-    };
-  }
-  if (emitted.unbound === "{plan}") {
-    return {
-      code: "FLOW_ACTION_UNBOUND",
-      message: `la acción de '${stopped.id}' juzga el plan de la corrida y esta corrida no tiene un plan único`,
-      action: "abrí la corrida sobre su plan: 'aw flow start --flow plan-exec --input <plan>'",
     };
   }
   if (emitted.unbound !== null) {

@@ -177,9 +177,9 @@ function retiredHookFinding(
     category: CATEGORY,
     resource: { kind: "hooks", name: report.label, locator: report.path },
     state: "blocking",
-    summary: `${retired.length} hook(s) de Workline en ${report.label} llaman a un comando que la plantilla vigente ya no tiene`,
+    summary: `${retired.length} hook(s) de Workline en ${report.label} llaman a un comando que la plantilla vigente ya no usa`,
     impact:
-      "el host corre un nombre retirado, que sale con RENAMED: se pierde la continuidad tras compactar y al cerrar",
+      "el host no corre los hooks de la plantilla vigente: un nombre retirado sale con RENAMED y se pierde la continuidad tras compactar o al cerrar",
     evidence: retired.map((command) => `comando retirado: ${command} (en ${report.path})`),
     ownership: "ours",
     remediation: { kind: "manual", action: null, guidance: ["aw self install"] },

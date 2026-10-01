@@ -1027,11 +1027,26 @@ describe("los gates de plan-exec leen sólo el plan de la corrida", () => {
     },
   );
 
-  it("sin un plan único la frontera se rechaza y nombra cómo abrir la corrida sobre su plan", () => {
-    const resolved = resolveBoundary(newRunState("plan-exec", RUN), [gates[0] as FlowDecision]);
-    expect(resolved.kind).toBe("blocked");
-    expect(resolved.action).toBeNull();
-    expect(resolved.error?.code).toBe("FLOW_ACTION_UNBOUND");
-    expect(resolved.error?.action).toContain("aw flow start --flow plan-exec --input <plan>");
+  it("sin un plan único lee el tablero completo, y el plan se nombra después en source-scope", () => {
+    for (const row of gates) {
+      const resolved = resolveBoundary(newRunState("plan-exec", RUN), [row]);
+      expect(resolved.error).toBeNull();
+      expect(resolved.action?.invocation.args).toEqual(["status", "--json", "--detail"]);
+      expect(resolved.action?.recovery).not.toContain("{plan}");
+    }
+  });
+
+  it("acepta los nombres de plan que el resto del CLI acepta", () => {
+    for (const plan of [
+      "docs/plans/087-plan.md",
+      "docs/plans/087-Plan-Salidas.md",
+      "docs\\plans\\087-plan-x.md",
+    ]) {
+      const state = withScope(newRunState("plan-exec", RUN), { plan, sources: ["hub"] });
+      expect(
+        resolveBoundary(state, [gates[0] as FlowDecision]).action?.invocation.args,
+        plan,
+      ).toEqual(["status", "--plan", "087", "--json"]);
+    }
   });
 });

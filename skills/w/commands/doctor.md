@@ -14,7 +14,7 @@ The report is read-only and leaves no trace. `prepare` seals and is logged; `app
 
 ## Run
 
-1. `aw doctor --format human` — emits coverage, findings and a verdict for every detected host. **The exit code IS the verdict**, and `ok:true` keeps the report printing even when it blocks. The default pass asks Claude and Codex for their MCPs, which connects them; `--skip-native` declines it and leaves that coverage `omitida`.
+1. `aw doctor --format human` — verdict first, then what needs action; `detalle` → `--detail`. **The exit code IS the verdict**, and `ok:true` keeps the report printing even when it blocks. The default pass asks Claude and Codex for their MCPs, which connects them; `--skip-native` declines and leaves that coverage `omitida`.
 2. **Relay it verbatim** — never paraphrase, re-sort, add or drop a line.
 3. `aw doctor prepare --format human`, with no selection, lists what can be repaired (`automatizable`); the report's `accionable` count also includes manual findings no batch accepts, so take the listing, not the count. **One option per listed finding**, in its order, plus the `flow` slot. Canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) and [host binding](../harness/HARNESS.md#harness-binding-matrix); the id is the label, `impacto` + `acción` the sentence.
 4. `aw doctor prepare --select <id> … --format human` seals that batch. Relay its preview and ask for **its digest**: the approval is over what the preview shows.

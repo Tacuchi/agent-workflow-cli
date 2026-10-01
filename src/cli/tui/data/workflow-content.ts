@@ -103,17 +103,17 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     {
       name: "SessionEnd",
       matcher: "(any)",
-      fires: "agent-workflow auto-compact-on-close",
+      fires: "agent-workflow hook session-end",
     },
     {
       name: "PreCompact",
       matcher: "(any)",
-      fires: "checkpoint-write — writes CHECKPOINT.md before compacting",
+      fires: "hook pre-compact — writes CHECKPOINT.md before compacting",
     },
     {
       name: "PostCompact",
       matcher: "(any)",
-      fires: "resume-summary + prompt to reload CHECKPOINT.md",
+      fires: "hook post-compact + prompt to reload CHECKPOINT.md",
     },
   ],
 

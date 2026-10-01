@@ -750,16 +750,25 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(state.events.filter((event) => event.kind === "rejected")).toEqual([]);
   });
 
-  it("sin plan resoluble la entrada se detiene y pide abrir la corrida sobre su plan, sin cobrar rechazos", async () => {
+  it("sin plan resoluble el gate lee el tablero completo y el handoff pide nombrarlo, sin cobrar rechazos", async () => {
     // Two plans answer to the session's slug: the run has no single plan to judge.
     await writeFile(join(workdir, "docs/plans/042-plan-tramo-plan.md"), "# Otro plan\n");
     await walkTo("plan-exec.entry-gate", []);
-    const { state, resolved } = await current();
+    expect((await current()).resolved.action?.invocation.args).toEqual([
+      "status",
+      "--json",
+      "--detail",
+    ]);
+    await walkTo("plan-exec.normalization-consent", ["plan.entry-gap-minor"]);
+    const result = await answer({
+      input_digest: (await current()).resolved.seal,
+      choice: "Ir a plan-refine",
+    });
+    expect(result.error?.code).toBe("FLOW_HANDOFF");
+    expect(result.next_action).toContain("/w:plan-refine <plan>");
+    const { state } = await current();
     expect(state.plan_exec_entry).toEqual({ plan: null, phases_without_open_tasks: null });
-    expect(resolved.kind).toBe("blocked");
-    expect(resolved.error?.code).toBe("FLOW_ACTION_UNBOUND");
-    expect(resolved.error?.action).toContain("aw flow start --flow plan-exec --input <plan>");
-    expect(resolved.action).toBeNull();
+    expect(state.handoff?.package.decisions.recovery).toContain("nombrá el plan");
     expect(state.events.filter((event) => event.kind === "rejected")).toEqual([]);
     expect(state.applied).not.toContain("plan-exec.unit-acquisition");
   });

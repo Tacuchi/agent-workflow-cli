@@ -122,6 +122,22 @@ describe("aw hook <evento>", () => {
   });
 });
 
+describe("aw checkpoint-write sigue saliendo con 0 como el PreCompact de un host sin reinstalar", () => {
+  it("en un hub con marcadores anteriores a 29.0.0 avisa por stderr y sale con 0", async () => {
+    const old = join(root, "old-hub");
+    await mkdir(join(old, ".workflow", "sessions"), { recursive: true });
+    await writeFile(join(old, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    await writeFile(
+      join(old, "CLAUDE.md"),
+      "<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nviejo\n<!-- WORKFLOW-PROJECT-END -->\n",
+    );
+    const { code, stdout, stderr } = await aw(old, ["checkpoint-write"], "{}");
+    expect(code).toBe(0);
+    expect(stdout).toBe("");
+    expect(stderr).toContain("hub-migrate");
+  });
+});
+
 describe("aw checkpoint-write --code queda para los agentes", () => {
   it("escribe el CHECKPOINT de la sesión nombrada", async () => {
     const { code } = await aw(hub, ["checkpoint-write", "--code", "001", "--json"]);

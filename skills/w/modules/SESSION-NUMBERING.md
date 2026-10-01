@@ -12,7 +12,7 @@ Loaded when the run has to locate or name a session beyond creating its own (sig
 
 **Resume**: locate the existing session by **scanning** `.workflow/sessions/` for descriptor + `## Origin` (which spec/plan), **not** by reconstructing the number (global, not derivable from the artifact). `aw session-load --code <NNN | folder>` resolves both forms.
 
-**Reopen to continue**: `aw session-load --code <NNN> --reopen` reactivates a **closed** session (removes `.closed` → active) to keep working in it; without `--reopen`, resume is read-only. To detect the most recent closed one: `aw resume-summary --include-recent-closed` (or `aw sessions --state all`).
+**Reopen to continue**: `aw session-load --code <NNN> --reopen` reactivates a **closed** session (removes `.closed` → active) to keep working in it; without `--reopen`, resume is read-only. To detect the most recent closed one: `aw sessions --state all`.
 
 **User-owned states:** only the person marks a session `paused` (`aw session-pause --code <NNN>`) or `abandoned` (`aw session-close --code <NNN> --abandon`). A loop never assigns either state by itself. `aw session-load --code <NNN>` activates a paused session again; an abandoned one requires the person's explicit `--reopen`.
 

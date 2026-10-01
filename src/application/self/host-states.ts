@@ -37,6 +37,7 @@ import { parseToml } from "../parsers/toml.js";
 import { CODEX_PLUGIN_DIR } from "./codex-plugin.js";
 import { isOurCommand } from "./hooks-dialect.js";
 import {
+  AGY_HOOK_NAME,
   countOurAgyHooks,
   countOurCrushHooks,
   hooksTemplateToAgy,
@@ -666,14 +667,31 @@ export interface InstalledHookCommands {
  *
  * Codex's is the generated plugin bundle, which is what its install refreshes.
  */
-const HOOK_CONFIGS: Partial<
-  Record<InstallTarget, (home: string) => { path: string; format: "json" | "toml" }>
-> = {
-  claude: (home) => ({ path: join(home, ".claude", "settings.json"), format: "json" }),
-  kimi: (home) => ({ path: join(home, ".kimi-code", "config.toml"), format: "toml" }),
-  codex: (home) => ({ path: join(home, ...CODEX_PLUGIN_DIR, "hooks.json"), format: "json" }),
-  crush: (home) => ({ path: crushGlobalMcpFile(home), format: "json" }),
-  gemini: (home) => ({ path: join(home, ".agents", "hooks.json"), format: "json" }),
+interface HookConfig {
+  path: string;
+  format: "json" | "toml";
+  /** The key our hooks live under: the rest of the file (an MCP entry, a user's hook) is not ours to judge. */
+  key: string;
+}
+
+const HOOK_CONFIGS: Partial<Record<InstallTarget, (home: string) => HookConfig>> = {
+  claude: (home) => ({
+    path: join(home, ".claude", "settings.json"),
+    format: "json",
+    key: "hooks",
+  }),
+  kimi: (home) => ({ path: join(home, ".kimi-code", "config.toml"), format: "toml", key: "hooks" }),
+  codex: (home) => ({
+    path: join(home, ...CODEX_PLUGIN_DIR, "hooks.json"),
+    format: "json",
+    key: "hooks",
+  }),
+  crush: (home) => ({ path: crushGlobalMcpFile(home), format: "json", key: "hooks" }),
+  gemini: (home) => ({
+    path: join(home, ".agents", "hooks.json"),
+    format: "json",
+    key: AGY_HOOK_NAME,
+  }),
 };
 
 /** The file a host's hooks live in, or `null` for a host whose hooks Workline does not write. */
@@ -719,7 +737,11 @@ export async function reportInstalledHookCommands(
       try {
         const text = await ctx.fs.readText(config.path);
         const parsed = config.format === "toml" ? parseToml(text) : JSON.parse(text);
-        return { ...base, commands: ourCommands(parsed) };
+        const hooks =
+          typeof parsed === "object" && parsed !== null
+            ? (parsed as Record<string, unknown>)[config.key]
+            : undefined;
+        return { ...base, commands: ourCommands(hooks) };
       } catch {
         return { ...base, commands: null };
       }

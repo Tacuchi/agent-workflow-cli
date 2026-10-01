@@ -10,7 +10,7 @@ allowed-tools:
 
 # resume — pending work
 
-Read-only **with or without an argument**: no loop, no session, and it writes nothing in `docs/` or `.workflow/`. Sibling of `aw status`; not `aw session-resume` / `aw resume-summary` (internals).
+Read-only **with or without an argument**: no loop, no session, and it writes nothing in `docs/` or `.workflow/`. Sibling of `aw status`; not `aw session-load` (internal).
 
 1. **Never re-decide** — priority, ties, the spec→plan link and the command are the CLI's. No re-sort by date, no slug match, no tie broken.
 2. Output in the **user's language**.
@@ -35,7 +35,7 @@ No target → **every** pending item as `candidates` in the CLI's order, `propos
 - **Priority**: unrefined spec → refined spec with no plan → plan not `done` → live handoff; started first. A loose session is a notice, never a candidate.
 - **Ties**: equal priority and progress → no single recommendation; date never splits.
 - **Spec→plan link**: `Derived from` or `## Origin`, never the slug; unproven stays unplanned.
-- **The route**: `/w:spec-refine`, `/w:plan-new`, `/w:plan-exec`, `aw settle prepare`, `aw session-resume --reopen`.
+- **The route**: `/w:spec-refine`, `/w:plan-new`, `/w:plan-exec`, `aw settle prepare`, `aw session-load --reopen`.
 
 > A plan is not finished because its boxes are ticked: re-entry is the first phase not `validada`, a `bloqueada` phase with its declared reason, or — phases green, plan never closed — the final validation. One declaring `done` over open work comes back as inconsistent. An obligation leaving it neither runnable nor closable is said before its percentage.
 

@@ -8,9 +8,9 @@
 |---|---|---|
 | `SessionStart` | namespace pin | Pins the hub namespace to `workflow` (so `.workflow/` resolves). |
 | `PreToolUse` (`execute_sql`) | `hook sql-mutation-guard` | Blocks DML/DDL over MCP — reads only (DB scripts-only invariant). |
-| `SessionEnd` | `auto-compact-on-close` | Writes `CHECKPOINT.md` on close — the resume key (*CHECKPOINT always* — chassis § Convergence / exit). |
-| `PreCompact` | `checkpoint-write` | Writes `CHECKPOINT.md` before the host compacts. **Never blocks the compaction.** |
-| `PostCompact` | `resume-summary` | Recovers **the conversation's own** loop state after a compact. |
+| `SessionEnd` | `hook session-end` | Writes `CHECKPOINT.md` on close — the resume key (*CHECKPOINT always* — chassis § Convergence / exit). |
+| `PreCompact` | `hook pre-compact` | Writes `CHECKPOINT.md` before the host compacts. **Never blocks the compaction.** |
+| `PostCompact` | `hook post-compact` | Recovers **the conversation's own** loop state after a compact. |
 
 > **Conversation identity (spec 011, spec 056).** The three lifecycle hooks act
 > on **one** session — the conversation's own — never on "the first active one"
@@ -37,7 +37,7 @@
 > session is active. `PostCompact` reports it as `refuge`.
 >
 > **Who adopts a refuge.** Its own conversation, into whichever session its next
-> `checkpoint-write` or `SessionEnd` resolves. Anybody else only with `--code` on one of its candidates, and only
+> `PreCompact` or `SessionEnd` resolves. Anybody else only with `--code` on one of its candidates, and only
 > when nobody else can claim it: it has no conversation, the invocation carries
 > no id, or it is older than 24 hours. Adopting folds it into that session's
 > `CHECKPOINT.md` and removes it. A refuge nobody can adopt any more — no active
@@ -48,6 +48,6 @@
 
 > **What the host hook enforces:** DB scripts-only via `sql-mutation-guard` (blocks DML/DDL over MCP). Branch, unit, custody and exact-path commit checks run at their flow boundaries.
 >
-> **Commands:** `agent-workflow hook sql-mutation-guard` is the `PreToolUse` target. The lifecycle hooks (`auto-compact-on-close`, `checkpoint-write`, `resume-summary`) are **top-level** runtime commands (`agent-workflow <cmd>`).
+> **Commands:** every hook target lives under `agent-workflow hook <event>`: `sql-mutation-guard` (`PreToolUse`), `pre-compact`, `post-compact` and `session-end`; outside a hub the three lifecycle targets exit 0 in silence. `aw checkpoint-write --code <NNN>` stays the agents' command.
 >
 > **Portability (`SessionStart`).** The namespace-pin hook invokes the binary directly — `agent-workflow self namespace --pin workflow` — which writes `~/.config/agent-workflow/namespace` cross-platform via Node `fs` (no shell, no literal `$HOME`), the same portable-argv shape every other hook uses. It replaced the old `sh -c` + `$HOME` one-liner, which was the only hook that could not run on Windows.

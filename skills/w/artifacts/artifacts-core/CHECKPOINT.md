@@ -24,4 +24,4 @@ Live doubts not yet resolved — the section exists only while there are any (ru
 ### Optional sections
 
 - `## Excluded` — phases/tasks explicitly excluded, with reason (the `aw status` dashboard reads it for the discarded list).
-- The `checkpoint-write` hook (PreCompact/SessionEnd) may write a **machine snapshot** with its own headings (`Last action`, `Next step`, `Files touched`, `Refs`, …) and `_[AI: …]_` placeholders — complete the placeholders; the loop-owned contract above still governs what the loop writes.
+- The PreCompact/SessionEnd hooks (`aw hook pre-compact|session-end`, the same write as `aw checkpoint-write --code`) may write a **machine snapshot** with its own headings (`Last action`, `Next step`, `Files touched`, `Refs`, …) and `_[AI: …]_` placeholders — complete the placeholders; the loop-owned contract above still governs what the loop writes.

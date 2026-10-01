@@ -43,16 +43,16 @@ export function hookLines(logText) {
   return {
     SessionStart: has(/ INFO self namespace\b/),
     PreToolUse: has(/ INFO hook sql-mutation-guard\b/),
-    PreCompact: has(/ INFO checkpoint-write\b/),
-    PostCompact: has(/ INFO resume-summary\b/),
+    PreCompact: has(/ INFO hook pre-compact\b/),
+    PostCompact: has(/ INFO hook post-compact\b/),
   };
 }
 
 const HOOK_COMMANDS = [
   ["self namespace", "SessionStart"],
   ["hook sql-mutation-guard", "PreToolUse"],
-  ["checkpoint-write", "PreCompact"],
-  ["resume-summary", "PostCompact"],
+  ["hook pre-compact", "PreCompact"],
+  ["hook post-compact", "PostCompact"],
 ];
 
 /** Which binary ran each hook, from the shims' own log: basenames only. */

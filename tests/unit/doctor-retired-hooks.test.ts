@@ -156,3 +156,28 @@ describe("aw doctor bloquea un hook que apunta a un comando retirado", () => {
     );
   });
 });
+
+describe("sólo cuenta lo que vive bajo la clave de hooks de cada host", () => {
+  it("la entrada MCP de Workline en crush.json y un hook ajeno de agy no son hooks retirados", async () => {
+    const { reportInstalledHookCommands } = await import(
+      "../../src/application/self/host-states.js"
+    );
+    const { crushGlobalMcpFile } = await import("../../src/application/mcp-host-paths.js");
+    const crush = crushGlobalMcpFile(home);
+    await mkdir(join(crush, ".."), { recursive: true });
+    await writeFile(
+      crush,
+      JSON.stringify({ mcp: { "agent-workflow": { type: "stdio", command: "agent-workflow" } } }),
+    );
+    await mkdir(join(home, ".agents"), { recursive: true });
+    await writeFile(
+      join(home, ".agents", "hooks.json"),
+      JSON.stringify({
+        mio: { PreToolUse: [{ hooks: [{ command: "agent-workflow checkpoint-write" }] }] },
+      }),
+    );
+    const reports = await reportInstalledHookCommands(ctx);
+    expect(reports.find((report) => report.target === "crush")?.commands).toEqual([]);
+    expect(reports.find((report) => report.target === "gemini")?.commands).toEqual([]);
+  });
+});

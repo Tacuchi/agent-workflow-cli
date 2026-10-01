@@ -212,8 +212,9 @@ Hub artifacts live under `.<namespace>/`. Resolution order (first match wins):
 
 - `hub-init` — materialize the runtime early; with sources, configure/reconcile hub metadata.
 - `skills` — show resolved capability → skill bindings.
-- `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-resume` / `session-artifacts` — internal session lifecycle (used by the loops).
-- `checkpoint-read` / `checkpoint-write` — `CHECKPOINT.md` handling.
+- `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-load` / `session-artifacts` — internal session lifecycle (used by the loops).
+- `checkpoint-read` / `checkpoint-write --code` — `CHECKPOINT.md` handling.
+- `hook pre-compact|post-compact|session-end|sql-mutation-guard` — the targets the host's hooks run (`aw --help --all` lists them).
 - `flow <advance|submit>` — the direction engine: `advance` applies every consecutive `cli`-owned transition of a flow run and returns the directive of the first non-deterministic frontier; `submit` takes the response as JSON via stdin (`--approval <digest>` for effects) and keeps advancing.
 - `sources` / `check-branch` / `set-working-branch` / `set-qa-branch` / `set-exception-branch` — multi-source git-safety (per-source base / working / QA / exception branches).
 - `set-edit-mode in-place|unit` — declares checkout editing or isolated units in the hub block; plans can require `> Aislamiento: unidad`.

@@ -122,7 +122,7 @@ export const STEPS = [
     evidence: [
       "log: self namespace (SessionStart)",
       "log: hook sql-mutation-guard (PreToolUse)",
-      "log: checkpoint-write / resume-summary (Pre/PostCompact)",
+      "log: hook pre-compact / hook post-compact (Pre/PostCompact)",
       "shim log: which binary ran each hook",
     ],
     judgedAfter: "compaction",
@@ -149,7 +149,7 @@ export const STEPS = [
     requires: ["structured-choice"],
     boundaries: [boundary("flow.close", [], "Cerrar")],
     stop: "the next boundary after compaction is answered Cerrar and the quick session closes",
-    evidence: ["log: checkpoint-write / resume-summary", "CHECKPOINT.md of the quick session"],
+    evidence: ["log: hook pre-compact / hook post-compact", "CHECKPOINT.md of the quick session"],
   },
 ];
 
