@@ -12,6 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [28.3.1] — 2026-09-30
+
+**Workline deja de fallar cuando el host corre en `$HOME` y vuelve a estar disponible en Antigravity (`agy` 1.2.x).**
+
+### Contrato
+
+- **Deja de valer:** el bundle `w` y los comandos `w-*` de Gemini/Antigravity en `~/.gemini/skills`, y su MCP global en `~/.gemini/settings.json`; `agy` 1.2.x no lee ninguno de los dos. **Lo reemplaza:** `~/.gemini/config/skills` y `~/.gemini/config/mcp_config.json`, que es lo que `agy` 1.2.x carga; la MCP de proyecto sigue en `.gemini/settings.json`. **Qué hacer:** corré `aw self update`, que migra el bundle y los `w-*` propios y deja intactas las skills ajenas. Después reescribí cada conexión MCP global de gemini con `aw mcp setup --host gemini --instance <nombre> --global --force` y quitá a mano sus entradas viejas de `~/.gemini/settings.json`.
+
+### Fixed
+
+- Los hooks de compactación (`checkpoint-write`, `resume-summary`, `auto-compact-on-close`) ya no fallan con `WORKSPACE_INVALID` cuando la sesión del host corre en `$HOME`. El `workline.json` de `~/.workflow` parecía marcar un workspace; ahora `$HOME` nunca cuenta como tal y el hook sale con 0 en silencio, como en cualquier carpeta sin workspace. Si un error de resolución llega igual a un hook, avisa por stderr y sale con 0, sin retener el evento del host.
+- `aw doctor` y `aw mcp … --global` corren desde cualquier carpeta, `$HOME` incluido. Los comandos del workspace (`status`, `mcp setup` sin `--global`, …) siguen rechazando `$HOME`.
+- `aw self install-skill --target gemini` instala donde lee `agy` 1.2.x y migra `~/.gemini/skills` con prueba de propiedad: el bundle y los envoltorios `w-*` propios, también si están enlazados, y nunca una skill ajena. `uninstall` barre las dos raíces del mismo modo.
+- La MCP global de gemini se escribe y se relee desde una sola ruta compartida, así que la verificación del escritor y el doctor miran el mismo archivo.
+
 ## [28.3.0] — 2026-09-30
 
 **Workline recomienda la ruta más barata que cubre el riesgo, y el modo plan del host entra en esa elección.**
