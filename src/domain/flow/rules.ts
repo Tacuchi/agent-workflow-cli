@@ -104,6 +104,8 @@ export interface RunBinding {
    * run that cannot supply its own coordinate deserves.
    */
   slug: string | null;
+  /** The number of the run's plan, or `null` while the run has no single plan. */
+  plan: string | null;
 }
 
 export type ActionBinding = { ok: true; action: DelegatedAction } | { ok: false; unbound: string };
@@ -127,6 +129,7 @@ export function bindAction(action: DelegatedAction, binding: RunBinding): Action
     "{session}": binding.session,
     "{code}": binding.code,
     "{slug}": binding.slug,
+    "{plan}": binding.plan,
   };
   const bind = (text: string): string =>
     RUN_PLACEHOLDERS.reduce((bound, placeholder) => {

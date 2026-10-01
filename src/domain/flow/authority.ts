@@ -417,8 +417,14 @@ export interface DelegatedInvocation {
  * named after the template. Documents and invocations do NOT share a notation:
  * prose says `<slug>` to a reader, a row says `{slug}` to the engine, and only
  * the second one fails closed when the run cannot supply it.
+ *
+ * `{plan}` is the number of the run's plan, so a gate that judges one plan reads
+ * `aw status --plan <PPP>` and not the whole inventory. It resolves with the rule
+ * the execution entry already uses — the scope's plan, or the single plan input
+ * of the custody — and a run without one leaves it unbound, so the boundary
+ * refuses instead of naming some other plan.
  */
-export const RUN_PLACEHOLDERS = ["{session}", "{code}", "{slug}"] as const;
+export const RUN_PLACEHOLDERS = ["{session}", "{code}", "{slug}", "{plan}"] as const;
 
 /**
  * The Workline operations this CLI materializes inside its own process.
@@ -2120,7 +2126,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["plan.spec-status-leido"],
       idempotent: true,
       recovery:
-        "volvé a correr 'aw status --json' y devolvé su salida real; sin el status de la spec no hay nada que sugerir ni que dar por listo",
+        "volvé a leer la spec con 'aw status --spec <NNN> --json' y devolvé su salida real; sin el status de la spec no hay nada que sugerir ni que dar por listo",
     },
   },
   {
@@ -2646,7 +2652,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // and not "I read the plan". A plan whose shape the board cannot resolve is
     // the gate's finding, not a detail to wave through.
     action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      invocation: {
+        program: "aw",
+        args: ["status", "--plan", "{plan}", "--json"],
+        target: ".",
+        input: null,
+      },
       execution: {
         kind: "external",
         reason:
@@ -2655,7 +2666,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["plan.forma-ejecutable", SOURCE_BOUNDED_EVIDENCE],
       idempotent: true,
       recovery:
-        "volvé a correr 'aw status --json' y devolvé su salida real; si el plan no se puede leer, eso ES el hallazgo del gate",
+        "volvé a correr 'aw status --plan {plan} --json' y devolvé su salida real; si el plan no se puede leer, eso ES el hallazgo del gate",
     },
   },
   {
@@ -3249,7 +3260,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // `final_validation_pending`, and a deferred check keeps its phase blocked —
     // so it is read, not asserted.
     action: {
-      invocation: { program: "aw", args: ["status", "--json"], target: ".", input: null },
+      invocation: {
+        program: "aw",
+        args: ["status", "--plan", "{plan}", "--json"],
+        target: ".",
+        input: null,
+      },
       execution: {
         kind: "external",
         reason:
@@ -3258,7 +3274,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
       evidence: ["plan.validacion-final-verde"],
       idempotent: true,
       recovery:
-        "un chequeo diferido nunca cuenta como aprobado: deja su fase bloqueada y el plan abierto, así que corré lo que falte y volvé a leer el tablero",
+        "un chequeo diferido nunca cuenta como aprobado: deja su fase bloqueada y el plan abierto, así que corré lo que falte y volvé a leer el plan con 'aw status --plan {plan} --json'",
     },
   },
   {

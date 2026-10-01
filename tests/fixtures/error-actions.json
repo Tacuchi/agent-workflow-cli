@@ -318,6 +318,18 @@
       "text": "aw flow prove --source <alias>",
       "class": "not-determinable",
       "reason": "la recuperación vale para cualquier fuente del scope; cuál falta se ve al leer las unidades"
+    },
+    {
+      "file": "src/application/flow/advance.ts",
+      "text": "aw flow start --flow plan-exec --input <plan>",
+      "class": "not-determinable",
+      "reason": "la corrida no tiene un plan único: cuál abrir es de la persona"
+    },
+    {
+      "file": "src/domain/flow/authority.ts",
+      "text": "aw status --spec <NNN>",
+      "class": "not-determinable",
+      "reason": "plan-new puede correr sin spec; la recuperación no liga un número que la corrida no tiene"
     }
   ]
 }

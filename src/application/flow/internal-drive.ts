@@ -44,6 +44,7 @@ import { executionVerdict } from "../../domain/flow/execution-result.js";
 import {
   type FlowRunEvent,
   type FlowRunState,
+  type PlanExecEntry,
   applyTransition,
   attemptsAt,
   grantAttempts,
@@ -56,6 +57,7 @@ import {
   withExhaustedRerunSpent,
   withPendingAction,
   withPlanExecBatchStageForTransition,
+  withPlanExecEntry,
   withProposal,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
@@ -73,6 +75,7 @@ import {
 } from "./advance.js";
 import { adoptionCommand } from "./flow-descriptor.js";
 import type { InternalActionExecutor, InternalActionOutcome } from "./internal-actions.js";
+import { earlyPlanEntry } from "./plan-entry.js";
 import { journeyForRun } from "./run-journey.js";
 import { type FlowRunLocation, type FlowRunMutation, applyUnderLock } from "./run-state-service.js";
 
@@ -116,8 +119,12 @@ export async function driveInternalActions(
     current = marked;
 
     const outcome = await run(executor, pending, current.state);
+    const entry =
+      pending.decision.id === "plan-exec.session"
+        ? await earlyPlanEntry(fs, paths, current.state)
+        : null;
 
-    const settled = await settle(fs, location, current, pending, outcome);
+    const settled = await settle(fs, location, current, pending, outcome, entry);
     if (!settled.ok) return settled;
     // The close initially projects while finalize still stands at the boundary.
     // Refresh only after the transition is durably recorded in the run state.
@@ -228,6 +235,7 @@ async function settle(
   current: DrivenRun,
   pending: PendingInternal,
   outcome: InternalActionOutcome,
+  entry: PlanExecEntry | null,
 ): Promise<
   { ok: true; run: DrivenRun; advanced: boolean } | { ok: false; failure: CapabilityFailure }
 > {
@@ -236,7 +244,7 @@ async function settle(
     location,
     (live) => {
       if (live === null) return { ok: false, failure: runVanished(location.session) };
-      return accept(live, pending, outcome, current.state);
+      return accept(live, pending, outcome, current.state, entry);
     },
     // A stateful internal action (the v10 batch publisher) writes its own
     // pre-intent and final trace while the driver is outside the run lock. Settle
@@ -257,6 +265,7 @@ function accept(
   pending: PendingInternal,
   outcome: InternalActionOutcome,
   actionState: FlowRunState,
+  entry: PlanExecEntry | null,
 ): FlowRunMutation<{ directive: FlowDirective; advanced: boolean }> {
   const journey = journeyForRun(state);
   // A stateful batch close returns the NEXT iteration's loop cursor. Its event
@@ -353,6 +362,7 @@ function accept(
   // is persisted, and a state that still named an action nobody is waiting on
   // would tell whoever resumes to run it again.
   next = withPendingAction(next, null);
+  if (entry !== null) next = withPlanExecEntry(next, entry);
   next = withBoundary(next, journey[next.applied.length]?.id ?? null);
 
   const advanced = advanceFlowRun({ state: next, journey, applied: [stepOf(pending.decision)] });

@@ -26,6 +26,8 @@ import {
   newRunState,
   sealRunState,
   serializeRunState,
+  withPlanExecEntry,
+  withScope,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { batchReview } from "../helpers/batch-review.js";
@@ -996,5 +998,40 @@ describe("una acción interna sólo la acredita el CLI", () => {
     const published = await readFile(join(workdir, PLAN), "utf8");
     expect(published).toContain("- [x] T1.1");
     expect(published).toContain("> Estado: validada");
+  });
+});
+
+describe("los gates de plan-exec leen sólo el plan de la corrida", () => {
+  const RUN = "295-salidas-plan-exec";
+  const PLAN = "docs/plans/087-plan-salidas.md";
+  const gates = ["plan-exec.entry-gate", "plan-exec.final-validation"].map((id) => {
+    const row = FLOW_DECISIONS.find((decision) => decision.id === id);
+    if (row === undefined) throw new Error(`el registro ya no tiene '${id}'`);
+    return row;
+  });
+
+  it.each(gates.map((row) => [row.id, row] as const))(
+    "%s sella 'aw status --plan <PPP> --json' con el número del plan de la corrida",
+    (_id, row) => {
+      const scoped = withScope(newRunState("plan-exec", RUN), { plan: PLAN, sources: ["hub"] });
+      const read = withPlanExecEntry(newRunState("plan-exec", RUN), {
+        plan: PLAN,
+        phases_without_open_tasks: [],
+      });
+      for (const state of [scoped, read]) {
+        const resolved = resolveBoundary(state, [row]);
+        expect(resolved.error).toBeNull();
+        expect(resolved.action?.invocation.args).toEqual(["status", "--plan", "087", "--json"]);
+        expect(resolved.action?.recovery).toContain("aw status --plan 087 --json");
+      }
+    },
+  );
+
+  it("sin un plan único la frontera se rechaza y nombra cómo abrir la corrida sobre su plan", () => {
+    const resolved = resolveBoundary(newRunState("plan-exec", RUN), [gates[0] as FlowDecision]);
+    expect(resolved.kind).toBe("blocked");
+    expect(resolved.action).toBeNull();
+    expect(resolved.error?.code).toBe("FLOW_ACTION_UNBOUND");
+    expect(resolved.error?.action).toContain("aw flow start --flow plan-exec --input <plan>");
   });
 });

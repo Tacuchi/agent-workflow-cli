@@ -297,6 +297,8 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
   }
 
   it("la lectura de artefactos se resuelve en proceso y el avance sigue hasta la frontera real", async () => {
+    await mkdir(join(workdir, "docs/plans"), { recursive: true });
+    await writeFile(join(workdir, "docs/plans/001-plan-prueba.md"), "# Plan 001 — prueba\n");
     const directive = await advance();
     // El paso interno se aplicó dentro de la MISMA invocación: nadie tuvo que
     // correr `aw session-artifacts` y devolver su salida.
@@ -306,7 +308,8 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
     // externo porque su veredicto es un juicio sobre el plan.
     expect(directive.boundary.transition).toBe("plan-exec.entry-gate");
     expect(directive.boundary.kind).toBe("execution");
-    expect(directive.action?.invocation.args).toEqual(["status", "--json"]);
+    // El gate juzga el plan de la corrida, leído al abrir la sesión.
+    expect(directive.action?.invocation.args).toEqual(["status", "--plan", "001", "--json"]);
     const current = await state();
     expect(current.applied).toContain("plan-exec.session");
     expect(current.pending_action?.transition).toBe("plan-exec.entry-gate");

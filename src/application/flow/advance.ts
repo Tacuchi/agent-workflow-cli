@@ -489,7 +489,13 @@ function runBinding(state: FlowRunState): RunBinding {
     // `NNN-<slug>-<flow>`, so the slug the numbering claim needs is already a
     // fact the engine holds by the time this boundary is emitted.
     slug: sessionSlug(state.session, state.flow),
+    plan: planNumber(state.scope?.plan ?? state.plan_exec_entry?.plan ?? null),
   };
+}
+
+/** `docs/plans/087-plan-<slug>.md` → `087`; anything else binds to nothing. */
+function planNumber(plan: string | null): string | null {
+  return plan === null ? null : (/(?:^|\/)(\d{3,})-plan-[^/]+\.md$/.exec(plan)?.[1] ?? null);
 }
 
 /**
@@ -576,6 +582,13 @@ function blockedCause(
       message: `'${stopped.id}' no declara propiedad del CLI y ya no queda doctrina a la que devolverlo`,
       action:
         "declarála en el registro de autoridad: desde el cierre de la migración toda transición de un recorrido público es 'cli-owned', y la ausencia es un error, no un fallback",
+    };
+  }
+  if (emitted.unbound === "{plan}") {
+    return {
+      code: "FLOW_ACTION_UNBOUND",
+      message: `la acción de '${stopped.id}' juzga el plan de la corrida y esta corrida no tiene un plan único`,
+      action: "abrí la corrida sobre su plan: 'aw flow start --flow plan-exec --input <plan>'",
     };
   }
   if (emitted.unbound !== null) {

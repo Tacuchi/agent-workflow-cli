@@ -3,26 +3,61 @@ import {
   type StatusOutput,
   runStatusCommand,
 } from "../../application/status-service.js";
-import { specDetail } from "../../application/workline-index-service.js";
+import {
+  type IndexedPlan,
+  type IndexedSpec,
+  planPresentation,
+  specDetail,
+} from "../../application/workline-index-service.js";
 import type { CommandResult } from "../../domain/types.js";
-import type { ParsedArgs } from "../parser.js";
+import { type ParsedArgs, flagValue } from "../parser.js";
 import type { CliCommand, HumanRenderContext } from "../registry.js";
+import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const statusCommand: CliCommand<StatusOutput> = {
+/** One document of the board: the same item `--detail` lists, with nothing around it. */
+export type StatusDocumentOutput = Pick<StatusOutput, "hub" | "last_activity"> &
+  ({ plan: IndexedPlan } | { spec: IndexedSpec });
+
+type StatusCommandOutput = StatusOutput | StatusDocumentOutput;
+
+export const statusCommand: CliCommand<StatusCommandOutput> = {
   name: "status",
-  flags: { known: [] },
+  flags: { known: ["plan", "spec"] },
   help: {
     purpose: "Show what is pending in the hub: specs, plans, sessions and discarded work.",
+    flags: {
+      plan: {
+        value: "<PPP>",
+        effect:
+          "Show only that plan: {hub, last_activity, plan}, the same item --detail lists in plans[].",
+      },
+      spec: {
+        value: "<NNN>",
+        effect:
+          "Show only that spec: {hub, last_activity, spec}, the same item --detail lists in specs[].",
+      },
+    },
     output:
-      "{hub, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], ...}. Read-only.",
+      "{hub, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], ...}; with --plan or --spec, {hub, last_activity, plan|spec}. Read-only.",
+    exit_codes: {
+      "1": "STATUS_DOCUMENT_NOT_FOUND: no document has that number; STATUS_FILTER_CONFLICT: --plan and --spec together.",
+    },
     notes: [
       "The human view lists pending work only; --detail adds finished history, sessions and discarded items.",
+      "--plan and --spec compare the number by value (87 and 087 are the same plan); their size does not depend on the hub's history.",
     ],
   },
 
-  async execute(_args: ParsedArgs, ctx: CliContext): Promise<CommandResult<StatusOutput>> {
+  async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<StatusCommandOutput>> {
+    const plan = flagValue(args, "plan");
+    const spec = flagValue(args, "spec");
+    if (plan !== undefined && spec !== undefined) {
+      return fail("STATUS_FILTER_CONFLICT", "--plan y --spec no se combinan: pedí un documento");
+    }
     const data = await runStatusCommand(ctx.fs, ctx.env, ctx.paths, { git: ctx.git });
+    if (plan !== undefined) return documentResult(data, "plan", plan);
+    if (spec !== undefined) return documentResult(data, "spec", spec);
     return { ok: true, data, exitCode: 0 };
   },
 
@@ -32,9 +67,10 @@ export const statusCommand: CliCommand<StatusOutput> = {
    * competing for attention with what is actually left to do. `--detail`
    * brings them back; the filter never removes anything from the domain.
    */
-  renderHuman(result: CommandResult<StatusOutput>, context: HumanRenderContext): string {
+  renderHuman(result: CommandResult<StatusCommandOutput>, context: HumanRenderContext): string {
     const data = result.data;
     if (data === undefined) return "";
+    if (!("pipeline" in data)) return renderDocument(data);
 
     const header = `${data.hub.name} · ${data.hub.path}`;
     const lines = [header, ""];
@@ -64,6 +100,53 @@ export const statusCommand: CliCommand<StatusOutput> = {
     return `${lines.join("\n").trimEnd()}\n`;
   },
 };
+
+/**
+ * The board narrowed to one document, picked out of the model the service already
+ * built: the record is the `--detail` item by construction, and a number nobody
+ * holds is an error that names it — an empty answer would read as "nothing owed".
+ */
+function documentResult(
+  data: StatusOutput,
+  kind: "plan" | "spec",
+  wanted: string,
+): CommandResult<StatusCommandOutput> {
+  const sameNumber = (number: string) => /^\d+$/.test(wanted) && Number(number) === Number(wanted);
+  const header = { hub: data.hub, last_activity: data.last_activity };
+  if (kind === "plan") {
+    const plan = data.plans.find((item) => sameNumber(item.number));
+    if (plan !== undefined) return { ok: true, data: { ...header, plan }, exitCode: 0 };
+  } else {
+    const spec = data.specs.find((item) => sameNumber(item.number));
+    if (spec !== undefined) return { ok: true, data: { ...header, spec }, exitCode: 0 };
+  }
+  return fail(
+    "STATUS_DOCUMENT_NOT_FOUND",
+    `no hay ${kind === "plan" ? "plan" : "spec"} con número '${wanted}' en ${data.hub.name}`,
+  );
+}
+
+/** One record over a few lines, in the same words the pipeline uses for it. */
+function renderDocument(data: StatusDocumentOutput): string {
+  const lines = [`${data.hub.name} · ${data.hub.path}`, ""];
+  if ("plan" in data) {
+    const { plan } = data;
+    const { detail } = planPresentation(plan);
+    lines.push(detail.objective, `  estado: ${plan.plan_state} · ${detail.progress}`);
+    for (const phase of plan.blocked_phases) {
+      lines.push(`  bloqueada F${phase.number} — ${phase.name}: ${phase.blocker ?? "sin motivo"}`);
+    }
+    lines.push(`  ${detail.next}`);
+  } else {
+    const { spec } = data;
+    // Whether a ready spec already has its plan is a fact of the whole board, so
+    // the single record states its own status and leaves that line out.
+    const detail = specDetail(spec, []);
+    lines.push(detail.objective, `  ${detail.progress}`);
+    if (spec.status !== "ready-for-plan") lines.push(`  ${detail.next}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 const GROUP_TITLES: Record<PipelineItem["kind"], string> = {
   "spec-unrefined": "Specs sin refinar",

@@ -10,7 +10,11 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { lintPlan } from "../../src/application/plan-lint-service.js";
+import {
+  type PlanGrammarCode,
+  lintPlan,
+  planBoundaryAction,
+} from "../../src/application/plan-lint-service.js";
 import {
   baselineOf,
   birthCustody,
@@ -78,7 +82,7 @@ const SESSION = "031-tramo-plan-plan-exec";
 const CODE = "031";
 
 const ALIAS = "acme";
-const PLAN_DOC = "docs/plans/031-plan-tramo.md";
+const PLAN_DOC = "docs/plans/031-plan-tramo-plan.md";
 const HUB_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
 ## Hub
 
@@ -730,8 +734,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
   });
 
   it("sin custodia resuelve el mismo slug que session-create; no elige entre dos planes", async () => {
-    const matching = "docs/plans/041-plan-tramo-plan.md";
-    await writeFile(join(workdir, matching), await readFile(join(workdir, PLAN_DOC), "utf8"));
+    const matching = PLAN_DOC;
     await walkTo("plan-exec.normalization-consent", ["plan.entry-gap-minor"]);
     expect((await current()).state.plan_exec_entry?.plan).toBe(matching);
     await writeFile(join(workdir, "docs/plans/042-plan-tramo-plan.md"), "# Otro plan\n");
@@ -747,17 +750,16 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     expect(state.events.filter((event) => event.kind === "rejected")).toEqual([]);
   });
 
-  it("sin plan resoluble el handoff pide nombrarlo, sin cobrar rechazos", async () => {
-    await walkTo("plan-exec.normalization-consent", ["plan.entry-gap-minor"]);
-    const result = await answer({
-      input_digest: (await current()).resolved.seal,
-      choice: "Ir a plan-refine",
-    });
-    expect(result.error?.code).toBe("FLOW_HANDOFF");
-    expect(result.next_action).toContain("/w:plan-refine <plan>");
-    const { state } = await current();
+  it("sin plan resoluble la entrada se detiene y pide abrir la corrida sobre su plan, sin cobrar rechazos", async () => {
+    // Two plans answer to the session's slug: the run has no single plan to judge.
+    await writeFile(join(workdir, "docs/plans/042-plan-tramo-plan.md"), "# Otro plan\n");
+    await walkTo("plan-exec.entry-gate", []);
+    const { state, resolved } = await current();
     expect(state.plan_exec_entry).toEqual({ plan: null, phases_without_open_tasks: null });
-    expect(state.handoff?.package.decisions.recovery).toContain("nombrá el plan");
+    expect(resolved.kind).toBe("blocked");
+    expect(resolved.error?.code).toBe("FLOW_ACTION_UNBOUND");
+    expect(resolved.error?.action).toContain("aw flow start --flow plan-exec --input <plan>");
+    expect(resolved.action).toBeNull();
     expect(state.events.filter((event) => event.kind === "rejected")).toEqual([]);
     expect(state.applied).not.toContain("plan-exec.unit-acquisition");
   });
@@ -1061,7 +1063,7 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
   const REFINE_CODE = "032";
   const EXEC_SESSION = "033-tramo-migracion-plan-exec";
   const EXEC_CODE = "033";
-  const DOC = "docs/plans/032-plan-migracion.md";
+  const DOC = "docs/plans/032-plan-tramo-migracion.md";
 
   const planWith = (validation: string) =>
     [
@@ -1269,7 +1271,11 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
     const entered = await answer(EXEC_CODE, bodyFor(scope.resolved, NADA));
     expect(entered.boundary.kind).toBe("blocked");
     expect(entered.error?.action).toContain("aw plan lint");
-    expect(entered.error?.action).toContain("/w:plan-refine");
+    // The run reads its plan at the entry, so the refusal is the entry's own rule
+    // for this code: a phrase to fix in the document, not a structure to refine.
+    expect(entered.error?.action).toBe(
+      planBoundaryAction(saved.error?.code as PlanGrammarCode, "execution-entry"),
+    );
     expect((await state(EXEC_SESSION)).state.scope).toBeNull();
 
     const linted = await lintPlan(fs, paths, DOC);

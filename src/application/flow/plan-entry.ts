@@ -97,3 +97,20 @@ export async function observePlanEntry(
       .map((phase) => phase.n),
   };
 }
+
+/**
+ * The entry reading taken when the session row opens a plan-exec run, so the
+ * gates that come before `source-scope` can already name the run's plan.
+ *
+ * `null` when the run already knows its plan — a scope or a reading of its own —
+ * so nothing it recorded is overwritten here.
+ */
+export async function earlyPlanEntry(
+  fs: FileSystemPort,
+  paths: PathsService,
+  state: FlowRunState,
+): Promise<PlanExecEntry | null> {
+  if (state.flow !== "plan-exec" || state.scope !== null || state.plan_exec_entry !== undefined)
+    return null;
+  return observePlanEntry(fs, paths, state);
+}
