@@ -92,8 +92,17 @@ describe("commit aprobado por lote, verificado en git real", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  async function seal(options: { approved?: boolean; message?: string; dirty?: string } = {}) {
+  async function seal(
+    options: {
+      approved?: boolean;
+      message?: string;
+      dirty?: string;
+      paths?: string[];
+      prepare?: () => Promise<void>;
+    } = {},
+  ) {
     await writeFile(join(unit, "included.txt"), options.dirty ?? "lote\n");
+    await options.prepare?.();
     const snapshot = {
       [ALIAS]: {
         head: command(unit, "rev-parse", "HEAD"),
@@ -105,7 +114,7 @@ describe("commit aprobado por lote, verificado en git real", () => {
     const sources = [
       {
         alias: ALIAS,
-        paths: ["included.txt"],
+        paths: options.paths ?? ["included.txt"],
         dirty: changes,
         message: options.message ?? MESSAGE,
       },
@@ -431,6 +440,37 @@ describe("commit aprobado por lote, verificado en git real", () => {
     expect(read.state.batches?.[1]?.base?.[ALIAS]).toBeTruthy();
     expect(read.state.batches?.[1]?.snapshot).toBeUndefined();
     expect((await git.dirtyPaths(unit)).map((item) => item.path)).toEqual(["included.txt"]);
+  });
+
+  it("commitea a la primera un lote con un renombre ya preparado por git mv", async () => {
+    const renamed = ["included.txt", "moved.txt", "outside.txt"];
+    const state = await seal({
+      paths: renamed,
+      prepare: async () => {
+        command(unit, "mv", "included.txt", "moved.txt");
+        await writeFile(join(unit, "outside.txt"), "lote\n");
+      },
+    });
+    const done = await commit(state.digest);
+    expect(done.ok).toBe(true);
+    expect(command(unit, "rev-parse", "HEAD^")).toBe(state.batches?.[0]?.snapshot?.[ALIAS]?.head);
+    expect(command(unit, "show", "--format=%B", "-s", "HEAD")).toBe(MESSAGE);
+    expect((await git.commitInfo(unit, command(unit, "rev-parse", "HEAD"))).paths).toEqual(renamed);
+    expect(command(unit, "status", "--porcelain")).toBe("");
+  });
+
+  it("commitPaths toma un renombre preparado, un archivo nuevo y uno modificado, sin el staged ajeno", async () => {
+    const before = command(unit, "rev-parse", "HEAD");
+    command(unit, "mv", "included.txt", "moved.txt");
+    await writeFile(join(unit, "new.txt"), "nuevo\n");
+    await writeFile(join(unit, "outside.txt"), "lote\n");
+    await writeFile(join(unit, "foreign.txt"), "ajeno\n");
+    command(unit, "add", "foreign.txt");
+    const approved = ["included.txt", "moved.txt", "new.txt", "outside.txt"];
+    const receipt = await git.commitPaths(unit, MESSAGE, approved);
+    expect(receipt.parents).toEqual([before]);
+    expect((await git.commitInfo(unit, receipt.after)).paths).toEqual(approved);
+    expect(command(unit, "diff", "--cached", "--name-only")).toBe("foreign.txt");
   });
 
   it("commitPaths por sí mismo respeta la lista y devuelve padres, rama y SHAs", async () => {

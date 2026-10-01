@@ -543,7 +543,16 @@ export class GitCliAdapter implements GitPort {
       throw new Error("git commitPaths exige rutas relativas explícitas no vacías");
     }
     const before = await this.headSha(repoPath);
-    await this.mustRun("add -- paths", ["add", "--", ...paths], repoPath);
+    // The old side of a rename staged by `git mv` is neither on disk nor in the
+    // index, so `git add` rejects it; `commit --only` still takes it from HEAD.
+    const known = await this.mustRunBinary(
+      "ls-files -- paths",
+      ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", ...paths],
+      repoPath,
+    );
+    const addable = new Set(nulSeparated(known.stdout));
+    const toAdd = paths.filter((path) => addable.has(path));
+    if (toAdd.length > 0) await this.mustRun("add -- paths", ["add", "--", ...toAdd], repoPath);
     await this.mustRun(
       "commit --only -- paths",
       ["commit", "--only", "-m", message, "--", ...paths],
