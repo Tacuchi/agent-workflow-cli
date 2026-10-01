@@ -9,7 +9,7 @@ import { addSourceCommand } from "./add-source.js";
 import { amendCommand } from "./amend.js";
 import { checkBranchCommand } from "./check-branch.js";
 import { checkpointReadCommand } from "./checkpoint-read.js";
-import { autoCompactOnCloseCommand, checkpointWriteCommand } from "./checkpoint-write.js";
+import { checkpointWriteCommand } from "./checkpoint-write.js";
 import { claimsCommand } from "./claims.js";
 import { codeScanCommand } from "./code-scan.js";
 import { contextBudgetCommand } from "./context-budget.js";
@@ -46,15 +46,14 @@ import { releaseDataCommand } from "./release-data.js";
 import { releasePassCommand } from "./release-pass.js";
 import { removeSourceCommand } from "./remove-source.js";
 import { resealCommand } from "./reseal.js";
-import { resumeSummaryCommand } from "./resume-summary.js";
 import { resumeCommand } from "./resume.js";
 import { discardCommand, resetCommand } from "./retirement.js";
 import { selfCommand } from "./self.js";
 import { sessionArtifactsCommand } from "./session-artifacts.js";
 import { sessionCloseCommand } from "./session-close.js";
 import { sessionCreateCommand } from "./session-create.js";
+import { sessionLoadCommand } from "./session-load.js";
 import { sessionPauseCommand } from "./session-pause.js";
-import { sessionResumeCommand } from "./session-resume.js";
 import { sessionsCommand } from "./sessions.js";
 import {
   setExceptionBranchCommand,
@@ -108,10 +107,8 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   gitFlowCommand,
   mergeStateCommand,
   checkpointReadCommand,
-  resumeSummaryCommand,
   checkBranchCommand,
   checkpointWriteCommand,
-  autoCompactOnCloseCommand,
   hookCommand,
   mcpCommand,
   toolCommand,
@@ -155,6 +152,6 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   // The punctual way into the current model for a hub that carries a legacy
   // series. Read-only without `--apply`.
   hubMigrateCommand,
-  sessionResumeCommand,
+  sessionLoadCommand,
   selfCommand,
 ];

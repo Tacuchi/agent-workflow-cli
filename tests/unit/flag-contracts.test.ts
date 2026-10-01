@@ -7,7 +7,6 @@ import { flowCommand } from "../../src/cli/commands/flow.js";
 import { hookCommand } from "../../src/cli/commands/hook.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { mcpCommand } from "../../src/cli/commands/mcp.js";
-import { resumeSummaryCommand } from "../../src/cli/commands/resume-summary.js";
 import { selfCommand } from "../../src/cli/commands/self.js";
 import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
 import { statusCommand } from "../../src/cli/commands/status.js";
@@ -313,9 +312,9 @@ describe("flag contracts · a command the host runs as a hook warns and runs", (
   });
 
   it("the other hook targets warn too, `self namespace` included", () => {
-    expect(gate(resumeSummaryCommand, ["--bogus"])).toMatchObject({ kind: "run" });
+    expect(gate(hookCommand, ["post-compact", "--bogus"])).toMatchObject({ kind: "run" });
     expect(gate(hookCommand, ["branch-check", "--bogus"])).toMatchObject({ kind: "run" });
-    expect(gate(command("auto-compact-on-close"), ["--bogus"])).toMatchObject({ kind: "run" });
+    expect(gate(hookCommand, ["session-end", "--bogus"])).toMatchObject({ kind: "run" });
     expect(gate(selfCommand, ["namespace", "--pin", "workflow", "--bogus"])).toMatchObject({
       kind: "run",
     });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
+import { runSessionLoad } from "../../src/application/session-load-service.js";
 import { resolveSessionTarget } from "../../src/application/session-resolver.js";
-import { runSessionResume } from "../../src/application/session-resume-service.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { NARRATIVE_BEGIN, NARRATIVE_END } from "../../src/domain/session/narrative.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -40,10 +40,10 @@ function buildFs(opts: { closed: boolean; narrated?: boolean }): FakeFs {
   return fs;
 }
 
-describe("runSessionResume --reopen", () => {
+describe("runSessionLoad --reopen", () => {
   it("reopens a closed session: removes .closed and returns state active", async () => {
     const fs = buildFs({ closed: true });
-    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runSessionLoad(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       code: "003",
       reopen: true,
     });
@@ -54,7 +54,7 @@ describe("runSessionResume --reopen", () => {
 
   it("una sesión sin corrida se reabre como antes: sin corrida que reabrir", async () => {
     const fs = buildFs({ closed: true });
-    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runSessionLoad(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       code: "003",
       reopen: true,
     });
@@ -66,7 +66,7 @@ describe("runSessionResume --reopen", () => {
 
   it("without reopen, a closed session stays closed (read-only resume)", async () => {
     const fs = buildFs({ closed: true });
-    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runSessionLoad(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       code: "003",
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
@@ -76,7 +76,7 @@ describe("runSessionResume --reopen", () => {
 
   it("reopen on an already-active session is a no-op (stays active)", async () => {
     const fs = buildFs({ closed: false });
-    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runSessionLoad(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       code: "003",
       reopen: true,
     });
@@ -90,7 +90,7 @@ describe("runSessionResume --reopen", () => {
   // retoma — el payload de abajo devuelve el documento entero.
   it("reabrir deja coherente el bloque administrado: ninguna superficie dice cerrada", async () => {
     const fs = buildFs({ closed: true, narrated: true });
-    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runSessionLoad(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       code: folder,
       reopen: true,
     });
@@ -109,7 +109,7 @@ describe("runSessionResume --reopen", () => {
 
   it("sin --reopen el bloque no se toca: una lectura no reescribe la sesión", async () => {
     const fs = buildFs({ closed: true, narrated: true });
-    const result = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const result = await runSessionLoad(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       code: folder,
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
@@ -127,7 +127,7 @@ describe("SESSION_CLOSED — el error enseña la salida", () => {
     const resolution = await resolveSessionTarget(fs, paths, { code: "003", intent: "read" });
     if (resolution.outcome !== "error") throw new Error("se esperaba SESSION_CLOSED");
     expect(resolution.code).toBe("SESSION_CLOSED");
-    expect(resolution.action).toContain(`aw session-resume --code ${folder} --reopen`);
+    expect(resolution.action).toContain(`aw session-load --code ${folder} --reopen`);
     expect(resolution.action).not.toContain("<NNN>");
   });
 
@@ -137,10 +137,10 @@ describe("SESSION_CLOSED — el error enseña la salida", () => {
     if (resolution.outcome !== "error") throw new Error("se esperaba SESSION_CLOSED");
     // La invocación se lee del propio error: si dejara de ser ejecutable verbatim,
     // esta prueba se cae en vez de seguir comprobando una que nadie emite.
-    const invoked = resolution.action.match(/aw session-resume --code (\S+) --reopen/);
+    const invoked = resolution.action.match(/aw session-load --code (\S+) --reopen/);
     if (invoked?.[1] === undefined) throw new Error(`acción no ejecutable: ${resolution.action}`);
 
-    const resumed = await runSessionResume(fs, new FakeEnv("/home/u", "/cwd"), paths, {
+    const resumed = await runSessionLoad(fs, new FakeEnv("/home/u", "/cwd"), paths, {
       code: invoked[1],
       reopen: true,
     });
@@ -152,15 +152,15 @@ describe("SESSION_CLOSED — el error enseña la salida", () => {
   });
 });
 
-describe("session-resume / session-artifacts commands — not-found envelope", () => {
+describe("session-load / session-artifacts commands — not-found envelope", () => {
   // Regression: both commands wrapped every service result in {ok:true, exitCode:0},
   // so a nonexistent session looked like success to loops keying off exit codes.
   function fakeCtx(fs: FakeFs): CliContext {
     return { fs, env: new FakeEnv("/home/u", "/cwd"), paths } as unknown as CliContext;
   }
 
-  it("session-resume maps session_not_found to ok:false + exit 1", async () => {
-    const { sessionResumeCommand } = await import("../../src/cli/commands/session-resume.js");
+  it("session-load maps session_not_found to ok:false + exit 1", async () => {
+    const { sessionLoadCommand } = await import("../../src/cli/commands/session-load.js");
     const args = {
       rest: [],
       plugin: {},
@@ -168,7 +168,7 @@ describe("session-resume / session-artifacts commands — not-found envelope", (
       values: new Map([["code", "999"]]),
       valuesMulti: new Map(),
     };
-    const result = await sessionResumeCommand.execute(args, fakeCtx(buildFs({ closed: false })));
+    const result = await sessionLoadCommand.execute(args, fakeCtx(buildFs({ closed: false })));
     expect(result.ok).toBe(false);
     expect(result.exitCode).toBe(1);
     expect(result.error?.code).toBe("SESSION_NOT_FOUND");

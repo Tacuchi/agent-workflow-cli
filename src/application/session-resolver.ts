@@ -199,7 +199,7 @@ export type SessionResolveRequest =
       intent: "write";
       /**
        * Establish the conversation association on success. Set by operations
-       * that own no other lock boundary; `session-create`, `session-resume
+       * that own no other lock boundary; `session-create`, `session-load
        * --reopen` and `session-close` bind inside their own `withCwdLock` so
        * the lock is acquired once per operation.
        */
@@ -468,8 +468,8 @@ async function resolveExplicit(
       // solved. Mid-journey this is the only way out: a run whose session was
       // closed from outside resolves with `allowClosed:false` and stops here.
       only.state === "paused"
-        ? `retomala con \`aw session-resume --code ${only.name}\` y reintentá`
-        : `reabrila con \`aw session-resume --code ${only.name} --reopen\` y reintentá, o elegí una sesión activa`,
+        ? `retomala con \`aw session-load --code ${only.name}\` y reintentá`
+        : `reabrila con \`aw session-load --code ${only.name} --reopen\` y reintentá, o elegí una sesión activa`,
     );
   }
   return {
@@ -546,7 +546,7 @@ async function resolveFromBinding(
       // Same closed session reached through the association instead of an
       // explicit identity, so it gets the same exact way out — with the folder
       // the binding already names.
-      `reasociá la conversación con \`aw session-resume --code ${lookup.folder} --reopen\``,
+      `reasociá la conversación con \`aw session-load --code ${lookup.folder} --reopen\``,
     );
   }
   return {

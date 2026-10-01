@@ -496,7 +496,7 @@ export function sanctionedActionFor(slot: SlotState): string {
   // reservation as part of closing, which is the action that actually resolves it.
   if (slot.ownerActive === true && !slot.revoked && slot.owner !== null) {
     return slot.ownerPaused
-      ? `aw session-resume --code ${slot.owner}`
+      ? `aw session-load --code ${slot.owner}`
       : `aw session-close --code ${slot.owner}`;
   }
   const confirm = slot.intact ? "" : " --confirm-no-producer";

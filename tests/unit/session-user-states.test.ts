@@ -8,8 +8,8 @@ import { runResume } from "../../src/application/resume-service.js";
 import { lookupBinding } from "../../src/application/session-binding-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
+import { runSessionLoad } from "../../src/application/session-load-service.js";
 import { runSessionPause } from "../../src/application/session-pause-service.js";
-import { runSessionResume } from "../../src/application/session-resume-service.js";
 import { SessionsService } from "../../src/application/sessions-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -42,7 +42,7 @@ describe("estados que sólo marca el usuario", () => {
     expect(
       readHistoryRows(await fs.readText(paths.cwdHistoryFile())).map((row) => row.key),
     ).toEqual(["047-legacy-x"]);
-    expect(await runSessionResume(fs, env, paths, { code: folder })).toHaveProperty(
+    expect(await runSessionLoad(fs, env, paths, { code: folder })).toHaveProperty(
       "state",
       "active",
     );
@@ -64,7 +64,7 @@ describe("estados que sólo marca el usuario", () => {
     const code = created.sessionCreate.folder;
     await runSessionPause(fs, paths, code);
     fs.rejectActive = true;
-    expect(await runSessionResume(fs, env, paths, { code, contextId: "conv" })).toMatchObject({
+    expect(await runSessionLoad(fs, env, paths, { code, contextId: "conv" })).toMatchObject({
       code: "SESSION_RESUME_FAILED",
     });
     expect(await fs.exists(`${created.sessionCreate.path}/.paused`)).toBe(true);
@@ -84,7 +84,7 @@ describe("estados que sólo marca el usuario", () => {
     await runSessionClose(fs, paths, { code, force: true });
     fs.rejectActive = true;
     expect(
-      await runSessionResume(fs, env, paths, { code, reopen: true, contextId: "conv" }),
+      await runSessionLoad(fs, env, paths, { code, reopen: true, contextId: "conv" }),
     ).toMatchObject({ code: "SESSION_REOPEN_FAILED" });
     expect(await fs.exists(`${created.sessionCreate.path}/.closed`)).toBe(true);
     expect(await fs.exists(paths.cwdSessionBindingsFile())).toBe(false);
@@ -102,7 +102,7 @@ describe("estados que sólo marca el usuario", () => {
     const code = created.sessionCreate.folder;
     await runSessionClose(fs, paths, { code, force: true });
     fs.file(locateRun(paths, code).statePath, "{");
-    const failed = await runSessionResume(fs, env, paths, {
+    const failed = await runSessionLoad(fs, env, paths, {
       code,
       reopen: true,
       contextId: "conv",
@@ -184,7 +184,7 @@ describe("estados que sólo marca el usuario", () => {
     expect(paused).toMatchObject({ active_count: 0, paused_count: 1, abandoned_count: 0 });
     expect(await fs.readText(paths.cwdHistoryFile())).toContain("| paused |");
 
-    const resumed = await runSessionResume(fs, env, paths, { code, contextId: "conversación" });
+    const resumed = await runSessionLoad(fs, env, paths, { code, contextId: "conversación" });
     expect(resumed).toHaveProperty("state", "active");
     expect(await lookupBinding(fs, paths, "conversación")).toMatchObject({
       status: "bound",
@@ -196,7 +196,7 @@ describe("estados que sólo marca el usuario", () => {
       "sessionClose.closed",
       true,
     );
-    expect(await runSessionResume(fs, env, paths, { code })).toMatchObject({
+    expect(await runSessionLoad(fs, env, paths, { code })).toMatchObject({
       code: "SESSION_ABANDONED",
     });
     const abandoned = await new SessionsService(fs, env, paths).list({ state: "all" });
@@ -205,7 +205,7 @@ describe("estados que sólo marca el usuario", () => {
     expect(await fs.readText(created.sessionCreate.session_path)).toContain(
       "**Estado:** abandonada",
     );
-    const reopened = await runSessionResume(fs, env, paths, { code, reopen: true });
+    const reopened = await runSessionLoad(fs, env, paths, { code, reopen: true });
     expect(reopened).toHaveProperty("state", "active");
     expect(await fs.readText(paths.cwdHistoryFile())).toContain("| active |");
   });

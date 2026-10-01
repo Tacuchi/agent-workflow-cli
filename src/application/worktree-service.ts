@@ -704,7 +704,7 @@ async function resolveTarget(
  * The refusal used to be written here, and it flattened every reason into "pasá
  * --code <NNN>": useless advice to somebody who already passed one, and actively
  * wrong for the case this feature creates. A session that CLOSED still holding a
- * unit resolves to a refusal whose action is `aw session-resume --code <NNN>
+ * unit resolves to a refusal whose action is `aw session-load --code <NNN>
  * --reopen` — the only move that gets the work merged — and rewriting it into a
  * generic hint is what turned the receipt's own remedy into a dead end.
  */

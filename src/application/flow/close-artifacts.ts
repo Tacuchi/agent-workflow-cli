@@ -49,7 +49,7 @@ export async function preserveBoundaryClose(
   const lines = [
     `Cierre solicitado en ${boundary}.`,
     ...pending.map((item) => `- ${item}`),
-    `Reabrir: aw session-resume --code ${state.session} --reopen`,
+    `Reabrir: aw session-load --code ${state.session} --reopen`,
   ];
   const folder = join(paths.cwdSessionsDir(), state.session);
   await writeCloseBlock(fs, join(folder, "CHECKPOINT.md"), "Pending / Next", lines);

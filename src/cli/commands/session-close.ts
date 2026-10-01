@@ -160,7 +160,7 @@ async function closeAtBoundary(
   }
   if (!("sessionClose" in data)) return withdraw(rendered(data));
   data.sessionClose.pending_work = pending;
-  data.sessionClose.reopen = `aw session-resume --code ${location.session} --reopen`;
+  data.sessionClose.reopen = `aw session-load --code ${location.session} --reopen`;
   const settled = await settleCloseAtBoundary(ctx.fs, location, data.sessionClose);
   if (settled !== null) {
     return fail(

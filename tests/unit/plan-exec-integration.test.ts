@@ -546,7 +546,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     expect(result.ok).toBe(true);
     expect(result.data).toMatchObject({
       run: { closed_at: "plan-exec.implementation", finalize: "applied" },
-      reopen: `aw session-resume --code ${DOS.folder} --reopen`,
+      reopen: `aw session-load --code ${DOS.folder} --reopen`,
     });
     // La unidad y su commit sobreviven al cierre: nada se integró ni se liberó.
     // Con la sesión cerrada la lista la muestra entre las huérfanas, que es lo

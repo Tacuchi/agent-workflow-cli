@@ -25,7 +25,7 @@ import {
   resolveSessionTarget,
 } from "./session-resolver.js";
 
-export interface SessionResumeInput {
+export interface SessionLoadInput {
   code?: string;
   /** Opaque conversation id; resolution falls back to its durable association. */
   contextId?: string;
@@ -39,7 +39,7 @@ export interface SessionResumeInput {
   reopen?: boolean;
 }
 
-export interface SessionResumeOutput {
+export interface SessionLoadOutput {
   code: string | null;
   folder: string;
   path: string;
@@ -60,15 +60,15 @@ export interface SessionResumeError {
 }
 
 export type SessionResumeResult =
-  | SessionResumeOutput
+  | SessionLoadOutput
   | SessionResumeError
   | { sessionError: SessionResolutionError };
 
-export async function runSessionResume(
+export async function runSessionLoad(
   fs: FileSystemPort,
   _env: EnvPort,
   paths: PathsService,
-  input: SessionResumeInput,
+  input: SessionLoadInput,
 ): Promise<SessionResumeResult> {
   // Reopening is a selection, not a guess: it reactivates a closed line and
   // associates the conversation with it, so it always names its target.
@@ -128,7 +128,7 @@ async function reopenSessionAndRun(
       failure: {
         code: "FLOW_REOPEN_FAILED",
         message: error instanceof Error ? error.message : String(error),
-        action: `volvé a correr 'aw session-resume --code ${session.folder} --reopen'`,
+        action: `volvé a correr 'aw session-load --code ${session.folder} --reopen'`,
       },
     };
   }
@@ -142,7 +142,7 @@ async function reopenSessionAndRun(
       error: `${run.failure.code}: ${run.failure.message}${restored === null ? "" : `; no se pudo restaurar .closed: ${restored}`}`,
       action:
         run.failure.code === "FLOW_RUN_LOCKED"
-          ? `esperá a que termine y volvé a correr 'aw session-resume --code ${session.folder} --reopen'`
+          ? `esperá a que termine y volvé a correr 'aw session-load --code ${session.folder} --reopen'`
           : run.failure.action,
       run_error: run.failure,
       ...(restored === null ? {} : { restore_error: restored }),
@@ -265,7 +265,7 @@ async function unpauseUnderLock(
   fs: FileSystemPort,
   paths: PathsService,
   session: SessionEntry,
-  input: SessionResumeInput,
+  input: SessionLoadInput,
 ): Promise<SessionResumeError | { resumed: true }> {
   if ((await readSessionState(fs, session.path)) !== "paused") {
     return {
@@ -356,7 +356,7 @@ async function resumedSessionOutput(
   };
 }
 
-function resolveResumeTarget(fs: FileSystemPort, paths: PathsService, input: SessionResumeInput) {
+function resolveResumeTarget(fs: FileSystemPort, paths: PathsService, input: SessionLoadInput) {
   return resolveSessionTarget(fs, paths, {
     intent: input.reopen === true ? "write" : "read",
     ...(input.code !== undefined ? { code: input.code } : {}),
@@ -383,6 +383,6 @@ async function bindReopenedSession(
   return null;
 }
 
-function reopenWithoutCode(input: SessionResumeInput): boolean {
+function reopenWithoutCode(input: SessionLoadInput): boolean {
   return input.reopen === true && (input.code ?? "").trim().length === 0;
 }

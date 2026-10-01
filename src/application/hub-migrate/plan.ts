@@ -257,7 +257,7 @@ type SessionOutcome =
  * The rule that makes seeding a sentinel safe is the LAYOUT: a `sessionNNN-`
  * folder predates the sentinel model entirely, so the file's absence there is
  * the absence of the model and not a statement about the session. In a
- * current-model folder that same absence MEANS active — `session-resume
+ * current-model folder that same absence MEANS active — `session-load
  * --reopen` produces exactly it, on purpose — and writing the sentinel back
  * would re-close a session somebody had just reopened. That is why this walks
  * the legacy series and nothing else.

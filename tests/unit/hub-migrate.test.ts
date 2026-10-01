@@ -1133,7 +1133,7 @@ describe("un workspace sano no cambia de comportamiento", () => {
   });
 
   it("una sesión reabierta con `--reopen` NO se vuelve a cerrar", async () => {
-    // `session-resume --reopen` borra el centinela y deja la fila diciendo
+    // `session-load --reopen` borra el centinela y deja la fila diciendo
     // `closed`: exactamente la forma del hueco fantasma, y sin embargo lo
     // correcto acá es no tocar nada.
     const fs = hub({

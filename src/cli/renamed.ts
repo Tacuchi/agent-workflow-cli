@@ -14,6 +14,9 @@ const RENAMED_COMMANDS: ReadonlyMap<string, string> = new Map([
   ["workspace-commit", "hub-commit"],
   ["workspace-migrate", "hub-migrate"],
   ["project-md-upsert", "hub-block"],
+  ["session-resume", "session-load"],
+  ["resume-summary", "hook post-compact"],
+  ["auto-compact-on-close", "hook session-end"],
 ]);
 
 const RENAMED_FLAGS: ReadonlyMap<string, string> = new Map([

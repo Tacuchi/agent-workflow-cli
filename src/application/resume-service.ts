@@ -376,7 +376,7 @@ async function sessionProposal(
     ...(session?.code !== undefined ? { code: session.code } : {}),
   });
   const run = await projectRun(fs, paths, folder);
-  const command = sessionResumeCommand(narrative.phase, run, folder);
+  const command = sessionLoadCommand(narrative.phase, run, folder);
   const [result] = narrative.results;
   return {
     kind: "session",
@@ -419,7 +419,7 @@ async function sessionsReadyToClose(
   return readyToClose;
 }
 
-function sessionResumeCommand(
+function sessionLoadCommand(
   phase: string,
   run: Awaited<ReturnType<typeof projectRun>>,
   folder: string,
@@ -427,11 +427,11 @@ function sessionResumeCommand(
   const directed = run !== null && run.boundary !== "final";
   const command =
     phase === "pausada"
-      ? `aw session-resume --code ${folder}`
+      ? `aw session-load --code ${folder}`
       : phase === "abandonada" || phase === "cerrada"
-        ? `aw session-resume --code ${folder} --reopen`
+        ? `aw session-load --code ${folder} --reopen`
         : directed
           ? run.command
-          : `aw session-resume --code ${folder} --reopen`;
+          : `aw session-load --code ${folder} --reopen`;
   return command;
 }

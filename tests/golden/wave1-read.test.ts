@@ -6,7 +6,7 @@ import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runArtifactsCommand } from "../../src/application/artifacts-service.js";
 import { runHubBlockRead } from "../../src/application/hub-block-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runSessionResume } from "../../src/application/session-resume-service.js";
+import { runSessionLoad } from "../../src/application/session-load-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
@@ -14,7 +14,7 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 // (objetivo-data / tasks-data / decisiones-list / dependencias-list) were
 // removed with the Flow/Phase model; this file now exercises only the
 // surviving, still-wired read services against the shared sample-workspace
-// fixture: session-artifacts, project-md --read, and session-resume.
+// fixture: session-artifacts, project-md --read, and session-load.
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = join(HERE, "..", "fixtures", "sample-workspace");
@@ -70,8 +70,8 @@ describe("Wave 1 read commands — golden parity (new model)", () => {
     expect(result).toEqual(loadHubReadGolden());
   });
 
-  it("session-resume --code 001", async () => {
-    const result = await runSessionResume(fs, env, paths, { code: "001" });
+  it("session-load --code 001", async () => {
+    const result = await runSessionLoad(fs, env, paths, { code: "001" });
     expect(result).toEqual(loadGolden("resume-001.json"));
   });
 });

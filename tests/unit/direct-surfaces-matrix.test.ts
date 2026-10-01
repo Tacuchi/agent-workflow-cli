@@ -73,8 +73,8 @@ describe("C1 · every declared surface is a real, registered command", () => {
   it("the three resume-shaped commands stay distinguishable", () => {
     const describes = purposes();
     expect(describes.get("resume")).toMatch(/what to resume/i);
-    expect(describes.get("resume-summary")).toContain("PostCompact");
-    expect(describes.get("session-resume")).toContain("session");
+    expect(describes.get("hook")).toContain("post-compact");
+    expect(describes.get("session-load")).toContain("session");
   });
 });
 

@@ -12,7 +12,7 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { readSessionArtifacts } from "../../src/application/release-data/artifacts.js";
-import { runSessionResume } from "../../src/application/session-resume-service.js";
+import { runSessionLoad } from "../../src/application/session-load-service.js";
 import { flowCommand } from "../../src/cli/commands/flow.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { parseArgv } from "../../src/cli/parser.js";
@@ -995,7 +995,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(result.next_action).toContain("seguí con /w:spec-new");
     expect(result.next_action).not.toContain("aw session-close");
     expect(result.next_action).toContain("hub: cambios sin commitear");
-    expect(result.next_action).toContain(`aw session-resume --code ${SESSION} --reopen`);
+    expect(result.next_action).toContain(`aw session-load --code ${SESSION} --reopen`);
     const state = (await current()).state;
     expect(state.handoff?.package.decisions.request).toBe("probar el tramo");
     expect(state.applied).not.toContain("quick.deliverable-authoring");
@@ -1017,7 +1017,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
   }
 
   async function expectReopenedCommitChoice(): Promise<void> {
-    const reopened = await runSessionResume(fs, new FakeEnv(workdir, workdir), paths, {
+    const reopened = await runSessionLoad(fs, new FakeEnv(workdir, workdir), paths, {
       code: CODE,
       reopen: true,
     });

@@ -18,7 +18,7 @@ describe("groupCommands", () => {
     const groups = groupCommands([
       "sessions",
       "session-create",
-      "session-resume",
+      "session-load",
       "session-close",
       "session-artifacts",
       "self",
@@ -27,7 +27,7 @@ describe("groupCommands", () => {
     expect(sessionGroup?.commands).toEqual([
       "sessions",
       "session-create",
-      "session-resume",
+      "session-load",
       "session-close",
       "session-artifacts",
     ]);
@@ -292,22 +292,37 @@ describe("aw --help — contract once, one command per intent, hook targets apar
     expect(help.indexOf("By intent:")).toBeLessThan(help.indexOf("Commands:"));
   });
 
-  it("groups exactly the four hook targets apart, by their attribute", () => {
-    expect(
-      ALL_COMMANDS.filter((c) => c.hook === true)
-        .map((c) => c.name)
-        .sort(),
-    ).toEqual(["auto-compact-on-close", "checkpoint-write", "hook", "resume-summary"]);
-    const section = help.slice(help.indexOf("Hook targets"), help.indexOf("Aliases:"));
-    const listed = [...section.matchAll(/^ {2}([\w-]+) {2,}/gm)].map((m) => m[1]).sort();
-    expect(listed).toEqual(["auto-compact-on-close", "checkpoint-write", "hook", "resume-summary"]);
-    const commandsSection = help.slice(help.indexOf("Commands:"), help.indexOf("Hook targets"));
-    for (const name of listed)
-      expect(commandsSection).not.toMatch(new RegExp(`^ {2}${name} `, "m"));
+  it("the only hook target is `hook`, listed apart and only with --all", () => {
+    expect(ALL_COMMANDS.filter((c) => c.hook === true).map((c) => c.name)).toEqual(["hook"]);
+    const full = globalHelpText(ALL_COMMANDS, "workflow", { all: true });
+    const section = full.slice(full.indexOf("Hook targets"), full.indexOf("Aliases:"));
+    const listed = [...section.matchAll(/^ {2}([\w-]+) {2,}/gm)].map((m) => m[1]);
+    expect(listed).toEqual(["hook"]);
+    const commandsSection = full.slice(full.indexOf("Commands:"), full.indexOf("Hook targets"));
+    expect(commandsSection).not.toMatch(/^ {2}hook /m);
   });
 
-  it("prints every purpose whole", () => {
-    expect(help).not.toContain("…");
-    for (const command of ALL_COMMANDS) expect(help).toContain(command.help.purpose);
+  it("without --all it names no hook target and no dev-only command, and says how to see them", () => {
+    const commandsSection = help.slice(help.indexOf("Commands:"), help.indexOf("Aliases:"));
+    expect(help).not.toContain("Hook targets");
+    expect(help).not.toContain("Dev-only:");
+    for (const name of ["hook", "harness", "profiles", "logs"]) {
+      expect(commandsSection, name).not.toMatch(new RegExp(`^ {2}${name} `, "m"));
+    }
+    expect(help).toContain(
+      "aw --help --all also lists the hook targets and the dev-only commands.",
+    );
+    const full = globalHelpText(ALL_COMMANDS, "workflow", { all: true });
+    expect(full).toContain("Dev-only:");
+    for (const name of ["harness", "profiles", "logs"]) {
+      expect(full, name).toMatch(new RegExp(`^ {2}${name} `, "m"));
+    }
+    expect(full).not.toContain("--help --all also lists");
+  });
+
+  it("prints every purpose whole with --all", () => {
+    const full = globalHelpText(ALL_COMMANDS, "workflow", { all: true });
+    expect(full).not.toContain("…");
+    for (const command of ALL_COMMANDS) expect(full).toContain(command.help.purpose);
   });
 });

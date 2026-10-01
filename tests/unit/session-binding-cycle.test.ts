@@ -7,8 +7,8 @@ import {
 } from "../../src/application/session-binding-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
+import { runSessionLoad } from "../../src/application/session-load-service.js";
 import { resolveSessionTarget } from "../../src/application/session-resolver.js";
-import { runSessionResume } from "../../src/application/session-resume-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs as FakeFs } from "../helpers/mem-fs.js";
@@ -198,10 +198,10 @@ describe("manual cycle — the conversation keeps its own line", () => {
   });
 });
 
-describe("session-resume — reopen is always an explicit selection", () => {
+describe("session-load — reopen is always an explicit selection", () => {
   it("--reopen without a target is refused instead of guessing", async () => {
     const fs = seed([{ folder: "001-sola-quick", closed: true }]);
-    const result = await runSessionResume(fs, env, paths, { reopen: true, contextId: "conv-a" });
+    const result = await runSessionLoad(fs, env, paths, { reopen: true, contextId: "conv-a" });
     if (!("error" in result)) throw new Error("expected an error");
     expect(result.code).toBe("INVALID_INPUT");
     expect(await fs.exists(`${sessionsDir}/001-sola-quick/.closed`)).toBe(true);
@@ -209,7 +209,7 @@ describe("session-resume — reopen is always an explicit selection", () => {
 
   it("--reopen with a target reactivates it and associates the conversation", async () => {
     const fs = seed([{ folder: "001-sola-quick", closed: true }]);
-    const result = await runSessionResume(fs, env, paths, {
+    const result = await runSessionLoad(fs, env, paths, {
       code: "001",
       reopen: true,
       contextId: "conv-a",

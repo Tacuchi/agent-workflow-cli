@@ -291,9 +291,9 @@
     },
     {
       "file": "src/domain/flow/authority.ts",
-      "text": "aw session-resume --code <NNN>",
+      "text": "aw session-load --code <NNN>",
       "class": "interpolated",
-      "reason": "en la recuperación, bindAction escribe el código de la sesión de la corrida; la atribución de session-resume.reopen sólo documenta la forma"
+      "reason": "en la recuperación, bindAction escribe el código de la sesión de la corrida; la atribución de session-load.reopen sólo documenta la forma"
     },
     {
       "file": "src/domain/flow/authority.ts",

@@ -718,13 +718,8 @@ describe("checkpoint-write CLI — exit 0 always, and the person hears why", () 
   it("SessionEnd says it on stderr too, with the refuge it parked", async () => {
     const spy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {
-      const { autoCompactOnCloseCommand } = await import(
-        "../../src/cli/commands/checkpoint-write.js"
-      );
-      const result = await autoCompactOnCloseCommand.execute(
-        argv([]),
-        ctxFor(seedTwoActive(), hostEnv),
-      );
+      const { sessionEndHook } = await import("../../src/cli/commands/checkpoint-write.js");
+      const result = await sessionEndHook.execute(argv([]), ctxFor(seedTwoActive(), hostEnv));
       expect(result.exitCode).toBe(0);
       const notice = spy.mock.calls.map((call) => String(call[0])).join("");
       expect(notice).toContain("el cierre continúa sin checkpoint");
@@ -759,9 +754,9 @@ describe("la plantilla de hooks ya no puede pedir una pausa", () => {
     return parsed.hooks;
   }
 
-  it("PreCompact invoca checkpoint-write a secas — sin --can-pause en ninguna parte", async () => {
+  it("PreCompact invoca aw hook pre-compact a secas — sin --can-pause en ninguna parte", async () => {
     const hooks = await template();
-    expect(hooks.PreCompact?.[0]?.hooks[0]?.command).toBe("agent-workflow checkpoint-write");
+    expect(hooks.PreCompact?.[0]?.hooks[0]?.command).toBe("agent-workflow hook pre-compact");
     expect(JSON.stringify(hooks)).not.toContain("--can-pause");
   });
 
@@ -770,7 +765,7 @@ describe("la plantilla de hooks ya no puede pedir una pausa", () => {
     expect(hooks.PostCompact?.[0]?.hooks).toEqual([
       {
         type: "command",
-        command: "agent-workflow resume-summary",
+        command: "agent-workflow hook post-compact",
         statusMessage: "Recuperando estado tras compact...",
         timeout: 10,
       },

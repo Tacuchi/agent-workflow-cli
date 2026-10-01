@@ -30,19 +30,21 @@ function runFromHome(args: string[], input = "") {
 }
 
 describe("aw desde $HOME", { timeout: 60_000 }, () => {
-  it.each(["checkpoint-write", "resume-summary", "auto-compact-on-close"])(
-    "el hook %s sale con 0, sin sobre de error",
-    (command) => {
-      const payload = JSON.stringify({
-        hook_event_name: "PreCompact",
-        session_id: "probe",
-        cwd: home,
-      });
-      const result = runFromHome([command], payload);
-      expect(result.status).toBe(0);
-      expect(result.stdout + result.stderr).not.toContain("HUB_INVALID");
-    },
-  );
+  it.each([
+    ["checkpoint-write"],
+    ["hook", "pre-compact"],
+    ["hook", "post-compact"],
+    ["hook", "session-end"],
+  ])("el hook %s sale con 0, sin sobre de error", (...command) => {
+    const payload = JSON.stringify({
+      hook_event_name: "PreCompact",
+      session_id: "probe",
+      cwd: home,
+    });
+    const result = runFromHome(command, payload);
+    expect(result.status).toBe(0);
+    expect(result.stdout + result.stderr).not.toContain("HUB_INVALID");
+  });
 
   it.each([
     ["doctor", "--only", "kimi", "--skip-native", "--format", "json"],

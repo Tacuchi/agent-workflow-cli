@@ -97,7 +97,7 @@ export const ARTIFACT_CATALOG: Record<ArtifactKind, ArtifactRole> = {
   checkpoint: {
     producer: "aw checkpoint-write y el loop en cada frontera",
     primary_source: "qué se completó, qué queda y cuál es el próximo paso",
-    consumers: ["aw checkpoint-read", "aw resume", "aw resume-summary", "aw status"],
+    consumers: ["aw checkpoint-read", "aw resume", "aw hook post-compact", "aw status"],
   },
   backlog: {
     producer: "el cierre de la corrida, sólo si algo quedó diferido",

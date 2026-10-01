@@ -45,8 +45,9 @@ describe("entrada delgada del dist construido", () => {
     const { cwd, home } = fixture();
     for (const args of [
       ["checkpoint-write"],
-      ["resume-summary"],
-      ["auto-compact-on-close"],
+      ["hook", "pre-compact"],
+      ["hook", "post-compact"],
+      ["hook", "session-end"],
       ["self", "namespace", "--pin", "workflow"],
     ]) {
       const result = run(cwd, home, args);

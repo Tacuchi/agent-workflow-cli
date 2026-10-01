@@ -75,7 +75,7 @@ const HOOK_STDIN_WINDOW_MS = 150;
  * A lifecycle hook's JSON payload, or `undefined` when there is none.
  *
  * These commands are BOTH hook targets and hand/agent-invocable (`aw
- * checkpoint-write --code`, `aw resume-summary`), so the read must be bounded.
+ * checkpoint-write --code`, `aw hook post-compact`), so the read must be bounded.
  * An interactive terminal is the easy case; the dangerous one is an inherited
  * stdin that is neither a TTY nor ever written to — an agent shell tool spawns
  * with a socket on fd 0, where `isTTY` is undefined and reading to EOF blocks

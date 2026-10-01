@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-workflow auto-compact-on-close",
+            "command": "agent-workflow hook session-end",
             "timeout": 10
           }
         ]
@@ -42,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-workflow checkpoint-write",
+            "command": "agent-workflow hook pre-compact",
             "statusMessage": "Escribiendo CHECKPOINT.md antes de compactar...",
             "timeout": 10
           }
@@ -55,7 +55,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "agent-workflow resume-summary",
+            "command": "agent-workflow hook post-compact",
             "statusMessage": "Recuperando estado tras compact...",
             "timeout": 10
           }

@@ -9,14 +9,14 @@ import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const resumeSummaryCommand: CliCommand = {
-  name: "resume-summary",
+/** `aw hook post-compact`: the PostCompact target, dispatched by `aw hook`. */
+export const postCompactHook: CliCommand = {
+  name: "hook post-compact",
   flags: {
     known: ["code", "include-recent-closed", "recent-days"],
     retired: ["can-pause"],
     mode: "warn",
   },
-  hook: true,
   help: {
     purpose:
       "PostCompact hook target: return the compact resume payload of the named or conversation-bound session.",

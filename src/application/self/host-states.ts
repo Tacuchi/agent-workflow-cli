@@ -34,6 +34,8 @@ import type { HarnessVerification } from "../../domain/host-verification.js";
 import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "../mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath } from "../multiroot/warp.js";
 import { parseToml } from "../parsers/toml.js";
+import { CODEX_PLUGIN_DIR } from "./codex-plugin.js";
+import { isOurCommand } from "./hooks-dialect.js";
 import {
   countOurAgyHooks,
   countOurCrushHooks,
@@ -647,6 +649,93 @@ export async function reportHookTemplateLosses(ctx: CliContext): Promise<HookTem
     losses: byTarget.get(spec.installTarget) ?? [],
     template_read: read,
   }));
+}
+
+// ─── hook commands, per host ─────────────────────────────────────────────────
+
+/** The commands our hooks run in one host's config, or `null` when it cannot be read. */
+export interface InstalledHookCommands {
+  target: InstallTarget;
+  label: string;
+  path: string;
+  commands: string[] | null;
+}
+
+/**
+ * Where each host keeps the hooks `aw self install` writes, and in which syntax.
+ *
+ * Codex's is the generated plugin bundle, which is what its install refreshes.
+ */
+const HOOK_CONFIGS: Partial<
+  Record<InstallTarget, (home: string) => { path: string; format: "json" | "toml" }>
+> = {
+  claude: (home) => ({ path: join(home, ".claude", "settings.json"), format: "json" }),
+  kimi: (home) => ({ path: join(home, ".kimi-code", "config.toml"), format: "toml" }),
+  codex: (home) => ({ path: join(home, ...CODEX_PLUGIN_DIR, "hooks.json"), format: "json" }),
+  crush: (home) => ({ path: crushGlobalMcpFile(home), format: "json" }),
+  gemini: (home) => ({ path: join(home, ".agents", "hooks.json"), format: "json" }),
+};
+
+/** The file a host's hooks live in, or `null` for a host whose hooks Workline does not write. */
+export function hookConfigPath(target: InstallTarget, home: string): string | null {
+  return HOOK_CONFIGS[target]?.(home).path ?? null;
+}
+
+/**
+ * `agent-workflow hook pre-compact --code 1` → `hook pre-compact`: what a hook
+ * runs, without the binary or its flags. A `--pin <namespace>` that differs from
+ * the template's is the person's choice, not a retired command.
+ */
+export function hookVerb(command: string): string {
+  const tokens = command.trim().split(/\s+/).slice(1);
+  const flag = tokens.findIndex((token) => token.startsWith("-"));
+  return (flag === -1 ? tokens : tokens.slice(0, flag)).join(" ");
+}
+
+/** Every `command` string under `value` that invokes this CLI. */
+function ourCommands(value: unknown, found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    for (const item of value) ourCommands(item, found);
+  } else if (typeof value === "object" && value !== null) {
+    for (const [key, item] of Object.entries(value)) {
+      if (key === "command" && typeof item === "string" && isOurCommand(item)) found.push(item);
+      else ourCommands(item, found);
+    }
+  }
+  return found;
+}
+
+/** The commands our installed hooks run, per host whose hooks Workline writes. */
+export async function reportInstalledHookCommands(
+  ctx: CliContext,
+): Promise<InstalledHookCommands[]> {
+  const home = ctx.env.homeDir();
+  return Promise.all(
+    HARNESSES.filter((spec) => HOOK_CONFIGS[spec.installTarget] !== undefined).map(async (spec) => {
+      const config = HOOK_CONFIGS[spec.installTarget]?.(home);
+      if (config === undefined) throw new Error(`sin configuración de hooks: ${spec.id}`);
+      const base = { target: spec.installTarget, label: spec.label, path: config.path };
+      if (!(await ctx.fs.exists(config.path))) return { ...base, commands: [] };
+      try {
+        const text = await ctx.fs.readText(config.path);
+        const parsed = config.format === "toml" ? parseToml(text) : JSON.parse(text);
+        return { ...base, commands: ourCommands(parsed) };
+      } catch {
+        return { ...base, commands: null };
+      }
+    }),
+  );
+}
+
+/** The verbs the bundled template runs, or `null` when it cannot be read. */
+export async function templateHookVerbs(ctx: CliContext): Promise<Set<string> | null> {
+  const path = await resolveBundledHookTemplate();
+  if (path === null || !(await ctx.fs.exists(path))) return null;
+  try {
+    return new Set(ourCommands(JSON.parse(await ctx.fs.readText(path))).map(hookVerb));
+  } catch {
+    return null;
+  }
 }
 
 /** Shared skills dirs — install destinations, never hosts. */

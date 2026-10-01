@@ -10,8 +10,8 @@ import {
  * The one target a lifecycle surface (PreCompact / PostCompact / SessionEnd) is
  * allowed to act on.
  *
- * These surfaces used to stand in for identity: `resume-summary` took
- * `actives[0]`, `auto-compact-on-close` iterated EVERY active session and could
+ * These surfaces used to stand in for identity: the PostCompact target took
+ * `actives[0]`, the SessionEnd target iterated EVERY active session and could
  * checkpoint another conversation's line. They now resolve the same canonical
  * target as every other session-scoped operation, and an unresolvable one is a
  * visible outcome — never a silently chosen session.

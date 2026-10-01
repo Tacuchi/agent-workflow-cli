@@ -1458,7 +1458,7 @@ async function close(
   if (documents.length > 0) closed.outdated_documents = documents;
   if (boundaryClose) {
     closed.pending_work = pending;
-    closed.reopen = `aw session-resume --code ${run.session} --reopen`;
+    closed.reopen = `aw session-load --code ${run.session} --reopen`;
   }
   return {
     ok: closed.closed,

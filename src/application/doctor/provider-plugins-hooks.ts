@@ -13,8 +13,18 @@ import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.j
  */
 import type { HostDoctorFinding } from "../host-doctor-service.js";
 import { runHostDoctor } from "../host-doctor-service.js";
-import type { HookTemplateLossReport, HooksArmedReport } from "../self/host-states.js";
-import { reportHookTemplateLosses, reportHooksArmed } from "../self/host-states.js";
+import type {
+  HookTemplateLossReport,
+  HooksArmedReport,
+  InstalledHookCommands,
+} from "../self/host-states.js";
+import {
+  hookVerb,
+  reportHookTemplateLosses,
+  reportHooksArmed,
+  reportInstalledHookCommands,
+  templateHookVerbs,
+} from "../self/host-states.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
 import { coverage } from "./types.js";
 
@@ -38,6 +48,7 @@ export const pluginsHooksProvider: DoctorProvider = {
         // "nothing was lost" row per host would bury the ones that did lose.
         .filter((loss) => !loss.template_read || loss.losses.length > 0)
         .map((loss) => templateLossFinding(hostOf(input, loss.target), loss)),
+      ...(await retiredHookFindings(input, participating)),
     ];
 
     return {
@@ -128,6 +139,51 @@ function templateLossFinding(host: string, loss: HookTemplateLossReport): Doctor
     evidence: loss.template_read ? loss.losses : ["la plantilla no se pudo leer"],
     ownership: "ours",
     remediation: { kind: "none", action: null, guidance: [] },
+  };
+}
+
+/**
+ * One blocking finding per host whose hooks run a command the template no longer
+ * has: after an upgrade the host keeps calling a retired name until
+ * `aw self install` rewrites its hooks. Compared by verb, not by line, so a
+ * flag the person chose is never mistaken for a retired command.
+ */
+async function retiredHookFindings(
+  input: DoctorProviderInput,
+  participating: ReadonlySet<string>,
+): Promise<DoctorFinding[]> {
+  const verbs = await templateHookVerbs(input.ctx);
+  // Without the template nothing can be called retired; the loss finding above
+  // already reports that the template could not be read.
+  if (verbs === null) return [];
+  return (await reportInstalledHookCommands(input.ctx))
+    .filter((report) => participating.has(report.target))
+    .flatMap((report) => {
+      const retired = (report.commands ?? []).filter((command) => !verbs.has(hookVerb(command)));
+      return retired.length === 0
+        ? []
+        : [retiredHookFinding(hostOf(input, report.target), report, retired)];
+    });
+}
+
+function retiredHookFinding(
+  host: string,
+  report: InstalledHookCommands,
+  retired: readonly string[],
+): DoctorFinding {
+  return {
+    id: doctorFindingId(host, CATEGORY, "hooks:comandos-retirados"),
+    host,
+    category: CATEGORY,
+    resource: { kind: "hooks", name: report.label, locator: report.path },
+    state: "blocking",
+    summary: `${retired.length} hook(s) de Workline en ${report.label} llaman a un comando que la plantilla vigente ya no tiene`,
+    impact:
+      "el host corre un nombre retirado, que sale con RENAMED: se pierde la continuidad tras compactar y al cerrar",
+    evidence: retired.map((command) => `comando retirado: ${command} (en ${report.path})`),
+    ownership: "ours",
+    remediation: { kind: "manual", action: null, guidance: ["aw self install"] },
+    proposal: { op: "self.install-hooks", args: { target: report.target } },
   };
 }
 

@@ -179,7 +179,7 @@ describe("every hook target reads stdin through the bounded window", () => {
   // `aw hook` used to read to EOF: run by hand from an agent's shell, whose fd 0
   // is an idle socket, it hung until the tool timed out. Every hook target has
   // to go through `readHookStdin`, never an unbounded read of `process.stdin`.
-  it.each(["hook.ts", "checkpoint-write.ts", "resume-summary.ts"])("%s", (file) => {
+  it.each(["hook.ts", "checkpoint-write.ts", "hook-post-compact.ts"])("%s", (file) => {
     const source = readFileSync(join(__dirname, "../../src/cli/commands", file), "utf8");
     expect(source).toContain("readHookStdin(");
     expect(source).not.toMatch(/text\(process\.stdin\)/);

@@ -371,7 +371,7 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
   const plan = planDispatch({ command: parsed.command, flags: parsed.flags, isTTY, hasHelp });
   if (plan.kind === "menu") return await runInteractiveMenu(ctx, registry, output);
   if (plan.kind === "global-help") {
-    printHelp(registry.list(), output);
+    printHelp(registry.list(), output, parsed.flags.has("--all"));
     return 0;
   }
 
@@ -647,10 +647,10 @@ async function dispatchMenuAction(
   }
 }
 
-function printHelp(commands: string[], mode: Pick<OutputMode, "ascii">): void {
+function printHelp(commands: string[], mode: Pick<OutputMode, "ascii">, all = false): void {
   const registered = new Set(commands);
   const entries = ALL_COMMANDS.filter((command) => registered.has(command.name));
-  writeStdout(forPerson(globalHelpText(entries, DEFAULT_NAMESPACE), mode));
+  writeStdout(forPerson(globalHelpText(entries, DEFAULT_NAMESPACE, { all }), mode));
 }
 
 function printCommandHelp(

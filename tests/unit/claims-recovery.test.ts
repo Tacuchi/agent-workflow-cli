@@ -19,7 +19,7 @@ import {
 import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { acquireLock } from "../../src/application/lock-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runSessionResume } from "../../src/application/session-resume-service.js";
+import { runSessionLoad } from "../../src/application/session-load-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -348,7 +348,7 @@ describe("aw claims recover", () => {
 
     const slot = (await scanSlots(fs, paths)).slots[0];
     if (slot === undefined) throw new Error("esperaba la reserva pausada");
-    expect(sanctionedActionFor(slot)).toBe(`aw session-resume --code ${OWNER}`);
+    expect(sanctionedActionFor(slot)).toBe(`aw session-load --code ${OWNER}`);
     expect(await previewRecovery(fs, paths, target)).toHaveProperty("error");
     expect(
       await applyRecovery(fs, paths, {
@@ -358,10 +358,7 @@ describe("aw claims recover", () => {
     ).toHaveProperty("error");
     expect(existsSync(join(hub, target))).toBe(true);
 
-    expect(await runSessionResume(fs, env, paths, { code: OWNER })).toHaveProperty(
-      "state",
-      "active",
-    );
+    expect(await runSessionLoad(fs, env, paths, { code: OWNER })).toHaveProperty("state", "active");
     expect((await scanSlots(fs, paths)).slots[0]?.ownerActive).toBe(true);
     expect(openClaimsOf((await readClaimEvents(fs, paths)).events, OWNER)).toHaveLength(1);
     expect(existsSync(join(hub, target))).toBe(true);

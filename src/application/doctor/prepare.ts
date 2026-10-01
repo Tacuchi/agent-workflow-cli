@@ -21,6 +21,8 @@ import type { CliContext } from "../../cli/types.js";
 import { SELF_AUTHORIZABLE_CLASSES } from "../../domain/capability/effects.js";
 import type { DoctorAction, DoctorFinding, DoctorReport } from "../../domain/doctor/model.js";
 import { doctorOperation } from "../../domain/doctor/operations.js";
+import type { InstallTarget } from "../../domain/harnesses.js";
+import { hookConfigPath } from "../self/host-states.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { type DoctorRunDeps, type DoctorRunOptions, runDoctor } from "./report.js";
 
@@ -323,6 +325,11 @@ function targetsOf(ctx: CliContext, action: DoctorBatchAction): string[] {
       return [join(scope, ".claude", "settings.local.json"), join(scope, ".codex", "config.toml")];
     case "hub.remove-retired-section":
       return action.locator === null ? [] : [action.locator];
+    // The hooks file of the host the finding names, not always Claude's.
+    case "self.install-hooks": {
+      const path = hookConfigPath(action.args.target as InstallTarget, home);
+      return path === null ? [] : [path];
+    }
     default:
       return [join(home, ".claude", "settings.json")];
   }

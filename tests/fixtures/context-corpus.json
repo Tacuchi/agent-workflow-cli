@@ -29,7 +29,7 @@
     },
     "recovery": {
       "why": "an interrupted run can be picked up where it stopped",
-      "any_of": ["Compact / resume", "Resumable", "resumable", "session-resume"]
+      "any_of": ["Compact / resume", "Resumable", "resumable", "session-load"]
     }
   },
   "journeys": [

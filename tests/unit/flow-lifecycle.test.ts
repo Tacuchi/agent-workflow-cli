@@ -13,10 +13,10 @@ import { locateRun, readRun } from "../../src/application/flow/run-state-service
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
+import { runSessionLoad } from "../../src/application/session-load-service.js";
 import { CLOSED_MARKER } from "../../src/application/session-resolver.js";
-import { runSessionResume } from "../../src/application/session-resume-service.js";
 import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
-import { sessionResumeCommand } from "../../src/cli/commands/session-resume.js";
+import { sessionLoadCommand } from "../../src/cli/commands/session-load.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { journeyOfFlow } from "../../src/domain/flow/authority.js";
@@ -161,10 +161,10 @@ describe("Cerrar aplica finalize y conserva lo pendiente (073 F1)", () => {
     for (const artifact of ["CHECKPOINT.md", "BACKLOG.md"]) {
       const text = await readFile(join(paths.cwdSessionsDir(), SESSION, artifact), "utf8");
       expect(text).toContain(boundary);
-      expect(text).toContain(`aw session-resume --code ${SESSION} --reopen`);
+      expect(text).toContain(`aw session-load --code ${SESSION} --reopen`);
       expect(text).not.toContain("_[AI:");
     }
-    const resumed = await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    const resumed = await runSessionLoad(fs, ctx.env, paths, { code: "051", reopen: true });
     expect(resumed).toMatchObject({ run: { resumes_at: boundary }, state: "active" });
   });
 
@@ -276,7 +276,7 @@ describe("Cerrar aplica finalize y conserva lo pendiente (073 F1)", () => {
     expect(await readFile(join(workdir, path), "utf8")).toBe(reserved);
     expect(existsSync(join(workdir, "docs/specs/052-spec-descartada.md"))).toBe(false);
     expect((await run()).proposal).toEqual(proposal);
-    await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    await runSessionLoad(fs, ctx.env, paths, { code: "051", reopen: true });
     expect((await run()).proposal).toEqual(proposal);
     const state = await run();
     const result = await submitFlow(fs, paths, {
@@ -398,7 +398,7 @@ describe("aw session-close sobre una corrida abierta", () => {
     expect(result.data).toMatchObject({
       run: { closed_at: AMBIGUITY, finalize: "applied" },
       pending_integration: [{ alias: "cli", branch: `aw/${SESSION}` }],
-      reopen: `aw session-resume --code ${SESSION} --reopen`,
+      reopen: `aw session-load --code ${SESSION} --reopen`,
     });
     expect((await run()).applied.at(-1)).toBe("chassis.finalize");
   });
@@ -561,7 +561,7 @@ describe("aw session-close: los caminos que no dejan nada a medias", () => {
   });
 });
 
-describe("aw session-resume --reopen reabre también la corrida", () => {
+describe("aw session-load --reopen reabre también la corrida", () => {
   const CONFIRMATION = "spec-refine.save-confirmation";
   // What made the run stand on the ambiguity in the first place: without it the
   // conditional row is passed over, reopened or not.
@@ -577,7 +577,7 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
   });
 
   async function reopen() {
-    const result = await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    const result = await runSessionLoad(fs, ctx.env, paths, { code: "051", reopen: true });
     if (!("folder" in result)) throw new Error(JSON.stringify(result));
     return result;
   }
@@ -682,7 +682,7 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     });
     await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state), "utf8");
     await writeFile(join(paths.cwdSessionsDir(), SESSION, CLOSED_MARKER), "", "utf8");
-    const reopened = await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    const reopened = await runSessionLoad(fs, ctx.env, paths, { code: "051", reopen: true });
     expect(reopened).toMatchObject({ code: "FLOW_REOPEN_NO_HUMAN" });
     expect(closed()).toBe(true);
   });
@@ -691,7 +691,7 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     const legacy = stateWrittenAt(10, "spec-refine", SESSION, IDS, null);
     await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(legacy), "utf8");
     await writeFile(join(paths.cwdSessionsDir(), SESSION, CLOSED_MARKER), "", "utf8");
-    const reopened = await runSessionResume(fs, ctx.env, paths, { code: "051", reopen: true });
+    const reopened = await runSessionLoad(fs, ctx.env, paths, { code: "051", reopen: true });
     expect(reopened).toMatchObject({ code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED" });
     expect(closed()).toBe(true);
   });
@@ -704,8 +704,8 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
     const lockPath = locateRun(paths, SESSION).lockPath;
     await writeFile(lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
 
-    const failed = await sessionResumeCommand.execute(
-      parseArgv(["session-resume", "--code", "051", "--reopen"]),
+    const failed = await sessionLoadCommand.execute(
+      parseArgv(["session-load", "--code", "051", "--reopen"]),
       ctx,
     );
     expect(failed.ok).toBe(false);
@@ -730,8 +730,8 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
         return super.writeText(path, content);
       }
     }
-    const failed = await sessionResumeCommand.execute(
-      parseArgv(["session-resume", "--code", "051", "--reopen"]),
+    const failed = await sessionLoadCommand.execute(
+      parseArgv(["session-load", "--code", "051", "--reopen"]),
       { ...ctx, fs: new RunWriteFailureFs() },
     );
     expect(failed.ok).toBe(false);
@@ -755,8 +755,8 @@ describe("aw session-resume --reopen reabre también la corrida", () => {
         return super.writeText(path, content);
       }
     }
-    const failed = await sessionResumeCommand.execute(
-      parseArgv(["session-resume", "--code", "051", "--reopen"]),
+    const failed = await sessionLoadCommand.execute(
+      parseArgv(["session-load", "--code", "051", "--reopen"]),
       { ...ctx, fs: new RestoreFailureFs() },
     );
     expect(failed.ok).toBe(false);

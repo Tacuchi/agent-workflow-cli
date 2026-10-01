@@ -37,13 +37,13 @@ async function lifecycleOptions(
   };
 }
 
+/** `aw checkpoint-write --code`: what agents call to persist a session's CHECKPOINT. */
 export const checkpointWriteCommand: CliCommand = {
   name: "checkpoint-write",
   flags: { known: ["code", "force"], retired: ["can-pause"], mode: "warn" },
-  hook: true,
   help: {
     purpose:
-      "PreCompact hook target: write CHECKPOINT.md for the named or conversation-bound session, never holding a compaction back.",
+      "Write CHECKPOINT.md for the named or conversation-bound session, never holding a compaction back. The host's PreCompact hook runs the same write as aw hook pre-compact.",
     flags: {
       code: {
         value: "<code>",
@@ -75,6 +75,17 @@ export const checkpointWriteCommand: CliCommand = {
   },
 };
 
+/** `aw hook pre-compact`: the PreCompact target, the same write as `checkpoint-write`. */
+export const preCompactHook: CliCommand = {
+  ...checkpointWriteCommand,
+  name: "hook pre-compact",
+  help: {
+    ...checkpointWriteCommand.help,
+    purpose:
+      "PreCompact hook target: write CHECKPOINT.md for the named or conversation-bound session, never holding a compaction back.",
+  },
+};
+
 function degradedNotice(
   event: string,
   data: Pick<CheckpointWriteDegraded, "reason" | "refuge_path">,
@@ -83,10 +94,10 @@ function degradedNotice(
   return `${event} continúa sin checkpoint: ${data.reason}${refuge}\n`;
 }
 
-export const autoCompactOnCloseCommand: CliCommand = {
-  name: "auto-compact-on-close",
+/** `aw hook session-end`: the SessionEnd target, dispatched by `aw hook`. */
+export const sessionEndHook: CliCommand = {
+  name: "hook session-end",
   flags: { known: ["code"], retired: ["can-pause"], mode: "warn" },
-  hook: true,
   help: {
     purpose:
       "SessionEnd hook target: checkpoint the named or conversation-bound session, and only that one.",

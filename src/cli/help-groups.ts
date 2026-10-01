@@ -16,13 +16,16 @@ export interface CommandGroup {
   commands: string[];
 }
 
+/** The group `aw --help` leaves out unless `--all` asks for it: commands for Workline's own development. */
+const DEV_ONLY_GROUP = "Dev-only";
+
 const GROUPS: readonly CommandGroup[] = [
   {
     name: "Session lifecycle",
     commands: [
       "sessions",
       "session-create",
-      "session-resume",
+      "session-load",
       "session-close",
       "session-pause",
       "session-artifacts",
@@ -31,7 +34,7 @@ const GROUPS: readonly CommandGroup[] = [
   },
   {
     name: "Checkpoint",
-    commands: ["checkpoint-read"],
+    commands: ["checkpoint-read", "checkpoint-write"],
   },
   {
     name: "Sources / Branches",
@@ -147,7 +150,7 @@ const GROUPS: readonly CommandGroup[] = [
     ],
   },
   { name: "MCP", commands: ["mcp", "tool"] },
-  { name: "Dev-only", commands: ["harness", "profiles", "logs"] },
+  { name: DEV_ONLY_GROUP, commands: ["harness", "profiles", "logs"] },
   { name: "Self", commands: ["self"] },
 ];
 
@@ -358,10 +361,15 @@ function aligned(rows: readonly [string, string][]): string[] {
 export function globalHelpText(
   commands: readonly GlobalHelpEntry[],
   defaultNamespace: string,
+  options: { all?: boolean } = {},
 ): string {
+  const all = options.all === true;
   const purposes = new Map(commands.map((command) => [command.name, command.help.purpose]));
-  const agentFacing = commands.filter((command) => command.hook !== true).map((c) => c.name);
-  const hooks = commands.filter((command) => command.hook === true);
+  const devOnly = new Set(GROUPS.find((group) => group.name === DEV_ONLY_GROUP)?.commands ?? []);
+  const agentFacing = commands
+    .filter((command) => command.hook !== true && (all || !devOnly.has(command.name)))
+    .map((c) => c.name);
+  const hooks = all ? commands.filter((command) => command.hook === true) : [];
   const lines = [
     "aw — Workline runtime CLI",
     "",
@@ -396,6 +404,7 @@ export function globalHelpText(
           "Hook targets (the host runs them; an agent does not call them):",
           ...aligned(hooks.map((command) => [command.name, command.help.purpose])),
         ]),
+    ...(all ? [] : ["", "aw --help --all also lists the hook targets and the dev-only commands."]),
     "",
     "Aliases:",
     "  agent-workflow      long name of `aw`",
