@@ -180,7 +180,7 @@ describe("una propuesta se aprueba una vez y se publica entera", () => {
             ? {
                 proof: {
                   kind: "inspection" as const,
-                  source: "workspace",
+                  source: "hub",
                   relative_cwd: ".",
                   checkout_digest: "test-checkout",
                   invocation: { artifact: "tests/unit/flow-proposal.test.ts" },
@@ -375,9 +375,9 @@ describe("Refinar vuelve a la redacción en los tres flujos que lo ofrecen", () 
       "## Tasks",
       "",
       "### F1 — algo",
-      "> Fuentes: workspace",
+      "> Fuentes: hub",
       "",
-      "- [ ] T1.1 — hacer algo _(fuentes: workspace)_",
+      "- [ ] T1.1 — hacer algo _(fuentes: hub)_",
       "",
       "**Validación de fase:** `npm test` pasa.",
       "**Condición de salida:** hecho.",
@@ -476,7 +476,7 @@ describe("Refinar vuelve a la redacción en los tres flujos que lo ofrecen", () 
             ? {
                 proof: {
                   kind: "inspection" as const,
-                  source: "workspace",
+                  source: "hub",
                   relative_cwd: ".",
                   checkout_digest: "test-checkout",
                   invocation: { artifact: "tests/unit/flow-proposal.test.ts" },

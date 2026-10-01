@@ -3,13 +3,15 @@ import { join } from "node:path";
 import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
 import { RETIRED_WORKLINE_SKILLS } from "../../domain/skills.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
+import { HUB_MIGRATE_ACTION } from "../../runtime/workspace-resolution.js";
+import { legacyBlockMarkers } from "../parsers/project-block.js";
 import { resolveBundledSkillPath } from "../self/install-skill.js";
 import type { DoctorProvider, DoctorProviderInput } from "./types.js";
 import { coverage } from "./types.js";
 
 const CATEGORY = "hub-visibility" as const;
 const MIRRORS = ["CLAUDE.md", "AGENTS.md"] as const;
-const OWNED_SECTIONS = new Set(["proyecto", "fuentes", "stack", "status", "pipeline"]);
+const OWNED_SECTIONS = new Set(["hub", "fuentes", "stack", "status", "pipeline"]);
 
 interface RetiredSection {
   from: number;
@@ -149,6 +151,10 @@ export const workspaceBlockProvider: DoctorProvider = {
         },
       });
     }
+    for (const file of files) {
+      if (file.text === null || legacyBlockMarkers(file.text) === null) continue;
+      findings.push(legacyBlockFinding(file.file, file.path));
+    }
     const known = await knownCommands();
     for (const file of files) {
       if (file.text === null) continue;
@@ -175,6 +181,22 @@ export const workspaceBlockProvider: DoctorProvider = {
     return { coverage: [coverage(CATEGORY, "hub", "checked")], findings };
   },
 };
+
+/** Every hub command fails with HUB_MIGRATION_REQUIRED until the block is migrated. */
+function legacyBlockFinding(file: string, path: string): DoctorFinding {
+  return {
+    id: doctorFindingId("hub", CATEGORY, `${file}:marcadores-anteriores`),
+    host: "hub",
+    category: CATEGORY,
+    resource: { kind: "project-file", name: file, locator: path },
+    state: "blocking",
+    summary: `${file} lleva el bloque con marcadores anteriores a 29.0.0`,
+    impact: "todo comando del hub falla con HUB_MIGRATION_REQUIRED hasta migrarlo",
+    evidence: ["el bloque usa <NS>-PROJECT-START/END"],
+    ownership: "ours",
+    remediation: { kind: "manual", action: null, guidance: [HUB_MIGRATE_ACTION] },
+  };
+}
 
 function retiredSkillReference(body: string): string | null {
   for (const [, skill] of body.matchAll(

@@ -6,6 +6,7 @@ import type { Namespace } from "../runtime/namespace.js";
 import { WORKLINE_MARKER_FILE } from "../runtime/workline-marker.js";
 import { resolveWorkspaceDirectory } from "../runtime/workspace-resolution.js";
 import { localDateIso } from "./dates.js";
+import { hubBlockMarkers } from "./parsers/project-block.js";
 
 export interface ProjectBlockMarkers {
   start: string;
@@ -148,13 +149,9 @@ export class PathsService {
     return join(this.cwdRoot(), "skills.toml");
   }
 
-  // CLAUDE.md / AGENTS.md project block markers
+  // CLAUDE.md / AGENTS.md hub block markers
   blockMarkers(): ProjectBlockMarkers {
-    const upper = this.ns.toUpperCase();
-    return {
-      start: `<!-- ${upper}-PROJECT-START -->`,
-      end: `<!-- ${upper}-PROJECT-END -->`,
-    };
+    return hubBlockMarkers(this.ns);
   }
 }
 

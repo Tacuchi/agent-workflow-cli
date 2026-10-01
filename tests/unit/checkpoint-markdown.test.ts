@@ -9,7 +9,7 @@ import type { SessionState } from "../../src/application/checkpoint/state-reader
 /** An inventory that was read and found nothing — the old `[]`. */
 function inventory(overrides: Partial<FilesTouched> = {}): FilesTouched {
   return {
-    observed: [{ alias: "workspace", boundary: "/ws", reference: "abc1234def" }],
+    observed: [{ alias: "hub", boundary: "/ws", reference: "abc1234def" }],
     unobserved: [],
     linked: [],
     contextual: [],
@@ -20,7 +20,7 @@ function inventory(overrides: Partial<FilesTouched> = {}): FilesTouched {
 
 function touched(path: string, overrides: Partial<TouchedFile> = {}): TouchedFile {
   return {
-    unit: "workspace",
+    unit: "hub",
     path,
     added: "1",
     removed: "0",
@@ -131,11 +131,11 @@ describe("formatCheckpointMd — EN headings", () => {
       baseState({
         files_touched: inventory({
           contextual: Array.from({ length: 20 }, (_, i) => touched(`src/file${i}.ts`)),
-          omitted: [{ unit: "workspace", count: 5 }],
+          omitted: [{ unit: "hub", count: 5 }],
         }),
       }),
     );
-    expect(md).toContain("- _… and 5 more contextual changes not listed (cap 20): workspace 5_");
+    expect(md).toContain("- _… and 5 more contextual changes not listed (cap 20): hub 5_");
   });
 
   it("renders Refs with EN labels (Origin/Artifacts present/Skills used)", () => {
@@ -230,14 +230,14 @@ describe("la sección de archivos tocados se explica sola (spec 038)", () => {
       baseState({
         files_touched: inventory({
           observed: [
-            { alias: "workspace", boundary: "/hub/projects/ws", reference: "1e669a0a1066f0b" },
+            { alias: "hub", boundary: "/hub/projects/ws", reference: "1e669a0a1066f0b" },
             { alias: "agent-workflow-cli", boundary: "/units/cli", reference: null },
           ],
           contextual: [touched("docs/x.md")],
         }),
       }),
     );
-    expect(md).toContain("workspace at `/hub/projects/ws` (vs 1e669a0)");
+    expect(md).toContain("hub at `/hub/projects/ws` (vs 1e669a0)");
     // A repository with no commit yet is said so, never shown as a fake ref.
     expect(md).toContain("agent-workflow-cli at `/units/cli` (no commit yet)");
     // AC-04 read out loud: this is the tree now, not a window over the session.
@@ -250,7 +250,7 @@ describe("la sección de archivos tocados se explica sola (spec 038)", () => {
         files_touched: inventory({
           linked: [touched("docs/plans/037-plan.md", { linked: true })],
           contextual: Array.from({ length: 20 }, (_, i) => touched(`src/file${i}.ts`)),
-          omitted: [{ unit: "workspace", count: 700 }],
+          omitted: [{ unit: "hub", count: 700 }],
         }),
       }),
     );
@@ -261,16 +261,14 @@ describe("la sección de archivos tocados se explica sola (spec 038)", () => {
     expect(lines[0]).toContain("docs/plans/037-plan.md");
     // 1 linked + 20 contextual: the cap bounds the contextual half alone.
     expect(lines).toHaveLength(21);
-    expect(md).toContain(
-      "- _… and 700 more contextual changes not listed (cap 20): workspace 700_",
-    );
+    expect(md).toContain("- _… and 700 more contextual changes not listed (cap 20): hub 700_");
   });
 
   it("AC-06: una unidad inobservable se nombra y el parcial se publica igual", () => {
     const md = formatCheckpointMd(
       baseState({
         files_touched: inventory({
-          observed: [{ alias: "workspace", boundary: "/ws", reference: "abc1234" }],
+          observed: [{ alias: "hub", boundary: "/ws", reference: "abc1234" }],
           unobserved: [
             { alias: "agent-workflow-cli", boundary: "/units/cli", reason: "not a git repository" },
           ],
@@ -289,13 +287,13 @@ describe("la sección de archivos tocados se explica sola (spec 038)", () => {
       baseState({
         files_touched: inventory({
           observed: [],
-          unobserved: [{ alias: "workspace", boundary: "/ws", reason: "git status failed" }],
+          unobserved: [{ alias: "hub", boundary: "/ws", reason: "git status failed" }],
         }),
       }),
     );
     // The exact sentence the old code printed for a failed collection.
     expect(md).not.toContain("No uncommitted changes");
-    expect(md).toContain("- **Not observed — workspace** at `/ws`: git status failed");
+    expect(md).toContain("- **Not observed — hub** at `/ws`: git status failed");
     expect(md).toContain("_No unit in scope could be read — see the declaration above._");
   });
 
@@ -309,7 +307,7 @@ describe("la sección de archivos tocados se explica sola (spec 038)", () => {
         files_touched: inventory({
           linked: [touched("zz-vinculada.md", { linked: true })],
           contextual: [touched("src/b.ts"), touched("src/a.ts")],
-          omitted: [{ unit: "workspace", count: 3 }],
+          omitted: [{ unit: "hub", count: 3 }],
         }),
       }),
     );

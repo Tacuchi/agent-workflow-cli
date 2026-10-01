@@ -79,8 +79,8 @@ const CODE = "031";
 
 const ALIAS = "acme";
 const PLAN_DOC = "docs/plans/031-plan-tramo.md";
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
-## Proyecto
+const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
+## Hub
 
 Tramo plan.
 
@@ -98,7 +98,7 @@ Tramo plan.
 
 - Ramas de trabajo actuales:
   - ${ALIAS}: main
-<!-- AGENT-WORKFLOW-PROJECT-END -->
+<!-- AGENT-WORKFLOW-HUB-END -->
 `;
 
 const EXEC = journeyOfFlow("plan-exec");
@@ -167,7 +167,7 @@ it("el cierre señala las notas efectivas propias, la línea del criterio y el r
       SESSION,
       ids.slice(0, ids.indexOf("chassis.finalize")),
       "chassis.finalize",
-      { scope: { plan: PLAN_DOC, sources: ["workspace"] } },
+      { scope: { plan: PLAN_DOC, sources: ["hub"] } },
     );
     await writeFile(locateRun(paths, SESSION).statePath, serializeRunState(state));
     const result = await advanceFlow(fs, paths, {

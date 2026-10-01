@@ -40,7 +40,7 @@ it("mueve un hub y conserva una fuente relativa externa; dry-run no escribe", as
   await writeFile(join(old, ".workflow", "workline.json"), '{"namespace":"workflow"}');
   await writeFile(
     join(old, "AGENTS.md"),
-    "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ../source | main |\n<!-- WORKFLOW-PROJECT-END -->",
+    "<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ../source | main |\n<!-- WORKFLOW-HUB-END -->",
   );
   const paths = new PathsService(normalizeNamespace("workflow"), home, old);
   await registerHub(fs, paths, old);
@@ -117,7 +117,7 @@ it("repara un hub movido a mano con commits retenidos en una unidad de su propia
   await git("git", ["-C", old, "config", "user.name", "T"]);
   await writeFile(
     join(old, "AGENTS.md"),
-    "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| self | . | main |\n## Status\n- Ramas de trabajo actuales:\n  - self: main\n<!-- WORKFLOW-PROJECT-END -->",
+    "<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| self | . | main |\n## Status\n- Ramas de trabajo actuales:\n  - self: main\n<!-- WORKFLOW-HUB-END -->",
   );
   await writeFile(join(old, "README.md"), "base\n");
   await git("git", ["-C", old, "add", "AGENTS.md", "README.md"]);

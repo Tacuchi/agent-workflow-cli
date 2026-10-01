@@ -65,9 +65,9 @@ afterEach(() => {
 /** El bloque de proyecto es la ÚNICA fuente de lo declarado que el motor lee. */
 function declararFuentes(...paths: string[]): void {
   const lines = [
-    "<!-- WORKFLOW-PROJECT-START -->",
+    "<!-- WORKFLOW-HUB-START -->",
     "",
-    "## Proyecto",
+    "## Hub",
     "",
     "Workspace de prueba.",
     "",
@@ -85,7 +85,7 @@ function declararFuentes(...paths: string[]): void {
     "",
     "- Ramas de trabajo actuales: _ninguna_",
     "",
-    "<!-- WORKFLOW-PROJECT-END -->",
+    "<!-- WORKFLOW-HUB-END -->",
   ];
   writeFileSync(join(workspace, "CLAUDE.md"), `${lines.join("\n")}\n`);
 }

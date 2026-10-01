@@ -48,8 +48,8 @@ describe("cada lote exige y conserva su revisión", () => {
         ...[1, 2].flatMap((n) => [
           `### F${n} — fase`,
           "> Estado: pendiente",
-          "> Fuentes: workspace",
-          `- [ ] T${n}.1 — trabajo _(fuentes: workspace)_`,
+          "> Fuentes: hub",
+          `- [ ] T${n}.1 — trabajo _(fuentes: hub)_`,
         ]),
         "",
         "## Execution batches",
@@ -60,7 +60,7 @@ describe("cada lote exige y conserva su revisión", () => {
     );
     walk = planExecWalk(
       { fs, paths, env: new FakeEnv(root, root), git: new RecordingGit() },
-      { sources: ["workspace"] },
+      { sources: ["hub"] },
     );
     await walk.walkTo(RUN, REVIEW);
   });

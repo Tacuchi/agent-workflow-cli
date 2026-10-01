@@ -385,8 +385,8 @@ describe("runWorkspaceInit", () => {
       writeFileSync(
         path,
         readFileSync(path, "utf-8").replace(
-          "<!-- WORKFLOW-PROJECT-END -->",
-          "## Pipeline\n\n- a: build `npm run build`\n- b: test `npm test`\n<!-- WORKFLOW-PROJECT-END -->",
+          "<!-- WORKFLOW-HUB-END -->",
+          "## Pipeline\n\n- a: build `npm run build`\n- b: test `npm test`\n<!-- WORKFLOW-HUB-END -->",
         ),
       );
     }

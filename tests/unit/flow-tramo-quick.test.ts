@@ -408,7 +408,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
           ? {
               proof: {
                 kind: "inspection" as const,
-                source: "workspace",
+                source: "hub",
                 relative_cwd: ".",
                 checkout_digest: "test-checkout",
                 invocation: { artifact: "tests/unit/flow-tramo-quick.test.ts" },
@@ -994,7 +994,7 @@ describe("QUICK dirigido — sobre una corrida real en disco", () => {
     expect(result.outcome).toBe("completed");
     expect(result.next_action).toContain("seguí con /w:spec-new");
     expect(result.next_action).not.toContain("aw session-close");
-    expect(result.next_action).toContain("workspace: cambios sin commitear");
+    expect(result.next_action).toContain("hub: cambios sin commitear");
     expect(result.next_action).toContain(`aw session-resume --code ${SESSION} --reopen`);
     const state = (await current()).state;
     expect(state.handoff?.package.decisions.request).toBe("probar el tramo");

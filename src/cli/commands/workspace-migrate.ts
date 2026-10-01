@@ -60,7 +60,7 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
   flags: FLAGS,
   help: {
     purpose:
-      "Bring a hub with a legacy session series up to the current model: markers, closing sentinels and reserved numbers.",
+      "Bring a hub up to the current model: block markers and heading, the reserved hub alias of open plans and runs, closing sentinels and reserved numbers.",
     flags: {
       apply: {
         effect: "Write the migration under the hub lock; without it nothing is written.",
@@ -68,9 +68,9 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
       renumber: { effect: "Instead, renumber colliding session folders (preview unless --apply)." },
     },
     output:
-      "{action: preview, hub, markers[], sentinels[], rows[], conflicts[], legacy[], next_correlative, pending, next} | {action: apply, hub, markers_renamed[], duplicates_dropped[], sentinels_seeded[], rows_seeded[], rows_without_date[], conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
+      "{action: preview, hub, markers[], aliases[], runs[], sentinels[], rows[], conflicts[], legacy[], next_correlative, pending, next} | {action: apply, hub, markers_renamed[], duplicates_dropped[], aliases_rewritten[], runs_rewritten[], sentinels_seeded[], rows_seeded[], rows_without_date[], conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
     notes: [
-      "Renames the hub block markers to the current namespace, seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
+      "Renames the block markers to <NS>-HUB-START/END (also from a PROJECT block or an older namespace) and its ## Proyecto heading to ## Hub, renames the reserved alias workspace to hub in open plans and open runs (closed ones stay byte for byte), seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
     ],
   },
 

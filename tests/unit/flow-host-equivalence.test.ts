@@ -153,7 +153,7 @@ function resultFor(resolved: Resolved, stopped: FlowDecision): Record<string, un
         ? {
             proof: {
               kind: "inspection" as const,
-              source: "workspace",
+              source: "hub",
               relative_cwd: ".",
               checkout_digest: "test-checkout",
               invocation: { artifact: "tests/unit/flow-host-equivalence.test.ts" },

@@ -24,7 +24,7 @@ it("persist apply desde el checkout resuelve el único hub incluso con marcador 
   writeFileSync(join(hub, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
   writeFileSync(
     join(hub, "AGENTS.md"),
-    `<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n<!-- WORKFLOW-PROJECT-END -->`,
+    `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n<!-- WORKFLOW-HUB-END -->`,
   );
   spawnSync("git", ["init", "-q", source]);
   const run = (cwd: string, args: string[], input?: string) => {

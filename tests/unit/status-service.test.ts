@@ -30,7 +30,7 @@ function fullWorkspace(): FakeFs {
   const fs = new FakeFs();
   fs.file(
     "/cwd/CLAUDE.md",
-    "<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nmi-workspace\n<!-- WORKFLOW-PROJECT-END -->\n",
+    "<!-- WORKFLOW-HUB-START -->\n## Hub\nmi-workspace\n<!-- WORKFLOW-HUB-END -->\n",
   );
   // specs
   fs.file(
@@ -109,7 +109,7 @@ describe("runStatusCommand — full dashboard", () => {
     const fs = fullWorkspace();
     fs.file(
       "/cwd/CLAUDE.md",
-      "<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nNombre\n\nDescripción\n<!-- WORKFLOW-PROJECT-END -->\n",
+      "<!-- WORKFLOW-HUB-START -->\n## Hub\nNombre\n\nDescripción\n<!-- WORKFLOW-HUB-END -->\n",
     );
     fs.file(
       "/cwd/.workflow/HISTORY.md",

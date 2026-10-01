@@ -93,7 +93,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
 
     writeFileSync(
       join(workspace, "CLAUDE.md"),
-      `<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\n\nX.\n\n## Fuentes\n\n| Alias | Path | Rama principal |\n|---|---|---|\n| acme | ${source} | main |\n\n## Status\n\n- Ramas de trabajo actuales:\n  - acme: main\n<!-- WORKFLOW-PROJECT-END -->\n`,
+      `<!-- WORKFLOW-HUB-START -->\n## Hub\n\nX.\n\n## Fuentes\n\n| Alias | Path | Rama principal |\n|---|---|---|\n| acme | ${source} | main |\n\n## Status\n\n- Ramas de trabajo actuales:\n  - acme: main\n<!-- WORKFLOW-HUB-END -->\n`,
     );
     writeFileSync(join(workspace, "docs", "specs", "025-spec-algo.md"), SPEC);
     writeFileSync(join(workspace, planPath), PLAN);

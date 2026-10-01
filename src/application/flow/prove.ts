@@ -101,7 +101,7 @@ function notEligible(wanted: string, candidates: readonly CheckoutIdentity[]): C
       .map((candidate) => candidate.source)
       .join(", ")})`,
     action:
-      "usá 'workspace' para el checkout documental, o el alias de una unidad de aislamiento que esta sesión ya tomó",
+      "usá 'hub' para el checkout documental, o el alias de una unidad de aislamiento que esta sesión ya tomó",
   };
 }
 
@@ -185,7 +185,7 @@ export async function proveFlowBoundary(
   }
 
   const captured = await captureCheckoutProof(fs, paths, input.git, session, action, {
-    source: input.source ?? "workspace",
+    source: input.source ?? "hub",
     ...(input.artifact === undefined ? {} : { artifact: input.artifact }),
   });
   if (!captured.ok) return { ok: false, failure: captured.failure };
@@ -267,7 +267,7 @@ export async function captureCheckoutProof(
         // this surface exists to stop.
         message: `no se pudo observar la raíz de '${identity.source}' (${identity.root}): o no existe, o no es un checkout git, o git no pudo leerla`,
         action:
-          "comprobá que esa raíz responda a 'git status' y tenga al menos un commit; para 'workspace' es el ancestro con el marcador de Workline, y para otro alias tomá su unidad con 'aw worktree ensure --source <alias> --code <NNN>'",
+          "comprobá que esa raíz responda a 'git status' y tenga al menos un commit; para 'hub' es el ancestro con el marcador de Workline, y para otro alias tomá su unidad con 'aw worktree ensure --source <alias> --code <NNN>'",
       },
     };
   }

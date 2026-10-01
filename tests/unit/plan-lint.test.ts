@@ -30,8 +30,8 @@ const PLAN = "docs/plans/055-plan-lint.md";
 const RUN = ".workflow/sessions/210-otra-plan-exec/.flow-run.json";
 
 const WORKSPACE_BLOCK = [
-  "<!-- AGENT-WORKFLOW-PROJECT-START -->",
-  "## Proyecto",
+  "<!-- AGENT-WORKFLOW-HUB-START -->",
+  "## Hub",
   "",
   "El lint.",
   "",
@@ -45,7 +45,7 @@ const WORKSPACE_BLOCK = [
   "",
   "- cli: build `npm run build` · test `npm test`",
   "",
-  "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+  "<!-- AGENT-WORKFLOW-HUB-END -->",
   "",
 ].join("\n");
 

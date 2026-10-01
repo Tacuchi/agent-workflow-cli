@@ -5,7 +5,7 @@ import {
   resolveDefinedWorkingBranch,
 } from "../../src/application/project-tab-data.js";
 
-const MARKERS = { start: "<!-- WORKFLOW-PROJECT-START -->", end: "<!-- WORKFLOW-PROJECT-END -->" };
+const MARKERS = { start: "<!-- WORKFLOW-HUB-START -->", end: "<!-- WORKFLOW-HUB-END -->" };
 
 function workspaceBlock(withWorkingBranches: boolean): string {
   const working = withWorkingBranches
@@ -20,7 +20,7 @@ function workspaceBlock(withWorkingBranches: boolean): string {
     : "";
   return [
     MARKERS.start,
-    "## Proyecto",
+    "## Hub",
     "",
     "Workspace de mantenimiento de contratos.",
     "",
@@ -378,7 +378,7 @@ describe("buildProjectTabData — rama principal resuelta", () => {
   function blockWithDefault(): string {
     return [
       MARKERS.start,
-      "## Proyecto",
+      "## Hub",
       "",
       "WS",
       "",

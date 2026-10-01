@@ -33,7 +33,7 @@ import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
 
 const PLAN =
-  "# Plan 001\n> Estado: open\n## Tasks\n### F1 — trabajo\n> Estado: pendiente\n> Fuentes: workspace\n- [ ] T1.1 — cambiar _(fuentes: workspace)_\n";
+  "# Plan 001\n> Estado: open\n## Tasks\n### F1 — trabajo\n> Estado: pendiente\n> Fuentes: hub\n- [ ] T1.1 — cambiar _(fuentes: hub)_\n";
 const SESSION = "001-sellos-plan-exec";
 const DOCUMENT = "docs/plans/001-plan-sellos.md";
 
@@ -65,7 +65,7 @@ describe("recover --reinfer-batch", () => {
     writeFileSync(sealedPlanPath(location.dir, inferred.batch.plan_digest), PLAN);
     let state = withScope(newRunState("plan-exec", SESSION), {
       plan: DOCUMENT,
-      sources: ["workspace"],
+      sources: ["hub"],
     });
     state = withPlanExecBatchLoop(withPlanExecBatch(state, inferred.batch), {
       pending: true,
@@ -164,7 +164,7 @@ describe("recover --reinfer-batch", () => {
 
   it("no re-sella un conjunto de tareas distinto ni un lote publicado", async () => {
     const { paths, location, state } = seed();
-    writeFileSync(join(root, DOCUMENT), `${PLAN}- [ ] T1.2 — extra _(fuentes: workspace)_\n`);
+    writeFileSync(join(root, DOCUMENT), `${PLAN}- [ ] T1.2 — extra _(fuentes: hub)_\n`);
     expect(await previewReinferBatch(fs, paths, SESSION)).toMatchObject({
       ok: false,
       failure: { code: "PLAN_EXEC_BATCH_TASK_SET_INVALID" },

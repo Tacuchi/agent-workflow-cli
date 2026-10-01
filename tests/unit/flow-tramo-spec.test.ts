@@ -226,7 +226,7 @@ describe("SPEC dirigido — sobre una corrida real en disco", () => {
           ? {
               proof: {
                 kind: "inspection" as const,
-                source: "workspace",
+                source: "hub",
                 relative_cwd: ".",
                 checkout_digest: "test-checkout",
                 invocation: { artifact: "tests/unit/flow-tramo-spec.test.ts" },

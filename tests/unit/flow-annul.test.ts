@@ -45,9 +45,9 @@ function planText(): string {
     ...PHASES.flatMap((n) => [
       `### F${n} — fase ${n}`,
       "> Estado: pendiente",
-      "> Fuentes: workspace",
+      "> Fuentes: hub",
       "",
-      `- [ ] T${n}.1 — tarea ${n} _(fuentes: workspace)_`,
+      `- [ ] T${n}.1 — tarea ${n} _(fuentes: hub)_`,
       "",
     ]),
     "## Execution batches",
@@ -88,13 +88,13 @@ describe("aw flow annul — el caso de motos-v2", () => {
     await writeFile(
       join(workdir, "CLAUDE.md"),
       [
-        "<!-- AGENT-WORKFLOW-PROJECT-START -->",
+        "<!-- AGENT-WORKFLOW-HUB-START -->",
         "## Fuentes",
         "",
         "| Alias | Path | Rama principal |",
         "|---|---|---|",
         `| acme | ${acme} | main |`,
-        "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+        "<!-- AGENT-WORKFLOW-HUB-END -->",
         "",
       ].join("\n"),
       "utf8",
@@ -105,7 +105,7 @@ describe("aw flow annul — el caso de motos-v2", () => {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "SESSION.md"), "# SESSION\n\n## Objective\nmotos\n", "utf8");
     // Every phase accredited, one batch each, without touching the source.
-    await planExecWalk(deps, { sources: ["workspace"] }).walkTo(RUN, "plan-exec.final-validation");
+    await planExecWalk(deps, { sources: ["hub"] }).walkTo(RUN, "plan-exec.final-validation");
   });
 
   afterEach(async () => {
@@ -175,7 +175,7 @@ describe("aw flow annul — el caso de motos-v2", () => {
     expect([3, 4, 5, 6].map((n) => states.get(n))).toEqual(Array(4).fill("pendiente"));
     expect(parseTasks(plan).open).toBe(4);
 
-    const walk = planExecWalk(deps, { sources: ["workspace"] });
+    const walk = planExecWalk(deps, { sources: ["hub"] });
     const { state } = await walk.current(RUN.folder);
     expect(state.events.map((event) => event.kind).slice(0, 2)).toEqual(["restarted", "annulled"]);
     const annulled = state.events[1];

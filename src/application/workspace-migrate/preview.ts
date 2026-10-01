@@ -9,6 +9,7 @@
  */
 
 import { relpath } from "../paths.js";
+import { aliasLocations } from "./aliases.js";
 import type { WorkspaceMigrationApplied } from "./apply.js";
 import { type MigrationConflict, type WorkspaceMigrationPlan, pendingChanges } from "./plan.js";
 
@@ -35,6 +36,10 @@ export interface PreviewRow {
 export interface WorkspaceMigrationPreview {
   hub: string;
   markers: PreviewMarker[];
+  /** `file:line` of every source declaration that goes from `workspace` to `hub`. */
+  aliases: string[];
+  /** Open runs whose scope goes from `workspace` to `hub`. */
+  runs: string[];
   sentinels: PreviewSentinel[];
   rows: PreviewRow[];
   conflicts: MigrationConflict[];
@@ -53,6 +58,8 @@ export function migrationPreview(plan: WorkspaceMigrationPlan): WorkspaceMigrati
       to: hub.to,
       drops_duplicate: hub.drops_duplicate,
     })),
+    aliases: aliasLocations(plan.workspace, plan.aliases),
+    runs: plan.runs.map((run) => run.session),
     sentinels: plan.sentinels.map((seed) => ({ folder: seed.folder, date: seed.date })),
     rows: plan.rows.map((seed) => ({
       folder: seed.folder,
@@ -73,32 +80,28 @@ export function renderMigrationPreview(preview: WorkspaceMigrationPreview): stri
   const lines = [
     `Hub: ${preview.hub}`,
     `Serie legacy: ${countOf(preview.legacy.length, "carpeta", "carpetas")} · próximo correlativo: ${preview.next_correlative}`,
+    ...section(
+      "Marcadores del bloque del hub:",
+      preview.markers.map((marker) => {
+        const duplicate = marker.drops_duplicate
+          ? " (y elimina el bloque vacío que el CLI había agregado aparte)"
+          : "";
+        return `${marker.file} — ${marker.from} → ${marker.to}${duplicate}`;
+      }),
+    ),
+    ...section("Alias reservado workspace → hub en los planes abiertos:", preview.aliases),
+    ...section("Alias reservado workspace → hub en las corridas abiertas:", preview.runs),
+    ...section(
+      "Centinelas de cierre a sembrar, con la fecha del histórico:",
+      preview.sentinels.map(
+        (sentinel) => `${sentinel.folder} — cerrada el ${sentinel.date || "(fila sin fecha)"}`,
+      ),
+    ),
+    ...section(
+      "Filas a reservar en el histórico, para que el número no se reasigne:",
+      preview.rows.map((row) => `${row.folder} — ${row.state}, ${dateNote(row.date)}`),
+    ),
   ];
-
-  if (preview.markers.length > 0) {
-    lines.push("", "Marcadores del bloque del hub:");
-    for (const marker of preview.markers) {
-      const duplicate = marker.drops_duplicate
-        ? " (y elimina el bloque vacío que el CLI había agregado aparte)"
-        : "";
-      lines.push(`  ${marker.file} — ${marker.from} → ${marker.to}${duplicate}`);
-    }
-  }
-
-  if (preview.sentinels.length > 0) {
-    lines.push("", "Centinelas de cierre a sembrar, con la fecha del histórico:");
-    for (const sentinel of preview.sentinels) {
-      lines.push(`  ${sentinel.folder} — cerrada el ${sentinel.date || "(fila sin fecha)"}`);
-    }
-  }
-
-  if (preview.rows.length > 0) {
-    lines.push("", "Filas a reservar en el histórico, para que el número no se reasigne:");
-    for (const row of preview.rows) {
-      lines.push(`  ${row.folder} — ${row.state}, ${dateNote(row.date)}`);
-    }
-  }
-
   if (preview.pending === 0) {
     lines.push("", "Nada que migrar: el hub ya opera con el modelo actual.");
   }
@@ -107,6 +110,11 @@ export function renderMigrationPreview(preview: WorkspaceMigrationPreview): stri
     lines.push("", "Para aplicarlo:", "  aw hub-migrate --apply");
   }
   return lines.join("\n");
+}
+
+/** A titled, indented list, or nothing when the list is empty. */
+function section(title: string, items: readonly string[]): string[] {
+  return items.length === 0 ? [] : ["", title, ...items.map((item) => `  ${item}`)];
 }
 
 export function renderMigrationApplied(applied: WorkspaceMigrationApplied): string {
@@ -118,6 +126,13 @@ export function renderMigrationApplied(applied: WorkspaceMigrationApplied): stri
   if (applied.duplicates_dropped.length > 0) {
     const files = applied.duplicates_dropped.map((path) => relpath(path, applied.hub));
     lines.push(`Bloques duplicados eliminados: ${files.join(", ")}`);
+  }
+  if (applied.aliases_rewritten.length > 0) {
+    const files = applied.aliases_rewritten.map((path) => relpath(path, applied.hub));
+    lines.push(`Alias hub en planes abiertos: ${files.join(", ")}`);
+  }
+  if (applied.runs_rewritten.length > 0) {
+    lines.push(`Alias hub en corridas abiertas: ${applied.runs_rewritten.join(", ")}`);
   }
   if (applied.sentinels_seeded.length > 0) {
     lines.push(`Centinelas sembrados: ${applied.sentinels_seeded.join(", ")}`);

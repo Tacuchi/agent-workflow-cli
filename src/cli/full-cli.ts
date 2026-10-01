@@ -9,6 +9,7 @@ import {
   formatTuiEvent,
 } from "../application/logging/log-events.js";
 import { Logger } from "../application/logging/logger.js";
+import { legacyBlockFiles } from "../application/parsers/project-block.js";
 import { PathsService } from "../application/paths-service.js";
 import { preparationMismatch, recordPreparation } from "../application/preparation-receipts.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
@@ -28,6 +29,7 @@ import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
 import {
   WorkspaceResolutionError,
+  hubMigrationRequired,
   registerResolvedWorkspace,
   resolveWorkspaceDirectory,
 } from "../runtime/workspace-resolution.js";
@@ -221,28 +223,50 @@ async function resolveWorklineDirectory(
   env: NodeEnv,
 ): Promise<WorklineDirectory | null> {
   try {
-    const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
-    if (parsed.command === "hub-init") return directory;
-    try {
-      return await resolveWorkspaceDirectory(
-        fs,
-        directory,
-        env.cwd(),
-        env.homeDir(),
-        parsed.values.get("hub"),
-      );
-    } catch (error) {
-      if (!(error instanceof WorkspaceResolutionError)) throw error;
-      if (isHookCommand(parsed)) {
-        writeStderr(error.message);
-        return null;
-      }
-      if (runsWithoutWorkspace(parsed))
-        return { ...directory, root: env.cwd(), materialized: false };
-      throw error;
+    const directory = await resolveHubDirectory(resolver, parsed, fs, env);
+    if (directory !== null && !exemptFromHubMigration(parsed)) {
+      const legacy = await legacyBlockFiles(fs, directory.root);
+      if (legacy.length > 0) throw hubMigrationRequired(directory.root, legacy);
     }
+    return directory;
   } catch (err) {
     return directoryFailure(err, parsed);
+  }
+}
+
+/**
+ * What still answers in a hub whose block wears pre-29 markers: the migration
+ * itself, and what does not operate on a hub (doctor, help, the machine-scoped
+ * commands and the stdio transports).
+ */
+function exemptFromHubMigration(parsed: ParsedArgs): boolean {
+  return parsed.command === "hub-migrate" || runsWithoutWorkspace(parsed);
+}
+
+async function resolveHubDirectory(
+  resolver: NamespaceResolver,
+  parsed: ParsedArgs,
+  fs: NodeFileSystem,
+  env: NodeEnv,
+): Promise<WorklineDirectory | null> {
+  const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
+  if (parsed.command === "hub-init") return directory;
+  try {
+    return await resolveWorkspaceDirectory(
+      fs,
+      directory,
+      env.cwd(),
+      env.homeDir(),
+      parsed.values.get("hub"),
+    );
+  } catch (error) {
+    if (!(error instanceof WorkspaceResolutionError)) throw error;
+    if (isHookCommand(parsed)) {
+      writeStderr(error.message);
+      return null;
+    }
+    if (runsWithoutWorkspace(parsed)) return { ...directory, root: env.cwd(), materialized: false };
+    throw error;
   }
 }
 
@@ -668,7 +692,10 @@ function directoryFailure(err: unknown, parsed: ParsedArgs): null {
       writeStderr(err.message);
       return null;
     }
-    const next = nextStepOfRoots(err.roots, process.argv.slice(2));
+    const next =
+      err.action !== undefined
+        ? { action: err.action }
+        : nextStepOfRoots(err.roots, process.argv.slice(2));
     emitError(
       { code: err.code, message: err.message, details: { roots: err.roots } },
       next ?? undefined,

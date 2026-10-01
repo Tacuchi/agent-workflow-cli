@@ -13,7 +13,7 @@ const phase = (n: number, state: string, extra: readonly string[] = []): string[
   `> Estado: ${state}`,
   ...extra,
   "",
-  `- [ ] T${n}.1 — trabajo _(fuentes: workspace)_`,
+  `- [ ] T${n}.1 — trabajo _(fuentes: hub)_`,
   "",
 ];
 

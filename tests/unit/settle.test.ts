@@ -80,12 +80,12 @@ const planText = (): string =>
     "### F1 — la primera",
     "> Estado: validada",
     "",
-    "- [x] T1.1 — hecho _(fuentes: workspace)_",
+    "- [x] T1.1 — hecho _(fuentes: hub)_",
     "",
     "### F2 — la segunda",
     "> Estado: pendiente",
     "",
-    "- [ ] T2.1 — queda _(fuentes: workspace)_",
+    "- [ ] T2.1 — queda _(fuentes: hub)_",
     "",
     "## Handoff operativo",
     "",
@@ -401,7 +401,7 @@ describe("aw settle", () => {
       mkdirSync(join(paths.cwdSessionsDir(), folder), { recursive: true });
       const run = withScope(newRunState("plan-exec", folder), {
         plan: PLAN_FILE,
-        sources: ["workspace"],
+        sources: ["hub"],
       });
       await writeFile(
         join(paths.cwdSessionsDir(), folder, FLOW_RUN_STATE_FILE),
@@ -477,7 +477,7 @@ describe("aw settle — las trampas que la relectura encontró", () => {
       "### F1 — la única",
       "> Estado: pendiente",
       "",
-      "- [ ] T1.1 — queda _(fuentes: workspace)_",
+      "- [ ] T1.1 — queda _(fuentes: hub)_",
       "",
     ].join("\n");
 
@@ -727,7 +727,7 @@ describe("aw settle — las trampas que la relectura encontró", () => {
     // Una corrida cuyo recorrido se agotó y cuya sesión nadie cerró.
     let run = withScope(newRunState("plan-exec", folder), {
       plan: PLAN_A,
-      sources: ["workspace"],
+      sources: ["hub"],
     });
     for (const decision of journeyOfFlow("plan-exec")) {
       run = applyTransition(run, decision.id);
@@ -757,7 +757,7 @@ describe("aw settle — las trampas que la relectura encontró", () => {
     mkdirSync(join(paths.cwdSessionsDir(), folder), { recursive: true });
     let run = withScope(newRunState("plan-exec", folder), {
       plan: PLAN_A,
-      sources: ["workspace"],
+      sources: ["hub"],
     });
     for (const decision of journeyOfFlow("plan-exec")) {
       if (decision.id === "plan-exec.branch-precondition") break;

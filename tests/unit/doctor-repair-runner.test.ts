@@ -79,8 +79,8 @@ const ctx = {
     cwdSkillsToml: () => "/ws/.workflow/skills.toml",
     userSkillsToml: () => "/home/tester/.workflow/skills.toml",
     blockMarkers: () => ({
-      start: "<!-- WORKFLOW-PROJECT-START -->",
-      end: "<!-- WORKFLOW-PROJECT-END -->",
+      start: "<!-- WORKFLOW-HUB-START -->",
+      end: "<!-- WORKFLOW-HUB-END -->",
     }),
   },
   // El delegado de `auth.flow` no es un módulo que se pueda doblar con

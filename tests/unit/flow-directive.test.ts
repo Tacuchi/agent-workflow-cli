@@ -397,14 +397,14 @@ describe("directiva de frontera — la forma válida", () => {
       outcome: "needs_input",
       action: delegated({
         evidence: ["sesion-creada", SOURCE_BOUNDED_EVIDENCE],
-        checkouts: [{ source: "workspace", root: "/hosts/este/proyectos/hub" }],
+        checkouts: [{ source: "hub", root: "/hosts/este/proyectos/hub" }],
       }),
       nextAction: "corré la invocación y devolvé su resultado",
     });
     if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
     const human = renderDirectiveHuman(built.directive);
     // El dato que quien prueba NO podía deducir: contra qué directorio se compara.
-    expect(human).toContain("workspace → /hosts/este/proyectos/hub");
+    expect(human).toContain("hub → /hosts/este/proyectos/hub");
     expect(human).toContain("observación local de esta corrida");
     // Lo transferible es la regla, no la ruta, y el lector va a ella por nombre.
     expect(human).toContain("aw flow --help");

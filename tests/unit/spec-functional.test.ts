@@ -391,9 +391,9 @@ Spec 040.
 
 ### F1 — sellar lo funcional
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — sellar el digest funcional _(fuentes: workspace)_
+- [ ] T1.1 — sellar el digest funcional _(fuentes: hub)_
 `;
 }
 
@@ -414,9 +414,9 @@ Spec 040.
 
 ### F1 — sellar lo funcional
 > Estado: validada
-> Fuentes: workspace
+> Fuentes: hub
 
-- [x] T1.1 — sellar el digest funcional _(fuentes: workspace)_
+- [x] T1.1 — sellar el digest funcional _(fuentes: hub)_
 `;
 }
 
@@ -930,8 +930,8 @@ const fs = new (class extends NodeFileSystem {
 const SESSION = "151-valvula-plan-exec";
 const CODE = "151";
 const ALIAS = "acme";
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
-## Proyecto
+const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
+## Hub
 
 La válvula.
 
@@ -945,7 +945,7 @@ La válvula.
 
 - Ramas de trabajo actuales:
   - ${ALIAS}: main
-<!-- AGENT-WORKFLOW-PROJECT-END -->
+<!-- AGENT-WORKFLOW-HUB-END -->
 `;
 
 /** El plan de la corrida: sellado funcional y con sus fuentes declaradas. */
@@ -1060,7 +1060,7 @@ describe("la ida completa de la válvula, sobre una corrida real", () => {
           ? {
               proof: {
                 kind: "inspection" as const,
-                source: "workspace",
+                source: "hub",
                 relative_cwd: ".",
                 checkout_digest: "test-checkout",
                 invocation: { artifact: "tests/unit/spec-functional.test.ts" },

@@ -54,7 +54,7 @@ it("commitea sólo las rutas declaradas en la rama del checkout, sin crear aw/*"
   await writeFile(join(repo, "user.txt"), "edición del usuario\n");
   await writeFile(
     join(root, "CLAUDE.md"),
-    `<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nPrueba\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| codigo | ${repo} | main |\n## Status\n- Modo de edición: in-place\n<!-- WORKFLOW-PROJECT-END -->\n`,
+    `<!-- WORKFLOW-HUB-START -->\n## Hub\nPrueba\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| codigo | ${repo} | main |\n## Status\n- Modo de edición: in-place\n<!-- WORKFLOW-HUB-END -->\n`,
   );
   const fs = new NodeFileSystem();
   const git = new GitCliAdapter(new NodeProcess());

@@ -47,8 +47,8 @@ const CODE = "001";
 const ALIAS = "selva";
 const PLAN_DOC = "docs/plans/001-plan-migracion.md";
 
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-PROJECT-START -->
-## Proyecto
+const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
+## Hub
 
 Migración de otro proyecto.
 
@@ -62,7 +62,7 @@ Migración de otro proyecto.
 
 - Ramas de trabajo actuales:
   - ${ALIAS}: main
-<!-- AGENT-WORKFLOW-PROJECT-END -->
+<!-- AGENT-WORKFLOW-HUB-END -->
 `;
 
 /**
@@ -152,7 +152,7 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
       ...base,
       proof: {
         kind: "inspection" as const,
-        source: "workspace",
+        source: "hub",
         relative_cwd: ".",
         checkout_digest: "test-checkout",
         invocation: { artifact: "tests/unit/flow-incidente-ceremonia.test.ts" },

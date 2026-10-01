@@ -56,8 +56,8 @@ describe("unidad con rama propia del documento", () => {
     expect(git(repo, "rev-parse", "main")).toBe(main);
     writeFileSync(
       join(workspace, "CLAUDE.md"),
-      `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+      `<!-- WORKFLOW-HUB-START -->
+## Hub
 Test.
 ## Fuentes
 | Alias | Path | Rama principal |
@@ -69,7 +69,7 @@ _Stack sin detectar._
 - Ramas de trabajo actuales:
   - acme: main
 - Última actividad: 2026-09-27
-<!-- WORKFLOW-PROJECT-END -->\n`,
+<!-- WORKFLOW-HUB-END -->\n`,
     );
     const paths = new PathsService(normalizeNamespace("workflow"), root, workspace);
     const folder = join(paths.cwdSessionsDir(), session);
@@ -247,8 +247,8 @@ _Stack sin detectar._
     const workspace = deps.paths.workspaceDir();
     writeFileSync(
       join(workspace, "CLAUDE.md"),
-      `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+      `<!-- WORKFLOW-HUB-START -->
+## Hub
 Test.
 ## Fuentes
 | Alias | Path | Rama principal |
@@ -262,7 +262,7 @@ _Stack sin detectar._
   - acme: main
   - beta: main
 - Última actividad: 2026-09-27
-<!-- WORKFLOW-PROJECT-END -->\n`,
+<!-- WORKFLOW-HUB-END -->\n`,
     );
     const own = await ensure();
     const defaultUnit = (await runWorktree(deps, {

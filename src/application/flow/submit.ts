@@ -1791,7 +1791,7 @@ function scopeFrom(
     };
   }
   const declared = snapshot.declared;
-  if (declared === null && aliases.some((alias) => alias !== "workspace")) {
+  if (declared === null && aliases.some((alias) => alias !== "hub")) {
     return {
       failure: {
         code: "FLOW_SCOPE_UNKNOWN_SOURCE",
@@ -1801,9 +1801,7 @@ function scopeFrom(
     };
   }
   const declaredAliases = declared ?? [];
-  const unknown = aliases.filter(
-    (alias) => alias !== "workspace" && !declaredAliases.includes(alias),
-  );
+  const unknown = aliases.filter((alias) => alias !== "hub" && !declaredAliases.includes(alias));
   if (unknown.length > 0) {
     return {
       failure: {

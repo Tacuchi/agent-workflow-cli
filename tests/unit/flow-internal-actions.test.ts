@@ -261,10 +261,10 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
   it("la inferencia guarda en la sesión la copia exacta direccionada por el sello", async () => {
     const plan = "docs/plans/001-plan.md";
     const text =
-      "# Plan 001\n> Estado: open\n## Tasks\n### F1 — trabajo\n> Estado: pendiente\n> Fuentes: workspace\n- [ ] T1.1 — prueba _(fuentes: workspace)_\n";
+      "# Plan 001\n> Estado: open\n## Tasks\n### F1 — trabajo\n> Estado: pendiente\n> Fuentes: hub\n- [ ] T1.1 — prueba _(fuentes: hub)_\n";
     await mkdir(join(workdir, "docs/plans"), { recursive: true });
     await writeFile(join(workdir, plan), text);
-    const run = withScope(newRunState("plan-exec", SESSION), { plan, sources: ["workspace"] });
+    const run = withScope(newRunState("plan-exec", SESSION), { plan, sources: ["hub"] });
     await writeFile(statePath(), serializeRunState(run));
     const outcome = await executor(
       { operation: "plan-exec.batch-infer" },
@@ -637,15 +637,15 @@ describe("la escritura del registro falla después del efecto", () => {
     "",
     "### F1 — uno",
     "> Estado: pendiente",
-    "> Fuentes: workspace",
+    "> Fuentes: hub",
     "",
-    "- [ ] T1.1 — uno _(fuentes: workspace)_",
+    "- [ ] T1.1 — uno _(fuentes: hub)_",
     "",
     "### F2 — dos",
     "> Estado: pendiente",
-    "> Fuentes: workspace",
+    "> Fuentes: hub",
     "",
-    "- [ ] T2.1 — dos _(fuentes: workspace)_",
+    "- [ ] T2.1 — dos _(fuentes: hub)_",
     "",
     "## Execution batches",
     "- B1 · isolated · F1",
@@ -653,8 +653,8 @@ describe("la escritura del registro falla después del efecto", () => {
     "",
   ].join("\n");
   const WORKSPACE_BLOCK = [
-    "<!-- AGENT-WORKFLOW-PROJECT-START -->",
-    "## Proyecto",
+    "<!-- AGENT-WORKFLOW-HUB-START -->",
+    "## Hub",
     "",
     "Re-entrada de acciones internas.",
     "",
@@ -663,7 +663,7 @@ describe("la escritura del registro falla después del efecto", () => {
     "| Alias | Path | Rama principal |",
     "|---|---|---|",
     "| acme | {{ACME}} | main |",
-    "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+    "<!-- AGENT-WORKFLOW-HUB-END -->",
     "",
   ].join("\n");
 
@@ -716,7 +716,7 @@ describe("la escritura del registro falla después del efecto", () => {
     await rm(workdir, { recursive: true, force: true });
   });
 
-  const walk = () => planExecWalk(deps, { sources: ["workspace"] });
+  const walk = () => planExecWalk(deps, { sources: ["hub"] });
 
   async function current() {
     const read = await readRun(fs, locateRun(paths, RUN.folder));
@@ -1039,7 +1039,7 @@ describe("a branch that does not match stops the run with an action, never asks 
       await mkdir(join(root, "acme"), { recursive: true });
       await writeFile(
         join(root, "CLAUDE.md"),
-        `<!-- AGENT-WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| acme | ${join(root, "acme")} | main |\n<!-- AGENT-WORKFLOW-PROJECT-END -->\n`,
+        `<!-- AGENT-WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| acme | ${join(root, "acme")} | main |\n<!-- AGENT-WORKFLOW-HUB-END -->\n`,
       );
       const ids = journeyOfFlow("plan-exec").map((row) => row.id);
       const state = stateWrittenAt(

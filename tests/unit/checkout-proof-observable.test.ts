@@ -45,7 +45,7 @@ describe("identidad del checkout observado", () => {
 
     const candidates = await resolveCheckoutCandidates(fs, paths, "001-prueba");
 
-    expect(candidates[0]).toEqual({ source: "workspace", root: hub });
+    expect(candidates[0]).toEqual({ source: "hub", root: hub });
     expect(candidates[0]?.root).not.toBe(gitRoot);
   });
 });
@@ -92,7 +92,7 @@ describe("atribución del defecto de forma", () => {
     // that object is the one the boundary just sealed.
     const result = parse({
       kind: "inspection",
-      source: "workspace",
+      source: "hub",
       relative_cwd: ".",
       checkout_digest: "un-digest",
       invocation,
@@ -110,7 +110,7 @@ describe("atribución del defecto de forma", () => {
   it("un proof command sin sus campos también se atribuye al proof", () => {
     const result = parse({
       kind: "command",
-      source: "workspace",
+      source: "hub",
       relative_cwd: ".",
       checkout_digest: "un-digest",
       invocation: { artifact: "docs/algo.md" },
@@ -126,7 +126,7 @@ describe("atribución del defecto de forma", () => {
   it("un kind mal escrito nombra los kinds válidos, no repite lo que llegó", () => {
     const result = parse({
       kind: "inspeccion",
-      source: "workspace",
+      source: "hub",
       relative_cwd: ".",
       checkout_digest: "un-digest",
       invocation: { artifact: "docs/algo.md" },
@@ -178,7 +178,7 @@ describe("atribución del defecto de forma", () => {
     // y es ciego a una reclasificación. Sin este caso, revertirla sería silencioso.
     const nested = parse({
       kind: "inspection",
-      source: "workspace",
+      source: "hub",
       relative_cwd: ".",
       checkout_digest: "un-digest",
       invocation,
@@ -194,7 +194,7 @@ describe("atribución del defecto de forma", () => {
   it("un proof bien formado no estorba: la lista se lee entera", () => {
     const result = parse({
       kind: "command",
-      source: "workspace",
+      source: "hub",
       relative_cwd: ".",
       checkout_digest: "un-digest",
       invocation: { program: "aw", args: ["status", "--json"] },

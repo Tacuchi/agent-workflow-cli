@@ -70,7 +70,7 @@ function buildCtx(opts: CtxOpts = {}): CliContext {
       cwdMarkerFile: () => "/home/test/project/.workflow/workline.json",
       cwdProcessesFile: () => "/home/test/project/.workflow/processes.json",
       cwdLockFile: () => "/home/test/project/.workflow/lock",
-      blockMarkers: () => ({ start: "<!-- AW-PROJECT-START -->", end: "<!-- AW-PROJECT-END -->" }),
+      blockMarkers: () => ({ start: "<!-- AW-HUB-START -->", end: "<!-- AW-HUB-END -->" }),
     } as never,
   } as unknown as CliContext;
 }

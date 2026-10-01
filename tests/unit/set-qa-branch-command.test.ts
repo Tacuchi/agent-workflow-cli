@@ -56,7 +56,7 @@ describe("set-qa-branch command", () => {
   it("declara hotfix y rechaza desarrollo/PROD como excepción", async () => {
     await writeFile(
       join(cwd, "CLAUDE.md"),
-      `<!-- AGENT-WORKFLOW-PROJECT-START -->\n## Proyecto\nTest\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| core | ${cwd} | main |\n## Status\n- Ramas por defecto:\n  - desarrollo: development\n<!-- AGENT-WORKFLOW-PROJECT-END -->`,
+      `<!-- AGENT-WORKFLOW-HUB-START -->\n## Hub\nTest\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| core | ${cwd} | main |\n## Status\n- Ramas por defecto:\n  - desarrollo: development\n<!-- AGENT-WORKFLOW-HUB-END -->`,
     );
     expect((await setExceptionBranchCommand.execute(args(["core", "development"]), ctx())).ok).toBe(
       false,

@@ -18,10 +18,10 @@ const validPlan = [
   "## Tasks",
   "",
   "### F1 — Política",
-  "> Fuentes: workspace, cli",
+  "> Fuentes: hub, cli",
   "",
   "- [ ] T1.1 — Implementar. _(fuentes: cli)_",
-  "- [ ] T1.2 — Documentar. _(fuentes: workspace)_",
+  "- [ ] T1.2 — Documentar. _(fuentes: hub)_",
 ].join("\n");
 
 describe("SourceBoundaryPolicy — estructura de plan", () => {
@@ -32,10 +32,10 @@ describe("SourceBoundaryPolicy — estructura de plan", () => {
         {
           n: 1,
           line: 7,
-          sources: ["workspace", "cli"],
+          sources: ["hub", "cli"],
           tasks: [
             { n: 1, line: 10, sources: ["cli"] },
-            { n: 2, line: 11, sources: ["workspace"] },
+            { n: 2, line: 11, sources: ["hub"] },
           ],
         },
       ],
@@ -63,9 +63,9 @@ describe("SourceBoundaryPolicy — estructura de plan", () => {
   it("falla cerrado por límite/fuentes ausentes, alias desconocido y tarea fuera de fase", () => {
     const malformed = validPlan
       .replace("> Límite de ejecución: checkout\n\n", "")
-      .replace("> Fuentes: workspace, cli", "> Fuentes: workspace")
+      .replace("> Fuentes: hub, cli", "> Fuentes: hub")
       .replace("_(fuentes: cli)_", "_(fuentes: desconocida)_")
-      .replace("_(fuentes: workspace)_", "");
+      .replace("_(fuentes: hub)_", "");
     expect(validatePlanSourceBoundary(malformed, ["cli"]).map((failure) => failure.code)).toEqual([
       "PLAN_SOURCE_BOUNDARY_MISSING",
       "PLAN_SOURCE_UNKNOWN",
@@ -201,11 +201,11 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
 
   it("nombra las fuentes elegibles cuando la prueba declara una que no lo es", () => {
     const failure = validateCheckoutProof(proof, [
-      { source: "workspace", digest },
+      { source: "hub", digest },
       { source: "ui", digest },
     ]);
     expect(failure?.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
-    expect(failure?.message).toContain("workspace, ui");
+    expect(failure?.message).toContain("hub, ui");
   });
 
   it("distingue una raíz ajena del digest vencido y conserva pruebas anteriores sin raíz", () => {

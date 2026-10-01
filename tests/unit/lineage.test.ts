@@ -74,9 +74,9 @@ Spec 033.
 
 ### F1 — algo verificable
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — hacer algo _(fuentes: workspace)_
+- [ ] T1.1 — hacer algo _(fuentes: hub)_
 `;
 }
 

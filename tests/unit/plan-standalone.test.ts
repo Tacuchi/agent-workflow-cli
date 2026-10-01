@@ -73,9 +73,9 @@ ${origin}
 
 ### F1 — hacer el trabajo
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — hacer el trabajo _(fuentes: workspace)_
+- [ ] T1.1 — hacer el trabajo _(fuentes: hub)_
 `;
 }
 
@@ -331,8 +331,8 @@ const GATE = "plan-exec.deviation-gate";
  * las unidades de cada fuente declarada con `git worktree list`, y una fuente que
  * no existe en disco es un estado de aislamiento ilegible, que el cierre rechaza.
  */
-const workspaceBlock = (acme: string) => `<!-- AGENT-WORKFLOW-PROJECT-START -->
-## Proyecto
+const workspaceBlock = (acme: string) => `<!-- AGENT-WORKFLOW-HUB-START -->
+## Hub
 
 Un plan nacido de la conversación.
 
@@ -346,7 +346,7 @@ Un plan nacido de la conversación.
 
 - Ramas de trabajo actuales:
   - acme: main
-<!-- AGENT-WORKFLOW-PROJECT-END -->
+<!-- AGENT-WORKFLOW-HUB-END -->
 `;
 
 /** El plan standalone del workspace real: sin `Derived from`, con su marcador. */
@@ -363,9 +363,9 @@ Adoptado de la conversación del host, sin spec previa.
 
 ### F1 — hacer el trabajo
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — hacer el trabajo _(fuentes: workspace)_
+- [ ] T1.1 — hacer el trabajo _(fuentes: hub)_
 `;
 
 describe("la ida completa — un desvío componible se registra y la corrida SIGUE", () => {
@@ -391,7 +391,7 @@ describe("la ida completa — un desvío componible se registra y la corrida SIG
     await writeFile(join(workdir, PLAN_PATH), REAL_PLAN, "utf8");
     walk = planExecWalk(
       { fs, env: new FakeEnv(workdir, workdir), git: new GitCliAdapter(new NodeProcess()), paths },
-      { sources: ["workspace"], signals: ["plan.deviation-composable"] },
+      { sources: ["hub"], signals: ["plan.deviation-composable"] },
     );
   });
 
@@ -619,9 +619,9 @@ Spec 070.
 
 ### F1 — hacer el trabajo
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — hacer el trabajo _(fuentes: workspace)_
+- [ ] T1.1 — hacer el trabajo _(fuentes: hub)_
 `,
       "utf8",
     );
@@ -629,7 +629,7 @@ Spec 070.
     // recorrido camina derecho hasta el sello final.
     const derecho = planExecWalk(
       { fs, env: new FakeEnv(workdir, workdir), git: new GitCliAdapter(new NodeProcess()), paths },
-      { sources: ["workspace"], signals: [] },
+      { sources: ["hub"], signals: [] },
     );
     await derecho.walkTo(run, "plan-exec.plan-done");
     // El sello lo corre el CLI: la corrida queda parada en él porque su

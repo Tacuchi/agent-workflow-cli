@@ -191,8 +191,8 @@ describe("project-block · una sección propia dentro del bloque sobrevive (AC-0
   it("se conserva y vuelve completa, encabezado incluido", () => {
     const clean = renderProjectBlock({ ...BASE, workingBranches: { core: "feature/x" } });
     const dirty = clean.replace(
-      "<!-- WORKFLOW-PROJECT-END -->",
-      `${NOTAS}\n\n<!-- WORKFLOW-PROJECT-END -->`,
+      "<!-- WORKFLOW-HUB-END -->",
+      `${NOTAS}\n\n<!-- WORKFLOW-HUB-END -->`,
     );
 
     const parsed = parseProjectBlock(dirty);
@@ -217,8 +217,8 @@ describe("project-block · una sección propia dentro del bloque sobrevive (AC-0
   it("y la segunda reescritura no la mueve ni la duplica", () => {
     const clean = renderProjectBlock({ ...BASE, workingBranches: { core: "feature/x" } });
     const dirty = clean.replace(
-      "<!-- WORKFLOW-PROJECT-END -->",
-      `${NOTAS}\n\n<!-- WORKFLOW-PROJECT-END -->`,
+      "<!-- WORKFLOW-HUB-END -->",
+      `${NOTAS}\n\n<!-- WORKFLOW-HUB-END -->`,
     );
     const once = rewrite(dirty);
     expect(rewrite(once)).toBe(once);

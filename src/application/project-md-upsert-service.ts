@@ -12,6 +12,7 @@ import {
   type ProjectPipeline,
   type ProjectStack,
   formatPipelineRecord,
+  namespaceOfMarkers,
   parseProjectBlock,
   readWorkspaceBlock,
 } from "./parsers/project-block.js";
@@ -168,11 +169,7 @@ async function buildUpsertPlan(
   const render = await buildRenderInput(fs, cwd, input, existing);
   const local = await readWorkspaceLocalConfig(
     fs,
-    join(
-      cwd,
-      `.${/^<!-- ([A-Z][A-Z0-9_-]*)-PROJECT-START -->$/.exec(markers.start)?.[1]?.toLowerCase() ?? "workflow"}`,
-      "local.json",
-    ),
+    join(cwd, `.${namespaceOfMarkers(markers)}`, "local.json"),
   );
   const migration = await portableSources(
     fs,
@@ -189,9 +186,7 @@ async function buildUpsertPlan(
     render.pipeline ??= {};
     render.pipeline[alias] = { ...declaration, ...render.pipeline[alias] };
   }
-  const namespace =
-    /^<!-- ([A-Z][A-Z0-9_-]*)-PROJECT-START -->$/.exec(markers.start)?.[1]?.toLowerCase() ??
-    "workflow";
+  const namespace = namespaceOfMarkers(markers);
   const history = `.${namespace}/HISTORY.md`;
   if (await fs.exists(join(cwd, history))) render.historicoPath = history;
 

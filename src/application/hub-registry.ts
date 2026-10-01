@@ -3,7 +3,11 @@ import { readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promise
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { acquireLock } from "./lock-service.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
+import {
+  type ParsedProjectBlock,
+  readLegacyBlock,
+  readWorkspaceBlock,
+} from "./parsers/project-block.js";
 import { PathsService } from "./paths-service.js";
 
 export class HubRegistryError extends Error {
@@ -109,6 +113,34 @@ export async function declaringHubs(
   namespace: string,
   repo: string,
 ): Promise<DeclaringHub[]> {
+  return await hubsDeclaring(home, namespace, repo, (root, paths) =>
+    readWorkspaceBlock(fs, root, paths.blockMarkers()),
+  );
+}
+
+/**
+ * The registered hubs whose pre-29 block declares `repo`.
+ *
+ * Read only so the walk-up can answer HUB_MIGRATION_REQUIRED instead of
+ * HUB_UNRESOLVED about a hub that exists: those hubs never resolve as hubs
+ * until `aw hub-migrate --apply` runs in them.
+ */
+export async function legacyDeclaringHubs(
+  fs: FileSystemPort,
+  home: string,
+  namespace: string,
+  repo: string,
+): Promise<string[]> {
+  const hubs = await hubsDeclaring(home, namespace, repo, (root) => readLegacyBlock(fs, root));
+  return [...new Set(hubs.map((hub) => hub.root))];
+}
+
+async function hubsDeclaring(
+  home: string,
+  namespace: string,
+  repo: string,
+  read: (root: string, paths: PathsService) => Promise<ParsedProjectBlock | null>,
+): Promise<DeclaringHub[]> {
   const common = await gitCommonDirectory(repo);
   if (common === null) return [];
   const result: DeclaringHub[] = [];
@@ -116,7 +148,7 @@ export async function declaringHubs(
     if (root === home) continue;
     const paths = new PathsService(namespace as PathsService["namespace"], home, root);
     try {
-      const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+      const block = await read(root, paths);
       for (const source of block?.fuentes ?? []) {
         if (source.path && (await gitCommonDirectory(source.path)) === common) {
           result.push({

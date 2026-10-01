@@ -121,14 +121,14 @@ describe("aw flow advance — agota los pasos deterministas", () => {
         plan_exec_entry: {
           plan: "docs/plans/001-plan-p.md",
           phases_without_open_tasks: [],
-          sources: ["cli", "workspace"],
+          sources: ["cli", "hub"],
         },
       },
       journey: row,
     });
     if (!known.ok) throw new Error("sin source-scope");
     expect(known.directive.expects.source_scope).toEqual({
-      aliases: ["cli", "workspace"],
+      aliases: ["cli", "hub"],
       rule: null,
     });
     const unknown = advanceFlowRun({

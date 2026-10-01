@@ -806,9 +806,9 @@ describe("una acción interna sólo la acredita el CLI", () => {
     "### F1 — única",
     "",
     "> Estado: pendiente",
-    "> Fuentes: workspace",
+    "> Fuentes: hub",
     "",
-    "- [ ] T1.1 — hacer lo único _(fuentes: workspace)_",
+    "- [ ] T1.1 — hacer lo único _(fuentes: hub)_",
     "",
   ].join("\n");
 
@@ -966,7 +966,7 @@ describe("una acción interna sólo la acredita el CLI", () => {
     });
     if (!batch.ok) throw new Error(batch.failure.message);
     const before = await standOn("plan-exec", "plan-exec.batch-close", {
-      scope: { plan: PLAN, sources: ["workspace"] },
+      scope: { plan: PLAN, sources: ["hub"] },
       batches: [{ ...batch.batch, stage: "reviewing", review: batchReview() }],
     });
 

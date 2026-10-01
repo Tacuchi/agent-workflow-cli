@@ -407,10 +407,10 @@ function validateSources(sources: WorkspaceSource[]): WorkspaceInitInputError | 
     if (!s.alias || !s.path) {
       return { error: "invalid_source", hint: `fuente sin alias o path: ${JSON.stringify(s)}` };
     }
-    if (s.alias === "workspace") {
+    if (s.alias === "hub") {
       return {
         error: "reserved_source_alias",
-        hint: "'workspace' es la fuente implícita reservada para la raíz Workline; elegí otro alias para una fuente adicional",
+        hint: "'hub' es la fuente implícita reservada para la raíz Workline; elegí otro alias para una fuente adicional",
       };
     }
     if (aliases.has(s.alias)) {

@@ -31,14 +31,12 @@ const HUB_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
  * stale the next time the tool is renamed. What the block wears is read off the
  * file; what it should wear comes from the running namespace.
  */
-const BLOCK_START = /<!--\s*([A-Z0-9_-]+)-PROJECT-START\s*-->/;
+const BLOCK_START = /<!--\s*([A-Z0-9_-]+-(?:PROJECT|HUB))-START\s*-->/;
 const EVERY_BLOCK_START = new RegExp(BLOCK_START.source, "g");
 
-function markersFor(prefix: string): ProjectBlockMarkers {
-  return {
-    start: `<!-- ${prefix}-PROJECT-START -->`,
-    end: `<!-- ${prefix}-PROJECT-END -->`,
-  };
+/** A block's stem is its namespace prefix plus its kind: `WORKFLOW-HUB`, `AGENT-WORKFLOW-PROJECT`. */
+function markersFor(stem: string): ProjectBlockMarkers {
+  return { start: `<!-- ${stem}-START -->`, end: `<!-- ${stem}-END -->` };
 }
 
 export interface HubMarkerRewrite {
@@ -147,7 +145,7 @@ function refuse(reason: HubMarkerRefusal["reason"], detail: string): HubMarkerOu
   return { kind: "refused", refusal: { reason, detail } };
 }
 
-/** `<!-- WORKFLOW-PROJECT-START -->` → `WORKFLOW`. */
+/** `<!-- WORKFLOW-HUB-START -->` → `WORKFLOW-HUB`. */
 function prefixOf(startMarker: string): string {
   return BLOCK_START.exec(startMarker)?.[1] ?? "";
 }
@@ -175,7 +173,13 @@ function blockPrefixes(text: string): string[] {
  * A rename touches two lines and nothing else.
  */
 function renameMarkers(text: string, from: ProjectBlockMarkers, to: ProjectBlockMarkers): string {
-  return text.replaceAll(from.start, to.start).replaceAll(from.end, to.end);
+  const start = text.indexOf(from.start);
+  const end = text.indexOf(from.end, start);
+  if (start < 0 || end < 0) return text;
+  const inner = text
+    .slice(start + from.start.length, end)
+    .replace(/^## Proyecto[ \t]*$/m, "## Hub");
+  return `${text.slice(0, start)}${to.start}${inner}${to.end}${text.slice(end + from.end.length)}`;
 }
 
 /** Cut a whole block out, leaving one blank line where it used to separate two. */

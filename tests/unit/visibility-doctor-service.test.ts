@@ -22,12 +22,12 @@ class VisibilityFixtureFs extends NodeFileSystem {
 }
 
 function writeProjectBlock(workspace: string, fuentes: { alias: string; path: string }[]): void {
-  const start = "<!-- WORKFLOW-PROJECT-START -->";
-  const end = "<!-- WORKFLOW-PROJECT-END -->";
+  const start = "<!-- WORKFLOW-HUB-START -->";
+  const end = "<!-- WORKFLOW-HUB-END -->";
   const lines = [
     start,
     "",
-    "## Proyecto",
+    "## Hub",
     "",
     "Test workspace.",
     "",

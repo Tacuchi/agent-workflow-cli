@@ -52,7 +52,7 @@ export async function resolveCheckoutCandidates(
   } catch {
     return [];
   }
-  const candidates: CheckoutIdentity[] = [{ source: "workspace", root }];
+  const candidates: CheckoutIdentity[] = [{ source: "hub", root }];
   if (block !== null) {
     const live = await readRun(fs, locateRun(paths, session));
     const inPlace =

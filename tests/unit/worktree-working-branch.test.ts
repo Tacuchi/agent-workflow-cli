@@ -31,8 +31,8 @@ describe("unidad sin rama de trabajo", () => {
   function declare(work: string | null): void {
     writeFileSync(
       join(workspace, "CLAUDE.md"),
-      `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+      `<!-- WORKFLOW-HUB-START -->
+## Hub
 Prueba.
 ## Fuentes
 | Alias | Path | Rama principal |
@@ -41,7 +41,7 @@ Prueba.
 ## Status
 - Ramas por defecto: desarrollo=develop
 ${work === null ? "" : `- Ramas de trabajo actuales:\n  - acme: ${work}\n`}- Última actividad: 2026-08-07
-<!-- WORKFLOW-PROJECT-END -->`,
+<!-- WORKFLOW-HUB-END -->`,
     );
   }
 

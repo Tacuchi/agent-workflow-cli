@@ -42,13 +42,13 @@ describe("PathsService", () => {
 
   it("blockMarkers returns parametric markers", () => {
     expect(wfPaths.blockMarkers()).toEqual({
-      start: "<!-- WORKFLOW-PROJECT-START -->",
-      end: "<!-- WORKFLOW-PROJECT-END -->",
+      start: "<!-- WORKFLOW-HUB-START -->",
+      end: "<!-- WORKFLOW-HUB-END -->",
     });
     const ps = new PathsService(normalizeNamespace("agent-workflow"), "/h", "/c");
     expect(ps.blockMarkers()).toEqual({
-      start: "<!-- AGENT-WORKFLOW-PROJECT-START -->",
-      end: "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+      start: "<!-- AGENT-WORKFLOW-HUB-START -->",
+      end: "<!-- AGENT-WORKFLOW-HUB-END -->",
     });
   });
 

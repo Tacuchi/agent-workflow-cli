@@ -28,7 +28,7 @@ function buildCtx(): CliContext {
 }
 
 const ESC = "\x1b";
-const MARKERS = { start: "<!-- WORKFLOW-PROJECT-START -->", end: "<!-- WORKFLOW-PROJECT-END -->" };
+const MARKERS = { start: "<!-- WORKFLOW-HUB-START -->", end: "<!-- WORKFLOW-HUB-END -->" };
 
 const DECLARED_DEFAULTS = [
   "- Ramas por defecto:",
@@ -41,7 +41,7 @@ const DECLARED_DEFAULTS = [
 function workspaceMd(defaults?: string[]): string {
   return [
     MARKERS.start,
-    "## Proyecto",
+    "## Hub",
     "",
     "WS",
     "",

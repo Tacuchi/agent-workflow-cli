@@ -1,6 +1,12 @@
 import { access, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { declaringHubs, gitCommonDirectory, registerHub } from "../application/hub-registry.js";
+import {
+  declaringHubs,
+  gitCommonDirectory,
+  legacyDeclaringHubs,
+  registerHub,
+} from "../application/hub-registry.js";
+import { legacyBlockFiles } from "../application/parsers/project-block.js";
 import { PathsService } from "../application/paths-service.js";
 import { hubUnitPaths } from "../application/unit-membership.js";
 import type { FileSystemPort } from "../ports/file-system.js";
@@ -12,9 +18,26 @@ export class WorkspaceResolutionError extends Error {
     public readonly code: string,
     message: string,
     public readonly roots: string[] = [],
+    /** The exact command that unblocks it, when no retry over `roots` does. */
+    public readonly action?: string,
   ) {
     super(message);
   }
+}
+
+export const HUB_MIGRATE_ACTION = "aw hub-migrate --apply";
+
+/** The refusal a hub whose block still wears pre-29 markers earns. */
+export function hubMigrationRequired(
+  root: string,
+  files: readonly string[],
+): WorkspaceResolutionError {
+  return new WorkspaceResolutionError(
+    "HUB_MIGRATION_REQUIRED",
+    `El hub ${root} tiene el bloque con marcadores anteriores a 29.0.0 (${files.join(", ")}); ejecutá ${HUB_MIGRATE_ACTION} en el hub`,
+    [],
+    HUB_MIGRATE_ACTION,
+  );
 }
 
 function contains(parent: string, child: string): boolean {
@@ -167,6 +190,9 @@ async function resolveDeclaredWorkspace(
       roots,
     );
   }
+  const legacy = await legacyDeclaringHubs(fs, home, namespace, repo);
+  if (legacy[0] !== undefined)
+    throw hubMigrationRequired(legacy[0], await legacyBlockFiles(fs, legacy[0]));
   if (directory.root === home || (await isWorklineRoot(fs, home, namespace)))
     throw new WorkspaceResolutionError(
       "HUB_UNRESOLVED",

@@ -40,8 +40,8 @@ function git(repo: string, ...args: string[]): string {
 }
 
 function block(sourcePath: string): string {
-  return `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+  return `<!-- WORKFLOW-HUB-START -->
+## Hub
 
 Test.
 
@@ -55,7 +55,7 @@ Test.
 
 - Ramas de trabajo actuales:
   - acme: main
-<!-- WORKFLOW-PROJECT-END -->
+<!-- WORKFLOW-HUB-END -->
 `;
 }
 

@@ -63,7 +63,7 @@ export function resolveFinalValidation(
 ): FinalValidationSource[] {
   const overrides = finalValidationOverrides(plan);
   return aliases
-    .filter((alias) => alias !== "workspace")
+    .filter((alias) => alias !== "hub")
     .map((alias) => {
       const override = overrides.find((item) => item.alias === alias);
       const source = pipelines.find((item) => item.alias === alias);

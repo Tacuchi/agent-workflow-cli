@@ -8,10 +8,10 @@ const ENTER = "\r";
 const DOWN = "\x1B[B";
 const ESC = "\x1B";
 const tick = (ms = 90) => new Promise((resolve) => setTimeout(resolve, ms));
-const MARKERS = { start: "<!-- WORKFLOW-PROJECT-START -->", end: "<!-- WORKFLOW-PROJECT-END -->" };
+const MARKERS = { start: "<!-- WORKFLOW-HUB-START -->", end: "<!-- WORKFLOW-HUB-END -->" };
 const WORKSPACE = [
   MARKERS.start,
-  "## Proyecto",
+  "## Hub",
   "WS",
   "## Fuentes",
   "| Alias | Path | Rama principal |",

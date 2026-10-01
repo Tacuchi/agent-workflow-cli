@@ -39,7 +39,7 @@ describe("registro de hubs por checkout", () => {
       await writeFile(join(hub, ".workflow", "workline.json"), '{"namespace":"workflow"}');
       await writeFile(
         join(hub, "AGENTS.md"),
-        `<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal | Rama de trabajo |\n|---|---|---|---|\n| src | ${repo} | main | ${branch} |\n## Status\n- Ramas de trabajo actuales:\n  - src: ${branch}\n<!-- WORKFLOW-PROJECT-END -->`,
+        `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal | Rama de trabajo |\n|---|---|---|---|\n| src | ${repo} | main | ${branch} |\n## Status\n- Ramas de trabajo actuales:\n  - src: ${branch}\n<!-- WORKFLOW-HUB-END -->`,
       );
       await registerHub(fs, new PathsService(normalizeNamespace("workflow"), home, hub), hub);
     }

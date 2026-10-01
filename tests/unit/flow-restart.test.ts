@@ -263,13 +263,13 @@ describe("aw flow restart — el caso de qtc-selva llega a la validación final"
     await writeFile(
       join(workdir, "CLAUDE.md"),
       [
-        "<!-- AGENT-WORKFLOW-PROJECT-START -->",
+        "<!-- AGENT-WORKFLOW-HUB-START -->",
         "## Fuentes",
         "",
         "| Alias | Path | Rama principal |",
         "|---|---|---|",
         `| acme | ${acme} | main |`,
-        "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+        "<!-- AGENT-WORKFLOW-HUB-END -->",
         "",
       ].join("\n"),
       "utf8",
@@ -288,15 +288,15 @@ describe("aw flow restart — el caso de qtc-selva llega a la validación final"
         "",
         "### F1 — uno",
         "> Estado: validada",
-        "> Fuentes: workspace",
+        "> Fuentes: hub",
         "",
-        "- [x] T1.1 — uno _(fuentes: workspace)_",
+        "- [x] T1.1 — uno _(fuentes: hub)_",
         "",
         "### F2 — dos",
         "> Estado: validada",
-        "> Fuentes: workspace",
+        "> Fuentes: hub",
         "",
-        "- [x] T2.1 — dos _(fuentes: workspace)_",
+        "- [x] T2.1 — dos _(fuentes: hub)_",
         "",
       ].join("\n"),
       "utf8",
@@ -332,7 +332,7 @@ describe("aw flow restart — el caso de qtc-selva llega a la validación final"
     if (first?.kind !== "restarted") throw new Error("la corrida nueva nace nombrando la salida");
     expect(first.cause).toContain("FLOW_RUN_LEGACY_ADOPTION_REQUIRED");
 
-    const walk = planExecWalk(deps, { sources: ["workspace"] });
+    const walk = planExecWalk(deps, { sources: ["hub"] });
     await walk.walkTo(RUN, "plan-exec.final-validation");
     const { state, resolved } = await walk.current(RUN.folder);
     expect(resolved.stopped?.id).toBe("plan-exec.final-validation");

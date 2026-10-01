@@ -57,8 +57,8 @@ function git(repo: string, ...args: string[]): string {
 
 /** Two declared sources; only one of them is named by the plans. */
 function block(sourcePath: string, otherPath: string): string {
-  return `<!-- AGENT-WORKFLOW-PROJECT-START -->
-## Proyecto
+  return `<!-- AGENT-WORKFLOW-HUB-START -->
+## Hub
 
 Aislamiento concurrente.
 
@@ -74,7 +74,7 @@ Aislamiento concurrente.
 - Ramas de trabajo actuales:
   - ${ALIAS}: main
   - ${OTRO}: main
-<!-- AGENT-WORKFLOW-PROJECT-END -->
+<!-- AGENT-WORKFLOW-HUB-END -->
 `;
 }
 

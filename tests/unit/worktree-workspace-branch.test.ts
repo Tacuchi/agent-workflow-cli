@@ -46,7 +46,7 @@ it("recupera una rama aw antigua ya liberada con commits en vez de recortarla a 
   git(source, "commit", "-m", "base");
   writeFileSync(
     join(hub, "AGENTS.md"),
-    `<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n## Status\n- Ramas de trabajo actuales:\n  - src: main\n<!-- WORKFLOW-PROJECT-END -->`,
+    `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n## Status\n- Ramas de trabajo actuales:\n  - src: main\n<!-- WORKFLOW-HUB-END -->`,
   );
   const paths = new PathsService(normalizeNamespace("workflow"), home, hub);
   const deps = {
@@ -116,7 +116,7 @@ it("dos hubs con el mismo checkout y número de sesión conservan unidades y ram
     mkdirSync(hub);
     writeFileSync(
       join(hub, "AGENTS.md"),
-      `<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n## Status\n- Ramas de trabajo actuales:\n  - src: main\n<!-- WORKFLOW-PROJECT-END -->`,
+      `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n## Status\n- Ramas de trabajo actuales:\n  - src: main\n<!-- WORKFLOW-HUB-END -->`,
     );
     const paths = new PathsService(normalizeNamespace("workflow"), home, hub);
     const born = await runSessionCreate(new NodeFileSystem(), paths, {

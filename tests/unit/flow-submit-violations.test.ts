@@ -78,7 +78,7 @@ describe("submit informa juntas las violaciones independientes del sobre", () =>
             id: "fixture.proof",
             passed: "true",
             detail: "la salida real",
-            proof: { kind: "otro", source: "workspace", relative_cwd: ".", checkout_digest: "abc" },
+            proof: { kind: "otro", source: "hub", relative_cwd: ".", checkout_digest: "abc" },
           },
         ],
         effects: { planned: ["read_only"], approved: [], applied: ["commit"] },

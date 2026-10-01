@@ -168,7 +168,7 @@ describe("Workline implicit materialization", () => {
     const fs = new MemFs();
     fs.dir("/cwd");
     const result = await runWorkspaceInit(fs, new FakeEnv("/home/u", "/cwd"), paths(), {
-      sources: [{ alias: "workspace", path: "/other" }],
+      sources: [{ alias: "hub", path: "/other" }],
     });
 
     expect(result).toMatchObject({ error: "reserved_source_alias" });

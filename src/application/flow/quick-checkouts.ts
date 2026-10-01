@@ -41,7 +41,7 @@ async function readQuickCheckouts(
   const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
   const units = await resolveCheckoutCandidates(fs, paths, session);
   const sources: ProjectFuente[] = [
-    { alias: "workspace", path: root, main_branch: null },
+    { alias: "hub", path: root, main_branch: null },
     ...(block?.fuentes ?? []),
   ];
   const result: Record<string, string> = {};

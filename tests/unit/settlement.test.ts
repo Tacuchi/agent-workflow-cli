@@ -94,7 +94,7 @@ const AT = { session: "167-x-plan-exec", phase: "cierre", date: "2026-09-03" };
 describe("plan-done exige validación final aplicada de verdad", () => {
   const session = "052-validacion-plan-exec";
   const plan = "docs/plans/052-plan-validacion.md";
-  const scope = { plan, sources: ["workspace"] };
+  const scope = { plan, sources: ["hub"] };
   const ids = journeyOfFlow("plan-exec").map((row) => row.id);
   const beforeDone = ids.slice(0, ids.indexOf("plan-exec.plan-done"));
 
@@ -858,10 +858,10 @@ describe("el cierre del último batch es lo que le dice al cierre qué se debe",
       "",
       "### F1 — la única fase",
       "> Estado: pendiente",
-      "> Fuentes: workspace",
+      "> Fuentes: hub",
       "",
       "**Trabajo:**",
-      "- [ ] T1.1 — el trabajo _(fuentes: workspace)_",
+      "- [ ] T1.1 — el trabajo _(fuentes: hub)_",
       "",
     ].join("\n");
 
@@ -934,7 +934,7 @@ describe("el cierre del último batch es lo que le dice al cierre qué se debe",
     const journey = journeyOfFlow("plan-exec");
     let run = withScope(newRunState("plan-exec", SESSION), {
       plan: PLAN_FILE,
-      sources: ["workspace"],
+      sources: ["hub"],
     });
     for (const row of journey.slice(
       0,
@@ -963,7 +963,7 @@ describe("el cierre del último batch es lo que le dice al cierre qué se debe",
       {
         session: SESSION,
         code: "167",
-        scope: { plan: PLAN_FILE, sources: ["workspace"] },
+        scope: { plan: PLAN_FILE, sources: ["hub"] },
         proposal: null,
         state_digest: read.state.digest,
       },
@@ -1009,7 +1009,7 @@ describe("el cierre del último batch es lo que le dice al cierre qué se debe",
       {
         session: SESSION,
         code: "167",
-        scope: { plan: PLAN_FILE, sources: ["workspace"] },
+        scope: { plan: PLAN_FILE, sources: ["hub"] },
         proposal: null,
         state_digest: read.state.digest,
       },

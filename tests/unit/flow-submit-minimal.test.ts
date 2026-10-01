@@ -233,7 +233,7 @@ describe("a batch of several sources gets one captured proof per source", () => 
     }
     await writeFile(
       join(root, "CLAUDE.md"),
-      `<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nPrueba\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| uno | ${repos.uno} | main |\n| dos | ${repos.dos} | main |\n## Status\n- Modo de edición: in-place\n<!-- WORKFLOW-PROJECT-END -->\n`,
+      `<!-- WORKFLOW-HUB-START -->\n## Hub\nPrueba\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| uno | ${repos.uno} | main |\n| dos | ${repos.dos} | main |\n## Status\n- Modo de edición: in-place\n<!-- WORKFLOW-HUB-END -->\n`,
     );
     await mkdir(join(root, "docs", "plans"), { recursive: true });
     await writeFile(

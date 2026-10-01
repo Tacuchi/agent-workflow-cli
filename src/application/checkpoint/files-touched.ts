@@ -32,7 +32,7 @@ import type { GitPort } from "../../ports/git.js";
 import { readCustody } from "../session-custody-service.js";
 
 /** The reserved alias of the workspace itself, the one unit always in scope. */
-export const HUB_UNIT = "workspace";
+export const HUB_UNIT = "hub";
 
 /**
  * Readable ceiling for the CONTEXTUAL half alone.

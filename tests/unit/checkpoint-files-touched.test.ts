@@ -134,7 +134,7 @@ describe("inventario acotado al workspace, sobre git real (spec 038 · F1)", () 
     const touched = await collectFilesTouched(realFs(), realGit(), workspace, sessionPath);
 
     expect(touched.observed).toHaveLength(1);
-    expect(touched.observed[0]?.alias).toBe("workspace");
+    expect(touched.observed[0]?.alias).toBe("hub");
     expect(touched.observed[0]?.boundary).toBe(workspace);
     expect(touched.observed[0]?.reference).toBe(git(hub, "rev-parse", "HEAD"));
     expect(touched.unobserved).toEqual([]);
@@ -217,7 +217,7 @@ describe("inventario acotado al workspace, sobre git real (spec 038 · F1)", () 
     expect(touched.unobserved[0]?.reason).not.toBe("");
     // The workspace's own inventory survives the other unit's failure.
     expect(paths(touched.linked)).toEqual([PLAN]);
-    expect(touched.observed.map((u) => u.alias)).toEqual(["workspace"]);
+    expect(touched.observed.map((u) => u.alias)).toEqual(["hub"]);
   });
 });
 
@@ -296,7 +296,7 @@ describe("orden y recorte del inventario (spec 038 · F2/F3)", () => {
 
     expect(paths(touched.linked)).toEqual(["mine.md"]);
     expect(touched.contextual).toHaveLength(CONTEXTUAL_LIMIT);
-    expect(touched.omitted).toEqual([{ unit: "workspace", count: 50 - CONTEXTUAL_LIMIT }]);
+    expect(touched.omitted).toEqual([{ unit: "hub", count: 50 - CONTEXTUAL_LIMIT }]);
     // The whole scope is reported, not merely what fitted on screen.
     expect(totalInScope(touched)).toBe(51);
   });
@@ -328,7 +328,7 @@ describe("orden y recorte del inventario (spec 038 · F2/F3)", () => {
     // The isolation unit is what gets read, not the shared source checkout.
     expect(touched.observed.map((u) => u.boundary)).toEqual(["/ws", "/units/cli"]);
     expect(touched.contextual.map((e) => `${e.unit}:${e.path}`)).toEqual([
-      "workspace:z.md",
+      "hub:z.md",
       "agent-workflow-cli:src/a.ts",
     ]);
     // A source unit's path is never mistaken for a claimed workspace artifact.
@@ -408,7 +408,7 @@ describe("hallazgos de la revisión de cierre (spec 038)", () => {
     expect(touched.unobserved).toEqual([
       { alias: "cli", boundary: "(sin ruta)", reason: "la custodia no declara unit_path ni path" },
     ]);
-    expect(touched.observed.map((u) => u.alias)).toEqual(["workspace"]);
+    expect(touched.observed.map((u) => u.alias)).toEqual(["hub"]);
     expect(paths(touched.contextual)).toEqual(["a.md"]);
   });
 
@@ -461,11 +461,11 @@ describe("hallazgos de la revisión de cierre (spec 038)", () => {
     );
 
     const shownUnits = new Set(touched.contextual.map((e) => e.unit));
-    expect(shownUnits).toEqual(new Set(["workspace", "cli"]));
+    expect(shownUnits).toEqual(new Set(["hub", "cli"]));
     expect(touched.contextual).toHaveLength(CONTEXTUAL_LIMIT);
     // Half each, and the omission is attributed per unit rather than lumped.
     expect(touched.omitted).toEqual([
-      { unit: "workspace", count: 15 },
+      { unit: "hub", count: 15 },
       { unit: "cli", count: 15 },
     ]);
     expect(totalInScope(touched)).toBe(50);
@@ -477,7 +477,7 @@ describe("hallazgos de la revisión de cierre (spec 038)", () => {
         custody({
           sources: [
             {
-              alias: "workspace",
+              alias: "hub",
               path: "/otro",
               branch: "main",
               baseline_head: null,
@@ -495,7 +495,7 @@ describe("hallazgos de la revisión de cierre (spec 038)", () => {
     );
 
     expect(touched.unobserved).toHaveLength(1);
-    expect(touched.unobserved[0]?.reason).toContain("no puede llamarse workspace");
+    expect(touched.unobserved[0]?.reason).toContain("no puede llamarse hub");
     expect(paths(touched.contextual)).toEqual(["a.md"]);
   });
 });

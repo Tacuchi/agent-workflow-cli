@@ -85,9 +85,9 @@ Spec 033.
 
 ### F1 — algo verificable
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — hacer algo _(fuentes: workspace)_
+- [ ] T1.1 — hacer algo _(fuentes: hub)_
 
 **Validación de fase:** pruebas locales sobre fixtures del checkout.
 
@@ -182,7 +182,7 @@ describe("publicar un plan sella el baseline de la spec que consumió", () => {
         ? {
             proof: {
               kind: "inspection" as const,
-              source: "workspace",
+              source: "hub",
               relative_cwd: ".",
               checkout_digest: "test-checkout",
               invocation: { artifact: "tests/unit/plan-publication-lineage.test.ts" },

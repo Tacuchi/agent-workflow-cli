@@ -46,7 +46,7 @@ it("aw sources informa el otro hub y avisa cuando el checkout usa la rama ajena"
     );
     await writeFile(
       join(hub, "AGENTS.md"),
-      `<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${repo} | main |\n## Status\n- Ramas de trabajo actuales:\n  - src: ${branch}\n<!-- WORKFLOW-PROJECT-END -->`,
+      `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${repo} | main |\n## Status\n- Ramas de trabajo actuales:\n  - src: ${branch}\n<!-- WORKFLOW-HUB-END -->`,
     );
     await registerHub(fs, new PathsService(namespace, home, hub), hub);
   }

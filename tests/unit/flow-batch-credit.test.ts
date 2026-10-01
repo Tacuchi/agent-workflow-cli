@@ -47,15 +47,15 @@ const PLAN_TEXT = [
   "",
   "### F3 — tres",
   "> Estado: pendiente",
-  "> Fuentes: workspace",
+  "> Fuentes: hub",
   "",
-  "- [ ] T3.1 — tres _(fuentes: workspace)_",
+  "- [ ] T3.1 — tres _(fuentes: hub)_",
   "",
   "### F4 — cuatro",
   "> Estado: pendiente",
-  "> Fuentes: workspace",
+  "> Fuentes: hub",
   "",
-  "- [ ] T4.1 — cuatro _(fuentes: workspace)_",
+  "- [ ] T4.1 — cuatro _(fuentes: hub)_",
   "",
   // These regressions require two independent credits, not the legacy default partition.
   "## Execution batches",
@@ -95,7 +95,7 @@ describe("un lote se acredita sólo con la prueba propia de su checkout", () => 
       git: new GitCliAdapter(new NodeProcess()),
       paths,
     };
-    walk = planExecWalk(deps, { sources: ["workspace"] });
+    walk = planExecWalk(deps, { sources: ["hub"] });
     await writeFile(join(workspace, PLAN), PLAN_TEXT, "utf8");
     await writeFile(join(workspace, "docs", "nota.md"), "# nota\n", "utf8");
     await writeFile(join(hub, "vecino", "README.md"), "# vecino\n", "utf8");
@@ -215,7 +215,7 @@ describe("un lote se acredita sólo con la prueba propia de su checkout", () => 
     expect(refused.error?.code).toBe("PLAN_EXEC_BATCH_UNCHANGED");
     expect(refused.error?.message).toContain("batch-2");
     expect(refused.error?.message).toContain("el cierre del batch anterior");
-    expect(refused.error?.message).toContain("'workspace' no cambió");
+    expect(refused.error?.message).toContain("'hub' no cambió");
     const { state, resolved } = await current();
     expect(resolved.stopped?.id).toBe(VALIDATION);
     const batch = state.batches?.find((entry) => entry.iteration === 2);
@@ -233,7 +233,7 @@ describe("un lote se acredita sólo con la prueba propia de su checkout", () => 
     await touch("docs/otra.md", "# otra\n\nF4.\n");
     expect((await validate("tsc: 0 errores")).error).toBeNull();
     const { state } = await current();
-    const credits = (state.batches ?? []).map((batch) => batch.credit?.workspace);
+    const credits = (state.batches ?? []).map((batch) => batch.credit?.hub);
     expect(credits).toHaveLength(2);
     expect(credits.every((digest) => typeof digest === "string")).toBe(true);
     expect(credits[0]).not.toBe(credits[1]);
@@ -324,24 +324,22 @@ describe("un lote se acredita sólo con la prueba propia de su checkout", () => 
       }
     }
     const broken = { ...deps, git: new Unmeasurable(new NodeProcess()) };
-    const brokenWalk = planExecWalk(broken, { sources: ["workspace"] });
-    await expect(brokenWalk.walkTo(RUN, VALIDATION)).rejects.toThrow(
-      "no se pudo medir 'workspace'",
-    );
+    const brokenWalk = planExecWalk(broken, { sources: ["hub"] });
+    await expect(brokenWalk.walkTo(RUN, VALIDATION)).rejects.toThrow("no se pudo medir 'hub'");
     const { state, resolved } = await current();
     expect(resolved.stopped?.id).toBe("plan-exec.unit-acquisition");
     expect(state.batches?.[0]?.base).toBeUndefined();
     // Resuelta la causa, la misma frontera sella la base real.
     await walk.walkTo(RUN, VALIDATION);
-    expect((await current()).state.batches?.[0]?.base?.workspace).toMatch(/^sha256:/);
+    expect((await current()).state.batches?.[0]?.base?.hub).toMatch(/^sha256:/);
   });
 
   it("la base se sella al adquirir las unidades del lote y no se mueve al reintentar", async () => {
     await walk.walkTo(RUN, VALIDATION);
     const { state } = await current();
     const base = state.batches?.[0]?.base;
-    expect(Object.keys(base ?? {})).toEqual(["workspace"]);
-    expect(base?.workspace).toMatch(/^sha256:/);
+    expect(Object.keys(base ?? {})).toEqual(["hub"]);
+    expect(base?.hub).toMatch(/^sha256:/);
     // Con trabajo ya en el árbol, una re-adquisición que volviera a medir daría
     // otra huella: la base tiene que seguir siendo la de antes del trabajo.
     await touch("docs/nota.md", "# nota\n\ncambio\n");
@@ -408,7 +406,7 @@ describe("batch-close se niega sin acreditación", () => {
     const state = sealRunState({
       ...fresh,
       ...older,
-      scope: { plan: PLAN, sources: ["workspace"] },
+      scope: { plan: PLAN, sources: ["hub"] },
       batches: [{ ...inferred.batch, stage: "reviewing", ...batch }],
     });
     await writeFile(

@@ -1,5 +1,5 @@
-<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+<!-- WORKFLOW-HUB-START -->
+## Hub
 
 Workspace fixture sample-workspace para tests golden de @tacuchi/agent-workflow-cli.
 
@@ -23,4 +23,4 @@ _Stack sin detectar._
   - sample: desarrollo
 - Última actividad: 2026-01-03 — fixture
 - Histórico: `.workflow/HISTORY.md`
-<!-- WORKFLOW-PROJECT-END -->
+<!-- WORKFLOW-HUB-END -->

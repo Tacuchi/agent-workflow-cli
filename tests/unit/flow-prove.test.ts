@@ -127,7 +127,7 @@ describe("aw flow prove", () => {
     await mkdir(source);
     await writeFile(
       join(workdir, "CLAUDE.md"),
-      `<!-- AGENT-WORKFLOW-PROJECT-START -->\n## Proyecto\nPrueba\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| codigo | ${source} | main |\n## Status\n- Modo de edición: in-place\n<!-- AGENT-WORKFLOW-PROJECT-END -->`,
+      `<!-- AGENT-WORKFLOW-HUB-START -->\n## Hub\nPrueba\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| codigo | ${source} | main |\n## Status\n- Modo de edición: in-place\n<!-- AGENT-WORKFLOW-HUB-END -->`,
     );
     const state = withScope(newRunState("plan-exec", SESSION), {
       plan: "docs/plans/072-plan-test.md",
@@ -151,13 +151,13 @@ describe("aw flow prove", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("esperaba una captura");
     const { receipt } = result;
-    expect(receipt.checkout).toEqual({ source: "workspace", root: workdir });
+    expect(receipt.checkout).toEqual({ source: "hub", root: workdir });
     expect(receipt.evidence).toContain(SOURCE_BOUNDED_EVIDENCE);
     expect(receipt.proof.kind).toBe("command");
     // The sealed program and args, and NOT `target`/`input`: carrying the whole
     // invocation object is the natural mistake, because it is right there.
     expect(receipt.proof.invocation).toEqual({ program: "aw", args: ["status", "--json"] });
-    expect(receipt.proof.source).toBe("workspace");
+    expect(receipt.proof.source).toBe("hub");
     expect(receipt.proof.root).toBe(workdir);
     // Dónde va, con el id EXACTO: el validador no busca, lee el ítem que se llama
     // así. Colgar la prueba de otro ítem de la lista se lee como una prueba que no
@@ -168,7 +168,7 @@ describe("aw flow prove", () => {
     // observed the same way. A capture this surface blessed must not be rejected
     // downstream for shape or ownership.
     const rejection = validateCheckoutProof(receipt.proof, [
-      { source: "workspace", digest: receipt.proof.checkout_digest, reproducible: true },
+      { source: "hub", digest: receipt.proof.checkout_digest, reproducible: true },
     ]);
     expect(rejection).toBeNull();
   });
@@ -351,7 +351,7 @@ describe("aw flow prove", () => {
     if (result.ok) throw new Error("esperaba un rechazo");
     if ("session" in result) throw new Error("esperaba un fallo de capacidad");
     expect(result.failure.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
-    expect(result.failure.message).toContain("workspace");
+    expect(result.failure.message).toContain("hub");
   });
 
   it("el comando despacha --source desde valuesMulti; no prueba workspace por accidente", async () => {

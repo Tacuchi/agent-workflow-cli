@@ -411,7 +411,7 @@ async function integrateSession(
           reclaimed: [] as ReclaimedUnit[],
           retained: [] as RetainedUnit[],
           unreadable: [
-            { alias: "workspace", error: swept.message },
+            { alias: "hub", error: swept.message },
           ] as WorktreeReclaimOutput["unreadable"],
           next: null,
         }

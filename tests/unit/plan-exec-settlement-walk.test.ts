@@ -72,8 +72,8 @@ const SPEC_TEXT = [
  */
 const workspaceBlock = (acme: string) =>
   [
-    "<!-- AGENT-WORKFLOW-PROJECT-START -->",
-    "## Proyecto",
+    "<!-- AGENT-WORKFLOW-HUB-START -->",
+    "## Hub",
     "",
     "El incidente del andamiaje autorreparable.",
     "",
@@ -87,7 +87,7 @@ const workspaceBlock = (acme: string) =>
     "",
     "- Ramas de trabajo actuales:",
     "  - acme: main",
-    "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+    "<!-- AGENT-WORKFLOW-HUB-END -->",
     "",
   ].join("\n");
 
@@ -111,9 +111,9 @@ const PLAN_TEXT = [
   "",
   "### F1 — hacer el trabajo",
   "> Estado: pendiente",
-  "> Fuentes: workspace",
+  "> Fuentes: hub",
   "",
-  "- [ ] T1.1 — hacer el trabajo _(fuentes: workspace)_",
+  "- [ ] T1.1 — hacer el trabajo _(fuentes: hub)_",
   "",
 ].join("\n");
 
@@ -204,7 +204,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
   }
 
   function walker(signals: readonly string[] = []) {
-    return planExecWalk(deps, { sources: ["workspace"], signals });
+    return planExecWalk(deps, { sources: ["hub"], signals });
   }
 
   async function current() {

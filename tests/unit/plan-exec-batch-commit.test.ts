@@ -62,7 +62,7 @@ describe("commit aprobado por lote, verificado en git real", () => {
     );
     await writeFile(
       join(root, "CLAUDE.md"),
-      `<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nPrueba de commits\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| ${ALIAS} | ${source} | main |\n## Status\n- Ramas de trabajo actuales:\n  - ${ALIAS}: main\n<!-- WORKFLOW-PROJECT-END -->\n`,
+      `<!-- WORKFLOW-HUB-START -->\n## Hub\nPrueba de commits\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| ${ALIAS} | ${source} | main |\n## Status\n- Ramas de trabajo actuales:\n  - ${ALIAS}: main\n<!-- WORKFLOW-HUB-END -->\n`,
     );
     command(source, "init", "--quiet", "--initial-branch=main");
     command(source, "config", "user.name", "Test");
@@ -162,7 +162,7 @@ describe("commit aprobado por lote, verificado en git real", () => {
       join(root, "CLAUDE.md"),
       block
         .replace("## Status", `| otra | ${repo} | main |\n## Status`)
-        .replace("<!-- WORKFLOW-PROJECT-END -->", "  - otra: main\n<!-- WORKFLOW-PROJECT-END -->"),
+        .replace("<!-- WORKFLOW-HUB-END -->", "  - otra: main\n<!-- WORKFLOW-HUB-END -->"),
     );
     const added = await runWorktree(
       { fs, git, env, paths },

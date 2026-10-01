@@ -57,8 +57,8 @@ function git(repo: string, ...args: string[]): string {
 }
 
 function block(sourcePath: string): string {
-  return `<!-- AGENT-WORKFLOW-PROJECT-START -->
-## Proyecto
+  return `<!-- AGENT-WORKFLOW-HUB-START -->
+## Hub
 
 Convergencia de unidades.
 
@@ -76,7 +76,7 @@ Convergencia de unidades.
 
 - Ramas de trabajo actuales:
   - ${ALIAS}: main
-<!-- AGENT-WORKFLOW-PROJECT-END -->
+<!-- AGENT-WORKFLOW-HUB-END -->
 `;
 }
 

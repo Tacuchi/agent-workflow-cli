@@ -16,8 +16,8 @@ describe("doctor · upstream de ramas de trabajo contra PROD", () => {
     const fs = new MemFs({ lenient: true });
     fs.file(
       join(root, "CLAUDE.md"),
-      `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+      `<!-- WORKFLOW-HUB-START -->
+## Hub
 Ejemplo
 ## Fuentes
 | Alias | Path | Rama principal |
@@ -26,7 +26,7 @@ Ejemplo
 ## Status
 - Ramas de trabajo actuales:
   - app: feature/w
-<!-- WORKFLOW-PROJECT-END -->`,
+<!-- WORKFLOW-HUB-END -->`,
     );
     const reads: string[] = [];
     const git = {

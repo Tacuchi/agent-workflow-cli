@@ -18,9 +18,7 @@ export async function readWorkspaceBlock(
   markers: ProjectBlockMarkers,
   accept: (block: ParsedProjectBlock) => boolean = () => true,
 ): Promise<ParsedProjectBlock | null> {
-  const namespace =
-    /^<!-- ([A-Z][A-Z0-9_-]*)-PROJECT-START -->$/.exec(markers.start)?.[1]?.toLowerCase() ??
-    "workflow";
+  const namespace = namespaceOfMarkers(markers);
   const local = await readWorkspaceLocalConfig(fs, join(dir, `.${namespace}`, "local.json"));
   for (const name of BLOCK_MIRROR_FILES) {
     const path = join(dir, name);
@@ -220,10 +218,68 @@ export interface ProjectBlockMarkers {
   end: string;
 }
 
-export const DEFAULT_PROJECT_BLOCK_MARKERS: ProjectBlockMarkers = {
-  start: "<!-- WORKFLOW-PROJECT-START -->",
-  end: "<!-- WORKFLOW-PROJECT-END -->",
-};
+/** The hub block markers of a namespace: `<!-- <NS>-HUB-START -->` … `<!-- <NS>-HUB-END -->`. */
+export function hubBlockMarkers(namespace: string): ProjectBlockMarkers {
+  const upper = namespace.toUpperCase();
+  return { start: `<!-- ${upper}-HUB-START -->`, end: `<!-- ${upper}-HUB-END -->` };
+}
+
+/** The namespace a pair of hub block markers was derived from. */
+export function namespaceOfMarkers(markers: ProjectBlockMarkers): string {
+  return (
+    /^<!-- ([A-Z][A-Z0-9_-]*)-HUB-START -->$/.exec(markers.start)?.[1]?.toLowerCase() ?? "workflow"
+  );
+}
+
+export const DEFAULT_PROJECT_BLOCK_MARKERS: ProjectBlockMarkers = hubBlockMarkers("workflow");
+
+const LEGACY_BLOCK_START = /<!-- ([A-Z0-9_-]+)-PROJECT-START -->/g;
+
+/**
+ * The markers of the first complete block that still wears the pre-29
+ * `<NS>-PROJECT-*` form, of any namespace, or `null`.
+ *
+ * Such a block is detected, never read as the hub's: reading it would keep the
+ * old name alive as an alias, and missing it would make the writer append a
+ * second, empty block. `aw hub-migrate --apply` is the only way forward.
+ */
+export function legacyBlockMarkers(text: string): ProjectBlockMarkers | null {
+  for (const match of text.matchAll(LEGACY_BLOCK_START)) {
+    const markers = {
+      start: `<!-- ${match[1]}-PROJECT-START -->`,
+      end: `<!-- ${match[1]}-PROJECT-END -->`,
+    };
+    if (text.includes(markers.end, (match.index ?? 0) + markers.start.length)) return markers;
+  }
+  return null;
+}
+
+/** The block mirror files under `dir` that still carry a pre-29 block. */
+export async function legacyBlockFiles(fs: FileSystemPort, dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const name of BLOCK_MIRROR_FILES) {
+    const path = join(dir, name);
+    if ((await fs.exists(path)) && legacyBlockMarkers(await fs.readText(path)) !== null)
+      found.push(name);
+  }
+  return found;
+}
+
+/** The pre-29 block of the first mirror file that has one, read only to answer "does it declare X". */
+export async function readLegacyBlock(
+  fs: FileSystemPort,
+  dir: string,
+): Promise<ParsedProjectBlock | null> {
+  for (const name of BLOCK_MIRROR_FILES) {
+    const path = join(dir, name);
+    if (!(await fs.exists(path))) continue;
+    const text = await fs.readText(path);
+    const markers = legacyBlockMarkers(text);
+    const block = markers === null ? null : parseWithMarkers(text, markers);
+    if (block !== null) return resolveWorkspaceBlockSources(block, dir);
+  }
+  return null;
+}
 
 /**
  * Lines the render emits by itself when a section has no data. They belong to
@@ -262,7 +318,9 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
   if (end < 0) return null;
   const inner = text.slice(start, end);
 
-  const proyectoText = parseMdSection(inner, "Proyecto") ?? "";
+  // A pre-29 block, read only to migrate it, keeps its description under `## Proyecto`.
+  const heading = markers.start.endsWith("-PROJECT-START -->") ? "Proyecto" : "Hub";
+  const proyectoText = parseMdSection(inner, heading) ?? "";
   const fuentesText = parseMdSection(inner, "Fuentes") ?? "";
   const stackText = parseMdSection(inner, "Stack") ?? "";
   const statusText = parseMdSection(inner, "Status") ?? "";
@@ -314,7 +372,7 @@ function parseWithMarkers(text: string, markers: ProjectBlockMarkers): ParsedPro
 
 /** The four `##` sections this block owns; anything else under a heading is somebody else's. */
 const OWNED_SECTIONS: ReadonlySet<string> = new Set([
-  "proyecto",
+  "hub",
   "fuentes",
   "stack",
   "status",

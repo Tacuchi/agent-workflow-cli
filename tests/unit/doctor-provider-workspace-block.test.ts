@@ -36,7 +36,7 @@ afterEach(async () => {
 
 function block(): string {
   const markers = ctx.paths.blockMarkers();
-  return `# Manual\n\n${markers.start}\n## Proyecto\n\nEjemplo\n\n## Fuentes\n\n_Sin fuentes._\n\n## Stack\n\nTypeScript\n\n## Status\n\n${markers.end}\n`;
+  return `# Manual\n\n${markers.start}\n## Hub\n\nEjemplo\n\n## Fuentes\n\n_Sin fuentes._\n\n## Stack\n\nTypeScript\n\n## Status\n\n${markers.end}\n`;
 }
 
 it("informa divergencia del par y sólo marca secciones que citan identidades retiradas", async () => {

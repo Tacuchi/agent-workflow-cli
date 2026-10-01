@@ -80,7 +80,7 @@ export function renderProjectBlock(input: RenderProjectBlockInput): string {
 
   return [
     markers.start,
-    "## Proyecto",
+    "## Hub",
     "",
     proyectoSection,
     "",

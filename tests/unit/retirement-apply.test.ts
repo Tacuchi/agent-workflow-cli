@@ -59,8 +59,8 @@ const PLAN_OPEN =
 const SPEC = "---\nstatus: ready-for-plan\n---\n\n# Spec 025 — algo\n";
 
 function block(sourcePath: string): string {
-  return `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+  return `<!-- WORKFLOW-HUB-START -->
+## Hub
 
 Retiro.
 
@@ -74,7 +74,7 @@ Retiro.
 
 - Ramas de trabajo actuales:
   - acme: main
-<!-- WORKFLOW-PROJECT-END -->
+<!-- WORKFLOW-HUB-END -->
 `;
 }
 

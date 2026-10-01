@@ -921,7 +921,7 @@ function validatePhaseSources(
   declaredSources: readonly string[],
   failures: SourceBoundaryFailure[],
 ): void {
-  const known = new Set(["workspace", ...declaredSources]);
+  const known = new Set(["hub", ...declaredSources]);
   for (const phase of parsed.phases) {
     if (phase.sources === null || phase.sources.length === 0) {
       failures.push({
@@ -974,7 +974,7 @@ function validateOverrideSources(
           override.build !== undefined));
     if (
       !scoped.has(override.alias) ||
-      override.alias === "workspace" ||
+      override.alias === "hub" ||
       seen.has(override.alias) ||
       (!override.build && !override.test)
     ) {

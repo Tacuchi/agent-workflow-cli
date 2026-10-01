@@ -130,8 +130,8 @@ function workflowProjectBlock(opts: {
         .map((s) => `  - ${s.folder} · fase: ${s.phase} · ramas: ${s.branches.join(", ")}`)
         .join("\n")
     : "  _ninguna_";
-  return `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+  return `<!-- WORKFLOW-HUB-START -->
+## Hub
 
 ${opts.proyecto}
 
@@ -153,7 +153,7 @@ _Stack sin detectar._
 ${sessLines}
 - Última actividad: 2026-01-01 00:00
 - Histórico: \`.workflow/HISTORY.md\`
-<!-- WORKFLOW-PROJECT-END -->
+<!-- WORKFLOW-HUB-END -->
 `;
 }
 
@@ -322,8 +322,8 @@ describe("runCheckpointWrite", () => {
   it("reads WORKFLOW-PROJECT markers in CLAUDE.md", async () => {
     const sessionFolder = "session001-dev-markers";
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
-    const projectBlock = `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+    const projectBlock = `<!-- WORKFLOW-HUB-START -->
+## Hub
 
 current
 
@@ -342,7 +342,7 @@ _Stack sin detectar._
 - Sesiones activas:
   - ${sessionFolder} · fase: planning · ramas: core:feat/x
 - Histórico: \`.workflow/HISTORY.md\`
-<!-- WORKFLOW-PROJECT-END -->
+<!-- WORKFLOW-HUB-END -->
 `;
     const fs = makeFs(
       new Map([
@@ -445,7 +445,7 @@ describe("el inventario que llega al CHECKPOINT.md escrito", () => {
     // Each of these fails if the collection degrades to "unit not observed",
     // which is exactly what a fake without `localChanges` used to produce
     // while every assertion in this file stayed green.
-    expect(body).toContain("_Scope: workspace at `/cwd` (vs abc1234)");
+    expect(body).toContain("_Scope: hub at `/cwd` (vs abc1234)");
     expect(body).toContain("- src/foo.ts (+3 -1) — _[AI: purpose in 1 line]_");
     expect(body).toContain("- nuevo.md (+7 -0) — _[AI: purpose in 1 line]_");
     expect(body).not.toContain("Not observed");
@@ -471,7 +471,7 @@ describe("el inventario que llega al CHECKPOINT.md escrito", () => {
     // No entry for `/cwd`, so the seeded fake throws the way real git would.
     const { result, body } = await write(new FakeGit({}));
 
-    expect(body).toContain("- **Not observed — workspace** at `/cwd`: git status failed in /cwd");
+    expect(body).toContain("- **Not observed — hub** at `/cwd`: git status failed in /cwd");
     expect(body).toContain("_No unit in scope could be read");
     expect(body).not.toContain("No uncommitted changes");
     expect("files_touched_count" in result && result.files_touched_count).toBe(0);

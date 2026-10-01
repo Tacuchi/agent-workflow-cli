@@ -24,7 +24,12 @@ import {
 import { workspaceMigrateCommand } from "../../src/cli/commands/workspace-migrate.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { newRunState, serializeRunState, withProposal } from "../../src/domain/flow/run-state.js";
+import {
+  newRunState,
+  sealRunState,
+  serializeRunState,
+  withProposal,
+} from "../../src/domain/flow/run-state.js";
 import { sealProposal } from "../../src/domain/proposal.js";
 import { reservationMarker } from "../../src/domain/reservation.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
@@ -338,7 +343,7 @@ describe("renumerado asistido de sesiones", () => {
     const local = "009-local-quick";
     const fs = hub({
       claude:
-        "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /repos/cli | main |\n<!-- WORKFLOW-PROJECT-END -->",
+        "<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /repos/cli | main |\n<!-- WORKFLOW-HUB-END -->",
       history: history("| 009-remota-quick | 2026-01-01 | active | — |"),
       folders: [{ name: local }],
     });
@@ -493,8 +498,8 @@ Arnés de agentes multihost.
 <!-- AGENT-WORKFLOW-PROJECT-END -->`;
 
 /** El bloque que el CLI agrega cuando no encuentra los marcadores vigentes. */
-const APPENDED_STUB = `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+const APPENDED_STUB = `<!-- WORKFLOW-HUB-START -->
+## Hub
 
 _Describe el proyecto aquí: qué es y por qué existe._
 
@@ -510,7 +515,7 @@ _Stack sin detectar._
 
 - Última actividad: 2026-08-01 10:00
 - Histórico: \`.workflow/HISTORY.md\`
-<!-- WORKFLOW-PROJECT-END -->`;
+<!-- WORKFLOW-HUB-END -->`;
 
 const SLIM_HEADER =
   "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|--------|-------|--------|------|\n";
@@ -587,7 +592,7 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
 
     expect(fs.writes.size).toBe(0);
     expect(plan.markers.map((m) => [m.from, m.to, m.drops_duplicate])).toEqual([
-      ["AGENT-WORKFLOW", "WORKFLOW", true],
+      ["AGENT-WORKFLOW-PROJECT", "WORKFLOW-HUB", true],
     ]);
     // El centinela sale del histórico, con la fecha del histórico.
     expect(plan.sentinels).toEqual([
@@ -606,7 +611,7 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
 
     const text = await fs.readText(HUB);
     expect(text).not.toContain("AGENT-WORKFLOW-PROJECT-START");
-    expect(text.match(/WORKFLOW-PROJECT-START/g)).toHaveLength(1);
+    expect(text.match(/WORKFLOW-HUB-START/g)).toHaveLength(1);
     expect(text).toContain("# CLAUDE.md");
 
     // Y lo que el CLI lee ahora es el bloque rico, no el vacío que había agregado.
@@ -689,9 +694,131 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
     await applyWorkspaceMigration(fs, paths);
     const second = await planWorkspaceMigration(fs, paths);
     expect(second.markers).toEqual([]);
+    expect(second.aliases).toEqual([]);
+    expect(second.runs).toEqual([]);
     expect(second.sentinels).toEqual([]);
     expect(second.rows).toEqual([]);
     expect(second.conflicts).toEqual([]);
+  });
+});
+
+// ─── 29.0.0: el término único hub ────────────────────────────────────────────
+
+describe("hub-migrate lleva el bloque, el encabezado y el alias a hub", () => {
+  const OPEN_PLAN = "/cwd/docs/plans/001-plan-abierto.md";
+  const DONE_PLAN = "/cwd/docs/plans/002-plan-cerrado.md";
+  const RUN = `${SESSIONS}/003-abierta-plan-exec/.flow-run.json`;
+
+  function planDoc(state: string): string {
+    return [
+      "# Plan 001 — abierto",
+      "",
+      `> Estado: ${state}`,
+      "> Límite de ejecución: checkout",
+      "",
+      "## Tasks",
+      "",
+      "### F1 — algo",
+      "> Estado: pendiente",
+      "> Fuentes: cli, workspace",
+      "",
+      "- [ ] T1.1 — tocar el hub _(fuentes: workspace)_",
+      "- [ ] T1.2 — tocar la fuente _(fuentes: cli)_",
+      "",
+    ].join("\n");
+  }
+
+  function hubWithAlias(): MemFs {
+    const fs = hub({ claude: `# CLAUDE.md\n\n${RICH_BLOCK}\n` });
+    fs.file(OPEN_PLAN, planDoc("open"));
+    fs.file(DONE_PLAN, planDoc("done"));
+    fs.file(`${SESSIONS}/003-abierta-plan-exec/SESSION.md`, "# SESSION\n");
+    const { digest: _seal, ...state } = newRunState("plan-exec", "003-abierta-plan-exec");
+    fs.file(
+      RUN,
+      serializeRunState(
+        sealRunState({
+          ...state,
+          scope: { plan: "docs/plans/001-plan-abierto.md", sources: ["workspace", "cli"] },
+        }),
+      ),
+    );
+    return fs;
+  }
+
+  it("la vista previa lista archivo y línea, y no escribe", async () => {
+    const fs = hubWithAlias();
+    const plan = await planWorkspaceMigration(fs, paths);
+    expect(fs.writes.size).toBe(0);
+    expect(plan.markers.map((m) => [m.from, m.to])).toEqual([
+      ["AGENT-WORKFLOW-PROJECT", "WORKFLOW-HUB"],
+    ]);
+    expect(plan.aliases.flatMap((a) => a.lines.map((l) => l.line))).toEqual([10, 12]);
+    expect(plan.runs.map((run) => run.session)).toEqual(["003-abierta-plan-exec"]);
+  });
+
+  it("aplicar deja marcadores HUB, ## Hub y el alias hub sólo en lo abierto", async () => {
+    const fs = hubWithAlias();
+    const closedBefore = await fs.readText(DONE_PLAN);
+    const applied = await applyWorkspaceMigration(fs, paths);
+    if ("error" in applied) throw new Error(applied.error);
+
+    const claude = await fs.readText(HUB);
+    expect(claude).toContain("<!-- WORKFLOW-HUB-START -->\n## Hub\n");
+    expect(claude).not.toContain("## Proyecto");
+    expect(parseProjectBlock(claude, paths.blockMarkers())?.proyecto).toBe(
+      "Arnés de agentes multihost.",
+    );
+
+    const open = await fs.readText(OPEN_PLAN);
+    expect(open).toContain("> Fuentes: cli, hub");
+    expect(open).toContain("_(fuentes: hub)_");
+    expect(open).not.toMatch(/\bworkspace\b/);
+    expect(await fs.readText(DONE_PLAN)).toBe(closedBefore);
+
+    const run = await readRun(fs, locateRun(paths, "003-abierta-plan-exec"));
+    expect(run.ok && run.state.scope?.sources).toEqual(["hub", "cli"]);
+    expect(applied.aliases_rewritten).toEqual([OPEN_PLAN]);
+    expect(applied.runs_rewritten).toEqual(["003-abierta-plan-exec"]);
+  });
+
+  it("una corrida cerrada conserva su alias tal cual", async () => {
+    const fs = hubWithAlias();
+    fs.file(`${SESSIONS}/003-abierta-plan-exec/.closed`, "");
+    const before = await fs.readText(RUN);
+    await applyWorkspaceMigration(fs, paths);
+    expect(await fs.readText(RUN)).toBe(before);
+  });
+
+  it("CLAUDE.md y AGENTS.md distintos conservan cada uno su contenido", async () => {
+    const fs = hub({ claude: `# CLAUDE.md\n\n${RICH_BLOCK}\n\nNotas de Claude.\n` });
+    const agents = "/cwd/AGENTS.md";
+    fs.file(
+      agents,
+      `# AGENTS.md\n\n${RICH_BLOCK.replace("Arnés de agentes multihost.", "Otra descripción.")}\n`,
+    );
+    await applyWorkspaceMigration(fs, paths);
+    const claude = await fs.readText(HUB);
+    const other = await fs.readText(agents);
+    expect(claude).toContain("Notas de Claude.");
+    expect(parseProjectBlock(claude, paths.blockMarkers())?.proyecto).toBe(
+      "Arnés de agentes multihost.",
+    );
+    expect(parseProjectBlock(other, paths.blockMarkers())?.proyecto).toBe("Otra descripción.");
+    expect(other).toContain("# AGENTS.md");
+  });
+
+  it("el segundo --apply no cambia nada", async () => {
+    const fs = hubWithAlias();
+    await applyWorkspaceMigration(fs, paths);
+    const snapshot = [HUB, OPEN_PLAN, DONE_PLAN, RUN].map((path) => fs.readText(path));
+    const before = await Promise.all(snapshot);
+    const second = await planWorkspaceMigration(fs, paths);
+    expect([second.markers, second.aliases, second.runs]).toEqual([[], [], []]);
+    await applyWorkspaceMigration(fs, paths);
+    expect(
+      await Promise.all([HUB, OPEN_PLAN, DONE_PLAN, RUN].map((path) => fs.readText(path))),
+    ).toEqual(before);
   });
 });
 
@@ -715,7 +842,7 @@ describe("cuando el histórico y el disco se contradicen, la sesión no se toca"
     expect(await fs.readText(HUB)).toBe(text);
     const applied = await applyWorkspaceMigration(fs, paths);
     if ("error" in applied) throw new Error(applied.error);
-    expect((await fs.readText(HUB)).match(/WORKFLOW-PROJECT-START/g)).toHaveLength(1);
+    expect((await fs.readText(HUB)).match(/WORKFLOW-HUB-START/g)).toHaveLength(1);
   });
 
   it("sin la ruta local no adivina que (local) equivale a una absoluta vieja", async () => {
@@ -853,7 +980,7 @@ describe("aw hub-migrate", () => {
 
     const human = workspaceMigrateCommand.renderHuman?.(result, { detail: false }) ?? "";
     expect(human).toContain("aw hub-migrate --apply");
-    expect(human).toContain("AGENT-WORKFLOW → WORKFLOW");
+    expect(human).toContain("AGENT-WORKFLOW-PROJECT → WORKFLOW-HUB");
   });
 
   it("con --apply escribe y reporta lo que hizo", async () => {

@@ -216,7 +216,7 @@ async function ensureUnits(
     // `workspace` is the documentary/control checkout itself. It is a valid
     // source-bounded proof surface, but never a source repository that needs a
     // per-session Git worktree.
-    if (alias === "workspace") continue;
+    if (alias === "hub") continue;
     const result = await ensureScopedUnit(deps, run, alias, acquired);
     if (!("created" in result)) return result;
     acquired.push(result);
@@ -1528,7 +1528,7 @@ async function batchGitSnapshot(
 > {
   const snapshot: NonNullable<PlanExecBatch["snapshot"]> = {};
   for (const alias of sources) {
-    if (alias === "workspace") continue;
+    if (alias === "hub") continue;
     const root = candidates.find((candidate) => candidate.source === alias)?.root;
     if (root === undefined)
       return {

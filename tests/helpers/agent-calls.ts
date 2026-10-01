@@ -72,8 +72,8 @@ const ALIAS = "acme";
 const SPEC_DOC = "docs/specs/001-spec-medida.md";
 const PLAN_DOC = "docs/plans/001-plan-medida.md";
 
-const workspaceBlock = (source: string) => `<!-- AGENT-WORKFLOW-PROJECT-START -->
-## Proyecto
+const workspaceBlock = (source: string) => `<!-- AGENT-WORKFLOW-HUB-START -->
+## Hub
 
 Medida de llamadas.
 
@@ -91,7 +91,7 @@ Medida de llamadas.
 
 - Ramas de trabajo actuales:
   - ${ALIAS}: main
-<!-- AGENT-WORKFLOW-PROJECT-END -->
+<!-- AGENT-WORKFLOW-HUB-END -->
 `;
 
 const SPEC = `---
@@ -147,11 +147,11 @@ function execPlan(phases: number): string {
     const n = index + 1;
     return `### F${n} — el tramo ${n} se recorre
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
 **Resultado:** el tramo ${n} se recorre entero.
 
-- [ ] T${n}.1 — recorrer el tramo ${n} _(fuentes: workspace)_
+- [ ] T${n}.1 — recorrer el tramo ${n} _(fuentes: hub)_
 
 **Validación de fase:** \`npm test\` pasa en el checkout.
 **Condición de salida:** la prueba local queda verde.
@@ -289,7 +289,7 @@ const ROUTE = {
 /** The judgement a semantic boundary asks for, by the contract its row declares. */
 function decisionsFor(stopped: FlowDecision): Record<string, unknown> {
   if (stopped.id === "chassis.route-evaluation") return { route: ROUTE };
-  if (stopped.scopes_sources === true) return { plan: PLAN_DOC, sources: ["workspace"] };
+  if (stopped.scopes_sources === true) return { plan: PLAN_DOC, sources: ["hub"] };
   if (stopped.answer_contract === "batch-review") return { review: batchReview() };
   if (stopped.id === "plan-exec.batch-commit-proposal") return { messages: {} };
   if (stopped.id === "quick.fix-preview") {
@@ -314,7 +314,7 @@ function judgment(directive: FlowDirective, resolved: Resolved): Record<string, 
 function proofSources(state: FlowRunState, stopped: FlowDecision): string[] {
   return stopped.id === "plan-exec.validation-execution"
     ? [...(state.scope?.sources ?? [])]
-    : ["workspace"];
+    : ["hub"];
 }
 
 export async function openMeasuredRun(

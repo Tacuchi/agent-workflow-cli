@@ -31,8 +31,8 @@ function git(repo: string, ...args: string[]): string {
 }
 
 function block(sourcePath: string): string {
-  return `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+  return `<!-- WORKFLOW-HUB-START -->
+## Hub
 
 Test.
 
@@ -52,7 +52,7 @@ _Stack sin detectar._
   - acme: main
 - Última actividad: 2026-08-07
 - Histórico: \`.workflow/HISTORY.md\`
-<!-- WORKFLOW-PROJECT-END -->
+<!-- WORKFLOW-HUB-END -->
 `;
 }
 
@@ -287,8 +287,8 @@ describe("integrar una sesión entera: el residuo se recoge al terminar", () => 
   function multiBlock(paths: Record<string, string>): string {
     const rows = ALIASES.map((a) => `| ${a} | ${paths[a]} | main |`).join("\n");
     const work = ALIASES.map((a) => `  - ${a}: main`).join("\n");
-    return `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+    return `<!-- WORKFLOW-HUB-START -->
+## Hub
 
 Test.
 
@@ -308,7 +308,7 @@ _Stack sin detectar._
 ${work}
 - Última actividad: 2026-08-07
 - Histórico: \`.workflow/HISTORY.md\`
-<!-- WORKFLOW-PROJECT-END -->
+<!-- WORKFLOW-HUB-END -->
 `;
   }
 

@@ -135,7 +135,7 @@ const ENVELOPE_NOTES = [
  */
 const CHECKOUT_NOTES = [
   "Which checkout a `workline.source-bounded` evidence is validated against: the directive prints the checkout it will validate (alias and root). That root is an observation of THIS host, not a transferable identity: never copy it to another machine or envelope. The rule that chose it is portable and deterministic.",
-  "workspace alias: the DOCUMENT root, found by walking up from the workspace directory to the FIRST ancestor holding the Workline marker. In a nested hub that directory is NOT the git repo root and the digest is computed over it, not over the repo; `git status` at the git root can be clean while the subdirectory fingerprint differs. Other aliases: this session's isolation unit for that alias of the AGENTS.md sources table; a proof cannot borrow another run's worktree by naming its alias.",
+  "hub alias: the DOCUMENT root, found by walking up from the hub directory to the FIRST ancestor holding the Workline marker. In a nested hub that directory is NOT the git repo root and the digest is computed over it, not over the repo; `git status` at the git root can be clean while the subdirectory fingerprint differs. Other aliases: this session's isolation unit for that alias of the AGENTS.md sources table; a proof cannot borrow another run's worktree by naming its alias.",
   "A boundary that is absent, unreadable or whose fingerprint is not reproducible fails CLOSED; it is never treated as a clean tree. The digest expires with every write to the proven tree, so the order is: run the sealed invocation, capture the proof, submit, without touching the repo in between (write the JSON envelope to a temporary directory OUTSIDE the proven checkout).",
 ] as const;
 
@@ -308,7 +308,7 @@ export const flowCommand: CliCommand<FlowResult> = {
         flags: {
           source: {
             value: "<alias>",
-            effect: "Source whose boundary to prove; defaults to workspace.",
+            effect: "Source whose boundary to prove; defaults to hub.",
           },
           artifact: {
             value: "<path>",

@@ -72,7 +72,7 @@ async function uncommittedSources(
   // checkouts are observed here; git errors propagate rather than saying clean.
   const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
   const sources: ProjectFuente[] = [
-    { alias: "workspace", path: paths.workspaceDir(), main_branch: null },
+    { alias: "hub", path: paths.workspaceDir(), main_branch: null },
     ...(block?.fuentes ?? []),
   ];
   const pending: string[] = [];

@@ -522,8 +522,7 @@ function emittedAction(
 
 function finalValidationAction(action: DelegatedAction, state: FlowRunState): DelegatedAction {
   const sources = state.scope?.final_validation ?? [];
-  if (sources.length === 0 && state.scope?.sources.every((alias) => alias === "workspace"))
-    return action;
+  if (sources.length === 0 && state.scope?.sources.every((alias) => alias === "hub")) return action;
   const requirements = sources.flatMap((source) =>
     (["build", "test"] as const).map((field) => {
       const value = source[field];

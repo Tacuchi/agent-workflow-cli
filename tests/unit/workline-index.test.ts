@@ -513,12 +513,12 @@ function detailPlan(
     `> Estado: ${options.f1 ?? "validada"}`,
     ...(options.f1 === "bloqueada" ? ["> Bloqueo: falta aplicar la migración 014"] : []),
     "",
-    "- [x] T1.1 — hecho _(fuentes: workspace)_",
+    "- [x] T1.1 — hecho _(fuentes: hub)_",
     "",
     "### F2 — la segunda",
     `> Estado: ${options.f2 ?? "pendiente"}`,
     "",
-    `- [${options.f2 === "validada" ? "x" : " "}] T2.1 — queda _(fuentes: workspace)_`,
+    `- [${options.f2 === "validada" ? "x" : " "}] T2.1 — queda _(fuentes: hub)_`,
     "",
   );
   return lines.join("\n");
@@ -876,7 +876,7 @@ describe("el ítem de un plan con compensación vigente siempre trae comando", (
     );
     const run = withScope(newRunState("plan-exec", folder), {
       plan: OWING_PLAN,
-      sources: ["workspace"],
+      sources: ["hub"],
     });
     fs.file(`/cwd/.workflow/sessions/${folder}/${FLOW_RUN_STATE_FILE}`, serializeRunState(run));
     return fs;

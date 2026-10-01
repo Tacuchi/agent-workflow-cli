@@ -32,12 +32,12 @@ const PLAN = [
   "## Tasks",
   "### F2 — fase pendiente con trabajo ya hecho",
   "> Estado: pendiente",
-  "> Fuentes: workspace",
-  "- [x] T2.1 — trabajo previo _(fuentes: workspace)_",
+  "> Fuentes: hub",
+  "- [x] T2.1 — trabajo previo _(fuentes: hub)_",
   "### F3 — trabajo nuevo",
   "> Estado: pendiente",
-  "> Fuentes: workspace",
-  "- [ ] T3.1 — nuevo trabajo _(fuentes: workspace)_",
+  "> Fuentes: hub",
+  "- [ ] T3.1 — nuevo trabajo _(fuentes: hub)_",
   "",
 ].join("\n");
 
@@ -75,7 +75,7 @@ describe("fase sin tareas abiertas: consentimiento, prueba real y crédito anula
       "# SESSION\n\n## Objective\nvalidar fase\n",
     );
     deps = { fs, paths, env: new FakeEnv(home, cwd), git: new GitCliAdapter(new NodeProcess()) };
-    walk = planExecWalk(deps, { sources: ["workspace"] });
+    walk = planExecWalk(deps, { sources: ["hub"] });
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });

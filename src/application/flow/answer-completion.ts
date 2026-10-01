@@ -310,5 +310,5 @@ async function captureProofs(
 /** One proof per scope source at the phase validation of a batch; the documentary one elsewhere. */
 function proofSources(state: FlowRunState, stopped: FlowDecision): string[] {
   if (stopped.id === "plan-exec.validation-execution") return [...(state.scope?.sources ?? [])];
-  return ["workspace"];
+  return ["hub"];
 }

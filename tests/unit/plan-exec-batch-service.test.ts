@@ -210,7 +210,7 @@ describe("plan-exec batch publication", () => {
 
   it("las tareas abiertas sin líneas Estado no se confunden con trabajo terminado", () => {
     const text =
-      "# Plan\n## Tasks\n### F1\n> Fuentes: workspace\n- [ ] T1.1 — trabajo _(fuentes: workspace)_\n";
+      "# Plan\n## Tasks\n### F1\n> Fuentes: hub\n- [ ] T1.1 — trabajo _(fuentes: hub)_\n";
     expect(inferNextPlanExecBatch(text, newRunState("plan-exec", "001-exec"))).toMatchObject({
       ok: false,
       failure: {
@@ -261,7 +261,7 @@ describe("plan-exec batch publication", () => {
     const text = `${PLAN.replaceAll("[ ]", "[x]")}\n### F5 — sin tareas\n> Estado: pendiente\n\n### F6 — trabajo\n> Estado: pendiente\n- [ ] T6.1 — pendiente\n`;
     const plan = "docs/plans/032-plan-batch.md";
     const run = withPlanExecEntry(
-      withScope(newRunState("plan-exec", "001-exec"), { plan, sources: ["workspace"] }),
+      withScope(newRunState("plan-exec", "001-exec"), { plan, sources: ["hub"] }),
       { plan, phases_without_open_tasks: [4, 5], approved_without_changes: [4, 5] },
     );
     const inferred = inferNextPlanExecBatch(text, run);

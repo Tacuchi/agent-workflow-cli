@@ -46,6 +46,12 @@ import {
 } from "../session-resolver.js";
 import { readWorkspaceLocalConfig } from "../workspace-local-config.js";
 import {
+  type PlanAliasRewrite,
+  type RunScopeRewrite,
+  planAliasRewrites,
+  runScopeRewrites,
+} from "./aliases.js";
+import {
   type HubMarkerRefusal,
   type HubMarkerRewrite,
   planHubMarkers,
@@ -88,6 +94,10 @@ export interface MigrationConflict {
 export interface WorkspaceMigrationPlan {
   workspace: string;
   markers: HubMarkerRewrite[];
+  /** Open plans whose source declarations still name the pre-29 alias. */
+  aliases: PlanAliasRewrite[];
+  /** Open runs whose scope still names the pre-29 alias. */
+  runs: RunScopeRewrite[];
   sentinels: SentinelSeed[];
   rows: RowSeed[];
   conflicts: MigrationConflict[];
@@ -148,7 +158,13 @@ export async function planRenumber(
 
 /** How many writes the plan holds. Zero means the workspace is already current. */
 export function pendingChanges(plan: WorkspaceMigrationPlan): number {
-  return plan.markers.length + plan.sentinels.length + plan.rows.length;
+  return (
+    plan.markers.length +
+    plan.aliases.length +
+    plan.runs.length +
+    plan.sentinels.length +
+    plan.rows.length
+  );
 }
 
 export async function planWorkspaceMigration(
@@ -191,6 +207,8 @@ export async function planWorkspaceMigration(
   return {
     workspace,
     markers: markers.rewrites,
+    aliases: await planAliasRewrites(fs, paths, workspace),
+    runs: await runScopeRewrites(fs, paths),
     sentinels,
     rows,
     conflicts,

@@ -135,9 +135,9 @@ Spec 040.
 
 ### F1 — re-sellar
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — re-sellar el baseline _(fuentes: workspace)_
+- [ ] T1.1 — re-sellar el baseline _(fuentes: hub)_
 
 **Validación de fase:** pruebas locales sobre fixtures del checkout.
 
@@ -580,9 +580,9 @@ Spec 040.
 
 ### F1 — re-sellar
 > Estado: validada
-> Fuentes: workspace
+> Fuentes: hub
 
-- [x] T1.1 — re-sellar el baseline _(fuentes: workspace)_
+- [x] T1.1 — re-sellar el baseline _(fuentes: hub)_
 
 **Validación de fase:** pruebas locales sobre fixtures del checkout.
 
@@ -688,9 +688,9 @@ ${origin}
 
 ### F1 — re-sellar
 > Estado: pendiente
-> Fuentes: workspace
+> Fuentes: hub
 
-- [ ] T1.1 — re-sellar el baseline _(fuentes: workspace)_
+- [ ] T1.1 — re-sellar el baseline _(fuentes: hub)_
 `;
 
   it("un plan legado que declara su spec en `## Origin` recibe un motivo CIERTO y una salida real", async () => {

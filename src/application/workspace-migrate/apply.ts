@@ -51,6 +51,10 @@ export interface WorkspaceMigrationApplied {
   hub: string;
   /** Hub files whose block markers now carry the running namespace. */
   markers_renamed: string[];
+  /** Open plans whose source declarations now name `hub`. */
+  aliases_rewritten: string[];
+  /** Open runs whose scope now names `hub`. */
+  runs_rewritten: string[];
   /** Hub files that also lost the empty block the CLI had appended. */
   duplicates_dropped: string[];
   /** Legacy sessions the record called closed and that now say so on disk. */
@@ -299,18 +303,20 @@ async function writePlan(
   paths: PathsService,
   plan: WorkspaceMigrationPlan,
 ): Promise<void> {
-  if (plan.markers.length > 0) {
+  const rewrites = [...plan.markers, ...plan.aliases];
+  if (rewrites.length > 0) {
     const published = await publishArtifacts(
       fs,
       plan.workspace,
-      plan.markers.map((hub) => ({
-        path: relative(plan.workspace, hub.path),
-        content: hub.text,
+      rewrites.map((file) => ({
+        path: relative(plan.workspace, file.path),
+        content: file.text,
         overwrite: true,
       })),
     );
     if (!published.ok) throw new Error(published.failure.message);
   }
+  for (const run of plan.runs) await fs.writeText(run.path, run.text);
   for (const seed of plan.sentinels) {
     // Empty, byte for byte what `session-close` writes: the sentinel says
     // "closed" by EXISTING, and giving it content here would be redesigning it.
@@ -335,6 +341,8 @@ function summarize(plan: WorkspaceMigrationPlan): WorkspaceMigrationApplied {
     hub: plan.workspace,
     markers_renamed: plan.markers.map((hub) => hub.path),
     duplicates_dropped: plan.markers.filter((h) => h.drops_duplicate).map((hub) => hub.path),
+    aliases_rewritten: plan.aliases.map((rewrite) => rewrite.path),
+    runs_rewritten: plan.runs.map((run) => run.session),
     sentinels_seeded: plan.sentinels.map((seed) => seed.folder),
     rows_seeded: plan.rows.map((seed) => seed.folder),
     rows_without_date: plan.rows.filter((seed) => seed.date === "—").map((seed) => seed.folder),

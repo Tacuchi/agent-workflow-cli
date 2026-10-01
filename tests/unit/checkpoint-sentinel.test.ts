@@ -251,7 +251,7 @@ describe("the sentinel is no longer a string the generator emits", () => {
       last_decision: null,
       artefacts: {},
       files_touched: {
-        observed: [{ alias: "workspace", boundary: "/ws", reference: "abc1234" }],
+        observed: [{ alias: "hub", boundary: "/ws", reference: "abc1234" }],
         unobserved: [],
         linked: [],
         contextual: [],
@@ -424,7 +424,7 @@ describe("cierre con CHECKPOINT veraz", () => {
     fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n- terminado\n");
     fs.file(
       "/cwd/AGENTS.md",
-      "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /fuente | main |\n<!-- WORKFLOW-PROJECT-END -->\n",
+      "<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /fuente | main |\n<!-- WORKFLOW-HUB-END -->\n",
     );
     class AheadGit extends FakeGit {
       override async upstreamBranch() {
@@ -446,7 +446,7 @@ describe("cierre con CHECKPOINT veraz", () => {
     fs.file(cpPath, "# CHECKPOINT\n\n## Completed\n- listo\n");
     fs.file(
       "/cwd/AGENTS.md",
-      "<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /fuente | main |\n<!-- WORKFLOW-PROJECT-END -->\n",
+      "<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| cli | /fuente | main |\n<!-- WORKFLOW-HUB-END -->\n",
     );
     class FollowingGit extends FakeGit {
       override async currentBranch() {

@@ -29,8 +29,8 @@ export function worktreeFixture() {
   writeFileSync(join(repo, "package-lock.json"), '{"lockfileVersion":3}\n');
   git(repo, "add", "-A");
   git(repo, "commit", "-m", "base");
-  const block = `<!-- WORKFLOW-PROJECT-START -->
-## Proyecto
+  const block = `<!-- WORKFLOW-HUB-START -->
+## Hub
 Prueba.
 ## Fuentes
 | Alias | Path | Rama principal |
@@ -39,7 +39,7 @@ Prueba.
 ## Status
 - Ramas de trabajo actuales:
   - acme: main
-<!-- WORKFLOW-PROJECT-END -->`;
+<!-- WORKFLOW-HUB-END -->`;
   writeFileSync(join(workspace, "CLAUDE.md"), block);
   const session = join(workspace, ".workflow", "sessions", "101-test-plan-exec");
   mkdirSync(session, { recursive: true });

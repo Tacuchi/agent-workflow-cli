@@ -31,7 +31,7 @@ describe("migración por máquina de la tabla Fuentes", () => {
     await mkdir(paths.cwdRoot());
     const original = [
       paths.blockMarkers().start,
-      "## Proyecto",
+      "## Hub",
       "hub",
       "## Fuentes",
       "| Alias | Path | Rama principal |",

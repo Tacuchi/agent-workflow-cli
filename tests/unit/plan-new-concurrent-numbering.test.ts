@@ -183,7 +183,7 @@ describe("dos plan-new concurrentes reclaman, completan y devuelven su correlati
           ? {
               proof: {
                 kind: "inspection" as const,
-                source: "workspace",
+                source: "hub",
                 relative_cwd: ".",
                 checkout_digest: "test-checkout",
                 invocation: { artifact: "tests/unit/plan-new-concurrent-numbering.test.ts" },

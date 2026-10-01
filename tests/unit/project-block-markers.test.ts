@@ -8,14 +8,14 @@ import { renderProjectBlock } from "../../src/application/render/project-block.j
 
 describe("project-block markers — parametric", () => {
   const customMarkers: ProjectBlockMarkers = {
-    start: "<!-- AGENT-WORKFLOW-PROJECT-START -->",
-    end: "<!-- AGENT-WORKFLOW-PROJECT-END -->",
+    start: "<!-- AGENT-WORKFLOW-HUB-START -->",
+    end: "<!-- AGENT-WORKFLOW-HUB-END -->",
   };
 
   it("parser returns null when markers do not match", () => {
     const text = [
       customMarkers.start,
-      "## Proyecto",
+      "## Hub",
       "foo",
       "",
       "## Fuentes",
@@ -29,7 +29,7 @@ describe("project-block markers — parametric", () => {
   it("parser succeeds with explicitly supplied markers", () => {
     const text = [
       customMarkers.start,
-      "## Proyecto",
+      "## Hub",
       "foo",
       "",
       "## Fuentes",

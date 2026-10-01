@@ -40,7 +40,7 @@ it("desde una fuente resuelve al único hub, se niega con dos y --workspace no s
     await writeFile(join(hub, ".workflow", "workline.json"), '{"namespace":"workflow"}');
     await writeFile(
       join(hub, "AGENTS.md"),
-      `<!-- WORKFLOW-PROJECT-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n<!-- WORKFLOW-PROJECT-END -->`,
+      `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n<!-- WORKFLOW-HUB-END -->`,
     );
   }
   await registerHub(fs, new PathsService(namespace, home, hubA), hubA);

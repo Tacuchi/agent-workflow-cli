@@ -216,7 +216,7 @@ describe("Cerrar aplica finalize y conserva lo pendiente (073 F1)", () => {
       flow === "quick"
         ? {}
         : {
-            scope: { plan: "docs/plans/051-plan-ciclo.md", sources: ["workspace", "cli"] },
+            scope: { plan: "docs/plans/051-plan-ciclo.md", sources: ["hub", "cli"] },
             batches: [
               {
                 id: "batch-2",
@@ -245,10 +245,10 @@ describe("Cerrar aplica finalize y conserva lo pendiente (073 F1)", () => {
     const result = await chooseClose(new RecordingGit({ dirty: true }));
     expect(result.error).toBeNull();
     expect(result.next_action).toContain("cli: cambios sin commitear");
-    expect(result.next_action).toContain("workspace: cambios sin commitear");
+    expect(result.next_action).toContain("hub: cambios sin commitear");
     if (flow === "plan-exec") {
       expect(result.next_action).toContain("lote 2 (batch-2): cli: cambios sin commitear");
-      expect(result.next_action).toContain("lote 2 (batch-2): workspace: cambios sin commitear");
+      expect(result.next_action).toContain("lote 2 (batch-2): hub: cambios sin commitear");
     }
     expect(closed()).toBe(true);
   });

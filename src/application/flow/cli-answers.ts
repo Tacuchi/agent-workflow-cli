@@ -89,7 +89,7 @@ async function verifyUnits(
 ): Promise<InternalActionOutcome> {
   const scope = run.scope;
   if (scope === null) return unanswered("la corrida todavía no fijó su scope");
-  const aliases = scope.sources.filter((alias) => alias !== "workspace");
+  const aliases = scope.sources.filter((alias) => alias !== "hub");
   if (scope.isolation === "in-place") {
     const verdicts = [];
     for (const alias of aliases) {
