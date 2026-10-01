@@ -47,7 +47,7 @@ const CODE = "001";
 const ALIAS = "selva";
 const PLAN_DOC = "docs/plans/001-plan-migracion.md";
 
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
+const HUB_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
 ## Hub
 
 Migración de otro proyecto.
@@ -111,7 +111,7 @@ describe("el incidente completo — de la entrada a la primera tarea, sin refina
       "# SESSION — migración\n\n## Objective\nejecutar la migración 001\n",
       "utf8",
     );
-    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), HUB_BLOCK, "utf8");
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await writeFile(join(workdir, PLAN_DOC), PLAN_TEXT, "utf8");
   });

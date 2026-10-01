@@ -2,7 +2,7 @@
  * Workline's overview binding in the skills cascade.
  *
  * The overview role → skill binding is resolved from `skills.toml`
- * (cascade: built-in default → global → workspace). See skills-resolver-service.
+ * (cascade: built-in default → global → hub). See skills-resolver-service.
  *
  * Generic, stack-agnostic conventions are standalone skills discovered by the
  * host; Workline never binds a specific one or credits it by installation.

@@ -1,6 +1,6 @@
 import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
 /**
- * Workspace visibility — the declared sources against the ones each host has
+ * Hub visibility — the declared sources against the ones each host has
  * registered.
  *
  * One finding per drift CLASS that is actually present, driven by the `missing`
@@ -8,13 +8,13 @@ import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.j
  * is `missing-paths` may also carry extras, and a single finding per host would
  * hide one of the two.
  *
- * With no project block in the current directory there is nothing to compare,
+ * With no hub block in the current directory there is nothing to compare,
  * and that is `not-applicable` — not a warning. Someone running the doctor from
- * a directory that is not a workspace has not misconfigured anything.
+ * a directory that is not a hub has not misconfigured anything.
  */
 import { harnessForMcpHost } from "../../domain/harnesses.js";
 import { isWorkingBranch, resolveSourceBranches } from "../branch-resolver.js";
-import { readWorkspaceBlock } from "../parsers/project-block.js";
+import { readHubBlock } from "../parsers/hub-block.js";
 import { runVisibilityDoctor } from "../visibility-doctor-service.js";
 import type { VisibilityHostReport } from "../visibility-doctor-service.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
@@ -37,7 +37,7 @@ export const visibilityProvider: DoctorProvider = {
   category: CATEGORY,
   async run(input: DoctorProviderInput): Promise<DoctorProviderOutput> {
     const result = await runVisibilityDoctor(input.ctx.fs, input.ctx.env, input.ctx.paths, {
-      workspace: input.workspaceDir,
+      hub: input.hubDir,
       global: true,
     });
     const reports = [...result.reports, ...result.global_reports];
@@ -61,7 +61,7 @@ export const visibilityProvider: DoctorProvider = {
             CATEGORY,
             host,
             "not-applicable",
-            `no hay bloque del hub para ${report.host} en ${input.workspaceDir}`,
+            `no hay bloque del hub para ${report.host} en ${input.hubDir}`,
           ),
         );
         continue;
@@ -96,11 +96,7 @@ export const visibilityProvider: DoctorProvider = {
 
 /** Each local work branch tracking PROD is a warning, never an automatic git edit. */
 async function prodUpstreamFindings(input: DoctorProviderInput): Promise<DoctorFinding[]> {
-  const block = await readWorkspaceBlock(
-    input.ctx.fs,
-    input.workspaceDir,
-    input.ctx.paths.blockMarkers(),
-  );
+  const block = await readHubBlock(input.ctx.fs, input.hubDir, input.ctx.paths.blockMarkers());
   if (block === null) return [];
   const findings: DoctorFinding[] = [];
   for (const source of block.fuentes) {

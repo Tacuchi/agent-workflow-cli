@@ -35,7 +35,7 @@ function seed(folders: { folder: string; closed?: boolean }[]): FakeFs {
 }
 
 /** Simulate another live operation holding the workspace lock. */
-async function holdWorkspaceLock(fs: FakeFs): Promise<void> {
+async function holdHubLock(fs: FakeFs): Promise<void> {
   await fs.writeText(
     paths.cwdLockFile(),
     JSON.stringify({ pid: 999999, ts: new Date().toISOString() }),
@@ -154,7 +154,7 @@ describe("manual cycle — the conversation keeps its own line", () => {
       bind: true,
       intent: "write",
     });
-    await holdWorkspaceLock(fs);
+    await holdHubLock(fs);
 
     const again = await resolveSessionTarget(fs, paths, {
       code: "001",
@@ -173,7 +173,7 @@ describe("manual cycle — the conversation keeps its own line", () => {
       bind: true,
       intent: "write",
     });
-    await holdWorkspaceLock(fs);
+    await holdHubLock(fs);
 
     const moved = await resolveSessionTarget(fs, paths, {
       code: "002",

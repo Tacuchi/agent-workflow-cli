@@ -343,7 +343,7 @@ export class GitCliAdapter implements GitPort {
     if (paths.length === 0) return {};
     // `--relative` makes git spell the answer the way the caller asked the
     // question — relative to THIS directory, not to the repository root — so a
-    // nested workspace gets back the same paths it passed in.
+    // nested hub gets back the same paths it passed in.
     //
     // `-z` is not a nicety: without it git applies `core.quotePath` and answers
     // `"a\303\261o.txt"` for a path the caller asked about as `año.txt`. The

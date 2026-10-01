@@ -1,11 +1,7 @@
 import { join } from "node:path";
 import type { FinalValidationCommand, FinalValidationSource } from "../domain/flow/run-state.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import {
-  BLOCK_MIRROR_FILES,
-  type ParsedProjectBlock,
-  parseProjectBlock,
-} from "./parsers/project-block.js";
+import { BLOCK_MIRROR_FILES, type ParsedHubBlock, parseHubBlock } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { finalValidationOverrides } from "./source-boundary-policy.js";
 
@@ -23,7 +19,7 @@ export interface SourcePipeline {
 }
 
 export function sourcePipeline(
-  block: ParsedProjectBlock,
+  block: ParsedHubBlock,
   alias: string,
   origin = "CLAUDE.md",
 ): SourcePipeline {
@@ -46,9 +42,9 @@ export async function readSourcePipelines(
 ): Promise<SourcePipeline[]> {
   const result = new Map<string, SourcePipeline>();
   for (const name of BLOCK_MIRROR_FILES) {
-    const file = join(paths.workspaceDir(), name);
+    const file = join(paths.hubDir(), name);
     if (!(await fs.exists(file))) continue;
-    const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
+    const block = parseHubBlock(await fs.readText(file), paths.blockMarkers());
     if (block === null) continue;
     mergeSourcePipelines(result, block, name);
   }
@@ -85,7 +81,7 @@ export function resolveFinalValidation(
 
 function mergeSourcePipelines(
   result: Map<string, SourcePipeline>,
-  block: ParsedProjectBlock,
+  block: ParsedHubBlock,
   name: string,
 ): void {
   for (const { alias } of block.fuentes) {

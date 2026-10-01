@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { readWorkspaceBlock } from "../../src/application/parsers/project-block.js";
+import { readHubBlock } from "../../src/application/parsers/hub-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { setEditModeCommand } from "../../src/cli/commands/set-edit-mode.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -27,9 +27,9 @@ it("declara el modo sin reemplazar las fuentes y lo cambia de nuevo", async () =
     valuesMulti: new Map(),
   });
   expect((await setEditModeCommand.execute(args("in-place"), ctx)).ok).toBe(true);
-  expect((await readWorkspaceBlock(fs, root, paths.blockMarkers()))?.edit_mode).toBe("in-place");
+  expect((await readHubBlock(fs, root, paths.blockMarkers()))?.edit_mode).toBe("in-place");
   expect((await setEditModeCommand.execute(args("unit"), ctx)).ok).toBe(true);
-  expect((await readWorkspaceBlock(fs, root, paths.blockMarkers()))?.edit_mode).toBe("unit");
+  expect((await readHubBlock(fs, root, paths.blockMarkers()))?.edit_mode).toBe("unit");
   expect(await readFile(join(root, "CLAUDE.md"), "utf8")).toContain("- Modo de edición: unit");
   expect((await setEditModeCommand.execute(args("bad"), ctx)).ok).toBe(false);
 });

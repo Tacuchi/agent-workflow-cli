@@ -151,7 +151,7 @@ export async function prepareDoctorBatch(
   // versión de CLI, sin marcas de tiempo, sin el informe entero. Dos corridas
   // sobre el mismo estado tienen que sellar igual, o «un reintento idéntico no
   // vuelve a preguntar» deja de ser cierto.
-  const digest = semanticDigest({ batch, read_set: readSet, workspace: ctx.paths.workspaceDir() });
+  const digest = semanticDigest({ batch, read_set: readSet, hub: ctx.paths.hubDir() });
   return {
     ok: true,
     kind: "sealed",
@@ -276,7 +276,7 @@ function effectsOf(actions: readonly DoctorBatchAction[]): string[] {
  * Lo que se leyó para decidir, con su digest: el compare-and-swap del lote.
  *
  * Se lee por `node:fs` y no por el puerto a propósito: son archivos de los
- * HOSTS, fuera del workspace, que es donde el puerto vive. Un archivo ausente
+ * HOSTS, fuera del hub, que es donde el puerto vive. Un archivo ausente
  * entra igual con el digest `absent`, porque «no estaba» es un estado del que
  * también depende la decisión: si aparece entre la vista previa y la aprobación,
  * el lote se armó sobre otra realidad.
@@ -296,8 +296,8 @@ function readSetFor(ctx: CliContext, actions: readonly DoctorBatchAction[]): Doc
 
 function targetsOf(ctx: CliContext, action: DoctorBatchAction): string[] {
   const home = ctx.env.homeDir();
-  const workspace = ctx.paths.workspaceDir();
-  const scope = action.args.scope === "global" ? home : workspace;
+  const hub = ctx.paths.hubDir();
+  const scope = action.args.scope === "global" ? home : hub;
   switch (action.op) {
     case "mcp.setup":
     case "mcp.remove":

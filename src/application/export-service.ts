@@ -56,7 +56,7 @@ export const EXPORT_CATEGORIES: readonly ExportCategory[] = [
 ];
 
 interface CategoryPolicy {
-  /** The single folder this export may write, unless the workspace canon moves it. */
+  /** The single folder this export may write, unless the hub canon moves it. */
   dir: string;
   /** `dossier` = a numbered directory of files; `document` = one numbered file. */
   shape: "dossier" | "document";
@@ -69,9 +69,9 @@ interface CategoryPolicy {
   contract: string;
 }
 
-/** A policy whose folder is the one this workspace actually publishes to. */
+/** A policy whose folder is the one this hub actually publishes to. */
 interface ResolvedPolicy extends Omit<CategoryPolicy, "overwritable"> {
-  /** Full workspace-relative path of the overwritable file, or null. */
+  /** Full hub-relative path of the overwritable file, or null. */
   overwritable: string | null;
 }
 
@@ -143,7 +143,7 @@ const FORWARD_RE = /^(\d{2})-(?!.*\.rollback\.sql$)[^/]+\.sql$/;
  *
  * It travels inside the request and comes back verbatim in the answer, which is
  * what lets `validate` and `apply` rebuild the same preparation. `date` and
- * `next` belong here for the same reason the filters do: they are not workspace
+ * `next` belong here for the same reason the filters do: they are not hub
  * state (the day is the clock's, and the real number is minted inside the lock
  * anyway), but the unit's name is built from them, so re-deriving them at a
  * later stage renames the destination the answer was written against.
@@ -176,7 +176,7 @@ export interface ExportScope {
  * `sessions` is what the command always did and stays the default: an
  * invocation that names no base produces exactly the material it produced
  * before this existed. `bundles` re-consolidates what `docs/scripts` already
- * published, and `workspace` sweeps everything the workspace holds.
+ * published, and `hub` sweeps everything the hub holds.
  */
 export type ExportBase = "sessions" | "bundles" | "hub";
 
@@ -227,7 +227,7 @@ export type ExportSelection = Partial<ExportScope>;
 export interface ExportPrepared {
   category: ExportCategory;
   request: SemanticRequest;
-  /** The folder this workspace publishes the category to (canon or default). */
+  /** The folder this hub publishes the category to (canon or default). */
   dir: string;
   /** The scope this preparation resolved — echoed by the answer, never re-derived. */
   scope: ExportScope;
@@ -310,7 +310,7 @@ export async function prepareExport(
 
   // Pinned when the answer echoed them, derived only on a first preparation:
   // re-deriving either at `validate` renames the very unit the answer wrote to,
-  // and neither is workspace state that a stale check should be defending.
+  // and neither is hub state that a stale check should be defending.
   const date = selection.date ?? localDateIso(now());
   // Rejected HERE and not only when the envelope comes back: `prepare` used to
   // accept any string, mint `…-export-manuals-lunes` and let the composer be
@@ -345,7 +345,7 @@ export async function prepareExport(
   async function checkReservation(): Promise<SemanticParse<never> | null> {
     if (category === "scripts" && selection.next !== undefined) {
       const markerPath = join(
-        paths.workspaceDir(),
+        paths.hubDir(),
         policy.dir,
         `${selection.next}-export-scripts-${date}`,
         FOLDER_RESERVATION_MARKER,
@@ -398,14 +398,14 @@ export async function prepareExport(
     const bundleOrigin =
       category === "scripts" ? await manifestOrigin(fs, paths, material) : undefined;
     const allBundles =
-      category === "scripts" ? await listGraduatedBundles(fs, paths.workspaceDir(), paths) : [];
+      category === "scripts" ? await listGraduatedBundles(fs, paths.hubDir(), paths) : [];
     const availableBundles =
       category === "scripts" ? allBundles.map((bundle) => basename(bundle.path)) : undefined;
     const looseSql =
-      category === "scripts" ? await listStandaloneSql(fs, paths.workspaceDir(), paths) : [];
+      category === "scripts" ? await listStandaloneSql(fs, paths.hubDir(), paths) : [];
     const coveredSql = new Set(allBundles.flatMap((bundle) => bundle.origin_standalone_sql ?? []));
     const unbundledSql = looseSql.filter(
-      (file) => !coveredSql.has(relative(paths.workspaceDir(), file.path).split(sep).join("/")),
+      (file) => !coveredSql.has(relative(paths.hubDir(), file.path).split(sep).join("/")),
     );
     const bundleWarnings =
       category === "scripts" && selection.environment !== undefined
@@ -448,10 +448,10 @@ export async function prepareExport(
     const readSet = materialPaths(material);
     return buildSemanticRequest({
       operation: `export-${category}`,
-      // What the seal defends is workspace state: the MATERIAL the scope covers —
+      // What the seal defends is hub state: the MATERIAL the scope covers —
       // sessions, loose SQL and previously published bundles alike, since any of
       // them appearing or changing changes what the dossier should have contained
-      // — and the folder this workspace publishes to. The scope rides along so an
+      // — and the folder this hub publishes to. The scope rides along so an
       // altered echo cannot pass as the original one.
       inputs: {
         ...(scriptsMaterial === null
@@ -464,7 +464,7 @@ export async function prepareExport(
         dir: policy.dir,
         ...(category === "manuals" ? { existing_manuals: existingManuals } : {}),
         scope,
-        workspace: paths.workspaceDir(),
+        hub: paths.hubDir(),
       },
       sealed: "el material del alcance o el destino declarado de la categoría",
       scope,
@@ -569,7 +569,7 @@ async function manifestOrigin(
   const sessions: BundleOrigin["sessions"] = [];
   for (const session of material.sessions) {
     const relativeRoot = session.path ?? session.folder;
-    const root = isAbsolute(relativeRoot) ? relativeRoot : join(paths.workspaceDir(), relativeRoot);
+    const root = isAbsolute(relativeRoot) ? relativeRoot : join(paths.hubDir(), relativeRoot);
     const files: OriginFile[] = [];
     for (const sql of await readScriptsArtifacts(fs, root)) {
       files.push({ path: sql.name, digest: (await digest(sql.path)).digest });
@@ -581,7 +581,7 @@ async function manifestOrigin(
   }
   const standalone_sql = await Promise.all(
     material.standalone.map(async (file) => ({
-      path: relative(paths.workspaceDir(), file.path).split(sep).join("/"),
+      path: relative(paths.hubDir(), file.path).split(sep).join("/"),
       digest: (await digest(file.path)).digest,
     })),
   );
@@ -615,7 +615,7 @@ async function sessionsWithSql(
   for (const session of sessions) {
     const root = session.path ?? session.folder;
     if (
-      (await readScriptsArtifacts(fs, isAbsolute(root) ? root : join(paths.workspaceDir(), root)))
+      (await readScriptsArtifacts(fs, isAbsolute(root) ? root : join(paths.hubDir(), root)))
         .length > 0
     )
       kept.push(session);
@@ -631,7 +631,7 @@ async function sqlMaterial(
   const entries: Array<{ origin: string; path: string; digest: string }> = [];
   for (const session of material.sessions) {
     const path = session.path ?? session.folder;
-    const root = isAbsolute(path) ? path : join(paths.workspaceDir(), path);
+    const root = isAbsolute(path) ? path : join(paths.hubDir(), path);
     for (const sql of await readScriptsArtifacts(fs, root)) {
       entries.push({
         origin: session.folder,
@@ -661,7 +661,7 @@ async function sqlMaterial(
   return entries.sort((a, b) => `${a.origin}/${a.path}`.localeCompare(`${b.origin}/${b.path}`));
 }
 
-/** The category's policy with the folder this workspace actually publishes to. */
+/** The category's policy with the folder this hub actually publishes to. */
 function resolvePolicy(category: ExportCategory, dir: string | undefined): ResolvedPolicy {
   const { overwritable, ...base } = POLICIES[category];
   const resolved = dir ?? base.dir;
@@ -861,7 +861,7 @@ async function composeMaterial(
 /**
  * Which of these bundles the book says already ran against this environment.
  *
- * The chain adds no new piece: a pass LINKS the bundle by workspace-relative
+ * The chain adds no new piece: a pass LINKS the bundle by hub-relative
  * path and that same pass has an application for the environment. One record is
  * enough — a bundle linked to two passes where only one ran there did run, and
  * demanding unanimity would re-deliver SQL that is already in place, which is
@@ -886,7 +886,7 @@ async function filterByEnvironment(
   // ever match — every bundle would read as pending and be delivered twice.
   const linked = new Set(there.flatMap((derived) => derived.artifacts).map(slashed));
   const excluded = bundles
-    .filter((bundle) => linked.has(slashed(relative(paths.workspaceDir(), bundle.path))))
+    .filter((bundle) => linked.has(slashed(relative(paths.hubDir(), bundle.path))))
     .map((bundle) => ({
       ...piece("bundles", bundleName(bundle), bundle.path),
       reason: "applied" as const,
@@ -1094,7 +1094,7 @@ export function validateExport(
   if (!assembled.ok) return assembled;
 
   // From what was prepared, never from the policy table: the folder is the
-  // workspace's, and re-reading it here would let the two stages disagree.
+  // hub's, and re-reading it here would let the two stages disagree.
   const policy = resolvePolicy(prepared.category, prepared.dir);
   const artifacts = assembled.value;
   const inUnit = artifacts.filter((a) => a.path !== policy.overwritable);
@@ -1442,7 +1442,7 @@ export async function applyExport(
     const number = input.prepared.next;
     const folderMarker =
       input.prepared.category === "scripts"
-        ? join(paths.workspaceDir(), input.prepared.unit, FOLDER_RESERVATION_MARKER)
+        ? join(paths.hubDir(), input.prepared.unit, FOLDER_RESERVATION_MARKER)
         : null;
     const expected =
       input.prepared.reservationOwner === undefined
@@ -1465,8 +1465,8 @@ export async function applyExport(
       };
     }
     async function checkNumberAvailability(): Promise<SemanticParse<never> | null> {
-      const entries = (await fs.exists(join(paths.workspaceDir(), policy.dir)))
-        ? await fs.list(join(paths.workspaceDir(), policy.dir))
+      const entries = (await fs.exists(join(paths.hubDir(), policy.dir)))
+        ? await fs.list(join(paths.hubDir(), policy.dir))
         : [];
       const usedNumbers = await exportUsedNumbers(fs, paths, policy.dir);
       const occupant = entries.find((entry) => {
@@ -1504,7 +1504,7 @@ export async function applyExport(
       (
         await Promise.all(
           artifacts.map(async (artifact) => {
-            const target = join(paths.workspaceDir(), artifact.path);
+            const target = join(paths.hubDir(), artifact.path);
             try {
               return (await fs.readText(target)) === artifact.content;
             } catch {
@@ -1515,7 +1515,7 @@ export async function applyExport(
       ).every(Boolean);
     const published = alreadyWritten
       ? { ok: true as const, value: { written: artifacts.map((artifact) => artifact.path) } }
-      : await publishArtifacts(fs, paths.workspaceDir(), artifacts, { overwrite: false });
+      : await publishArtifacts(fs, paths.hubDir(), artifacts, { overwrite: false });
     // Under the SAME lock as the write, for the same reason as in `persist`: two
     // concurrent publications outside it would lose one of the two rows.
     if (published.ok) {
@@ -1763,8 +1763,8 @@ async function listExistingManuals(
   category: ExportCategory,
   dir: string,
 ): Promise<string[]> {
-  return category === "manuals" && (await fs.exists(join(paths.workspaceDir(), dir)))
-    ? (await fs.list(join(paths.workspaceDir(), dir)))
+  return category === "manuals" && (await fs.exists(join(paths.hubDir(), dir)))
+    ? (await fs.list(join(paths.hubDir(), dir)))
         .filter((entry) => entry.type === "file" && entry.name.endsWith(".md"))
         .map((entry) => `${dir}/${entry.name}`)
     : [];

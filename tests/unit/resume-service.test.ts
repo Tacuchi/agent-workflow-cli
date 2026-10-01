@@ -22,7 +22,7 @@ function resume(fs: MemFs, input: ResumeInput = {}) {
   return runResume(fs, fakeEnv, paths(), { ...input, now: NOW });
 }
 
-function workspace(): MemFs {
+function hub(): MemFs {
   const fs = new MemFs();
   fs.file("/cwd/.workflow/sessions/.keep", "");
   return fs;
@@ -46,7 +46,7 @@ function session(fs: MemFs, folder: string, objective: string, origin: string, p
 
 describe("runResume — without a target it follows the documental priority", () => {
   it("fails closed when the core documentary canon is invalid", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/.workflow/skills.toml", '[docs]\nspec = "knowledge/specs"\n');
 
     const out = await resume(fs);
@@ -57,7 +57,7 @@ describe("runResume — without a target it follows the documental priority", ()
   });
 
   it("recommends the unrefined spec over a partial plan and a loose checkpoint", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/001-spec-borrador.md", DRAFT);
     fs.file("/cwd/docs/plans/005-plan-parcial.md", "# Plan\n\n## Tasks\n- [x] T1\n- [ ] T2\n");
     session(fs, "010-suelta-quick", "algo suelto", "prompt directo", "seguir");
@@ -71,7 +71,7 @@ describe("runResume — without a target it follows the documental priority", ()
   });
 
   it("reports every field the caller needs to decide, plus the exact route", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/009-plan-x.md",
       "# Plan\n\n## Tasks\n- [x] T1\n- [x] T2\n- [ ] T3\n- [ ] T4\n",
@@ -89,7 +89,7 @@ describe("runResume — without a target it follows the documental priority", ()
   });
 
   it("surfaces a blocked phase as what the plan is waiting on", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/003-plan-b.md",
       "# Plan\n\n## Tasks\n\n### F1 — algo\n\n> Estado: bloqueada\n> Bloqueo: falta aplicar la migración 014\n\n- [x] T1.1\n",
@@ -101,7 +101,7 @@ describe("runResume — without a target it follows the documental priority", ()
   });
 
   it("returns candidates on a tie and refuses to break it by date", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/001-spec-vieja.md", DRAFT, new Date(2020, 0, 1));
     fs.file("/cwd/docs/specs/002-spec-nueva.md", DRAFT, new Date(2026, 6, 28));
 
@@ -112,7 +112,7 @@ describe("runResume — without a target it follows the documental priority", ()
   });
 
   it("says the pipeline is empty instead of inventing something to do", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/001-plan-a.md",
       "# Plan\n\n> Estado: done\n> Derived from docs/specs/003-spec-a.md\n\n## Tasks\n- [x] T1\n",
@@ -128,7 +128,7 @@ describe("runResume — without a target it follows the documental priority", ()
 
 describe("runResume — an explicit target wins over the pipeline", () => {
   it("una spec reemplazada no recomienda refinar ni planificar, incluso al pedir su ruta", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/specs/030-spec-vieja.md",
       "---\nstatus: superseded\nsuperseded_by: docs/specs/031-spec-nueva.md\n---\n# Spec\n",
@@ -138,7 +138,7 @@ describe("runResume — an explicit target wins over the pipeline", () => {
     expect(target).toMatchObject({ status: "invalid_target", action: "reemplazada por 031" });
   });
   it("resolves a plan by its path even when a spec outranks it", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/001-spec-borrador.md", DRAFT);
     fs.file("/cwd/docs/plans/005-plan-x.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
 
@@ -149,7 +149,7 @@ describe("runResume — an explicit target wins over the pipeline", () => {
   });
 
   it("resolves a bare number when only one document carries it", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/plans/005-plan-x.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
 
     const out = await resume(fs, { target: "005" });
@@ -158,7 +158,7 @@ describe("runResume — an explicit target wins over the pipeline", () => {
   });
 
   it("preserves the compatible legacy warning on an explicit open plan", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/plans/006-plan-legado.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
 
     const out = await resume(fs, { target: "docs/plans/006-plan-legado.md" });
@@ -168,7 +168,7 @@ describe("runResume — an explicit target wins over the pipeline", () => {
   });
 
   it("does not offer plan-exec for a closed legacy plan targeted explicitly", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/007-plan-historico.md",
       "# Plan\n\n> Estado: done\n\n## Tasks\n- [x] T1\n",
@@ -184,7 +184,7 @@ describe("runResume — an explicit target wins over the pipeline", () => {
   // A number is not an identity: spec 005 and plan 005 both exist in real
   // workspaces, so the tie goes back to the caller.
   it("returns candidates when a number names both a spec and a plan", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/005-spec-x.md", DRAFT);
     fs.file("/cwd/docs/plans/005-plan-y.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
 
@@ -198,14 +198,14 @@ describe("runResume — an explicit target wins over the pipeline", () => {
   });
 
   it("rejects a target that matches nothing, naming both accepted forms", async () => {
-    const out = await resume(workspace(), { target: "404" });
+    const out = await resume(hub(), { target: "404" });
     expect(out.status).toBe("invalid_target");
     if (out.status !== "invalid_target") return;
     expect(out.action).toContain("--code");
   });
 
   it("reads a session target through --code", async () => {
-    const fs = workspace();
+    const fs = hub();
     session(fs, "049-x-plan-exec", "ejecutar el plan 008", "docs/plans/008-plan-x.md", "cerrar F3");
 
     const out = await resume(fs, { code: "049" });
@@ -231,7 +231,7 @@ describe("runResume — reads state, never records it", () => {
   // association (`sessionReadRequest` sets `bind: true`). `resume` must not:
   // asking what to pick up is not the same as claiming a work line.
   it("leaves .bindings.json untouched when resolving a session by code", async () => {
-    const fs = workspace();
+    const fs = hub();
     session(fs, "049-x-plan-exec", "ejecutar", "docs/plans/008-plan-x.md", "seguir");
 
     const out = await resume(fs, { code: "049", contextId: "conversation-abc" });
@@ -241,7 +241,7 @@ describe("runResume — reads state, never records it", () => {
   });
 
   it("does not create a binding when the conversation resolves the sole active session", async () => {
-    const fs = workspace();
+    const fs = hub();
     session(fs, "049-x-plan-exec", "ejecutar", "docs/plans/008-plan-x.md", "seguir");
 
     await resume(fs, { code: "049-x-plan-exec", contextId: "conversation-xyz" });
@@ -249,7 +249,7 @@ describe("runResume — reads state, never records it", () => {
   });
 
   it("writes nothing at all on the pipeline path either", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/001-spec-borrador.md", DRAFT);
     fs.file("/cwd/docs/plans/005-plan-x.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
     session(fs, "010-suelta-quick", "algo", "prompt", "seguir");
@@ -270,7 +270,7 @@ describe("runResume — reads state, never records it", () => {
  * the spec→plan link stay the CLI's, and the command is still only presented.
  */
 function nine(): MemFs {
-  const fs = workspace();
+  const fs = hub();
   for (const n of ["001", "002", "003"]) fs.file(`/cwd/docs/specs/${n}-spec-borrador.md`, DRAFT);
   for (const n of ["004", "005"]) fs.file(`/cwd/docs/specs/${n}-spec-lista.md`, READY);
   for (const n of ["010", "011", "012", "013"]) {
@@ -311,7 +311,7 @@ describe("runResume — sin target, la oferta es el pipeline completo", () => {
   });
 
   it("sin empate hay recomendación Y el resto de la oferta, no una sola cosa", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/001-spec-borrador.md", DRAFT);
     fs.file("/cwd/docs/plans/010-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
     fs.file("/cwd/docs/plans/011-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
@@ -335,7 +335,7 @@ describe("runResume — sin target, la oferta es el pipeline completo", () => {
   });
 
   it("sin pendientes sigue devolviendo idle, sin abrir ninguna elección", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/001-plan-a.md",
       "# Plan\n\n> Estado: done\n> Derived from docs/specs/003-spec-a.md\n\n## Tasks\n- [x] T1\n",
@@ -389,7 +389,7 @@ describe("runResume — el traspaso de un plan cerrado se ofrece sin bloquear", 
   const expected = `TRASPASO VIGENTE por DEC-001 — ${HANDOFF_TEXT}`;
 
   it("lo propone con su comando cuando no hay nada abierto que le gane", async () => {
-    const fs = workspace();
+    const fs = hub();
     seedClosedPlanWithHandoff(fs);
 
     const out = await resume(fs);
@@ -403,7 +403,7 @@ describe("runResume — el traspaso de un plan cerrado se ofrece sin bloquear", 
   });
 
   it("un plan ABIERTO le gana: el traspaso no adelanta trabajo de afuera", async () => {
-    const fs = workspace();
+    const fs = hub();
     seedClosedPlanWithHandoff(fs);
     fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [x] T1\n- [ ] T2\n");
 
@@ -417,7 +417,7 @@ describe("runResume — el traspaso de un plan cerrado se ofrece sin bloquear", 
   });
 
   it("preguntado por el plan mismo dice exactamente lo que dice el tablero", async () => {
-    const fs = workspace();
+    const fs = hub();
     seedClosedPlanWithHandoff(fs);
 
     const direct = await resume(fs, { target: HANDOFF_PLAN });

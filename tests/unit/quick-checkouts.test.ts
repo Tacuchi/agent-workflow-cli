@@ -48,7 +48,7 @@ afterEach(async () => {
 
 it("detecta modos Git sin incluir vecinos ni artefactos internos", async () => {
   git("init", "--quiet", "--initial-branch=main");
-  const script = join(paths.workspaceDir(), "script.sh");
+  const script = join(paths.hubDir(), "script.sh");
   await writeFile(script, "#!/bin/sh\nexit 0\n");
   await chmod(script, 0o644);
   git("add", "workspace/script.sh");
@@ -64,7 +64,7 @@ it("detecta modos Git sin incluir vecinos ni artefactos internos", async () => {
   expect(await observe()).not.toEqual(before);
   await chmod(script, 0o644);
   expect(await observe()).toEqual(before);
-  const untracked = join(paths.workspaceDir(), "nuevo.sh");
+  const untracked = join(paths.hubDir(), "nuevo.sh");
   await writeFile(untracked, "#!/bin/sh\nexit 0\n");
   await chmod(untracked, 0o644);
   const added = await observe();
@@ -77,7 +77,7 @@ it("rechaza un mapa cuya primera raíz cambió al leer la segunda", async () => 
   const source = join(repo, "source");
   await mkdir(source);
   await writeFile(
-    join(paths.workspaceDir(), "AGENTS.md"),
+    join(paths.hubDir(), "AGENTS.md"),
     [
       paths.blockMarkers().start,
       "## Fuentes",
@@ -87,11 +87,11 @@ it("rechaza un mapa cuya primera raíz cambió al leer la segunda", async () => 
       paths.blockMarkers().end,
     ].join("\n"),
   );
-  let workspace = "original";
+  let hub = "original";
   const reader = Object.assign(new RecordingGit(), {
     scopedFingerprint: async (root: string) => {
-      if (root === source) workspace = "cambió durante la lectura";
-      return root === source ? "source" : workspace;
+      if (root === source) hub = "cambió durante la lectura";
+      return root === source ? "source" : hub;
     },
     checkoutFingerprint: async () => "metadata",
   });

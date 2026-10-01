@@ -83,7 +83,7 @@ describe("recover --reinfer-batch", () => {
         {
           ...inferred.batch,
           stage: "reviewing",
-          credit: { workspace: "prueba vieja" },
+          credit: { hub: "prueba vieja" },
           review: batchReview(),
         },
       ],
@@ -235,7 +235,7 @@ describe("recover --reinfer-batch", () => {
           batches: [
             {
               ...batch,
-              snapshot: { workspace: { head: "base", branch: "aw/test", dirty: [] } },
+              snapshot: { hub: { head: "base", branch: "aw/test", dirty: [] } },
             },
           ],
         }),

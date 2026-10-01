@@ -100,7 +100,7 @@ interface Conversation {
   executor: ReturnType<typeof testExecutor>;
 }
 
-async function openWorkspace(label: string, contextId: string, at?: string): Promise<Conversation> {
+async function openHub(label: string, contextId: string, at?: string): Promise<Conversation> {
   const workdir = at ?? (await mkdtemp(join(tmpdir(), `aw-host-${label}-`)));
   const paths = new PathsService(normalizeNamespace("agent-workflow"), workdir, workdir);
   await mkdir(join(paths.cwdSessionsDir(), SESSION), { recursive: true });
@@ -306,8 +306,8 @@ describe("dos hosts con el mismo estado reciben la misma directiva", () => {
   let codex: Conversation;
 
   beforeEach(async () => {
-    claude = await openWorkspace("claude", "conv-claude-7f2a");
-    codex = await openWorkspace("codex", "conv-codex-91bd");
+    claude = await openHub("claude", "conv-claude-7f2a");
+    codex = await openHub("codex", "conv-codex-91bd");
   });
 
   afterEach(async () => {
@@ -332,12 +332,12 @@ describe("dos hosts con el mismo estado reciben la misma directiva", () => {
   }> {
     const at = codex.workdir;
     await rm(at, { recursive: true, force: true });
-    const first = await openWorkspace("claude", claude.contextId, at);
+    const first = await openHub("claude", claude.contextId, at);
     const adoptedHere = await adopt(first);
     const here = await walk(first);
     const executedHere = (await boundaryOf(first)).state.events;
     await rm(at, { recursive: true, force: true });
-    const second = await openWorkspace("codex", codex.contextId, at);
+    const second = await openHub("codex", codex.contextId, at);
     const adoptedThere = await adopt(second);
     const there = await walk(second);
     const executedThere = (await boundaryOf(second)).state.events;
@@ -451,7 +451,7 @@ describe("una frontera detenida se reanuda desde otro host", () => {
   let resumed: Conversation;
 
   beforeEach(async () => {
-    started = await openWorkspace("resume", "conv-original-3ce1");
+    started = await openHub("resume", "conv-original-3ce1");
     resumed = otherConversation(started, "conv-otra-8a40");
   });
 
@@ -563,7 +563,7 @@ describe("la conversación original ya no está disponible", () => {
   let started: Conversation;
 
   beforeEach(async () => {
-    started = await openWorkspace("gone", "conv-que-se-perdio-0d5f");
+    started = await openHub("gone", "conv-que-se-perdio-0d5f");
   });
 
   afterEach(async () => {

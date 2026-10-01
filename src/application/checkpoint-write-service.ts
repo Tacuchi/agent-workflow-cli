@@ -20,7 +20,7 @@ import {
 } from "./lifecycle-target.js";
 import { withCwdLock } from "./lock-service.js";
 import { parseMdValue } from "./markdown.js";
-import { type PathsService, resolveWorkspaceRoot } from "./paths-service.js";
+import { type PathsService, resolveHubRoot } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { hashContextId } from "./session-binding-service.js";
 import { writeSessionNarrative } from "./session-narrative.js";
@@ -53,7 +53,7 @@ export interface CheckpointWriteOutput {
   reason?: string;
   /**
    * Refuge checkpoints folded into this session's CHECKPOINT on the way, by
-   * workspace-relative path. Absent when there was none to adopt.
+   * hub-relative path. Absent when there was none to adopt.
    */
   refuge_adopted?: string[];
   /** Refuges nobody could adopt any more, removed on the way (see {@link sweepRefuges}). */
@@ -75,7 +75,7 @@ export interface CheckpointWriteDegraded {
   candidates: SessionCandidate[];
   action: string;
   /**
-   * Where the state was parked instead, workspace-relative — `null` when there
+   * Where the state was parked instead, hub-relative — `null` when there
    * was no active candidate that could ever adopt it (see {@link parkRefuge}).
    */
   refuge_path: string | null;
@@ -183,15 +183,15 @@ async function writeResolvedCheckpoint(
   // the refuge existed to save (its file on disk is long gone).
   const carried = await carriedAdoptions(fs, cpPath);
 
-  // The workspace root rather than the raw cwd. Today the two coincide by
+  // The hub root rather than the raw cwd. Today the two coincide by
   // construction — session resolution already refuses to run from a
   // subdirectory, so nothing reaches here with a deeper cwd — and what actually
   // bounds the reading is `repoPrefix` inside the collection. This stays the
   // resolved root anyway: it is the value the boundary is DEFINED as, so the
   // day session resolution learns to walk up, the inventory does not silently
   // widen to the parent repository along with it.
-  const workspaceRoot = await resolveWorkspaceRoot(fs, env, paths);
-  const state = await extractSessionState(fs, git, workspaceRoot, session.path);
+  const hubRoot = await resolveHubRoot(fs, env, paths);
+  const state = await extractSessionState(fs, git, hubRoot, session.path);
   const md = withCarried(formatCheckpointMd(state), carried);
   await fs.mkdirp(session.path);
   await fs.writeText(cpPath, md);
@@ -284,8 +284,8 @@ export async function runAutoCompactOnClose(
         ],
       };
     }
-    const workspaceRoot = await resolveWorkspaceRoot(fs, env, paths);
-    const entry = await writeCheckpointForTarget(fs, git, workspaceRoot, target.session);
+    const hubRoot = await resolveHubRoot(fs, env, paths);
+    const entry = await writeCheckpointForTarget(fs, git, hubRoot, target.session);
     // Only over a checkpoint that exists: a failed write cannot adopt its refuge.
     if (entry.error === undefined) {
       const adopted = await adoptRefuge(fs, paths, target.session, adoptionScope(options, now));
@@ -325,7 +325,7 @@ export async function runAutoCompactOnClose(
 async function writeCheckpointForTarget(
   fs: FileSystemPort,
   git: GitPort,
-  workspaceRoot: string,
+  hubRoot: string,
   session: SessionEntry,
 ): Promise<AutoCompactOnCloseOutput["checkpoints_written"][number]> {
   const cpPath = join(session.path, "CHECKPOINT.md");
@@ -342,7 +342,7 @@ async function writeCheckpointForTarget(
   }
   try {
     const carried = await carriedAdoptions(fs, cpPath);
-    const state = await extractSessionState(fs, git, workspaceRoot, session.path);
+    const state = await extractSessionState(fs, git, hubRoot, session.path);
     const md = withCarried(formatCheckpointMd(state), carried);
     await fs.mkdirp(session.path);
     await fs.writeText(cpPath, md);
@@ -488,7 +488,7 @@ export interface RefugeCheckpointInput {
 export interface RefugeEntry {
   /** Absolute path — what adoption removes. */
   path: string;
-  /** Workspace-relative path — what a caller reports. */
+  /** Hub-relative path — what a caller reports. */
   relative: string;
   date: string;
   /** `sha256:…` digest of the owning conversation; `null` when it declared none. */
@@ -500,7 +500,7 @@ export interface RefugeEntry {
   body: string;
 }
 
-/** Where the parked state goes, and its workspace-relative path for the caller. */
+/** Where the parked state goes, and its hub-relative path for the caller. */
 export async function writeRefugeCheckpoint(
   fs: FileSystemPort,
   paths: PathsService,
@@ -515,7 +515,7 @@ export async function writeRefugeCheckpoint(
   );
   await fs.mkdirp(dir);
   await fs.writeText(path, refugeBody(input, now, digest));
-  return relpath(path, paths.workspaceDir());
+  return relpath(path, paths.hubDir());
 }
 
 /**
@@ -524,7 +524,7 @@ export async function writeRefugeCheckpoint(
  *
  * A closed session is not a destination: every write refuses it, so listing it
  * would promise an adoption that cannot happen. With no active candidate — a
- * workspace between runs, which is the ordinary state, or a `--code` that named
+ * hub between runs, which is the ordinary state, or a `--code` that named
  * a closed or missing session — the parked file would name nobody, and the
  * notice on stderr is the whole answer.
  */
@@ -612,7 +612,7 @@ function outsideAdoptionWindow(refuge: Pick<RefugeEntry, "parkedAt">, now: Date)
  * Remove every refuge nobody can adopt any more, and name them.
  *
  * Runs on every lifecycle write, which is also every adoption. Exported so the
- * workspace residue sweep reuses this rule instead of writing a second one.
+ * hub residue sweep reuses this rule instead of writing a second one.
  * Like adoption, it never throws out of a lifecycle surface: a refuge it could
  * not remove is simply not reported, and the next write tries again.
  */
@@ -758,7 +758,7 @@ export async function listRefugeCheckpoints(
     const date = parseMdValue(body, REFUGE_DATE_KEY);
     refuges.push({
       path: entry.path,
-      relative: relpath(entry.path, paths.workspaceDir()),
+      relative: relpath(entry.path, paths.hubDir()),
       date: date ?? "sin fecha",
       conversation: conversation?.startsWith(REFUGE_DIGEST_PREFIX) ? conversation : null,
       candidates: refugeCandidates(parseMdValue(body, REFUGE_CANDIDATES_KEY)),

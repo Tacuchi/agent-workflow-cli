@@ -12,7 +12,7 @@ export interface TabBarProps {
 /**
  * TabBar — horizontal row with the accessible tabs.
  *
- * Layout: `<Status>  <Workflow>  <Project>  <MCP>  <Skills>`
+ * Layout: `<Status>  <Workflow>  <Hub>  <MCP>  <Skills>`
  *
  * Active: inverse violet highlight (CTA pill style).
  * Inactive: `dim`.

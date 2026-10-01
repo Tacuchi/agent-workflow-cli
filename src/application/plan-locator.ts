@@ -8,7 +8,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
  *
  * Two spellings, because both are what somebody actually types: the path they
  * copied from `aw status`, or the correlative they remember. Resolving them is
- * the same three refusals every time — not a path of this workspace, no plan
+ * the same three refusals every time — not a path of this hub, no plan
  * with that number, a number that names more than one document — so it is ONE
  * implementation rather than one per command.
  *

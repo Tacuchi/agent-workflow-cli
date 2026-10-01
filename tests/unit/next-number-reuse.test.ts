@@ -27,23 +27,23 @@ const OWNER = "201-alpha-plan-new";
 const OTHER = "202-beta-plan-new";
 
 describe("reutilización determinista de correlativos liberados", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
-  const plans = (): string[] => readdirSync(join(workspace, "docs", "plans")).sort();
+  const plans = (): string[] => readdirSync(join(hub, "docs", "plans")).sort();
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "next-number-reuse-"));
-    env = new FakeEnv(workspace, workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "next-number-reuse-"));
+    env = new FakeEnv(hub, hub);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new NodeFileSystem();
-    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
   });
-  afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+  afterEach(() => rmSync(hub, { recursive: true, force: true }));
 
   const session = (folder: string): void => {
-    const dir = join(workspace, ".workflow", "sessions", folder);
+    const dir = join(hub, ".workflow", "sessions", folder);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), "# SESSION — x\n\n## Objective\nx\n");
   };
@@ -84,7 +84,7 @@ describe("reutilización determinista de correlativos liberados", () => {
     expect(closed.sessionClose.reservations_released).toEqual([
       "docs/scripts/001-export-scripts-2026-09-27",
     ]);
-    expect(readdirSync(join(workspace, "docs", "scripts"))).toEqual([]);
+    expect(readdirSync(join(hub, "docs", "scripts"))).toEqual([]);
   });
 
   it("un correlativo PUBLICADO nunca entra al conjunto elegible", async () => {
@@ -110,9 +110,9 @@ describe("reutilización determinista de correlativos liberados", () => {
   });
 
   it("el número publicado y luego borrado no vuelve ni en dry-run ni al reclamar", async () => {
-    mkdirSync(join(workspace, "docs", "scripts"), { recursive: true });
+    mkdirSync(join(hub, "docs", "scripts"), { recursive: true });
     writeFileSync(
-      join(workspace, ".workflow", "HISTORY.md"),
+      join(hub, ".workflow", "HISTORY.md"),
       "## Publicaciones\n\n| Documento | Fecha | Comando |\n|-----------|-------|---------|\n| docs/scripts/008-export-scripts-2026-01-01/README.md | 2026-01-01 | export-scripts |\n",
     );
     const consulted = await runNextNumber(fs, env, paths, {
@@ -197,7 +197,7 @@ describe("reutilización determinista de correlativos liberados", () => {
     if (!("sessionClose" in closed)) throw new Error("esperaba cerrar la sesión");
 
     // El ledger dice que 001 volvió, pero alguien escribió un documento ahí.
-    writeFileSync(join(workspace, "docs", "plans", "001-plan-ajeno.md"), "# Plan\n\ncontenido\n");
+    writeFileSync(join(hub, "docs", "plans", "001-plan-ajeno.md"), "# Plan\n\ncontenido\n");
     session(OTHER);
     const minted = await claim("plan-nuevo.md", OTHER);
 

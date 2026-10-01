@@ -6,7 +6,7 @@ function context(run: CliContext["process"]["run"]): CliContext {
   return {
     process: { run },
     runtime: { binName: "agent-workflow" },
-    paths: { workspaceDir: () => "/fixture" },
+    paths: { hubDir: () => "/fixture" },
   } as unknown as CliContext;
 }
 

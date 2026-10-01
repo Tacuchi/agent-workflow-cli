@@ -1,26 +1,22 @@
 import { isAbsolute, join } from "node:path";
-import { parseUnitPath, workspaceKey } from "../domain/isolation-unit.js";
+import { hubKey, parseUnitPath } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "./parsers/project-block.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface MergeStateInput {
-  /** Inspect this repo path directly (absolute, or relative to cwd). Workspace-independent. */
+  /** Inspect this repo path directly (absolute, or relative to cwd). Hub-independent. */
   path?: string;
-  /** Inspect the workspace source with this alias (requires a WORKSPACE block). */
+  /** Inspect the hub source with this alias (requires a hub block). */
   source?: string;
-  /** Inspect every workspace source (requires a WORKSPACE block). */
+  /** Inspect every hub source (requires a hub block). */
   all?: boolean;
 }
 
 export interface RepoMergeState {
-  /** Source alias when resolved from the workspace block; null for a direct path / cwd. */
+  /** Source alias when resolved from the hub block; null for a direct path / cwd. */
   alias: string | null;
   /** Session folder when this repository is an isolation unit. */
   unit?: string;
@@ -45,8 +41,8 @@ export interface MergeStateOutput {
 }
 
 /**
- * Read-only inspection of in-progress merge state, per repo. Workspace-independent:
- * a `path` (or cwd) inspects that repo without any WORKSPACE block. An unreadable
+ * Read-only inspection of in-progress merge state, per repo. Hub-independent:
+ * a `path` (or cwd) inspects that repo without any hub block. An unreadable
  * target is never silently reported as "no merges".
  */
 export async function runMergeState(
@@ -102,7 +98,7 @@ async function resolveTargets(
   input: MergeStateInput,
   unreadable: MergeStateOutput["unreadable"],
 ): Promise<{ alias: string | null; path: string }[]> {
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
   if (input.path !== undefined) {
     const p = isAbsolute(input.path) ? input.path : join(cwd, input.path);
     return [{ alias: null, path: p }];
@@ -190,8 +186,7 @@ async function inspectSourceUnits(
   const root = await fs.realPath(paths.userUnitsDir()).catch(() => paths.userUnitsDir());
   for (const tree of trees) {
     const identity = parseUnitPath(root, tree.path);
-    if (identity?.workspaceKey !== workspaceKey(paths.workspaceDir()) || identity.alias !== t.alias)
-      continue;
+    if (identity?.hubKey !== hubKey(paths.hubDir()) || identity.alias !== t.alias) continue;
     if (tree.prunable) {
       notes.push(`Unidad ${identity.session} de ${t.alias} omitida: prunable (${tree.path})`);
       continue;
@@ -225,15 +220,10 @@ async function resolveSourceTargets(
   input: MergeStateInput,
   unreadable: MergeStateOutput["unreadable"],
 ): Promise<{ alias: string | null; path: string }[]> {
-  const cwd = paths.workspaceDir();
-  let fuentes: ProjectFuente[] | undefined;
+  const cwd = paths.hubDir();
+  let fuentes: HubFuente[] | undefined;
   try {
-    const block = await readWorkspaceBlock(
-      fs,
-      cwd,
-      paths.blockMarkers(),
-      (b) => b.fuentes.length > 0,
-    );
+    const block = await readHubBlock(fs, cwd, paths.blockMarkers(), (b) => b.fuentes.length > 0);
     fuentes = block?.fuentes;
   } catch {
     fuentes = undefined;
@@ -264,7 +254,7 @@ async function resolveSourceTargets(
 
 async function sourcePaths(
   fs: FileSystemPort,
-  fuentes: ProjectFuente[],
+  fuentes: HubFuente[],
   input: MergeStateInput,
   unreadable: MergeStateOutput["unreadable"],
 ): Promise<{ alias: string; path: string }[]> {

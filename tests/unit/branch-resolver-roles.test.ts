@@ -3,14 +3,11 @@ import {
   BRANCH_ROLE_FALLBACKS,
   resolveSourceBranches,
 } from "../../src/application/branch-resolver.js";
-import type {
-  ParsedProjectBlock,
-  ProjectFuente,
-} from "../../src/application/parsers/project-block.js";
+import type { HubFuente, ParsedHubBlock } from "../../src/application/parsers/hub-block.js";
 
-const source: ProjectFuente = { alias: "core", path: "/repo/core", main_branch: "certificacion" };
+const source: HubFuente = { alias: "core", path: "/repo/core", main_branch: "certificacion" };
 
-function block(over: Partial<ParsedProjectBlock> = {}): ParsedProjectBlock {
+function block(over: Partial<ParsedHubBlock> = {}): ParsedHubBlock {
   return {
     proyecto: "X",
     fuentes: [source],

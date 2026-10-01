@@ -16,9 +16,10 @@ import { localDateIso } from "./dates.js";
 import { locateRun, readRun } from "./flow/run-state-service.js";
 import { readHistoryRows } from "./history-table.js";
 import { historyFields, sharedNumberError, upsertHistoryRow } from "./history-update-service.js";
+import { type HubCommitProposal, runHubCommit } from "./hub-commit-service.js";
 import { withCwdLock } from "./lock-service.js";
 import { parseMdSectionBilingual } from "./markdown.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
+import { readHubBlock } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { readScriptsArtifacts } from "./release-data/artifacts.js";
 import { listGraduatedBundles } from "./release-data/bundles.js";
@@ -40,7 +41,6 @@ import {
   resolveSessionTarget,
   sessionsSharingNumber,
 } from "./session-resolver.js";
-import { type WorkspaceCommitProposal, runWorkspaceCommit } from "./workspace-commit-service.js";
 
 export interface SessionCloseInput {
   code?: string;
@@ -64,7 +64,7 @@ export interface SessionCloseInput {
   requireIntegrated?: boolean;
   /** Derived from run state: a mid-journey finalize is re-openable, not final. */
   final?: boolean;
-  /** Workspace-relative reservations still backing an unpublished proposal. */
+  /** Hub-relative reservations still backing an unpublished proposal. */
   preserveReservations?: readonly string[];
 }
 
@@ -145,7 +145,7 @@ export interface SessionCloseOutput {
   sql_pending_export_error?: string;
   archive_paths?: string[];
   archive_error?: string;
-  commit_proposal?: WorkspaceCommitProposal;
+  commit_proposal?: HubCommitProposal;
   commit_proposal_error?: string;
   commit_receipt?: CommitReceipt;
   commit_error?: string;
@@ -309,7 +309,7 @@ async function pendingSqlExport(
     (file) => !file.is_rollback,
   );
   if (scripts.length === 0) return undefined;
-  const bundles = await listGraduatedBundles(fs, paths.workspaceDir(), paths);
+  const bundles = await listGraduatedBundles(fs, paths.hubDir(), paths);
   const exported = new Set<string>();
   for (const bundle of bundles) {
     await collectExportedSql(fs, bundle.path, session.folder, exported);
@@ -375,7 +375,7 @@ function refuseHeld(code: string, folder: string, units: HeldUnits): SessionClos
   };
 }
 
-/** Reads this workspace's live isolation units; absent when the caller has no git port. */
+/** Reads this hub's live isolation units; absent when the caller has no git port. */
 export type IsolationReader = () => Promise<
   | Array<ClassifiedUnit>
   | {
@@ -485,8 +485,8 @@ async function releaseReservations(
   preserve: readonly string[],
 ): Promise<{ released: string[]; error?: string }> {
   const marker = reservationMarker(folder);
-  const docs = join(paths.workspaceDir(), "docs");
-  const retained = new Set(preserve.map((path) => join(paths.workspaceDir(), path)));
+  const docs = join(paths.hubDir(), "docs");
+  const retained = new Set(preserve.map((path) => join(paths.hubDir(), path)));
   const released: string[] = [];
   try {
     const ledger = await readClaimEvents(fs, paths, { lockHeld: true });
@@ -606,7 +606,7 @@ async function closeUnderLock(
       reservations: { released: [] },
     };
     await recordCloseHistory(fs, paths, session, row, abandon, closure);
-    // The same workspace lock excludes renumbering while checking and releasing
+    // The same hub lock excludes renumbering while checking and releasing
     // the marker; a close must not release a claim another session just acquired.
     closure.reservations = await releaseReservations(
       fs,
@@ -642,7 +642,7 @@ async function sourceGitState(
   paths: PathsService,
   git: GitPort,
 ): Promise<string> {
-  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
+  const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers());
   if (!block || block.fuentes.length === 0) return "sin fuentes declaradas";
   const result: string[] = [];
   for (const source of block.fuentes) {
@@ -657,7 +657,7 @@ async function recoverPendingRenumber(
 ): Promise<SessionCloseError | null> {
   if (await fs.exists(join(paths.cwdRoot(), "renumber-pending.json"))) {
     try {
-      const { recoverRenumberJournal } = await import("./workspace-migrate/apply.js");
+      const { recoverRenumberJournal } = await import("./hub-migrate/apply.js");
       await recoverRenumberJournal(fs, paths);
     } catch (error) {
       return {
@@ -923,7 +923,7 @@ async function archiveClosedSession(
 
 async function appendSourceGitState(
   git: GitPort,
-  source: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>["fuentes"][number],
+  source: NonNullable<Awaited<ReturnType<typeof readHubBlock>>>["fuentes"][number],
   result: string[],
 ): Promise<void> {
   if (source.path === null) {
@@ -1003,7 +1003,7 @@ async function offerCloseCommit(
   sessionClose: SessionCloseOutput,
 ): Promise<void> {
   if (git && process) {
-    const offer = await runWorkspaceCommit(fs, git, process, paths, { code: session.folder });
+    const offer = await runHubCommit(fs, git, process, paths, { code: session.folder });
     if ("proposal" in offer) sessionClose.commit_proposal = offer.proposal;
     else sessionClose.commit_proposal_error = offer.error;
   }

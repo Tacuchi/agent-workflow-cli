@@ -135,7 +135,7 @@ describe("parseSpecRelation — contradictions and silence", () => {
 
 // ── the index ────────────────────────────────────────────────────────────────
 
-function workspace(): MemFs {
+function hub(): MemFs {
   const fs = new MemFs();
   fs.file("/cwd/.workflow/sessions/.keep", "");
   return fs;
@@ -146,7 +146,7 @@ const DRAFT = "---\nstatus: draft\n---\n\n# Spec\n";
 
 describe("buildWorklineIndex — the spec→plan relation drives what is unplanned", () => {
   it("superseded elimina drafts y ready del pipeline sin alterar el baseline funcional", async () => {
-    const fs = workspace();
+    const fs = hub();
     const original = "---\nstatus: ready-for-plan\n---\n# Spec\n\n## Requirement\nUn resultado.\n";
     fs.file("/cwd/docs/specs/053-spec-vieja.md", original);
     fs.file("/cwd/docs/specs/054-spec-borrador.md", DRAFT);
@@ -178,7 +178,7 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
     expect(out.plans[0]?.baseline.status).toBe("aligned");
   });
   it("does not fall back to literal docs paths when [docs] is invalid", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/.workflow/skills.toml", '[docs]\nplan = "knowledge/plans"\n');
     fs.file("/cwd/docs/specs/001-spec-a.md", READY);
     fs.file("/cwd/docs/plans/001-plan-a.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
@@ -190,7 +190,7 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
   });
 
   it("drops a spec from the pipeline once a plan proves it derives from it", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/003-spec-a.md", READY);
     fs.file(
       "/cwd/docs/plans/001-plan-a.md",
@@ -208,7 +208,7 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
   });
 
   it("keeps the spec pending when the plan proves nothing", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/003-spec-a.md", READY);
     fs.file("/cwd/docs/plans/001-plan-a.md", "# Plan\n\n> Estado: done\n\n## Tasks\n- [x] T1\n");
     const out = await index(fs);
@@ -218,7 +218,7 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
   });
 
   it("keeps the spec pending when the plan's evidence is ambiguous", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/003-spec-a.md", READY);
     fs.file("/cwd/docs/specs/004-spec-b.md", READY);
     fs.file(
@@ -232,7 +232,7 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
   });
 
   it("reports spec-not-found when the declared spec is not in the workspace", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/001-plan-a.md",
       "# Plan\n\n> Estado: done\n> Derived from docs/specs/099-spec-ghost.md\n\n## Tasks\n- [x] T1\n",
@@ -244,7 +244,7 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
 
 describe("buildWorklineIndex — pipeline order", () => {
   it("mantiene un plan done con pase cert pendiente hasta applied y exige el corte vinculado", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/074-plan-pase.md",
       [
@@ -303,7 +303,7 @@ describe("buildWorklineIndex — pipeline order", () => {
   });
 
   it("un pase a PROD sólo se salda al llegar el pase vinculado a producción", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/plans/075-plan-pase.md",
       "# Plan\n> Estado: done\n## Tasks\n- [x] T1\n## Handoff operativo\n- Pase a PROD: corte-2\n",
@@ -358,7 +358,7 @@ describe("buildWorklineIndex — pipeline order", () => {
   // sesión la maneja el workline central, así que un checkpoint suelto se reporta
   // como aviso y deja de competir con un plan abierto por la atención de alguien.
   it("ranks unrefined spec → unplanned spec → open plan, y la sesión suelta va al aviso", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/001-spec-draft.md", DRAFT);
     fs.file("/cwd/docs/specs/002-spec-ready.md", READY);
     fs.file("/cwd/docs/plans/005-plan-open.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
@@ -381,7 +381,7 @@ describe("buildWorklineIndex — pipeline order", () => {
   });
 
   it("puts a started plan ahead of an untouched one", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/plans/002-plan-untouched.md", "# Plan\n\n## Tasks\n- [ ] T1\n- [ ] T2\n");
     fs.file("/cwd/docs/plans/008-plan-started.md", "# Plan\n\n## Tasks\n- [x] T1\n- [ ] T2\n");
 
@@ -392,7 +392,7 @@ describe("buildWorklineIndex — pipeline order", () => {
   });
 
   it("leaves same-priority candidates tied instead of breaking by date", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/001-spec-vieja.md", DRAFT, new Date(2020, 0, 1));
     fs.file("/cwd/docs/specs/002-spec-nueva.md", DRAFT, new Date(2026, 6, 28));
 
@@ -402,7 +402,7 @@ describe("buildWorklineIndex — pipeline order", () => {
   });
 
   it("excludes a done plan and keeps an inconsistent one", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/plans/001-plan-done.md", "# Plan\n\n> Estado: done\n\n## Tasks\n- [x] T1\n");
     fs.file(
       "/cwd/docs/plans/002-plan-inconsistent.md",
@@ -415,7 +415,7 @@ describe("buildWorklineIndex — pipeline order", () => {
   });
 
   it("does not treat a session whose Origin names a doc as an orphan checkpoint", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/.workflow/sessions/011-x-plan-exec/SESSION.md",
       "# SESSION\n\n## Objective\nejecutar\n\n## Origin\n- docs/plans/005-plan-open.md\n",
@@ -431,7 +431,7 @@ describe("buildWorklineIndex — pipeline order", () => {
   });
 
   it("ignores a closed session even when it holds a checkpoint", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/.workflow/sessions/012-cerrada-quick/SESSION.md",
       "# SESSION\n\n## Objective\nx\n",
@@ -525,7 +525,7 @@ function detailPlan(
 }
 
 /** The workspace of a single spec and a single plan, plus optional extra files. */
-function detailWorkspace(planText: string, specText = D_SPEC_TEXT): MemFs {
+function detailHub(planText: string, specText = D_SPEC_TEXT): MemFs {
   const fs = new MemFs({ lenient: true });
   fs.file("/cwd/.workflow/sessions/.keep", "");
   fs.file(`/cwd/${D_SPEC}`, specText);
@@ -578,14 +578,14 @@ async function planItem(fs: MemFs) {
 
 describe("derivePipeline — cada eslabón de la precedencia, en su orden", () => {
   it("1 · una referencia histórica design no desplaza el bloqueo funcional", async () => {
-    const item = await planItem(detailWorkspace(detailPlan({ design: true, f1: "bloqueada" })));
+    const item = await planItem(detailHub(detailPlan({ design: true, f1: "bloqueada" })));
     expect(item.detail.next).toBe("BLOQUEADA F1 — falta aplicar la migración 014");
     expect(item.detail.obligation).toBe(true);
   });
 
   it("2 · una fase bloqueada gana a la reconciliación pendiente y bloquea el route", async () => {
     const text = detailPlan({ f1: "bloqueada" });
-    const fs = detailWorkspace(text);
+    const fs = detailHub(text);
     seedObligation(fs, text);
 
     const item = await planItem(fs);
@@ -603,7 +603,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
       "> Bloqueo: falta aplicar la migración 014\n",
       "",
     );
-    const item = await planItem(detailWorkspace(text));
+    const item = await planItem(detailHub(text));
     expect(item.detail.next).toBe("BLOQUEADA F1 — sin motivo declarado");
   });
 
@@ -611,7 +611,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     // `done` con una fase pendiente es justo lo que hace `inconsistent`: si la
     // obligación no ganara, el tablero mandaría a reparar un plan que no está roto.
     const text = detailPlan({ header: [`> Baseline: ${D_SPEC}@${D_DIGEST}`, "> Estado: done"] });
-    const fs = detailWorkspace(text);
+    const fs = detailHub(text);
     seedObligation(fs, text);
 
     const item = await planItem(fs);
@@ -632,7 +632,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
   });
 
   it("4 · un legacy inconsistente sigue ejecutable en modo compatible, sin afirmar baseline", async () => {
-    const item = await planItem(detailWorkspace(detailPlan({ header: ["> Estado: done"] })));
+    const item = await planItem(detailHub(detailPlan({ header: ["> Estado: done"] })));
     expect(item.detail.next).toBe(
       "el plan se declara done pero sus contadores no lo respaldan: reconciliar las tareas y fases acreditadas desde plan-exec",
     );
@@ -647,7 +647,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
 
   it("5 · un baseline sin sello es warning de compatibilidad, no bloqueo", async () => {
     const item = await planItem(
-      detailWorkspace(detailPlan({ header: ["> Estado: open"], f2: "validada" })),
+      detailHub(detailPlan({ header: ["> Estado: open"], f2: "validada" })),
     );
     expect(item.detail.next).toBe("todo ejecutado: falta la validación final y el cierre");
     expect(item.detail.obligation).toBe(false);
@@ -656,7 +656,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
   });
 
   it("5b · un baseline divergente entrega exactamente a plan-refine", async () => {
-    const item = await planItem(detailWorkspace(detailPlan(), D_SPEC_TEXT.replace("una.", "una,")));
+    const item = await planItem(detailHub(detailPlan(), D_SPEC_TEXT.replace("una.", "una,")));
     expect(item.detail.next).toContain("BASELINE DIVERGENTE");
     expect(item.detail.obligation).toBe(true);
     expect(item.action).toEqual({
@@ -669,7 +669,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
 
   it("5c · baseline malformado o spec ausente siempre bloquean, incluso si el plan es inconsistente", async () => {
     const malformed = await planItem(
-      detailWorkspace(
+      detailHub(
         detailPlan({
           header: [`> Baseline: ${D_SPEC}@no-es-un-sello`, "> Estado: done"],
         }),
@@ -682,7 +682,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     });
 
     const missingSpec = await planItem(
-      detailWorkspace(
+      detailHub(
         detailPlan({
           header: [
             "> Derived from docs/specs/999-spec-ausente.md",
@@ -700,14 +700,14 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
   });
 
   it("6 · con todo validado y el sello alineado, lo que falta es la validación final", async () => {
-    const item = await planItem(detailWorkspace(detailPlan({ f2: "validada" })));
+    const item = await planItem(detailHub(detailPlan({ f2: "validada" })));
     expect(item.detail.next).toBe("todo ejecutado: falta la validación final y el cierre");
     expect(item.detail.obligation).toBe(false);
     expect(item.detail.progress).toBe("tareas 2/2 · fases 2/2");
   });
 
   it("7 · y si queda fase por validar, el paso es continuar por ella", async () => {
-    const item = await planItem(detailWorkspace(detailPlan()));
+    const item = await planItem(detailHub(detailPlan()));
     expect(item.detail.next).toBe("continuar por la primera fase no validada");
     expect(item.detail.obligation).toBe(false);
   });
@@ -715,7 +715,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
 
 describe("derivePipeline — de una spec pendiente se dice su status y sus preguntas", () => {
   it("y nada que exija correr el motor del refine", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/docs/specs/015-spec-borrador.md",
       "---\nstatus: draft\n---\n\n# Spec\n\n## Open questions\n\n- ¿una?\n- ¿dos?\n",
@@ -734,7 +734,7 @@ describe("derivePipeline — de una spec pendiente se dice su status y sus pregu
   });
 
   it("una spec refinada y sin plan dice que le falta generarlo", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/016-spec-lista.md", READY);
 
     const out = await index(fs);
@@ -753,8 +753,8 @@ describe("derivePipeline — de una spec pendiente se dice su status y sus pregu
 // ── the loose session leaves the pipeline and becomes a notice ───────────────
 
 describe("buildWorklineIndex — una sesión suelta es un aviso, no trabajo del usuario", () => {
-  function looseWorkspace(): MemFs {
-    const fs = workspace();
+  function looseHub(): MemFs {
+    const fs = hub();
     fs.file(
       "/cwd/.workflow/sessions/013-suelta-quick/SESSION.md",
       "# SESSION\n\n## Objective\nalgo suelto\n\n## Origin\n- prompt directo\n",
@@ -767,13 +767,13 @@ describe("buildWorklineIndex — una sesión suelta es un aviso, no trabajo del 
   }
 
   it("sale del pipeline y se reporta por su carpeta en loose_sessions", async () => {
-    const out = await index(looseWorkspace());
+    const out = await index(looseHub());
     expect(out.pipeline).toEqual([]);
     expect(out.loose_sessions).toEqual(["013-suelta-quick"]);
   });
 
   it("no compite con un plan abierto: el plan es el único pendiente", async () => {
-    const fs = looseWorkspace();
+    const fs = looseHub();
     fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
 
     const out = await index(fs);
@@ -782,7 +782,7 @@ describe("buildWorklineIndex — una sesión suelta es un aviso, no trabajo del 
   });
 
   it("una sesión con documento asociado no es suelta", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/.workflow/sessions/014-x-plan-exec/SESSION.md",
       "# SESSION\n\n## Objective\nejecutar\n\n## Origin\n- docs/plans/005-plan-x.md\n",
@@ -821,7 +821,7 @@ describe("una cadena ilegible deja el plan sin cerrar, nombrando el archivo", ()
 
   it("el plan cerrado deja de leerse cerrable y su pendiente nombra el índice", async () => {
     const text = donePlan();
-    const fs = detailWorkspace(text);
+    const fs = detailHub(text);
     seedUnreadable(fs);
 
     const out = await index(fs);
@@ -845,7 +845,7 @@ describe("una cadena ilegible deja el plan sin cerrar, nombrando el archivo", ()
 
   it("y una cadena legible sobre el mismo plan lo deja cerrar", async () => {
     const text = donePlan();
-    const fs = detailWorkspace(text);
+    const fs = detailHub(text);
 
     const plan = (await index(fs)).plans.find((p) => p.file === D_PLAN);
 

@@ -135,7 +135,7 @@ export class NodeMcpHostReceiptStore implements McpHostReceiptStore {
   }
 }
 
-/** The single user-scoped receipt book covers both workspace and global host entries. */
+/** The single user-scoped receipt book covers both hub and global host entries. */
 export function mcpHostReceiptFile(paths: PathsService): string {
   return join(paths.userDevDir(), "mcp-host-receipts.json");
 }

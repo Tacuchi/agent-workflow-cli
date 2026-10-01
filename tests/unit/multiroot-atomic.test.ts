@@ -94,8 +94,8 @@ it("reparar un sobrante conserva fuente y unidad viva en ambos hosts", async () 
   if (!("path" in unit)) throw new Error("no unit");
   const intrusa = join(f.root, "intrusa");
   mkdirSync(intrusa);
-  attachClaude([f.repo, intrusa], f.workspace);
-  attachCodex([f.repo, intrusa], f.workspace);
+  attachClaude([f.repo, intrusa], f.hub);
+  attachCodex([f.repo, intrusa], f.hub);
   const before = await runVisibilityDoctor(f.deps.fs, f.deps.env, f.deps.paths, {});
   for (const report of before.reports.filter((item) => item.host !== "warp")) {
     expect(report.extra).toEqual([intrusa]);

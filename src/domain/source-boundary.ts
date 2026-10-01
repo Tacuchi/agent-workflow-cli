@@ -16,7 +16,7 @@ export const SOURCE_BOUNDED_EVIDENCE = "workline.source-bounded";
  * enters the checkout digest. The resolution rule remains the portable half.
  */
 export interface CheckoutIdentity {
-  /** The eligible alias: `workspace`, or one of this session's isolated units. */
+  /** The eligible alias: `hub`, or one of this session's isolated units. */
   source: string;
   /** Absolute local root this run resolved for that alias, on THIS host. */
   root: string;

@@ -29,7 +29,7 @@ const SPEC = "docs/specs/053-spec-lint.md";
 const PLAN = "docs/plans/055-plan-lint.md";
 const RUN = ".workflow/sessions/210-otra-plan-exec/.flow-run.json";
 
-const WORKSPACE_BLOCK = [
+const HUB_BLOCK = [
   "<!-- AGENT-WORKFLOW-HUB-START -->",
   "## Hub",
   "",
@@ -111,7 +111,7 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
     await writeFile(join(root, SPEC), "# Spec 053 — lint\n\n## Requirement\n\nlint\n", "utf8");
     await writeFile(join(root, PLAN), PLAN_TEXT, "utf8");
     await writeFile(join(root, RUN), '{"version":2}\n', "utf8");
-    await writeFile(join(root, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await writeFile(join(root, "CLAUDE.md"), HUB_BLOCK, "utf8");
   });
 
   afterEach(async () => {
@@ -167,7 +167,7 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
   it("rechaza tests sin build en lint y en la publicación, con línea y fuente", async () => {
     await writeFile(
       join(root, "CLAUDE.md"),
-      WORKSPACE_BLOCK.replace("build `npm run build`", "build ninguno"),
+      HUB_BLOCK.replace("build `npm run build`", "build ninguno"),
     );
     const text = `${PLAN_TEXT}\n- Validación final · \`cli\` · tests \`npm test\``;
     await writeFile(join(root, PLAN), text);
@@ -197,7 +197,7 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
   });
 
   it("localiza en la fase la fuente sin pipeline ni viñeta final", async () => {
-    await writeFile(join(root, "CLAUDE.md"), WORKSPACE_BLOCK.replace("## Pipeline", "## Otro"));
+    await writeFile(join(root, "CLAUDE.md"), HUB_BLOCK.replace("## Pipeline", "## Otro"));
     const report = await lintPlan(fs, paths, PLAN);
     if (!report.ok) throw new Error(report.failure.message);
     expect(report.report.violations).toContainEqual(

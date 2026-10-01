@@ -80,7 +80,7 @@ Spec 033.
 `;
 }
 
-function workspace(planText: string, specText: string = SPEC): MemFs {
+function hub(planText: string, specText: string = SPEC): MemFs {
   const fs = new MemFs({ lenient: true });
   fs.file("/cwd/.workflow/sessions/.keep", "");
   fs.file(`/cwd/${SPEC_PATH}`, specText);
@@ -106,7 +106,7 @@ const SEALED = `> Baseline: ${SPEC_PATH}@${specBaselineDigest(SPEC)}`;
 
 describe("F1.1 — editar un byte de la spec cambia el veredicto de alineación", () => {
   it("un plan sellado contra la spec vigente está alineado", async () => {
-    const board = await index(workspace(plan(SEALED)));
+    const board = await index(hub(plan(SEALED)));
     const p = board.plans[0];
     // El digest que se reporta es SIEMPRE el funcional, incluso cuando la
     // alineación casó por el sello legado: es el que pinea toda nota nueva.
@@ -119,7 +119,7 @@ describe("F1.1 — editar un byte de la spec cambia el veredicto de alineación"
     expect(edited).not.toBe(SPEC);
     expect(edited.length).toBe(SPEC.length);
 
-    const board = await index(workspace(plan(SEALED), edited));
+    const board = await index(hub(plan(SEALED), edited));
     expect(board.plans[0]?.baseline).toEqual({
       status: "divergent",
       sealed_digest: specBaselineDigest(SPEC),
@@ -129,7 +129,7 @@ describe("F1.1 — editar un byte de la spec cambia el veredicto de alineación"
 
   it("el número sigue resolviendo igual: es el contrato lo que cambió, no la spec citada", async () => {
     const edited = SPEC.replace("una sola vez.", "una sola vez,");
-    const board = await index(workspace(plan(SEALED), edited));
+    const board = await index(hub(plan(SEALED), edited));
     expect(board.plans[0]?.spec).toMatchObject({
       status: "resolved",
       number: "033",
@@ -140,7 +140,7 @@ describe("F1.1 — editar un byte de la spec cambia el veredicto de alineación"
 
 describe("F1.2 — un plan sin la línea reporta sin sello", () => {
   it("`unsealed`, que no es ni alineado ni divergente", async () => {
-    const board = await index(workspace(plan(null)));
+    const board = await index(hub(plan(null)));
     const baseline = board.plans[0]?.baseline;
     expect(baseline).toEqual({ status: "unsealed" });
     expect(baseline?.status).not.toBe("aligned");
@@ -148,7 +148,7 @@ describe("F1.2 — un plan sin la línea reporta sin sello", () => {
   });
 
   it("y sigue siendo un plan legible: la ausencia es diagnóstico, no error", async () => {
-    const board = await index(workspace(plan(null)));
+    const board = await index(hub(plan(null)));
     expect(board.plans[0]).toMatchObject({
       number: "032",
       plan_state: "open",
@@ -158,7 +158,7 @@ describe("F1.2 — un plan sin la línea reporta sin sello", () => {
   });
 
   it("una línea presente y rota es `malformed`, jamás `unsealed`", async () => {
-    const board = await index(workspace(plan(`> Baseline: ${SPEC_PATH}@no-es-un-digest`)));
+    const board = await index(hub(plan(`> Baseline: ${SPEC_PATH}@no-es-un-digest`)));
     expect(board.plans[0]?.baseline).toMatchObject({ status: "malformed" });
   });
 
@@ -236,15 +236,15 @@ describe("F1.4 — el sello no mueve el ruteo del pipeline", () => {
     }));
 
   it("sellar un plan no mueve una sola letra de las prioridades", async () => {
-    const before = await index(workspace(plan(null)));
-    const after = await index(workspace(plan(SEALED)));
+    const before = await index(hub(plan(null)));
+    const after = await index(hub(plan(SEALED)));
     expect(JSON.stringify(routing(after.pipeline))).toBe(JSON.stringify(routing(before.pipeline)));
   });
 
   it("un baseline divergente entrega exactamente a plan-refine", async () => {
     const edited = SPEC.replace("una sola vez.", "una sola vez,");
-    const before = await index(workspace(plan(null)));
-    const after = await index(workspace(plan(SEALED), edited));
+    const before = await index(hub(plan(null)));
+    const after = await index(hub(plan(SEALED), edited));
     expect(routing(before.pipeline)[0]?.command).toBe(
       "/w:plan-exec docs/plans/032-plan-reconciliacion.md",
     );
@@ -259,8 +259,8 @@ describe("F1.4 — el sello no mueve el ruteo del pipeline", () => {
   });
 
   it("y lo único que mueve es el modo: sin sello es compatible, sellado normal", async () => {
-    const unsealed = await index(workspace(plan(null)));
-    const sealed = await index(workspace(plan(SEALED)));
+    const unsealed = await index(hub(plan(null)));
+    const sealed = await index(hub(plan(SEALED)));
 
     expect(unsealed.pipeline[0]?.detail).toMatchObject({
       next: "continuar por la primera fase no validada",
@@ -377,7 +377,7 @@ describe("`Derived from` y `Derivado de` son la misma etiqueta de linaje", () =>
 
 describe("consumidores de un baseline", () => {
   it("enumera todo plan derivado de la spec y dice cómo está cada sello", async () => {
-    const fs = workspace(plan(SEALED));
+    const fs = hub(plan(SEALED));
     fs.file("/cwd/docs/plans/031-plan-viejo.md", plan(null));
     const board = await index(fs);
 
@@ -389,14 +389,14 @@ describe("consumidores de un baseline", () => {
   });
 
   it("un plan cuya provenencia no se puede probar no se cuenta como consumidor", async () => {
-    const fs = workspace(plan(SEALED));
+    const fs = hub(plan(SEALED));
     fs.file("/cwd/docs/plans/030-plan-huerfano.md", "# Plan 030\n\n## Origin\n\nsin spec.\n");
     const board = await index(fs);
     expect(specConsumers("033", board.plans).map((c) => c.number)).toEqual(["032"]);
   });
 
   it("una spec sin consumidores devuelve la lista vacía, no todo el tablero", async () => {
-    const board = await index(workspace(plan(SEALED)));
+    const board = await index(hub(plan(SEALED)));
     expect(specConsumers("099", board.plans)).toEqual([]);
   });
 });

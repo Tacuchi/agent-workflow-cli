@@ -31,23 +31,20 @@ status: ready-for-plan
 - [ ] AC-09: esto es una pregunta, no un criterio.
 `;
 
-let workspace: string;
+let hub: string;
 let paths: PathsService;
 const fs = new NodeFileSystem();
 
 beforeEach(() => {
-  workspace = mkdtempSync(join(tmpdir(), "aw-criteria-seed-"));
-  paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
-  mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
-  mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-  writeFileSync(join(workspace, SPEC), SPEC_TEXT);
-  writeFileSync(
-    join(workspace, PLAN),
-    `# Plan 031 — correo\n\n> Derived from ${SPEC}\n> Estado: open\n`,
-  );
+  hub = mkdtempSync(join(tmpdir(), "aw-criteria-seed-"));
+  paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
+  mkdirSync(join(hub, "docs", "specs"), { recursive: true });
+  mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+  writeFileSync(join(hub, SPEC), SPEC_TEXT);
+  writeFileSync(join(hub, PLAN), `# Plan 031 — correo\n\n> Derived from ${SPEC}\n> Estado: open\n`);
 });
 
-afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+afterEach(() => rmSync(hub, { recursive: true, force: true }));
 
 async function criteriaOf(type: string, name: string): Promise<string[]> {
   const result = await runSessionCreate(fs, paths, { type, name, objetivo: "o" });

@@ -1,9 +1,9 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { DOCS_FOLDERS } from "../../src/application/hub-init-service.js";
 import { DESCRIPTION_MAX } from "../../src/application/plugin-doctor/skills.js";
 import { SKILL_DIR_NAME, splitCommandDoc } from "../../src/application/self/install-skill.js";
-import { DOCS_FOLDERS } from "../../src/application/workspace-init-service.js";
 import { decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
 

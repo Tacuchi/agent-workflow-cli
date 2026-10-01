@@ -440,7 +440,7 @@ async function rehearse(
 ): Promise<PreparedReverts | RehearsalFailure> {
   // A UNIQUE directory per rehearsal, and the uniqueness is the fix for a real
   // collision. The path used to be `rehearsal-<opId>-<alias>`, where `opId` is a
-  // session folder: correlatives restart per workspace, so two workspaces on one
+  // session folder: correlatives restart per hub, so two hubs on one
   // machine routinely hold a `001-algo-plan-exec` with the same source alias, and
   // two concurrent retirements then aimed `git worktree add` at the SAME path in
   // the shared tmpdir. The loser fails with "no se pudo preparar un árbol

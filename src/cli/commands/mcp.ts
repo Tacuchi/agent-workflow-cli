@@ -8,6 +8,11 @@ import { DatabaseToolCatalog } from "../../application/database-tool-catalog.js"
 import { runHarness } from "../../application/dev-only-services.js";
 import { runElicitationStdio } from "../../application/elicitation-stdio.js";
 import {
+  type WorklineMaterialization,
+  ensureWorklineMaterialized,
+  previewWorklineMaterialization,
+} from "../../application/hub-materialization-service.js";
+import {
   type StoredMcpConnection,
   resolveMcpConnectionSelection,
 } from "../../application/mcp-connections-service.js";
@@ -55,11 +60,6 @@ import {
   resolveWarpProjectMcpPath,
 } from "../../application/multiroot/warp.js";
 import { PathsService } from "../../application/paths-service.js";
-import {
-  type WorklineMaterialization,
-  ensureWorklineMaterialized,
-  previewWorklineMaterialization,
-} from "../../application/workspace-materialization-service.js";
 import { DATABASE_TOOL_DESCRIPTORS, type ToolFailure } from "../../domain/database-tools.js";
 import { type HarnessId, MCP_FILE_HOSTS, harnessById } from "../../domain/harnesses.js";
 import {
@@ -423,13 +423,13 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
 
-  // All workspace-scoped MCP artifacts share Workline's resolved root. An
+  // All hub-scoped MCP artifacts share Workline's resolved root. An
   // explicit --hub remains an intentional override; raw process cwd is
   // only the invocation coordinate and may be a source subdirectory.
-  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
+  const hub = args.values.get("hub") ?? ctx.paths.hubDir();
   const scopeInput = args.flags.has("--global")
     ? ({ scope: "global" } as const)
-    : ({ scope: "hub", workspace } as const);
+    : ({ scope: "hub", hub } as const);
   const result = await runMcpSetupWithMaterialization(ctx, {
     hosts: hosts.value,
     connections: connections.value,
@@ -449,7 +449,7 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
         hosts.value,
         connections.value.map((connection) => connection.name),
         scopeInput.scope,
-        workspace,
+        hub,
       )
     : [];
   return {
@@ -491,11 +491,7 @@ async function runMcpSetupWithMaterialization(
     return "ok" in result ? result : await attachSetupReceipts(ctx, input, result);
   }
 
-  const materialization = await materializeMcpWorkspace(
-    ctx,
-    input.workspace,
-    input.dryRun === true,
-  );
+  const materialization = await materializeMcpHub(ctx, input.hub, input.dryRun === true);
   if (input.dryRun) return { ...preview, materialization };
 
   const result = runMcpSetup(ctx.env, input);
@@ -563,11 +559,7 @@ async function runMcpRemoveWithMaterialization(
     return "ok" in result ? result : await attachRemoveReceipts(ctx, input, result);
   }
 
-  const materialization = await materializeMcpWorkspace(
-    ctx,
-    input.workspace,
-    input.dryRun === true,
-  );
+  const materialization = await materializeMcpHub(ctx, input.hub, input.dryRun === true);
   if (input.dryRun) return { ...preview, materialization };
 
   const result = runMcpRemove(ctx.env, input);
@@ -589,13 +581,13 @@ function hasPendingMcpMutation(results: readonly { action: string }[]): boolean 
   return results.some((result) => result.action === "dry-run");
 }
 
-async function materializeMcpWorkspace(
+async function materializeMcpHub(
   ctx: CliContext,
-  workspace: string,
+  hub: string,
   dryRun: boolean,
 ): Promise<WorklineMaterialization> {
-  const root = resolve(workspace);
-  const currentRoot = resolve(ctx.paths.workspaceDir());
+  const root = resolve(hub);
+  const currentRoot = resolve(ctx.paths.hubDir());
   const paths =
     root === currentRoot
       ? ctx.paths
@@ -610,21 +602,21 @@ function buildWarpHintsFor(
   hosts: McpHost[],
   instances: McpInstance[],
   scope: "hub" | "global",
-  workspace: string,
+  hub: string,
 ): WarpPostInstallHint[] {
   if (!hosts.includes("warp")) return [];
   const file =
     scope === "global"
       ? (resolveWarpGlobalMcpPath() ?? "~/.warp/.mcp.json")
-      : resolveWarpProjectMcpPath(resolve(workspace));
+      : resolveWarpProjectMcpPath(resolve(hub));
   return instances.map((instance) =>
     buildWarpPostInstallHint(mcpEntryNameFor(instance), scope, file),
   );
 }
 
 async function runWarpStatusSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
-  const projectFile = resolveWarpProjectMcpPath(resolve(workspace));
+  const hub = args.values.get("hub") ?? ctx.paths.hubDir();
+  const projectFile = resolveWarpProjectMcpPath(resolve(hub));
   const globalFile = resolveWarpGlobalMcpPath() ?? `${homedir()}/.warp/.mcp.json`;
   const sources = [
     { scope: "hub" as const, file: projectFile },
@@ -643,7 +635,7 @@ async function runWarpStatusSub(args: ParsedArgs, ctx: CliContext): Promise<Comm
       reports,
       summary: anyDetected
         ? "Archivos .warp/.mcp.json detectados. Activá 'File-based MCP Servers' en Warp Settings si todavía no lo hiciste."
-        : "No se encontró .warp/.mcp.json en el workspace ni en home. Primero registrá una conexión con 'agent-workflow mcp setup --host warp'.",
+        : "No se encontró .warp/.mcp.json en el hub ni en home. Primero registrá una conexión con 'agent-workflow mcp setup --host warp'.",
     },
     exitCode: 0,
   };
@@ -667,10 +659,10 @@ async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
 
-  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
+  const hub = args.values.get("hub") ?? ctx.paths.hubDir();
   const scopeInput = args.flags.has("--global")
     ? ({ scope: "global" } as const)
-    : ({ scope: "hub", workspace } as const);
+    : ({ scope: "hub", hub } as const);
   const result = await runMcpRemoveWithMaterialization(ctx, {
     hosts: hosts.value,
     connections: connections.value,
@@ -719,7 +711,7 @@ interface DoctorInput {
   hosts: McpHost[];
   connections: StoredMcpConnection[];
   probeMode: "launch" | "data" | undefined;
-  scope: { scope: "global" } | { scope: "hub"; workspace: string };
+  scope: { scope: "global" } | { scope: "hub"; hub: string };
 }
 
 interface ReadableMcpDescriptor {
@@ -738,13 +730,13 @@ function resolveDoctorInput(
   if (!("value" in connections)) return connections;
   const probeMode = resolveDoctorProbeMode(args);
   if (!("value" in probeMode)) return probeMode;
-  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
+  const hub = args.values.get("hub") ?? ctx.paths.hubDir();
   return {
     value: {
       hosts: hosts.value,
       connections: connections.value,
       probeMode: probeMode.value,
-      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "hub", workspace },
+      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "hub", hub },
     },
   };
 }
@@ -976,7 +968,7 @@ interface MigrationInput {
   apply: boolean;
   hosts: McpHost[];
   connections: StoredMcpConnection[];
-  scope: { scope: "global" } | { scope: "hub"; workspace: string };
+  scope: { scope: "global" } | { scope: "hub"; hub: string };
 }
 
 interface MigrationFinalization {
@@ -1017,13 +1009,13 @@ function resolveMigrationInput(
   if (!("value" in hosts)) return hosts;
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
-  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
+  const hub = args.values.get("hub") ?? ctx.paths.hubDir();
   return {
     value: {
       apply,
       hosts: hosts.value,
       connections: connections.value,
-      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "hub", workspace },
+      scope: args.flags.has("--global") ? { scope: "global" } : { scope: "hub", hub },
     },
   };
 }

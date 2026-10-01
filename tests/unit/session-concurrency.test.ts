@@ -7,6 +7,7 @@ import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { readHistoryRows } from "../../src/application/history-table.js";
+import { planRenumber } from "../../src/application/hub-migrate/plan.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   hashContextId,
@@ -15,7 +16,6 @@ import {
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { resolveSessionTarget } from "../../src/application/session-resolver.js";
-import { planRenumber } from "../../src/application/workspace-migrate/plan.js";
 import type { DirEntry } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { RecordingGit } from "../helpers/fake-git.js";

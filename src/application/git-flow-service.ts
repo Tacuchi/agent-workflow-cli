@@ -7,11 +7,11 @@ import {
   resolveSourceBranches,
 } from "./branch-resolver.js";
 import {
-  type ProjectFuente,
+  type HubFuente,
   SourcePathMissingError,
-  readWorkspaceBlock,
+  readHubBlock,
   requireSourcePath,
-} from "./parsers/project-block.js";
+} from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { type ProdConsent, spendProdConsent } from "./prod-consent.js";
 import { semanticDigest } from "./semantic-operation/protocol.js";
@@ -127,7 +127,7 @@ export async function runGitFlow(
   const invalid = invalidInput(input);
   if (invalid !== null) return errorResult(input.action, invalid);
 
-  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
+  const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers());
   const sources = block?.fuentes ?? [];
   if (sources.length === 0) {
     return errorResult(input.action, "no_sources_declared");
@@ -213,15 +213,15 @@ function planDigest(entries: PlannedSource[]): string {
 
 /** One selected source, planned: either its ops, or the result that replaces running them. */
 type PlannedSource =
-  | { source: ProjectFuente & { path: string }; ops: PlannedOp[]; publishesProd: boolean }
-  | { source: ProjectFuente; ops: null; result: GitFlowSourceResult; publishesProd: false };
+  | { source: HubFuente & { path: string }; ops: PlannedOp[]; publishesProd: boolean }
+  | { source: HubFuente; ops: null; result: GitFlowSourceResult; publishesProd: false };
 
 /**
  * Plan every source before touching any: whether the call publishes in PROD is
  * a fact about the whole plan, and consent is asked for it before the first step.
  */
 function planSource(
-  source: ProjectFuente & { path: string },
+  source: HubFuente & { path: string },
   branches: SourceBranchRoles,
   input: GitFlowInput,
 ): PlannedSource {
@@ -319,9 +319,9 @@ function worst(a: GitFlowResult["status"], b: GitFlowResult["status"]): GitFlowR
 // --- source selection ---------------------------------------------------------
 
 function selectSources(
-  sources: ProjectFuente[],
+  sources: HubFuente[],
   input: GitFlowInput,
-): { sources: ProjectFuente[] } | { error: string } {
+): { sources: HubFuente[] } | { error: string } {
   if (input.all === true) {
     return { sources };
   }
@@ -329,7 +329,7 @@ function selectSources(
   if (named.length === 0) {
     return { error: "Specify --source <alias> or --all" };
   }
-  const selected: ProjectFuente[] = [];
+  const selected: HubFuente[] = [];
   for (const alias of named) {
     const match = sources.find((s) => s.alias === alias);
     if (!match) return { error: `Unknown source: ${alias}` };
@@ -357,7 +357,7 @@ function noopReason(
 
 /**
  * Build the ordered op list for an action. Every role is already resolved
- * (per-source value → workspace default → fallback), so no branch can be
+ * (per-source value → hub default → fallback), so no branch can be
  * missing here — that is why no validation step precedes this.
  */
 function buildPlan(
@@ -401,7 +401,7 @@ function buildPlan(
 function devIntoWorkingBranch(ops: PlannedOp[], branches: SourceBranchRoles): string | null {
   const dev = new Set([branches.dev, `origin/${branches.dev}`]);
   for (const op of ops) {
-    // A workspace whose development default IS the PROD branch still syncs PROD
+    // A hub whose development default IS the PROD branch still syncs PROD
     // into its working branches: that merge is PROD's, whatever the name says.
     if (op.kind !== "merge" || op.from === branches.prod) continue;
     if (dev.has(op.from) && isWorkingBranch(op.onto, branches)) {
@@ -467,7 +467,7 @@ function syncPlan(prod: string, workDest: string): PlannedOp[] {
 
 async function executePlan(
   git: GitPort,
-  source: ProjectFuente & { path: string },
+  source: HubFuente & { path: string },
   ops: PlannedOp[],
 ): Promise<GitFlowSourceResult> {
   const repo = source.path;
@@ -708,8 +708,8 @@ function errorResult(action: string, message: string): GitFlowResult {
 
 async function planSelectedSources(
   fs: FileSystemPort,
-  sources: ProjectFuente[],
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  sources: HubFuente[],
+  block: Awaited<ReturnType<typeof readHubBlock>>,
   input: GitFlowInput,
 ): Promise<PlannedSource[]> {
   const entries: PlannedSource[] = [];

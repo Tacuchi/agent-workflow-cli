@@ -9,19 +9,19 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("runNextNumber", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let fs: NodeFileSystem;
   let paths: PathsService;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "next-number-"));
-    env = new FakeEnv(workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "next-number-"));
+    env = new FakeEnv(hub, hub);
     fs = new NodeFileSystem();
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
   });
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   it("crea el directorio faltante on-demand (created=true, exists reporta el estado previo)", async () => {
@@ -31,7 +31,7 @@ describe("runNextNumber", () => {
     expect(result.next).toBe("001");
     expect(result.current_max).toBe(0);
     expect(result.files).toEqual([]);
-    expect(existsSync(join(workspace, "docs", "specs"))).toBe(true);
+    expect(existsSync(join(hub, "docs", "specs"))).toBe(true);
   });
 
   it("--dry-run es consulta pura: nunca crea el directorio", async () => {
@@ -39,11 +39,11 @@ describe("runNextNumber", () => {
     expect(result.exists).toBe(false);
     expect(result.created).toBe(false);
     expect(result.next).toBe("001");
-    expect(existsSync(join(workspace, "docs", "plans"))).toBe(false);
+    expect(existsSync(join(hub, "docs", "plans"))).toBe(false);
   });
 
   it("directorio existente: no re-crea y numera sobre archivos Y carpetas con prefijo NNN", async () => {
-    const dir = join(workspace, "docs", "reports");
+    const dir = join(hub, "docs", "reports");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "001-informe.md"), "x");
     mkdirSync(join(dir, "003-export-scripts-2026-07-03"));
@@ -58,7 +58,7 @@ describe("runNextNumber", () => {
   });
 
   it("path absoluto se respeta tal cual (no se une al cwd)", async () => {
-    const abs = join(workspace, "otro", "lado");
+    const abs = join(hub, "otro", "lado");
     const result = await runNextNumber(fs, env, paths, { directory: abs });
     expect(result.created).toBe(true);
     expect(existsSync(abs)).toBe(true);
@@ -66,7 +66,7 @@ describe("runNextNumber", () => {
   });
 
   it("dry-run sobre existente: mismos números que el modo normal", async () => {
-    const dir = join(workspace, "docs", "scripts");
+    const dir = join(hub, "docs", "scripts");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "007-x.sql"), "-- x");
     const result = await runNextNumber(fs, env, paths, { directory: "docs/scripts", dryRun: true });
@@ -76,7 +76,7 @@ describe("runNextNumber", () => {
   });
 
   it("continúa 999 hacia 1000 y conserva el orden numérico", async () => {
-    const dir = join(workspace, "docs", "plans");
+    const dir = join(hub, "docs", "plans");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "999-plan-legacy.md"), "x");
 

@@ -22,7 +22,7 @@ const env = new FakeEnv("/home", "/cwd");
 const paths = (): PathsService => new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
 const DATE = "2026-07-29";
 
-function workspace(): MemFs {
+function hub(): MemFs {
   const fs = new MemFs();
   fs.file(
     "/cwd/.workflow/sessions/040-algo-plan-exec/SESSION.md",
@@ -114,13 +114,13 @@ describe("prepareExport — the corpus decides whether there is anything to expo
   });
 
   it("no escribe nada al preparar", async () => {
-    const fs = workspace();
+    const fs = hub();
     await prepare(fs, "diagrams");
     expect([...fs.writes.keys()]).toEqual([]);
   });
 
   it("cada categoría declara SOLO su carpeta como destino", async () => {
-    const fs = workspace();
+    const fs = hub();
     for (const category of ["diagrams", "manuals", "reports", "scripts"] as ExportCategory[]) {
       const prepared = await prepare(fs, category);
       for (const destination of prepared.request.allowed_destinations) {
@@ -134,7 +134,7 @@ describe("prepareExport — the corpus decides whether there is anything to expo
 
 describe("validateExport — each category enforces its own shape", () => {
   it("un informe indivisible supera 512 KiB; un forward grande indica cómo partirlo", async () => {
-    const fs = workspace();
+    const fs = hub();
     const report = await prepare(fs, "reports");
     const largeReport = validateExport(
       answer(report, [
@@ -176,7 +176,7 @@ describe("validateExport — each category enforces its own shape", () => {
     expect(globalRollback.ok).toBe(true);
   });
   it("diagrams exige README y admite Markdown más DSL", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const ok = validateExport(
       answer(prepared, dossier(prepared, [[`${prepared.unit}/c4.dsl`, "workspace {}\n"]])),
@@ -193,7 +193,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("publica un diagrama Graphviz de un corpus local sin exigir C4 ni Mermaid", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const source = "digraph flujo { Cliente -> API -> BaseDeDatos }\n";
     const raw = answer(prepared, dossier(prepared, [[`${prepared.unit}/flujo.dot`, source]]));
@@ -213,7 +213,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("reports publica UN documento, no un dossier", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "reports");
     const result = validateExport(
       answer(prepared, [
@@ -227,7 +227,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("reports exige el número preparado en la ruta del documento", async () => {
-    const prepared = await prepare(workspace(), "reports");
+    const prepared = await prepare(hub(), "reports");
     const bad = validateExport(
       answer(prepared, [["docs/reports/002-informe.md", "# Informe\n"]]),
       prepared,
@@ -237,7 +237,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("scripts exige rollback global, acoplados y forwards numerados dentro de cada categoría", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "scripts");
     const complete = dossier(prepared, [
       [`${prepared.unit}/rollback/00-global/00-ROLLBACK.sql`, "-- rollback\n"],
@@ -268,7 +268,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("rechaza juntos rollback mal ubicado, forward sin reverse, huérfano y SQL de raíz", async () => {
-    const prepared = await prepare(workspace(), "scripts");
+    const prepared = await prepare(hub(), "scripts");
     const result = validateExport(
       answer(
         prepared,
@@ -295,7 +295,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("README y RUNBOOK rechazan juntos citas ausentes pero reconocen bundle.json", async () => {
-    const prepared = await prepare(workspace(), "scripts");
+    const prepared = await prepare(hub(), "scripts");
     const result = validateExport(
       answer(prepared, [
         [
@@ -316,7 +316,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("rechaza una extensión fuera de la categoría", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const result = validateExport(
       answer(prepared, dossier(prepared, [[`${prepared.unit}/notas.sql`, "select 1;\n"]])),
@@ -327,7 +327,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("rechaza un archivo vacío", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const result = validateExport(
       answer(prepared, [[`${prepared.unit}/README.md`, "   \n"]]),
@@ -338,7 +338,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("rechaza escribir en la carpeta de otra categoría", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const result = validateExport(
       answer(prepared, [["docs/manuals/README.md", "# Ajeno\n"]]),
@@ -349,7 +349,7 @@ describe("validateExport — each category enforces its own shape", () => {
   });
 
   it("el preview es determinista: mismo digest de aprobación en dos pasadas", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, dossier(prepared));
     expect(approvalOf(prepared, raw)).toBe(approvalOf(prepared, raw));
@@ -360,7 +360,7 @@ describe("validateExport — each category enforces its own shape", () => {
 
 describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   it("manuals complement publica sólo INDEX.md sin dossier", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, [["docs/manuals/INDEX.md", "# Manuales\n\nListado actual\n"]]);
     const checked = validateExport(raw, prepared);
@@ -378,7 +378,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("manuals planos listan todos los reemplazos y exigen --overwrite sólo para ellos", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/manuals/guia.md", "# Vieja\n");
     fs.file("/cwd/docs/manuals/operacion.md", "# Vieja\n");
     const prepared = await prepare(fs, "manuals");
@@ -413,7 +413,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("publica el dossier con el número asignado dentro del lock", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/manuals/001-export-manuals-2026-01-01/README.md", "# Viejo\n");
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, dossier(prepared, [[`${prepared.unit}/guia.md`, "# Guía\n"]]));
@@ -434,7 +434,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("rechaza el correlativo ocupado por otra fecha sin renumerar ni escribir", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     expect(prepared.unit).toBe(`docs/diagrams/001-export-diagrams-${DATE}`);
     const raw = answer(prepared, dossier(prepared));
@@ -453,7 +453,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("rechaza un número publicado aunque su carpeta haya sido borrada", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "scripts");
     const raw = answer(
       prepared,
@@ -477,7 +477,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("rechaza un correlativo enlazado en el libro de pases aunque no haya carpeta", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const raw = answer(prepared, dossier(prepared));
     const linked = {
@@ -498,7 +498,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("un approval que no corresponde no escribe un solo byte", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const raw = answer(prepared, dossier(prepared));
     const result = await applyExport(fs, env, paths(), { raw, prepared, approval: "otro" });
@@ -509,7 +509,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
 
   // The INDEX is the one file an export may replace, and only on purpose.
   it("manuals exige --overwrite para reemplazar INDEX.md", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/manuals/INDEX.md", "# Índice viejo\n");
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, [
@@ -535,7 +535,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
 
   // The dossier guarantee: injecting a failure mid-publish leaves ZERO files.
   it("un fallo a mitad de la publicación deja cero archivos finales", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const raw = answer(
       prepared,
@@ -561,7 +561,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("no toca sesiones ni otra carpeta de docs", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "reports");
     const raw = answer(prepared, [
       ["docs/reports/001-informe-x-2026-07-29.md", "# Informe\n\nAudiencia: dirección\n"],
@@ -580,7 +580,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
   });
 
   it("deja su fila en el índice del workspace, sin flujo activo que la escriba", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "reports");
     const raw = answer(prepared, [
       ["docs/reports/001-informe-x-2026-07-29.md", "# Informe\n\nAudiencia: dirección\n"],
@@ -611,7 +611,7 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
  */
 describe("el alcance viaja con lo preparado — los tres disparadores del vencimiento", () => {
   it("(a) validar sin repetir los flags de alcance opera sobre el alcance preparado", async () => {
-    const fs = workspace();
+    const fs = hub();
     closedSession(fs, "041-otra-plan-exec");
     const prepared = await prepare(fs, "manuals", {
       sessions: ["040-algo-plan-exec"],
@@ -633,7 +633,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("(b) que alguien numere en el destino entre dos etapas ya no vence", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const raw = answer(prepared, dossier(prepared));
 
@@ -646,7 +646,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("(c) cruzar la medianoche entre preparar y aplicar ya no vence", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams", {}, clock("2026-07-29T23:59:30"));
     expect(prepared.unit).toBe(`docs/diagrams/001-export-diagrams-${DATE}`);
     const raw = answer(prepared, dossier(prepared));
@@ -665,7 +665,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("un cambio real del contenido que el alcance abarca sigue venciendo, y dice qué cambió", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "diagrams");
     const raw = answer(prepared, dossier(prepared));
 
@@ -684,7 +684,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("una invocación que repite los mismos flags en las tres etapas sigue funcionando igual", async () => {
-    const fs = workspace();
+    const fs = hub();
     const flags = { sessions: ["040-algo-plan-exec"], date: DATE };
     const prepared = await prepare(fs, "manuals", flags);
     const raw = answer(prepared, dossier(prepared));
@@ -703,7 +703,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("un sobre sin scope sellado se rechaza por clave faltante", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, dossier(prepared), { scope: undefined });
     const echoed = readExportScope(raw);
@@ -715,7 +715,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("un scope reescrito se rechaza nombrando el campo, no se usa a medias", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, dossier(prepared), {
       scope: { ...prepared.scope, date: "ayer" },
@@ -726,7 +726,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("detecta claves añadidas, eliminadas y alteradas antes de comparar el digest", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     for (const scope of [
       { ...prepared.scope, extra: "otro" },
@@ -740,7 +740,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("el contenido SQL vence el sello, una sesión sin SQL no", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "scripts");
     closedSession(fs, "041-otra-plan-exec");
     const second = await prepare(fs, "scripts");
@@ -754,7 +754,7 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
   });
 
   it("un flag de alcance que contradice el sobre se nombra en vez de ignorarse", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals", { sessions: ["040-algo-plan-exec"], date: DATE });
     expect(conflictingScopeFlags(prepared.scope, { date: DATE })).toEqual([]);
     expect(conflictingScopeFlags(prepared.scope, { sessions: ["040-algo-plan-exec"] })).toEqual([]);
@@ -777,7 +777,7 @@ describe("el sobre y el rechazo se entienden sin gastar un intento", () => {
     ["input_digest", { input_digest: undefined }],
     ["state", { state: undefined }],
   ])("omitir '%s' nombra el campo que falta", async (field, over) => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const result = validateExport(answer(prepared, dossier(prepared), over), prepared);
     if (result.ok) throw new Error("expected a rejection");
@@ -788,7 +788,7 @@ describe("el sobre y el rechazo se entienden sin gastar un intento", () => {
   // The old message for a missing `state` was `estado desconocido: undefined`:
   // it named the value, so the reader could not tell `state` from `status`.
   it("un estado inventado sigue siendo un estado inventado", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "manuals");
     const result = validateExport(
       answer(prepared, dossier(prepared), { state: "maybe" }),
@@ -819,7 +819,7 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
   }
 
   it("publica en la carpeta que el workspace declara, sin dejar un árbol paralelo", async () => {
-    const fs = withCanon(workspace(), '[docs]\nmanuals = "documentacion/manuales"\n');
+    const fs = withCanon(hub(), '[docs]\nmanuals = "documentacion/manuales"\n');
     const prepared = await prepare(fs, "manuals");
     expect(prepared.dir).toBe("documentacion/manuales");
     expect(prepared.unit).toBe(`documentacion/manuales/001-export-manuals-${DATE}`);
@@ -841,7 +841,7 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
   });
 
   it("el canon configurable también aloja manuales planos sin dossier paralelo", async () => {
-    const fs = withCanon(workspace(), '[docs]\nmanuals = "documentacion/manuales"\n');
+    const fs = withCanon(hub(), '[docs]\nmanuals = "documentacion/manuales"\n');
     const prepared = await prepare(fs, "manuals");
     const raw = answer(prepared, [["documentacion/manuales/guia.md", "# Guía\n"]]);
     const approved = approvalOf(prepared, raw);
@@ -856,7 +856,7 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
   // numerado se comía ese número y publicaba en una carpeta que nadie aprobó ni
   // figura en los destinos permitidos — y nada aguas abajo lo re-verifica.
   it("un canon NUMERADO no se come la renumeración: se escribe donde se aprobó", async () => {
-    const fs = withCanon(workspace(), '[docs]\nmanuals = "docs/003-manuales"\n');
+    const fs = withCanon(hub(), '[docs]\nmanuals = "docs/003-manuales"\n');
     const prepared = await prepare(fs, "manuals");
     expect(prepared.unit).toBe(`docs/003-manuales/001-export-manuals-${DATE}`);
 
@@ -877,7 +877,7 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
   // bajo el runtime se llama `NNN-export-…`, así que el workspace pasaría a
   // enumerarla como sesión y quedaría con una línea abierta fantasma.
   it("rechaza un canon que apunta al estado interno de la herramienta", async () => {
-    const fs = withCanon(workspace(), '[docs]\nmanuals = ".workflow/sessions"\n');
+    const fs = withCanon(hub(), '[docs]\nmanuals = ".workflow/sessions"\n');
     const result = await prepareExport(fs, env, paths(), "manuals");
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -892,12 +892,12 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
   });
 
   it("un workspace que no declara nada conserva el destino de siempre", async () => {
-    const prepared = await prepare(withCanon(workspace(), '[docs]\nscripts = "sql"\n'), "manuals");
+    const prepared = await prepare(withCanon(hub(), '[docs]\nscripts = "sql"\n'), "manuals");
     expect(prepared.dir).toBe("docs/manuals");
   });
 
   it("un destino que se escapa del workspace se rechaza, no se corrige solo", async () => {
-    const fs = withCanon(workspace(), '[docs]\nmanuals = "../fuera"\n');
+    const fs = withCanon(hub(), '[docs]\nmanuals = "../fuera"\n');
     const result = await prepareExport(fs, env, paths(), "manuals", { date: DATE });
     if (result.ok) throw new Error("expected a rejection");
     expect(result.failure.code).toBe("EXPORT_DESTINATION_INVALID");
@@ -905,7 +905,7 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
   });
 
   it("una categoría que no existe se nombra en vez de no hacer nada", async () => {
-    const fs = withCanon(workspace(), '[docs]\nmanueles = "docs/manuales"\n');
+    const fs = withCanon(hub(), '[docs]\nmanueles = "docs/manuales"\n');
     const result = await prepareExport(fs, env, paths(), "manuals", { date: DATE });
     if (result.ok) throw new Error("expected a rejection");
     expect(result.failure.message).toContain("manueles");
@@ -921,7 +921,7 @@ describe("el destino de una categoría se alinea con el canon del workspace", ()
  */
 describe("la consolidación de scripts declara el estado final neto", () => {
   it("el contrato de scripts publica la doctrina completa", async () => {
-    const fs = workspace();
+    const fs = hub();
     const contract = (await prepare(fs, "scripts")).request.contract;
     for (const clause of SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS) {
       expect(contract, clause).toContain(clause);
@@ -929,14 +929,14 @@ describe("la consolidación de scripts declara el estado final neto", () => {
   });
 
   it("las otras categorías no heredan una doctrina que no es suya", async () => {
-    const fs = workspace();
+    const fs = hub();
     expect((await prepare(fs, "manuals")).request.contract).not.toContain("ESTADO FINAL NETO");
   });
 });
 
 /** Un workspace sin canon declarado, para los casos que no lo necesitan. */
 function fs0(): MemFs {
-  return workspace();
+  return hub();
 }
 
 // ── the origin, composed ─────────────────────────────────────────────────────
@@ -955,7 +955,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
   const BUNDLE_B = "003-export-scripts-2026-07-10";
 
   function withMaterial(): MemFs {
-    const fs = workspace();
+    const fs = hub();
     closedSession(fs, "041-otra-plan-exec");
     fs.file(
       "/cwd/.workflow/sessions/041-otra-plan-exec/SCRIPTS.sql",
@@ -1194,7 +1194,7 @@ describe("el ambiente deja fuera lo que ya consta aplicado", () => {
   const CERT = "certificación";
 
   function withBundles(): MemFs {
-    const fs = workspace();
+    const fs = hub();
     fs.file(`${SCRIPTS}/${BUNDLE_A}/01-alter.sql`, "ALTER TABLE t ADD c int;");
     fs.file(`${SCRIPTS}/${BUNDLE_A}/00-ROLLBACK.sql`, "ALTER TABLE t DROP COLUMN c;");
     fs.file(`${SCRIPTS}/${BUNDLE_B}/01-drop.sql`, "DROP TABLE t;");
@@ -1319,7 +1319,7 @@ describe("bundle.json · manifiesto derivado y aprobado por el CLI", () => {
   const named = "005-retiro-hinovill";
 
   function withNamedBundle(): MemFs {
-    const fs = workspace();
+    const fs = hub();
     fs.file(`${scripts}/${named}/01-ddl-tablas/01-legacy.sql`, "CREATE TABLE legacy (id int);");
     fs.file(`${scripts}/suelto.sql`, "ALTER TABLE legacy ADD c int;");
     return fs;
@@ -1460,7 +1460,7 @@ describe("export-scripts · reserva de carpeta desde prepare", () => {
     ]);
 
   it("un prepare repetido recupera su carpeta; validate y apply consumen la marca", async () => {
-    const fs = workspace();
+    const fs = hub();
     const old = "/cwd/docs/scripts/002-export-scripts-2026-07-01";
     fs.file(`${old}/01-ddl-tablas/01-vieja.sql`, "CREATE TABLE vieja (id int);");
     const prepared = await prepare(fs, "scripts", { from: "bundles", date: DATE });
@@ -1482,7 +1482,7 @@ describe("export-scripts · reserva de carpeta desde prepare", () => {
   });
 
   it("si apply falla a mitad, el marcador de la carpeta queda para reintentar", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "scripts", { date: DATE });
     const raw = answer(prepared, files(prepared));
     const original = fs.writeTextExclusive.bind(fs);
@@ -1502,7 +1502,7 @@ describe("export-scripts · reserva de carpeta desde prepare", () => {
   });
 
   it("reintenta una publicación escrita cuyo registro de claim falló sin duplicar archivos", async () => {
-    const fs = workspace();
+    const fs = hub();
     const prepared = await prepare(fs, "scripts", { date: DATE });
     const raw = answer(prepared, files(prepared));
     const approval = approvalOf(prepared, raw);
@@ -1528,7 +1528,7 @@ describe("export-scripts · reserva de carpeta desde prepare", () => {
   });
 
   it("un prepare nuevo de la misma sesión libera su reserva anterior sin publicar", async () => {
-    const fs = workspace();
+    const fs = hub();
     const root = "/cwd/.workflow/sessions/050-nuevo-plan-exec";
     fs.file(`${root}/SESSION.md`, "# SESSION\n\n## Objective\nMigrar\n");
     fs.file(`${root}/SCRIPTS.sql`, sql);

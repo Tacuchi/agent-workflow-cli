@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { parseProjectBlock } from "../../src/application/parsers/project-block.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { parseHubBlock } from "../../src/application/parsers/hub-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { parseFuentesSpecs } from "../../src/cli/parsers/fuentes.js";
 
 // Regression guard for the Windows path-corruption report: a `C:\Source\…` path
@@ -20,14 +20,14 @@ describe("Windows backslash paths — Fuentes round-trip", () => {
   });
 
   it("render → parse keeps the backslash path unchanged", () => {
-    const block = renderProjectBlock({
+    const block = renderHubBlock({
       proyecto: "demo",
       fuentes: [{ alias: "miscuotas", path: WIN, main_branch: "main" }],
       stack: {},
       lastActivity: "2026-06-23 00:00",
     });
     expect(block).toContain(WIN);
-    const parsed = parseProjectBlock(block);
+    const parsed = parseHubBlock(block);
     expect(parsed?.fuentes[0]?.path).toBe(WIN);
   });
 });

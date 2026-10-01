@@ -455,7 +455,7 @@ function noteChain(planText: string, specDigest: string, amends: string): string
   return `${JSON.stringify({ ...index, notes: [sealed] }, null, 2)}\n`;
 }
 
-function memWorkspace(planText: string, specText: string = SPEC): MemFs {
+function memHub(planText: string, specText: string = SPEC): MemFs {
   const fs = new MemFs({ lenient: true });
   fs.file("/cwd/.workflow/sessions/.keep", "");
   fs.file(`/cwd/${SPEC_PATH}`, specText);
@@ -537,7 +537,7 @@ describe("alineación dual — la migración no invalida un solo plan sellado", 
   });
 
   it("y el tablero lo lee igual: editorial sobre sello funcional no entrega a plan-refine", async () => {
-    const board = await memIndex(memWorkspace(planDoc(FUNCTIONAL_SEAL), EDITORIAL));
+    const board = await memIndex(memHub(planDoc(FUNCTIONAL_SEAL), EDITORIAL));
     expect(board.plans[0]?.baseline).toEqual({
       status: "aligned",
       digest: functionalSpecDigest(SPEC),
@@ -548,7 +548,7 @@ describe("alineación dual — la migración no invalida un solo plan sellado", 
 
 describe("paridad — el digest que el tablero reporta ES el que una nota pinea", () => {
   it("completa sólo schema y date, avisa de campos desconocidos y conserva la fecha del reintento", async () => {
-    const fs = memWorkspace(planDoc(FUNCTIONAL_SEAL));
+    const fs = memHub(planDoc(FUNCTIONAL_SEAL));
     const draft = {
       decision: "AC-03 se satisface con el rótulo",
       reason: "la cosecha direcciona el rótulo",
@@ -656,7 +656,7 @@ describe("paridad — el digest que el tablero reporta ES el que una nota pinea"
   };
 
   it("con un sello FUNCIONAL, tablero y nota pinean el mismo digest", async () => {
-    const fs = memWorkspace(planDoc(FUNCTIONAL_SEAL));
+    const fs = memHub(planDoc(FUNCTIONAL_SEAL));
     const board = await memIndex(fs);
     const reported = board.plans[0]?.baseline;
     expect(reported).toMatchObject({ status: "aligned" });
@@ -667,7 +667,7 @@ describe("paridad — el digest que el tablero reporta ES el que una nota pinea"
     // Si el índice reportara el byte-exacto para un sello legado, una nota
     // registrada un segundo después dispararía `CONTRACT_BASELINE_ABSENT` sobre
     // un baseline que nadie movió, y el plan no cerraría nunca.
-    const fs = memWorkspace(planDoc(LEGACY_SEAL));
+    const fs = memHub(planDoc(LEGACY_SEAL));
     const board = await memIndex(fs);
     const reported = board.plans[0]?.baseline;
     expect(reported).toMatchObject({ status: "aligned" });
@@ -686,7 +686,7 @@ describe("migración del lado NOTA — la dualidad también cubre lo ya publicad
     // para siempre sobre una spec que nadie tocó, y sin salida: la nota
     // sustituta que el mensaje pide tampoco se puede preparar.
     const planText = closedPlanDoc(LEGACY_SEAL);
-    const fs = memWorkspace(planText);
+    const fs = memHub(planText);
     fs.file(NOTE_PATH, noteChain(planText, specBaselineDigest(SPEC), "S040/AC-01"));
 
     const plan = (await memIndex(fs)).plans[0];
@@ -707,7 +707,7 @@ describe("migración del lado NOTA — la dualidad también cubre lo ya publicad
     const planText = closedPlanDoc(
       `> Baseline: ${SPEC_PATH}@${functionalSpecDigest(FUNCTIONAL_CHANGE)}`,
     );
-    const fs = memWorkspace(planText, FUNCTIONAL_CHANGE);
+    const fs = memHub(planText, FUNCTIONAL_CHANGE);
     fs.file(NOTE_PATH, noteChain(planText, specBaselineDigest(SPEC), "S040/AC-01"));
 
     const plan = (await memIndex(fs)).plans[0];
@@ -722,7 +722,7 @@ describe("migración del lado NOTA — la dualidad también cubre lo ya publicad
     // nota vieja, el gate de la desviación no podría preparar NINGUNA decisión
     // nueva en ese workspace — el mismo silencio, un paso antes.
     const planText = planDoc(LEGACY_SEAL);
-    const fs = memWorkspace(planText);
+    const fs = memHub(planText);
     fs.file(NOTE_PATH, noteChain(planText, specBaselineDigest(SPEC), "S040/AC-01"));
 
     const prepared = await preparePlanExecDecision(fs, {
@@ -930,7 +930,7 @@ const fs = new (class extends NodeFileSystem {
 const SESSION = "151-valvula-plan-exec";
 const CODE = "151";
 const ALIAS = "acme";
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
+const HUB_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
 ## Hub
 
 La válvula.
@@ -1011,7 +1011,7 @@ describe("la ida completa de la válvula, sobre una corrida real", () => {
       "# SESSION — la válvula\n\n## Objective\nejecutar el plan 041\n",
       "utf8",
     );
-    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), HUB_BLOCK, "utf8");
     await mkdir(join(workdir, "docs", "specs"), { recursive: true });
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await writeFile(join(workdir, SPEC_PATH), SPEC, "utf8");

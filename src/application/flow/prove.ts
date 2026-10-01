@@ -82,8 +82,8 @@ export type ProveFlowResult =
 /**
  * The alias is not one this run can prove — and the two reasons need different fixes.
  *
- * With nothing eligible at all, "use workspace" would be advice to repeat what the
- * caller just did: the failure is upstream, in a workspace boundary that could not
+ * With nothing eligible at all, "use hub" would be advice to repeat what the
+ * caller just did: the failure is upstream, in a hub boundary that could not
  * be read. Only when there ARE eligible sources is naming them the useful answer.
  */
 function notEligible(wanted: string, candidates: readonly CheckoutIdentity[]): CapabilityFailure {

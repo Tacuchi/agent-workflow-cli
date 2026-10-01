@@ -44,7 +44,7 @@ vi.mock("../../src/application/doctor/report.js", async (importOriginal) => {
 
 const { doctorCommand } = await import("../../src/cli/commands/doctor.js");
 
-const ctx = { paths: { workspaceDir: () => "/ws" } } as unknown as CliContext;
+const ctx = { paths: { hubDir: () => "/ws" } } as unknown as CliContext;
 
 beforeEach(() => {
   seen.options.length = 0;

@@ -1,9 +1,9 @@
 import { basename } from "node:path";
 import { Box, type Key, Text, useApp, useInput } from "ink";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { runHubBlockUpsertWrite } from "../../application/hub-block-upsert-service.js";
 import { formatTuiEvent } from "../../application/logging/log-events.js";
-import type { DefaultBranches } from "../../application/parsers/project-block.js";
-import { runProjectMdUpsertWrite } from "../../application/project-md-upsert-service.js";
+import type { DefaultBranches } from "../../application/parsers/hub-block.js";
 import { writeNamespacePin } from "../../application/self/namespace-info.js";
 import type { ExitCode } from "../../domain/types.js";
 import type { MenuAction } from "../interactive-menu.js";
@@ -13,21 +13,21 @@ import { HomeHeader } from "./components/home-header.js";
 import { NotificationStack } from "./components/notification-stack.js";
 import { ScreenFrame } from "./components/screen-frame.js";
 import { TabBar } from "./components/tab-bar.js";
-import { TABS_LIST, type TabId, type WorkspaceContext } from "./components/tabs-config.js";
+import { type HubContext, TABS_LIST, type TabId } from "./components/tabs-config.js";
 import type { LogEntry } from "./data/logs.js";
 import { loadLogs } from "./data/logs.js";
+import { hubRoot } from "./hub-root.js";
 import { InputLockProvider, useInputLock } from "./input-lock.js";
 import { NotificationCenterProvider, useNotifications } from "./notification-center.js";
 import { type PublicStatusSummary, readPublicStatus } from "./public-status.js";
 import { ConfigTab } from "./tabs/config-tab.js";
+import { HubTab } from "./tabs/hub-tab.js";
 import { McpTab } from "./tabs/mcp-tab.js";
-import { ProjectTab } from "./tabs/project-tab.js";
 import { StatusTab } from "./tabs/status-tab.js";
 import { WorkflowTab } from "./tabs/workflow-tab.js";
 import { applyAccent, colors } from "./theme.js";
 import { DEFAULT_TUI_PREFS, type TuiPrefs, TuiPrefsService } from "./tui-prefs.js";
 import { useOnMount } from "./use-on-mount.js";
-import { workspaceRoot } from "./workspace-root.js";
 
 export type TuiResult =
   | { kind: "menu-action"; action: MenuAction }
@@ -95,10 +95,10 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     },
     [ctx],
   );
-  // projectName hydrates async from the cwd (package.json#name or basename).
+  // hubName hydrates async from the cwd (package.json#name or basename).
   // Empty placeholder so the boot doesn't flash a wrong brand.
-  const [projectName, setProjectName] = useState<string>("");
-  const [workspaceCtx, setWorkspaceCtx] = useState<WorkspaceContext>({
+  const [hubName, setHubName] = useState<string>("");
+  const [hubCtx, setHubCtx] = useState<HubContext>({
     branchLabel: "— · loading",
     sessionsLabel: "— sessions",
   });
@@ -118,7 +118,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     triggerAction,
   } = useNotifications();
 
-  // Branch defaults live in the WORKSPACE block of CLAUDE.md/AGENTS.md (the same
+  // Branch defaults live in the hub block of CLAUDE.md/AGENTS.md (the same
   // "database" git-flow reads), never in the user-global TUI prefs. The upsert
   // merges per role, so one edited role never clears the others.
   //
@@ -127,7 +127,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   // and handed back: the tab only adopts the new value when the write landed.
   const onSaveBranchDefaults = useCallback(
     async (defaultBranches: DefaultBranches): Promise<boolean> => {
-      const res = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
+      const res = await runHubBlockUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
         op: "init",
         defaultBranches,
       });
@@ -142,10 +142,10 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   );
 
   const loadShellData = useCallback(async () => {
-    const name = await resolveProjectName(ctx);
-    setProjectName(name);
-    const [wctx, summary] = await Promise.all([loadWorkspaceContext(ctx), readPublicStatus(ctx)]);
-    setWorkspaceCtx({ ...wctx, sessionsLabel: summary.sessionsLabel });
+    const name = await resolveHubName(ctx);
+    setHubName(name);
+    const [wctx, summary] = await Promise.all([loadHubContext(ctx), readPublicStatus(ctx)]);
+    setHubCtx({ ...wctx, sessionsLabel: summary.sessionsLabel });
     setWorkflowSummary(summary);
     const dailyLogs = await loadLogs(ctx);
     setLogs(dailyLogs);
@@ -336,7 +336,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
   return (
     <ScreenFrame>
       <Box flexDirection="column" flexGrow={1} minHeight={0}>
-        <HomeHeader brand={projectName} version={version} workspaceContext={workspaceCtx} />
+        <HomeHeader brand={hubName} version={version} hubContext={hubCtx} />
         <NotificationStack items={notifications} />
         <TabBar activeTabId={activeTab} />
         {/* flexShrink + minHeight=0 + overflowY=hidden: the active tab's
@@ -377,7 +377,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
             />
           ) : null}
           {activeTab === "hub" ? (
-            <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
+            <HubTab ctx={ctx} isActive={true} onRunAction={runAction} />
           ) : null}
           {activeTab === "mcp" ? (
             <McpTab
@@ -405,12 +405,12 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
 }
 
 /**
- * Resolves the project name shown in the header.
+ * Resolves the hub name shown in the header.
  * Priority: `package.json#name` (without the `@org/` scope) → `basename(cwd)`.
  * Any read/parse error falls back to basename.
  */
-async function resolveProjectName(ctx: CliContext): Promise<string> {
-  const cwd = workspaceRoot(ctx);
+async function resolveHubName(ctx: CliContext): Promise<string> {
+  const cwd = hubRoot(ctx);
   try {
     const pkgPath = `${cwd}/package.json`;
     if (await ctx.fs.exists(pkgPath)) {
@@ -428,8 +428,8 @@ async function resolveProjectName(ctx: CliContext): Promise<string> {
   return basename(cwd) || "hub";
 }
 
-async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> {
-  const cwd = workspaceRoot(ctx);
+async function loadHubContext(ctx: CliContext): Promise<HubContext> {
+  const cwd = hubRoot(ctx);
 
   // Branch + sync
   let branchLabel = "— · no git";

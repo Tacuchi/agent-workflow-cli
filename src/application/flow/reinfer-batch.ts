@@ -10,7 +10,7 @@ import {
 import { baseDigest, matchTextSeal } from "../../domain/proposal.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { parseTasks } from "../parsers/tasks.js";
-import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { type PathsService, resolveHubRootFrom } from "../paths-service.js";
 import { planLineDiff, sealedPlanPath } from "../plan-exec-plan-diff.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { directiveFor, resolveBoundary } from "./advance.js";
@@ -86,7 +86,7 @@ async function previewOf(
     );
   }
   const location = locateRun(paths, state.session);
-  const root = await resolveWorkspaceRootFrom(fs, paths);
+  const root = await resolveHubRootFrom(fs, paths);
   let sealed: string;
   let current: string;
   try {
@@ -178,7 +178,7 @@ export async function applyReinferBatch(
     }
     const snapshotFailure = await publishReinferredPlan(fs, location.dir, prepared);
     if (snapshotFailure !== null) return snapshotFailure;
-    const root = await resolveWorkspaceRootFrom(fs, paths);
+    const root = await resolveHubRootFrom(fs, paths);
     try {
       const live = await fs.readText(join(root, state.scope?.plan ?? ""));
       if (matchTextSeal(prepared.preview.new_digest, live) === null) {

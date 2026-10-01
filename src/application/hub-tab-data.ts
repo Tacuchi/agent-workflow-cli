@@ -1,0 +1,356 @@
+// Data layer for the TUI's hub tab.
+//
+// Aggregates the hub information the user needs without opening any AI
+// host. One concept: a hub simply has 1+ sources.
+// Purely read-only: no side effects on disk or on the remote.
+
+import { basename } from "node:path";
+import type { EnvPort } from "../ports/env.js";
+import type { FileSystemPort } from "../ports/file-system.js";
+import type { GitPort } from "../ports/git.js";
+import type { ProcessPort } from "../ports/process.js";
+import { resolveSourceBranches } from "./branch-resolver.js";
+import { type ParsedHubBlock, readHubBlock, requireSourcePath } from "./parsers/hub-block.js";
+import type { PathsService } from "./paths-service.js";
+
+export interface HubGitData {
+  branch: string;
+  base: string;
+  ahead: number;
+  behind: number;
+  dirty: number;
+  staged: number;
+  untracked: number;
+}
+
+export interface HubSource {
+  alias: string;
+  path: string | null;
+  error?: string;
+  branch: string | null;
+  mainBranch: string;
+  /**
+   * Commits made ON the current branch: reachable from it but not from the
+   * resolved main branch, merges excluded. `null` when it cannot be measured
+   * (branch IS the main one, no local base, detached HEAD, git failure).
+   */
+  commitCount: number | null;
+  dirty: boolean;
+  changedFiles: number;
+}
+
+export interface HubTabData {
+  hubName: string;
+  /** Absolute resolved Workline root. */
+  hubPath: string;
+  /**
+   * True when the hub has a hub block in CLAUDE.md/AGENTS.md.
+   * Kept as data for the configuration affordance; it no longer gates the
+   * normal Hub tab view.
+   */
+  initialized: boolean;
+  /** Git data for the primary repo (cwd, or the first declared source) */
+  git: HubGitData | null;
+  /** Declared sources (alias / path / main branch) */
+  sources: HubSource[];
+  /** Current working branches per source alias (hub block > Status) */
+  workingBranches: Record<string, string>;
+  /** Current QA branches per source alias (hub block > Status > Ramas QA) */
+  qaBranches: Record<string, string>;
+  /** Partial fetch failures, if any */
+  warnings: string[];
+}
+
+export interface HubTabDataDeps {
+  fs: FileSystemPort;
+  env: EnvPort;
+  git: GitPort;
+  process: ProcessPort;
+  paths: PathsService;
+}
+
+/**
+ * Builds all the Hub tab data in one pass.
+ *
+ * Each subfetch catches its own errors so the render never goes down — if
+ * e.g. `git log` fails, the rest of the payload stays valid and the failure
+ * lands in `warnings[]`.
+ */
+export async function buildHubTabData(deps: HubTabDataDeps): Promise<HubTabData> {
+  const { fs, git, process: proc, paths } = deps;
+  const cwd = paths.hubDir();
+  const warnings: string[] = [];
+
+  const block = await safeRun(
+    "read-project-block",
+    () => readHubBlock(fs, cwd, paths.blockMarkers()),
+    warnings,
+    null as ParsedHubBlock | null,
+  );
+
+  const hubName = block?.proyecto || basename(cwd);
+
+  // Primary repo: the first declared source (if any), else the cwd.
+  const primarySource = block?.fuentes[0];
+  const primaryRepoPath = primarySource
+    ? await requireSourcePath(fs, primarySource).catch(() => null)
+    : cwd;
+  const primaryMainBranch = primarySource
+    ? resolveSourceBranches(primarySource, block).prod
+    : "main";
+  // The GIT tile must show the working branch DEFINED in the hub for the
+  // primary source, not whatever branch the repo has checked out (could be any).
+  const definedWorkingBranch = resolveDefinedWorkingBranch(block);
+
+  const gitData =
+    primaryRepoPath === null
+      ? null
+      : await safeRun(
+          "git",
+          () => buildGitData(git, proc, primaryRepoPath, primaryMainBranch, definedWorkingBranch),
+          warnings,
+          null,
+        );
+
+  const sources = await buildHubSources(fs, git, proc, block, warnings);
+
+  return {
+    hubName,
+    hubPath: cwd,
+    initialized: block !== null,
+    git: gitData,
+    sources,
+    workingBranches: block?.working_branches ?? {},
+    qaBranches: block?.qa_branches ?? {},
+    warnings,
+  };
+}
+
+// ---------- subfetchers ----------
+
+async function buildGitData(
+  git: GitPort,
+  proc: ProcessPort,
+  repoPath: string,
+  mainBranch: string,
+  workBranch?: string,
+): Promise<HubGitData | null> {
+  const isRepo = await git.isGitRepo(repoPath);
+  if (!isRepo) return null;
+  // `workBranch` (the hub-defined working branch) takes precedence over
+  // the checked-out branch: the GIT tile represents the hub's work, not
+  // the source's accidental HEAD. ahead/behind is computed against the branch shown.
+  const branch = workBranch ?? (await git.currentBranch(repoPath)) ?? "(detached)";
+
+  // ahead/behind vs `origin/<mainBranch>` — falls back to 0/0 on failure
+  const aheadBehind = await runProc(
+    proc,
+    "git",
+    ["rev-list", "--left-right", "--count", `origin/${mainBranch}...${branch}`],
+    repoPath,
+  );
+  let ahead = 0;
+  let behind = 0;
+  if (aheadBehind.ok && aheadBehind.stdout) {
+    const parts = aheadBehind.stdout.trim().split(/\s+/);
+    behind = Number.parseInt(parts[0] ?? "0", 10) || 0;
+    ahead = Number.parseInt(parts[1] ?? "0", 10) || 0;
+  }
+
+  const status = await runProc(proc, "git", ["status", "--porcelain=v1"], repoPath);
+  const { dirty, staged, untracked } = countGitStatus(status);
+
+  return {
+    branch,
+    base: mainBranch,
+    ahead,
+    behind,
+    dirty,
+    staged,
+    untracked,
+  };
+}
+
+/** What `git rev-parse --abbrev-ref HEAD` prints when HEAD is not on a branch. */
+const DETACHED_HEAD = "HEAD";
+
+/**
+ * Count the commits the branch itself carries: `<base>..<branch>` with merges
+ * excluded, so neither the history inherited from the base nor a later merge of
+ * the base back into the branch is counted.
+ *
+ * Local refs only (no fetch): tries `<main>` and falls back to `origin/<main>`.
+ * A non-zero exit is the ordinary "that base ref does not exist here" case, so
+ * it resolves to `null` silently — warning per source would be noise on any
+ * fresh clone. Only a thrown error reaches the caller's `safeRun`.
+ */
+async function countOwnCommits(
+  proc: ProcessPort,
+  repoPath: string,
+  branch: string | null,
+  mainBranch: string,
+): Promise<number | null> {
+  // `rev-parse --abbrev-ref HEAD` prints the literal "HEAD" (exit 0) when
+  // detached, so that is the detachment sentinel — not a null. Without this the
+  // range `<base>..HEAD` counts happily and reports a partial number mid-rebase.
+  if (branch === null || branch === DETACHED_HEAD || branch === mainBranch) return null;
+  for (const base of [mainBranch, `origin/${mainBranch}`]) {
+    const res = await runProc(
+      proc,
+      "git",
+      ["rev-list", "--count", "--no-merges", `${base}..${branch}`],
+      repoPath,
+    );
+    if (!res.ok) continue;
+    const count = Number.parseInt(res.stdout.trim(), 10);
+    if (Number.isFinite(count)) return count;
+  }
+  return null;
+}
+
+// ---------- utils ----------
+
+async function safeRun<T>(
+  label: string,
+  fn: () => Promise<T>,
+  warnings: string[],
+  fallback: T,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    warnings.push(`${label}: ${(err as Error).message}`);
+    return fallback;
+  }
+}
+
+async function runProc(
+  proc: ProcessPort,
+  cmd: string,
+  args: string[],
+  cwd: string,
+): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  const res = await proc.run(cmd, args, { cwd });
+  return { ok: res.code === 0, stdout: res.stdout, stderr: res.stderr };
+}
+
+/**
+ * Working branch to display in the GIT tile.
+ *
+ * The tile represents the primary repo (`fuentes[0]`), but its label must be
+ * the working branch DEFINED in the hub (section `## Status > Ramas de
+ * trabajo actuales`), not the branch the source has checked out. That way the
+ * tile does not change depending on which branch the sources are on.
+ *
+ * Returns `undefined` when no working branch is declared for the primary
+ * source → the caller falls back to the repo's current branch.
+ */
+export function resolveDefinedWorkingBranch(block: ParsedHubBlock | null): string | undefined {
+  if (!block) return undefined;
+  const primaryAlias = block.fuentes[0]?.alias;
+  if (primaryAlias === undefined) return undefined;
+  return block.working_branches[primaryAlias];
+}
+
+async function buildHubSources(
+  fs: FileSystemPort,
+  git: GitPort,
+  proc: ProcessPort,
+  block: ParsedHubBlock | null,
+  warnings: string[],
+): Promise<HubSource[]> {
+  const sources: HubSource[] = [];
+  if (block) {
+    for (const f of block.fuentes) {
+      let repoPath: string;
+      try {
+        repoPath = await requireSourcePath(fs, f);
+      } catch (err) {
+        const error = (err as Error).message;
+        warnings.push(error);
+        sources.push({
+          alias: f.alias,
+          path: null,
+          error,
+          branch: null,
+          mainBranch: resolveSourceBranches(f, block).prod,
+          commitCount: null,
+          dirty: false,
+          changedFiles: 0,
+        });
+        continue;
+      }
+      const isRepo = await safeRun(
+        `is-repo:${f.alias}`,
+        () => git.isGitRepo(repoPath),
+        warnings,
+        false,
+      );
+      if (!isRepo) {
+        warnings.push(`${f.alias}: no es un repositorio git (${repoPath})`);
+        sources.push({
+          alias: f.alias,
+          path: repoPath,
+          branch: null,
+          mainBranch: resolveSourceBranches(f, block).prod,
+          commitCount: null,
+          dirty: false,
+          changedFiles: 0,
+        });
+        continue;
+      }
+      const branch = await safeRun(
+        `branch:${f.alias}`,
+        () => git.currentBranch(repoPath),
+        warnings,
+        undefined,
+      );
+      const changed = await safeRun(
+        `dirty:${f.alias}`,
+        () => git.changedFiles(repoPath),
+        warnings,
+        [] as string[],
+      );
+      const roles = resolveSourceBranches(f, block);
+      const commitCount = await safeRun(
+        `commits:${f.alias}`,
+        () => countOwnCommits(proc, repoPath, branch ?? null, roles.prod),
+        warnings,
+        null,
+      );
+      sources.push({
+        alias: f.alias,
+        path: repoPath,
+        branch: branch ?? null,
+        mainBranch: roles.prod,
+        commitCount,
+        dirty: changed.length > 0,
+        changedFiles: changed.length,
+      });
+    }
+  }
+
+  return sources;
+}
+
+function countGitStatus(
+  status: Awaited<ReturnType<typeof runProc>>,
+): Pick<HubGitData, "dirty" | "staged" | "untracked"> {
+  let dirty = 0;
+  let staged = 0;
+  let untracked = 0;
+  if (!status.ok) return { dirty, staged, untracked };
+  for (const line of status.stdout.split("\n")) {
+    if (line.length === 0) continue;
+    const x = line[0];
+    const y = line[1];
+    if (x === "?" && y === "?") {
+      untracked++;
+    } else {
+      dirty++;
+      if (x !== " " && x !== "?") staged++;
+    }
+  }
+
+  return { dirty, staged, untracked };
+}

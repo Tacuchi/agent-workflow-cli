@@ -7,7 +7,7 @@ import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { setWorkingBranchCommand } from "../../src/cli/commands/set-branch.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -58,7 +58,7 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
   let origin: string;
   let other: string;
   let source: string;
-  let workspace: string;
+  let hub: string;
 
   beforeAll(() => {
     const globals = mkdtempSync(join(tmpdir(), "aw-swb-globals-"));
@@ -88,8 +88,8 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
     origin = join(root, "origin.git");
     other = join(root, "other");
     source = join(root, "source");
-    workspace = join(root, "workspace");
-    mkdirSync(workspace);
+    hub = join(root, "workspace");
+    mkdirSync(hub);
     git(root, "init", "-q", "--bare", "-b", PROD, origin);
     git(root, "clone", "-q", origin, other);
     commitFile(other, "base.txt");
@@ -101,8 +101,8 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
   });
 
   function declare(prod = PROD): CliContext {
-    const paths = new PathsService(normalizeNamespace("agent-workflow"), workspace, workspace);
-    const block = renderProjectBlock({
+    const paths = new PathsService(normalizeNamespace("agent-workflow"), hub, hub);
+    const block = renderHubBlock({
       proyecto: "Fixture",
       fuentes: [{ alias: "core", path: source, main_branch: prod }],
       stack: {},
@@ -111,17 +111,17 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
       qaBranches: {},
       markers: paths.blockMarkers(),
     });
-    writeFileSync(join(workspace, "CLAUDE.md"), block, "utf8");
+    writeFileSync(join(hub, "CLAUDE.md"), block, "utf8");
     return {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(workspace),
+      env: new FakeEnv(hub),
       paths,
       git: new GitCliAdapter(new NodeProcess()),
     } as unknown as CliContext;
   }
 
   const registered = (branch: string) =>
-    readFileSync(join(workspace, "CLAUDE.md"), "utf8").includes(`  - core: ${branch}`);
+    readFileSync(join(hub, "CLAUDE.md"), "utf8").includes(`  - core: ${branch}`);
 
   it("una rama que ya existe en local se registra como hoy", async () => {
     git(source, "branch", "feature/local", PROD);
@@ -250,6 +250,6 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
     expect((result.data as { working_branch: { notice: string } }).working_branch.notice).toMatch(
       /otra no es una fuente declarada: la rama feature\/z se registró sin comprobarla ni crearla/,
     );
-    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf8")).toContain("  - otra: feature/z");
+    expect(readFileSync(join(hub, "CLAUDE.md"), "utf8")).toContain("  - otra: feature/z");
   });
 });

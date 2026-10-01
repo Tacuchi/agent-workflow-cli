@@ -50,7 +50,7 @@ export interface ResumeInput {
 
 export interface ResumeProposal {
   kind: PipelineItem["kind"] | "session";
-  /** workspace-relative doc path, or the session folder */
+  /** hub-relative doc path, or the session folder */
   file: string;
   number: string | null;
   objective: string;

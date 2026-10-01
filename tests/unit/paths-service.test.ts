@@ -28,7 +28,7 @@ describe("PathsService", () => {
   });
 
   it("resolves workspace-root runtime dirs for namespace 'workflow'", () => {
-    expect(wfPaths.workspaceDir()).toBe("/cwd");
+    expect(wfPaths.hubDir()).toBe("/cwd");
     expect(wfPaths.cwdRoot()).toBe("/cwd/.workflow");
     expect(wfPaths.cwdSessionsDir()).toBe("/cwd/.workflow/sessions");
     expect(wfPaths.cwdHistoryFile()).toBe("/cwd/.workflow/HISTORY.md");

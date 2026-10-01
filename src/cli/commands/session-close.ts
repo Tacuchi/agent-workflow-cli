@@ -224,7 +224,7 @@ async function runLocation(
 }
 
 /**
- * The workspace's live units. A close that stayed silent about the units the
+ * The hub's live units. A close that stayed silent about the units the
  * session still holds would be the one way a flow's uncommitted-upstream work
  * disappears from view.
  */

@@ -82,7 +82,7 @@ export const icons = {
   chevron: "›",
   // NOTE: avoid the "branch" glyph U+2387. Several terminal fonts (e.g. Warp's
   // default, on Mac and Windows) lack it and use a width-2 fallback while Ink
-  // measures it as 1 → misaligns the Project tab's columns (it renders one per
+  // measures it as 1 → misaligns the Hub tab's columns (it renders one per
   // row). U+21B3 (Arrows block) is far better supported and measures 1 cell.
   branch: "↳",
   alertDot: "●",

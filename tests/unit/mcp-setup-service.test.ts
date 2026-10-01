@@ -15,17 +15,17 @@ const ALPHA = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
 const BETA = { name: "beta", dsnVar: "BETA_DATABASE_URL" };
 
 describe("runMcpSetup", () => {
-  let workspace: string;
+  let hub: string;
   let home: string;
   let env: FakeEnv;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "mcp-setup-svc-"));
-    home = join(workspace, "home");
-    env = new FakeEnv(home, workspace);
+    hub = mkdtempSync(join(tmpdir(), "mcp-setup-svc-"));
+    home = join(hub, "home");
+    env = new FakeEnv(home, hub);
   });
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   it("aplica las 4 combinaciones host×conexión en una corrida", () => {
@@ -33,7 +33,7 @@ describe("runMcpSetup", () => {
       hosts: ["claude", "codex"],
       connections: [ALPHA, BETA],
       scope: "workspace",
-      workspace,
+      hub,
     });
     if ("ok" in result) throw new Error("did not expect refusal");
     expect(result.applied).toHaveLength(4);
@@ -49,13 +49,13 @@ describe("runMcpSetup", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
     const second = runMcpSetup(env, {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
     if ("ok" in second) throw new Error("did not expect refusal");
     expect(second.applied).toHaveLength(0);
@@ -67,7 +67,7 @@ describe("runMcpSetup", () => {
       hosts: ["claude", "codex"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
       dryRun: true,
     });
     if ("ok" in result) throw new Error("did not expect refusal");
@@ -76,7 +76,7 @@ describe("runMcpSetup", () => {
   });
 
   it("una entrada homónima de forma ajena se informa como conflicto y no se escribe", () => {
-    const file = join(workspace, ".mcp.json");
+    const file = join(hub, ".mcp.json");
     const foreign = `${JSON.stringify(
       { mcpServers: { alpha: { command: "node", args: ["foreign.js"], env: {} } } },
       null,
@@ -88,7 +88,7 @@ describe("runMcpSetup", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
 
     if ("ok" in result) throw new Error("did not expect refusal");
@@ -99,7 +99,7 @@ describe("runMcpSetup", () => {
   });
 
   it("no reemplaza el servidor legacy de elicitation sin la migración explícita", () => {
-    const file = join(workspace, ".mcp.json");
+    const file = join(hub, ".mcp.json");
     const legacy = worklineMcpEntry("claude");
     const original = `${JSON.stringify(
       { mcpServers: { "agent-workflow": mcpEntryShapeForHost("claude", legacy) } },
@@ -112,7 +112,7 @@ describe("runMcpSetup", () => {
       hosts: ["claude"],
       connections: [{ name: "agent-workflow", dsnVar: "WORKLINE_DATABASE_URL" }],
       scope: "workspace",
-      workspace,
+      hub,
     });
 
     if ("ok" in result) throw new Error("did not expect refusal");
@@ -207,7 +207,7 @@ describe("runMcpSetup", () => {
       hosts: ["codex"],
       connections: [{ name: "reporting", dsnVar: "REPORTING_DATABASE_URL" }],
       scope: "workspace",
-      workspace,
+      hub,
     });
     if ("ok" in result) throw new Error("did not expect refusal");
     expect(result.applied).toHaveLength(1);
@@ -219,7 +219,7 @@ describe("runMcpSetup", () => {
       hosts: ["claude"],
       connections: [{ name: "reporting", dsnVar: "REPORTING_DATABASE_URL" }],
       scope: "workspace",
-      workspace,
+      hub,
     });
     if ("ok" in result) throw new Error("did not expect refusal");
     expect(result.applied[0]?.name).toBe("reporting");
@@ -244,7 +244,7 @@ describe("runMcpSetup", () => {
       connections: [ALPHA],
       scope: "global",
       globalApproval: "explicit-cli-force",
-      workspace,
+      hub,
     });
     expect("ok" in result).toBe(false);
     if ("ok" in result) throw new Error("did not expect refusal");
@@ -258,7 +258,7 @@ describe("runMcpSetup", () => {
       connections: [ALPHA],
       scope: "global",
       dryRun: true,
-      workspace,
+      hub,
     });
     expect("ok" in result).toBe(false);
   });

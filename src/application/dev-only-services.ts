@@ -269,7 +269,7 @@ export async function runLogs(
   input: LogsInput,
 ): Promise<LogsOutput> {
   // Unified to the GLOBAL, user-level daily log (~/.${ns}/logs/agent-workflow-*.log):
-  // the same source the [Status] tab lists. The old per-workspace path is obsolete.
+  // the same source the [Status] tab lists. The old per-hub path is obsolete.
   void env;
   const logsDir = paths.userLogsDir();
   const path = paths.userDailyLogFile(new Date());
@@ -358,7 +358,7 @@ export interface NextNumberInput {
    * Claim the correlative by materializing `<NNN>-<name>` inside the directory,
    * for the session that will own it.
    *
-   * The scan and the creation happen inside ONE workspace-lock boundary, so no
+   * The scan and the creation happen inside ONE hub-lock boundary, so no
    * other flow can read the same maximum; the exclusive creation then makes the
    * name itself unshareable even if the lock ever expires underneath.
    *
@@ -429,7 +429,7 @@ function mintOf(
 }
 
 /**
- * The mint itself, already inside the workspace lock.
+ * The mint itself, already inside the hub lock.
  *
  * Extracted so `runNextNumber` reads as what it is — resolve the mode, guard the
  * name, take the lock, report — instead of nesting the whole critical section
@@ -477,7 +477,7 @@ async function mintAvailableNumber(
   // Correlatives the ledger says came back, lowest first, BEFORE `max + 1`.
   //
   // The old mint computed `max + 1` and probed forward only, so a number released
-  // in the middle of the range was gone for good — this workspace still carries a
+  // in the middle of the range was gone for good — this hub still carries a
   // permanent hole from exactly that. The disk cannot tell a number that was given
   // back from one that never existed; only the record can, which is why the
   // eligible set is read here and not derived from the directory listing.
@@ -609,9 +609,9 @@ export async function runNextNumber(
   input: NextNumberInput,
 ): Promise<NextNumberOutput> {
   // `paths` is the WorklineDirectory resolved once at bootstrap.  A nested
-  // invocation still numbers the workspace's docs tree; it must not quietly
+  // invocation still numbers the hub's docs tree; it must not quietly
   // create a second docs/ under the raw process cwd.
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
   const { directory, dryRun = false, claim, publish, minimum } = input;
   const target = isAbsolute(directory) ? directory : join(cwd, directory);
   if (claim !== undefined && publish !== undefined) {
@@ -718,7 +718,7 @@ async function scan(
   const exists = await fs.exists(target);
   let created = false;
   if (!exists && !dryRun) {
-    // On-demand creation: the CLI owns docs/<category> dirs — workspace-init no
+    // On-demand creation: the CLI owns docs/<category> dirs — hub-init no
     // longer scaffolds them upfront, they are born at the first numbered write.
     await fs.mkdirp(target);
     created = true;
@@ -758,8 +758,8 @@ async function publishedNumbers(
   paths: PathsService,
   target: string,
 ): Promise<Set<string>> {
-  const relative = target.startsWith(`${paths.workspaceDir()}/`)
-    ? target.slice(paths.workspaceDir().length + 1).replace(/\\/g, "/")
+  const relative = target.startsWith(`${paths.hubDir()}/`)
+    ? target.slice(paths.hubDir().length + 1).replace(/\\/g, "/")
     : target.replace(/\\/g, "/");
   const numbers = await publishedCorrelatives(fs, paths.cwdHistoryFile(), relative);
   const passes = await readReleasePasses(fs, paths);

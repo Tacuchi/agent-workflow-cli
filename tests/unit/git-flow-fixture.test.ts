@@ -9,7 +9,7 @@ import { NodeProcess } from "../../src/adapters/node-process.js";
 import { type GitFlowInput, runGitFlow } from "../../src/application/git-flow-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { attributeTuiKeypress, grantProdConsent } from "../../src/application/prod-consent.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -65,7 +65,7 @@ describe("git-flow sobre git real: cada rama sólo desde su homónima, PROD sól
   let origin: string;
   let other: string;
   let source: string;
-  let workspace: string;
+  let hub: string;
 
   beforeAll(() => {
     const globals = mkdtempSync(join(tmpdir(), "aw-gitflow-globals-"));
@@ -88,8 +88,8 @@ describe("git-flow sobre git real: cada rama sólo desde su homónima, PROD sól
     origin = join(root, "origin.git");
     other = join(root, "other");
     source = join(root, "source");
-    workspace = join(root, "workspace");
-    execFileSync("mkdir", ["-p", workspace]);
+    hub = join(root, "workspace");
+    execFileSync("mkdir", ["-p", hub]);
 
     git(root, "init", "-q", "--bare", "-b", PROD, origin);
     git(root, "clone", "-q", origin, other);
@@ -116,8 +116,8 @@ describe("git-flow sobre git real: cada rama sólo desde su homónima, PROD sól
   }
 
   async function flow(input: GitFlowInput, work = WORK, prod = PROD) {
-    const paths = new PathsService(normalizeNamespace("agent-workflow"), workspace, workspace);
-    const block = renderProjectBlock({
+    const paths = new PathsService(normalizeNamespace("agent-workflow"), hub, hub);
+    const block = renderHubBlock({
       proyecto: "Fixture",
       fuentes: [{ alias: "core", path: source, main_branch: prod }],
       stack: {},
@@ -127,7 +127,7 @@ describe("git-flow sobre git real: cada rama sólo desde su homónima, PROD sól
       qaBranches: {},
       markers: paths.blockMarkers(),
     });
-    writeFileSync(join(workspace, "CLAUDE.md"), block, "utf8");
+    writeFileSync(join(hub, "CLAUDE.md"), block, "utf8");
     return runGitFlow(new NodeFileSystem(), new GitCliAdapter(new NodeProcess()), paths, input);
   }
 
@@ -144,8 +144,8 @@ describe("git-flow sobre git real: cada rama sólo desde su homónima, PROD sól
     expect(result.status).toBe("ok");
     expect(result.results[0]?.steps.length).toBeGreaterThan(0);
     expect(git(source, "branch", "--show-current")).toBe(WORK);
-    expect(existsSync(join(workspace, ".agent-workflow"))).toBe(false);
-    expect(existsSync(join(workspace, ".workflow"))).toBe(false);
+    expect(existsSync(join(hub, ".agent-workflow"))).toBe(false);
+    expect(existsSync(join(hub, ".workflow"))).toBe(false);
   });
 
   it("con varios heads en el fetch, PROD queda igual a su remoto y sin merge nuevo", async () => {

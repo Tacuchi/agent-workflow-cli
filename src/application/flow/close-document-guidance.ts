@@ -6,7 +6,7 @@ import { readNoteIndex } from "../decision-note-service.js";
 import { scanMarkdown } from "../markdown.js";
 import { ACCEPTANCE_CRITERIA_KEY, functionalSections } from "../parsers/spec-functional.js";
 import { parseSpecCriteria, parseSpecRelation } from "../parsers/spec-relation.js";
-import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { type PathsService, resolveHubRootFrom } from "../paths-service.js";
 import { readLineage } from "../plan-exec-decision-service.js";
 
 /** Report only this session's effective deviations, without editing their documents. */
@@ -17,7 +17,7 @@ export async function closeDocumentGuidance(
 ): Promise<string[]> {
   if (state.flow !== "plan-exec" || state.scope === null) return [];
   try {
-    const root = await resolveWorkspaceRootFrom(fs, paths);
+    const root = await resolveHubRootFrom(fs, paths);
     const plan = state.scope.plan;
     if (parseSpecRelation(await fs.readText(join(root, plan))).status === "standalone") return [];
     const lineage = await readLineage(fs, { root, plan });

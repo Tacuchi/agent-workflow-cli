@@ -44,19 +44,19 @@ const OWNER = "201-alpha-plan-new";
 const OTHER = "202-beta-plan-new";
 
 describe("aw claims recover", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "claims-recovery-"));
-    env = new FakeEnv(workspace, workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "claims-recovery-"));
+    env = new FakeEnv(hub, hub);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new NodeFileSystem();
-    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
   });
-  afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+  afterEach(() => rmSync(hub, { recursive: true, force: true }));
 
   const claimSlot = async (name: string, owner: string, dir = "docs/plans") =>
     await runNextNumber(fs, env, paths, { directory: dir, claim: { name, owner } });
@@ -80,12 +80,9 @@ describe("aw claims recover", () => {
   it("lista reservas y placeholders legacy, y NUNCA un documento publicado", async () => {
     await claimSlot("plan-alpha.md", OWNER);
     // Un documento real, con contenido.
-    writeFileSync(
-      join(workspace, "docs", "plans", "002-plan-publicado.md"),
-      "# Plan\n\ncontenido\n",
-    );
+    writeFileSync(join(hub, "docs", "plans", "002-plan-publicado.md"), "# Plan\n\ncontenido\n");
     // Un placeholder legacy: numerado, vacío, sin dueño.
-    writeFileSync(join(workspace, "docs", "plans", "003-plan-viejo.md"), "");
+    writeFileSync(join(hub, "docs", "plans", "003-plan-viejo.md"), "");
 
     const scan = await scanSlots(fs, paths);
 
@@ -115,15 +112,15 @@ describe("aw claims recover", () => {
     const mineEvents = read.events.filter((e) => e.claim.name === "plan-alpha.md");
     // El orden es la garantía, y es observable en el registro.
     expect(mineEvents.map((e) => e.event)).toEqual(["claimed", "revoked", "released"]);
-    expect(existsSync(join(workspace, target))).toBe(false);
+    expect(existsSync(join(hub, target))).toBe(false);
 
     // Acotada al claim: la otra reserva del MISMO dueño sigue abierta y en disco,
     // y la de otra sesión no se toca. Revocar la sesión entera para reclamar un
     // número destruiría trabajo para ordenar un correlativo.
     expect(openClaimsOf(read.events, OWNER).map((c) => c.name)).toEqual(["plan-alpha-dos.md"]);
-    expect(existsSync(join(workspace, `docs/plans/${alsoMine.next}-plan-alpha-dos.md`))).toBe(true);
+    expect(existsSync(join(hub, `docs/plans/${alsoMine.next}-plan-alpha-dos.md`))).toBe(true);
     expect(openClaimsOf(read.events, OTHER)).toHaveLength(1);
-    expect(existsSync(join(workspace, `docs/plans/${theirs.next}-plan-beta.md`))).toBe(true);
+    expect(existsSync(join(hub, `docs/plans/${theirs.next}-plan-beta.md`))).toBe(true);
     expect(mine.next).toBe("001");
   });
 
@@ -138,7 +135,7 @@ describe("aw claims recover", () => {
     ).rejects.toThrow(/no se puede sellar/);
 
     // Lo único inaceptable sería un slot liberado sin cerco: el archivo sigue ahí.
-    expect(existsSync(join(workspace, target))).toBe(true);
+    expect(existsSync(join(hub, target))).toBe(true);
     const read = await readClaimEvents(fs, paths);
     expect(read.events.map((e) => e.event)).toEqual(["claimed"]);
     expect(openClaimsOf(read.events, OWNER)).toHaveLength(1);
@@ -151,12 +148,12 @@ describe("aw claims recover", () => {
     const applied = await applyRecovery(fs, paths, { target, approval: "0".repeat(64) });
 
     expect("error" in applied && applied.error).toMatch(/aprobación no corresponde/);
-    expect(existsSync(join(workspace, target))).toBe(true);
+    expect(existsSync(join(hub, target))).toBe(true);
   });
 
   it("un placeholder legacy exige confirmación explícita de que no queda productor", async () => {
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    writeFileSync(join(workspace, "docs", "plans", "005-plan-viejo.md"), "");
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    writeFileSync(join(hub, "docs", "plans", "005-plan-viejo.md"), "");
     const target = "docs/plans/005-plan-viejo.md";
     const preview = await previewRecovery(fs, paths, target);
     if ("error" in preview) throw new Error(preview.error);
@@ -170,7 +167,7 @@ describe("aw claims recover", () => {
       approval: preview.proposal.digest,
     });
     expect("error" in refused && refused.error).toMatch(/placeholder legacy ambiguo/);
-    expect(existsSync(join(workspace, target))).toBe(true);
+    expect(existsSync(join(hub, target))).toBe(true);
 
     const applied = await applyRecovery(fs, paths, {
       target,
@@ -178,7 +175,7 @@ describe("aw claims recover", () => {
       noProducerConfirmed: true,
     });
     if ("error" in applied) throw new Error(applied.error);
-    expect(existsSync(join(workspace, target))).toBe(false);
+    expect(existsSync(join(hub, target))).toBe(false);
     const read = await readClaimEvents(fs, paths);
     expect(read.events.map((e) => e.event)).toEqual(["released"]);
     expect(read.events[0]?.cause).toContain("no queda productor");
@@ -207,13 +204,13 @@ describe("aw claims recover", () => {
   });
 
   it("un documento publicado no se recupera", async () => {
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    writeFileSync(join(workspace, "docs", "plans", "001-plan-real.md"), "# Plan\n\ncontenido\n");
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    writeFileSync(join(hub, "docs", "plans", "001-plan-real.md"), "# Plan\n\ncontenido\n");
 
     const preview = await previewRecovery(fs, paths, "docs/plans/001-plan-real.md");
 
     expect("error" in preview && preview.error).toMatch(/no es una reserva/);
-    expect(existsSync(join(workspace, "docs", "plans", "001-plan-real.md"))).toBe(true);
+    expect(existsSync(join(hub, "docs", "plans", "001-plan-real.md"))).toBe(true);
   });
 
   it("un documento PUBLICADO no es un slot, aunque sus bytes estén vacíos", async () => {
@@ -226,19 +223,19 @@ describe("aw claims recover", () => {
       event: "published",
       claim: { category: "plans", correlative: "001", name: "plan-alpha.md", owner: OWNER },
     });
-    writeFileSync(join(workspace, "docs", "plans", "001-plan-alpha.md"), "");
+    writeFileSync(join(hub, "docs", "plans", "001-plan-alpha.md"), "");
 
     expect((await scanSlots(fs, paths)).slots).toEqual([]);
     const preview = await previewRecovery(fs, paths, "docs/plans/001-plan-alpha.md");
     expect("error" in preview && preview.error).toMatch(/no es una reserva/);
-    expect(existsSync(join(workspace, "docs", "plans", "001-plan-alpha.md"))).toBe(true);
+    expect(existsSync(join(hub, "docs", "plans", "001-plan-alpha.md"))).toBe(true);
   });
 
   it("un marcador VACIADO sigue siendo la reserva de su dueño, y su recuperación cerca ESE claim", async () => {
     await claimSlot("plan-alpha.md", OWNER);
     const target = "docs/plans/001-plan-alpha.md";
     // Alguien vació el marcador: un editor, un `> archivo`, un checkout.
-    writeFileSync(join(workspace, target), "");
+    writeFileSync(join(hub, target), "");
 
     const scan = await scanSlots(fs, paths);
     // No es de nadie sólo porque sus bytes se hayan ido: el ledger dice quién lo tiene.
@@ -276,7 +273,7 @@ describe("aw claims recover", () => {
       claim: { category: "plans", correlative: "001", name: "plan-alpha.md", owner: OWNER },
       cause: "interrumpida",
     });
-    expect(existsSync(join(workspace, target))).toBe(true);
+    expect(existsSync(join(hub, target))).toBe(true);
 
     const preview = await previewRecovery(fs, paths, target);
     if ("error" in preview) throw new Error(preview.error);
@@ -291,7 +288,7 @@ describe("aw claims recover", () => {
     if ("error" in applied) throw new Error(applied.error);
 
     expect(applied.applied.resumed).toBe(true);
-    expect(existsSync(join(workspace, target))).toBe(false);
+    expect(existsSync(join(hub, target))).toBe(false);
     const read = await readClaimEvents(fs, paths);
     // El cerco NO se duplica: es irrevocable y ya estaba.
     expect(read.events.filter((e) => e.event === "revoked")).toHaveLength(1);
@@ -314,7 +311,7 @@ describe("aw claims recover", () => {
         approval: preview.proposal.digest,
       });
       expect("error" in refused && refused.error).toMatch(/candado/);
-      expect(existsSync(join(workspace, target))).toBe(true);
+      expect(existsSync(join(hub, target))).toBe(true);
     } finally {
       await held.release();
     }
@@ -322,7 +319,7 @@ describe("aw claims recover", () => {
 
   it("la reserva de una sesión ACTIVA no ofrece la recuperación: la resuelve su dueño", async () => {
     // La sesión existe y no tiene marcador `.closed`: está viva.
-    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    const dir = join(hub, ".workflow", "sessions", OWNER);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
     await claimSlot("plan-alpha.md", OWNER);
@@ -344,7 +341,7 @@ describe("aw claims recover", () => {
     const target = `docs/plans/${reserved.next}-plan-alpha.md`;
     const beforePause = await previewRecovery(fs, paths, target);
     if ("error" in beforePause) throw new Error(beforePause.error);
-    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    const dir = join(hub, ".workflow", "sessions", OWNER);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
     writeFileSync(join(dir, ".paused"), "");
@@ -359,7 +356,7 @@ describe("aw claims recover", () => {
         approval: beforePause.proposal.digest,
       }),
     ).toHaveProperty("error");
-    expect(existsSync(join(workspace, target))).toBe(true);
+    expect(existsSync(join(hub, target))).toBe(true);
 
     expect(await runSessionResume(fs, env, paths, { code: OWNER })).toHaveProperty(
       "state",
@@ -367,11 +364,11 @@ describe("aw claims recover", () => {
     );
     expect((await scanSlots(fs, paths)).slots[0]?.ownerActive).toBe(true);
     expect(openClaimsOf((await readClaimEvents(fs, paths)).events, OWNER)).toHaveLength(1);
-    expect(existsSync(join(workspace, target))).toBe(true);
+    expect(existsSync(join(hub, target))).toBe(true);
   });
 
   it("la reserva de una sesión CERRADA sí ofrece la recuperación", async () => {
-    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    const dir = join(hub, ".workflow", "sessions", OWNER);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
     await claimSlot("plan-alpha.md", OWNER);
@@ -386,7 +383,7 @@ describe("aw claims recover", () => {
   });
 
   it("una abandonada es cierre sin completar: su reserva sí es recuperable", async () => {
-    const dir = join(workspace, ".workflow", "sessions", OWNER);
+    const dir = join(hub, ".workflow", "sessions", OWNER);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
     await claimSlot("plan-alpha.md", OWNER);
@@ -399,8 +396,8 @@ describe("aw claims recover", () => {
   });
 
   it("un placeholder legacy no tiene dueño vivo que consultar", async () => {
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    writeFileSync(join(workspace, "docs", "plans", "009-plan-viejo.md"), "");
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    writeFileSync(join(hub, "docs", "plans", "009-plan-viejo.md"), "");
 
     const slot = (await scanSlots(fs, paths)).slots[0];
     if (slot === undefined) throw new Error("esperaba el placeholder");

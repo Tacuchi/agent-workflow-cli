@@ -134,12 +134,13 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import type { ProcessPort } from "../../ports/process.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
+import { runHubCommit } from "../hub-commit-service.js";
 import { parseMdSectionBilingual } from "../markdown.js";
+import { readHubBlock } from "../parsers/hub-block.js";
 import { parsePhases } from "../parsers/phases.js";
-import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseDerivedFromPath, parseSpecRelation } from "../parsers/spec-relation.js";
 import { parseTasks } from "../parsers/tasks.js";
-import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { type PathsService, resolveHubRootFrom } from "../paths-service.js";
 import {
   commitStoredPlanExecDecision,
   preparePlanExecDecision,
@@ -158,7 +159,6 @@ import {
   type validatePlanSourceBoundary,
 } from "../source-boundary-policy.js";
 import { readSourcePipelines, resolveFinalValidation } from "../source-pipeline.js";
-import { runWorkspaceCommit } from "../workspace-commit-service.js";
 import {
   type ResolvedBoundary,
   actionDigest,
@@ -397,7 +397,7 @@ async function submitOnce(
   if (resolution.outcome !== "resolved") return { ok: false, session: resolution };
 
   const location = locateRun(paths, resolution.session.folder);
-  // Read the workspace BEFORE taking the lock, so the decision below stays pure.
+  // Read the hub BEFORE taking the lock, so the decision below stays pure.
   // What this observation buys is the honest half of the preview — whether a write
   // creates or replaces, and what it would replace — plus the two facts a declared
   // scope is checked against. The race it leaves open on the destinations is
@@ -479,12 +479,12 @@ type SubmitDecision = FlowRunMutation<SubmitOutcome>;
 type DestinationSnapshot = ReadonlyMap<string, { exists: boolean; digest: string }>;
 
 /**
- * What a DECLARED scope gets checked against — read from the workspace, never
+ * What a DECLARED scope gets checked against — read from the hub, never
  * from the payload.
  *
  * Two halves with different strengths, and saying which is which is the point.
- * `declared` is the WORKSPACE block's alias list and it is decisive: an alias the
- * workspace does not declare is not a source, full stop. `mentioned` is the set
+ * `declared` is the hub block's alias list and it is decisive: an alias the
+ * hub does not declare is not a source, full stop. `mentioned` is the set
  * of those aliases the plan document names anywhere in its text, and it can only
  * catch one thing — a source the plan never talks about. It cannot confirm the
  * reverse, because a plan legitimately names sources to declare them OUT of
@@ -540,7 +540,7 @@ async function observe(
   session: string,
   git: GitPort | undefined,
 ): Promise<Observation> {
-  const root = await resolveWorkspaceRootFrom(fs, paths);
+  const root = await resolveHubRootFrom(fs, paths);
   const plans = await observePlanArtifacts(fs, paths, raw);
   const checkouts = await observeCheckouts(fs, paths, session, git);
   return {
@@ -653,7 +653,7 @@ interface PlanArtifactBoundary {
  * The grammar half is the same judgment the execution entry makes, one moment
  * earlier — over the artifact's content instead of a file on disk — so a plan
  * accepted when it closes cannot be rejected for the same cause when somebody
- * tries to run it. When the WORKSPACE block cannot be read, only the SEMANTIC
+ * tries to run it. When the hub block cannot be read, only the SEMANTIC
  * half runs: answering an unreadable block with "that alias does not exist"
  * would reject a plan for something the plan did not do.
  *
@@ -677,8 +677,8 @@ async function observePlanArtifacts(
   // prose by the plan's closure rule, or sealing on a guess, would both act on
   // whatever the payload happened to carry.
   if (!canon.ok) return { evidence, baselines };
-  const root = await resolveWorkspaceRootFrom(fs, paths);
-  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const root = await resolveHubRootFrom(fs, paths);
+  const block = await readHubBlock(fs, root, paths.blockMarkers());
   const declared = block === null ? null : block.fuentes.map((source) => source.alias);
   for (const artifact of proposed) {
     if (!checkSafeRelativePath(artifact.path).ok) continue;
@@ -720,7 +720,7 @@ function proposedArtifacts(raw: string): { path: string; content: string }[] {
 }
 
 /**
- * The workspace's declared aliases and the named plan's text, when the payload
+ * The hub's declared aliases and the named plan's text, when the payload
  * declares a scope at all.
  *
  * Nothing is read when it does not: every other boundary would pay a block parse
@@ -751,8 +751,8 @@ async function observeScope(
   const asked = (decisions as { sources?: unknown }).sources;
   if (!Array.isArray(asked)) return empty;
 
-  const root = await resolveWorkspaceRootFrom(fs, paths);
-  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const root = await resolveHubRootFrom(fs, paths);
+  const block = await readHubBlock(fs, root, paths.blockMarkers());
   const declared = block === null ? null : block.fuentes.map((source) => source.alias);
 
   const named = (decisions as { plan?: unknown }).plan;
@@ -796,7 +796,7 @@ async function observeScope(
 /**
  * Fresh checkout states for source-bounded proof verification.
  *
- * `workspace` is the documentary checkout. Every other source is resolved to
+ * `hub` is the documentary checkout. Every other source is resolved to
  * the isolation unit of THIS session, so a proof cannot borrow another run's
  * worktree merely by spelling its alias.
  */
@@ -857,7 +857,7 @@ function identitiesOf(checkouts: readonly CheckoutState[] | null): CheckoutIdent
  *
  * The shape check is NOT redundant with that allowlist. Reading is an effect, and
  * an absolute path or a `..` would have this function open a file outside the
- * workspace before anybody decided the destination was admissible. Nothing would
+ * hub before anybody decided the destination was admissible. Nothing would
  * leak — the entry is discarded when validation rejects the path — but "read only
  * what you were asked to read" is not a property to leave resting on what happens
  * to the result afterwards.
@@ -876,7 +876,7 @@ async function observeDestinations(
   }
   const artifacts = (parsed as { artifacts?: unknown } | null)?.artifacts;
   if (!Array.isArray(artifacts) || artifacts.length === 0) return snapshot;
-  const root = await resolveWorkspaceRootFrom(fs, paths);
+  const root = await resolveHubRootFrom(fs, paths);
   for (const entry of artifacts) {
     const path = (entry as { path?: unknown })?.path;
     if (typeof path !== "string") continue;
@@ -1067,7 +1067,7 @@ async function decide(
   // even while its registration is handled by the decision bridge below.
   const selected = choiceOutcomeOf(resolved.stopped, parsed.answer.choice);
   const withEvidence = parsed.answer.choice === "Copiar evidencia y aprobar commit del hub";
-  let approvedWorkspaceCommit: { approval: string; message: string; paths: string[] } | null = null;
+  let approvedHubCommit: { approval: string; message: string; paths: string[] } | null = null;
   if (
     resolved.stopped.id === "chassis.commit-choice" &&
     (parsed.answer.choice === "Aprobar commit del hub" || withEvidence)
@@ -1083,7 +1083,7 @@ async function decide(
         },
         cost,
       );
-    const prepared = await runWorkspaceCommit(fs, input.git, input.process, paths, {
+    const prepared = await runHubCommit(fs, input.git, input.process, paths, {
       code: state.session,
       withEvidence,
     });
@@ -1111,7 +1111,7 @@ async function decide(
         cost,
       );
     }
-    approvedWorkspaceCommit = prepared.proposal;
+    approvedHubCommit = prepared.proposal;
   }
   if (selected?.kind === "handoff") {
     // Only `spec-refine` needs a document the run never declared: the plan's
@@ -1260,13 +1260,13 @@ async function decide(
           outcome: selected,
         })
       : approved;
-  if (approvedWorkspaceCommit !== null) {
+  if (approvedHubCommit !== null) {
     selectedState = withEvent(selectedState, {
       kind: "executed",
       transition: "chassis.commit-choice",
       operation: "workspace.commit-approved",
-      summary: JSON.stringify(approvedWorkspaceCommit),
-      output_digest: semanticDigest(approvedWorkspaceCommit),
+      summary: JSON.stringify(approvedHubCommit),
+      output_digest: semanticDigest(approvedHubCommit),
       effects: [],
       evidence: ["workspace.commit-paths-approved"],
     });
@@ -1719,9 +1719,9 @@ function adjustRouteProposal(
 }
 
 /**
- * Fix the run's plan and its sources — checked against the workspace, not taken.
+ * Fix the run's plan and its sources — checked against the hub, not taken.
  *
- * The order of the refusals is the contract: shape, then the workspace, then the
+ * The order of the refusals is the contract: shape, then the hub, then the
  * plan. A malformed list must not be reported as "unknown alias", and an alias
  * nobody declared must not be reported as a source-contract failure — the two
  * have different fixes. The document's structural contract is then checked as a

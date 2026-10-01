@@ -29,21 +29,21 @@ const UI = "ui-spec-generator";
  * that there is no record.
  */
 describe("lineage service", () => {
-  let workspace: string;
+  let hub: string;
   let paths: PathsService;
   let env: FakeEnv;
   let fs: NodeFileSystem;
 
   function spec(number: string, slug: string): void {
     writeFileSync(
-      join(workspace, "docs", "specs", `${number}-spec-${slug}.md`),
+      join(hub, "docs", "specs", `${number}-spec-${slug}.md`),
       `---\nstatus: ready-for-plan\n---\n\n# Spec ${number}\n`,
     );
   }
 
   function plan(number: string, slug: string, from: string, fromSlug: string): void {
     writeFileSync(
-      join(workspace, "docs", "plans", `${number}-plan-${slug}.md`),
+      join(hub, "docs", "plans", `${number}-plan-${slug}.md`),
       [
         `# Plan ${number}`,
         "",
@@ -63,12 +63,12 @@ describe("lineage service", () => {
   }
 
   beforeEach(async () => {
-    workspace = mkdtempSync(join(tmpdir(), "lineage-"));
-    mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
-    env = new FakeEnv(workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "lineage-"));
+    mkdirSync(join(hub, "docs", "specs"), { recursive: true });
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
+    env = new FakeEnv(hub, hub);
     fs = new NodeFileSystem();
 
     spec("090", "corte");
@@ -119,7 +119,7 @@ describe("lineage service", () => {
   });
 
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   async function context(): Promise<LineageContext> {

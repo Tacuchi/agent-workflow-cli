@@ -195,7 +195,7 @@ export interface FlowDecision {
    *
    * Only an `agent` row may declare it — which sources a plan touches is read off
    * the plan, and the engine never read it — and what the answer hands over is
-   * checked before it is persisted: every alias against the WORKSPACE block, and
+   * checked before it is persisted: every alias against the hub block, and
    * the plan against the document it names. See {@link FlowRunScope}.
    */
   scopes_sources?: true;
@@ -331,7 +331,7 @@ export interface TransitionCondition {
  * person was shown.
  */
 export interface ProposalContract {
-  /** Workspace-relative folders (or exact files) the artifacts may land in. */
+  /** Hub-relative folders (or exact files) the artifacts may land in. */
   destinations: readonly string[];
   /** What publishing them really exercises. */
   effects: readonly EffectClass[];
@@ -472,7 +472,7 @@ export const SETTLEMENT_READINGS = [
 export type SettlementReading = (typeof SETTLEMENT_READINGS)[number]["outcome"];
 
 export const INTERNAL_ACTION_OPERATIONS = [
-  /** Project the workspace board — what `aw status --json` returns. */
+  /** Project the hub board — what `aw status --json` returns. */
   "workspace.board",
   /** Read, and where the command seeds them, a session's own artifacts. */
   "session.artifacts",
@@ -515,7 +515,7 @@ export const INTERNAL_OPERATION_EFFECTS: Readonly<
   "session.close": ["read_only", "local_additive", "mutate_overwrite"],
   // A unit is a new working tree on a new branch, inside the run's own namespace:
   // it replaces nothing and it destroys nothing. That the CLI reaches git to make
-  // it is not what the class measures — `workspace.board` already reads git the
+  // it is not what the class measures — `hub.board` already reads git the
   // same way and is `read_only`.
   "worktree.ensure": ["local_additive", "mutate_overwrite"],
   // Creating and replacing, both real — and which of the two happens is decided
@@ -849,7 +849,7 @@ export const FIX_PREVIEW_TRANSITION = "quick.fix-preview";
 /**
  * The one thing a session-scoped action needs: this run's session.
  *
- * `aw` runs from the workspace root, so the target of a session-scoped
+ * `aw` runs from the hub root, so the target of a session-scoped
  * invocation is the session it acts ON, and the correlative travels in the
  * arguments. Both are bound from the run state before the boundary is emitted.
  */
@@ -1537,7 +1537,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     document: CODE_POLICIES_MD,
     attribution: PLAN_ATTRIBUTION,
     // Answered by the CLI (sources.verify): `aw check-branch` without a target now
-    // checks every declared source, and a workspace with none has nothing to verify.
+    // checks every declared source, and a hub with none has nothing to verify.
     answered_by: "sources.verify",
     action: {
       invocation: {
@@ -2168,7 +2168,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     attribution: `aw next-number ${PLAN_DOCS_DIR} --claim`,
     // The row used to be attribution and nothing else: no effect, no evidence, no
     // result. So the number was "assigned" by whoever narrated it, and the engine
-    // credited a transition that had never touched the workspace — which is also
+    // credited a transition that had never touched the hub — which is also
     // why nothing downstream could tell this run's slot from a stranger's file.
     // The claim is a WRITE and now travels as one, with the slot it produced as
     // the evidence.
@@ -2757,11 +2757,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // Which sources a plan touches is read off the plan, and the execution entry
     // already reads it: the scope is the union of its `> Fuentes:`, so the CLI
     // answers with that union and the plan it adopted. The answer is still CHECKED
-    // before it is persisted — an alias the WORKSPACE block does not declare, or
+    // before it is persisted — an alias the hub block does not declare, or
     // one the plan never names, is refused — by the same rule a sent answer meets.
     //
     // It carries no signals on purpose. A vocabulary would be a verdict over a
-    // fixed taxonomy, and the aliases of a workspace are not one.
+    // fixed taxonomy, and the aliases of a hub are not one.
     //
     // It is deliberately outside the repeatable batch segment: every later batch
     // must inherit the same already-validated plan/sources, never ask to widen
@@ -2872,7 +2872,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     // exactamente lo que deja la frontera pendiente.
     //
     // La responde el CLI con la misma lectura (worktree.verify), o con
-    // `aw check-branch` por fuente en un workspace in-place.
+    // `aw check-branch` por fuente en un hub in-place.
     answered_by: "worktree.verify",
     action: {
       invocation: {

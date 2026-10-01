@@ -115,7 +115,7 @@ export async function preparePersist(
   const canon = await resolveCoreDocsCanon(fs, paths);
   if (!canon.ok) return { ok: false, failure: canonFailure(canon.error) };
   const categories = persistLayout(canon.canon);
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
   const inventory: PersistInventory = { categories: emptyCategories(categories) };
   const readSet: string[] = [];
   let readSetBytes = 0;
@@ -139,8 +139,8 @@ export async function preparePersist(
       // The seal covers the whole inventory: a document appearing anywhere in
       // docs/ between prepare and apply invalidates the duplicate check AND the
       // consultative numbering the answer reasoned over.
-      inputs: { inventory, workspace: cwd },
-      scope: { workspace: cwd },
+      inputs: { inventory, hub: cwd },
+      scope: { hub: cwd },
       contract: CONTRACT,
       inventory,
       allowedDestinations: Object.values(categories).map((c) => c.dir),
@@ -467,10 +467,10 @@ export async function applyPersist(
     );
     if ("failure" in content) return { ok: false as const, failure: content.failure };
     const previous =
-      preview.mode === "update" ? await fs.readText(join(paths.workspaceDir(), path)) : null;
+      preview.mode === "update" ? await fs.readText(join(paths.hubDir(), path)) : null;
     const published = await publishArtifacts(
       fs,
-      paths.workspaceDir(),
+      paths.hubDir(),
       [{ path, content: content.text }],
       { overwrite: preview.mode === "update" },
     );
@@ -521,7 +521,7 @@ async function sealedContent(
   request: SemanticRequest,
 ): Promise<{ text: string } | { failure: SemanticFailure }> {
   if (category !== "plan") return { text: content };
-  const seal = await observePlanLineageSeal(fs, paths.workspaceDir(), content, specDirOf(request));
+  const seal = await observePlanLineageSeal(fs, paths.hubDir(), content, specDirOf(request));
   if (seal.status === "refused") return { failure: lineageFailure(seal.failure.message) };
   return { text: seal.status === "sealed" ? withSpecBaseline(content, seal.baseline) : content };
 }
@@ -594,7 +594,7 @@ async function readAttachment(
     ? item.source
     : (() => {
         const checked = checkSafeRelativePath(item.source);
-        return checked.ok ? join(paths.workspaceDir(), checked.path) : null;
+        return checked.ok ? join(paths.hubDir(), checked.path) : null;
       })();
   if (source === null)
     return { ok: false, failure: reject(`source '${item.source}' no es una ruta local segura`) };
@@ -633,7 +633,7 @@ async function publishPersistAttachments(
         : attachment.path;
     const source = isAbsolute(attachment.source)
       ? attachment.source
-      : join(paths.workspaceDir(), attachment.source);
+      : join(paths.hubDir(), attachment.source);
     const failure = await publishPersistAttachment(
       fs,
       paths,
@@ -664,13 +664,13 @@ async function publishPersistAttachment(
     const bytes = await fs.readBytes(source);
     if (`sha256:${createHash("sha256").update(bytes).digest("hex")}` !== digest)
       throw new Error("digest cambió");
-    const created = await fs.publishBytesExclusive(join(paths.workspaceDir(), destination), bytes);
+    const created = await fs.publishBytesExclusive(join(paths.hubDir(), destination), bytes);
     if (!created.created) throw new Error("el destino ya existe");
     written.push(destination);
   } catch (error) {
-    for (const name of written.slice(1)) await fs.remove(join(paths.workspaceDir(), name));
-    if (previous === null) await fs.remove(join(paths.workspaceDir(), path));
-    else await fs.writeText(join(paths.workspaceDir(), path), previous);
+    for (const name of written.slice(1)) await fs.remove(join(paths.hubDir(), name));
+    if (previous === null) await fs.remove(join(paths.hubDir(), path));
+    else await fs.writeText(join(paths.hubDir(), path), previous);
     return {
       ok: false as const,
       failure: {

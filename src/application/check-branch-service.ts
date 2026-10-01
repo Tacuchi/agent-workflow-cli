@@ -1,19 +1,11 @@
-import {
-  parseUnitPath,
-  unitBranch,
-  workspaceKey as workspaceKeyOf,
-} from "../domain/isolation-unit.js";
+import { hubKey as hubKeyOf, parseUnitPath, unitBranch } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort, WorktreeEntry } from "../ports/git.js";
 import { expectedWorkBranch, resolveSourceBranches } from "./branch-resolver.js";
 import { documentOfSession, readDocBranches, resolveDocBranch } from "./doc-branch-ledger.js";
 import { normalizePath } from "./multiroot/paths.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "./parsers/project-block.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { resolveSessionTarget } from "./session-resolver.js";
 import { findOwningSource, hubUnitPaths } from "./unit-membership.js";
@@ -70,8 +62,8 @@ export async function runCheckBranch(
   paths: PathsService,
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
-  const cwd = paths.workspaceDir();
-  const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
+  const cwd = paths.hubDir();
+  const block = await readHubBlock(fs, cwd, paths.blockMarkers());
   const sources = block?.fuentes ?? [];
   const untargeted =
     input.alias === undefined && input.pathArg === undefined && input.fileArg === undefined;
@@ -113,7 +105,7 @@ export async function runCheckBranch(
 
   // The isolation verdict comes FIRST, and only when the source actually has
   // units: with none, nobody is running isolated and the check is exactly the
-  // one this workspace had before the feature existed.
+  // one this hub had before the feature existed.
   const units = await unitsOf(fs, git, paths, unitsRoot, located);
   if (units.length > 0) {
     return unitVerdict(fs, git, paths, unitsRoot, located, block, units, input);
@@ -126,13 +118,13 @@ async function checkoutVerdict(
   fs: FileSystemPort,
   git: GitPort,
   paths: PathsService,
-  located: ProjectFuente & { path: string },
-  target: ProjectFuente,
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  located: HubFuente & { path: string },
+  target: HubFuente,
+  block: Awaited<ReturnType<typeof readHubBlock>>,
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
   const repo = located.path;
-  // Expected work branch comes from the WORKSPACE block working_branches for the
+  // Expected work branch comes from the hub block working_branches for the
   // owning source. Decoupled from sessions/flow.
   const ledger = await readDocBranches(fs, paths);
   const registered = expectedWorkBranch(located, block?.working_branches ?? {});
@@ -186,9 +178,9 @@ async function checkoutVerdict(
 async function checkoutBranchVerdict(
   fs: FileSystemPort,
   git: GitPort,
-  located: ProjectFuente & { path: string },
-  target: ProjectFuente,
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  located: HubFuente & { path: string },
+  target: HubFuente,
+  block: Awaited<ReturnType<typeof readHubBlock>>,
   input: CheckBranchInput,
   expected: string | null,
   extra: Partial<CheckBranchOutput>,
@@ -302,8 +294,8 @@ async function unitVerdict(
   git: GitPort,
   paths: PathsService,
   unitsRoot: string,
-  target: ProjectFuente & { path: string },
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  target: HubFuente & { path: string },
+  block: Awaited<ReturnType<typeof readHubBlock>>,
   units: UnitRef[],
   input: CheckBranchInput,
 ): Promise<CheckBranchOutput> {
@@ -375,8 +367,8 @@ async function sharedCheckoutVerdict(
   fs: FileSystemPort,
   git: GitPort,
   paths: PathsService,
-  target: ProjectFuente & { path: string },
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  target: HubFuente & { path: string },
+  block: Awaited<ReturnType<typeof readHubBlock>>,
   session: string,
   base: Pick<
     CheckBranchOutput,
@@ -446,13 +438,13 @@ async function sharedCheckoutVerdict(
   };
 }
 
-/** Units of `source` that belong to THIS workspace, read from git itself. */
+/** Units of `source` that belong to THIS hub, read from git itself. */
 async function unitsOf(
   fs: FileSystemPort,
   git: GitPort,
   paths: PathsService,
   unitsRoot: string,
-  source: ProjectFuente,
+  source: HubFuente,
 ): Promise<UnitRef[]> {
   let trees: WorktreeEntry[];
   try {
@@ -490,7 +482,7 @@ type FlowIdentity =
  *
  * The whole precedence is walked, always — an explicit `--code`, then the
  * conversation's binding, then the sole active session — instead of giving up
- * when neither was passed. Giving up was what made a workspace with one session
+ * when neither was passed. Giving up was what made a hub with one session
  * and one with three answer the same thing, and the second is exactly where the
  * answer must not be "whatever tree you are in".
  *
@@ -518,8 +510,8 @@ async function flowSession(
 function unitFor(session: string, paths: PathsService, unitsRoot: string, alias: string): UnitRef {
   return {
     session,
-    path: `${unitsRoot}/${workspaceKeyOf(paths.workspaceDir())}/${alias}/${session}`,
-    branch: unitBranch(session, paths.workspaceDir()),
+    path: `${unitsRoot}/${hubKeyOf(paths.hubDir())}/${alias}/${session}`,
+    branch: unitBranch(session, paths.hubDir()),
   };
 }
 
@@ -543,10 +535,10 @@ function inside(file: string, dir: string): boolean {
 }
 
 function resolveTarget(
-  sources: ProjectFuente[],
+  sources: HubFuente[],
   input: CheckBranchInput,
   unitsRoot: string,
-): ProjectFuente | null {
+): HubFuente | null {
   if (input.alias) {
     return sources.find((s) => s.alias === input.alias) ?? null;
   }

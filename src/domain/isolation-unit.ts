@@ -5,7 +5,7 @@ import { join } from "node:path";
  * The isolation unit of a flow: one git worktree of a source, on a branch of its
  * own, addressed by a CONVENTION rather than by a registry file.
  *
- * The path itself encodes the three facts anybody needs — which workspace, which
+ * The path itself encodes the three facts anybody needs — which hub, which
  * source, which session — and `git worktree list` of the source is the live,
  * authoritative view of which units exist. So there is no registry to write, and
  * therefore none that can drift from the trees that actually exist. Occupancy is
@@ -17,28 +17,28 @@ import { join } from "node:path";
 /** Every isolation-unit branch lives under this prefix, and nothing else does. */
 export const UNIT_BRANCH_PREFIX = "aw/";
 
-/** Directory under the user root that holds every workspace's units. */
+/** Directory under the user root that holds every hub's units. */
 export const UNITS_DIR = "worktrees";
 
 export interface UnitIdentity {
-  /** Workspace the unit belongs to, as encoded in its path. */
-  workspaceKey: string;
-  /** Source alias, as declared in the workspace's Fuentes table. */
+  /** Hub the unit belongs to, as encoded in its path. */
+  hubKey: string;
+  /** Source alias, as declared in the hub's Fuentes table. */
   alias: string;
   /** Session folder name (`103-<slug>-plan-exec`). */
   session: string;
 }
 
 /**
- * Filesystem-safe, collision-resistant name for a workspace.
+ * Filesystem-safe, collision-resistant name for a hub.
  *
  * The folder name alone would collide across two checkouts of the same project,
  * and the absolute path alone is not a directory name — so it is the readable
  * half plus a short digest of the full path, which keeps the tree browsable
- * without making two workspaces share a unit.
+ * without making two hubs share a unit.
  */
-export function workspaceKey(workspaceDir: string): string {
-  const normalized = workspaceDir.split("\\").join("/").replace(/\/+$/, "");
+export function hubKey(hubDir: string): string {
+  const normalized = hubDir.split("\\").join("/").replace(/\/+$/, "");
   const base = normalized.slice(normalized.lastIndexOf("/") + 1);
   const safe = base
     .toLowerCase()
@@ -49,24 +49,24 @@ export function workspaceKey(workspaceDir: string): string {
 }
 
 /** The branch a session works on inside its units, across every source. */
-export function unitBranch(session: string, workspaceDir?: string): string {
-  return `${UNIT_BRANCH_PREFIX}${workspaceDir === undefined ? "" : `${workspaceKey(workspaceDir).slice(-8)}/`}${session}`;
+export function unitBranch(session: string, hubDir?: string): string {
+  return `${UNIT_BRANCH_PREFIX}${hubDir === undefined ? "" : `${hubKey(hubDir).slice(-8)}/`}${session}`;
 }
 
-/** `<userRoot>/worktrees` — the root every unit of every workspace hangs from. */
+/** `<userRoot>/worktrees` — the root every unit of every hub hangs from. */
 export function unitsRoot(userRoot: string): string {
   return join(userRoot, UNITS_DIR);
 }
 
 /**
- * The one path a given (workspace, source, session) triple may occupy.
+ * The one path a given (hub, source, session) triple may occupy.
  *
  * `root` is the units root, and callers pass its CANONICAL form: git reports
  * worktrees with symlinks resolved, so a root spelled `/tmp/...` would never
  * match the `/private/tmp/...` git answers with on macOS.
  */
 export function unitPath(root: string, identity: UnitIdentity): string {
-  return join(root, identity.workspaceKey, identity.alias, identity.session);
+  return join(root, identity.hubKey, identity.alias, identity.session);
 }
 
 /**
@@ -74,7 +74,7 @@ export function unitPath(root: string, identity: UnitIdentity): string {
  * path belongs to no unit of ours.
  *
  * This is the inverse of {@link unitPath} and the reason no registry is needed:
- * a worktree git reports can be attributed to its workspace, source and session
+ * a worktree git reports can be attributed to its hub, source and session
  * from its location alone.
  *
  * It reads a path *inside* the unit too, because the caller that matters most is
@@ -91,8 +91,8 @@ export function parseUnitPath(root: string, path: string): UnitIdentity | null {
     .split("/")
     .filter((p) => p.length > 0);
   if (parts.length < 3) return null;
-  const [workspaceKey, alias, session] = parts as [string, string, string];
-  return { workspaceKey, alias, session };
+  const [hubKey, alias, session] = parts as [string, string, string];
+  return { hubKey, alias, session };
 }
 
 function normalize(path: string): string {

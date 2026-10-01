@@ -58,7 +58,7 @@ export async function runReleaseData(
   input: ReleaseDataInput,
   runtime?: ResolvedRuntime,
 ): Promise<ReleaseDataOutput | ReleaseDataError> {
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
   const verbose = input.verbose ?? false;
 
   let docsRoot: string;

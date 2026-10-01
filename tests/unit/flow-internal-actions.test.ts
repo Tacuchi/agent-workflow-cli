@@ -551,7 +551,7 @@ describe("ejecución interna — el recorrido avanza sin trabajo del host", () =
 describe("plan-done — el rechazo por reconciliación nombra una salida ejecutable", () => {
   const OWING_SESSION = "144-deuda-plan-exec";
 
-  function owingWorkspace(): { deps: Parameters<typeof planDonePrecondition>[0]; mem: MemFs } {
+  function owingHub(): { deps: Parameters<typeof planDonePrecondition>[0]; mem: MemFs } {
     const mem = new MemFs();
     mem.file("/cwd/.workflow/sessions/.keep", "");
     seedExecutedPlanOwingCompensation(mem);
@@ -567,7 +567,7 @@ describe("plan-done — el rechazo por reconciliación nombra una salida ejecuta
   }
 
   it("no es el rechazo de los contadores: el plan está entero y aun así no cierra", async () => {
-    const { deps } = owingWorkspace();
+    const { deps } = owingHub();
 
     const failure = await planDonePrecondition(deps, OWING_PLAN, OWING_SESSION);
 
@@ -577,7 +577,7 @@ describe("plan-done — el rechazo por reconciliación nombra una salida ejecuta
   });
 
   it("con el linaje ilegible nombra la reparación, que es lo único que sirve", async () => {
-    const { deps, mem } = owingWorkspace();
+    const { deps, mem } = owingHub();
     // La cadena corrompida: sin contrato que componer, el tramo de saldo se
     // saltea solo —no hay nota que sustituir— y el rechazo del cierre queda como
     // el único texto de todo el recorrido que puede decir qué hacer.
@@ -600,7 +600,7 @@ describe("plan-done — el rechazo por reconciliación nombra una salida ejecuta
   });
 
   it("nombra las dos salidas y ninguna es una fase ya validada", async () => {
-    const { deps } = owingWorkspace();
+    const { deps } = owingHub();
 
     const failure = await planDonePrecondition(deps, OWING_PLAN, OWING_SESSION);
 
@@ -652,7 +652,7 @@ describe("la escritura del registro falla después del efecto", () => {
     "- B2 · isolated · F2",
     "",
   ].join("\n");
-  const WORKSPACE_BLOCK = [
+  const HUB_BLOCK = [
     "<!-- AGENT-WORKFLOW-HUB-START -->",
     "## Hub",
     "",
@@ -708,7 +708,7 @@ describe("la escritura del registro falla después del efecto", () => {
     const acme = join(workdir, "acme");
     await mkdir(acme, { recursive: true });
     execFileSync("git", ["init", "--quiet", "--initial-branch=main"], { cwd: acme });
-    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK.replace("{{ACME}}", acme), "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), HUB_BLOCK.replace("{{ACME}}", acme), "utf8");
     await writeFile(join(workdir, PLAN), PLAN_TEXT, "utf8");
   });
 

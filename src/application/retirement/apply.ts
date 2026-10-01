@@ -9,7 +9,7 @@
  *                       digest means the world moved and the approval no longer fits
  *   2. journal        — the only trace that exists before any effect, and it lives
  *                       OUTSIDE every folder this operation may delete
- *   3. stage          — restores written into quarantine; the workspace untouched
+ *   3. stage          — restores written into quarantine; the hub untouched
  *   4. reverts        — built in a temporary detached worktree, held by private refs
  *   5. COMMIT POINT   — the ref's compare-and-swap, or the HISTORY row when there is
  *                       no git side. Exactly one, and nothing else can be it
@@ -121,7 +121,7 @@ export async function applyRetirement(deps: ApplyDeps, input: ApplyInput): Promi
 }
 
 async function runUnderLock(deps: ApplyDeps, input: ApplyInput): Promise<ApplyOutcome> {
-  // 1 — the proposal is computed AGAIN, from the live workspace. Trusting the one
+  // 1 — the proposal is computed AGAIN, from the live hub. Trusting the one
   // that produced the preview would authorize a state that may no longer exist.
   const prepared = await prepareRetirement(deps, input);
   if (!prepared.ok) return { ok: false, rejection: prepared.rejection };
@@ -226,7 +226,7 @@ async function staleReadSet(
   proposal: RetirementProposal,
 ): Promise<RetirementRejection | null> {
   for (const restore of proposal.restores) {
-    const absolute = join(deps.paths.workspaceDir(), restore.path);
+    const absolute = join(deps.paths.hubDir(), restore.path);
     const current = (await deps.fs.exists(absolute)) ? await deps.fs.readText(absolute) : null;
     if (
       (current === null && restore.current_digest === null) ||
@@ -386,7 +386,7 @@ async function finish(
 
   const removed: string[] = [];
   for (const target of proposal.deletes) {
-    await deps.fs.remove(join(deps.paths.workspaceDir(), target.path));
+    await deps.fs.remove(join(deps.paths.hubDir(), target.path));
     removed.push(target.path);
   }
 
@@ -500,7 +500,7 @@ async function releaseReservations(
     // after the row is owed to a retirement that already happened. The journal
     // outlives a throw here, so the next entry finishes what this one could not.
     try {
-      const absolute = join(deps.paths.workspaceDir(), reservation.path);
+      const absolute = join(deps.paths.hubDir(), reservation.path);
       const present = await deps.fs.exists(absolute);
       if (
         present &&
@@ -582,7 +582,7 @@ async function applyRestore(
   restore: RetirementRestore,
   index: number,
 ): Promise<void> {
-  const destination = join(deps.paths.workspaceDir(), restore.path);
+  const destination = join(deps.paths.hubDir(), restore.path);
   if (!restore.existed) {
     await deps.fs.remove(destination);
     return;
@@ -602,7 +602,7 @@ async function applyRestore(
  *
  * Called only from BEFORE the commit point, and it is not a compensation: the
  * quarantine and the private refs were never observable, so dropping them returns
- * the workspace to a state it never left.
+ * the hub to a state it never left.
  */
 async function rollback(deps: ApplyDeps, journal: RetirementJournal): Promise<void> {
   const publication = journal.proposal.publication;

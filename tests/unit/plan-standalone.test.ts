@@ -331,7 +331,7 @@ const GATE = "plan-exec.deviation-gate";
  * las unidades de cada fuente declarada con `git worktree list`, y una fuente que
  * no existe en disco es un estado de aislamiento ilegible, que el cierre rechaza.
  */
-const workspaceBlock = (acme: string) => `<!-- AGENT-WORKFLOW-HUB-START -->
+const hubBlock = (acme: string) => `<!-- AGENT-WORKFLOW-HUB-START -->
 ## Hub
 
 Un plan nacido de la conversación.
@@ -386,7 +386,7 @@ describe("la ida completa — un desvío componible se registra y la corrida SIG
       "# SESSION — plan standalone\n\n## Objective\nejecutar un plan sin spec\n",
       "utf8",
     );
-    await writeFile(join(workdir, "CLAUDE.md"), workspaceBlock(acme), "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), hubBlock(acme), "utf8");
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await writeFile(join(workdir, PLAN_PATH), REAL_PLAN, "utf8");
     walk = planExecWalk(

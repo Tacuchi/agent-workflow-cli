@@ -47,7 +47,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
         "",
       );
     }
-    appendWorkspaceAlerts(lines, data);
+    appendHubAlerts(lines, data);
     // A held correlative is not pending work — nobody should weigh it against an
     // open plan — but it must be VISIBLE. Leaving it out of the human view took
     // the board from wrong (it used to offer `/w:plan-exec` on a bare marker) to
@@ -55,7 +55,7 @@ export const statusCommand: CliCommand<StatusOutput> = {
     // ownerless legacy placeholder — had no trace outside `aw claims`.
     lines.push(...renderReservations(data, lines.at(-1)));
     lines.push(...renderAssuranceAlerts(data, lines.at(-1)));
-    // An implicit Workline root is still a valid read-only workspace.  Empty
+    // An implicit Workline root is still a valid read-only hub.  Empty
     // means exactly no pending work; it never suggests a mandatory init gate.
     if (lines.length === 2 && !context.detail) {
       return `${header} — sin pendientes\n`;
@@ -255,7 +255,7 @@ function renderDetail(data: StatusOutput): string[] {
   return lines;
 }
 
-function appendWorkspaceAlerts(lines: string[], data: StatusOutput): void {
+function appendHubAlerts(lines: string[], data: StatusOutput): void {
   if (data.history_remote_rows.length > 0 || data.history_collisions.length > 0) {
     lines.push("HISTORY: sesiones de otra máquina o números compartidos");
     for (const row of data.history_remote_rows) lines.push(`  sin carpeta local: ${row}`);

@@ -10,7 +10,7 @@ import type { PathsService } from "./paths-service.js";
  * host's opaque conversation id (the raw id is NEVER persisted); values are
  * canonical session folder names.
  *
- * Every function here is **lock-free**: the caller owns the workspace lock so
+ * Every function here is **lock-free**: the caller owns the hub lock so
  * one operation = one lock boundary (no nested acquisition). Reads are safe
  * without the lock because `writeText` renames atomically onto the path.
  *

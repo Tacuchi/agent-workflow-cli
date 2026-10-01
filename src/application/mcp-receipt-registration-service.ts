@@ -52,9 +52,9 @@ export async function registerMcpSetupReceipts(
   result: McpSetupResult,
 ): Promise<McpReceiptRegistrationResult> {
   const buckets: ReceiptBuckets = { registered: [], probeTargets: [], errors: [] };
-  // Workspace descriptors intentionally remain PATH-dependent and portable.
+  // Hub descriptors intentionally remain PATH-dependent and portable.
   // The receipt contract is reliable user-scope/TUI evidence only, avoiding a
-  // user-global receipt identity being shared by separate workspaces.
+  // user-global receipt identity being shared by separate hubs.
   if (result.dry_run || input.scope !== "global") return buckets;
   const receipts = openMcpHostReceiptService(paths);
   const worklineVersion = readPackageVersion();

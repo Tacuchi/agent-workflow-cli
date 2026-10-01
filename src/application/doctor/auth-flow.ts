@@ -56,7 +56,7 @@ export async function runDoctorAuthFlow(
     };
   }
   const { code } = await ctx.process.runInteractive(program, [...argv.slice(1)], {
-    cwd: ctx.paths.workspaceDir(),
+    cwd: ctx.paths.hubDir(),
   });
   return code === 0
     ? { status: "applied", detail: `flujo de autenticación: ${program} terminó con código 0` }

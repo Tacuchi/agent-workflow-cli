@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { runMergeState } from "../../src/application/merge-state-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
-import { workspaceKey } from "../../src/domain/isolation-unit.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
+import { hubKey } from "../../src/domain/isolation-unit.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { RecordingGit } from "../helpers/fake-git.js";
@@ -18,7 +18,7 @@ function blockWith(fs: FakeFs, fuentes: { alias: string; path: string }[]): Fake
   for (const fuente of fuentes) fs.dir(fuente.path);
   fs.file(
     "/cwd/CLAUDE.md",
-    renderProjectBlock({
+    renderHubBlock({
       proyecto: "Test",
       fuentes: fuentes.map((f) => ({ alias: f.alias, path: f.path, main_branch: "main" })),
       stack: {},
@@ -116,7 +116,7 @@ describe("runMergeState — workspace sources", () => {
 
   it("encuentra un merge en una unidad propia y omite otra prunable con nota", async () => {
     const root = "/cwd/.agent-workflow/worktrees";
-    const prefix = `${root}/${workspaceKey("/cwd")}/core`;
+    const prefix = `${root}/${hubKey("/cwd")}/core`;
     const unit = `${prefix}/230-plan-exec`;
     const prunable = `${prefix}/229-plan-exec`;
     const fs = blockWith(new FakeFs(), [{ alias: "core", path: "/repo/core" }]).dir(unit);

@@ -4,7 +4,7 @@
 // asks the person, even though they sit inside the workspace; the session
 // artifacts under .workflow/sessions/ stay editable.
 //
-// Swept from src (paths-service.ts, parsers/project-block.ts, workline-marker.ts,
+// Swept from src (paths-service.ts, parsers/hub-block.ts, workline-marker.ts,
 // multiroot) and the hosts' own project-level config files:
 // - CLAUDE.md, AGENTS.md: the WORKSPACE block with its Fuentes (BLOCK_MIRROR_FILES);
 // - .workflow/local.json: per-machine source-path overrides (readWorkspaceLocalConfig);

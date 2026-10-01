@@ -70,7 +70,7 @@ const SPEC_TEXT = [
  * las unidades de cada fuente declarada con `git worktree list`, y una fuente que
  * no existe en disco es un estado de aislamiento ilegible, que el cierre rechaza.
  */
-const workspaceBlock = (acme: string) =>
+const hubBlock = (acme: string) =>
   [
     "<!-- AGENT-WORKFLOW-HUB-START -->",
     "## Hub",
@@ -155,7 +155,7 @@ describe("F6 — el recorrido completo cierra solo, y un workspace bloqueado sal
     await mkdir(join(workdir, "docs", "specs"), { recursive: true });
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await mkdir(join(workdir, "docs", "decisions"), { recursive: true });
-    await writeFile(join(workdir, "CLAUDE.md"), workspaceBlock(acme), "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), hubBlock(acme), "utf8");
     await writeFile(join(workdir, SPEC), SPEC_TEXT, "utf8");
     await writeFile(join(workdir, PLAN), PLAN_TEXT, "utf8");
   });

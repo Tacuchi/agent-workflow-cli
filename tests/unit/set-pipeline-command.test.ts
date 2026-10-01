@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { runHubBlockUpsertWrite } from "../../src/application/hub-block-upsert-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runProjectMdUpsertWrite } from "../../src/application/project-md-upsert-service.js";
 import { setPipelineCommand } from "../../src/cli/commands/set-pipeline.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -26,7 +26,7 @@ it("declara build y test, ninguno explícito, en los dos espejos y rechaza alias
   const paths = new PathsService(normalizeNamespace("workflow"), cwd, cwd);
   const env = new FakeEnv(cwd);
   const ctx = { fs, env, paths } as unknown as CliContext;
-  await runProjectMdUpsertWrite(fs, env, paths, {
+  await runHubBlockUpsertWrite(fs, env, paths, {
     op: "init",
     fuentes: [{ alias: "core", path: "../repo" }],
   });

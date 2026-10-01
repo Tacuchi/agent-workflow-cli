@@ -17,7 +17,7 @@
  *
  * While a journal exists, the operation is neither a success nor a failure: it is
  * IN FLIGHT, and every Workline surface that projects state has to say so rather
- * than describe a half-retired workspace as if it were finished.
+ * than describe a half-retired hub as if it were finished.
  */
 
 import { join } from "node:path";
@@ -126,8 +126,8 @@ export async function readJournal(
 /**
  * Every journal in flight right now.
  *
- * Read by the surfaces that project state, because a workspace with a journal is
- * not a workspace anybody can describe yet: one of its sessions may be gone from
+ * Read by the surfaces that project state, because a hub with a journal is
+ * not a hub anybody can describe yet: one of its sessions may be gone from
  * disk while its row is not written, or a ref may have moved while the filesystem
  * has not caught up. Reporting the pending operation is what turns that window
  * from a lie into a visible state.
@@ -165,7 +165,7 @@ async function parseJournal(fs: FileSystemPort, path: string): Promise<JournalRe
   }
   // A journal written before the proposal carried reservations is still a valid
   // operation in flight, and refusing it would strand the one retirement least
-  // able to be re-prepared — its workspace is already half gone. An absent list
+  // able to be re-prepared — its hub is already half gone. An absent list
   // means "this retirement releases no correlative", which is exactly what it
   // was approved to do.
   if (!Array.isArray(parsed.proposal.reservations)) {

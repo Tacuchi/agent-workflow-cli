@@ -8,6 +8,7 @@ import {
   ownReleaseVariantMcpEntry,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
+import type { WorklineMaterialization } from "./hub-materialization-service.js";
 import { type McpEntryClassification, classifyMcpEntry } from "./mcp-entry-classification.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
 import { writeMcpEntry } from "./mcp-host-writer.js";
@@ -19,7 +20,6 @@ import {
   resolveScopeDir,
   toErrorRecord,
 } from "./mcp-scope-common.js";
-import type { WorklineMaterialization } from "./workspace-materialization-service.js";
 
 export type McpSetupInput = McpScopeInput & {
   hosts: McpHost[];
@@ -61,7 +61,7 @@ export interface McpSetupResult {
     outcome: "passed" | "failed";
     code?: "HOST_BINARY_MISSING" | "HOST_NATIVE_CHECK_FAILED" | "HOST_ENTRY_NOT_VISIBLE";
   }>;
-  /** First-write receipt when the CLI materialized an implicit workspace for setup. */
+  /** First-write receipt when the CLI materialized an implicit hub for setup. */
   materialization?: WorklineMaterialization;
 }
 

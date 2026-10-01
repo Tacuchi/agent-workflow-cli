@@ -6,11 +6,7 @@ import {
   prefixedCorrelativeInput,
 } from "../../domain/correlative.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "../parsers/project-block.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "../parsers/hub-block.js";
 import type { PathsService } from "../paths-service.js";
 
 export function sessionCorrelative(code: string | null | undefined): string | null {
@@ -62,8 +58,8 @@ export async function readSources(
   fs: FileSystemPort,
   cwd: string,
   paths: PathsService,
-): Promise<ProjectFuente[]> {
-  const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
+): Promise<HubFuente[]> {
+  const block = await readHubBlock(fs, cwd, paths.blockMarkers());
   return block?.fuentes ?? [];
 }
 

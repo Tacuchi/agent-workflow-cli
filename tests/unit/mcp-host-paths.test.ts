@@ -103,12 +103,12 @@ describe("buildMcpEntry — descriptor fiable", () => {
   });
 
   it("mantiene el descriptor workspace portable dependiente de PATH en Windows", () => {
-    const workspaceEntry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "win32");
-    expect(workspaceEntry.command).toBe("cmd");
-    expect(workspaceEntry.args).toEqual(
+    const hubEntry = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", "win32");
+    expect(hubEntry.command).toBe("cmd");
+    expect(hubEntry.args).toEqual(
       expect.arrayContaining(["/c", "agent-workflow", "mcp", "serve-db", "--scope", "hub"]),
     );
-    expect(workspaceEntry.args[0]).not.toBe(TEST_ENTRYPOINT);
+    expect(hubEntry.args[0]).not.toBe(TEST_ENTRYPOINT);
   });
 
   it("rechaza rutas relativas en un descriptor global", () => {

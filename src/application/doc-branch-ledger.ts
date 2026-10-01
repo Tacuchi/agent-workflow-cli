@@ -4,7 +4,7 @@ import type { SessionCustody } from "../domain/session/custody.js";
 import { type WorklineNodeId, formatNodeId, nodeFromDocPath } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { expectedWorkBranch } from "./branch-resolver.js";
-import type { ParsedProjectBlock, ProjectFuente } from "./parsers/project-block.js";
+import type { HubFuente, ParsedHubBlock } from "./parsers/hub-block.js";
 import { parseDerivedFromPath } from "./parsers/spec-relation.js";
 import type { PathsService } from "./paths-service.js";
 import { readCustody } from "./session-custody-service.js";
@@ -141,8 +141,8 @@ export interface EffectiveDocBranch {
 export async function resolveDocBranch(
   fs: FileSystemPort,
   paths: PathsService,
-  source: ProjectFuente,
-  block: ParsedProjectBlock | null,
+  source: HubFuente,
+  block: ParsedHubBlock | null,
   identity: DocIdentity,
   provided?: DocBranchRead,
 ): Promise<EffectiveDocBranch> {
@@ -172,7 +172,7 @@ export async function findDocument(
 ): Promise<string | null> {
   if (doc.kind !== "plan" && doc.kind !== "spec") return null;
   const directory = DEFAULT_CORE_DOCS_CANON[doc.kind];
-  const entries = await fs.list(join(paths.workspaceDir(), directory));
+  const entries = await fs.list(join(paths.hubDir(), directory));
   const file = entries.find(
     (entry) =>
       entry.type === "file" &&
@@ -185,7 +185,7 @@ export async function findDocument(
 async function inheritedDocBranch(
   fs: FileSystemPort,
   paths: PathsService,
-  source: ProjectFuente,
+  source: HubFuente,
   identity: Extract<DocIdentity, { status: "resolved" }>,
   read: DocBranchRead,
   registered: string | null,
@@ -194,9 +194,9 @@ async function inheritedDocBranch(
   if (identity.doc.kind !== "plan") return null;
   const path = identity.path ?? (await findDocument(fs, paths, identity.doc));
   if (path === null) return null;
-  const plan = await fs.readText(join(paths.workspaceDir(), path));
+  const plan = await fs.readText(join(paths.hubDir(), path));
   const specPath = parseDerivedFromPath(plan);
-  const specExists = specPath !== null && (await fs.exists(join(paths.workspaceDir(), specPath)));
+  const specExists = specPath !== null && (await fs.exists(join(paths.hubDir(), specPath)));
   if (specExists && specPath !== null) {
     const spec = nodeFromDocPath(specPath);
     if (spec?.kind === "spec") {

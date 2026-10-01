@@ -68,7 +68,7 @@ function attributeByMarkers(env: EnvPort): Attribution {
 
 /**
  * The person's yes to publishing exactly these sources, once, with exactly the
- * plan they were shown: `plan` is the preview's digest, so a workspace block
+ * plan they were shown: `plan` is the preview's digest, so a hub block
  * rewritten while the question waited publishes nothing.
  */
 export interface ProdConsent {

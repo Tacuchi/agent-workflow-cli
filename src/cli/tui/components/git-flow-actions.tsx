@@ -14,7 +14,7 @@ import { notificationStackRows } from "./notification-stack.js";
 import { SectionHead } from "./section-head.js";
 
 /**
- * Interactive render of a git-flow run for the Project tab: overall status +
+ * Interactive render of a git-flow run for the Hub tab: overall status +
  * exactly ONE non-wrapping row per source, each carrying its whole ordered
  * step chain.
  *
@@ -25,7 +25,7 @@ import { SectionHead } from "./section-head.js";
  * like SOURCES (↑/↓) and a chain wider than the row is reached with ←/→ instead
  * of wrapping — the alias and the status never move out of their fixed zone.
  *
- * The keys live here and not in ProjectTab: the tab keeps the run and the
+ * The keys live here and not in HubTab: the tab keeps the run and the
  * global lock and gets `onRerun` / `onBack`, so `r` has exactly one consequence
  * and `Enter` is free to open the conflict/error detail.
  */
@@ -53,7 +53,7 @@ const MARKER_CELLS = 2;
 const ROWS_INDENT = 2;
 
 /**
- * Cap on the alias column. A workspace alias is short; letting an unusually long
+ * Cap on the alias column. A hub alias is short; letting an unusually long
  * one size the column would starve the chain zone on every OTHER row. Past this
  * the alias is truncated (with `…`) and stays identifiable, which is what the
  * row owes — the chain remains reachable with ←/→, which is what it must not lose.
@@ -70,7 +70,7 @@ const ALIAS_MIN_CELLS = 4;
 
 // Terminal rows eaten around the result list, handed to `useListWindow` so the
 // selected row never clips under app.tsx's `overflowY="hidden"` (same accounting
-// style as SOURCES_LIST_RESERVED_ROWS in project-tab):
+// style as SOURCES_LIST_RESERVED_ROWS in hub-tab):
 // - app shell: ScreenFrame border+paddingY (4) + HomeHeader (2 lines + 1 margin)
 //   + TabBar (1 line + 2 border) + tab content box border+paddingY (4)
 //   + HomeFooter (1 line + 1 margin) = 16
@@ -109,7 +109,7 @@ export function FlowResultView({
   confirm?: FlowConfirm;
   /** `r`: re-runs the same action (= resumes after a resolved conflict). */
   onRerun?: () => void;
-  /** `esc` from the list: back to the Project listing. */
+  /** `esc` from the list: back to the Hub listing. */
   onBack?: () => void;
 }) {
   const sources = result.results;

@@ -80,7 +80,7 @@ export async function runArtifactsCommand(
   const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
   if (resolution.outcome !== "resolved") return { sessionError: resolution };
   const session = resolution.session;
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
   const verbose = input.verbose === true;
 
   const sessionSummary = await summarizeSession(fs, session.path);

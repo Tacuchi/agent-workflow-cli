@@ -88,7 +88,7 @@ export type NoteScope = "functional" | "plan-only";
 
 export interface DecisionNote {
   schema: string;
-  /** `DEC-NNN`, minted under the workspace lock like every other correlative. */
+  /** `DEC-NNN`, minted under the hub lock like every other correlative. */
   id: string;
   lineage: NoteLineage;
   decision: string;
@@ -98,7 +98,7 @@ export interface DecisionNote {
   /** The note this one corrects, by id — `null` when it corrects none. */
   supersedes_note: string | null;
   scope: NoteScope;
-  /** Plans reached by the decision, workspace-relative. */
+  /** Plans reached by the decision, hub-relative. */
   consumers: string[];
   evidence_preserved: string[];
   evidence_invalidated: string[];

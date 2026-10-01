@@ -22,18 +22,18 @@ import { FakeEnv } from "../helpers/fake-env.js";
  * write silently replaced the first document.
  */
 describe("runNextNumber --claim", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "next-number-"));
-    env = new FakeEnv(workspace, workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "next-number-"));
+    env = new FakeEnv(hub, hub);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new NodeFileSystem();
   });
-  afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+  afterEach(() => rmSync(hub, { recursive: true, force: true }));
 
   it("hands eight concurrent claims eight distinct numbers and eight distinct files", async () => {
     const results = await Promise.all(
@@ -52,15 +52,15 @@ describe("runNextNumber --claim", () => {
     expect(new Set(claimed).size).toBe(8);
 
     // Every claim is a possession, not a prediction: the file is on disk.
-    const onDisk = readdirSync(join(workspace, "docs", "plans")).sort();
+    const onDisk = readdirSync(join(hub, "docs", "plans")).sort();
     expect(onDisk).toHaveLength(8);
     expect(new Set(onDisk.map((n) => n.slice(0, 3))).size).toBe(8);
   });
 
   it("skips a number another document already holds under a different slug", async () => {
-    mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
-    writeFileSync(join(workspace, "docs", "specs", "001-spec-uno.md"), "x");
-    writeFileSync(join(workspace, "docs", "specs", "002-spec-dos.md"), "x");
+    mkdirSync(join(hub, "docs", "specs"), { recursive: true });
+    writeFileSync(join(hub, "docs", "specs", "001-spec-uno.md"), "x");
+    writeFileSync(join(hub, "docs", "specs", "002-spec-dos.md"), "x");
 
     const claimed = await runNextNumber(fs, env, paths, {
       directory: "docs/specs",
@@ -76,7 +76,7 @@ describe("runNextNumber --claim", () => {
 
     expect(consulted.next).toBe("001");
     expect(consulted.claimed_path).toBeNull();
-    expect(readdirSync(join(workspace, "docs", "plans"))).toEqual([]);
+    expect(readdirSync(join(hub, "docs", "plans"))).toEqual([]);
   });
 
   it("refuses a claim that is a path instead of a name", async () => {
@@ -88,7 +88,7 @@ describe("runNextNumber --claim", () => {
         claim: { name: "../fuera.md", owner: "201-x-plan-new" },
       }),
     ).rejects.toThrow(/separadores de ruta/);
-    expect(existsSync(join(workspace, "docs", "fuera.md"))).toBe(false);
+    expect(existsSync(join(hub, "docs", "fuera.md"))).toBe(false);
   });
 
   it("never creates the directory in dry-run", async () => {
@@ -99,7 +99,7 @@ describe("runNextNumber --claim", () => {
 
     expect(consulted.created).toBe(false);
     expect(consulted.claimed_path).toBeNull();
-    expect(() => readdirSync(join(workspace, "docs", "reports"))).toThrow();
+    expect(() => readdirSync(join(hub, "docs", "reports"))).toThrow();
   });
 
   it("reserva carpetas con marcador propio, reentra y permite recuperarlas", async () => {

@@ -8,7 +8,7 @@ import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { readDocBranches } from "../../src/application/doc-branch-ledger.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { docBranchCommand } from "../../src/cli/commands/doc-branch.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -61,7 +61,7 @@ describe("aw doc-branch show|set", () => {
     writeFileSync(join(ws, "docs", "specs", "049-spec-rama.md"), "# Spec 049\n");
     writeFileSync(
       join(ws, "CLAUDE.md"),
-      renderProjectBlock({
+      renderHubBlock({
         proyecto: "Fixture",
         fuentes: [{ alias: "core", path: repo, main_branch: "main" }],
         stack: {},

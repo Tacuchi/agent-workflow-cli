@@ -10,7 +10,7 @@ describe("TUI y Git directo sin motor de flujos", () => {
     const resolver = readFileSync(resolve("src/application/branch-resolver.ts"), "utf8");
     const gitFlow = readFileSync(resolve("src/application/git-flow-service.ts"), "utf8");
     expect(resolver).not.toMatch(/from ["'].*isolation-unit/);
-    expect(gitFlow).not.toMatch(/from ["'].*workspace-materialization-service/);
+    expect(gitFlow).not.toMatch(/from ["'].*hub-materialization-service/);
   });
 
   it("el componente principal y el servicio git-flow cargan sin sesiones ni decisiones internas", () => {

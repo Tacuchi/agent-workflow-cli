@@ -671,12 +671,12 @@ describe("runDoctor", () => {
    * `hostStates` existe para no re-sondear (cada sonda tiene techo de 2.5 s), así
    * que llega vacío sin que nada se rompa; `currentHost` es lo que cada proveedor
    * usa para resaltar y podría ser siempre null aunque `scope.current_host`, que
-   * se calcula aparte, esté bien; y `workspaceDir` decide qué árbol se mira. Los
+   * se calcula aparte, esté bien; y `hubDir` decide qué árbol se mira. Los
    * tres se rompen en silencio: los seis proveedores reales producen un informe
    * byte-idéntico con este input destruido.
    */
   it("cada proveedor recibe el catálogo completo, el host invocante y el workspace", async () => {
-    const workspace = join(home, "proyecto");
+    const hub = join(home, "proyecto");
     let seen: DoctorProviderInput | null = null;
     const capturing: DoctorProvider = {
       category: "hub-visibility",
@@ -687,7 +687,7 @@ describe("runDoctor", () => {
     };
 
     const report = await runDoctor(
-      makeCtx(new RecordingFs(hostStateFs(home)), home, workspace),
+      makeCtx(new RecordingFs(hostStateFs(home)), home, hub),
       { host: "codex" },
       { providers: [capturing] },
     );
@@ -697,10 +697,10 @@ describe("runDoctor", () => {
     expect(seen?.hostStates.map((state) => state.host)).toEqual(CATALOG_ORDER);
     expect(seen?.hosts.map((host) => host.host)).toEqual(["claude-code", "codex"]);
     expect(seen?.currentHost).toBe("codex");
-    expect(seen?.workspaceDir).toBe(workspace);
+    expect(seen?.hubDir).toBe(hub);
     expect(seen?.skipNative).toBe(false);
     // El mismo workspace que el proveedor recibió es el que el informe declara.
-    expect(report.scope.hub_dir).toBe(workspace);
+    expect(report.scope.hub_dir).toBe(hub);
   });
 
   /**

@@ -1,10 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import { useEffect, useState } from "react";
 import { resolveDefaultBranches } from "../../../application/branch-resolver.js";
-import {
-  type DefaultBranches,
-  readWorkspaceBlock,
-} from "../../../application/parsers/project-block.js";
+import { type DefaultBranches, readHubBlock } from "../../../application/parsers/hub-block.js";
 import { isValidNamespace } from "../../../runtime/namespace.js";
 import type { CliContext } from "../../types.js";
 import { FocusRow } from "../components/focus-row.js";
@@ -13,12 +10,12 @@ import { PageHead } from "../components/page-head.js";
 import { SectionHead } from "../components/section-head.js";
 import { TABS_LIST, type TabId } from "../components/tabs-config.js";
 import { HOSTS, supportPill } from "../hosts.js";
+import { hubRoot } from "../hub-root.js";
 import { useInputLock } from "../input-lock.js";
 import { ACCENTS, ACCENT_ORDER, type AccentColor, colors, icons } from "../theme.js";
 import { DEFAULT_TUI_PREFS, type TuiPrefs } from "../tui-prefs.js";
 import { useListCursor } from "../use-list-cursor.js";
 import { useTerminalSize } from "../use-terminal-size.js";
-import { workspaceRoot } from "../workspace-root.js";
 
 export interface ConfigTabProps {
   ctx: CliContext;
@@ -28,7 +25,7 @@ export interface ConfigTabProps {
   /** Persists the namespace (config file read by NamespaceResolver). */
   onSaveNamespace: (ns: string) => void;
   /**
-   * Persists workspace branch defaults into the WORKSPACE block (one role at a
+   * Persists hub branch defaults into the hub block (one role at a
    * time). Resolves false when the write did not land (busy lock, unwritable
    * file) — the row then keeps its previous value instead of lying.
    */
@@ -72,7 +69,7 @@ export function ConfigTab({
 }: ConfigTabProps) {
   const { cols } = useTerminalSize();
   const { lock, unlock } = useInputLock();
-  // null until the workspace block is read; stays null when it is absent, and
+  // null until the hub block is read; stays null when it is absent, and
   // then the RAMAS section is not rendered nor focusable.
   const [branches, setBranches] = useState<Required<DefaultBranches> | null>(null);
   const controls: Control[] = [
@@ -87,17 +84,13 @@ export function ConfigTab({
   const [namespace, setNamespace] = useState<string>(ctx.namespace.namespace);
   const focused = controls[cursor];
 
-  // Hydrate the branch defaults from the WORKSPACE block (CLAUDE.md/AGENTS.md).
-  // Any failure (no workspace, unreadable file) leaves the section hidden.
+  // Hydrate the branch defaults from the hub block (CLAUDE.md/AGENTS.md).
+  // Any failure (no hub, unreadable file) leaves the section hidden.
   useEffect(() => {
     let alive = true;
     void (async () => {
       try {
-        const block = await readWorkspaceBlock(
-          ctx.fs,
-          workspaceRoot(ctx),
-          ctx.paths.blockMarkers(),
-        );
+        const block = await readHubBlock(ctx.fs, hubRoot(ctx), ctx.paths.blockMarkers());
         if (alive && block) setBranches(resolveDefaultBranches(block.default_branches));
       } catch {
         // An unreadable or absent block leaves the optional branch section hidden.
@@ -324,7 +317,7 @@ export function ConfigTab({
 const EDIT_HINT = "⏎ edit";
 const BRANCH_LABEL_WIDTH = 20;
 
-/** A branch name the workspace block can round-trip: non-empty, no whitespace. */
+/** A branch name the hub block can round-trip: non-empty, no whitespace. */
 function validateBranchName(value: string): boolean | string {
   const v = value.trim();
   if (v.length === 0) return "nombre de rama vacío";

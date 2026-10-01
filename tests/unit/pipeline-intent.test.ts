@@ -43,7 +43,7 @@ function plan(fs: MemFs, number: string, slug: string): void {
 }
 
 /** A cut of three plans, all born from one spec, none of them started. */
-function workspace(): MemFs {
+function hub(): MemFs {
   const fs = new MemFs();
   fs.file("/cwd/.workflow/sessions/.keep", "");
   fs.file("/cwd/docs/specs/090-spec-corte.md", "---\nstatus: ready-for-plan\n---\n\n# Spec 090\n");
@@ -112,7 +112,7 @@ function passes(fs: MemFs, arrived: boolean): void {
  */
 describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   it("sin intención ni pases declarados, el orden es exactamente el de hoy", async () => {
-    const out = await index(workspace());
+    const out = await index(hub());
     const plans = out.pipeline.filter((item) => item.number !== null && item.kind === "plan-open");
 
     // The correlative, untouched: this is the assertion that keeps the change
@@ -123,7 +123,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("la intención invierte el correlativo y la propuesta encabeza por intención", async () => {
-    const fs = workspace();
+    const fs = hub();
     declareCut(fs);
     passes(fs, false);
 
@@ -138,7 +138,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("el reservado aparece postergado con su motivo mientras el pase anterior sigue abierto", async () => {
-    const fs = workspace();
+    const fs = hub();
     declareCut(fs);
     passes(fs, false);
 
@@ -154,7 +154,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("al cerrar el pase, lo liberado sale del tablero y el reservado se vuelve recomendable", async () => {
-    const fs = workspace();
+    const fs = hub();
     declareCut(fs);
     passes(fs, true);
 
@@ -171,7 +171,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("el plan liberado no aparece entre los candidatos de la reanudación", async () => {
-    const fs = workspace();
+    const fs = hub();
     declareCut(fs);
     passes(fs, true);
 
@@ -186,7 +186,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("la reanudación sigue siendo un relevo: proyecta el pipeline, no vuelve a decidir", async () => {
-    const fs = workspace();
+    const fs = hub();
     declareCut(fs);
     passes(fs, false);
 
@@ -205,7 +205,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("no se posterga para siempre por un plan que el workspace no tiene", async () => {
-    const fs = workspace();
+    const fs = hub();
     // The cut puts 093 behind a plan that was discarded — or never written. It
     // has no pass and it never will, so waiting on it is waiting forever.
     fs.file(
@@ -230,7 +230,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("con algo real por delante, nombra lo que falta y lo que el workspace no tiene", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(
       "/cwd/.workflow/cut-intents.jsonl",
       `${JSON.stringify({
@@ -259,7 +259,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("la posición declarada se lee en una sola escala entre cortes, y el orden es consistente", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/050-spec-otra.md", "---\nstatus: ready-for-plan\n---\n\n# Spec 050\n");
     fs.file(
       "/cwd/docs/plans/051-plan-otra.md",
@@ -327,7 +327,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
   });
 
   it("un plan que la intención no menciona conserva el orden por correlativo", async () => {
-    const fs = workspace();
+    const fs = hub();
     plan(fs, "094", "cuatro");
     declareCut(fs);
     passes(fs, false);
@@ -352,7 +352,7 @@ describe("el tablero obedece la intención declarada y lo ya liberado", () => {
  */
 describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
   it("el plan postergado trae la advertencia con su motivo, y la operación termina en éxito", async () => {
-    const fs = workspace();
+    const fs = hub();
     // Declared standalone so the board has nothing else to warn about on this
     // row: the channel is one field, and this test is about what fills it when
     // the document itself is fine.
@@ -394,10 +394,10 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
   });
 
   it("ninguna rama convierte el orden declarado en un bloqueo", async () => {
-    const declared = workspace();
+    const declared = hub();
     declareCut(declared);
     passes(declared, false);
-    const bare = workspace();
+    const bare = hub();
 
     const withCut = await index(declared);
     const without = await index(bare);
@@ -417,7 +417,7 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
   });
 
   it("el aviso de orden cede ante un aviso sobre un defecto del documento, y el motivo no se pierde", async () => {
-    const fs = workspace();
+    const fs = hub();
     // A plan with no `Derived from`: the board already warns that nobody sealed
     // its baseline, which is a defect of the document and outranks an advisory.
     fs.file(
@@ -452,7 +452,7 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
   });
 
   it("la reanudación tampoco pierde el motivo cuando el aviso de orden cedió el canal", async () => {
-    const fs = workspace();
+    const fs = hub();
     // Same collision as above, asked on the OTHER surface: `warning` is one
     // field and the document's defect takes it, so if `resume` did not carry
     // `postponed` the same plan would be explained by `status` and silently
@@ -489,7 +489,7 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
   });
 
   it("sin intención declarada no aparece ningún aviso de orden", async () => {
-    const out = await index(workspace());
+    const out = await index(hub());
     expect(
       out.pipeline.every(
         (item) => item.detail.warning?.code !== "WORKLINE_PLAN_OUT_OF_DECLARED_ORDER",

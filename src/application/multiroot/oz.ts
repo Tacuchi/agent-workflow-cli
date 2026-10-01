@@ -1,5 +1,5 @@
 /**
- * Oz adapter. Oz is a cloud agent orchestrator with no local workspace config
+ * Oz adapter. Oz is a cloud agent orchestrator with no local hub config
  * file (MCP config is passed by the host itself via `oz agent run --mcp`, not
  * written by this CLI). Attach/detach are intentionally no-ops.
  */

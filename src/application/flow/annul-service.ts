@@ -2,7 +2,7 @@
  * `aw flow annul` — reopen a mis-accredited batch and every later one.
  *
  * Kept apart from the engine's own service because it reads the plan document
- * from the workspace root, which needs the environment the engine modules never
+ * from the hub root, which needs the environment the engine modules never
  * read. What it shares with `restart` — the session guard and the re-adoption —
  * it takes from `flow-service`.
  */
@@ -13,7 +13,7 @@ import { type LocalProposal, sealProposal } from "../../domain/proposal.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { applyLocalProposal } from "../local-proposal.js";
-import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
+import { type PathsService, resolveHubRoot } from "../paths-service.js";
 import { preparePlanExecAnnulment } from "../plan-exec-batch-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import {
@@ -77,7 +77,7 @@ export async function prepareAnnulment(
  * Apply the annulment the approval names, or nothing.
  *
  * The preview is recomputed and must still carry the approved digest; the plan
- * is rewritten through the workspace-lock publication with its current bytes as
+ * is rewritten through the hub-lock publication with its current bytes as
  * the compare-and-swap base; then the run leaves through the same re-adoption as
  * `restart`, with the annulment in its trace. Git is never touched.
  */
@@ -168,7 +168,7 @@ async function annulmentOf(
   const annulled = closed.filter((batch) => batch.iteration >= first.iteration);
   const phases = [...new Set(annulled.flatMap((batch) => batch.phases))].sort((a, b) => a - b);
   const tasks = [...new Set(annulled.flatMap((batch) => batch.tasks))];
-  const root = await resolveWorkspaceRoot(fs, input.env, paths);
+  const root = await resolveHubRoot(fs, input.env, paths);
   const plan = state.scope.plan;
   let text: string;
   try {

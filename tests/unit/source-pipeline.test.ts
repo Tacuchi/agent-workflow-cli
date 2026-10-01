@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { parseProjectBlock } from "../../src/application/parsers/project-block.js";
+import { parseHubBlock } from "../../src/application/parsers/hub-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { readSourcePipelines, sourcePipeline } from "../../src/application/source-pipeline.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 
@@ -18,7 +18,7 @@ afterEach(async () => {
 it("el lector distingue comando, ninguno y no declarado con acción y origen del espejo", async () => {
   cwd = await mkdtemp(join(tmpdir(), "aw-pipeline-reader-"));
   const paths = new PathsService(normalizeNamespace("workflow"), cwd, cwd);
-  const block = renderProjectBlock({
+  const block = renderHubBlock({
     proyecto: "Demo",
     stack: {},
     fuentes: [
@@ -43,7 +43,7 @@ it("el lector distingue comando, ninguno y no declarado con acción y origen del
       origin: "AGENTS.md",
     },
   ]);
-  const parsed = parseProjectBlock(block);
+  const parsed = parseHubBlock(block);
   if (parsed === null) throw new Error("expected a parsed block");
   expect(sourcePipeline(parsed, "core").build).toEqual({
     kind: "command",

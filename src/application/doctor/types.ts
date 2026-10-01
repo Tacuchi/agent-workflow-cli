@@ -38,7 +38,7 @@ export interface DoctorProviderInput {
   hostStates: readonly HostStateReport[];
   /** The host the run was invoked from — highlighted, never a filter. */
   currentHost: HarnessId | null;
-  workspaceDir: string;
+  hubDir: string;
   /** The native MCP inspection was declined: coverage says `skipped`, not `checked`. */
   skipNative: boolean;
   /**

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { hasWorklineMarker } from "../runtime/workline-marker.js";
 const argv = process.argv.slice(2);
-// Help reads no workspace, so it is served wherever it is asked for.
+// Help reads no hub, so it is served wherever it is asked for.
 const asksHelp = argv.includes("--help") || argv.includes("-h");
 const scoped =
   !asksHelp &&
@@ -10,13 +10,13 @@ const scoped =
     argv[0] === "auto-compact-on-close" ||
     (argv[0] === "self" && argv[1] === "namespace" && argv.includes("--pin")));
 
-async function scopedWorkspaceVisible(): Promise<boolean> {
+async function scopedHubVisible(): Promise<boolean> {
   const { homedir } = await import("node:os");
-  // $HOME is never a workspace, though the user-level ~/.workflow carries a marker.
+  // $HOME is never a hub, though the user-level ~/.workflow carries a marker.
   if (process.cwd() === homedir()) return false;
   if (await hasWorklineMarker(process.cwd())) return true;
   // A source without its own marker can still belong to a registered hub.
-  // Consult the user-level index without creating workspace runtime or invoking git.
+  // Consult the user-level index without creating hub runtime or invoking git.
   const { declaringHubs } = await import("../application/hub-registry.js");
   const { NodeFileSystem } = await import("../adapters/node-file-system.js");
   const flag = argv.indexOf("--namespace");
@@ -42,8 +42,8 @@ if (argv[0] === "hook" && argv[1] !== "sql-mutation-guard" && !asksHelp) {
   );
   process.exitCode = 1;
 } else if (scoped) {
-  if (await scopedWorkspaceVisible()) await import("./full-cli.js");
+  if (await scopedHubVisible()) await import("./full-cli.js");
 } else {
-  // sql-mutation-guard protects user-level connections, even without a workspace.
+  // sql-mutation-guard protects user-level connections, even without a hub.
   await import("./full-cli.js");
 }

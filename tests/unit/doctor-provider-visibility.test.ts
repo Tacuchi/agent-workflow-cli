@@ -33,7 +33,7 @@ const NS = normalizeNamespace("workflow");
 
 let root: string;
 let home: string;
-let workspace: string;
+let hub: string;
 let ctx: CliContext;
 /** Directorios que el bloque de proyecto declara como fuentes. */
 let fuenteA: string;
@@ -44,16 +44,15 @@ let intrusa: string;
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "doctor-visibility-"));
   home = join(root, "home");
-  workspace = join(root, "ws");
+  hub = join(root, "ws");
   fuenteA = join(root, "src-a");
   fuenteB = join(root, "src-b");
   intrusa = join(root, "intrusa");
-  for (const dir of [home, workspace, fuenteA, fuenteB, intrusa])
-    mkdirSync(dir, { recursive: true });
+  for (const dir of [home, hub, fuenteA, fuenteB, intrusa]) mkdirSync(dir, { recursive: true });
   ctx = {
     fs: new NodeFileSystem(),
-    env: new FakeEnv(home, workspace),
-    paths: new PathsService(NS, home, workspace),
+    env: new FakeEnv(home, hub),
+    paths: new PathsService(NS, home, hub),
     git: { isGitRepo: async () => false } as GitPort,
   } as unknown as CliContext;
 });
@@ -87,21 +86,21 @@ function declararFuentes(...paths: string[]): void {
     "",
     "<!-- WORKFLOW-HUB-END -->",
   ];
-  writeFileSync(join(workspace, "CLAUDE.md"), `${lines.join("\n")}\n`);
+  writeFileSync(join(hub, "CLAUDE.md"), `${lines.join("\n")}\n`);
 }
 
 function registrarEnClaude(...dirs: string[]): void {
-  mkdirSync(join(workspace, ".claude"), { recursive: true });
+  mkdirSync(join(hub, ".claude"), { recursive: true });
   writeFileSync(
-    join(workspace, ".claude", "settings.json"),
+    join(hub, ".claude", "settings.json"),
     `${JSON.stringify({ permissions: { additionalDirectories: dirs } })}\n`,
   );
 }
 
 function registrarEnCodex(...dirs: string[]): void {
-  mkdirSync(join(workspace, ".codex"), { recursive: true });
+  mkdirSync(join(hub, ".codex"), { recursive: true });
   writeFileSync(
-    join(workspace, ".codex", "config.toml"),
+    join(hub, ".codex", "config.toml"),
     `additional_writable_roots = [${dirs.map((dir) => `"${dir}"`).join(", ")}]\n`,
   );
 }
@@ -129,13 +128,13 @@ function inputFor(hosts: HarnessId[]): DoctorProviderInput {
     hosts: hosts.map(hostView),
     hostStates: [],
     currentHost: null,
-    workspaceDir: workspace,
+    hubDir: hub,
     skipNative: false,
   };
 }
 
 /** Sólo el ámbito workspace: el ámbito global aporta sus propias filas. */
-function delWorkspace<T extends { id: string }>(items: readonly T[]): T[] {
+function delHub<T extends { id: string }>(items: readonly T[]): T[] {
   return items.filter((item) => item.id.includes("/hub:visibilidad"));
 }
 
@@ -155,7 +154,7 @@ describe("proveedor de visibilidad del workspace", () => {
     expect([...new Set(output.coverage.map((entry) => entry.host))]).toEqual(["codex"]);
     expect([...new Set(output.findings.map((finding) => finding.host))]).toEqual(["codex"]);
     // Y el host que sí participa se sigue comprobando: el filtro no vacía todo.
-    expect(delWorkspace(output.findings).map((finding) => finding.state)).toEqual(["healthy"]);
+    expect(delHub(output.findings).map((finding) => finding.state)).toEqual(["healthy"]);
   });
 
   it("con la selección vacía —`--only` sobre un host ausente— no emite nada", async () => {
@@ -179,7 +178,7 @@ describe("proveedor de visibilidad del workspace", () => {
     registrarEnClaude(fuenteA, intrusa);
 
     const output = await visibilityProvider.run(inputFor(["claude-code"]));
-    const findings = delWorkspace(output.findings);
+    const findings = delHub(output.findings);
 
     expect(findings.map((finding) => finding.id)).toEqual([
       "claude-code/hub-visibility/hub:visibilidad:faltantes",
@@ -206,14 +205,14 @@ describe("proveedor de visibilidad del workspace", () => {
     declararFuentes(fuenteA, fuenteB);
 
     const output = await visibilityProvider.run(inputFor(["codex"]));
-    const findings = delWorkspace(output.findings);
+    const findings = delHub(output.findings);
 
     const ids = findings.map((finding) => finding.id);
     expect(ids).toContain("codex/hub-visibility/hub:visibilidad:sin-config");
     expect(findings.every((finding) => finding.state === "warning")).toBe(true);
     expect(
       findings.find((finding) => finding.id.endsWith(":sin-config"))?.evidence.join(" | "),
-    ).toContain(join(workspace, ".codex", "config.toml"));
+    ).toContain(join(hub, ".codex", "config.toml"));
   });
 
   it("el host que registra exactamente lo declarado sale sano y comprobado (AC-15)", async () => {
@@ -221,7 +220,7 @@ describe("proveedor de visibilidad del workspace", () => {
     registrarEnClaude(fuenteA, fuenteB);
 
     const output = await visibilityProvider.run(inputFor(["claude-code"]));
-    const [finding] = delWorkspace(output.findings);
+    const [finding] = delHub(output.findings);
 
     expect(finding?.state).toBe("healthy");
     expect(finding?.id).toBe("claude-code/hub-visibility/hub:visibilidad");
@@ -237,7 +236,7 @@ describe("proveedor de visibilidad del workspace", () => {
     // ámbito global —que sí tiene algo que mirar— aporta su fila.
     const output = await visibilityProvider.run(inputFor(["claude-code", "codex"]));
 
-    expect(delWorkspace(output.findings)).toEqual([]);
+    expect(delHub(output.findings)).toEqual([]);
     expect(output.findings.filter((finding) => finding.state === "warning")).toEqual([]);
     expect(output.findings.map((finding) => finding.id)).toEqual([
       "claude-code/hub-visibility/global:visibilidad",

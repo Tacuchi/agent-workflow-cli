@@ -2,7 +2,7 @@
  * `aw settle`: saldar las obligaciones de un plan que ya no tiene recorrido abierto.
  *
  * The closure of a `plan-exec` run settles its own obligations, and that is the
- * ordinary path. This is the other half: a plan blocked TODAY, in a workspace
+ * ordinary path. This is the other half: a plan blocked TODAY, in a hub
  * where the run that created the obligation closed months ago. Before this, the
  * only way out was writing `docs/decisions/` by hand — the exact surgery the
  * scaffolding exists to make unnecessary.
@@ -12,7 +12,7 @@
  * a person ASSERTS something between them: that the compensatory work was done,
  * or that it was somebody else's all along. `prepare` shows what each settlement
  * would publish and the digest that authorizes it; `apply` re-derives everything
- * from the live workspace, demands that digest back, and publishes under the
+ * from the live hub, demands that digest back, and publishes under the
  * lock. Two steps, and never one more: `list` is the same reading without a seal.
  *
  * What it never does is compete with a run. A `plan-exec` run holding this plan
@@ -36,7 +36,7 @@ import {
   parseSpecCriteria,
   parseSpecRelation,
 } from "./parsers/spec-relation.js";
-import { type PathsService, resolveWorkspaceRoot } from "./paths-service.js";
+import { type PathsService, resolveHubRoot } from "./paths-service.js";
 import { currentResumePoint } from "./plan-current-point.js";
 import { settlePlanExecObligations } from "./plan-exec-decision-service.js";
 import { locatePlanDocument } from "./plan-locator.js";
@@ -222,7 +222,7 @@ export async function prepareSettle(
   // overwritten by a yes given over an older reading.
   const sealed = semanticDigest({
     operation: "settle.obligations",
-    workspace: paths.workspaceDir(),
+    hub: paths.hubDir(),
     plan: listing.plan,
     plan_digest: specBaselineDigest(planText),
     spec_digest: baseline.digest,
@@ -241,9 +241,9 @@ export async function prepareSettle(
 /**
  * Publish exactly what was previewed, or nothing at all.
  *
- * The preparation runs AGAIN from the live workspace and the approval is
+ * The preparation runs AGAIN from the live hub and the approval is
  * compared against what THAT produces — never against the digest a preview
- * handed back, which may describe a workspace that no longer exists. What
+ * handed back, which may describe a hub that no longer exists. What
  * publishes is `settlePlanExecObligations`, the same path the closure of a run
  * takes, so the two cannot disagree about what a settlement writes.
  */
@@ -270,7 +270,7 @@ export async function applySettle(
     );
   }
 
-  const root = await resolveWorkspaceRoot(fs, env, paths);
+  const root = await resolveHubRoot(fs, env, paths);
   const declared = parseDeclarations(input.declarations, prepared.listing);
   if ("failure" in declared) return declared;
   const settled = await settlePlanExecObligations(fs, paths, {
@@ -329,7 +329,7 @@ async function readLineage(
   paths: PathsService,
   target: string,
 ): Promise<Lineage | Failed> {
-  const root = await resolveWorkspaceRoot(fs, env, paths);
+  const root = await resolveHubRoot(fs, env, paths);
   const canon = await resolveCoreDocsCanon(fs, paths);
   if (!canon.ok) {
     return fail(

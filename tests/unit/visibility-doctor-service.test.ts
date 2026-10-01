@@ -21,7 +21,7 @@ class VisibilityFixtureFs extends NodeFileSystem {
   }
 }
 
-function writeProjectBlock(workspace: string, fuentes: { alias: string; path: string }[]): void {
+function writeHubBlock(hub: string, fuentes: { alias: string; path: string }[]): void {
   const start = "<!-- WORKFLOW-HUB-START -->";
   const end = "<!-- WORKFLOW-HUB-END -->";
   const lines = [
@@ -50,13 +50,13 @@ function writeProjectBlock(workspace: string, fuentes: { alias: string; path: st
     "",
     end,
   );
-  writeFileSync(join(workspace, "CLAUDE.md"), `${lines.join("\n")}\n`);
+  writeFileSync(join(hub, "CLAUDE.md"), `${lines.join("\n")}\n`);
 }
 
-function writeClaudeSettings(workspace: string, file: string, dirs: string[]): void {
-  mkdirSync(join(workspace, ".claude"), { recursive: true });
+function writeClaudeSettings(hub: string, file: string, dirs: string[]): void {
+  mkdirSync(join(hub, ".claude"), { recursive: true });
   writeFileSync(
-    join(workspace, ".claude", file),
+    join(hub, ".claude", file),
     JSON.stringify({ permissions: { additionalDirectories: dirs } }),
   );
 }
@@ -66,120 +66,120 @@ function claudeOf(result: VisibilityDoctorResult) {
 }
 
 describe("runVisibilityDoctor", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "vis-doctor-"));
-    env = new FakeEnv(workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "vis-doctor-"));
+    env = new FakeEnv(hub);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new VisibilityFixtureFs();
   });
   it("una fuente sin ruta no convierte las rutas registradas en sobrantes", async () => {
-    writeProjectBlock(workspace, [{ alias: "remoto", path: "C:/Source/remoto" }]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/a"]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    writeHubBlock(hub, [{ alias: "remoto", path: "C:/Source/remoto" }]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/a"]);
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const claude = claudeOf(result);
     expect(claude?.status).toBe("source-path-missing");
     expect(claude?.extra).toEqual([]);
     expect(result.unreadable_sources?.[0]).toContain("aw add-source remoto:<ruta>");
   });
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   it("status=no-hub-block cuando no hay CLAUDE.md", async () => {
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     expect(result.summary.no_hub_block).toBe(2);
     expect(result.reports[0]?.status).toBe("no-hub-block");
   });
 
   it("status=no-settings cuando hay fuentes pero falta .claude/settings.json", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     expect(result.summary.no_settings).toBe(2);
     expect(result.reports[0]?.status).toBe("no-settings");
   });
 
   it("status=ok cuando settings.json y config.toml tienen las fuentes registradas", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(
-      join(workspace, ".claude", "settings.json"),
+      join(hub, ".claude", "settings.json"),
       JSON.stringify({ permissions: { additionalDirectories: ["/tmp/a", "/tmp/b"] } }),
     );
-    mkdirSync(join(workspace, ".codex"), { recursive: true });
+    mkdirSync(join(hub, ".codex"), { recursive: true });
     writeFileSync(
-      join(workspace, ".codex", "config.toml"),
+      join(hub, ".codex", "config.toml"),
       'additional_writable_roots = [\n  "/tmp/a",\n  "/tmp/b"\n]\n',
     );
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     expect(result.summary.ok).toBe(3);
     for (const r of result.reports) expect(r.status).toBe("ok");
   });
 
   it("claude status=ok cuando las fuentes viven sólo en settings.local.json", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
     // Per-machine convention: settings.local.json (gitignored), no settings.json.
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(
-      join(workspace, ".claude", "settings.local.json"),
+      join(hub, ".claude", "settings.local.json"),
       JSON.stringify({ permissions: { additionalDirectories: ["/tmp/a", "/tmp/b"] } }),
     );
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const claude = result.reports.find((r) => r.host === "claude");
     expect(claude?.status).toBe("ok");
     expect(claude?.missing).toHaveLength(0);
   });
 
   it("status=missing-paths si settings tiene menos de los declarados", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(
-      join(workspace, ".claude", "settings.json"),
+      join(hub, ".claude", "settings.json"),
       JSON.stringify({ permissions: { additionalDirectories: ["/tmp/a"] } }),
     );
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const claude = result.reports.find((r) => r.host === "claude");
     expect(claude?.status).toBe("missing-paths");
     expect(claude?.missing).toEqual(["/tmp/b"]);
   });
 
   it("status=extra-paths si settings tiene paths que no son fuentes", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(
-      join(workspace, ".claude", "settings.json"),
+      join(hub, ".claude", "settings.json"),
       JSON.stringify({
         permissions: { additionalDirectories: ["/tmp/a", "/tmp/b", "/tmp/extra"] },
       }),
     );
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const claude = result.reports.find((r) => r.host === "claude");
     expect(claude?.status).toBe("extra-paths");
     expect(claude?.extra).toEqual(["/tmp/extra"]);
   });
 
   it("warp siempre reporta status=ok (no tiene additionalDirectories)", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const warp = result.reports.find((r) => r.host === "warp");
     expect(warp).toBeDefined();
     expect(warp?.status).toBe("ok");
@@ -190,8 +190,8 @@ describe("runVisibilityDoctor", () => {
   });
 
   it("reports tiene exactamente 3 entradas: claude, codex, warp", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     expect(result.reports).toHaveLength(3);
     const hosts = result.reports.map((r) => r.host);
     expect(hosts).toContain("claude");
@@ -203,78 +203,78 @@ describe("runVisibilityDoctor", () => {
   // so with only the .local file present it answered `ok` while pointing at a
   // file that does not exist.
   it("targets nombra sólo settings.local.json cuando settings.json no existe", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/a"]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/a"]);
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const claude = claudeOf(result);
     expect(claude?.status).toBe("ok");
-    expect(claude?.targets).toEqual([join(workspace, ".claude", "settings.local.json")]);
-    expect(claude?.target).toBe(join(workspace, ".claude", "settings.local.json"));
+    expect(claude?.targets).toEqual([join(hub, ".claude", "settings.local.json")]);
+    expect(claude?.target).toBe(join(hub, ".claude", "settings.local.json"));
   });
 
   it("targets nombra los DOS archivos cuando los dos existen", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    writeClaudeSettings(workspace, "settings.json", ["/tmp/a"]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/b"]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    writeClaudeSettings(hub, "settings.json", ["/tmp/a"]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/b"]);
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const claude = claudeOf(result);
     expect(claude?.status).toBe("ok");
     expect(claude?.targets).toEqual([
-      join(workspace, ".claude", "settings.json"),
-      join(workspace, ".claude", "settings.local.json"),
+      join(hub, ".claude", "settings.json"),
+      join(hub, ".claude", "settings.local.json"),
     ]);
     // `target` keeps the one-path shape: the FIRST file actually read.
-    expect(claude?.target).toBe(join(workspace, ".claude", "settings.json"));
+    expect(claude?.target).toBe(join(hub, ".claude", "settings.json"));
   });
 
   it("sin ningún settings el target sigue siendo settings.json (el archivo a crear)", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const claude = claudeOf(result);
     expect(claude?.status).toBe("no-settings");
-    expect(claude?.target).toBe(join(workspace, ".claude", "settings.json"));
-    expect(claude?.targets).toEqual([join(workspace, ".claude", "settings.json")]);
+    expect(claude?.target).toBe(join(hub, ".claude", "settings.json"));
+    expect(claude?.targets).toEqual([join(hub, ".claude", "settings.json")]);
     expect(claude?.detail).toContain("settings.local.json");
   });
 
   it("codex y warp reportan targets con su único archivo", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    const result = await runVisibilityDoctor(fs, env, paths, { workspace });
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    const result = await runVisibilityDoctor(fs, env, paths, { hub });
     const codex = result.reports.find((r) => r.host === "codex");
     const warp = result.reports.find((r) => r.host === "warp");
-    expect(codex?.targets).toEqual([join(workspace, ".codex", "config.toml")]);
+    expect(codex?.targets).toEqual([join(hub, ".codex", "config.toml")]);
     expect(warp?.targets).toEqual([warp?.target]);
   });
 
   // Residual 2: the same path in both files is ONE registration, not two.
   it("registered_paths no duplica una ruta declarada en settings.json Y en el .local", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    writeClaudeSettings(workspace, "settings.json", ["/tmp/a", "/tmp/b"]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/b", "/tmp/a"]);
-    const claude = claudeOf(await runVisibilityDoctor(fs, env, paths, { workspace }));
+    writeClaudeSettings(hub, "settings.json", ["/tmp/a", "/tmp/b"]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/b", "/tmp/a"]);
+    const claude = claudeOf(await runVisibilityDoctor(fs, env, paths, { hub }));
     // Orden de primera aparición, sin repetidos.
     expect(claude?.registered_paths).toEqual(["/tmp/a", "/tmp/b"]);
     expect(claude?.status).toBe("ok");
   });
 
   it("la deduplicación no cambia missing ni extra", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    writeClaudeSettings(workspace, "settings.json", ["/tmp/a", "/tmp/extra"]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/extra"]);
-    const claude = claudeOf(await runVisibilityDoctor(fs, env, paths, { workspace }));
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    writeClaudeSettings(hub, "settings.json", ["/tmp/a", "/tmp/extra"]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/extra"]);
+    const claude = claudeOf(await runVisibilityDoctor(fs, env, paths, { hub }));
     expect(claude?.status).toBe("extra-paths");
     expect(claude?.extra).toEqual(["/tmp/extra"]);
     expect(claude?.missing).toEqual([]);
   });
 
   it("global=true reporta global-pollution si ~/.claude tiene fuentes del hub", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a-test-pollution" },
       { alias: "b", path: "/tmp/b-test-pollution" },
     ]);
@@ -288,9 +288,9 @@ describe("runVisibilityDoctor", () => {
         permissions: { additionalDirectories: ["/tmp/a-test-pollution", "/tmp/ajeno"] },
       }),
     );
-    const globalEnv = new FakeEnv(homeStub, workspace);
+    const globalEnv = new FakeEnv(homeStub, hub);
 
-    const result = await runVisibilityDoctor(fs, globalEnv, paths, { workspace, global: true });
+    const result = await runVisibilityDoctor(fs, globalEnv, paths, { hub, global: true });
 
     expect(result.global_reports).toHaveLength(2);
     const claudeGlobal = result.global_reports.find((r) => r.host === "claude");
@@ -303,10 +303,10 @@ describe("runVisibilityDoctor", () => {
   });
 
   it("global sin ningún settings de claude apunta al settings.json a crear", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
     const homeStub = mkdtempSync(join(tmpdir(), "vis-doctor-home-"));
-    const result = await runVisibilityDoctor(fs, new FakeEnv(homeStub, workspace), paths, {
-      workspace,
+    const result = await runVisibilityDoctor(fs, new FakeEnv(homeStub, hub), paths, {
+      hub,
       global: true,
     });
     const claudeGlobal = result.global_reports.find((r) => r.host === "claude");
@@ -320,56 +320,56 @@ describe("runVisibilityDoctor", () => {
 // Residual 3: `aw visibility doctor --format human` printed the same JSON as
 // `--json` because the command declared no human projection at all.
 describe("aw visibility doctor — proyección humana", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "vis-render-"));
-    env = new FakeEnv(workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "vis-render-"));
+    env = new FakeEnv(hub);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new VisibilityFixtureFs();
   });
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   async function render(detail = false): Promise<string> {
-    const data = await runVisibilityDoctor(fs, env, paths, { workspace });
+    const data = await runVisibilityDoctor(fs, env, paths, { hub });
     return visibilityCommand.renderHuman?.({ ok: true, data, exitCode: 0 }, { detail }) ?? "";
   }
 
   it("no es JSON: una línea por host con estado y archivo real", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/a"]);
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/a"]);
     const text = await render();
     expect(text.startsWith("{")).toBe(false);
     expect(text).toContain("claude");
     expect(text).toContain("codex");
     expect(text).toContain("warp");
     // El target impreso es el archivo del que salieron las rutas, no settings.json.
-    expect(text).toContain(join(workspace, ".claude", "settings.local.json"));
-    expect(text).not.toContain(join(workspace, ".claude", "settings.json"));
+    expect(text).toContain(join(hub, ".claude", "settings.local.json"));
+    expect(text).not.toContain(join(hub, ".claude", "settings.json"));
     expect(text.endsWith("\n")).toBe(true);
   });
 
   it("imprime los dos archivos cuando el doctor leyó los dos", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    writeClaudeSettings(workspace, "settings.json", ["/tmp/a"]);
-    writeClaudeSettings(workspace, "settings.local.json", []);
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    writeClaudeSettings(hub, "settings.json", ["/tmp/a"]);
+    writeClaudeSettings(hub, "settings.local.json", []);
     const text = await render();
     expect(text).toContain(
-      `${join(workspace, ".claude", "settings.json")} + ${join(workspace, ".claude", "settings.local.json")}`,
+      `${join(hub, ".claude", "settings.json")} + ${join(hub, ".claude", "settings.local.json")}`,
     );
   });
 
   it("lista faltantes y sobrantes, y ofrece el comando que corresponde", async () => {
-    writeProjectBlock(workspace, [
+    writeHubBlock(hub, [
       { alias: "a", path: "/tmp/a" },
       { alias: "b", path: "/tmp/b" },
     ]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/a", "/tmp/sobra"]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/a", "/tmp/sobra"]);
     const text = await render();
     expect(text).toContain("faltan: /tmp/b");
     expect(text).toContain("sobran: /tmp/sobra");
@@ -380,21 +380,18 @@ describe("aw visibility doctor — proyección humana", () => {
   });
 
   it("sin drift no propone ningún comando de corrección", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/a"]);
-    mkdirSync(join(workspace, ".codex"), { recursive: true });
-    writeFileSync(
-      join(workspace, ".codex", "config.toml"),
-      "additional_writable_roots = ['/tmp/a']\n",
-    );
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/a"]);
+    mkdirSync(join(hub, ".codex"), { recursive: true });
+    writeFileSync(join(hub, ".codex", "config.toml"), "additional_writable_roots = ['/tmp/a']\n");
     const text = await render();
     expect(text).toContain("3/3 host(s) sin drift");
     expect(text).not.toContain("Para corregir:");
   });
 
   it("--detail agrega declarados/registrados sin cambiar el veredicto", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
-    writeClaudeSettings(workspace, "settings.local.json", ["/tmp/a"]);
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
+    writeClaudeSettings(hub, "settings.local.json", ["/tmp/a"]);
     const brief = await render(false);
     const wide = await render(true);
     expect(brief).not.toContain("declarados:");
@@ -403,7 +400,7 @@ describe("aw visibility doctor — proyección humana", () => {
   });
 
   it("con drift el reporte viaja en action: ok:false sólo renderiza el error", async () => {
-    writeProjectBlock(workspace, [{ alias: "a", path: "/tmp/a" }]);
+    writeHubBlock(hub, [{ alias: "a", path: "/tmp/a" }]);
     const ctx = { fs, env, paths } as unknown as CliContext;
     const result = await visibilityCommand.execute(parseArgv(["visibility", "doctor"]), ctx);
     expect(result.ok).toBe(false);

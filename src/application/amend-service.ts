@@ -13,7 +13,7 @@
  * plan against its spec. Here there is no such assertion to stage — the caller
  * declares that the correction changes no scope, no criteria and no rules, and
  * that declaration is what gets recorded. What protects the write is not a second
- * step but the workspace lock plus the compare-and-swap on the document's own
+ * step but the hub lock plus the compare-and-swap on the document's own
  * digest, which is the same protection `reseal apply` ends up with.
  *
  * And the declaration is not what stops a change to the contract. That is
@@ -45,10 +45,10 @@ import { parsePhases } from "./parsers/phases.js";
 import { parsePlanStatus } from "./parsers/plan-status.js";
 import { functionalSpecDigest } from "./parsers/spec-functional.js";
 import { parseTasks } from "./parsers/tasks.js";
-import { type PathsService, resolveWorkspaceRoot } from "./paths-service.js";
+import { type PathsService, resolveHubRoot } from "./paths-service.js";
 import { closingClausesOf, parsePlanSourceBoundary } from "./source-boundary-policy.js";
 
-/** Lives next to `claims.jsonl`: workspace state, never workspace corpus. */
+/** Lives next to `claims.jsonl`: hub state, never hub corpus. */
 const LEDGER_FILE = "amendments.jsonl";
 const LEDGER_VERSION = 1;
 const AMEND_OPERATION = "amend.wording";
@@ -84,7 +84,7 @@ export interface AmendFailure {
  */
 export interface Amendment {
   id: string;
-  /** Workspace-relative path of the corrected document. */
+  /** Hub-relative path of the corrected document. */
   document: string;
   /** `direct` is what distinguishes this from a change born of a refinement. */
   origin: "direct";
@@ -109,7 +109,7 @@ export interface AmendmentEvent {
 export interface AmendInput {
   /** Classify the proposed replacement without publishing or recording it. */
   check?: boolean;
-  /** Path inside the workspace, or a correlative the canon can resolve. */
+  /** Path inside the hub, or a correlative the canon can resolve. */
   target: string;
   /** The exact text to replace — it must appear exactly once. */
   from: string;
@@ -344,7 +344,7 @@ async function resolveTarget(
   paths: PathsService,
   target: string,
 ): Promise<ResolvedTarget | { failure: AmendFailure }> {
-  const root = await resolveWorkspaceRoot(fs, env, paths);
+  const root = await resolveHubRoot(fs, env, paths);
   const canon = await resolveCoreDocsCanon(fs, paths);
   if (!canon.ok) {
     return {
@@ -561,7 +561,7 @@ async function publish(
   paths: PathsService,
   input: { document: string; absolute: string; content: string; base: string },
 ): Promise<{ written: string[] } | { failure: AmendFailure }> {
-  const root = await resolveWorkspaceRoot(fs, env, paths);
+  const root = await resolveHubRoot(fs, env, paths);
   const proposal = sealProposal({
     operation: AMEND_OPERATION,
     artifacts: [{ path: input.document, content: input.content, overwrite: true }],

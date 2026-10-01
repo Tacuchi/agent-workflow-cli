@@ -10,10 +10,10 @@ import { type TerminalEvent, readEvents } from "./retirement/history-events.js";
 import { sessionNumericCode } from "./session-resolver.js";
 import {
   type IndexedDiscarded,
+  type IndexedHub,
   type IndexedPlan,
   type IndexedReservation,
   type IndexedSpec,
-  type IndexedWorkspace,
   type PendingRetirement,
   type PipelineItem,
   type SessionUnit,
@@ -61,7 +61,7 @@ export interface StatusSession {
 }
 
 export interface StatusOutput {
-  hub: IndexedWorkspace;
+  hub: IndexedHub;
   last_activity: string | null;
   specs: IndexedSpec[];
   plans: IndexedPlan[];
@@ -137,8 +137,8 @@ export interface StatusInput {
 }
 
 /**
- * Read-only whole-workspace status aggregator. Never throws on a reachable cwd:
- * an uninitialized workspace returns `initialized:false` with empty collections;
+ * Read-only whole-hub status aggregator. Never throws on a reachable cwd:
+ * an uninitialized hub returns `initialized:false` with empty collections;
  * a single unreadable file is skipped rather than tanking the command.
  */
 export async function runStatusCommand(
@@ -166,7 +166,7 @@ export async function runStatusCommand(
   const historyCollisions = findHistoryCollisions(index, rows);
 
   return {
-    hub: index.workspace,
+    hub: index.hub,
     last_activity: index.last_activity,
     specs: index.specs,
     plans: index.plans,

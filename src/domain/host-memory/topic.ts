@@ -2,7 +2,7 @@
  * Whether a piece of host memory is about Workline.
  *
  * A note's type cannot tell (most Workline learnings are filed as `project`), so
- * the test is what the text names: the tool, its command family, its workspace
+ * the test is what the text names: the tool, its command family, its hub
  * folder, or a real `aw` command. Checking `aw <x>` against the installed command
  * table keeps an unrelated "aw" out.
  */

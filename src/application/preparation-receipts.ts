@@ -49,9 +49,9 @@ export async function recordPreparation(
     const receipts = (await readReceipts(paths)).filter(
       (r) =>
         now - r.at < MAX_AGE &&
-        !(r.verb === verb && r.digest === digest && r.root === paths.workspaceDir()),
+        !(r.verb === verb && r.digest === digest && r.root === paths.hubDir()),
     );
-    receipts.push({ verb, digest, root: paths.workspaceDir(), at: now });
+    receipts.push({ verb, digest, root: paths.hubDir(), at: now });
     const tmp = `${file}.${randomUUID()}.tmp`;
     try {
       await writeFile(tmp, `${JSON.stringify(receipts)}\n`, { flag: "wx" });
@@ -73,9 +73,9 @@ export async function preparationMismatch(
   const receipts = (await readReceipts(paths)).filter(
     (r) => r.verb === verb && r.digest === digest,
   );
-  if (receipts.some((r) => r.root === paths.workspaceDir())) return null;
+  if (receipts.some((r) => r.root === paths.hubDir())) return null;
   const receipt = receipts.at(-1);
   return receipt
-    ? `HUB_MISMATCH: preparado en ${receipt.root}; hub actual ${paths.workspaceDir()}.`
+    ? `HUB_MISMATCH: preparado en ${receipt.root}; hub actual ${paths.hubDir()}.`
     : null;
 }

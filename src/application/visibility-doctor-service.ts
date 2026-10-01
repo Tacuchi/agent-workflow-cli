@@ -5,7 +5,7 @@ import type { McpHost } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { normalizePath } from "./multiroot/paths.js";
-import { readWorkspaceBlock, requireSourcePath } from "./parsers/project-block.js";
+import { readHubBlock, requireSourcePath } from "./parsers/hub-block.js";
 import { PathsService } from "./paths-service.js";
 import { readCustody } from "./session-custody-service.js";
 import { listSessionFolders } from "./session-resolver.js";
@@ -62,7 +62,7 @@ function oneTarget(file: string): HostTargets {
 }
 
 export interface VisibilityDoctorInput {
-  workspace?: string;
+  hub?: string;
   global?: boolean;
 }
 
@@ -87,14 +87,11 @@ export async function runVisibilityDoctor(
   paths: PathsService,
   input: VisibilityDoctorInput,
 ): Promise<VisibilityDoctorResult> {
-  const workspace = input.workspace ? resolve(input.workspace) : paths.workspaceDir();
-  const scoped = new PathsService(paths.namespace, dirname(paths.userRoot()), workspace);
-  const sourceReading = await readDeclaredFuentes(fs, scoped, workspace);
+  const hub = input.hub ? resolve(input.hub) : paths.hubDir();
+  const scoped = new PathsService(paths.namespace, dirname(paths.userRoot()), hub);
+  const sourceReading = await readDeclaredFuentes(fs, scoped, hub);
   const initial = sourceReading.paths;
-  const visible = [
-    inspectClaude(workspace, initial, "hub"),
-    inspectCodex(workspace, initial, "hub"),
-  ];
+  const visible = [inspectClaude(hub, initial, "hub"), inspectCodex(hub, initial, "hub")];
   const unitsRoot = await fs.realPath(scoped.userUnitsDir()).catch(() => scoped.userUnitsDir());
   const owns = await hubUnitPaths(fs, scoped, unitsRoot);
   const livingUnits: string[] = [];
@@ -111,16 +108,16 @@ export async function runVisibilityDoctor(
   }
   const declared = initial === null ? null : [...new Set([...initial, ...livingUnits])];
   const reports: VisibilityHostReport[] = [
-    inspectClaude(workspace, declared, "hub"),
-    inspectCodex(workspace, declared, "hub"),
-    inspectWarp(workspace, declared, "hub"),
+    inspectClaude(hub, declared, "hub"),
+    inspectCodex(hub, declared, "hub"),
+    inspectWarp(hub, declared, "hub"),
   ];
 
   const globalReports: VisibilityHostReport[] = [];
   if (input.global) {
-    // Home comes from the injected EnvPort, like the workspace does: reading
+    // Home comes from the injected EnvPort, like the hub does: reading
     // node:os directly made the global scope unobservable from a test, which is
-    // the half of the doctor that touches files outside the workspace.
+    // the half of the doctor that touches files outside the hub.
     const home = env.homeDir();
     globalReports.push(inspectClaudeGlobal(home, declared), inspectCodexGlobal(home, declared));
   }
@@ -137,7 +134,7 @@ export async function runVisibilityDoctor(
   }
 
   return {
-    hub_dir: workspace,
+    hub_dir: hub,
     ...(sourceReading.errors.length > 0 ? { unreadable_sources: sourceReading.errors } : {}),
     reports,
     global_reports: globalReports,
@@ -148,14 +145,9 @@ export async function runVisibilityDoctor(
 async function readDeclaredFuentes(
   fs: FileSystemPort,
   paths: PathsService,
-  workspace: string,
+  hub: string,
 ): Promise<{ paths: string[] | null; errors: string[] }> {
-  const block = await readWorkspaceBlock(
-    fs,
-    workspace,
-    paths.blockMarkers(),
-    (b) => b.fuentes.length > 0,
-  );
+  const block = await readHubBlock(fs, hub, paths.blockMarkers(), (b) => b.fuentes.length > 0);
   if (!block) return { paths: null, errors: [] };
   const pathsFound: string[] = [];
   const errors: string[] = [];
@@ -257,8 +249,8 @@ function inspectWarp(
   _declared: string[] | null,
   scope: "hub" | "global",
 ): VisibilityHostReport {
-  // Warp Terminal does not have a workspace additionalDirectories concept.
-  // Report is always ok — workspace path management is not applicable for Warp.
+  // Warp Terminal does not have a hub additionalDirectories concept.
+  // Report is always ok — hub path management is not applicable for Warp.
   const target = join(_scopeDir, ".warp", "settings.toml");
   return {
     host: "warp",

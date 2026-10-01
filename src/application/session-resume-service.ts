@@ -117,8 +117,8 @@ async function reopenSessionAndRun(
 ): Promise<SessionResumeError | { resumes_at: string | null }> {
   const reopened = await reopenUnderLock(fs, paths, session, contextId);
   if ("error" in reopened) return reopened;
-  // F3 keeps the workspace and run locks separate. If the second step fails,
-  // restore the marker under the workspace lock before reporting failure.
+  // F3 keeps the hub and run locks separate. If the second step fails,
+  // restore the marker under the hub lock before reporting failure.
   let run: RunReopen;
   try {
     run = await reopenRun(fs, locateRun(paths, session.folder));
@@ -334,14 +334,14 @@ async function resumedSessionOutput(
   state: SessionEntry["state"],
   resumesAt: string | null,
 ): Promise<SessionResumeResult> {
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
   // Dual-read: new-model SESSION.md first, legacy OBJECTIVE.md as fallback.
   const objetivoPath =
     (await findArtifact(session.path, "session", fs)) ??
     (await findArtifact(session.path, "objective", fs));
   const objetivoText = objetivoPath ? await fs.readText(objetivoPath) : null;
 
-  // Resume context comes from the folder-local CHECKPOINT.md, not the project block.
+  // Resume context comes from the folder-local CHECKPOINT.md, not the hub block.
   const checkpoint = await readLatestCheckpoint(fs, session.path);
 
   return {

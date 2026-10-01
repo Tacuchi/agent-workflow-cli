@@ -28,15 +28,15 @@ const FAKE_DSN = "postgres://usuario:CLAVE-INVENTADA-9f3a@localhost:5432/cert";
 
 let root: string;
 let home: string;
-let workspace: string;
+let hub: string;
 let ctx: CliContext;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "doctor-tools-auth-"));
   home = join(root, "home");
-  workspace = join(root, "ws");
+  hub = join(root, "ws");
   mkdirSync(home, { recursive: true });
-  mkdirSync(workspace, { recursive: true });
+  mkdirSync(hub, { recursive: true });
   const dev = join(home, ".workflow", "dev");
   mkdirSync(dev, { recursive: true });
   writeFileSync(
@@ -47,8 +47,8 @@ beforeEach(() => {
     })}\n`,
   );
   ctx = {
-    env: new FakeEnv(home, workspace),
-    paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
+    env: new FakeEnv(home, hub),
+    paths: new PathsService(normalizeNamespace("workflow"), home, hub),
   } as unknown as CliContext;
 });
 
@@ -67,7 +67,7 @@ function inputFor(): DoctorProviderInput {
     hosts: [],
     hostStates: [],
     currentHost: null,
-    workspaceDir: workspace,
+    hubDir: hub,
     skipNative: false,
   };
 }

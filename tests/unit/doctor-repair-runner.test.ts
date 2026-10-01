@@ -62,7 +62,7 @@ vi.mock("../../src/application/mcp-migration-service.js", () => ({
 vi.mock("../../src/application/multiroot-service.js", () => ({
   runMultiroot: spy("runMultiroot", {}),
 }));
-vi.mock("../../src/application/doctor/provider-workspace-block.js", () => ({
+vi.mock("../../src/application/doctor/provider-hub-block.js", () => ({
   applyRetiredSectionRemoval: spy("applyRetiredSectionRemoval", true),
 }));
 vi.mock("../../src/application/mcp-connections-service.js", () => ({
@@ -75,7 +75,7 @@ const ctx = {
   fs: {},
   env: { homeDir: () => "/home/tester" },
   paths: {
-    workspaceDir: () => "/ws",
+    hubDir: () => "/ws",
     cwdSkillsToml: () => "/ws/.workflow/skills.toml",
     userSkillsToml: () => "/home/tester/.workflow/skills.toml",
     blockMarkers: () => ({
@@ -298,9 +298,9 @@ describe("el cableado entre una operación y la función que escribe", () => {
       actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "hub" }),
       ctx,
     );
-    const workspaceCall = invocations.find((call) => call.name === "runMcpSetup");
-    expect(workspaceCall?.args[1]).toMatchObject({ scope: "hub", workspace: "/ws" });
-    expect(workspaceCall?.args[1]).not.toHaveProperty("globalApproval");
+    const hubCall = invocations.find((call) => call.name === "runMcpSetup");
+    expect(hubCall?.args[1]).toMatchObject({ scope: "hub", hub: "/ws" });
+    expect(hubCall?.args[1]).not.toHaveProperty("globalApproval");
   });
 
   it("la conexión que la operación recibe es la que su instancia nombra, no cualquiera", async () => {

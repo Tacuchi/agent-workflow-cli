@@ -18,14 +18,14 @@ export interface SessionState {
 }
 
 /**
- * `workspaceRoot` and not the process's cwd on purpose: the cwd is wherever the
+ * `hubRoot` and not the process's cwd on purpose: the cwd is wherever the
  * operator happened to stand, and using it made the inventory's boundary an
  * accident of invocation instead of a property of the session.
  */
 export async function extractSessionState(
   fs: FileSystemPort,
   git: GitPort,
-  workspaceRoot: string,
+  hubRoot: string,
   sessionPath: string,
 ): Promise<SessionState> {
   const folder = sessionPath.split(/[\\/]/).pop() ?? "";
@@ -34,7 +34,7 @@ export async function extractSessionState(
   const progressPct = tasks.total > 0 ? Math.round((100 * tasks.closed) / tasks.total) : null;
   const lastDecision = await readLastDecision(fs, sessionPath);
   const artefacts = await listArtefacts(fs, sessionPath);
-  const filesTouched = await collectFilesTouched(fs, git, workspaceRoot, sessionPath);
+  const filesTouched = await collectFilesTouched(fs, git, hubRoot, sessionPath);
   const origen = await readOrigen(fs, sessionPath);
 
   return {

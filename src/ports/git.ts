@@ -143,9 +143,9 @@ export interface GitPort {
    * The directory's own path relative to its repository root, with a trailing
    * slash; `""` when the directory IS the root, `null` when it is in no repo.
    *
-   * This is what bounds a reading to a workspace nested inside a bigger
+   * This is what bounds a reading to a hub nested inside a bigger
    * repository. `localChanges` answers for the whole repository and spells its
-   * paths from the repository root, so without this prefix a nested workspace
+   * paths from the repository root, so without this prefix a nested hub
    * cannot tell its own files from a sibling project's — which is how a
    * checkpoint came to list hundreds of entries that were never its own.
    */

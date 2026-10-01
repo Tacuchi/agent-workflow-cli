@@ -2,13 +2,13 @@ import { dirname, join } from "node:path";
 import { unitsRoot } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { resolveHubDirectory } from "../runtime/hub-resolution.js";
 import type { Namespace } from "../runtime/namespace.js";
 import { WORKLINE_MARKER_FILE } from "../runtime/workline-marker.js";
-import { resolveWorkspaceDirectory } from "../runtime/workspace-resolution.js";
 import { localDateIso } from "./dates.js";
-import { hubBlockMarkers } from "./parsers/project-block.js";
+import { hubBlockMarkers } from "./parsers/hub-block.js";
 
-export interface ProjectBlockMarkers {
+export interface HubBlockMarkers {
   start: string;
   end: string;
 }
@@ -25,8 +25,8 @@ export class PathsService {
     return this.ns;
   }
 
-  /** The resolved Workline workspace root. */
-  workspaceDir(): string {
+  /** The resolved Workline hub root. */
+  hubDir(): string {
     return this.root;
   }
 
@@ -71,7 +71,7 @@ export class PathsService {
     return join(this.userRoot(), "lib", `.${this.ns}-core-version`);
   }
   /**
-   * Root of every flow's isolation units, across every workspace.
+   * Root of every flow's isolation units, across every hub.
    *
    * Deliberately OUTSIDE any repository: a worktree nested inside its own source
    * would show up in that source's status, its ignores and its own scans.
@@ -80,7 +80,7 @@ export class PathsService {
     return unitsRoot(this.userRoot());
   }
 
-  // workspace-level (.${ns}/... at the resolved Workline root)
+  // hub-level (.${ns}/... at the resolved Workline root)
   cwdRoot(): string {
     return join(this.root, `.${this.ns}`);
   }
@@ -115,7 +115,7 @@ export class PathsService {
    * that restoring an earlier copy of a run's ledger cannot give back attempts
    * already spent, and while it lived inside the session folder a `cp -r` of
    * that folder took the counter with it — the evasion arrived wearing the shape
-   * of a backup. Here it is workspace runtime, dot-prefixed so
+   * of a backup. Here it is hub runtime, dot-prefixed so
    * `listSessionFolders` skips it, and already covered by the `.${ns}/sessions/`
    * entry of the gitignore the CLI manages.
    */
@@ -132,8 +132,8 @@ export class PathsService {
     return join(this.cwdRoot(), "local.json");
   }
   /**
-   * The workspace's own mark — what the resolver reads to tell a Workline
-   * workspace from a host tool's directory that happens to hold a `sessions/`.
+   * The hub's own mark — what the resolver reads to tell a Workline
+   * hub from a host tool's directory that happens to hold a `sessions/`.
    */
   cwdMarkerFile(): string {
     return join(this.cwdRoot(), WORKLINE_MARKER_FILE);
@@ -141,7 +141,7 @@ export class PathsService {
   cwdLockFile(): string {
     return join(this.cwdRoot(), ".lock");
   }
-  // skills.toml — capability role → skill bindings (cascade: global then workspace)
+  // skills.toml — capability role → skill bindings (cascade: global then hub)
   userSkillsToml(): string {
     return join(this.userRoot(), "skills.toml");
   }
@@ -150,16 +150,16 @@ export class PathsService {
   }
 
   // CLAUDE.md / AGENTS.md hub block markers
-  blockMarkers(): ProjectBlockMarkers {
+  blockMarkers(): HubBlockMarkers {
     return hubBlockMarkers(this.ns);
   }
 }
 
 /**
- * Resolve the workspace root directory.
+ * Resolve the hub root directory.
  *
- * Graduation always lands at the workspace root (the parent of `.<ns>/`),
- * regardless of how many sources the workspace declares.
+ * Graduation always lands at the hub root (the parent of `.<ns>/`),
+ * regardless of how many sources the hub declares.
  *
  * Walks up from the resolved Workline root looking for the nearest directory
  * that contains the canonical `.<ns>/sessions/` marker. This guarantees that
@@ -170,30 +170,30 @@ export class PathsService {
  * given start unchanged. The command bootstrap already made that start the
  * implicit Workline root, so this never guesses a Git root.
  */
-export async function resolveWorkspaceRoot(
+export async function resolveHubRoot(
   fs: FileSystemPort,
   _env: EnvPort,
   paths: PathsService,
 ): Promise<string> {
-  return resolveWorkspaceRootFrom(fs, paths, paths.workspaceDir());
+  return resolveHubRootFrom(fs, paths, paths.hubDir());
 }
 
 /**
  * The same walk, for a caller that holds no `EnvPort`.
  *
- * It starts from the paths service's resolved workspace root. A caller that
+ * It starts from the paths service's resolved hub root. A caller that
  * holds a source-local `from` can still ask for the nearest canonical marker.
  */
-export async function resolveWorkspaceRootFrom(
+export async function resolveHubRootFrom(
   fs: FileSystemPort,
   paths: PathsService,
-  from: string = paths.workspaceDir(),
+  from: string = paths.hubDir(),
 ): Promise<string> {
-  if (from === paths.workspaceDir()) return from;
-  const resolved = await resolveWorkspaceDirectory(
+  if (from === paths.hubDir()) return from;
+  const resolved = await resolveHubDirectory(
     fs,
     {
-      root: paths.workspaceDir(),
+      root: paths.hubDir(),
       namespace: paths.namespace,
       namespaceSource: "default",
       materialized: true,

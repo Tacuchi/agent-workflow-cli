@@ -7,6 +7,7 @@ import {
   buildMcpEntry,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
+import type { WorklineMaterialization } from "./hub-materialization-service.js";
 import { classifyMcpEntry } from "./mcp-entry-classification.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
 import { removeMcpEntry } from "./mcp-host-writer.js";
@@ -18,7 +19,6 @@ import {
   resolveScopeDir,
   toErrorRecord,
 } from "./mcp-scope-common.js";
-import type { WorklineMaterialization } from "./workspace-materialization-service.js";
 
 export type McpRemoveInput = McpScopeInput & {
   hosts: McpHost[];
@@ -40,7 +40,7 @@ export interface McpRemoveResult {
   errors: McpErrorRecord[];
   /** Successful descriptor removals that still require the host to reload. */
   reload_required?: McpRemovalReloadRequirement[];
-  /** First-write receipt when the CLI materialized an implicit workspace for removal. */
+  /** First-write receipt when the CLI materialized an implicit hub for removal. */
   materialization?: WorklineMaterialization;
 }
 

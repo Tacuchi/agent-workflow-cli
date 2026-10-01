@@ -3,7 +3,7 @@
  *
  * Same shape and same reasons as the two ledgers next to it: append-only, one
  * JSON record per line, under `.workflow/` and deliberately OUTSIDE `docs/`. A
- * pass is workspace state, not a document somebody published.
+ * pass is hub state, not a document somebody published.
  *
  * Append-only matters here in a third way, different from the claims ledger's
  * irrevocable fence and from the cut intent's reviewable correction: an arrival
@@ -43,7 +43,7 @@ export type ReleasePassEvent =
       at: string;
       event: "linked";
       pass_version: string;
-      /** Workspace-relative path. The file is never opened, moved or renumbered. */
+      /** Hub-relative path. The file is never opened, moved or renumbered. */
       artifact: string;
     }
   | {
@@ -193,7 +193,7 @@ export async function recordReversion(
 }
 
 /**
- * Link an artifact to a pass, by workspace-relative path.
+ * Link an artifact to a pass, by hub-relative path.
  *
  * The file is checked for EXISTENCE and nothing else — never opened, never moved,
  * never renumbered, never executed. A link is a pointer the pass holds; making it
@@ -205,7 +205,7 @@ export async function linkArtifact(
   paths: PathsService,
   input: { at: string; passVersion: string; artifact: string },
 ): Promise<{ linked: true } | { linked: false; reason: string }> {
-  const absolute = join(paths.workspaceDir(), input.artifact);
+  const absolute = join(paths.hubDir(), input.artifact);
   if (!(await fs.exists(absolute))) {
     return {
       linked: false,

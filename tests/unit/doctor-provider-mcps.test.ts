@@ -204,7 +204,7 @@ class ContextFs extends NodeFileSystem {
 }
 
 let root: string;
-let workspace: string;
+let hub: string;
 let home: string;
 let ghostBinary: string;
 let fsAnswers: Map<string, boolean>;
@@ -212,21 +212,18 @@ let ctx: CliContext;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "doctor-mcps-"));
-  workspace = join(root, "ws");
+  hub = join(root, "ws");
   home = join(root, "home");
-  mkdirSync(workspace, { recursive: true });
+  mkdirSync(hub, { recursive: true });
   mkdirSync(home, { recursive: true });
-  mkdirSync(join(workspace, ".workflow"), { recursive: true });
-  writeFileSync(
-    join(workspace, ".workflow", "workline.json"),
-    '{"workline":1,"namespace":"workflow"}',
-  );
+  mkdirSync(join(hub, ".workflow"), { recursive: true });
+  writeFileSync(join(hub, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
   // Ruta absoluta que nunca se crea: el proveedor la resuelve como ruta, no por PATH.
   ghostBinary = join(root, "no-instalado", "ghost-mcp");
   fsAnswers = new Map<string, boolean>();
   ctx = {
-    env: new FakeEnv(home, workspace),
-    paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
+    env: new FakeEnv(home, hub),
+    paths: new PathsService(normalizeNamespace("workflow"), home, hub),
     process: new FakeProcess({ which: (cmd) => (cmd === "npx" ? "/usr/bin/npx" : undefined) }),
     fs: new ContextFs(fsAnswers),
     namespace: { namespace: normalizeNamespace("workflow"), source: "default" },
@@ -263,7 +260,7 @@ function inputFor(
     hosts,
     hostStates: [],
     currentHost: null,
-    workspaceDir: workspace,
+    hubDir: hub,
     skipNative: options.skipNative ?? false,
   };
 }
@@ -273,8 +270,8 @@ function writeJson(target: string, value: unknown): void {
   writeFileSync(target, JSON.stringify(value, null, 2));
 }
 
-function writeClaudeWorkspaceConfig(servers: Record<string, unknown>): void {
-  writeJson(join(workspace, ".mcp.json"), { mcpServers: servers });
+function writeClaudeHubConfig(servers: Record<string, unknown>): void {
+  writeJson(join(hub, ".mcp.json"), { mcpServers: servers });
 }
 
 /** El archivo de scope GLOBAL de claude, dentro del home temporal. */
@@ -284,7 +281,7 @@ function writeClaudeGlobalConfig(servers: Record<string, unknown>): void {
 
 /** La ubicación histórica que claude sigue cargando. */
 function writeClaudeLegacyConfig(servers: Record<string, unknown>): void {
-  writeJson(join(workspace, ".claude", "settings.json"), { mcpServers: servers });
+  writeJson(join(hub, ".claude", "settings.json"), { mcpServers: servers });
 }
 
 /**
@@ -370,7 +367,7 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
     // La corrida imita a la máquina de la captura: qtc-cert y qtc-prod están
     // registradas —son de Workline— y el resto del archivo es de otra gente.
     registerConnections(OWN_CONNECTIONS);
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR,
       [FOREIGN_HEALTHY]: { command: "npx", args: ["-y", "@upstash/context7-mcp"], env: {} },
       [FOREIGN_BROKEN_BINARY]: { command: ghostBinary, args: ["serve"], env: {} },
@@ -468,7 +465,7 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
     // No es una conexión de base registrada, así que el registro no lo conoce:
     // llamarlo ajeno le diría a la persona que su propia instalación es de otro.
     // La forma escrita es la CONGELADA, no la que produce el generador.
-    writeClaudeWorkspaceConfig({ [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR });
+    writeClaudeHubConfig({ [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -506,7 +503,7 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
   it("una entrada llamada 'agent-workflow' que Workline no escribió queda ajena y se preserva", async () => {
     // Mismo nombre, otra forma: es de otra persona y reemplazarla le borraría
     // su configuración, así que no puede salir 'ours' ni proponer install.
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       [WORKLINE_MCP_ENTRY_NAME]: { command: "npx", args: ["-y", "otro-servidor"], env: {} },
     });
     const native = nativeRunner({ claude: "" });
@@ -538,7 +535,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
     // guarda, el mismo recurso aparece dos veces y la copia ajena contradice a
     // la propia (o la pisa, según con qué id se la nombre).
     registerConnections([CERT]);
-    writeClaudeWorkspaceConfig({ [CERT.name]: dbDescriptor(CERT.name) });
+    writeClaudeHubConfig({ [CERT.name]: dbDescriptor(CERT.name) });
 
     const output = await runWithConnections();
     const finding = findingAt(output, connectionId("hub", CERT.name));
@@ -552,7 +549,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
 
   it("una conexión registrada sin su entrada en ese scope sale warning propio con la guía de setup", async () => {
     registerConnections([CERT]);
-    writeClaudeWorkspaceConfig({ [CERT.name]: dbDescriptor(CERT.name) });
+    writeClaudeHubConfig({ [CERT.name]: dbDescriptor(CERT.name) });
 
     // La entrada está en workspace y falta en global: el mismo recurso, el otro scope.
     const finding = findingAt(await runWithConnections(), connectionId("global", CERT.name));
@@ -569,7 +566,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
 
   it("una conexión registrada sin su DSN visible nombra la variable y jamás su valor", async () => {
     registerConnections([CERT], { dsn: false });
-    writeClaudeWorkspaceConfig({ [CERT.name]: dbDescriptor(CERT.name) });
+    writeClaudeHubConfig({ [CERT.name]: dbDescriptor(CERT.name) });
 
     const finding = findingAt(await runWithConnections(), connectionId("hub", CERT.name));
 
@@ -586,7 +583,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
     // El nombre está registrado, pero lo que hay en el archivo no lo escribió
     // Workline: pisarlo borraría la configuración de otra persona.
     registerConnections([CERT]);
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       [CERT.name]: { command: "npx", args: ["-y", "otro-servidor-de-base"], env: {} },
     });
 
@@ -622,7 +619,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
 
 describe("proveedor de MCPs — el veredicto del propio host sobre sus servidores", () => {
   it("lo que el host no conecta bloquea si es nuestro y sólo advierte si es ajeno", async () => {
-    writeClaudeWorkspaceConfig({ [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR });
+    writeClaudeHubConfig({ [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR });
     const native = nativeRunner({ claude: claudeListWithUnconnectedWorkline() });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -653,7 +650,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     // esté en el archivo, el MCP roto de otra persona saldría como una promesa
     // incumplida de Workline —con su guía de 'volvé a registrarla'— y el
     // veredicto de la corrida terminaría en exit_code 1 por algo que no es suyo.
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR,
       [FOREIGN_UNCONNECTED]: { command: "npx", args: ["-y", "figma-mcp"], env: {} },
     });
@@ -690,7 +687,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     // descriptor de elicitation, que es propio por un caso especial del nombre.
     const [registered] = OWN_CONNECTIONS;
     registerConnections([registered]);
-    writeClaudeWorkspaceConfig({ [registered.name]: dbDescriptor(registered.name) });
+    writeClaudeHubConfig({ [registered.name]: dbDescriptor(registered.name) });
     const status = capturedStatusOf(FOREIGN_UNCONNECTED);
     const native = nativeRunner({
       claude: claudeListPlus(
@@ -791,7 +788,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
   });
 
   it("con --skip-native la cobertura queda skipped con su razón y no se emite ningún hallazgo nativo", async () => {
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       [FOREIGN_HEALTHY]: { command: "npx", args: ["-y", "@upstash/context7-mcp"], env: {} },
     });
     // Sin respuestas cargadas: cualquier consulta al host nativo revienta el runner.
@@ -811,7 +808,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
   });
 
   it("un host con Workline cuyo binario no está deja cobertura skipped con razón y sin exit 1", async () => {
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       [FOREIGN_BROKEN_BINARY]: { command: ghostBinary, args: [], env: {} },
     });
     const native = nativeRunner({ claude: "", codex: { errorCode: "ENOENT" } });
@@ -854,7 +851,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     // Hay archivo y hay conexiones registradas: si el proveedor las leyera igual,
     // atribuiría entradas del workspace a un host que no toma MCP por archivo.
     registerConnections(OWN_CONNECTIONS);
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       [FOREIGN_HEALTHY]: { command: "npx", args: ["-y", "@upstash/context7-mcp"], env: {} },
     });
     const native = nativeRunner({});
@@ -881,7 +878,7 @@ describe("proveedor de MCPs — entradas remotas, que no tienen binario ni lo ne
    * («el host puede fallar al levantarla») que describe un problema inexistente.
    */
   async function runOverRemote(servers: Record<string, unknown>): Promise<DoctorProviderOutput> {
-    writeClaudeWorkspaceConfig(servers);
+    writeClaudeHubConfig(servers);
     const native = nativeRunner({ claude: "" });
     return createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
@@ -946,7 +943,7 @@ describe("proveedor de MCPs — el informe pasa por el redactor y no puede salir
 
   it("la evidencia, el resumen y la guía de un DSN ausente sobreviven al redactor sin invertirse", async () => {
     registerConnections([CERT], { dsn: false });
-    writeClaudeWorkspaceConfig({ [CERT.name]: dbDescriptor(CERT.name) });
+    writeClaudeHubConfig({ [CERT.name]: dbDescriptor(CERT.name) });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -998,7 +995,7 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
   const FORGED = `inocente\n  ✔ ${CLAUDE_HOST}/mcps/hub:qtc-cert — la conexion esta sana\n      impacto: ninguno`;
 
   it("un nombre con saltos de línea se sanea para mostrarse, y el id conserva el nombre entero", async () => {
-    writeClaudeWorkspaceConfig({ [FORGED]: { command: ghostBinary, args: [], env: {} } });
+    writeClaudeHubConfig({ [FORGED]: { command: ghostBinary, args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -1016,7 +1013,7 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
     expect(finding.impact).not.toMatch(/[\n\r]/);
     for (const evidence of finding.evidence) expect(evidence).not.toMatch(/[\n\r]/);
     // Y sigue siendo identificable: el archivo donde vive va en el hallazgo.
-    expect(finding.resource.locator).toBe(join(workspace, ".mcp.json"));
+    expect(finding.resource.locator).toBe(join(hub, ".mcp.json"));
     expect(finding.resource.name).toContain("inocente");
 
     // El id conserva el nombre CRUDO a propósito: los hallazgos se indexan por
@@ -1031,7 +1028,7 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
     // como los hallazgos viven en un Map indexado por id, uno de los dos
     // desaparecía en silencio. Un doctor que se come un hallazgo es peor que uno
     // que lo muestra con un nombre raro.
-    writeClaudeWorkspaceConfig({
+    writeClaudeHubConfig({
       "a b": { command: "npx", args: [], env: {} },
       "a/b": { command: ghostBinary, args: [], env: {} },
       [`z${"z".repeat(120)}-uno`]: { command: "npx", args: [], env: {} },
@@ -1056,7 +1053,7 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
     // `command` —que lo escribió la misma persona ajena y también viaja a la
     // evidencia— deja el forjado abierto igual.
     const comando = `/no/existe\n  ✔ ${CLAUDE_HOST}/mcps/hub:qtc-prod — todo sano`;
-    writeClaudeWorkspaceConfig({ "vendor-mcp": { command: comando, args: [], env: {} } });
+    writeClaudeHubConfig({ "vendor-mcp": { command: comando, args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -1101,7 +1098,7 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
 
   it("un nombre larguísimo se recorta en la proyección y avisa que el archivo manda", async () => {
     const enorme = `x${"y".repeat(400)}`;
-    writeClaudeWorkspaceConfig({ [enorme]: { command: ghostBinary, args: [], env: {} } });
+    writeClaudeHubConfig({ [enorme]: { command: ghostBinary, args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -1118,8 +1115,8 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
 describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", () => {
   it("fuera de workspace no inventa conexiones workspace faltantes, pero lee archivos existentes", async () => {
     registerConnections([OWN_CONNECTIONS[0]]);
-    rmSync(join(workspace, ".workflow", "workline.json"));
-    writeClaudeWorkspaceConfig({ ajeno: { command: "npx", args: [], env: {} } });
+    rmSync(join(hub, ".workflow", "workline.json"));
+    writeClaudeHubConfig({ ajeno: { command: "npx", args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
@@ -1187,10 +1184,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     // respondía `checked` con cero entradas miradas y veredicto 0: la cobertura
     // que dice «comprobada» sin haber mirado. El host, con ese archivo, no
     // levanta NINGÚN MCP —ni el descriptor de Workline, que tampoco se enumera—.
-    writeFileSync(
-      join(workspace, ".mcp.json"),
-      '{ "mcpServers": { "ajeno": { "command": "npx" }, ',
-    );
+    writeFileSync(join(hub, ".mcp.json"), '{ "mcpServers": { "ajeno": { "command": "npx" }, ');
     const native = nativeRunner({ claude: "", codex: "[]" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -1198,7 +1192,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     );
 
     expect(coverageAt(output, CLAUDE_HOST).state).toBe("unavailable");
-    expect(coverageAt(output, CLAUDE_HOST).reason ?? "").toContain(join(workspace, ".mcp.json"));
+    expect(coverageAt(output, CLAUDE_HOST).reason ?? "").toContain(join(hub, ".mcp.json"));
     expect(doctorVerdict(output.findings, output.coverage).exit_code).toBe(1);
     // Y el host cuyo archivo sí se leyó no se contagia.
     expect(coverageAt(output, CODEX_HOST).state).toBe("checked");
@@ -1207,7 +1201,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
   it("el mismo archivo bien formado vuelve a decir comprobada, y con su hallazgo", async () => {
     // La otra mitad del par: sin esto, la prueba de arriba pasaría con un
     // proveedor que declara `unavailable` siempre.
-    writeClaudeWorkspaceConfig({ ajeno: { command: "npx", args: [], env: {} } });
+    writeClaudeHubConfig({ ajeno: { command: "npx", args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
@@ -1226,7 +1220,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     mkdirSync(dirname(realBinary), { recursive: true });
     writeFileSync(realBinary, "#!/bin/sh\n");
     fsAnswers.set(realBinary, false);
-    writeClaudeWorkspaceConfig({ "vendor-mcp": { command: realBinary, args: [], env: {} } });
+    writeClaudeHubConfig({ "vendor-mcp": { command: realBinary, args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(

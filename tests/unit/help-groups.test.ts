@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { hubBlockUpsertCommand } from "../../src/cli/commands/hub-block.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
-import { projectMdUpsertCommand } from "../../src/cli/commands/project-md-upsert.js";
 import {
   INTENTS,
   commandHelpText,
@@ -199,10 +199,10 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
   });
 
   it("hub-block exige exactamente uno, y rechaza ambas operaciones juntas", async () => {
-    const help = commandHelpText(projectMdUpsertCommand);
+    const help = commandHelpText(hubBlockUpsertCommand);
     expect(help).toContain("exactly one of: --read | --init");
     expect(help).toMatch(/--fuente <[^>]+> +Declare a source with --init\. \(repeatable\)/);
-    const result = await projectMdUpsertCommand.execute(
+    const result = await hubBlockUpsertCommand.execute(
       parseArgv(["hub-block", "--read", "--init"]),
       {} as CliContext,
     );

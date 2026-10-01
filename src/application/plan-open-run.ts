@@ -50,10 +50,10 @@ export interface HoldingRuns {
  *   interleaving this reading exists to prevent;
  * - a run of ANY OTHER FLOW holds no plan at all. A `quick` or a `spec-refine`
  *   never fixes one, and treating it as a holder is how this reading came to
- *   claim every plan in the workspace;
+ *   claim every plan in the hub;
  * - a run whose journey is EXHAUSTED (`final`) holds nothing any more, even
  *   though its session was never closed. Counting it would leave `aw settle`
- *   useless in exactly the workspace it was built for — a plan blocked today,
+ *   useless in exactly the hub it was built for — a plan blocked today,
  *   whose run finished long ago;
  * - a `plan-exec` run with no scope yet may still fix THIS plan, so it counts
  *   too — said as what it is rather than as an unreadable state.
@@ -80,7 +80,7 @@ export async function readHoldingRuns(
     // `plan-exec`, así que mirarlo primero convertía toda corrida de `quick`,
     // `spec-refine` o `plan-new` en «una corrida ilegible» — y con eso en la
     // dueña de TODO plan que nadie más nombrara. `aw settle` quedaba inservible
-    // en cualquier workspace con otra sesión abierta, que es el workspace normal
+    // en cualquier hub con otra sesión abierta, que es el hub normal
     // y justo el que la orden existe para destrabar.
     if (run.flow !== "plan-exec") continue;
     if (run.boundary === "final") continue;

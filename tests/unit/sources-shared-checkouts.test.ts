@@ -59,6 +59,6 @@ it("aw sources informa el otro hub y avisa cuando el checkout usa la rama ajena"
   );
   expect(output.sources[0]?.other_hubs).toMatchObject([{ working_branch: "main" }]);
   expect(output.sources[0]?.shared_branch_warning).toContain(
-    "checkout está en la rama de trabajo de otro workspace",
+    "checkout está en la rama de trabajo de otro hub",
   );
 });

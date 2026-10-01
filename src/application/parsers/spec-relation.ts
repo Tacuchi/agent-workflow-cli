@@ -326,7 +326,7 @@ export function declaresStandalone(text: string): boolean {
   return false;
 }
 
-/** Match a spec path under the workspace's declared documentary canon. */
+/** Match a spec path under the hub's declared documentary canon. */
 function specPathPattern(specDir: string): RegExp {
   const escaped = specDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`${escaped}/(${CORRELATIVE_SOURCE})-spec[^\\s\`)"']*\\.md`, "g");

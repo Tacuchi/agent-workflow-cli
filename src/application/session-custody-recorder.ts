@@ -180,7 +180,7 @@ export async function recordCommit(
 }
 
 export interface PublishedArtifact {
-  /** Workspace-relative destination. */
+  /** Hub-relative destination. */
   path: string;
   /** The bytes that were there BEFORE the write; `null` when nothing was. */
   previous: string | null;

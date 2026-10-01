@@ -1,10 +1,10 @@
 import { dirname, join } from "node:path";
 import {
   type UnitIdentity,
+  hubKey,
   parseUnitPath,
   unitBranch,
   unitPath,
-  workspaceKey,
 } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { DirEntry, FileSystemPort } from "../ports/file-system.js";
@@ -12,14 +12,11 @@ import type { GitPort, WorktreeEntry } from "../ports/git.js";
 import { isWorkingBranch, resolveSourceBranches } from "./branch-resolver.js";
 import { documentOfSession, resolveDocBranch } from "./doc-branch-ledger.js";
 import { locateRun, readRun } from "./flow/run-state-service.js";
+import { ensureWorklineMaterialized } from "./hub-materialization-service.js";
 import { withCwdLock } from "./lock-service.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "./parsers/project-block.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { recordIntegration, recordUnitTaken } from "./session-custody-recorder.js";
 import { readCustody } from "./session-custody-service.js";
@@ -37,10 +34,9 @@ import {
 } from "./unit-dependencies.js";
 import { hubUnitPaths } from "./unit-membership.js";
 import { finishResidue } from "./unit-residue.js";
-import { ensureWorklineMaterialized } from "./workspace-materialization-service.js";
 
 /**
- * How long an integration waits for the workspace lock before giving up.
+ * How long an integration waits for the hub lock before giving up.
  *
  * Longer than the registry's and the claim's, because what is behind this lock is
  * a merge: the wait is bounded by another merge finishing, not by a file write.
@@ -109,7 +105,7 @@ export type WorktreeEnsureOutput = IsolationUnit & {
  * One live unit as the list reports it: what it is, plus what its tree is doing.
  *
  * `dirty` and `head` are the two facts a branch or commit boundary needs and the
- * ones no other reading of this workspace can supply — `aw sources` answers them
+ * ones no other reading of this hub can supply — `aw sources` answers them
  * about the shared checkout, which under isolation is precisely the tree the flow
  * does NOT edit. `null` on either means the read failed, never "clean" and never
  * "no commit": a tree nobody could stat must not pass as a tree with nothing
@@ -130,11 +126,7 @@ export async function classifyListedUnits(
   deps: WorktreeDeps,
   units: ListedUnit[],
 ): Promise<ListedUnit[]> {
-  const block = await readWorkspaceBlock(
-    deps.fs,
-    deps.paths.workspaceDir(),
-    deps.paths.blockMarkers(),
-  );
+  const block = await readHubBlock(deps.fs, deps.paths.hubDir(), deps.paths.blockMarkers());
   const declared = new Set<string>();
   for (const source of block?.fuentes ?? []) {
     const roles = resolveSourceBranches(source, block);
@@ -658,7 +650,7 @@ async function integrateLocked(
 }
 
 interface ResolvedTarget {
-  source: ProjectFuente & { path: string };
+  source: HubFuente & { path: string };
   identity: UnitIdentity;
   path: string;
   branch: string;
@@ -671,11 +663,7 @@ async function resolveTarget(
   deps: WorktreeDeps,
   input: WorktreeInput,
 ): Promise<ResolvedTarget | WorktreeError> {
-  const block = await readWorkspaceBlock(
-    deps.fs,
-    deps.paths.workspaceDir(),
-    deps.paths.blockMarkers(),
-  );
+  const block = await readHubBlock(deps.fs, deps.paths.hubDir(), deps.paths.blockMarkers());
   const sources = block?.fuentes ?? [];
   const source = targetSource(sources, input.alias);
   if ("error" in source) return source;
@@ -696,7 +684,7 @@ async function resolveTarget(
   if (resolution.outcome !== "resolved") return sessionRefusal(resolution);
   const session = resolution.session.folder;
   const identity: UnitIdentity = {
-    workspaceKey: workspaceKey(deps.paths.workspaceDir()),
+    hubKey: hubKey(deps.paths.hubDir()),
     alias: source.alias,
     session,
   };
@@ -785,9 +773,9 @@ async function ensureUnit(
   // Vanished directories keep holding their branch until git is told, so the
   // prune runs BEFORE the occupancy read — otherwise a unit whose folder the
   // user deleted by hand would look occupied forever.
-  // The worktree itself lives under the user runtime, not under the workspace
+  // The worktree itself lives under the user runtime, not under the hub
   // root, so materialize explicitly before this first Git mutation rather than
-  // relying on a workspace-path filesystem write to notice it.
+  // relying on a hub-path filesystem write to notice it.
   await ensureWorklineMaterialized(deps.fs, deps.paths);
   const unitsRoot = await canonicalUnitsRootForRead(deps);
   const owns = await hubUnitPaths(deps.fs, deps.paths, unitsRoot);
@@ -900,7 +888,7 @@ async function deleteContainedUnitBranch(
 }
 
 /**
- * Collect the residue: one act over the whole workspace, or over one session.
+ * Collect the residue: one act over the whole hub, or over one session.
  *
  * Every unit it looks at is one the inventory already names — and the inventory
  * names units whose session is CLOSED or GONE. That is the whole reason this
@@ -919,11 +907,7 @@ async function reclaimUnits(
   deps: WorktreeDeps,
   input: WorktreeInput,
 ): Promise<WorktreeReclaimOutput | WorktreeError> {
-  const block = await readWorkspaceBlock(
-    deps.fs,
-    deps.paths.workspaceDir(),
-    deps.paths.blockMarkers(),
-  );
+  const block = await readHubBlock(deps.fs, deps.paths.hubDir(), deps.paths.blockMarkers());
   const sources = block?.fuentes ?? [];
   if (sources.length === 0) {
     return {
@@ -939,7 +923,7 @@ async function reclaimUnits(
       hint: `fuentes declaradas: ${sources.map((s) => s.alias).join(", ")}`,
     };
   }
-  const key = workspaceKey(deps.paths.workspaceDir());
+  const key = hubKey(deps.paths.hubDir());
   const root = await canonicalUnitsRootForRead(deps);
   const sessions = await sessionStates(deps);
   const owns = await hubUnitPaths(deps.fs, deps.paths, root);
@@ -975,14 +959,14 @@ async function reclaimUnits(
 /** What one source's residue produced, or why its trees could not be read. */
 async function sweepSource(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: HubFuente,
   ctx: {
     root: string;
     key: string;
     only: string | null;
     sessions: SessionStates;
     owns: (path: string) => boolean;
-    block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
+    block: Awaited<ReturnType<typeof readHubBlock>>;
   },
 ): Promise<
   | { reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }
@@ -1046,7 +1030,7 @@ async function branchForResidue(
       : undefined;
   if (recorded?.unit_branch) return recorded.unit_branch;
   const names = [
-    `aw/${identity.workspaceKey.slice(-8)}/${identity.session}`,
+    `aw/${identity.hubKey.slice(-8)}/${identity.session}`,
     unitBranch(identity.session),
   ];
   for (const branch of names) if (await deps.git.branchExists(repo, branch)) return branch;
@@ -1069,9 +1053,9 @@ async function baseForReclaim(
 /** The vanished trees git dropped, or the same ones still listed and why. */
 async function prune(
   deps: WorktreeDeps,
-  source: ProjectFuente & { path: string },
+  source: HubFuente & { path: string },
   vanished: ReclaimedUnit[],
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  block: Awaited<ReturnType<typeof readHubBlock>>,
 ): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }> {
   await ensureWorklineMaterialized(deps.fs, deps.paths);
   try {
@@ -1130,7 +1114,7 @@ function candidateOf(
   if (ctx.only !== null && !sessionFolderMatches(identity.session, ctx.only)) return null;
   const orphan = orphanReason(identity.session, ctx.sessions, tree.prunable);
   // Outside a named session only residue is touched: a live session's unit is
-  // somebody's working tree, and a workspace-wide sweep that could take one would
+  // somebody's working tree, and a hub-wide sweep that could take one would
   // be the failure this whole feature exists to prevent.
   if (orphan === null && ctx.only === null) return null;
   return { session: identity.session, alias: identity.alias, orphan };
@@ -1139,7 +1123,7 @@ function candidateOf(
 /** One candidate, weighed and then collected or left standing. */
 async function sweepOne(
   deps: WorktreeDeps,
-  source: ProjectFuente & { path: string },
+  source: HubFuente & { path: string },
   tree: WorktreeEntry,
   work: string | null,
   candidate: { session: string; alias: string; orphan: OrphanUnit["reason"] | null },
@@ -1242,7 +1226,7 @@ async function sweepOne(
  */
 async function reclaimability(
   deps: WorktreeDeps,
-  source: ProjectFuente & { path: string },
+  source: HubFuente & { path: string },
   tree: WorktreeEntry,
   work: string,
   orphan: OrphanUnit["reason"] | null,
@@ -1320,7 +1304,7 @@ async function reclaimability(
 
 /** How the work of a unit that is not on the working branch gets back onto it. */
 function recoveryFor(
-  source: ProjectFuente & { path: string },
+  source: HubFuente & { path: string },
   tree: WorktreeEntry,
   orphan: OrphanUnit["reason"] | null,
   work: string,
@@ -1336,7 +1320,7 @@ function recoveryFor(
 }
 
 /**
- * The workspace's live units — every one of them, or only one session's.
+ * The hub's live units — every one of them, or only one session's.
  *
  * The filter is what makes this reading usable as a run's own evidence: a flow
  * asking "is my tree there, on my branch, with my work committed?" must not be
@@ -1357,12 +1341,8 @@ async function listUnits(
   if (typeof narrowed !== "string" && narrowed !== null) return narrowed;
   const only = narrowed;
 
-  const block = await readWorkspaceBlock(
-    deps.fs,
-    deps.paths.workspaceDir(),
-    deps.paths.blockMarkers(),
-  );
-  const key = workspaceKey(deps.paths.workspaceDir());
+  const block = await readHubBlock(deps.fs, deps.paths.hubDir(), deps.paths.blockMarkers());
+  const key = hubKey(deps.paths.hubDir());
   const root = await canonicalUnitsRootForRead(deps);
   const sessions = await sessionStates(deps);
   const owns = await hubUnitPaths(deps.fs, deps.paths, root);
@@ -1398,7 +1378,7 @@ async function listUnits(
 /** What one source contributes to the list, or why its trees could not be read. */
 async function scanSource(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: HubFuente,
   ctx: {
     root: string;
     key: string;
@@ -1439,7 +1419,7 @@ async function scanSource(
 }
 
 /**
- * The session folder the list is narrowed to: `null` for the whole workspace, or
+ * The session folder the list is narrowed to: `null` for the whole hub, or
  * the refusal when the caller named one nobody can resolve.
  */
 async function narrowTo(
@@ -1579,7 +1559,7 @@ async function classifyCustodiedUnit(
   deps: WorktreeDeps,
   unit: ListedUnit,
   head: string,
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  block: Awaited<ReturnType<typeof readHubBlock>>,
   declared: Set<string>,
   custody: Awaited<ReturnType<typeof readCustody>>,
   classify: (
@@ -1670,10 +1650,7 @@ async function finishIntegration(
   };
 }
 
-function targetSource(
-  sources: ProjectFuente[],
-  alias: string | undefined,
-): ProjectFuente | WorktreeError {
+function targetSource(sources: HubFuente[], alias: string | undefined): HubFuente | WorktreeError {
   if (sources.length === 0) {
     return {
       error: "no_sources_declared",
@@ -1702,7 +1679,7 @@ function targetSource(
 
 async function previousUnsealedUnit(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: HubFuente,
   sourcePath: string,
   session: string,
   custody: Awaited<ReturnType<typeof readCustody>>,
@@ -1722,7 +1699,7 @@ async function previousUnsealedUnit(
     }
     if (previous) {
       const found = parseUnitPath(root, previous.path);
-      if (found) identity.workspaceKey = found.workspaceKey;
+      if (found) identity.hubKey = found.hubKey;
     }
   }
   return previous;
@@ -1899,13 +1876,13 @@ function reclaimNext(
 
 async function resolveCustodiedTarget(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: HubFuente,
   sourcePath: string,
   session: string,
   identity: UnitIdentity,
   roles: ResolvedTarget["roles"],
   custody: Awaited<ReturnType<typeof readCustody>>,
-  block: Awaited<ReturnType<typeof readWorkspaceBlock>>,
+  block: Awaited<ReturnType<typeof readHubBlock>>,
 ): Promise<ResolvedTarget | WorktreeError> {
   const sealed =
     custody.status === "present"
@@ -1918,7 +1895,7 @@ async function resolveCustodiedTarget(
   if (recorded?.unit_path) {
     const oldIdentity = parseUnitPath(await canonicalUnitsRootForRead(deps), recorded.unit_path);
     if (oldIdentity?.alias === source.alias && oldIdentity.session === session)
-      identity.workspaceKey = oldIdentity.workspaceKey;
+      identity.hubKey = oldIdentity.hubKey;
   }
   const previous = await previousUnsealedUnit(deps, source, sourcePath, session, custody, identity);
   const effective =
@@ -1941,8 +1918,7 @@ async function resolveCustodiedTarget(
     identity,
     path:
       recorded?.unit_path ?? previous?.path ?? unitPath(await canonicalUnitsRoot(deps), identity),
-    branch:
-      recorded?.unit_branch ?? previous?.branch ?? unitBranch(session, deps.paths.workspaceDir()),
+    branch: recorded?.unit_branch ?? previous?.branch ?? unitBranch(session, deps.paths.hubDir()),
     base: sealed ?? effective?.branch ?? null,
     roles,
   };
@@ -2024,7 +2000,7 @@ type SweepContext = Parameters<typeof sweepSource>[2];
 
 async function sweepUnregisteredDirectories(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: HubFuente,
   repo: string,
   ctx: SweepContext,
   trees: WorktreeEntry[],
@@ -2032,7 +2008,7 @@ async function sweepUnregisteredDirectories(
   retained: RetainedUnit[],
 ): Promise<void> {
   const registered = new Set(trees.map((tree) => normalizePath(tree.path)));
-  // Also visit previous workspace keys registered by 075, without claiming another hub's units.
+  // Also visit previous hub keys registered by 075, without claiming another hub's units.
   for (const keyEntry of (await deps.fs.lstat(ctx.root)) === null
     ? []
     : await deps.fs.list(ctx.root)) {
@@ -2056,7 +2032,7 @@ async function sweepUnregisteredDirectories(
 
 async function sweepUnregisteredSession(
   deps: WorktreeDeps,
-  source: ProjectFuente,
+  source: HubFuente,
   repo: string,
   ctx: SweepContext,
   sessionEntry: DirEntry,

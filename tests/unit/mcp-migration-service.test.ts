@@ -39,26 +39,26 @@ function publishedLegacy(name: string, dsnVar: string) {
 }
 
 describe("runMcpMigration", () => {
-  let workspace: string;
+  let hub: string;
   let env: EnvPort;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "aw-mcp-migration-"));
+    hub = mkdtempSync(join(tmpdir(), "aw-mcp-migration-"));
     env = {
       get: () => undefined,
-      homeDir: () => workspace,
-      cwd: () => workspace,
+      homeDir: () => hub,
+      cwd: () => hub,
     };
   });
 
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   function migrate(connections: readonly McpConnectionRef[] = [CONNECTION], apply = false) {
     return runMcpMigration(env, {
       scope: "workspace",
-      workspace,
+      hub,
       hosts: ["claude"],
       connections,
       namespace: "tenant-a",
@@ -71,7 +71,7 @@ describe("runMcpMigration", () => {
 
     expect(result).toMatchObject({
       scope: "workspace",
-      scope_dir: workspace,
+      scope_dir: hub,
       preview: true,
       summary: { missing: 1 },
     });
@@ -83,12 +83,12 @@ describe("runMcpMigration", () => {
         action: "install",
       }),
     ]);
-    expect(existsSync(join(workspace, ".mcp.json"))).toBe(false);
+    expect(existsSync(join(hub, ".mcp.json"))).toBe(false);
   });
 
   it("el preview reconoce únicamente la forma legacy Workline exacta", () => {
     const legacy = publishedLegacy(CONNECTION.name, CONNECTION.dsnVar);
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     const original = `${JSON.stringify(
       { mcpServers: { alpha: mcpEntryShapeForHost("claude", legacy) } },
       null,
@@ -108,7 +108,7 @@ describe("runMcpMigration", () => {
 
   it("migra el servidor legacy de elicitation sólo para la conexión DB homónima", () => {
     const legacy = worklineMcpEntry("claude");
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     const original = `${JSON.stringify(
       { mcpServers: { "agent-workflow": mcpEntryShapeForHost("claude", legacy) } },
       null,
@@ -141,7 +141,7 @@ describe("runMcpMigration", () => {
 
   it("no migra una variante del servidor legacy de elicitation", () => {
     const legacy = worklineMcpEntry("claude");
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     const foreign = {
       ...mcpEntryShapeForHost("claude", legacy),
       args: ["mcp", "serve", "--host", "claude", "--extra"],
@@ -156,7 +156,7 @@ describe("runMcpMigration", () => {
   });
 
   it("el preview bloquea una entrada ajena y conserva sus bytes", () => {
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     const original = `${JSON.stringify(
       {
         mcpServers: {
@@ -176,7 +176,7 @@ describe("runMcpMigration", () => {
   });
 
   it("el preview bloquea un contenedor malformado y no intenta repararlo", () => {
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     const original = "{ not valid json";
     writeFileSync(target, original);
 
@@ -192,7 +192,7 @@ describe("runMcpMigration", () => {
     const gamma: McpConnectionRef = { name: "gamma", dsnVar: "GAMMA_DATABASE_URL" };
     const legacy = publishedLegacy(CONNECTION.name, CONNECTION.dsnVar);
     const foreign = { command: "/usr/local/bin/foreign", args: ["serve"], env: {} };
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     writeFileSync(
       target,
       `${JSON.stringify(
@@ -241,13 +241,13 @@ describe("runMcpMigration", () => {
     expect(content.mcpServers.gamma).toEqual(foreign);
     for (const connection of [CONNECTION, beta]) {
       const entry = currentEntry(connection.name, connection.dsnVar);
-      const snapshot = readMcpEntry("claude", workspace, entry.name, "workspace");
+      const snapshot = readMcpEntry("claude", hub, entry.name, "workspace");
       expect(classifyMcpEntry("claude", snapshot, entry, connection).state).toBe("current");
     }
   });
 
   it("apply no sobrescribe una entrada foreign aunque haya sido solicitado", () => {
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     const original = `${JSON.stringify(
       {
         mcpServers: {
@@ -273,7 +273,7 @@ describe("runMcpMigration", () => {
       dsnVar: "QTC_CERT_DATABASE_URL",
     };
     const legacy = publishedLegacy("cert", qtcCert.dsnVar);
-    const target = join(workspace, ".mcp.json");
+    const target = join(hub, ".mcp.json");
     writeFileSync(
       target,
       `${JSON.stringify(
@@ -320,8 +320,8 @@ describe("runMcpMigration", () => {
       dsnVar: "QTC_CERT_DATABASE_URL",
     };
     const legacy = publishedLegacy("cert", qtcCert.dsnVar);
-    const legacyFile = join(workspace, ".claude", "settings.json");
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    const legacyFile = join(hub, ".claude", "settings.json");
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(
       legacyFile,
       `${JSON.stringify(
@@ -332,7 +332,7 @@ describe("runMcpMigration", () => {
     );
     // Force the current qtc write to fail after classification. The migration
     // must not remove `cert` until `qtc-cert` has been written and reread.
-    mkdirSync(join(workspace, ".mcp.json.agent-workflow.lock"));
+    mkdirSync(join(hub, ".mcp.json.agent-workflow.lock"));
 
     const applied = migrate([qtcCert], true);
 
@@ -351,7 +351,7 @@ describe("runMcpMigration", () => {
       mcpServers: Record<string, unknown>;
     };
     expect(retained.mcpServers.cert).toEqual(mcpEntryShapeForHost("claude", legacy));
-    expect(existsSync(join(workspace, ".mcp.json"))).toBe(false);
+    expect(existsSync(join(hub, ".mcp.json"))).toBe(false);
   });
 
   it("retira también un alias DBHub exacto de la ubicación histórica de Claude", () => {
@@ -360,8 +360,8 @@ describe("runMcpMigration", () => {
       dsnVar: "QTC_PROD_DATABASE_URL",
     };
     const legacy = publishedLegacy("prod", qtcProd.dsnVar);
-    const legacyFile = join(workspace, ".claude", "settings.json");
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    const legacyFile = join(hub, ".claude", "settings.json");
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(
       legacyFile,
       `${JSON.stringify(
@@ -391,6 +391,6 @@ describe("runMcpMigration", () => {
     });
 
     expect(result).toMatchObject({ ok: false, error: "global_requires_force", exitCode: 2 });
-    expect(existsSync(join(workspace, ".claude.json"))).toBe(false);
+    expect(existsSync(join(hub, ".claude.json"))).toBe(false);
   });
 });

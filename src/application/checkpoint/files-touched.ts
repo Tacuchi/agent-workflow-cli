@@ -2,14 +2,14 @@
  * The inventory of touched files a checkpoint reports, bounded on purpose.
  *
  * It used to be `git diff --numstat HEAD` run from wherever the process
- * happened to start, which is not a boundary at all. In a workspace nested
+ * happened to start, which is not a boundary at all. In a hub nested
  * inside a bigger repository the effective scope became the parent repository,
  * so a section meant to say "here is where you were" listed hundreds of files
  * belonging to sibling projects while omitting the one file the session had just
  * created. Three properties make it useful again, and each closes one way the
  * old reading could lie:
  *
- * - **The boundary is declared, never inherited.** It is the workspace plus the
+ * - **The boundary is declared, never inherited.** It is the hub plus the
  *   source units the session recorded in its own custody — durable, typed
  *   evidence. Nothing is inferred from a path or a name, because guessing at
  *   ownership is precisely what produced the foreign entries.
@@ -31,7 +31,7 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import { readCustody } from "../session-custody-service.js";
 
-/** The reserved alias of the workspace itself, the one unit always in scope. */
+/** The reserved alias of the hub itself, the one unit always in scope. */
 export const HUB_UNIT = "hub";
 
 /**
@@ -111,7 +111,7 @@ interface ScopedUnit {
 export async function collectFilesTouched(
   fs: FileSystemPort,
   git: GitPort,
-  workspaceRoot: string,
+  hubRoot: string,
   sessionPath: string,
 ): Promise<FilesTouched> {
   const custody = await readCustody(fs, sessionPath);
@@ -127,11 +127,11 @@ export async function collectFilesTouched(
     unobserved.push({ alias: "custodia", boundary: sessionPath, reason: custody.reason });
   }
 
-  // Custody artifact paths are already workspace-relative, which is the same
-  // spelling this inventory uses for the workspace unit.
+  // Custody artifact paths are already hub-relative, which is the same
+  // spelling this inventory uses for the hub unit.
   const claimed = new Set((present?.artifacts ?? []).map((artifact) => artifact.path));
 
-  const units = unitsInScope(present?.sources ?? [], workspaceRoot, unobserved);
+  const units = unitsInScope(present?.sources ?? [], hubRoot, unobserved);
 
   const observed: ObservedUnit[] = [];
   const linked: TouchedFile[] = [];
@@ -168,7 +168,7 @@ export async function collectFilesTouched(
 /**
  * Hands the readable cap out round-robin instead of first-come.
  *
- * Sorting puts the workspace first, so a plain `slice` gave the whole cap to
+ * Sorting puts the hub first, so a plain `slice` gave the whole cap to
  * whichever unit sorted first: twenty churning docs were enough to print ZERO
  * files from the isolation unit where a plan-exec session does its actual work,
  * while the scope line went on announcing that unit as observed. A reader
@@ -236,10 +236,10 @@ function quotaPerUnit(sizes: number[]): number[] {
  */
 function unitsInScope(
   sources: readonly CustodySource[],
-  workspaceRoot: string,
+  hubRoot: string,
   unobserved: UnobservedUnit[],
 ): ScopedUnit[] {
-  const units: ScopedUnit[] = [{ alias: HUB_UNIT, boundary: workspaceRoot }];
+  const units: ScopedUnit[] = [{ alias: HUB_UNIT, boundary: hubRoot }];
   for (const source of sources) {
     // The isolation unit is where this session's own edits live; a session that
     // took none could only have touched the source checkout itself.
@@ -285,8 +285,8 @@ async function observeUnit(
       added: null,
       removed: null,
       untracked: change.untracked,
-      // Only the workspace unit can match: custody spells its artifacts
-      // relative to the workspace and nothing else.
+      // Only the hub unit can match: custody spells its artifacts
+      // relative to the hub and nothing else.
       linked: unit.alias === HUB_UNIT && claimed.has(path),
     });
   }
@@ -296,7 +296,7 @@ async function observeUnit(
 /**
  * The path relative to the boundary, or `null` when it falls outside it.
  *
- * `localChanges` answers for the whole repository, so in a nested workspace
+ * `localChanges` answers for the whole repository, so in a nested hub
  * everything a sibling project changed arrives here too. This is the single line
  * that keeps somebody else's work out of this session's checkpoint.
  */

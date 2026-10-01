@@ -25,13 +25,13 @@ import { redactSensitiveValue } from "../../domain/redaction.js";
 import { readPackageVersion } from "../../runtime/version.js";
 import { annotateRepairs } from "./actions.js";
 import { DOCTOR_HOST_ORDER, type DoctorHostSelection, selectDoctorHosts } from "./hosts.js";
+import { hubBlockProvider } from "./provider-hub-block.js";
 import { createInstallationProvider } from "./provider-installation.js";
 import { type McpsProviderDeps, createMcpsProvider } from "./provider-mcps.js";
 import { pluginsHooksProvider } from "./provider-plugins-hooks.js";
 import { skillsProvider } from "./provider-skills.js";
 import { toolsAuthProvider } from "./provider-tools-auth.js";
 import { visibilityProvider } from "./provider-visibility.js";
-import { workspaceBlockProvider } from "./provider-workspace-block.js";
 import { type DoctorProvider, type DoctorProviderInput, coverage } from "./types.js";
 
 export interface DoctorRunOptions {
@@ -68,7 +68,7 @@ export function defaultDoctorProviders(
     toolsAuthProvider,
     pluginsHooksProvider,
     visibilityProvider,
-    workspaceBlockProvider,
+    hubBlockProvider,
   ];
 }
 
@@ -80,14 +80,14 @@ export async function runDoctor(
   const currentHost = normalizeHost(options.host ?? null);
   const only = [...(options.only ?? [])];
   const selection = await selectDoctorHosts(ctx, { currentHost, only });
-  const workspaceDir = ctx.paths.workspaceDir();
+  const hubDir = ctx.paths.hubDir();
 
   const input: DoctorProviderInput = {
     ctx,
     hosts: selection.hosts,
     hostStates: selection.states,
     currentHost,
-    workspaceDir,
+    hubDir,
     skipNative: options.skipNative === true,
     ...(options.verify === undefined ? {} : { verifyAuthorization: options.verify }),
   };
@@ -128,7 +128,7 @@ export async function runDoctor(
   const report: DoctorReport = {
     schema_version: DOCTOR_SCHEMA_VERSION,
     cli_version: readPackageVersion(),
-    scope: { hub_dir: workspaceDir, current_host: currentHost, only },
+    scope: { hub_dir: hubDir, current_host: currentHost, only },
     hosts: selection.hosts.map(({ mcp_host: _mcpHost, ...view }) => view),
     hosts_absent: selection.absent,
     coverage: orderedCoverage,

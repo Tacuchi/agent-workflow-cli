@@ -6,7 +6,7 @@ import { type ClaudeResult, attachClaude, detachClaude } from "./multiroot/claud
 import { type CodexResult, attachCodex, detachCodex } from "./multiroot/codex.js";
 import { type OzAttachNoop, attachOz, detachOz } from "./multiroot/oz.js";
 import { type WarpResult, attachWarp, detachWarp } from "./multiroot/warp.js";
-import { readWorkspaceBlock, requireSourcePath } from "./parsers/project-block.js";
+import { readHubBlock, requireSourcePath } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 
 export interface MultirootInput {
@@ -14,7 +14,7 @@ export interface MultirootInput {
   pathsCsv?: string;
   fromSources?: boolean;
   useGlobal?: boolean;
-  workspace?: string;
+  hub?: string;
   /** Compute host-config changes without creating directories, backups or files. */
   dryRun?: boolean;
   skipClaude?: boolean;
@@ -57,7 +57,7 @@ export async function runMultiroot(
 
   if (input.fromSources && paths.length === 0) {
     return {
-      error: "no_sources_in_project_block",
+      error: "no_sources_in_hub_block",
       hint: "El bloque del hub no declara fuentes; pasá --path explícito.",
     };
   }
@@ -115,7 +115,7 @@ async function resolveScopeAndPaths(
     );
   }
   if (input.fromSources) {
-    paths = await readSourcesFromProject(fs, pathsService);
+    paths = await readSourcesFromHub(fs, pathsService);
   }
 
   let scopeDir: string;
@@ -123,23 +123,23 @@ async function resolveScopeAndPaths(
   if (input.useGlobal) {
     scopeDir = homedir();
     scope = "global";
-  } else if (input.workspace) {
-    scopeDir = resolve(input.workspace);
+  } else if (input.hub) {
+    scopeDir = resolve(input.hub);
     scope = "hub";
   } else {
-    scopeDir = pathsService.workspaceDir();
+    scopeDir = pathsService.hubDir();
     scope = "hub";
   }
   return { paths, scopeDir, scope };
 }
 
-async function readSourcesFromProject(
+async function readSourcesFromHub(
   fs: FileSystemPort,
   pathsService: PathsService,
 ): Promise<string[]> {
-  const block = await readWorkspaceBlock(
+  const block = await readHubBlock(
     fs,
-    pathsService.workspaceDir(),
+    pathsService.hubDir(),
     pathsService.blockMarkers(),
     (b) => b.fuentes.length > 0,
   );

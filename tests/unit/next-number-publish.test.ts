@@ -31,19 +31,19 @@ class FailingPublishFs extends NodeFileSystem {
 }
 
 describe("runNextNumber --publish", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
-  const specs = (): string[] => readdirSync(join(workspace, "docs", "specs")).sort();
+  const specs = (): string[] => readdirSync(join(hub, "docs", "specs")).sort();
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "next-number-publish-"));
-    env = new FakeEnv(workspace, workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "next-number-publish-"));
+    env = new FakeEnv(hub, hub);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new NodeFileSystem();
   });
-  afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+  afterEach(() => rmSync(hub, { recursive: true, force: true }));
 
   it("asigna el correlativo y escribe los bytes finales en un solo acto", async () => {
     const out = await runNextNumber(fs, env, paths, {
@@ -57,7 +57,7 @@ describe("runNextNumber --publish", () => {
     expect(out.claimed_path).toBeNull();
     expect(out.claimed_owner).toBeNull();
     expect(out.claim_reused).toBe(false);
-    expect(readFileSync(join(workspace, "docs", "specs", "001-spec-algo.md"), "utf8")).toContain(
+    expect(readFileSync(join(hub, "docs", "specs", "001-spec-algo.md"), "utf8")).toContain(
       "# 001 — Spec — algo",
     );
     expect(Object.keys(out)[0]).toBe("published_path");
@@ -74,7 +74,7 @@ describe("runNextNumber --publish", () => {
     // El defecto de origen fue exactamente un archivo de cero bytes ocupando un
     // correlativo: si esta afirmación se rompe, volvió.
     expect(
-      readFileSync(join(workspace, "docs", "specs", onDisk[0] as string), "utf8").length,
+      readFileSync(join(hub, "docs", "specs", onDisk[0] as string), "utf8").length,
     ).toBeGreaterThan(0);
   });
 
@@ -105,8 +105,8 @@ describe("runNextNumber --publish", () => {
   });
 
   it("salta un correlativo que otro documento ya tiene", async () => {
-    mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
-    writeFileSync(join(workspace, "docs", "specs", "001-spec-vieja.md"), "x");
+    mkdirSync(join(hub, "docs", "specs"), { recursive: true });
+    writeFileSync(join(hub, "docs", "specs", "001-spec-vieja.md"), "x");
 
     const out = await runNextNumber(fs, env, paths, {
       directory: "docs/specs",
@@ -114,7 +114,7 @@ describe("runNextNumber --publish", () => {
     });
 
     expect(out.next).toBe("002");
-    expect(readFileSync(join(workspace, "docs", "specs", "001-spec-vieja.md"), "utf8")).toBe("x");
+    expect(readFileSync(join(hub, "docs", "specs", "001-spec-vieja.md"), "utf8")).toBe("x");
   });
 
   it("repetir nombre y contenido es idempotente; cambiar contenido publica otro número", async () => {
@@ -145,7 +145,7 @@ describe("runNextNumber --publish", () => {
     });
     expect(preview.published_path).toContain("001-spec-previa.md");
     expect(preview.created).toBe(false);
-    expect(() => readdirSync(join(workspace, "docs"))).toThrow();
+    expect(() => readdirSync(join(hub, "docs"))).toThrow();
   });
 
   it("el comando --publish se niega fuera de un workspace sin materializarlo", async () => {
@@ -154,7 +154,7 @@ describe("runNextNumber --publish", () => {
       { fs, env, paths } as CliContext,
     );
     expect(result.error?.code).toBe("HUB_ABSENT");
-    expect(() => readdirSync(join(workspace, ".workflow"))).toThrow();
+    expect(() => readdirSync(join(hub, ".workflow"))).toThrow();
   });
 
   it("rechaza un nombre que es una ruta en lugar de un nombre", async () => {
@@ -166,7 +166,7 @@ describe("runNextNumber --publish", () => {
     ).rejects.toThrow(/separadores de ruta/);
     // La guarda corre ANTES del candado y del scan, así que ni el directorio se
     // creó: no hay «directorio vacío» que inspeccionar, no hay directorio.
-    expect(() => readdirSync(join(workspace, "docs"))).toThrow();
+    expect(() => readdirSync(join(hub, "docs"))).toThrow();
   });
 
   it("reclamar y publicar se excluyen", async () => {
@@ -178,7 +178,7 @@ describe("runNextNumber --publish", () => {
       }),
     ).rejects.toThrow(/se excluyen/);
     // Mismo motivo: la exclusión se decide antes de tocar el filesystem.
-    expect(() => readdirSync(join(workspace, "docs"))).toThrow();
+    expect(() => readdirSync(join(hub, "docs"))).toThrow();
   });
 });
 

@@ -30,7 +30,7 @@ export async function runSessionsSweep(
       if (state !== "closed" && state !== "abandoned") continue;
       terminal.add(folder.name);
       const lock = join(folder.path, ".flow-run.json.lock");
-      if (await fs.exists(lock)) locks.push(relative(paths.workspaceDir(), lock));
+      if (await fs.exists(lock)) locks.push(relative(paths.hubDir(), lock));
     }
     const attempts = await terminalAttempts(fs, paths, terminal, present);
     const registry = await readBindingRegistry(fs, paths);
@@ -61,7 +61,7 @@ async function terminalAttempts(
       if (file.type !== "file" || !file.name.endsWith(".json")) continue;
       const folder = file.name.slice(0, -".json".length);
       if (terminal.has(folder) || !present.has(folder))
-        attempts.push(relative(paths.workspaceDir(), file.path));
+        attempts.push(relative(paths.hubDir(), file.path));
     }
   }
   return attempts;
@@ -74,7 +74,7 @@ async function removeTerminalState(
   attempts: string[],
   bindings: string[],
 ): Promise<void> {
-  for (const file of [...locks, ...attempts]) await fs.remove(join(paths.workspaceDir(), file));
+  for (const file of [...locks, ...attempts]) await fs.remove(join(paths.hubDir(), file));
   for (const folder of bindings) {
     const cleared = await invalidateBindingsTo(fs, paths, folder);
     if (!cleared.ok) throw new Error(cleared.reason);

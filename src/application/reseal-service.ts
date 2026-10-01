@@ -24,7 +24,7 @@
  * read-only and answers with the preview plus the sealed proposal, and
  * {@link applyReseal} RE-RUNS the preparation, demands that the approval still
  * matches what the recomputation produces, and only then publishes under the
- * workspace lock with the plan's own digest as the compare-and-swap base. That is
+ * hub lock with the plan's own digest as the compare-and-swap base. That is
  * what makes it impossible to overwrite a `plan-exec` publication in flight: if
  * the plan or its spec moved since the preview, the recomputed digest differs and
  * the approval no longer fits.
@@ -46,7 +46,7 @@ import {
   parsePlanBaselineSeal,
   parseSpecRelation,
 } from "./parsers/spec-relation.js";
-import { type PathsService, resolveWorkspaceRoot } from "./paths-service.js";
+import { type PathsService, resolveHubRoot } from "./paths-service.js";
 import { locatePlanDocument } from "./plan-locator.js";
 
 /** What the proposal calls itself: one operation, one vocabulary. */
@@ -84,9 +84,9 @@ export interface ResealFailure {
 
 /** Everything a person needs before asserting that the plan still holds. */
 export interface ResealPreview {
-  /** Workspace-relative path of the plan whose seal is rewritten. */
+  /** Hub-relative path of the plan whose seal is rewritten. */
   plan: string;
-  /** Workspace-relative path of the spec the plan declares as its source. */
+  /** Hub-relative path of the spec the plan declares as its source. */
   spec: string;
   /** The digest the plan seals TODAY; `null` when it seals nothing. */
   sealed_digest: string | null;
@@ -116,7 +116,7 @@ export type ResealApplication =
   | { status: "failed"; failure: ResealFailure };
 
 export interface ApplyResealInput {
-  /** The plan: a workspace-relative path, or its correlative. */
+  /** The plan: a hub-relative path, or its correlative. */
   target: string;
   /** The digest `prepare` showed. Nothing is written unless it still fits. */
   approval: string;
@@ -143,7 +143,7 @@ export async function prepareReseal(
   paths: PathsService,
   target: string,
 ): Promise<ResealPreparation> {
-  const root = await resolveWorkspaceRoot(fs, env, paths);
+  const root = await resolveHubRoot(fs, env, paths);
   const canon = await resolveCoreDocsCanon(fs, paths);
   if (!canon.ok) {
     return fail(
@@ -242,7 +242,7 @@ export async function prepareReseal(
       // The plan's CURRENT digest, so the write lands on the bytes the preview
       // was computed from and on no others.
       bases: [{ path: planPath, digest: baseDigest(planText) }],
-      scope: { hub_root: paths.workspaceDir() },
+      scope: { hub_root: paths.hubDir() },
       effects: ["mutate_overwrite"],
       requiresApproval: ["mutate_overwrite"],
     }),
@@ -252,7 +252,7 @@ export async function prepareReseal(
 /**
  * Land exactly the line that was previewed, or nothing at all.
  *
- * The preparation runs AGAIN, from the live workspace, and the approval is
+ * The preparation runs AGAIN, from the live hub, and the approval is
  * compared against what THAT produces. Trusting the digest a preview handed back
  * would authorize a state that may no longer exist — and the state that moves
  * here is not hypothetical: `plan-exec` publishes into the same plan while a
@@ -278,7 +278,7 @@ export async function applyReseal(
     );
   }
 
-  const root = await resolveWorkspaceRoot(fs, env, paths);
+  const root = await resolveHubRoot(fs, env, paths);
   const applied = await applyLocalProposal(fs, paths, {
     root,
     proposal: prepared.proposal,
@@ -414,12 +414,12 @@ function undeclaredHeaderLineage(
 }
 
 /**
- * The plan a target names: an exact workspace-relative path, or a correlative
+ * The plan a target names: an exact hub-relative path, or a correlative
  * resolved against the documentary canon.
  *
  * The short form exists because typing the whole slug to fix one line is
  * ceremony, and it resolves against the CANON rather than a literal `docs/plans`
- * so a workspace that declares its own plan folder is read the way every other
+ * so a hub that declares its own plan folder is read the way every other
  * surface reads it. A path is checked with the same guard every write boundary
  * uses and then required to be INSIDE that folder — comparing segments, so
  * `docs/plans-viejos` never passes as `docs/plans`: a re-seal writes a plan's

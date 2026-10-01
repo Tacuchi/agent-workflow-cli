@@ -60,7 +60,7 @@ export const persistCommand: CliCommand<PersistData> = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<PersistData>> {
     const stage = args.rest[0];
     // The request is never carried between stages: each one rebuilds it from
-    // the workspace. That is what makes the handshake stateless AND what
+    // the hub. That is what makes the handshake stateless AND what
     // detects staleness — a docs/ that moved yields a different digest.
     if (stage !== "prepare" && stage !== "validate" && stage !== "apply") {
       return fail("ARGS_INVALID", "uso: aw persist prepare | validate | apply --approval <digest>");

@@ -202,7 +202,7 @@ async function buildProposal(
   return {
     ok: true,
     proposal: sealRetirementProposal({
-      hub_root: deps.paths.workspaceDir(),
+      hub_root: deps.paths.hubDir(),
       mode: closure.mode,
       target: closure.target.id,
       closure: closure.entries.map(
@@ -233,7 +233,7 @@ interface SessionCollector {
   custody: RetirementCustodyScope[];
   units: RetirementUnit[];
   reservations: RetirementReservation[];
-  /** Every held correlative in the workspace, as the index projects them. */
+  /** Every held correlative in the hub, as the index projects them. */
   slots: readonly IndexedReservation[];
   dirty: RetirementProposal["dirty"];
   reverts: RetirementProposal["reverts"];
@@ -426,7 +426,7 @@ async function collectCustodyArtifacts(
   for (const artifact of custody.artifacts) {
     if (artifact.role === "output") {
       // Born inside the session: it goes, in both modes.
-      const absolute = join(deps.paths.workspaceDir(), artifact.path);
+      const absolute = join(deps.paths.hubDir(), artifact.path);
       collector.deletes.push({
         path: artifact.path,
         kind: "file",
@@ -435,7 +435,7 @@ async function collectCustodyArtifacts(
       continue;
     }
     if (collector.mode !== "reset") continue;
-    const absolute = join(deps.paths.workspaceDir(), artifact.path);
+    const absolute = join(deps.paths.hubDir(), artifact.path);
     const eolOnly = await hasOnlyEolChange(deps.fs, absolute, artifact.before.content);
     collector.restores.push({
       path: artifact.path,

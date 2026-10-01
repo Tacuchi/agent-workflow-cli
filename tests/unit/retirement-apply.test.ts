@@ -35,8 +35,8 @@ import { sealCustody } from "../../src/domain/session/custody.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
-function movedBranch(workspace: string, folder: string): string {
-  return `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${folder}`;
+function movedBranch(hub: string, folder: string): string {
+  return `aw/${createHash("sha256").update(hub.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${folder}`;
 }
 
 function git(repo: string, ...args: string[]): string {
@@ -85,7 +85,7 @@ Retiro.
  */
 describe("coordinador de retiro — dos estados estables y una sola huella", () => {
   let root: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let paths: PathsService;
   let deps: ApplyDeps;
@@ -96,9 +96,9 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
   function newProcess(): ApplyDeps {
     return {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(join(root, "home"), workspace),
+      env: new FakeEnv(join(root, "home"), hub),
       git: new GitCliAdapter(new NodeProcess()),
-      paths: new PathsService(normalizeNamespace("workflow"), join(root, "home"), workspace),
+      paths: new PathsService(normalizeNamespace("workflow"), join(root, "home"), hub),
     };
   }
 
@@ -135,25 +135,25 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "apply-"));
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, "acme");
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
-    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    mkdirSync(join(hub, "docs", "specs"), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
     mkdirSync(source, { recursive: true });
     git(source, "init", "--quiet", "--initial-branch=main");
     writeFileSync(join(source, "base.txt"), "base\n");
     git(source, "add", "-A");
     git(source, "commit", "-q", "-m", "inicial");
 
-    writeFileSync(join(workspace, "CLAUDE.md"), block(source));
-    writeFileSync(join(workspace, "docs", "specs", "025-spec-algo.md"), SPEC);
-    writeFileSync(join(workspace, planPath), PLAN_OPEN);
+    writeFileSync(join(hub, "CLAUDE.md"), block(source));
+    writeFileSync(join(hub, "docs", "specs", "025-spec-algo.md"), SPEC);
+    writeFileSync(join(hub, planPath), PLAN_OPEN);
 
-    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), workspace);
+    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), hub);
     deps = {
       fs,
-      env: new FakeEnv(join(root, "home"), workspace),
+      env: new FakeEnv(join(root, "home"), hub),
       git: new GitCliAdapter(new NodeProcess()),
       paths,
     };
@@ -173,8 +173,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (!outcome.ok) return;
 
     // Nada de la clausura sigue en pie.
-    expect(existsSync(join(workspace, planPath))).toBe(false);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
+    expect(existsSync(join(hub, planPath))).toBe(false);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(false);
     // Y la única superficie durable propia de Workline es la fila de HISTORY.
     expect(rowsFor(proposal.digest)).toBe(1);
     expect(history()).toContain(`| ${folder} |`);
@@ -187,13 +187,13 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(existsSync(join(journalDir(paths), `${proposal.digest}.json`))).toBe(false);
     expect(outcome.result.already_applied).toBe(false);
     // La spec que NO estaba en el alcance sigue intacta.
-    expect(existsSync(join(workspace, "docs", "specs", "025-spec-algo.md"))).toBe(true);
+    expect(existsSync(join(hub, "docs", "specs", "025-spec-algo.md"))).toBe(true);
   });
 
   it("aplica un reset devolviendo la entrada a sus bytes previos byte por byte", async () => {
     const folder = await session("algo-plan-exec", [planPath]);
     // La sesión avanzó el plan.
-    writeFileSync(join(workspace, planPath), PLAN_OPEN.replace("- [ ] T1.1", "- [x] T1.1"));
+    writeFileSync(join(hub, planPath), PLAN_OPEN.replace("- [ ] T1.1", "- [x] T1.1"));
     const proposal = await proposalFor("reset", planPath);
 
     const outcome = await applyRetirement(deps, {
@@ -204,8 +204,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
 
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(PLAN_OPEN);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(PLAN_OPEN);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(false);
     expect(outcome.result.restored).toEqual([planPath]);
     expect(rowsFor(proposal.digest)).toBe(1);
   });
@@ -213,7 +213,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
   it("reset restaura los bytes originales aunque un editor sólo cambie LF a CRLF después de preparar", async () => {
     await session("algo-plan-exec", [planPath]);
     const proposal = await proposalFor("reset", planPath);
-    writeFileSync(join(workspace, planPath), PLAN_OPEN.replace(/\n/g, "\r\n"));
+    writeFileSync(join(hub, planPath), PLAN_OPEN.replace(/\n/g, "\r\n"));
 
     const outcome = await applyRetirement(deps, {
       mode: "reset",
@@ -221,12 +221,12 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       approval: proposal.digest,
     });
     expect(outcome.ok).toBe(true);
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(PLAN_OPEN);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(PLAN_OPEN);
   });
 
   it("una aprobación que no es la del alcance vigente no toca nada", async () => {
     await session("algo-plan-exec", [planPath]);
-    const before = readFileSync(join(workspace, planPath), "utf-8");
+    const before = readFileSync(join(hub, planPath), "utf-8");
 
     const outcome = await applyRetirement(deps, {
       mode: "discard",
@@ -236,7 +236,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.rejection.message).toContain("lo aprobado no es lo que se aplicaría");
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(before);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(before);
     expect(history()).not.toContain("## Retiros");
     expect(existsSync(journalDir(paths))).toBe(false);
   });
@@ -245,7 +245,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     const folder = await session("algo-plan-exec", [planPath]);
     const proposal = await proposalFor("reset", planPath);
     // Alguien edita el plan DESPUÉS de sellar la propuesta.
-    writeFileSync(join(workspace, planPath), `${PLAN_OPEN}\n<!-- editado a mano -->\n`);
+    writeFileSync(join(hub, planPath), `${PLAN_OPEN}\n<!-- editado a mano -->\n`);
 
     const outcome = await applyRetirement(deps, {
       mode: "reset",
@@ -256,8 +256,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (outcome.ok) return;
     // El digest cambia con los bytes, así que el rechazo llega por el sello.
     expect(outcome.rejection.code).toBe("EVIDENCE_MISSING");
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toContain("editado a mano");
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toContain("editado a mano");
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
     expect(history()).not.toContain("## Retiros");
   });
 
@@ -295,14 +295,14 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // El ref quedó donde lo dejó el competidor y no hay fila de éxito.
     expect(git(source, "rev-parse", `refs/heads/aw/${folder}`)).toBe(moved);
     expect(history()).not.toContain("## Retiros");
-    expect(existsSync(join(workspace, planPath))).toBe(true);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(existsSync(join(hub, planPath))).toBe(true);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
   });
 
   it("un proceso que murió ANTES del punto de commit: la reentrada descarta lo invisible", async () => {
     const folder = await session("algo-plan-exec", [planPath]);
     const proposal = await proposalFor("discard", "plan:024");
-    const planBefore = readFileSync(join(workspace, planPath), "utf-8");
+    const planBefore = readFileSync(join(hub, planPath), "utf-8");
     const refsBefore = git(source, "show-ref");
 
     // El mid-state real: journal escrito y cuarentena preparada, ref sin mover.
@@ -320,8 +320,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       { digest: proposal.digest, outcome: "rolled-back", target: "plan:024" },
     ]);
     // Estado observable idéntico: nada de esto llegó a existir para nadie.
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(planBefore);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(planBefore);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
     expect(git(source, "show-ref")).toBe(refsBefore);
     expect(existsSync(journal.quarantine)).toBe(false);
     expect(history()).not.toContain("## Retiros");
@@ -387,8 +387,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     const recovery = await recoverPendingRetirements(newProcess());
     expect(recovery.recovered[0]?.outcome).toBe("completed");
     // El resultado quedó completo y el ref sigue adelante, nunca atrás.
-    expect(existsSync(join(workspace, planPath))).toBe(false);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
+    expect(existsSync(join(hub, planPath))).toBe(false);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(false);
     expect(git(source, "rev-parse", publication.ref)).toBe(rebuilt);
     expect(await deps.git.treeOf(source, publication.ref)).toBe(publication.expected_tree);
     expect(rowsFor(proposal.digest)).toBe(1);
@@ -474,7 +474,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
         alias: "acme",
         session: folder,
         path: ensured.path,
-        branch: movedBranch(workspace, folder),
+        branch: movedBranch(hub, folder),
         repo: source,
       },
     ]);
@@ -487,16 +487,16 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
 
-    expect(outcome.result.units_released).toEqual([`acme:${movedBranch(workspace, folder)}`]);
+    expect(outcome.result.units_released).toEqual([`acme:${movedBranch(hub, folder)}`]);
     expect(outcome.result.pending_reconciliation).toEqual([]);
     expect(existsSync(ensured.path)).toBe(false);
     expect(readFileSync(join(source, "node_modules", "sentinel"), "utf8")).toBe("intacto");
     expect(git(source, "worktree", "list", "--porcelain")).not.toContain(folder);
     // La rama sobrevive: es la única alcanzabilidad de los commits de la sesión, y
     // borrarla los volvería inalcanzables. Retirar la unidad no es borrar historia.
-    expect(
-      git(source, "rev-parse", "--verify", `refs/heads/${movedBranch(workspace, folder)}`),
-    ).toMatch(/^[0-9a-f]{40}$/);
+    expect(git(source, "rev-parse", "--verify", `refs/heads/${movedBranch(hub, folder)}`)).toMatch(
+      /^[0-9a-f]{40}$/,
+    );
   });
 
   it("una unidad con trabajo sin commitear se REPORTA, nunca se fuerza", async () => {
@@ -520,9 +520,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (!outcome.ok) return;
 
     expect(outcome.result.units_released).toEqual([]);
-    expect(outcome.result.pending_reconciliation).toEqual([
-      `acme:${movedBranch(workspace, folder)}`,
-    ]);
+    expect(outcome.result.pending_reconciliation).toEqual([`acme:${movedBranch(hub, folder)}`]);
     expect(readFileSync(join(ensured.path, "a-medio-hacer.txt"), "utf-8")).toBe(
       "trabajo sin commitear\n",
     );
@@ -582,8 +580,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       expect(git(source, "rev-parse", "HEAD^{tree}")).toBe(baseline);
       expect(git(source, "merge-base", "--is-ancestor", receipt.after, "main")).toBe("");
       expect(git(source, "branch", "--list", ensured.branch)).toBe("");
-      expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
-      expect(existsSync(join(workspace, planPath))).toBe(mode === "reset");
+      expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(false);
+      expect(existsSync(join(hub, planPath))).toBe(mode === "reset");
       expect(rowsFor(proposal.digest)).toBe(1);
       for (const read of [operationState, localChanges, head]) {
         expect(read).not.toHaveBeenCalledWith(ensured.path);
@@ -641,7 +639,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
   );
 
   async function corruptIntegratedTip(folder: string): Promise<void> {
-    const sessionPath = join(workspace, ".workflow", "sessions", folder);
+    const sessionPath = join(hub, ".workflow", "sessions", folder);
     const read = await readCustody(deps.fs, sessionPath);
     if (read.status !== "present") throw new Error("custodia ausente");
     const record = read.custody;
@@ -689,8 +687,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       ok: false,
       rejection: { message: expect.stringContaining(reason) },
     });
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(PLAN_OPEN);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(PLAN_OPEN);
     expect(history()).not.toContain("## Retiros");
     if (fault !== "fuente ilegible") expect(git(source, "rev-parse", "main")).toBe(after);
     if (fault === "destino sucio") {
@@ -717,7 +715,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       ok: false,
       rejection: { message: expect.stringContaining("varias integraciones") },
     });
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
     expect(readFileSync(join(source, "trabajo.txt"), "utf-8")).toBe("de la sesión\n");
     expect(readFileSync(join(source, "segundo.txt"), "utf-8")).toBe("segunda integración\n");
   });
@@ -729,19 +727,19 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       ok: false,
       rejection: { message: expect.stringContaining("ya no contiene la integración") },
     });
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
     expect(git(source, "rev-parse", "main")).toBe(before);
   });
 
   it("un lock de workspace ocupado bloquea sin tocar nada", async () => {
     const folder = await session("algo-plan-exec", [planPath]);
     const proposal = await proposalFor("discard", "plan:024");
-    const before = readFileSync(join(workspace, planPath), "utf-8");
+    const before = readFileSync(join(hub, planPath), "utf-8");
     // Un holder vivo del lock del workspace: la sección crítica es inalcanzable, y
     // un retiro que empezara igual sería un retiro sin coordinación.
-    mkdirSync(join(workspace, ".workflow"), { recursive: true });
+    mkdirSync(join(hub, ".workflow"), { recursive: true });
     writeFileSync(
-      join(workspace, ".workflow", ".lock"),
+      join(hub, ".workflow", ".lock"),
       JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
     );
 
@@ -753,8 +751,8 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
     expect(outcome.rejection.message).toContain("lock ocupado");
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(before);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(before);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
     expect(history()).not.toContain("## Retiros");
     expect(existsSync(journalDir(paths))).toBe(false);
   });
@@ -797,7 +795,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (!outcome.ok) return;
 
     // El correlativo dejó de estar tomado y el retiro lo dice.
-    expect(existsSync(join(workspace, held))).toBe(false);
+    expect(existsSync(join(hub, held))).toBe(false);
     expect(outcome.result.reservations_released).toEqual([held]);
     expect(outcome.result.reservations_held).toEqual([]);
     // Y la huella sobrevive a la carpeta que la tenía: el ledger vive fuera.
@@ -814,7 +812,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     const other = await session("otro-plan-new");
     const damaged = await claim(folder, "spec-danada.md");
     const foreign = await claim(other, "spec-ajena.md");
-    writeFileSync(join(workspace, damaged), "");
+    writeFileSync(join(hub, damaged), "");
     const proposal = await proposalFor("discard", `session:${folder}`);
 
     const outcome = await applyRetirement(deps, {
@@ -826,11 +824,11 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     if (!outcome.ok) return;
 
     // Bytes inciertos: el retiro los deja donde están y lo dice en su reporte.
-    expect(existsSync(join(workspace, damaged))).toBe(true);
+    expect(existsSync(join(hub, damaged))).toBe(true);
     expect(outcome.result.reservations_held).toEqual([damaged]);
     expect(outcome.result.reservations_released).toEqual([]);
     // La ajena sigue siendo de su dueño, y sin un solo registro nuevo sobre ella.
-    expect(existsSync(join(workspace, foreign))).toBe(true);
+    expect(existsSync(join(hub, foreign))).toBe(true);
     expect(await ledgerEvents()).toEqual([
       { event: "claimed", path: damaged, owner: folder },
       { event: "claimed", path: foreign, owner: other },
@@ -859,7 +857,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     ]);
     // La liberación vive DENTRO de la transacción: si el retiro no ocurre,
     // tampoco ocurre ella — ni el borrado ni el registro.
-    expect(existsSync(join(workspace, held))).toBe(true);
+    expect(existsSync(join(hub, held))).toBe(true);
     expect(await ledgerEvents()).toEqual(before);
   });
 
@@ -894,9 +892,9 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // La liberación vive DENTRO de la transacción y DESPUÉS de su punto de
     // commit: un retiro que no ocurrió no devuelve ningún número, ni en disco
     // ni en el ledger.
-    expect(existsSync(join(workspace, held))).toBe(true);
+    expect(existsSync(join(hub, held))).toBe(true);
     expect((await ledgerEvents()).some((e) => e.event === "released")).toBe(false);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
   });
 
   it("terminar dos veces el mismo retiro no agrega un segundo registro de liberación", async () => {
@@ -970,14 +968,14 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       }),
       phase: "committed" as const,
     });
-    writeFileSync(join(workspace, held), "# trabajo de alguien\n");
+    writeFileSync(join(hub, held), "# trabajo de alguien\n");
 
     const recovery = await recoverPendingRetirements(newProcess());
 
     expect(recovery.recovered[0]?.outcome).toBe("completed");
     // La reentrada NO vuelve a preparar ni compara digests: si se fiara del sello
     // borraría trabajo. Los bytes se releen en el momento exacto de borrarlos.
-    expect(readFileSync(join(workspace, held), "utf-8")).toBe("# trabajo de alguien\n");
+    expect(readFileSync(join(hub, held), "utf-8")).toBe("# trabajo de alguien\n");
     expect((await ledgerEvents()).some((e) => e.event === "released")).toBe(false);
   });
 
@@ -1018,7 +1016,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
 
     // El archivo sigue ahí porque el borrado falló, y el registro YA está puesto:
     // sobre-declarar una liberación se reconcilia; una liberación muda, no.
-    expect(existsSync(join(workspace, held))).toBe(true);
+    expect(existsSync(join(hub, held))).toBe(true);
     expect((await ledgerEvents()).filter((e) => e.event === "released")).toEqual([
       { event: "released", path: held, owner: folder },
     ]);
@@ -1039,7 +1037,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       phase: "committed" as const,
     });
     await recoverPendingRetirements(newProcess());
-    expect(existsSync(join(workspace, held))).toBe(false);
+    expect(existsSync(join(hub, held))).toBe(false);
     expect((await ledgerEvents()).filter((e) => e.event === "released")).toHaveLength(1);
   });
 
@@ -1074,17 +1072,17 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // que no ocurrió. Devolver su correlativo igual lo pondría en el conjunto
     // elegible de otra sesión mientras esta sigue leyéndose como deshecha.
     expect(rowsFor(proposal.digest)).toBe(0);
-    expect(existsSync(join(workspace, held))).toBe(true);
+    expect(existsSync(join(hub, held))).toBe(true);
     expect((await ledgerEvents()).some((e) => e.event === "released")).toBe(false);
   });
 
   it("un reset devuelve el correlativo que su propia restauración vuelve a materializar", async () => {
     const folder = await session("algo-quick");
     const held = await claim(folder, "spec-mia.md");
-    const marker = readFileSync(join(workspace, held), "utf-8");
+    const marker = readFileSync(join(hub, held), "utf-8");
     // La sesión completó su propia reserva: el destino se sella en custodia con
     // rol `input` y baseline = EL MARCADOR, y el ledger acredita `published`.
-    writeFileSync(join(workspace, held), "---\nstatus: draft\n---\n\n# Spec\n");
+    writeFileSync(join(hub, held), "---\nstatus: draft\n---\n\n# Spec\n");
     await recordPublication(deps, folder, [{ path: held, previous: marker }]);
     await appendClaimEvent(fs, paths, {
       at: new Date().toISOString(),
@@ -1114,7 +1112,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // dueño: un archivo cuyo contenido entero es `<!-- aw:reserva … -->` que el
     // ledger ya marcó `published`, así que `slotOf` NO lo lee como slot y el
     // tablero lo contaba como una spec publicada. Ninguna superficie lo resolvía.
-    expect(existsSync(join(workspace, held))).toBe(false);
+    expect(existsSync(join(hub, held))).toBe(false);
     expect(outcome.result.reservations_released).toEqual([held]);
     const index = await buildWorklineIndex(fs, deps.env, paths, {});
     expect(index.specs.map((s) => s.file)).not.toContain(held);
@@ -1124,7 +1122,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
   it("una reserva sellada NO liberable jamás se reporta como liberada, ni si otro la borró", async () => {
     const folder = await session("algo-plan-exec", [planPath]);
     const held = await claim(folder, "spec-danada.md");
-    writeFileSync(join(workspace, held), "");
+    writeFileSync(join(hub, held), "");
     const proposal = await proposalFor("discard", `session:${folder}`);
     expect(proposal.reservations[0]?.intact).toBe(false);
 
@@ -1136,7 +1134,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     });
     await appendEvent(fs, paths, eventOf(proposal, new Date()));
     await writeJournal(fs, paths, { ...journal, phase: "committed" as const });
-    rmSync(join(workspace, held));
+    rmSync(join(hub, held));
 
     await recoverPendingRetirements(newProcess());
 

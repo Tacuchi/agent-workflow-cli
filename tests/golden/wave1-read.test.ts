@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runArtifactsCommand } from "../../src/application/artifacts-service.js";
+import { runHubBlockRead } from "../../src/application/hub-block-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runProjectMdRead } from "../../src/application/project-md-service.js";
 import { runSessionResume } from "../../src/application/session-resume-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -39,7 +39,7 @@ function loadGolden(name: string): unknown {
 /** `project-md --read` exposes source coordinates as their resolved Workline
  * paths. Keep the fixture's portable `.` in JSON while binding this one golden
  * expectation to the test fixture root at runtime. */
-function loadProjectReadGolden(): unknown {
+function loadHubReadGolden(): unknown {
   const golden = loadGolden("project-read.json") as {
     block: { fuentes: Array<{ path: string }> } | null;
   };
@@ -66,8 +66,8 @@ describe("Wave 1 read commands — golden parity (new model)", () => {
   });
 
   it("project-md-upsert --read", async () => {
-    const result = await runProjectMdRead(fs, env, paths);
-    expect(result).toEqual(loadProjectReadGolden());
+    const result = await runHubBlockRead(fs, env, paths);
+    expect(result).toEqual(loadHubReadGolden());
   });
 
   it("session-resume --code 001", async () => {

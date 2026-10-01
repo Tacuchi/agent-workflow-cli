@@ -123,7 +123,7 @@ interface LegacyMigrationState {
  * line after the header, so a second markdown table further down the file is
  * left untouched. Returns `null` when the table cannot be safely mapped (no
  * separator row, or the Sesión column is missing) — the caller then leaves the
- * file as-is and falls back to append-only. HISTORY.md is the workspace's
+ * file as-is and falls back to append-only. HISTORY.md is the hub's
  * durable git-tracked record: never rewrite what we cannot parse.
  *
  * `lossy` is the second half of that promise: the dropped columns are reported
@@ -252,7 +252,7 @@ function migrateLegacyRow(line: string, columns: LegacyColumns): { row: string; 
  * so it remembers what the filesystem no longer does.
  *
  * A file that cannot be read yields 0 rather than throwing: numbering must still
- * work in a workspace whose history was never created, and the folder scan is
+ * work in a hub whose history was never created, and the folder scan is
  * the other half of the maximum.
  */
 export async function maxHistoryCorrelative(

@@ -31,7 +31,7 @@ import { selfUninstall } from "../self/uninstall.js";
 import type { DoctorActionOutcome } from "./apply.js";
 import { runDoctorAuthFlow } from "./auth-flow.js";
 import type { DoctorBatchAction } from "./prepare.js";
-import { applyRetiredSectionRemoval } from "./provider-workspace-block.js";
+import { applyRetiredSectionRemoval } from "./provider-hub-block.js";
 
 /** Un `ParsedArgs` explícito: sin comando, sin positional y con los flags que la operación pide. */
 function argsOf(values: Record<string, string>, flags: string[] = []): ParsedArgs {
@@ -98,7 +98,7 @@ export async function runDoctorRepair(
       const path = action.locator;
       if (
         path === null ||
-        !["CLAUDE.md", "AGENTS.md"].some((file) => path === `${ctx.paths.workspaceDir()}/${file}`)
+        !["CLAUDE.md", "AGENTS.md"].some((file) => path === `${ctx.paths.hubDir()}/${file}`)
       )
         return { status: "failed", detail: "archivo de proyecto fuera del hub" };
       const removed = await applyRetiredSectionRemoval(ctx.fs, path, ctx.paths.blockMarkers());
@@ -139,7 +139,7 @@ function mcpInput(ctx: CliContext, action: DoctorBatchAction) {
     connections,
     ...(scope === "global"
       ? { scope: "global" as const, globalApproval: "explicit-self-action" as const }
-      : { scope: "hub" as const, workspace: ctx.paths.workspaceDir() }),
+      : { scope: "hub" as const, hub: ctx.paths.hubDir() }),
   };
 }
 
@@ -197,7 +197,7 @@ function migrateOutcome(action: DoctorBatchAction, ctx: CliContext): DoctorActio
         })
       : runMcpMigration(ctx.env, {
           scope: "hub",
-          workspace: ctx.paths.workspaceDir(),
+          hub: ctx.paths.hubDir(),
           hosts: [host],
           connections,
           apply: true,

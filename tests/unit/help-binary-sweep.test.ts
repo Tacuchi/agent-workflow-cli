@@ -61,16 +61,16 @@ async function pooled<T, R>(items: T[], limit: number, fn: (item: T) => Promise<
 
 let root: string;
 let bare: string;
-let workspace: string;
+let hub: string;
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "aw-help-sweep-"));
   bare = join(root, "bare");
-  workspace = join(root, "ws");
+  hub = join(root, "ws");
   await mkdir(bare, { recursive: true });
-  await mkdir(join(workspace, ".workflow", "sessions"), { recursive: true });
+  await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
   await writeFile(
-    join(workspace, ".workflow", "workline.json"),
+    join(hub, ".workflow", "workline.json"),
     worklineMarkerContent("workflow"),
     "utf8",
   );
@@ -86,7 +86,7 @@ describe("aw <command> [<action>] --help — through the binary", () => {
     const results = await pooled(
       TARGETS.flatMap((target) => [
         { target, cwd: () => bare },
-        { target, cwd: () => workspace },
+        { target, cwd: () => hub },
       ]),
       8,
       async ({ target, cwd }) => ({ target, where: cwd(), help: await helpOf(target, cwd()) }),
@@ -107,20 +107,20 @@ describe("aw <command> [<action>] --help — through the binary", () => {
 describe("errors and directives stay in Spanish", () => {
   it("an unknown flag is refused in Spanish", async () => {
     const { stdout } = await run(process.execPath, [CLI, "status", "--bogus", "--json"], {
-      cwd: workspace,
+      cwd: hub,
       encoding: "utf8",
     }).catch((error: { stdout: string }) => error);
     expect(stdout).toContain("no es un flag de este comando");
   });
 
   it("a flow directive is still written in Spanish", async () => {
-    const session = join(workspace, ".workflow", "sessions", "001-ayuda-quick");
+    const session = join(hub, ".workflow", "sessions", "001-ayuda-quick");
     await mkdir(session, { recursive: true });
     await writeFile(join(session, "SESSION.md"), "# SESSION\n\n## Objective\nayuda\n", "utf8");
     const { stdout } = await run(
       process.execPath,
       [CLI, "flow", "advance", "--session", "001", "--flow", "quick", "--adopt", "--json"],
-      { cwd: workspace, encoding: "utf8" },
+      { cwd: hub, encoding: "utf8" },
     );
     expect(JSON.parse(stdout).next_action).toMatch(/respondé|ejecutá|corré/);
   });

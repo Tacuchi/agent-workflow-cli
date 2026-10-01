@@ -54,7 +54,7 @@ export interface FileSystemPort {
   publishBytesExclusive(path: string, content: Uint8Array): Promise<{ created: boolean }>;
   /** Idempotent removal of a file or directory (recursive). A missing path is silently ignored. */
   remove(path: string): Promise<void>;
-  /** Move one file or directory inside a workspace, preserving its contents. */
+  /** Move one file or directory inside a hub, preserving its contents. */
   rename(from: string, to: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   list(path: string): Promise<DirEntry[]>;

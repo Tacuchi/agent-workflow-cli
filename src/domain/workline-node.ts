@@ -30,7 +30,7 @@ export interface WorklineNodeId {
   kind: WorklineKind;
   /**
    * `025` for a spec, `024` for a plan, the session folder for a session or a
-   * quick — whatever identifies that kind uniquely inside the workspace.
+   * quick — whatever identifies that kind uniquely inside the hub.
    */
   key: string;
 }
@@ -49,7 +49,7 @@ export function formatNodeId(id: WorklineNodeId): string {
 /**
  * The node a document path IS — `docs/plans/024-plan-x.md` is `plan:024`.
  *
- * This is not inferring provenance from a name: the workspace's own layout fixes
+ * This is not inferring provenance from a name: the hub's own layout fixes
  * that a spec lives at `docs/specs/NNN-spec-*.md`, and the board already reads
  * every spec and plan by exactly this shape. Identity is what the path declares;
  * what the document is DERIVED from is a different question, answered by the

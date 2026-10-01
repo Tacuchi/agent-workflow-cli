@@ -43,8 +43,8 @@ const FILE = "src/feature.ts";
 const UNO = { code: "201", folder: "201-alpha-plan-exec", plan: "docs/plans/041-plan-alpha.md" };
 const DOS = { code: "202", folder: "202-beta-plan-exec", plan: "docs/plans/042-plan-beta.md" };
 
-function expectedUnitBranch(workspace: string, session: string): string {
-  return `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session}`;
+function expectedUnitBranch(hub: string, session: string): string {
+  return `aw/${createHash("sha256").update(hub.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session}`;
 }
 
 function git(repo: string, ...args: string[]): string {
@@ -81,7 +81,7 @@ Aislamiento concurrente.
 describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
   let root: string;
   let home: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let otro: string;
   let deps: {
@@ -95,10 +95,10 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "aw-f2-"));
     home = join(root, "home");
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, ALIAS);
     otro = join(root, OTRO);
-    for (const dir of [home, workspace, source, otro]) mkdirSync(dir, { recursive: true });
+    for (const dir of [home, hub, source, otro]) mkdirSync(dir, { recursive: true });
 
     git(source, "init", "--initial-branch=main");
     git(source, "config", "user.email", "t@example.com");
@@ -110,17 +110,17 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
 
     deps = {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(home, workspace),
+      env: new FakeEnv(home, hub),
       git: new GitCliAdapter(new NodeProcess()),
-      paths: new PathsService(normalizeNamespace("agent-workflow"), home, workspace),
+      paths: new PathsService(normalizeNamespace("agent-workflow"), home, hub),
     };
     walk = planExecWalk(deps, { sources: [ALIAS], agentAnswersScope: true });
 
-    writeFileSync(join(workspace, "CLAUDE.md"), block(source, otro));
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    writeFileSync(join(hub, "CLAUDE.md"), block(source, otro));
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
     for (const run of [UNO, DOS]) {
       writeFileSync(
-        join(workspace, run.plan),
+        join(hub, run.plan),
         `# Plan ${run.code}\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — aislamiento\n> Estado: pendiente\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — aislar la unidad _(fuentes: ${ALIAS})_\n`,
       );
       const dir = join(deps.paths.cwdSessionsDir(), run.folder);
@@ -229,10 +229,10 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     // Dos árboles distintos, cada uno en la rama de SU sesión.
     expect(units.uno).not.toBe(units.dos);
     expect(git(units.uno, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(
-      expectedUnitBranch(workspace, UNO.folder),
+      expectedUnitBranch(hub, UNO.folder),
     );
     expect(git(units.dos, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe(
-      expectedUnitBranch(workspace, DOS.folder),
+      expectedUnitBranch(hub, DOS.folder),
     );
 
     // Y el scope quedó en el estado dirigido, no en la memoria de nadie: es lo
@@ -254,12 +254,12 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
 
   it("un plan exige unidad aunque su workspace declare in-place", async () => {
     writeFileSync(
-      join(workspace, "CLAUDE.md"),
+      join(hub, "CLAUDE.md"),
       block(source, otro).replace("## Status", "## Status\n\n- Modo de edición: in-place"),
     );
     writeFileSync(
-      join(workspace, UNO.plan),
-      readFileSync(join(workspace, UNO.plan), "utf8").replace(
+      join(hub, UNO.plan),
+      readFileSync(join(hub, UNO.plan), "utf8").replace(
         "> Límite de ejecución: checkout",
         "> Límite de ejecución: checkout\n> Aislamiento: unidad",
       ),
@@ -359,7 +359,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     expect(mine.session).toBe(UNO.folder);
     expect(mine.units).toHaveLength(1);
     expect(mine.units[0]?.path).toBe(units.uno);
-    expect(mine.units[0]?.branch).toBe(expectedUnitBranch(workspace, UNO.folder));
+    expect(mine.units[0]?.branch).toBe(expectedUnitBranch(hub, UNO.folder));
     expect(mine.units[0]?.dirty).toBe(false);
     expect(mine.units[0]?.head).toBe(sha);
 
@@ -398,7 +398,7 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
       expect(resumed.proposal.scope?.plan).toBe(run.plan);
       expect(resumed.proposal.units?.map((u) => u.path)).toEqual([unit]);
       expect(resumed.proposal.units?.map((u) => u.branch)).toEqual([
-        expectedUnitBranch(workspace, run.folder),
+        expectedUnitBranch(hub, run.folder),
       ]);
     }
   });

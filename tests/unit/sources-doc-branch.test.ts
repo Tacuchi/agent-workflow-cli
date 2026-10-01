@@ -8,7 +8,7 @@ import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { appendDocBranch } from "../../src/application/doc-branch-ledger.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { runSources } from "../../src/application/sources-service.js";
 import { sealCustody } from "../../src/domain/session/custody.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -61,7 +61,7 @@ describe("aw sources por rama esperada", () => {
     writeFileSync(join(root, "docs", "plans", "067-plan-fixture.md"), "# Plan\n");
     writeFileSync(
       join(root, "CLAUDE.md"),
-      renderProjectBlock({
+      renderHubBlock({
         proyecto: "Test",
         fuentes: sources,
         stack: {},

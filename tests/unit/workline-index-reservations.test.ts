@@ -26,7 +26,7 @@ const paths = (): PathsService => new PathsService(normalizeNamespace("workflow"
 const index = (fs: MemFs) =>
   buildWorklineIndex(fs, new FakeEnv("/home", "/cwd"), paths(), { now: NOW });
 
-const workspace = (): MemFs =>
+const hub = (): MemFs =>
   new MemFs({ lenient: true })
     .file("/cwd/CLAUDE.md", "# Proyecto\n\n## Fuentes\n\n| Alias | Path | Rama |\n")
     .dir("/cwd/.workflow/sessions")
@@ -35,7 +35,7 @@ const workspace = (): MemFs =>
 
 describe("el tablero distingue reserva, documento y placeholder legacy", () => {
   it("una reserva con dueño válido NO es un plan y NO se ofrece como ejecutable", async () => {
-    const fs = workspace()
+    const fs = hub()
       .file("/cwd/docs/plans/036-plan-claims-con-propietario.md", reservationMarker(OWNER))
       .file(
         "/cwd/docs/plans/034-plan-real.md",
@@ -63,7 +63,7 @@ describe("el tablero distingue reserva, documento y placeholder legacy", () => {
   });
 
   it("un numerado vacío sin dueño es un placeholder legacy ambiguo, no un documento", async () => {
-    const fs = workspace().file("/cwd/docs/specs/003-spec-vieja.md", "");
+    const fs = hub().file("/cwd/docs/specs/003-spec-vieja.md", "");
 
     const result = await index(fs);
 
@@ -80,7 +80,7 @@ describe("el tablero distingue reserva, documento y placeholder legacy", () => {
   });
 
   it("un documento publicado sigue siendo un documento", async () => {
-    const fs = workspace().file(
+    const fs = hub().file(
       "/cwd/docs/specs/004-spec-real.md",
       "---\nstatus: ready-for-plan\n---\n\n# Spec 004\n",
     );
@@ -92,7 +92,7 @@ describe("el tablero distingue reserva, documento y placeholder legacy", () => {
   });
 
   it("el tablero HUMANO los nombra: pasar de equivocado a mudo no era arreglarlo", async () => {
-    const fs = workspace()
+    const fs = hub()
       .file("/cwd/docs/plans/036-plan-reservado.md", reservationMarker(OWNER))
       .file("/cwd/docs/specs/003-spec-vacia.md", "");
 

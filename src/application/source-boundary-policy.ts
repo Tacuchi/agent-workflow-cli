@@ -320,8 +320,8 @@ function continueTask(
 }
 
 /**
- * Validates the plan's source contract against the aliases its WORKSPACE block
- * declares. `workspace` is the sole reserved alias; every other spelling must
+ * Validates the plan's source contract against the aliases its hub block
+ * declares. `hub` is the sole reserved alias; every other spelling must
  * resolve through that block. Errors are structural, not keyword-based: a
  * narrative cannot make an undeclared or remote source locally executable.
  */

@@ -9,17 +9,14 @@ import {
   PROD_CONSENT_REQUIRED,
   runGitFlow,
 } from "../../src/application/git-flow-service.js";
-import type {
-  DefaultBranches,
-  ProjectBlockMarkers,
-} from "../../src/application/parsers/project-block.js";
+import type { DefaultBranches, HubBlockMarkers } from "../../src/application/parsers/hub-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   type ProdConsent,
   attributeTuiKeypress,
   grantProdConsent,
 } from "../../src/application/prod-consent.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { type GitCall, RecordingGit } from "../helpers/fake-git.js";
 
@@ -42,7 +39,7 @@ interface SourceSpec {
 function blockFor(
   sources: SourceSpec[],
   defaults: DefaultBranches | undefined,
-  markers: ProjectBlockMarkers,
+  markers: HubBlockMarkers,
 ): string {
   const workingBranches: Record<string, string> = {};
   const qaBranches: Record<string, string> = {};
@@ -50,7 +47,7 @@ function blockFor(
     if (s.work) workingBranches[s.alias] = s.work;
     if (s.qa) qaBranches[s.alias] = s.qa;
   }
-  return renderProjectBlock({
+  return renderHubBlock({
     proyecto: "Test",
     fuentes: sources.map((s) => ({ alias: s.alias, path: s.path, main_branch: s.main })),
     stack: {},

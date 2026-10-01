@@ -148,7 +148,7 @@ async function integrateUnits(
   );
 }
 
-/** Every declared source on its expected branch; a workspace with none has nothing to verify. */
+/** Every declared source on its expected branch; a hub with none has nothing to verify. */
 async function verifySources(
   deps: InternalActionDeps,
   run: InternalActionRun,
@@ -169,7 +169,7 @@ async function verifySources(
   );
 }
 
-/** This run's plan number, reserved under the workspace lock for its own session. */
+/** This run's plan number, reserved under the hub lock for its own session. */
 async function claimNumber(
   deps: InternalActionDeps,
   run: InternalActionRun,

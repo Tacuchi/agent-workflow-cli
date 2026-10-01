@@ -973,15 +973,15 @@ export type FlowRunEvent =
  * WHICH plan a session is executing instead of leaving two concurrent runs
  * indistinguishable.
  *
- * `sources` is never empty. `workspace` may appear as the documentary/control
+ * `sources` is never empty. `hub` may appear as the documentary/control
  * checkout and needs no isolation unit; every other alias is acquired before
  * editing. An empty list would make the acquisition's effect conditional on a
  * scope somebody could leave blank.
  */
 export interface FlowRunScope {
-  /** Workspace-relative plan document this run executes. */
+  /** Hub-relative plan document this run executes. */
   plan: string;
-  /** `workspace` plus declared aliases this run may touch — non-empty, no repeats. */
+  /** `hub` plus declared aliases this run may touch — non-empty, no repeats. */
   sources: string[];
   /** Missing on older runs; their truthful isolation is unit. */
   isolation?: "unit" | "in-place";

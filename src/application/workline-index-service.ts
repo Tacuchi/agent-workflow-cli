@@ -34,9 +34,9 @@ import {
 import { readHistoryRows } from "./history-table.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
+import { parseHubBlock } from "./parsers/hub-block.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
 import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
-import { parseProjectBlock } from "./parsers/project-block.js";
 import { functionalSpecDigest, unclosedSpecFence } from "./parsers/spec-functional.js";
 import {
   type SpecEvidence,
@@ -69,7 +69,7 @@ import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
 import { type OrphanUnit, type WorktreeListOutput, runWorktree } from "./worktree-service.js";
 
 /**
- * The one reading of the workspace's Workline documents.
+ * The one reading of the hub's Workline documents.
  *
  * `status` and `resume` used to answer the same questions from two places —
  * one in the CLI, one re-derived by an agent reading JSON — and drifted. This
@@ -111,14 +111,14 @@ export type SpecRelation =
   | { status: "unknown"; reason: "no-evidence" | "spec-not-found" }
   | { status: "ambiguous"; numbers: string[]; evidence: SpecEvidence };
 
-export interface IndexedWorkspace {
+export interface IndexedHub {
   name: string;
   /** Resolved WorklineDirectory root; kept alongside `path` during the transition. */
   root: string;
   path: string;
   /**
    * `implicit` has no marker/config, `materialized` has the canonical sessions
-   * marker, and `configured` additionally has a WORKSPACE block.
+   * marker, and `configured` additionally has a hub block.
    */
   mode: "implicit" | "materialized" | "configured";
   /** @deprecated Use `mode`; retained for one release of JSON consumers. */
@@ -257,7 +257,7 @@ export type ConsumerStanding =
 
 /** A plan that consumes a given spec, with how its seal stands against it. */
 export interface SpecConsumer {
-  /** Workspace-relative path of the plan. */
+  /** Hub-relative path of the plan. */
   file: string;
   number: string;
   slug: string;
@@ -293,7 +293,7 @@ export interface IndexedSession {
   /**
    * Isolation units this session is editing in, one per source it took.
    * Empty when the session is not isolated — which is every session in a
-   * workspace that never asked for a unit, so the reading stays honest for
+   * hub that never asked for a unit, so the reading stays honest for
    * the single-flow case instead of implying an isolation that is not there.
    */
   units: SessionUnit[];
@@ -427,7 +427,7 @@ export interface PipelineItemDetail {
 export interface PipelineItem {
   kind: PipelineKind;
   priority: 1 | 2 | 3 | 4;
-  /** workspace-relative path of the doc, or of the session folder */
+  /** hub-relative path of the doc, or of the session folder */
   file: string;
   number: string | null;
   slug: string;
@@ -451,7 +451,7 @@ export interface PipelineItem {
 }
 
 export interface WorklineIndex {
-  workspace: IndexedWorkspace;
+  hub: IndexedHub;
   /** Newest declared HISTORY date or CHECKPOINT modification day; no stored block timestamp. */
   last_activity: string | null;
   specs: IndexedSpec[];
@@ -546,7 +546,7 @@ export interface WorklineIndexInput {
 }
 
 /**
- * Never throws on a reachable cwd: an uninitialized workspace returns
+ * Never throws on a reachable cwd: an uninitialized hub returns
  * `initialized:false` with empty collections, and a single unreadable file is
  * skipped rather than tanking the whole read.
  */
@@ -557,9 +557,9 @@ export async function buildWorklineIndex(
   input: WorklineIndexInput = {},
 ): Promise<WorklineIndex> {
   const now = input.now ?? new Date();
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
 
-  const workspace = await readWorkspace(fs, paths, cwd);
+  const hub = await readHub(fs, paths, cwd);
   const canon = await resolveCoreDocsCanon(fs, paths);
   const docs = canon.ok ? canon.canon : null;
   // Scanned BEFORE the documents, because it is what tells them apart: a
@@ -573,7 +573,7 @@ export async function buildWorklineIndex(
   const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now, heldPaths);
   const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now, heldPaths);
   const sessions = await readSessions(fs, env, paths, now, docs);
-  const lastActivity = await workspaceLastActivity(fs, paths, sessions);
+  const lastActivity = await hubLastActivity(fs, paths, sessions);
   const isolation = await readIsolation(fs, env, paths, input.git);
   for (const session of sessions) {
     session.units = isolation.bySession.get(session.folder) ?? [];
@@ -609,7 +609,7 @@ export async function buildWorklineIndex(
   }
   const discarded = await readDiscarded(fs, sessions, cwd, now);
   return {
-    workspace,
+    hub,
     last_activity: lastActivity,
     specs,
     plans,
@@ -636,7 +636,7 @@ export async function buildWorklineIndex(
   };
 }
 
-async function workspaceLastActivity(
+async function hubLastActivity(
   fs: FileSystemPort,
   paths: PathsService,
   sessions: IndexedSession[],
@@ -696,7 +696,7 @@ async function readPendingRetirements(
 }
 
 /**
- * Isolation units of this workspace, grouped by the session that owns each one.
+ * Isolation units of this hub, grouped by the session that owns each one.
  *
  * `aw worktree list` is the single reading — the same one the command surface
  * answers with — so `status`, `resume` and `worktree list` can never disagree
@@ -744,7 +744,7 @@ interface CutContext {
   cuts: CutIntentRead;
   passes: DerivedPass[];
   /**
-   * The plans that actually exist in the workspace, by node id.
+   * The plans that actually exist in the hub, by node id.
    *
    * Needed because a cut is a DECLARATION and the corpus moves under it: a plan
    * it names can be discarded, retired, or never written at all. Such a node has
@@ -847,7 +847,7 @@ function postponementOf(
   cut: CutContext,
   after: readonly WorklineNodeId[],
 ): PipelineItemDetail["postponed"] | null {
-  // A node the workspace does not have is NOT something to wait for. It has no
+  // A node the hub does not have is NOT something to wait for. It has no
   // pass and it never will — nobody declares a release for a document that was
   // discarded or never written — so keeping it in `waiting` postpones the row
   // forever, and the guarantee above becomes false. The declaration is not
@@ -1066,7 +1066,7 @@ export function planPresentation(plan: IndexedPlan): {
           // Not an obligation: `obligation` means "neither runnable nor
           // closable", and a handoff is precisely the class that holds nothing
           // shut. Marking it would put somebody else's work ahead of this
-          // workspace's own.
+          // hub's own.
           obligation: false,
           // The closure's own caveat survives the handoff row. Without it a plan
           // closed on omitted or substitute evidence would stop saying so the
@@ -1394,19 +1394,15 @@ function compareDeclaredOrder(a: PipelineItem, b: PipelineItem): number {
   return 0;
 }
 
-// ── workspace ────────────────────────────────────────────────────────────────
+// ── hub ────────────────────────────────────────────────────────────────
 
-async function readWorkspace(
-  fs: FileSystemPort,
-  paths: PathsService,
-  cwd: string,
-): Promise<IndexedWorkspace> {
+async function readHub(fs: FileSystemPort, paths: PathsService, cwd: string): Promise<IndexedHub> {
   let name = basename(cwd);
   let configured = false;
   for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
     try {
       if (!(await fs.exists(file))) continue;
-      const block = parseProjectBlock(await fs.readText(file), paths.blockMarkers());
+      const block = parseHubBlock(await fs.readText(file), paths.blockMarkers());
       if (block !== null) configured = true;
       if (block?.proyecto) {
         name = block.proyecto.split("\n")[0]?.trim() || name;
@@ -1420,7 +1416,7 @@ async function readWorkspace(
   try {
     materialized = (await fs.stat(paths.cwdSessionsDir())).type === "dir";
   } catch {
-    // A bare namespace directory is intentionally not a workspace marker.
+    // A bare namespace directory is intentionally not a hub marker.
   }
   const mode = configured ? "configured" : materialized ? "materialized" : "implicit";
   return {
@@ -1748,7 +1744,7 @@ function resolveSpecRelation(
     return { status: "ambiguous", numbers: parsed.numbers, evidence: parsed.evidence };
   }
   const spec = specs.get(parsed.number);
-  // The plan names a spec that is not in the workspace: evidence exists but
+  // The plan names a spec that is not in the hub: evidence exists but
   // proves nothing here, and inventing a match by slug is exactly the guess
   // this resolution exists to remove.
   if (spec === undefined) return { status: "unknown", reason: "spec-not-found" };

@@ -66,7 +66,7 @@ export type ArtifactRole =
   | "output";
 
 export interface CustodyArtifact {
-  /** Workspace-relative path — the same spelling every Workline surface uses. */
+  /** Hub-relative path — the same spelling every Workline surface uses. */
   path: string;
   role: ArtifactRole;
   before: CustodyBaseline;
@@ -137,7 +137,7 @@ export interface CustodyEffect {
   parents: string[];
   /** Ref the effect moved (`refs/heads/aw/119-…`), when it moved one. */
   ref: string | null;
-  /** Workspace-relative paths the effect wrote, when it wrote any. */
+  /** Hub-relative paths the effect wrote, when it wrote any. */
   paths: string[];
   /** Local date the effect was recorded, for a human reading the trail. */
   at: string;

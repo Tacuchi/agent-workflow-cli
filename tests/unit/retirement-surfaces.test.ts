@@ -46,7 +46,7 @@ const SPEC = "---\nstatus: ready-for-plan\n---\n\n# Spec 025 — algo\n";
 
 describe("superficies de retiro — los cinco escenarios de la spec por el comando registrado", () => {
   let root: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let ctx: CliContext;
   let paths: PathsService;
@@ -80,11 +80,11 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "surfaces-"));
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, "acme");
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
-    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    mkdirSync(join(hub, "docs", "specs"), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
     mkdirSync(source, { recursive: true });
     git(source, "init", "--quiet", "--initial-branch=main");
     writeFileSync(join(source, "base.txt"), "base\n");
@@ -92,14 +92,14 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     git(source, "commit", "-q", "-m", "inicial");
 
     writeFileSync(
-      join(workspace, "CLAUDE.md"),
+      join(hub, "CLAUDE.md"),
       `<!-- WORKFLOW-HUB-START -->\n## Hub\n\nX.\n\n## Fuentes\n\n| Alias | Path | Rama principal |\n|---|---|---|\n| acme | ${source} | main |\n\n## Status\n\n- Ramas de trabajo actuales:\n  - acme: main\n<!-- WORKFLOW-HUB-END -->\n`,
     );
-    writeFileSync(join(workspace, "docs", "specs", "025-spec-algo.md"), SPEC);
-    writeFileSync(join(workspace, planPath), PLAN);
+    writeFileSync(join(hub, "docs", "specs", "025-spec-algo.md"), SPEC);
+    writeFileSync(join(hub, planPath), PLAN);
 
-    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), workspace);
-    const env = new FakeEnv(join(root, "home"), workspace);
+    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), hub);
+    const env = new FakeEnv(join(root, "home"), hub);
     ctx = { fs, env, git: new GitCliAdapter(new NodeProcess()), paths } as CliContext;
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -123,10 +123,10 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
 
     const applied = await run("discard", "apply", "spec:025", "--approval", data.digest);
     expect(applied.result.ok).toBe(true);
-    expect(existsSync(join(workspace, "docs", "specs", "025-spec-algo.md"))).toBe(false);
-    expect(existsSync(join(workspace, planPath))).toBe(false);
+    expect(existsSync(join(hub, "docs", "specs", "025-spec-algo.md"))).toBe(false);
+    expect(existsSync(join(hub, planPath))).toBe(false);
     for (const folder of [refine, exec]) {
-      expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
+      expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(false);
     }
     // Ningún nodo de la clausura queda activo, pendiente ni reanudable, y la única
     // huella propia de Workline es la fila del ledger.
@@ -170,15 +170,15 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     const refused = await run("discard", "apply", "plan:024");
     expect(refused.result.ok).toBe(false);
     expect(refused.result.error?.code).toBe("APPROVAL_REQUIRED");
-    expect(existsSync(join(workspace, planPath))).toBe(true);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(true);
+    expect(existsSync(join(hub, planPath))).toBe(true);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
     expect(git(source, "rev-parse", `refs/heads/aw/${folder}`)).toBe(receipt.after);
     expect(readFileSync(paths.cwdHistoryFile(), "utf8")).toBe(historyBefore);
   });
 
   it("3 · resetea una ejecución parcial de plan y lo deja disponible para refinarse", async () => {
     const folder = await session("algo-plan-exec", [planPath]);
-    writeFileSync(join(workspace, planPath), PLAN.replace("- [ ] T1.1", "- [x] T1.1"));
+    writeFileSync(join(hub, planPath), PLAN.replace("- [ ] T1.1", "- [x] T1.1"));
 
     const prepared = await run("reset", "prepare", planPath);
     expect(prepared.result.ok).toBe(true);
@@ -189,8 +189,8 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     const applied = await run("reset", "apply", planPath, "--approval", data.digest);
     expect(applied.result.ok).toBe(true);
     // El plan volvió a sus bytes previos y sigue en el tablero, listo para refinar.
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(PLAN);
-    expect(existsSync(join(workspace, ".workflow", "sessions", folder))).toBe(false);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(PLAN);
+    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(false);
     const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
     expect(board.plans.map((p) => p.number)).toEqual(["024"]);
     expect(board.pipeline.some((i) => i.command === `/w:plan-exec ${planPath}`)).toBe(true);
@@ -198,10 +198,10 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
   });
 
   it("4 · un efecto compartido bloquea e informa, sin tocar nada", async () => {
-    writeFileSync(join(workspace, "docs", "specs", "026-spec-otro.md"), SPEC);
+    writeFileSync(join(hub, "docs", "specs", "026-spec-otro.md"), SPEC);
     // Una sesión que declara dos padres: uno dentro del alcance y otro fuera.
     await session("compartida-plan-exec", [planPath, "docs/specs/026-spec-otro.md"]);
-    const before = readFileSync(join(workspace, planPath), "utf-8");
+    const before = readFileSync(join(hub, planPath), "utf-8");
     const historyBefore = readFileSync(paths.cwdHistoryFile(), "utf8");
 
     const prepared = await run("discard", "prepare", "spec:025");
@@ -209,7 +209,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(prepared.result.error?.code).toBe("SHARED_CONSUMER");
     expect(prepared.result.error?.message).toContain("fuera del alcance");
     // Cero efectos: ni el documento, ni las sesiones, ni HISTORY.
-    expect(readFileSync(join(workspace, planPath), "utf-8")).toBe(before);
+    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(before);
     expect(readFileSync(paths.cwdHistoryFile(), "utf8")).toBe(historyBefore);
   });
 
@@ -227,7 +227,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(applied.result.ok).toBe(true);
     // Y después de aplicar tampoco se lee «listo» donde no se restauró nada.
     expect(applied.human).toContain("Nada volvió atrás");
-    expect(existsSync(join(workspace, ".workflow", "sessions", quick))).toBe(false);
+    expect(existsSync(join(hub, ".workflow", "sessions", quick))).toBe(false);
     const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
     expect(board.sessions.active).toEqual([]);
     expect(board.terminal_events).toHaveLength(1);
@@ -299,7 +299,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(slot?.next).toBe(`aw session-close --code ${owner}`);
     expect(rejected.result.error?.details?.action).toContain(slot?.next ?? "");
     // Nada se tocó: sigue siendo una reserva de su dueño.
-    expect(existsSync(join(workspace, held))).toBe(true);
+    expect(existsSync(join(hub, held))).toBe(true);
   });
 
   it("6c · un correlativo reservado en OTRA categoría no contesta por el número pedido", async () => {

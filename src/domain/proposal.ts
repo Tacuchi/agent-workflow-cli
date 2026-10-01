@@ -25,7 +25,7 @@ import { semanticDigest } from "../application/semantic-operation/protocol.js";
 import type { EffectClass } from "./capability/effects.js";
 
 export interface ProposalArtifact {
-  /** Workspace-relative destination. */
+  /** Hub-relative destination. */
   path: string;
   /** The exact bytes to write. */
   content: string;
@@ -42,7 +42,7 @@ export interface ProposalArtifact {
 
 /** The compare-and-swap base: what the candidate output was computed FROM. */
 export interface ProposalBase {
-  /** Workspace-relative path, re-read at apply time. */
+  /** Hub-relative path, re-read at apply time. */
   path: string;
   /** Its digest when the proposal was sealed, always via {@link baseDigest}. */
   digest: string;

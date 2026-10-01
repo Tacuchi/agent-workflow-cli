@@ -56,19 +56,19 @@ const CONTENT = "---\nstatus: draft\n---\n\n# Spec de prueba\n";
 const CONTENT_BYTES = Buffer.byteLength(CONTENT, "utf8");
 
 describe("publishTextExclusive commits atomically", () => {
-  let workspace: string;
+  let hub: string;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "publish-atomicity-"));
+    hub = mkdtempSync(join(tmpdir(), "publish-atomicity-"));
     fs = new NodeFileSystem();
     observations.length = 0;
     stagingFailure = null;
   });
-  afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+  afterEach(() => rmSync(hub, { recursive: true, force: true }));
 
   it("el destino no existe hasta que ya tiene TODOS sus bytes", async () => {
-    const target = join(workspace, "001-spec-algo.md");
+    const target = join(hub, "001-spec-algo.md");
 
     expect(await fs.publishTextExclusive(target, CONTENT)).toEqual({ created: true });
 
@@ -82,8 +82,8 @@ describe("publishTextExclusive commits atomically", () => {
   });
 
   it("un fallo de staging no deja residuo ni consume el correlativo", async () => {
-    const env = new FakeEnv(workspace, workspace);
-    const paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    const env = new FakeEnv(hub, hub);
+    const paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     stagingFailure = Object.assign(new Error("ENOSPC simulado"), { code: "ENOSPC" });
 
     await expect(
@@ -96,7 +96,7 @@ describe("publishTextExclusive commits atomically", () => {
     // El residuo del staging no puede quedar, y sobre todo no puede LEERSE como
     // un correlativo: un temporal cuyo nombre empieza por `NNN-` quemaba el
     // número para siempre, invisible para heldReservation y para el cierre.
-    const left = readdirSync(join(workspace, "docs", "specs"));
+    const left = readdirSync(join(hub, "docs", "specs"));
     expect(left.filter((n) => leadingCorrelative(n) !== null)).toEqual([]);
 
     stagingFailure = null;

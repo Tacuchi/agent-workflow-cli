@@ -2,11 +2,7 @@ import { join } from "node:path";
 import type { FlowRunState } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "../parsers/project-block.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "../parsers/hub-block.js";
 import type { PathsService } from "../paths-service.js";
 import type { ClassifiedUnit } from "../session-close-service.js";
 
@@ -70,9 +66,9 @@ async function uncommittedSources(
 ): Promise<string[]> {
   // Other sessions' units are not this run's work. Only its unisolated source
   // checkouts are observed here; git errors propagate rather than saying clean.
-  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
-  const sources: ProjectFuente[] = [
-    { alias: "hub", path: paths.workspaceDir(), main_branch: null },
+  const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers());
+  const sources: HubFuente[] = [
+    { alias: "hub", path: paths.hubDir(), main_branch: null },
     ...(block?.fuentes ?? []),
   ];
   const pending: string[] = [];
@@ -138,7 +134,7 @@ function pendingUnitStatus(unit: ClassifiedUnit): string {
 async function appendUncommittedSource(
   git: GitPort,
   state: FlowRunState,
-  source: ProjectFuente,
+  source: HubFuente,
   repo: string,
   pending: string[],
 ): Promise<void> {

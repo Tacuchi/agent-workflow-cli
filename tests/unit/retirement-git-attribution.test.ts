@@ -58,7 +58,7 @@ function gitFails(repo: string, ...args: string[]): boolean {
 
 describe("atribución de efectos Git — fixtures de cada estado, sin reescribir historia", () => {
   let root: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let paths: PathsService;
   let gitPort: GitCliAdapter;
@@ -66,7 +66,7 @@ describe("atribución de efectos Git — fixtures de cada estado, sin reescribir
   const deps = () => ({ fs, git: gitPort, paths });
 
   function sessionsDir(): string {
-    return join(workspace, ".workflow", "sessions");
+    return join(hub, ".workflow", "sessions");
   }
 
   async function newSession(name = "retiro-plan-exec"): Promise<string> {
@@ -99,7 +99,7 @@ describe("atribución de efectos Git — fixtures de cada estado, sin reescribir
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "attrib-"));
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, "acme");
     mkdirSync(sessionsDir(), { recursive: true });
     mkdirSync(join(root, "scratch"), { recursive: true });
@@ -112,8 +112,8 @@ describe("atribución de efectos Git — fixtures de cada estado, sin reescribir
     git(source, "add", "-A");
     git(source, "commit", "-q", "-m", "inicial");
 
-    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), workspace);
-    void new FakeEnv(join(root, "home"), workspace);
+    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), hub);
+    void new FakeEnv(join(root, "home"), hub);
     gitPort = new GitCliAdapter(new NodeProcess());
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));

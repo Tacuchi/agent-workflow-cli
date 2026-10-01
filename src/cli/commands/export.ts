@@ -16,11 +16,8 @@ import {
   readExportScope,
   validateExportWithCatalog,
 } from "../../application/export-service.js";
+import { type HubCommitProposal, runHubCommit } from "../../application/hub-commit-service.js";
 import type { SemanticFailure } from "../../application/semantic-operation/protocol.js";
-import {
-  type WorkspaceCommitProposal,
-  runWorkspaceCommit,
-} from "../../application/workspace-commit-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { usageLine } from "../help-groups.js";
@@ -34,7 +31,7 @@ type ExportData =
   | ({ stage: "validate" } & ExportValidation)
   | ({
       stage: "apply";
-      commit_proposal?: WorkspaceCommitProposal;
+      commit_proposal?: HubCommitProposal;
       commit_proposal_error?: string;
     } & ExportApplied);
 
@@ -213,7 +210,7 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
       if (!scope.ok) return failSemantic(scope.failure);
       const catalog = exportCatalog(category, scope.selection, ctx);
 
-      // Each stage rebuilds the request from the workspace: stateless, and the
+      // Each stage rebuilds the request from the hub: stateless, and the
       // corpus digest is what detects a session that moved meanwhile.
       const prepared = await prepareExport(
         ctx.fs,
@@ -412,7 +409,7 @@ async function runApply(
   if (!result.ok) return failSemantic(result.failure);
   const destination = result.value.written[0]?.split("/").slice(0, 3).join("/");
   const offer = destination
-    ? await runWorkspaceCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
+    ? await runHubCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
         exportPath: destination,
       })
     : { error: "el export no informó sus rutas" };

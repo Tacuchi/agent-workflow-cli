@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import { removeSourceCommand } from "../../src/cli/commands/remove-source.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
@@ -52,7 +52,7 @@ describe("remove-source command", () => {
 
   beforeEach(async () => {
     cwd = await mkdtemp(join(tmpdir(), "aw-remove-source-cmd-"));
-    const block = renderProjectBlock({
+    const block = renderHubBlock({
       proyecto: "Test",
       fuentes: [
         { alias: "core", path: "/repo/core", main_branch: "main" },

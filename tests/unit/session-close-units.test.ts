@@ -106,9 +106,9 @@ describe("unidades del cierre final y del cierre reabrible", () => {
     git(unit.path, "commit", "-m", "integrado");
     git(f.repo, "merge", "--ff-only", unit.branch);
     git(f.repo, "branch", "aaaa-qa", git(f.repo, "rev-parse", "main"));
-    const block = readFileSync(join(f.workspace, "CLAUDE.md"), "utf8");
+    const block = readFileSync(join(f.hub, "CLAUDE.md"), "utf8");
     writeFileSync(
-      join(f.workspace, "CLAUDE.md"),
+      join(f.hub, "CLAUDE.md"),
       block.replace(
         "- Ramas de trabajo actuales:",
         "- Ramas QA actuales:\n  - acme: aaaa-qa\n- Ramas de trabajo actuales:",
@@ -128,9 +128,9 @@ describe("unidades del cierre final y del cierre reabrible", () => {
     git(unit.path, "add", "qa.txt");
     git(unit.path, "commit", "-m", "qa");
     git(f.repo, "branch", "qa", git(unit.path, "rev-parse", "HEAD"));
-    const block = readFileSync(join(f.workspace, "CLAUDE.md"), "utf8");
+    const block = readFileSync(join(f.hub, "CLAUDE.md"), "utf8");
     writeFileSync(
-      join(f.workspace, "CLAUDE.md"),
+      join(f.hub, "CLAUDE.md"),
       block.replace(
         "- Ramas de trabajo actuales:",
         "- Ramas QA actuales:\n  - acme: qa\n- Ramas de trabajo actuales:",
@@ -207,9 +207,9 @@ describe("unidades del cierre final y del cierre reabrible", () => {
     const f = setup(false);
     const unit = await f.run("ensure");
     if (!("path" in unit)) throw new Error("no unit");
-    const block = readFileSync(join(f.workspace, "CLAUDE.md"), "utf8");
+    const block = readFileSync(join(f.hub, "CLAUDE.md"), "utf8");
     writeFileSync(
-      join(f.workspace, "CLAUDE.md"),
+      join(f.hub, "CLAUDE.md"),
       block.replace("- Ramas de trabajo actuales:\n  - acme: main\n", ""),
     );
     expect(await f.close()).toMatchObject({

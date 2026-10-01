@@ -1,5 +1,5 @@
 /**
- * The provenance and ownership graph of the workspace.
+ * The provenance and ownership graph of the hub.
  *
  * It used to live inside the retirement module, which made consulting it — "what
  * does this plan descend from, and what descends from it?" — go through a
@@ -72,7 +72,7 @@ export interface SessionNodeFacts {
 export interface GraphNode {
   id: WorklineNodeId;
   kind: WorklineKind;
-  /** Workspace-relative path of the document or the session folder. */
+  /** Hub-relative path of the document or the session folder. */
   path: string;
   absolute_path: string;
   /** Sessions only. */
@@ -160,7 +160,7 @@ export async function buildWorklineGraph(
     ...(deps.git !== undefined ? { git: deps.git } : {}),
   });
   const graph = new WorklineGraph(index.reservations, canon);
-  const root = deps.paths.workspaceDir();
+  const root = deps.paths.hubDir();
 
   for (const spec of index.specs) addDoc(graph, root, "spec", spec);
   for (const plan of index.plans) addDoc(graph, root, "plan", plan);
@@ -336,5 +336,5 @@ function docPathOf(
     const node = nodeFromDocPath(a.path, canon);
     return node !== null && node.kind === parent.kind && node.key === parent.key;
   });
-  return artifact === undefined ? null : join(deps.paths.workspaceDir(), artifact.path);
+  return artifact === undefined ? null : join(deps.paths.hubDir(), artifact.path);
 }

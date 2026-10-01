@@ -229,7 +229,7 @@ describe("un flujo de autenticación declarado, de punta a punta", () => {
     // El programa que corrió es EXACTAMENTE el del argv sellado, separado, y desde
     // el workspace de la corrida.
     expect(proc.interactive).toEqual([
-      { cmd: ARGV[0], args: ARGV.slice(1), cwd: makeCtx().paths.workspaceDir() },
+      { cmd: ARGV[0], args: ARGV.slice(1), cwd: makeCtx().paths.hubDir() },
     ]);
   });
 
@@ -481,7 +481,7 @@ describe("el ejecutor de flujos, en sus bordes", () => {
 
     await runDoctorAuthFlow(actionOf(ARGV), ctx);
 
-    expect(seen).toBe(ctx.paths.workspaceDir());
+    expect(seen).toBe(ctx.paths.hubDir());
   });
 });
 

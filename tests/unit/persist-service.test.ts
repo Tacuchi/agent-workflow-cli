@@ -15,7 +15,7 @@ import { MemFs } from "../helpers/mem-fs.js";
 const env = new FakeEnv("/home", "/cwd");
 const paths = (): PathsService => new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
 
-function workspace(): MemFs {
+function hub(): MemFs {
   const fs = new MemFs();
   fs.file("/cwd/.workflow/sessions/.keep", "");
   return fs;
@@ -46,7 +46,7 @@ async function prepared(fs: MemFs): Promise<SemanticRequest> {
 
 describe("preparePersist — inventories without touching a byte", () => {
   it("fails closed when a core [docs] route tries to move before every reader supports it", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/.workflow/skills.toml", '[docs]\nresearch = "knowledge/research"\n');
 
     const result = await preparePersist(fs, env, paths());
@@ -57,14 +57,14 @@ describe("preparePersist — inventories without touching a byte", () => {
   });
 
   it("writes nothing", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/specs/003-spec-x.md", "# Spec\n\n## Origin\n\nvenía de una charla\n");
     await prepared(fs);
     expect([...fs.writes.keys()]).toEqual([]);
   });
 
   it("declares the three destinations, the consultative number and the read-set", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/research/001-research-a.md", "# A\n\n## Objective\nprimera\n");
     fs.file("/cwd/docs/research/002-research-b.md", "# B\n\n## Objective\nsegunda\n");
     const request = await prepared(fs);
@@ -79,7 +79,7 @@ describe("preparePersist — inventories without touching a byte", () => {
   });
 
   it("exposes existing docs with a digest so a replacement can prove it saw them", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/research/001-research-a.md", "# A\n\n## Objective\ncomparar motores\n");
     const request = await prepared(fs);
     const docs = (request.inventory as { categories: Record<string, { docs: unknown[] }> })
@@ -89,7 +89,7 @@ describe("preparePersist — inventories without touching a byte", () => {
   });
 
   it("the digest changes when docs/ changes — that is the whole staleness signal", async () => {
-    const fs = workspace();
+    const fs = hub();
     const before = await prepared(fs);
     fs.file("/cwd/docs/specs/009-spec-nueva.md", "# Nueva\n");
     const after = await prepared(fs);
@@ -101,7 +101,7 @@ describe("preparePersist — inventories without touching a byte", () => {
 
 describe("validatePersist — fails closed, and always says what to do next", () => {
   it("accepts a well-formed proposal and returns a stable approval digest", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const first = validatePersist(answer(request), request);
     const second = validatePersist(answer(request), request);
@@ -131,7 +131,7 @@ describe("validatePersist — fails closed, and always says what to do next", ()
   ];
 
   it.each(rejections)("rechaza %s", async (_name, over, code) => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const raw = typeof over === "string" ? over : answer(request, over);
     const result = validatePersist(raw, request);
@@ -150,7 +150,7 @@ describe("validatePersist — fails closed, and always says what to do next", ()
   ];
 
   it.each(escapes)("rechaza el destino '%s'", async (path) => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const result = validatePersist(
       answer(request, { artifacts: [{ path, content: "x" }] }),
@@ -161,7 +161,7 @@ describe("validatePersist — fails closed, and always says what to do next", ()
   });
 
   it("rechaza un artefacto que excede el límite de bytes", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const result = validatePersist(
       answer(request, {
@@ -179,7 +179,7 @@ describe("validatePersist — fails closed, and always says what to do next", ()
   });
 
   it("rechaza un nombre de archivo que no respeta el esquema de la categoría", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const result = validatePersist(
       answer(request, {
@@ -192,7 +192,7 @@ describe("validatePersist — fails closed, and always says what to do next", ()
   });
 
   it("devuelve la ambigüedad como problema, no como escritura", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const result = validatePersist(
       answer(request, { state: "ambiguous", reason: "ya existe algo casi igual" }),
@@ -221,7 +221,7 @@ describe("persist · adjuntos binarios en la aprobación", () => {
   };
 
   it("aprueba sha256 de los bytes y publica PDF y PPTX sin decodificarlos", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.binary("/cwd/assets/resumen.pdf", pdf);
     fs.binary("/cwd/assets/diapositivas.pptx", pptx);
     const request = await prepared(fs);
@@ -246,7 +246,7 @@ describe("persist · adjuntos binarios en la aprobación", () => {
   });
 
   it("rechaza el contenido binario cambiado después de la aprobación", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.binary("/cwd/assets/resumen.pdf", pdf);
     fs.binary("/cwd/assets/diapositivas.pptx", pptx);
     const request = await prepared(fs);
@@ -265,7 +265,7 @@ describe("persist · adjuntos binarios en la aprobación", () => {
   });
 
   it("un fallo del segundo adjunto revierte el documento y el primer binario", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.binary("/cwd/assets/resumen.pdf", pdf);
     fs.binary("/cwd/assets/diapositivas.pptx", pptx);
     const request = await prepared(fs);
@@ -294,7 +294,7 @@ describe("persist · adjuntos binarios en la aprobación", () => {
 
 describe("validatePersist — replacing an existing document needs proof", () => {
   function withDoc(): MemFs {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/research/001-research-comparar-motores.md", "# A\n\n## Objective\nviejo\n");
     return fs;
   }
@@ -369,7 +369,7 @@ function approvalFor(request: SemanticRequest, raw: string): string {
 
 describe("applyPersist — writes exactly the approved proposal, or nothing", () => {
   it("crea un único documento en la categoría aprobada", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const raw = answer(request);
     const result = await applyPersist(fs, env, paths(), {
@@ -389,7 +389,7 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
     // `persist` no crea sesiones y no corre dentro de un recorrido dirigido, así
     // que hasta acá lo que publicaba no dejaba rastro en el registro propio del
     // workspace: había que repararlo a mano con `aw history-update` después.
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const raw = answer(request);
 
@@ -409,7 +409,7 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
   // The consultative number in the answer is not the number that lands: two
   // existing docs mean the next one is 003, whatever the proposal said.
   it("reasigna el número dentro del lock, ignorando el que trajo la respuesta", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/research/001-research-a.md", "# A\n");
     fs.file("/cwd/docs/research/002-research-b.md", "# B\n");
     const request = await prepared(fs);
@@ -428,7 +428,7 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
   });
 
   it("rechaza un approval que no corresponde, sin escribir", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const raw = answer(request);
     const result = await applyPersist(fs, env, paths(), {
@@ -443,7 +443,7 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
   });
 
   it("rechaza cuando docs/ cambió entre la aprobación y la escritura", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const raw = answer(request);
     const approval = approvalFor(request, raw);
@@ -458,7 +458,7 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
   });
 
   it("no sobrescribe un documento existente en modo new", async () => {
-    const fs = workspace();
+    const fs = hub();
     fs.file("/cwd/docs/research/001-research-comparar-motores.md", "# Original\n");
     const request = await prepared(fs);
     // The answer proposes 001, but apply mints 002 — so build a collision the
@@ -480,7 +480,7 @@ describe("applyPersist — writes exactly the approved proposal, or nothing", ()
   });
 
   it("nunca crea una sesión", async () => {
-    const fs = workspace();
+    const fs = hub();
     const request = await prepared(fs);
     const raw = answer(request);
     await applyPersist(fs, env, paths(), {
@@ -508,7 +508,7 @@ describe("persist de un plan — pasa por la misma observación del linaje que a
       ],
     });
   const withSpec = (): MemFs => {
-    const fs = workspace();
+    const fs = hub();
     fs.file(`/cwd/${SPEC}`, SPEC_TEXT);
     return fs;
   };

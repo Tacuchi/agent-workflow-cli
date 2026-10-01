@@ -1,8 +1,8 @@
 import { join } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
-import type { ProjectStack } from "./parsers/project-block.js";
+import type { HubStack } from "./parsers/hub-block.js";
 
-export interface DetectedStack extends ProjectStack {
+export interface DetectedStack extends HubStack {
   wrapper?: string;
 }
 

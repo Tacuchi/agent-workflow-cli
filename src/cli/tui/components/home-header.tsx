@@ -1,12 +1,12 @@
 import { Box, Text } from "ink";
 import { colors, icons } from "../theme.js";
-import type { WorkspaceContext } from "./tabs-config.js";
+import type { HubContext } from "./tabs-config.js";
 
 export interface HomeHeaderProps {
   brand: string;
   version: string;
   handle?: string;
-  workspaceContext: WorkspaceContext;
+  hubContext: HubContext;
 }
 
 const DEFAULT_HANDLE = "@tacuchi";
@@ -36,9 +36,9 @@ export function HomeHeader({
   brand,
   version,
   handle = DEFAULT_HANDLE,
-  workspaceContext,
+  hubContext,
 }: HomeHeaderProps) {
-  const { branch, sync } = parseBranchLabel(workspaceContext.branchLabel);
+  const { branch, sync } = parseBranchLabel(hubContext.branchLabel);
   return (
     <Box flexDirection="column" marginBottom={1}>
       {/* Line 1: brand + version */}
@@ -54,7 +54,7 @@ export function HomeHeader({
           {"  "}v{version}
         </Text>
       </Text>
-      {/* Line 2: project · handle · branch · sync · sessions */}
+      {/* Line 2: hub · handle · branch · sync · sessions */}
       <Text wrap="truncate-end">
         <Text color={colors.dim}>{brand || "—"}</Text>
         <Text color={colors.faint}>{`  ${DOT}  `}</Text>
@@ -74,7 +74,7 @@ export function HomeHeader({
           </>
         ) : null}
         <Text color={colors.faint}>{`  ${DOT}  `}</Text>
-        <Text color={colors.dim}>{workspaceContext.sessionsLabel}</Text>
+        <Text color={colors.dim}>{hubContext.sessionsLabel}</Text>
       </Text>
     </Box>
   );

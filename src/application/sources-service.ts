@@ -4,11 +4,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { documentOfSession, readDocBranches, resolveDocBranch } from "./doc-branch-ledger.js";
 import { declaringHubs } from "./hub-registry.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "./parsers/project-block.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 import { resolveSessionTarget } from "./session-resolver.js";
@@ -21,7 +17,7 @@ export interface SourcesInput {
   verbose?: boolean;
 }
 
-export interface EnrichedSource extends ProjectFuente {
+export interface EnrichedSource extends HubFuente {
   expected_work_branch: string | null;
   expected_origin?: string;
   working_branch_notice?: string;
@@ -60,9 +56,9 @@ export async function runSources(
   paths: PathsService,
   input: SourcesInput,
 ): Promise<SourcesOutput> {
-  const cwd = paths.workspaceDir();
+  const cwd = paths.hubDir();
   const ownRoot = await fs.realPath(cwd).catch(() => cwd);
-  const block = await readWorkspaceBlock(fs, cwd, paths.blockMarkers());
+  const block = await readHubBlock(fs, cwd, paths.blockMarkers());
   const verbose = input.verbose === true;
 
   if (!block || block.fuentes.length === 0) {
@@ -79,7 +75,7 @@ export async function runSources(
   const sources = input.scope
     ? block.fuentes.filter((s) => input.scope?.includes(s.alias))
     : block.fuentes;
-  // Expected work branch comes from WORKSPACE block working_branches per source;
+  // Expected work branch comes from hub block working_branches per source;
   // decoupled from sessions/flow.
   const workingBranches = block.working_branches;
   const resolution = await resolveSessionTarget(fs, paths, {
@@ -104,7 +100,7 @@ export async function runSources(
   const ledger = await readDocBranches(fs, paths);
 
   const enriched: EnrichedSource[] = [];
-  async function enrichSource(src: ProjectFuente): Promise<void> {
+  async function enrichSource(src: HubFuente): Promise<void> {
     const effective = await resolveDocBranch(fs, paths, src, block, document, ledger);
     const expected = effective.branch;
     const others =
@@ -143,7 +139,7 @@ export async function runSources(
           (hub) => hub.working_branch !== null && hub.working_branch === checked.current_branch,
         )
           ? {
-              shared_branch_warning: `El checkout está en la rama de trabajo de otro workspace: ${others
+              shared_branch_warning: `El checkout está en la rama de trabajo de otro hub: ${others
                 .filter((hub) => hub.working_branch === checked.current_branch)
                 .map((hub) => hub.root)
                 .join(", ")}`,
@@ -180,7 +176,7 @@ export async function runSources(
 async function checkSourceBranch(
   fs: FileSystemPort,
   git: GitPort,
-  source: ProjectFuente,
+  source: HubFuente,
   expected: string | null,
 ): Promise<EnrichedSource> {
   const base: EnrichedSource = {

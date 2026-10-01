@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { readWorkspaceBlock } from "../../src/application/parsers/project-block.js";
+import { readHubBlock } from "../../src/application/parsers/hub-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { addSource } from "../../src/application/source-add-service.js";
 import { addSourceCommand } from "../../src/cli/commands/add-source.js";
@@ -37,7 +37,7 @@ it("add-source agrega una fuente sin podar las existentes y escribe la ruta en l
     "error" in
       (await addSource(fs, env, git, paths, { alias: "b", path: repoB, mainBranch: "main" })),
   ).toBe(false);
-  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const block = await readHubBlock(fs, root, paths.blockMarkers());
   expect(block?.fuentes.map((f) => f.alias)).toEqual(["a", "b"]);
   expect((await readFile(join(root, "CLAUDE.md"), "utf8")).includes("| a | a | main |")).toBe(true);
   const local = JSON.parse(await readFile(paths.cwdLocalConfigFile(), "utf8"));
@@ -62,7 +62,7 @@ it("registra una rama de trabajo explícita cuando ya existe en el repositorio",
     workingBranch: "feature/x",
   });
   expect(result).toMatchObject({ alias: "repo", working_branch: "feature/x" });
-  const block = await readWorkspaceBlock(new NodeFileSystem(), root, paths.blockMarkers());
+  const block = await readHubBlock(new NodeFileSystem(), root, paths.blockMarkers());
   expect(block?.working_branches.repo).toBe("feature/x");
 });
 
@@ -84,7 +84,7 @@ it("actualizar la ruta de un alias existente reemplaza sólo su coordenada local
   } as GitPort;
   const updated = await addSource(fs, env, updateGit, paths, { alias: "core", path: next });
   expect(updated).toMatchObject({ alias: "core", path: next });
-  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const block = await readHubBlock(fs, root, paths.blockMarkers());
   expect(block?.fuentes).toHaveLength(1);
   expect(block?.fuentes[0]?.path).toBe(next);
   expect(block?.working_branches.core).toBeUndefined();

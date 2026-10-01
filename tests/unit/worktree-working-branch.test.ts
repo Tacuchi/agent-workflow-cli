@@ -19,7 +19,7 @@ function git(repo: string, ...args: string[]): string {
 describe("unidad sin rama de trabajo", () => {
   let root: string;
   let home: string;
-  let workspace: string;
+  let hub: string;
   let repo: string;
   let deps: {
     fs: NodeFileSystem;
@@ -30,7 +30,7 @@ describe("unidad sin rama de trabajo", () => {
 
   function declare(work: string | null): void {
     writeFileSync(
-      join(workspace, "CLAUDE.md"),
+      join(hub, "CLAUDE.md"),
       `<!-- WORKFLOW-HUB-START -->
 ## Hub
 Prueba.
@@ -48,9 +48,9 @@ ${work === null ? "" : `- Ramas de trabajo actuales:\n  - acme: ${work}\n`}- Úl
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "aw-no-work-"));
     home = join(root, "home");
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     repo = join(root, "repo");
-    for (const dir of [home, workspace, repo]) mkdirSync(dir);
+    for (const dir of [home, hub, repo]) mkdirSync(dir);
     git(repo, "init", "--initial-branch=main");
     git(repo, "config", "user.email", "test@example.com");
     git(repo, "config", "user.name", "Test");
@@ -59,7 +59,7 @@ ${work === null ? "" : `- Ramas de trabajo actuales:\n  - acme: ${work}\n`}- Úl
     git(repo, "commit", "-m", "initial");
     git(repo, "branch", "develop");
     declare(null);
-    const session = join(workspace, ".workflow", "sessions", "101-test-plan-exec");
+    const session = join(hub, ".workflow", "sessions", "101-test-plan-exec");
     mkdirSync(session, { recursive: true });
     writeFileSync(
       join(session, "SESSION.md"),
@@ -67,9 +67,9 @@ ${work === null ? "" : `- Ramas de trabajo actuales:\n  - acme: ${work}\n`}- Úl
     );
     deps = {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(home, workspace),
+      env: new FakeEnv(home, hub),
       git: new GitCliAdapter(new NodeProcess()),
-      paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
+      paths: new PathsService(normalizeNamespace("workflow"), home, hub),
     };
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));

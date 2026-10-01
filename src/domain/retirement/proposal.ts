@@ -18,7 +18,7 @@
  *   descendant: all of them change the digest, and the old approval stops fitting.
  *
  * The `read_set` is the compare-and-swap. A retirement is computed FROM a state of
- * the workspace — the board, each session's custody, git — and applying it later
+ * the hub — the board, each session's custody, git — and applying it later
  * is only legitimate while that state still holds. Recording what was read, with
  * its digest, is what lets `apply` refuse instead of acting on a world that moved.
  *
@@ -38,7 +38,7 @@ export type RetirementMode = (typeof RETIREMENT_MODES)[number];
 /** One node inside the closure, and why it is in there. */
 export interface ClosureEntry {
   node: WorklineNodeId;
-  /** Workspace-relative path of the document, or of the session folder. */
+  /** Hub-relative path of the document, or of the session folder. */
   path: string;
   /**
    * `target` for the node that was named, `descendant` for one reached through a
@@ -204,7 +204,7 @@ export interface RetirementCustodyScope {
  * orphan this change exists to end.
  */
 export interface RetirementReservation {
-  /** Workspace-relative `docs/<category>/<NNN>-<name>`. */
+  /** Hub-relative `docs/<category>/<NNN>-<name>`. */
   path: string;
   /** The claim it joins to in the ledger — owner included, always. */
   claim: ClaimIdentity;

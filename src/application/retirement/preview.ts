@@ -4,7 +4,7 @@
  * Every line below is DERIVED from the record — nothing is authored here and
  * nothing is looked up again. That is the property the whole authorization rests
  * on: the person reads this, approves the digest, and `apply` performs the same
- * object. A preview assembled from a second reading of the workspace could describe
+ * object. A preview assembled from a second reading of the hub could describe
  * a retirement that differs from the one being approved, and it would be the
  * description a human trusts.
  *

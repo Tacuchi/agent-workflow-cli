@@ -1,8 +1,8 @@
 /**
- * The row a publication leaves in the workspace index, with no flow to leave it.
+ * The row a publication leaves in the hub index, with no flow to leave it.
  *
  * `export-*` and `persist` write into `docs/` outside any directed run, and
- * until now the workspace's own record — `.<ns>/HISTORY.md` — heard nothing
+ * until now the hub's own record — `.<ns>/HISTORY.md` — heard nothing
  * about it: whoever wanted the document listed had to run `aw history-update` by
  * hand afterwards, which is a repair and not an index.
  *
@@ -50,7 +50,7 @@ const TABLE_HEADER =
   "|-----------|-------|---------|";
 
 export interface PublicationRow {
-  /** Path inside the workspace, as the publication wrote it. */
+  /** Path inside the hub, as the publication wrote it. */
   document: string;
   date: string;
   /** The command that published it: `persist`, `export-manuals`, … */

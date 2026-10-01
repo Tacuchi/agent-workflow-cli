@@ -54,7 +54,7 @@ Ejemplo
       hosts: [],
       hostStates: [],
       currentHost: null,
-      workspaceDir: root,
+      hubDir: root,
       skipNative: true,
     } as DoctorProviderInput;
     const report = await visibilityProvider.run(input);

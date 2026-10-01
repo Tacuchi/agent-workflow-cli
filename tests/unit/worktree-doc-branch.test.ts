@@ -42,9 +42,9 @@ describe("unidad con rama propia del documento", () => {
   beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), "worktree-doc-"));
     repo = join(root, "repo");
-    const workspace = join(root, "workspace");
+    const hub = join(root, "workspace");
     mkdirSync(repo);
-    mkdirSync(workspace);
+    mkdirSync(hub);
     git(repo, "init", "-q", "-b", "main");
     git(repo, "config", "user.email", "fixture@example.com");
     git(repo, "config", "user.name", "Fixture");
@@ -55,7 +55,7 @@ describe("unidad con rama propia del documento", () => {
     git(repo, "checkout", "-q", "main");
     expect(git(repo, "rev-parse", "main")).toBe(main);
     writeFileSync(
-      join(workspace, "CLAUDE.md"),
+      join(hub, "CLAUDE.md"),
       `<!-- WORKFLOW-HUB-START -->
 ## Hub
 Test.
@@ -71,7 +71,7 @@ _Stack sin detectar._
 - Última actividad: 2026-09-27
 <!-- WORKFLOW-HUB-END -->\n`,
     );
-    const paths = new PathsService(normalizeNamespace("workflow"), root, workspace);
+    const paths = new PathsService(normalizeNamespace("workflow"), root, hub);
     const folder = join(paths.cwdSessionsDir(), session);
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "SESSION.md"), `# SESSION — ${session}\n`);
@@ -86,11 +86,11 @@ _Stack sin detectar._
         }),
       ),
     );
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    writeFileSync(join(workspace, "docs", "plans", "067-plan-rama.md"), "# Plan 067\n");
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    writeFileSync(join(hub, "docs", "plans", "067-plan-rama.md"), "# Plan 067\n");
     deps = {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(root, workspace),
+      env: new FakeEnv(root, hub),
       git: new GitCliAdapter(new NodeProcess()),
       paths,
     };
@@ -244,9 +244,9 @@ _Stack sin detectar._
     git(second, "config", "user.email", "fixture@example.com");
     git(second, "config", "user.name", "Fixture");
     const secondHead = commit(second, "base.txt", "segundo\n");
-    const workspace = deps.paths.workspaceDir();
+    const hub = deps.paths.hubDir();
     writeFileSync(
-      join(workspace, "CLAUDE.md"),
+      join(hub, "CLAUDE.md"),
       `<!-- WORKFLOW-HUB-START -->
 ## Hub
 Test.

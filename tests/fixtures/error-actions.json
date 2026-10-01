@@ -140,7 +140,7 @@
       "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
     },
     {
-      "file": "src/application/project-md-upsert-service.ts",
+      "file": "src/application/hub-block-upsert-service.ts",
       "text": "aw add-source ${source.alias}:<ruta>",
       "class": "not-determinable",
       "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
@@ -182,7 +182,7 @@
       "reason": "el hecho observado y la fuente los declara la persona; la versión va interpolada"
     },
     {
-      "file": "src/application/workspace-init-service.ts",
+      "file": "src/application/hub-init-service.ts",
       "text": "aw add-source <alias>",
       "class": "not-determinable",
       "reason": "alias, ruta y rama de una fuente nueva son de la persona"
@@ -212,13 +212,13 @@
       "reason": "el nombre de la rama de trabajo lo elige la persona"
     },
     {
-      "file": "src/application/parsers/project-block.ts",
+      "file": "src/application/parsers/hub-block.ts",
       "text": "aw add-source ${alias}:<ruta>",
       "class": "not-determinable",
       "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
     },
     {
-      "file": "src/application/parsers/project-block.ts",
+      "file": "src/application/parsers/hub-block.ts",
       "text": "aw add-source <alias>",
       "class": "not-determinable",
       "reason": "alias, ruta y rama de una fuente nueva son de la persona"
@@ -230,13 +230,13 @@
       "reason": "alias, ruta y rama de una fuente nueva son de la persona"
     },
     {
-      "file": "src/application/doctor/provider-workspace-block.ts",
+      "file": "src/application/doctor/provider-hub-block.ts",
       "text": "aw doctor prepare --select <id>",
       "class": "not-determinable",
       "reason": "qué hallazgo reparar lo elige la persona y el digest sale de prepare"
     },
     {
-      "file": "src/application/doctor/provider-workspace-block.ts",
+      "file": "src/application/doctor/provider-hub-block.ts",
       "text": "aw doctor apply --approval <digest>",
       "class": "not-determinable",
       "reason": "qué hallazgo reparar lo elige la persona y el digest sale de prepare"

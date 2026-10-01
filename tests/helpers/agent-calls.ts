@@ -72,7 +72,7 @@ const ALIAS = "acme";
 const SPEC_DOC = "docs/specs/001-spec-medida.md";
 const PLAN_DOC = "docs/plans/001-plan-medida.md";
 
-const workspaceBlock = (source: string) => `<!-- AGENT-WORKFLOW-HUB-START -->
+const hubBlock = (source: string) => `<!-- AGENT-WORKFLOW-HUB-START -->
 ## Hub
 
 Medida de llamadas.
@@ -243,7 +243,7 @@ async function seed(root: string, paths: PathsService, flow: WorklineFlow, phase
     "utf8",
   );
   await writeFile(join(session, "CHECKPOINT.md"), "# CHECKPOINT\n\nsembrado\n", "utf8");
-  await writeFile(join(root, "CLAUDE.md"), workspaceBlock(join(root, ALIAS)), "utf8");
+  await writeFile(join(root, "CLAUDE.md"), hubBlock(join(root, ALIAS)), "utf8");
   for (const dir of ["docs/specs", "docs/plans"]) await mkdir(join(root, dir), { recursive: true });
   await writeFile(join(root, SPEC_DOC), SPEC, "utf8");
   if (flow === "plan-refine") await writeFile(join(root, PLAN_DOC), PLAN, "utf8");

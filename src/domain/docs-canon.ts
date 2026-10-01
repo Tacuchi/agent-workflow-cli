@@ -1,7 +1,7 @@
 /**
  * The fixed core of the documentary layout.
  *
- * The workspace may configure non-core export folders, but research, specs and
+ * The hub may configure non-core export folders, but research, specs and
  * plans form a graph consumed by lifecycle operations. Keep their default in a
  * dependency-free domain module so every reader can name the same locations
  * without importing an application service or recreating a literal.

@@ -56,9 +56,9 @@ async function runDoctorSub(
   args: ParsedArgs,
   ctx: CliContext,
 ): Promise<CommandResult<VisibilityDoctorResult>> {
-  const workspace = args.values.get("hub");
+  const hub = args.values.get("hub");
   const data = await runVisibilityDoctor(ctx.fs, ctx.env, ctx.paths, {
-    ...(workspace !== undefined ? { workspace } : {}),
+    ...(hub !== undefined ? { hub } : {}),
     global: args.flags.has("--global"),
   });
 
@@ -152,7 +152,7 @@ function renderFixes(reports: VisibilityHostReport[]): string[] {
     fixes.push("  aw attach-multiroot --from-sources          registra las fuentes que faltan");
   }
   // Global leftovers are the hub's own sources leaking into ~/: a different
-  // command, and `--path` on the workspace scope would not touch them.
+  // command, and `--path` on the hub scope would not touch them.
   if (reports.some((r) => r.scope === "hub" && r.extra.length > 0)) {
     fixes.push("  aw detach-multiroot --path <dir>            quita las rutas que sobran");
   }

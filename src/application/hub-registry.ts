@@ -3,11 +3,7 @@ import { readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promise
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { acquireLock } from "./lock-service.js";
-import {
-  type ParsedProjectBlock,
-  readLegacyBlock,
-  readWorkspaceBlock,
-} from "./parsers/project-block.js";
+import { type ParsedHubBlock, readHubBlock, readLegacyBlock } from "./parsers/hub-block.js";
 import { PathsService } from "./paths-service.js";
 
 export class HubRegistryError extends Error {
@@ -114,7 +110,7 @@ export async function declaringHubs(
   repo: string,
 ): Promise<DeclaringHub[]> {
   return await hubsDeclaring(home, namespace, repo, (root, paths) =>
-    readWorkspaceBlock(fs, root, paths.blockMarkers()),
+    readHubBlock(fs, root, paths.blockMarkers()),
   );
 }
 
@@ -139,7 +135,7 @@ async function hubsDeclaring(
   home: string,
   namespace: string,
   repo: string,
-  read: (root: string, paths: PathsService) => Promise<ParsedProjectBlock | null>,
+  read: (root: string, paths: PathsService) => Promise<ParsedHubBlock | null>,
 ): Promise<DeclaringHub[]> {
   const common = await gitCommonDirectory(repo);
   if (common === null) return [];

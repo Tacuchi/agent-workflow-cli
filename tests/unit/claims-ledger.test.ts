@@ -39,7 +39,7 @@ class FailingAppendFs extends NodeFileSystem {
  * recovery had no evidence and a reuse had no basis.
  */
 describe("claims ledger", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
   let paths: PathsService;
   let fs: NodeFileSystem;
@@ -54,7 +54,7 @@ describe("claims ledger", () => {
   });
 
   it("cierre reintentado tras fallar remove no anexa released dos veces", async () => {
-    const markerPath = join(workspace, "docs", "plans", "036-plan-x.md");
+    const markerPath = join(hub, "docs", "plans", "036-plan-x.md");
     class FailRemoveOnce extends NodeFileSystem {
       failed = false;
       override async remove(path: string) {
@@ -66,7 +66,7 @@ describe("claims ledger", () => {
       }
     }
     const unstable = new FailRemoveOnce();
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
     mkdirSync(join(paths.cwdSessionsDir(), OWNER), { recursive: true });
     writeFileSync(join(paths.cwdSessionsDir(), OWNER, "SESSION.md"), "# SESSION\n");
     writeFileSync(markerPath, reservationMarker(OWNER));
@@ -85,8 +85,8 @@ describe("claims ledger", () => {
   });
 
   it("dos vidas del mismo claim reciben cada una su propio released", async () => {
-    const markerPath = join(workspace, "docs", "plans", "036-plan-x.md");
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    const markerPath = join(hub, "docs", "plans", "036-plan-x.md");
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
     mkdirSync(join(paths.cwdSessionsDir(), OWNER), { recursive: true });
     writeFileSync(join(paths.cwdSessionsDir(), OWNER, "SESSION.md"), "# SESSION\n");
     const claim = { category: "plans", correlative: "036", name: "plan-x.md", owner: OWNER };
@@ -116,8 +116,8 @@ describe("claims ledger", () => {
   });
 
   it("un reintento de claim repara el marcador anterior al evento claimed", async () => {
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    writeFileSync(join(workspace, "docs", "plans", "036-plan-x.md"), reservationMarker(OWNER));
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    writeFileSync(join(hub, "docs", "plans", "036-plan-x.md"), reservationMarker(OWNER));
     const claimed = await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
       claim: { name: "plan-x.md", owner: OWNER },
@@ -136,7 +136,7 @@ describe("claims ledger", () => {
   });
 
   it("un evento desconocido no vuelve a hacer elegible un correlativo revocado", async () => {
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
     writeFileSync(
       ledgerPath(paths),
       `${JSON.stringify({
@@ -212,8 +212,8 @@ describe("claims ledger", () => {
         from: OWNER,
         to: "210-alpha-plan-new",
       };
-      mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-      writeFileSync(join(workspace, transfer.marker), reservationMarker(markerOwner));
+      mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+      writeFileSync(join(hub, transfer.marker), reservationMarker(markerOwner));
       await appendClaimEvent(fs, paths, { at: "2026-01-01", event: "claimed", claim });
       await appendClaimEvent(fs, paths, {
         at: "2026-01-01",
@@ -242,13 +242,13 @@ describe("claims ledger", () => {
   );
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "claims-ledger-"));
-    env = new FakeEnv(workspace, workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "claims-ledger-"));
+    env = new FakeEnv(hub, hub);
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new NodeFileSystem();
-    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
   });
-  afterEach(() => rmSync(workspace, { recursive: true, force: true }));
+  afterEach(() => rmSync(hub, { recursive: true, force: true }));
 
   it("vive bajo .workflow/ y nunca dentro de docs/", async () => {
     await appendClaimEvent(fs, paths, {
@@ -258,11 +258,11 @@ describe("claims ledger", () => {
     });
 
     const path = ledgerPath(paths);
-    expect(path).toBe(join(workspace, ".workflow", "claims.jsonl"));
-    expect(path).not.toContain(`${join(workspace, "docs")}`);
+    expect(path).toBe(join(hub, ".workflow", "claims.jsonl"));
+    expect(path).not.toContain(`${join(hub, "docs")}`);
     // El corpus es para documentos que alguien publicó, y una historia de
     // reservas no es uno: dentro de docs/ la huella se leería como una spec.
-    expect(existsSync(join(workspace, "docs"))).toBe(false);
+    expect(existsSync(join(hub, "docs"))).toBe(false);
   });
 
   it("es append-only: un registro nuevo no reescribe al anterior", async () => {
@@ -332,7 +332,7 @@ describe("claims ledger", () => {
   });
 
   it("la liberación al cerrar deja su causa, y la huella sobrevive al borrado de la sesión", async () => {
-    const sessionDir = join(workspace, ".workflow", "sessions", OWNER);
+    const sessionDir = join(hub, ".workflow", "sessions", OWNER);
     mkdirSync(sessionDir, { recursive: true });
     writeFileSync(join(sessionDir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
     await runNextNumber(fs, env, paths, {
@@ -430,14 +430,14 @@ describe("claims ledger", () => {
   });
 
   it("si el registro de la liberación falla, el marcador NO se borra: nada se libera sin huella", async () => {
-    const sessionDir = join(workspace, ".workflow", "sessions", OWNER);
+    const sessionDir = join(hub, ".workflow", "sessions", OWNER);
     mkdirSync(sessionDir, { recursive: true });
     writeFileSync(join(sessionDir, "SESSION.md"), "# SESSION — alpha\n\n## Objective\nx\n");
     await runNextNumber(fs, env, paths, {
       directory: "docs/plans",
       claim: { name: "plan-alpha.md", owner: OWNER },
     });
-    const slot = join(workspace, "docs", "plans", "001-plan-alpha.md");
+    const slot = join(hub, "docs", "plans", "001-plan-alpha.md");
     expect(existsSync(slot)).toBe(true);
 
     const closed = await runSessionClose(new FailingAppendFs(), paths, { code: "201" });

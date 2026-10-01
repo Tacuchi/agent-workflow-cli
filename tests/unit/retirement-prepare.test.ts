@@ -83,7 +83,7 @@ const PLAN = (n: string, spec: string, estado = "open") => `# Plan ${n} — algo
 
 describe("retirement prepare — resolución, clausura y sello sin escribir nada", () => {
   let root: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let paths: PathsService;
   let deps: PrepareDeps;
@@ -96,7 +96,7 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     return `docs/plans/${n}-plan-algo.md`;
   }
   function write(relative: string, content: string): void {
-    writeFileSync(join(workspace, relative), content);
+    writeFileSync(join(hub, relative), content);
   }
 
   async function session(name: string, inputs: string[] = []): Promise<string> {
@@ -113,7 +113,7 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
   }
 
   /** Snapshot of every path under the workspace, to prove `prepare` writes nothing. */
-  function tree(dir = workspace, prefix = ""): string[] {
+  function tree(dir = hub, prefix = ""): string[] {
     const out: string[] = [];
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const rel = `${prefix}${entry.name}`;
@@ -125,11 +125,11 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "retire-"));
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, "acme");
-    mkdirSync(join(workspace, "docs", "specs"), { recursive: true });
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
-    mkdirSync(join(workspace, ".workflow", "sessions"), { recursive: true });
+    mkdirSync(join(hub, "docs", "specs"), { recursive: true });
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
     mkdirSync(source, { recursive: true });
     git(source, "init", "--initial-branch=main");
     git(source, "config", "user.email", "t@example.com");
@@ -139,8 +139,8 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     git(source, "commit", "-m", "inicial");
 
     write("CLAUDE.md", block(source));
-    const env = new FakeEnv(join(root, "home"), workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), workspace);
+    const env = new FakeEnv(join(root, "home"), hub);
+    paths = new PathsService(normalizeNamespace("workflow"), join(root, "home"), hub);
     deps = { fs, env, git: new GitCliAdapter(new NodeProcess()), paths };
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -249,9 +249,9 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     write(specFile("025"), SPEC("025"));
     // Una sesión legacy: carpeta a mano, sin custodia, con su Origin en prosa.
     const folder = "090-legacy-spec-refine";
-    mkdirSync(join(workspace, ".workflow", "sessions", folder), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions", folder), { recursive: true });
     writeFileSync(
-      join(workspace, ".workflow", "sessions", folder, "SESSION.md"),
+      join(hub, ".workflow", "sessions", folder, "SESSION.md"),
       `# SESSION — ${folder}\n\n## Origin\n- desde docs/specs/025-spec-algo.md\n`,
     );
 
@@ -289,7 +289,7 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     write(specFile("025"), SPEC("025"));
     write(planFile("024"), PLAN("024", "025"));
     const exec = await session("algo-plan-exec", [planFile("024")]);
-    writeFileSync(join(workspace, ".workflow", "sessions", exec, ".closed"), "");
+    writeFileSync(join(hub, ".workflow", "sessions", exec, ".closed"), "");
 
     expect(proposalOf(await prepare("reset", `session:${exec}`)).target).toEqual({
       kind: "session",
@@ -418,9 +418,9 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     // Una carpeta hecha a mano HOY: es la ausencia del archivo lo único que se
     // verificó, y de una ausencia no se deduce cuándo nació la sesión.
     const folder = "090-hecha-a-mano-plan-exec";
-    mkdirSync(join(workspace, ".workflow", "sessions", folder), { recursive: true });
+    mkdirSync(join(hub, ".workflow", "sessions", folder), { recursive: true });
     writeFileSync(
-      join(workspace, ".workflow", "sessions", folder, "SESSION.md"),
+      join(hub, ".workflow", "sessions", folder, "SESSION.md"),
       `# SESSION — ${folder}\n`,
     );
 
@@ -550,8 +550,8 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     // categoría ni por proximidad de correlativo.
     expect(proposal.reservations.some((r) => r.path === foreign)).toBe(false);
     // Y sigue sin escribir nada: `prepare` sólo mira.
-    expect(existsSync(join(workspace, foreign))).toBe(true);
-    expect(existsSync(join(workspace, held))).toBe(true);
+    expect(existsSync(join(hub, foreign))).toBe(true);
+    expect(existsSync(join(hub, held))).toBe(true);
   });
 
   it("una reserva con el marcador dañado se enumera, y como NO liberable", async () => {
@@ -606,7 +606,7 @@ describe("retirement prepare — resolución, clausura y sello sin escribir nada
     // Un `docs/` que no se puede recorrer entero no es un `docs/` sin reservas:
     // sellar lo que el barrido alcanzó a ver presentaría una lista truncada como
     // si fuera todo lo que este retiro devuelve.
-    const broken = join(workspace, "docs", "plans", "001-plan-rota.md");
+    const broken = join(hub, "docs", "plans", "001-plan-rota.md");
     writeFileSync(broken, "x");
     chmodSync(broken, 0o000);
     try {

@@ -38,7 +38,7 @@ export class SessionsService {
   ) {}
 
   async list(input: ListSessionsInput = {}): Promise<ListSessionsOutput> {
-    const cwd = this.paths.workspaceDir();
+    const cwd = this.paths.hubDir();
     const sessionsDir = this.paths.cwdSessionsDir();
     const sessions = await this.scanFolder(sessionsDir, cwd, input.verbose === true);
 

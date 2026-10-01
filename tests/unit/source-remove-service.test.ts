@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { runHubBlockUpsertWrite } from "../../src/application/hub-block-upsert-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runProjectMdUpsertWrite } from "../../src/application/project-md-upsert-service.js";
 import { removeSource } from "../../src/application/source-remove-service.js";
 import type { EnvPort } from "../../src/ports/env.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -29,7 +29,7 @@ describe("removeSource", () => {
   });
 
   async function seedBlock(env: EnvPort, paths: PathsService) {
-    await runProjectMdUpsertWrite(fs, env, paths, {
+    await runHubBlockUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
         { alias: "core", path: "../repo/core", mainBranch: "main" },
@@ -116,7 +116,7 @@ describe("removeSource", () => {
     await mkdir(angular);
     await writeFile(join(java, "pom.xml"), "<project/>");
     await writeFile(join(angular, "angular.json"), "{}");
-    await runProjectMdUpsertWrite(fs, env, paths, {
+    await runHubBlockUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [
         { alias: "java", path: java, mainBranch: "main" },

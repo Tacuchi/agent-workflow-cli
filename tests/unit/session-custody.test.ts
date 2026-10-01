@@ -62,14 +62,14 @@ Test.
 describe("session custody — what a run received, created and changed", () => {
   let root: string;
   let home: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let paths: PathsService;
   let deps: Parameters<typeof runWorktree>[0];
   const fs = new NodeFileSystem();
 
   function sessionsDir(): string {
-    return join(workspace, ".workflow", "sessions");
+    return join(hub, ".workflow", "sessions");
   }
 
   async function custodyOf(folder: string): Promise<SessionCustody> {
@@ -81,10 +81,10 @@ describe("session custody — what a run received, created and changed", () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "custody-"));
     home = join(root, "home");
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, "acme");
     mkdirSync(home, { recursive: true });
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
     mkdirSync(sessionsDir(), { recursive: true });
     mkdirSync(source, { recursive: true });
 
@@ -95,9 +95,9 @@ describe("session custody — what a run received, created and changed", () => {
     git(source, "add", "-A");
     git(source, "commit", "-m", "inicial");
 
-    writeFileSync(join(workspace, "CLAUDE.md"), block(source));
-    const env = new FakeEnv(home, workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), home, workspace);
+    writeFileSync(join(hub, "CLAUDE.md"), block(source));
+    const env = new FakeEnv(home, hub);
+    paths = new PathsService(normalizeNamespace("workflow"), home, hub);
     deps = { fs, env, git: new GitCliAdapter(new NodeProcess()), paths };
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -118,7 +118,7 @@ describe("session custody — what a run received, created and changed", () => {
 
   it("is sealed with the session, before it can produce any effect", async () => {
     const plan = "docs/plans/024-plan-x.md";
-    writeFileSync(join(workspace, plan), "# Plan 024\n> Estado: open\n");
+    writeFileSync(join(hub, plan), "# Plan 024\n> Estado: open\n");
 
     const session = await create("x-plan-exec", [plan]);
 
@@ -168,11 +168,11 @@ describe("session custody — what a run received, created and changed", () => {
       return result.sessionCreate;
     }
 
-    beforeEach(() => mkdirSync(join(workspace, "docs", "specs"), { recursive: true }));
+    beforeEach(() => mkdirSync(join(hub, "docs", "specs"), { recursive: true }));
 
     it("seals the plan a `-plan-exec` works on, with no skill passing --input", async () => {
       const plan = "docs/plans/024-plan-correo-otp.md";
-      writeFileSync(join(workspace, plan), "# Plan 024\n> Estado: open\n");
+      writeFileSync(join(hub, plan), "# Plan 024\n> Estado: open\n");
 
       const record = await bare("exec", "correo-otp-plan-exec");
 
@@ -189,8 +189,8 @@ describe("session custody — what a run received, created and changed", () => {
 
     it("seals the SPEC for `-plan-new`: the plan it writes has no number yet", async () => {
       const spec = "docs/specs/029-spec-correo-otp.md";
-      writeFileSync(join(workspace, spec), "---\nstatus: ready-for-plan\n---\n");
-      writeFileSync(join(workspace, "docs/plans/024-plan-correo-otp.md"), "# Plan 024\n");
+      writeFileSync(join(hub, spec), "---\nstatus: ready-for-plan\n---\n");
+      writeFileSync(join(hub, "docs/plans/024-plan-correo-otp.md"), "# Plan 024\n");
 
       const record = await bare("refine", "correo-otp-plan-new");
 
@@ -200,12 +200,12 @@ describe("session custody — what a run received, created and changed", () => {
 
     it("seals the spec a `-spec-refine` works on", async () => {
       const spec = "docs/specs/029-spec-correo-otp.md";
-      writeFileSync(join(workspace, spec), "---\nstatus: draft\n---\n");
+      writeFileSync(join(hub, spec), "---\nstatus: draft\n---\n");
       expect((await bare("refine", "correo-otp-spec-refine")).inputs).toEqual([spec]);
     });
 
     it("derives nothing for a quick: a quick works on no document", async () => {
-      writeFileSync(join(workspace, "docs/plans/024-plan-suelto.md"), "# Plan 024\n");
+      writeFileSync(join(hub, "docs/plans/024-plan-suelto.md"), "# Plan 024\n");
       const record = await bare("quick", "suelto-quick");
       expect(record.inputs).toEqual([]);
       expect(record.inputs_from).toBe("none");
@@ -214,8 +214,8 @@ describe("session custody — what a run received, created and changed", () => {
     });
 
     it("refuses to CHOOSE when two documents answer to the same slug, and says so", async () => {
-      writeFileSync(join(workspace, "docs/plans/024-plan-correo-otp.md"), "# Plan 024\n");
-      writeFileSync(join(workspace, "docs/plans/031-plan-correo-otp.md"), "# Plan 031\n");
+      writeFileSync(join(hub, "docs/plans/024-plan-correo-otp.md"), "# Plan 024\n");
+      writeFileSync(join(hub, "docs/plans/031-plan-correo-otp.md"), "# Plan 031\n");
 
       const record = await bare("exec", "correo-otp-plan-exec");
 
@@ -239,7 +239,7 @@ describe("session custody — what a run received, created and changed", () => {
     it("rejects a descriptor that is only a flow name", async () => {
       // `--name plan-exec` leaves an empty slug: matching on it would adopt any
       // `docs/plans/NNN-plan.md` as this run's input.
-      writeFileSync(join(workspace, "docs/plans/024-plan.md"), "# Plan 024\n");
+      writeFileSync(join(hub, "docs/plans/024-plan.md"), "# Plan 024\n");
       const result = await runSessionCreate(fs, paths, {
         type: "exec",
         name: "plan-exec",
@@ -251,8 +251,8 @@ describe("session custody — what a run received, created and changed", () => {
     it("lets an explicit --input win: the caller is the authority", async () => {
       const derivable = "docs/plans/024-plan-correo-otp.md";
       const chosen = "docs/specs/029-spec-otra-cosa.md";
-      writeFileSync(join(workspace, derivable), "# Plan 024\n");
-      writeFileSync(join(workspace, chosen), "---\nstatus: draft\n---\n");
+      writeFileSync(join(hub, derivable), "# Plan 024\n");
+      writeFileSync(join(hub, chosen), "---\nstatus: draft\n---\n");
 
       const result = await runSessionCreate(fs, paths, {
         type: "exec",
@@ -338,7 +338,7 @@ describe("session custody — what a run received, created and changed", () => {
     expect(recorded?.branch).toBe("main");
     expect(recorded?.baseline_head).toBe(head);
     expect(recorded?.unit_branch).toBe(
-      `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session.folder}`,
+      `aw/${createHash("sha256").update(hub.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session.folder}`,
     );
     expect(recorded?.unit_path).toBe(unit.path);
     // The pre-existing dirt is named, so it can never be attributed to this run.
@@ -415,7 +415,7 @@ describe("session custody — what a run received, created and changed", () => {
 
   it("reports a hand-edited record as incomplete instead of trusting it", async () => {
     const plan = "docs/plans/024-plan-x.md";
-    writeFileSync(join(workspace, plan), "original\n");
+    writeFileSync(join(hub, plan), "original\n");
     const session = await create("siete-plan-exec", [plan]);
 
     const raw = JSON.parse(readFileSync(join(session.path, CUSTODY_FILE), "utf-8")) as {

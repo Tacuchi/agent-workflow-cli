@@ -51,14 +51,14 @@ import { journeyForRun } from "./run-journey.js";
  * fell to restoring the directory that contained it, which is the same move one
  * level up.
  *
- * Now it is workspace runtime — `.<ns>/sessions/.flow-attempts/<folder>.json`,
+ * Now it is hub runtime — `.<ns>/sessions/.flow-attempts/<folder>.json`,
  * keyed by the session it counts, dot-prefixed so the session listing skips it
  * and already inside the gitignore the CLI manages. Restoring a session folder
  * cannot lower it, deleting the folder cannot delete it, and a recovery does not
  * delete it either: it records how many attempts were given back. See
  * `attemptsAt`.
  *
- * One file per run rather than one registry for the workspace, because two runs
+ * One file per run rather than one registry for the hub, because two runs
  * advance concurrently under two DIFFERENT locks: a shared registry would need a
  * lock of its own, and losing that race would silently drop a run's floor —
  * rebuilding the very hole the file exists to close.
@@ -82,7 +82,7 @@ export interface FlowRunLocation {
   session: string;
   dir: string;
   statePath: string;
-  /** Workspace runtime, NOT under {@link dir}. See {@link COUNTER_VERSION}. */
+  /** Hub runtime, NOT under {@link dir}. See {@link COUNTER_VERSION}. */
   countersPath: string;
   lockPath: string;
 }

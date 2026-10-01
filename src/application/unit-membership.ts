@@ -1,16 +1,16 @@
-import { parseUnitPath, workspaceKey } from "../domain/isolation-unit.js";
+import { hubKey, parseUnitPath } from "../domain/isolation-unit.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import type { ProjectFuente } from "./parsers/project-block.js";
+import type { HubFuente } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { readCustody } from "./session-custody-service.js";
 import { listSessionFolders } from "./session-resolver.js";
 
 /** Source of a file in its declared checkout or in one of this hub's flow units. */
 export function findOwningSource(
-  sources: readonly ProjectFuente[],
+  sources: readonly HubFuente[],
   filePath: string,
   unitsRoot?: string,
-): ProjectFuente | null {
+): HubFuente | null {
   for (const source of sources) {
     if (source.path === null) continue;
     const root = source.path.endsWith("/") ? source.path : `${source.path}/`;
@@ -28,8 +28,8 @@ export async function hubUnitPaths(
   paths: PathsService,
   root: string,
 ): Promise<(path: string) => boolean> {
-  const keys = new Set([workspaceKey(paths.workspaceDir())]);
-  await addPreviousWorkspaceKeys(fs, paths, keys);
+  const keys = new Set([hubKey(paths.hubDir())]);
+  await addPreviousHubKeys(fs, paths, keys);
   const owned = new Set<string>();
   for (const session of await listSessionFolders(fs, paths.cwdSessionsDir())) {
     const custody = await readCustody(fs, session.path);
@@ -39,11 +39,11 @@ export async function hubUnitPaths(
   return (path) => {
     const unit = parseUnitPath(root, path);
     if (unit === null) return false;
-    return owned.has(path) || keys.has(unit.workspaceKey);
+    return owned.has(path) || keys.has(unit.hubKey);
   };
 }
 
-async function addPreviousWorkspaceKeys(
+async function addPreviousHubKeys(
   fs: FileSystemPort,
   paths: PathsService,
   keys: Set<string>,

@@ -1,10 +1,6 @@
-import type {
-  DefaultBranches,
-  ParsedProjectBlock,
-  ProjectFuente,
-} from "./parsers/project-block.js";
+import type { DefaultBranches, HubFuente, ParsedHubBlock } from "./parsers/hub-block.js";
 
-/** Floor applied when the workspace declares no default for a role. */
+/** Floor applied when the hub declares no default for a role. */
 export const BRANCH_ROLE_FALLBACKS: Required<DefaultBranches> = {
   principal: "main",
   desarrollo: "development",
@@ -19,11 +15,11 @@ export interface SourceBranchRoles {
   work: string | null;
   /** QA branch: Status `Ramas QA` → default `qa`. */
   qa: string;
-  /** Development branch: workspace default `desarrollo` (no per-source value). */
+  /** Development branch: hub default `desarrollo` (no per-source value). */
   dev: string;
 }
 
-/** Workspace defaults with the fallback floor applied. */
+/** Hub defaults with the fallback floor applied. */
 export function resolveDefaultBranches(
   defaults: DefaultBranches | undefined,
 ): Required<DefaultBranches> {
@@ -36,13 +32,13 @@ export function resolveDefaultBranches(
 
 /**
  * Resolve the working role from its own declaration; environment roles still
- * have workspace defaults and a hardcoded floor. Shared by git-flow and the
- * Project tab, so
+ * have hub defaults and a hardcoded floor. Shared by git-flow and the
+ * Hub tab, so
  * what the TUI shows is what the flows act on.
  */
 export function resolveSourceBranches(
-  source: ProjectFuente,
-  block: Pick<ParsedProjectBlock, "default_branches" | "working_branches" | "qa_branches"> | null,
+  source: HubFuente,
+  block: Pick<ParsedHubBlock, "default_branches" | "working_branches" | "qa_branches"> | null,
 ): SourceBranchRoles {
   const defaults = resolveDefaultBranches(block?.default_branches);
   return {
@@ -84,7 +80,7 @@ export function isPlainBranchName(name: string): boolean {
 /**
  * Single shared resolver for the expected WORKING branch of a source.
  *
- * The expected work branch is sourced from the WORKSPACE block's
+ * The expected work branch is sourced from the hub block's
  * `working_branches` (per owning Fuentes source). It is DECOUPLED from sessions
  * and flow. "Rama principal" (the Fuentes table) is the BASE
  * branch, NOT the expected work branch, so it is never used here.
@@ -93,7 +89,7 @@ export function isPlainBranchName(name: string): boolean {
  * declares none (callers treat null as "no expectation → allow / no-op").
  */
 export function expectedWorkBranch(
-  source: ProjectFuente,
+  source: HubFuente,
   workingBranches: Record<string, string>,
 ): string | null {
   const branch = workingBranches[source.alias];

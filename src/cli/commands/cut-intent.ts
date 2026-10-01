@@ -22,7 +22,7 @@ const USAGE =
  * corrected.
  *
  * Its own surface rather than a flag on `status`, for the reason the record
- * exists: this is the ONE place a human intention enters the workspace, and
+ * exists: this is the ONE place a human intention enters the hub, and
  * everything else derives from it. Folding the declaration into a board that
  * otherwise only reports would blur which of the two a given number came from.
  *
@@ -192,7 +192,7 @@ async function declare(args: ParsedArgs, ctx: CliContext): Promise<CommandResult
 }
 
 /**
- * A node from a bare correlative or from a workspace-relative document path.
+ * A node from a bare correlative or from a hub-relative document path.
  *
  * Both spellings are accepted because both are what a person has at hand: the
  * board prints numbers and the flows pass paths. The path form goes through

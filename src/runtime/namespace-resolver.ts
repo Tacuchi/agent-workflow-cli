@@ -12,12 +12,12 @@ export interface ResolvedNamespace {
 }
 
 /**
- * The one workspace-scoped coordinate resolved before any service is built.
+ * The one hub-scoped coordinate resolved before any service is built.
  *
- * A Workline workspace does not need a configuration block to exist.  Its
+ * A Workline hub does not need a configuration block to exist.  Its
  * durable marker is `.<namespace>/workline.json` — a mark of Workline's own, not
  * a folder name a host tool also uses (see `workline-marker`); until that marker
- * exists the directory from which the command was invoked is still the workspace
+ * exists the directory from which the command was invoked is still the hub
  * root for read-only commands.  Keeping that fact here prevents each command from
  * independently walking cwd (or, worse, guessing a Git root).
  */
@@ -98,11 +98,11 @@ export class NamespaceResolver {
       };
     }
 
-    const workspace = await this.detectFromWorkspace(cwd);
-    if (workspace !== null) {
+    const hub = await this.detectFromHub(cwd);
+    if (hub !== null) {
       return {
-        root: workspace.root,
-        namespace: workspace.namespace,
+        root: hub.root,
+        namespace: hub.namespace,
         namespaceSource: "hub",
         materialized: true,
       };
@@ -130,9 +130,7 @@ export class NamespaceResolver {
     };
   }
 
-  private async detectFromWorkspace(
-    cwd: string,
-  ): Promise<{ root: string; namespace: Namespace } | null> {
+  private async detectFromHub(cwd: string): Promise<{ root: string; namespace: Namespace } | null> {
     let dir = cwd;
     while (true) {
       if (dir === this.env.homeDir()) return null;

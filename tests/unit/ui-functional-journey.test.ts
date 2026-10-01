@@ -43,9 +43,9 @@ describe("SPEC → PLAN → QUICK con ayuda UI opcional", () => {
       const root = await mkdtemp(join(tmpdir(), "aw-ui-functional-"));
       try {
         const home = join(root, "home");
-        const workspace = join(root, "workspace");
+        const hub = join(root, "workspace");
         await mkdir(home);
-        await mkdir(workspace);
+        await mkdir(hub);
         if (help) {
           const skill = join(home, ".agents/skills/ui-authoring");
           await mkdir(skill, { recursive: true });
@@ -54,7 +54,7 @@ describe("SPEC → PLAN → QUICK con ayuda UI opcional", () => {
             "---\nname: ui-authoring\n---\nPropuesta de resumen accesible.\n",
           );
         }
-        const paths = new PathsService(normalizeNamespace("agent-workflow"), home, workspace);
+        const paths = new PathsService(normalizeNamespace("agent-workflow"), home, hub);
         const bindings = await resolveSkills(new NodeFileSystem(), paths);
         expect(bindings.skills).toEqual({
           overview: { role: "overview", skill: "w", source: "default", enabled: true },

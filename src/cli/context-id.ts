@@ -21,7 +21,7 @@ export const CONTEXT_ID_ENV = "AW_CONTEXT_ID";
  * — one conversation, one id, whichever surface reads it. Without this
  * fallback, the `aw` calls an agent runs (session-create, a `--code` fix)
  * carried no identity at all: no conversation ever got bound, so a pausable
- * PreCompact held every compaction of a workspace with two active sessions,
+ * PreCompact held every compaction of a hub with two active sessions,
  * and retrying could never recover.
  */
 const HOST_CONTEXT_ID_ENVS = ["CLAUDE_CODE_SESSION_ID"] as const;

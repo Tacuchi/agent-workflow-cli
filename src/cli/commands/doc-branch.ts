@@ -13,7 +13,7 @@ import {
   readDocBranches,
   resolveDocBranch,
 } from "../../application/doc-branch-ledger.js";
-import { readWorkspaceBlock, requireSourcePath } from "../../application/parsers/project-block.js";
+import { readHubBlock, requireSourcePath } from "../../application/parsers/hub-block.js";
 import { resolveSessionTarget, sessionSlug } from "../../application/session-resolver.js";
 import { ensureWorkingBranch } from "../../application/working-branch-service.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -92,11 +92,7 @@ export const docBranchCommand: CliCommand = {
         identity.status === "unreadable" ? identity.reason : "la sesión no nombra un documento",
       );
     }
-    const block = await readWorkspaceBlock(
-      ctx.fs,
-      ctx.paths.workspaceDir(),
-      ctx.paths.blockMarkers(),
-    );
+    const block = await readHubBlock(ctx.fs, ctx.paths.hubDir(), ctx.paths.blockMarkers());
     if (!block || block.fuentes.length === 0)
       return fail("NO_SOURCES_DECLARED", "el hub no declara fuentes");
     const read = await readDocBranches(ctx.fs, ctx.paths);
@@ -162,7 +158,7 @@ async function proposedName(
 
 async function showDocumentBranches(
   ctx: CliContext,
-  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  block: NonNullable<Awaited<ReturnType<typeof readHubBlock>>>,
   identity: Extract<DocIdentity, { status: "resolved" }>,
   read: Awaited<ReturnType<typeof readDocBranches>>,
 ): Promise<CommandResult> {
@@ -208,7 +204,7 @@ async function showDocumentBranches(
 async function setDocumentBranch(
   args: ParsedArgs,
   ctx: CliContext,
-  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  block: NonNullable<Awaited<ReturnType<typeof readHubBlock>>>,
   identity: Extract<DocIdentity, { status: "resolved" }>,
   read: Awaited<ReturnType<typeof readDocBranches>>,
   code: string | undefined,

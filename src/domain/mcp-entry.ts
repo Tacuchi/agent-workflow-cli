@@ -36,7 +36,7 @@ export interface McpEntryLaunchOptions {
   nodePath?: string;
   /** Test/embedded entrypoint override. Production is the installed CLI entrypoint. */
   entrypoint?: string;
-  /** Only used by the retained portable workspace descriptor. */
+  /** Only used by the retained portable hub descriptor. */
   platform?: NodeJS.Platform;
   /**
    * Global launch generation bound into argv and the receipt digest. A release
@@ -136,7 +136,7 @@ export interface McpDriftReport {
   dsn: { path: string; exists: boolean; key: string; present: boolean };
   mcp: { name: string; present: boolean; matches: boolean };
   entry_state: McpEntryState;
-  /** Workspace setup remains portable but depends on the host PATH. */
+  /** Hub setup remains portable but depends on the host PATH. */
   launch_mode: "absolute" | "path-dependent";
   status: McpDriftStatus;
   detail?: string;
@@ -216,7 +216,7 @@ export function buildMcpEntry(
   // The registry retains the DSN variable as secret ownership metadata. It is
   // intentionally absent from the persisted host descriptor.
   void dsnVar;
-  // Keep the historical platform string source-compatible for workspace
+  // Keep the historical platform string source-compatible for hub
   // descriptors. Global/TUI descriptors deliberately ignore shell shims.
   const launch = normalizeMcpEntryOptions(options);
   const namespace = launch.namespace ?? "workflow";
@@ -349,7 +349,7 @@ export function generationVariantMcpEntry(
 
 /**
  * The descriptor 28.x wrote for this same entry: identical but for spelling the
- * hub scope `--scope workspace`.
+ * hub scope `--scope hub`.
  *
  * Without it, 29.0.0 would read every hub descriptor it installed before the
  * rename as somebody else's server and never replace it. It is recognized only

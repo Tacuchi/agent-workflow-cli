@@ -1,7 +1,7 @@
 /**
  * The intent a person had when they cut one spec into several plans.
  *
- * The workspace already knows which plans descend from which spec — the
+ * The hub already knows which plans descend from which spec — the
  * provenance graph proves that edge from the plan's own `Derived from` line. What
  * it has never known is the part that only a person can say: which of those plans
  * were meant to go together, in what order inside the group, and which were held
@@ -51,7 +51,7 @@ export interface CutIntent {
 }
 
 /**
- * What the workspace answers about one plan's place in a cut.
+ * What the hub answers about one plan's place in a cut.
  *
  * `declared: false` is a first-class answer and NOT an empty `order`. A reader
  * that cannot tell "nobody said" from "said, and it is empty" will fill the

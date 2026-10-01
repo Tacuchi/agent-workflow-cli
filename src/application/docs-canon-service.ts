@@ -5,24 +5,24 @@ import { parseToml } from "./parsers/toml.js";
 import type { PathsService } from "./paths-service.js";
 
 /**
- * The workspace's DOCUMENTARY CANON: where each export category publishes.
+ * The hub's DOCUMENTARY CANON: where each export category publishes.
  *
  * The categories are the tool's (an export owns exactly one folder and that
- * invariant does not move); the FOLDER is the workspace's. A workspace whose
+ * invariant does not move); the FOLDER is the hub's. A hub whose
  * canon says `documentacion/manuales` used to get a second, parallel tree next
  * to its own the first time it exported, because the destinations were literals
  * in the policy table.
  *
- * It lives in the `[docs]` table of `skills.toml` — the workspace's only
- * declarative config, already read through the same global → workspace cascade.
- * The alternative was the WORKSPACE block, which is a CLI-RENDERED block: a
+ * It lives in the `[docs]` table of `skills.toml` — the hub's only
+ * declarative config, already read through the same global → hub cascade.
+ * The alternative was the hub block, which is a CLI-RENDERED block: a
  * value there needs a renderer, a parser slot and an upsert path before anyone
  * can write it, and it would still be a second place to look for config.
  *
  * Fail-closed, unlike the skills cascade above it: a role that cannot be
- * resolved falls back to a built-in skill and the workspace still runs, whereas
+ * resolved falls back to a built-in skill and the hub still runs, whereas
  * a destination that cannot be resolved would publish a dossier somewhere the
- * author did not mean. A workspace that declares nothing keeps the tool's
+ * author did not mean. A hub that declares nothing keeps the tool's
  * default and never reads a file that is not there.
  */
 
@@ -44,11 +44,11 @@ export type DocsCategory = (typeof DOCS_CATEGORIES)[number];
 export const CORE_DOC_CATEGORIES = ["research", "spec", "plan"] as const;
 
 /**
- * Categories a workspace may NOT relocate.
+ * Categories a hub may NOT relocate.
  *
  * The three core ones, plus `decision`: a decision note amends the effective
  * contract of a spec its plan was derived from, so flow, status and resume all
- * have to find the same chain. A note tree the workspace could move is a chain
+ * have to find the same chain. A note tree the hub could move is a chain
  * one reader finds and another does not — and a contract that half the surfaces
  * can see is worse than no contract at all.
  */
@@ -59,7 +59,7 @@ export type CoreDocsCategory = (typeof CORE_DOC_CATEGORIES)[number];
 export { DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
 export type { CoreDocsCanon } from "../domain/docs-canon.js";
 
-/** Current layout when the workspace has no `[docs]` table. */
+/** Current layout when the hub has no `[docs]` table. */
 export const DEFAULT_DOCS_CANON: Readonly<Record<DocsCategory, string>> = {
   ...DEFAULT_CORE_DOCS_CANON,
   decision: "docs/decisions",
@@ -69,7 +69,7 @@ export const DEFAULT_DOCS_CANON: Readonly<Record<DocsCategory, string>> = {
   scripts: "docs/scripts",
 };
 
-/** Category → workspace-relative folder, for the requested categories. */
+/** Category → hub-relative folder, for the requested categories. */
 export type DocsCanon = Readonly<Partial<Record<DocsCategory, string>>>;
 
 export type DocsCanonResult = { ok: true; canon: DocsCanon } | { ok: false; error: string };
@@ -83,7 +83,7 @@ export async function resolveDocsCanon(
 ): Promise<DocsCanonResult> {
   const canon: Record<string, string> = {};
   for (const category of categories) canon[category] = DEFAULT_DOCS_CANON[category];
-  // Workspace last: it overrides the user-global default, same order as skills.
+  // Hub last: it overrides the user-global default, same order as skills.
   for (const path of [paths.userSkillsToml(), paths.cwdSkillsToml()]) {
     if (!(await fs.exists(path))) continue;
     const level = await readDocsTable(fs, path);
@@ -148,15 +148,15 @@ function checkDestination(
     return { ok: false, error: `${path}: [${TABLE}].${category} tiene que ser una ruta de texto` };
   }
   // Same guard every write boundary uses, so a canon can move a category inside
-  // the workspace and never outside it.
+  // the hub and never outside it.
   const safe = checkSafeRelativePath(dir.replace(/\/+$/, ""));
   if (!safe.ok) {
     return { ok: false, error: `${path}: [${TABLE}].${category} = '${dir}' ${safe.why}` };
   }
-  // Inside the workspace is not enough: it has to be DOCUMENTAL. A canon
+  // Inside the hub is not enough: it has to be DOCUMENTAL. A canon
   // pointing at a dot-directory would publish dossiers into the CLI's own
   // runtime — `.workflow/sessions` is the sharp case, because a published unit
-  // named `NNN-export-…` is then enumerated as a session and the workspace grows
+  // named `NNN-export-…` is then enumerated as a session and the hub grows
   // a phantom open line that shows up in `status` and in the next export's
   // corpus. The tool's own state is not a place a document may be published to.
   if (safe.path.split("/")[0]?.startsWith(".") === true) {

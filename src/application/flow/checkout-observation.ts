@@ -14,16 +14,12 @@
 import { isAbsolute, join, relative } from "node:path";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
-import { unitPath, workspaceKey } from "../../domain/isolation-unit.js";
+import { hubKey, unitPath } from "../../domain/isolation-unit.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../../domain/source-boundary.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "../parsers/project-block.js";
-import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "../parsers/hub-block.js";
+import { type PathsService, resolveHubRootFrom } from "../paths-service.js";
 import { readCustody } from "../session-custody-service.js";
 import { type CheckoutState, checkoutDigest } from "../source-boundary-policy.js";
 import { locateRun, readRun } from "./run-state-service.js";
@@ -31,7 +27,7 @@ import { locateRun, readRun } from "./run-state-service.js";
 /**
  * The alias→root map a run's source-bounded evidence is measured against.
  *
- * `workspace` is the documentary checkout: the nearest ancestor of the workspace
+ * `hub` is the documentary checkout: the nearest ancestor of the hub
  * directory carrying the Workline marker, which in a nested hub is NOT the git root.
  * Every other alias resolves to the isolation unit of THIS session, so a proof
  * cannot borrow another run's worktree by spelling its alias.
@@ -45,10 +41,10 @@ export async function resolveCheckoutCandidates(
   session: string,
 ): Promise<CheckoutIdentity[]> {
   let root: string;
-  let block: Awaited<ReturnType<typeof readWorkspaceBlock>>;
+  let block: Awaited<ReturnType<typeof readHubBlock>>;
   try {
-    root = await resolveWorkspaceRootFrom(fs, paths);
-    block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+    root = await resolveHubRootFrom(fs, paths);
+    block = await readHubBlock(fs, root, paths.blockMarkers());
   } catch {
     return [];
   }
@@ -120,7 +116,7 @@ export async function observeCheckout(
  * is compared against to know whether it changed anything of its own.
  *
  * Measured over the same roots the proofs are: the documentary root for
- * `workspace`, this session's unit for every other alias. The CLI's own runtime
+ * `hub`, this session's unit for every other alias. The CLI's own runtime
  * folder is left out whether or not `.gitignore` covers it, so writing a
  * CHECKPOINT, a lock or the run's state never counts as work. `null` is a source
  * that is not an observable repository at all; a repository git fails to measure
@@ -138,7 +134,7 @@ export async function observeScopedFingerprints(
 > {
   const candidates = await resolveCheckoutCandidates(fs, paths, session);
   const runtime = paths.cwdRoot();
-  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers());
+  const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers());
   const base: Record<string, string | null> = {};
   for (const source of sources) {
     const declared = block?.fuentes.find((item) => item.alias === source);
@@ -236,7 +232,7 @@ export async function publishObservedCheckouts(
 
 async function appendInPlaceCandidates(
   fs: FileSystemPort,
-  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  block: NonNullable<Awaited<ReturnType<typeof readHubBlock>>>,
   sources: readonly string[],
   candidates: CheckoutIdentity[],
 ): Promise<void> {
@@ -255,12 +251,12 @@ async function appendUnitCandidates(
   fs: FileSystemPort,
   paths: PathsService,
   session: string,
-  block: NonNullable<Awaited<ReturnType<typeof readWorkspaceBlock>>>,
+  block: NonNullable<Awaited<ReturnType<typeof readHubBlock>>>,
   candidates: CheckoutIdentity[],
 ): Promise<void> {
   try {
     const units = await fs.realPath(paths.userUnitsDir());
-    const key = workspaceKey(paths.workspaceDir());
+    const key = hubKey(paths.hubDir());
     const custody = await readCustody(fs, join(paths.cwdSessionsDir(), session));
     for (const source of block.fuentes) {
       try {
@@ -273,10 +269,10 @@ async function appendUnitCandidates(
       const unit =
         custody.status === "present"
           ? (custody.custody.sources.find((entry) => entry.alias === source.alias)?.unit_path ??
-            unitPath(units, { workspaceKey: key, alias: source.alias, session }))
-          : unitPath(units, { workspaceKey: key, alias: source.alias, session });
+            unitPath(units, { hubKey: key, alias: source.alias, session }))
+          : unitPath(units, { hubKey: key, alias: source.alias, session });
       // Only a unit this session actually TOOK is published. Listing every alias
-      // the workspace block declares would advertise roots the validator then
+      // the hub block declares would advertise roots the validator then
       // refuses as ineligible — the same divergence between what a run shows and
       // what it measures that this whole change exists to close.
       if (await fs.exists(unit)) candidates.push({ source: source.alias, root: unit });
@@ -289,7 +285,7 @@ async function appendUnitCandidates(
 
 async function declaredSourceFailure(
   fs: FileSystemPort,
-  declared: ProjectFuente | undefined,
+  declared: HubFuente | undefined,
   source: string,
 ): Promise<CapabilityFailure | null> {
   if (declared !== undefined) {

@@ -17,14 +17,14 @@ it("doctor advierte bindings históricos sin ofrecer migración ni tocar sus arc
     const fs = new NodeFileSystem();
     const home = join(root, "home");
     const paths = new PathsService(normalizeNamespace("workflow"), home, root);
-    const workspaceFile = paths.cwdSkillsToml();
+    const hubFile = paths.cwdSkillsToml();
     const globalFile = paths.userSkillsToml();
-    await fs.mkdirp(dirname(workspaceFile));
+    await fs.mkdirp(dirname(hubFile));
     await fs.mkdirp(dirname(globalFile));
-    const workspace =
+    const hub =
       '[skills]\ndesign = "vendor/design"\ngit = "mi-skill"\n[docs]\nspecs = "docs/specs"\n';
     const global = '[skills]\noverview = "vendor/w"\n';
-    await fs.writeText(workspaceFile, workspace);
+    await fs.writeText(hubFile, hub);
     await fs.writeText(globalFile, global);
     const ctx = {
       fs,
@@ -37,7 +37,7 @@ it("doctor advierte bindings históricos sin ofrecer migración ni tocar sus arc
     expect(notices.length).toBeGreaterThan(0);
     expect(notices.every((item) => item.resource.kind === "binding")).toBe(true);
     expect(notices.every((item) => item.remediation.action === null)).toBe(true);
-    expect(await readFile(workspaceFile, "utf8")).toBe(workspace);
+    expect(await readFile(hubFile, "utf8")).toBe(hub);
     expect(await readFile(globalFile, "utf8")).toBe(global);
   } finally {
     await rm(root, { recursive: true, force: true });

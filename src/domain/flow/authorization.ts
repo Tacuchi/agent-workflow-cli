@@ -94,7 +94,7 @@ export interface SealedSubject {
    *
    * The row's own `effects` are the ceiling — the widest a proposal on that step
    * may reach — and this is what the sealed bytes actually do against the current
-   * workspace. Asking somebody to authorize an overwrite for a proposal that only
+   * hub. Asking somebody to authorize an overwrite for a proposal that only
    * creates files would be an approval with no subject, and the run would then
    * fail its own verdict for an effect that never happened.
    */

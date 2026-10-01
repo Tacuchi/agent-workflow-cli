@@ -121,7 +121,7 @@ class FakeGit implements GitPort {
 const ns = normalizeNamespace("workflow");
 const paths = new PathsService(ns, "/home/u", "/cwd");
 
-function workflowProjectBlock(opts: {
+function workflowHubBlock(opts: {
   proyecto: string;
   sessions: { folder: string; phase: string; branches: string[] }[];
 }): string {
@@ -160,7 +160,7 @@ ${sessLines}
 describe("runCheckpointWrite", () => {
   it("skips when no active sessions in WORKFLOW-PROJECT.Status", async () => {
     const fs = makeFs(
-      new Map([["/cwd/CLAUDE.md", workflowProjectBlock({ proyecto: "p", sessions: [] })]]),
+      new Map([["/cwd/CLAUDE.md", workflowHubBlock({ proyecto: "p", sessions: [] })]]),
       new Map([["/cwd/.workflow/sessions", []]]),
     );
     const result = await runCheckpointWrite(
@@ -182,7 +182,7 @@ describe("runCheckpointWrite", () => {
       new Map([
         [
           "/cwd/CLAUDE.md",
-          workflowProjectBlock({
+          workflowHubBlock({
             proyecto: "p",
             sessions: [{ folder: sessionFolder, phase: "execution", branches: ["core:feat/x"] }],
           }),
@@ -217,7 +217,7 @@ describe("runCheckpointWrite", () => {
       new Map([
         [
           "/cwd/CLAUDE.md",
-          workflowProjectBlock({
+          workflowHubBlock({
             proyecto: "p",
             sessions: [
               { folder: "session001-dev-foo", phase: "planning", branches: [] },
@@ -279,7 +279,7 @@ describe("runCheckpointWrite", () => {
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
     const fs = makeFs(
       new Map([
-        ["/cwd/CLAUDE.md", workflowProjectBlock({ proyecto: "p", sessions: [] })],
+        ["/cwd/CLAUDE.md", workflowHubBlock({ proyecto: "p", sessions: [] })],
         [`${sessionPath}/OBJETIVO.md`, "# Objetivo\nfoo\n"],
       ]),
       new Map([
@@ -304,7 +304,7 @@ describe("runCheckpointWrite", () => {
 
   it("--code returns null folder when no matching session exists (falls through to skip)", async () => {
     const fs = makeFs(
-      new Map([["/cwd/CLAUDE.md", workflowProjectBlock({ proyecto: "p", sessions: [] })]]),
+      new Map([["/cwd/CLAUDE.md", workflowHubBlock({ proyecto: "p", sessions: [] })]]),
       new Map([["/cwd/.workflow/sessions", []]]),
     );
     const result = await runCheckpointWrite(
@@ -322,7 +322,7 @@ describe("runCheckpointWrite", () => {
   it("reads WORKFLOW-PROJECT markers in CLAUDE.md", async () => {
     const sessionFolder = "session001-dev-markers";
     const sessionPath = `/cwd/.workflow/sessions/${sessionFolder}`;
-    const projectBlock = `<!-- WORKFLOW-HUB-START -->
+    const hubBlock = `<!-- WORKFLOW-HUB-START -->
 ## Hub
 
 current
@@ -346,7 +346,7 @@ _Stack sin detectar._
 `;
     const fs = makeFs(
       new Map([
-        ["/cwd/CLAUDE.md", projectBlock],
+        ["/cwd/CLAUDE.md", hubBlock],
         [`${sessionPath}/OBJETIVO.md`, "# Objetivo\nfoo\n"],
         [`${sessionPath}/TASKS.md`, "- [ ] T1\n"],
       ]),
@@ -375,7 +375,7 @@ _Stack sin detectar._
       new Map([
         [
           "/cwd/CLAUDE.md",
-          workflowProjectBlock({
+          workflowHubBlock({
             proyecto: "p",
             sessions: [{ folder: sessionFolder, phase: "planning", branches: [] }],
           }),
@@ -418,7 +418,7 @@ describe("el inventario que llega al CHECKPOINT.md escrito", () => {
       new Map([
         [
           "/cwd/CLAUDE.md",
-          workflowProjectBlock({
+          workflowHubBlock({
             proyecto: "p",
             sessions: [{ folder, phase: "execution", branches: ["core:feat/x"] }],
           }),
@@ -880,7 +880,7 @@ describe("las reglas del refugio", () => {
   const dentro = new Date(t0.getTime() + 2 * 60 * 60 * 1000);
   const fuera = new Date(t0.getTime() + 25 * 60 * 60 * 1000);
 
-  function seedWorkspace(): MemFs {
+  function seedHub(): MemFs {
     const fs = seedActive(activa, otraActiva);
     fs.file(`${sessionsDir}/${cerrada}/SESSION.md`, `# SESSION — ${cerrada}\n`);
     fs.file(`${sessionsDir}/${cerrada}/.closed`, "");
@@ -916,7 +916,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("las cerradas no figuran como candidatas del refugio", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     // Un --code que no existe: la negativa lista TODAS las carpetas, cerrada incluida.
     const result = await write(fs, { code: "999", contextId: conv, now: t0 });
     if (!("continuity" in result)) throw new Error(JSON.stringify(result));
@@ -927,7 +927,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("uno sin conversación lo adopta --code sobre una candidata, y no sobre otra sesión", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const anonimo = await parkAt(fs, [activa], t0);
 
     const ajena = await write(fs, { code: otraActiva, contextId: conv, now: dentro });
@@ -941,7 +941,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("el de otra conversación no se adopta dentro de la ventana, y sí fuera de ella", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const ajeno = await parkAt(fs, [activa], t0, "conv-de-otro");
 
     const antes = await write(fs, { code: activa, contextId: conv, now: dentro });
@@ -955,7 +955,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("fuera de la ventana, el de otra conversación tampoco se pliega en una sesión que no es candidata", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const ajeno = await parkAt(fs, [activa], t0, "conv-de-otro");
     const result = await write(fs, { code: otraActiva, contextId: conv, now: fuera });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
@@ -964,7 +964,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("una invocación sin identidad lo adopta sobre una candidata, dentro de la ventana", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const ajeno = await parkAt(fs, [activa], t0, "conv-de-otro");
     const result = await write(fs, { code: activa, now: dentro });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
@@ -972,7 +972,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("su propia conversación lo adopta en la sesión que resuelva, candidata o no", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const propio = await parkAt(fs, [activa], t0, conv);
     const result = await write(fs, { code: otraActiva, contextId: conv, now: dentro });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
@@ -982,7 +982,7 @@ describe("las reglas del refugio", () => {
   // Adoptable y barrible a la vez: su conversación vuelve pasada la ventana y
   // ninguna candidata sigue activa. Barrer antes de adoptar lo perdería.
   it("un SessionEnd resuelto adopta el refugio propio antes de barrer", async () => {
-    const fs = seedBinding(seedWorkspace(), sessionsDir, conv, activa);
+    const fs = seedBinding(seedHub(), sessionsDir, conv, activa);
     const propio = await parkAt(fs, [cerrada], t0, conv);
     const result = await runAutoCompactOnClose(fs, env, new FakeGit(), paths, {
       contextId: conv,
@@ -993,7 +993,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("sin conversación y sin candidata activa se barre y figura en la salida", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const huerfano = await parkAt(fs, [cerrada], t0);
     const result = await write(fs, { code: activa, contextId: conv, now: dentro });
     if (!("checkpoint_path" in result)) throw new Error(JSON.stringify(result));
@@ -1002,7 +1002,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("uno con conversación y sin candidata activa espera la ventana, y después se barre", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const ajeno = await parkAt(fs, [cerrada], t0, "conv-de-otro");
 
     // Su conversación todavía puede volver y adoptarlo en la sesión que resuelva.
@@ -1024,7 +1024,7 @@ describe("las reglas del refugio", () => {
   });
 
   it("una fecha ilegible cuenta como fuera de la ventana", async () => {
-    const fs = seedWorkspace();
+    const fs = seedHub();
     const ajeno = await parkAt(fs, [cerrada], t0, "conv-de-otro");
     const texto = await fs.readText(`/cwd/${ajeno}`);
     fs.file(`/cwd/${ajeno}`, texto.replace(/- Fecha: .*/, "- Fecha: ayer por la tarde"));

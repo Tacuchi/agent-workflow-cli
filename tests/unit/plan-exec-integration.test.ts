@@ -8,7 +8,7 @@ import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
-import { readWorkspaceBlock } from "../../src/application/parsers/project-block.js";
+import { readHubBlock } from "../../src/application/parsers/hub-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import {
@@ -83,7 +83,7 @@ Convergencia de unidades.
 describe("F3 — integración, recuperación y cierre son una sola convergencia", () => {
   let root: string;
   let home: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let deps: { fs: NodeFileSystem; env: FakeEnv; git: GitCliAdapter; paths: PathsService };
   let walk: ReturnType<typeof planExecWalk>;
@@ -91,9 +91,9 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "aw-f3-"));
     home = join(root, "home");
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, ALIAS);
-    for (const dir of [home, workspace, source]) mkdirSync(dir, { recursive: true });
+    for (const dir of [home, hub, source]) mkdirSync(dir, { recursive: true });
 
     git(source, "init", "--initial-branch=main");
     git(source, "config", "user.email", "t@example.com");
@@ -105,19 +105,19 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
 
     deps = {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(home, workspace),
+      env: new FakeEnv(home, hub),
       git: new GitCliAdapter(new NodeProcess()),
-      paths: new PathsService(normalizeNamespace("agent-workflow"), home, workspace),
+      paths: new PathsService(normalizeNamespace("agent-workflow"), home, hub),
     };
     walk = planExecWalk(deps, {
       sources: [ALIAS],
     });
 
-    writeFileSync(join(workspace, "CLAUDE.md"), block(source));
-    mkdirSync(join(workspace, "docs", "plans"), { recursive: true });
+    writeFileSync(join(hub, "CLAUDE.md"), block(source));
+    mkdirSync(join(hub, "docs", "plans"), { recursive: true });
     for (const run of [UNO, DOS]) {
       writeFileSync(
-        join(workspace, run.plan),
+        join(hub, run.plan),
         `# Plan ${run.code}\n\n> Límite de ejecución: checkout\n\n## Tasks\n\n### F1 — integración\n> Estado: en ejecución\n> Fuentes: ${ALIAS}\n\n- [ ] T1.1 — integrar la unidad _(fuentes: ${ALIAS})_\n`,
       );
       const dir = join(deps.paths.cwdSessionsDir(), run.folder);
@@ -395,7 +395,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
       `| ${ALIAS} | ${source} | main |`,
       `| ${ALIAS} | ../${ALIAS} | main |\n| remoto | (local) | main |`,
     );
-    writeFileSync(join(workspace, "CLAUDE.md"), portable);
+    writeFileSync(join(hub, "CLAUDE.md"), portable);
     writeFileSync(
       deps.paths.cwdLocalConfigFile(),
       JSON.stringify({ version: 1, sources: { acme: source } }),
@@ -424,7 +424,7 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     expect(closed.summary).toContain("remoto");
     expect(closed.summary).toContain("no verificable");
     expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(true);
-    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf8")).toBe(portable);
+    expect(readFileSync(join(hub, "CLAUDE.md"), "utf8")).toBe(portable);
   });
 
   it("finalize un hub portable con fuentes relativa y (local) resueltas en este host sin reescribir la tabla", async () => {
@@ -443,12 +443,12 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
         `| ${ALIAS} | ../ruta-del-otro-host | main |\n| remoto | (local) | main |`,
       )
       .replace(`  - ${ALIAS}: main`, `  - ${ALIAS}: main\n  - remoto: main`);
-    writeFileSync(join(workspace, "CLAUDE.md"), portable);
+    writeFileSync(join(hub, "CLAUDE.md"), portable);
     writeFileSync(
       deps.paths.cwdLocalConfigFile(),
       JSON.stringify({ version: 1, sources: { acme: source, remoto: second } }),
     );
-    const parsed = await readWorkspaceBlock(deps.fs, workspace, deps.paths.blockMarkers());
+    const parsed = await readHubBlock(deps.fs, hub, deps.paths.blockMarkers());
     expect(parsed?.fuentes.map((item) => [item.alias, item.declared_path, item.path])).toEqual([
       [ALIAS, "../ruta-del-otro-host", source],
       ["remoto", "(local)", second],
@@ -483,10 +483,10 @@ describe("F3 — integración, recuperación y cierre son una sola convergencia"
     );
     expect(closed.ok).toBe(true);
     expect(existsSync(join(deps.paths.cwdSessionsDir(), DOS.folder, ".closed"))).toBe(true);
-    expect(readFileSync(join(workspace, "CLAUDE.md"), "utf8")).toBe(portable);
-    expect(
-      (await readWorkspaceBlock(deps.fs, workspace, deps.paths.blockMarkers()))?.fuentes,
-    ).toEqual(parsed?.fuentes);
+    expect(readFileSync(join(hub, "CLAUDE.md"), "utf8")).toBe(portable);
+    expect((await readHubBlock(deps.fs, hub, deps.paths.blockMarkers()))?.fuentes).toEqual(
+      parsed?.fuentes,
+    );
   });
 
   it("finalize diferencia un inventario git ilegible de una fuente sin ruta", async () => {

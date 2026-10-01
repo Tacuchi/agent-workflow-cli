@@ -139,7 +139,7 @@ export interface HistoryRowFields {
 }
 
 /**
- * Upsert the HISTORY.md row WITHOUT acquiring the workspace lock — for callers
+ * Upsert the HISTORY.md row WITHOUT acquiring the hub lock — for callers
  * that already hold it. `session-close` mutates the `.closed` marker, the
  * bindings registry and this row inside ONE lock boundary; going through the
  * public command instead would nest the acquisition.

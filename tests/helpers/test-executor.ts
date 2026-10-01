@@ -22,7 +22,7 @@ export function testExecutor(
   paths: PathsService,
   overrides: { env?: EnvPort; git?: GitPort } = {},
 ): InternalActionExecutor {
-  const root = paths.workspaceDir();
+  const root = paths.hubDir();
   return internalActionExecutor({
     fs,
     paths,

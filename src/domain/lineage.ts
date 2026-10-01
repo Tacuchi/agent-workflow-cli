@@ -25,7 +25,7 @@ import { baseDigest, legacyBaseDigest } from "./proposal.js";
 
 /** The exact spec content a plan was derived from. */
 export interface SpecBaseline {
-  /** Workspace-relative path of the spec when the plan was sealed — a HINT. */
+  /** Hub-relative path of the spec when the plan was sealed — a HINT. */
   path: string;
   /** The spec's correlative, read from that path. It, not the path, is the identity. */
   number: string;
@@ -255,7 +255,7 @@ export interface SpecCurrentDigests {
 /**
  * The seal against the spec as it reads NOW.
  *
- * `current` is `null` when the workspace holds no such spec: that is
+ * `current` is `null` when the hub holds no such spec: that is
  * `unresolved`, not `divergent` — a document that is not there did not change,
  * and saying it did would send whoever reads it to diff against nothing.
  *

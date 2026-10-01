@@ -34,18 +34,18 @@ const P2 = { kind: "plan", key: "045" } as const;
  * shipped, which is the exact failure this record exists to prevent.
  */
 describe("release pass ledger", () => {
-  let workspace: string;
+  let hub: string;
   let paths: PathsService;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "release-pass-"));
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "release-pass-"));
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new NodeFileSystem();
   });
 
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   async function openPass(version = "v25.5.0"): Promise<void> {
@@ -70,7 +70,7 @@ describe("release pass ledger", () => {
 
   it("el libro vive bajo el namespace del workspace, no en docs/", async () => {
     await openPass();
-    expect(releasePassLedgerPath(paths)).toBe(join(workspace, ".workflow", "release-passes.jsonl"));
+    expect(releasePassLedgerPath(paths)).toBe(join(hub, ".workflow", "release-passes.jsonl"));
   });
 
   it("con una sola llegada el pase es parcial, nombra las dos fuentes y no da por liberado lo que falta", async () => {
@@ -160,10 +160,10 @@ describe("release pass ledger", () => {
 
   it("enlaza un artefacto por ruta y lo deja intacto: misma ruta, mismo contenido, mismo número", async () => {
     await openPass();
-    const docs = join(workspace, "docs", "plans");
+    const docs = join(hub, "docs", "plans");
     mkdirSync(docs, { recursive: true });
     const relative = "docs/plans/045-plan-intencion-linaje-y-release.md";
-    const absolute = join(workspace, relative);
+    const absolute = join(hub, relative);
     const original = "# Plan 045\n\n> Estado: open\n";
     writeFileSync(absolute, original);
     const before = { names: readdirSync(docs), bytes: readFileSync(absolute) };

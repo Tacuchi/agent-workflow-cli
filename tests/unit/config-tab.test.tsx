@@ -38,7 +38,7 @@ const DECLARED_DEFAULTS = [
 ];
 
 /** Workspace block with (or without) a `Ramas por defecto` entry. */
-function workspaceMd(defaults?: string[]): string {
+function hubMd(defaults?: string[]): string {
   return [
     MARKERS.start,
     "## Hub",
@@ -61,7 +61,7 @@ function workspaceMd(defaults?: string[]): string {
 
 /**
  * ctx of a fully-formed environment with NO workspace block: the hydration
- * effect must reach `readWorkspaceBlock` and get null, instead of dying on a
+ * effect must reach `readHubBlock` and get null, instead of dying on a
  * missing ctx.fs/ctx.env (which would make the "hidden section" assertion pass
  * for the wrong reason).
  */
@@ -79,12 +79,12 @@ function buildPlainCtx(): CliContext {
 }
 
 /** ctx of a real workspace → the RAMAS section renders. */
-function buildWorkspaceCtx(defaults?: string[]): CliContext {
+function buildHubCtx(defaults?: string[]): CliContext {
   return {
     ...buildCtx(),
     fs: {
       exists: async (p: string) => p === "/ws/CLAUDE.md",
-      readText: async () => workspaceMd(defaults),
+      readText: async () => hubMd(defaults),
     },
     env: { cwd: () => "/ws", homeDir: () => "/home" },
     paths: {
@@ -128,7 +128,7 @@ describe("ConfigTab — sección RAMAS (workspace)", () => {
   it("muestra los 3 roles con los defaults declarados en el bloque WORKSPACE", async () => {
     const { lastFrame } = render(
       <ConfigTab
-        ctx={buildWorkspaceCtx(DECLARED_DEFAULTS)}
+        ctx={buildHubCtx(DECLARED_DEFAULTS)}
         isActive
         prefs={DEFAULT_TUI_PREFS}
         onChange={noop}
@@ -150,7 +150,7 @@ describe("ConfigTab — sección RAMAS (workspace)", () => {
   it("cae a main/development/qa cuando el bloque no declara defaults", async () => {
     const { lastFrame } = render(
       <ConfigTab
-        ctx={buildWorkspaceCtx()}
+        ctx={buildHubCtx()}
         isActive
         prefs={DEFAULT_TUI_PREFS}
         onChange={noop}
@@ -169,7 +169,7 @@ describe("ConfigTab — sección RAMAS (workspace)", () => {
     const onSaveBranchDefaults = vi.fn().mockResolvedValue(true);
     const { stdin, lastFrame } = render(
       <ConfigTab
-        ctx={buildWorkspaceCtx(DECLARED_DEFAULTS)}
+        ctx={buildHubCtx(DECLARED_DEFAULTS)}
         isActive
         prefs={DEFAULT_TUI_PREFS}
         onChange={noop}
@@ -202,7 +202,7 @@ describe("ConfigTab — sección RAMAS (workspace)", () => {
     const onSaveBranchDefaults = vi.fn().mockResolvedValue(false);
     const { stdin, lastFrame } = render(
       <ConfigTab
-        ctx={buildWorkspaceCtx(DECLARED_DEFAULTS)}
+        ctx={buildHubCtx(DECLARED_DEFAULTS)}
         isActive
         prefs={DEFAULT_TUI_PREFS}
         onChange={noop}
@@ -229,7 +229,7 @@ describe("ConfigTab — sección RAMAS (workspace)", () => {
     const onSaveBranchDefaults = vi.fn().mockResolvedValue(true);
     const { stdin, lastFrame } = render(
       <ConfigTab
-        ctx={buildWorkspaceCtx(DECLARED_DEFAULTS)}
+        ctx={buildHubCtx(DECLARED_DEFAULTS)}
         isActive
         prefs={DEFAULT_TUI_PREFS}
         onChange={noop}
@@ -255,7 +255,7 @@ describe("ConfigTab — sección RAMAS (workspace)", () => {
     const onSaveBranchDefaults = vi.fn().mockResolvedValue(true);
     const { stdin, lastFrame } = render(
       <ConfigTab
-        ctx={buildWorkspaceCtx()}
+        ctx={buildHubCtx()}
         isActive
         prefs={DEFAULT_TUI_PREFS}
         onChange={noop}

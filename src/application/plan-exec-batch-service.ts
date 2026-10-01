@@ -382,7 +382,7 @@ export function preparePlanExecBatchPublication(
 
 /** The deterministic plan-document edit performed only by the terminal flow row. */
 export interface PreparePlanExecDoneSealInput {
-  /** Workspace-relative plan path, used only in actionable refusals. */
+  /** Hub-relative plan path, used only in actionable refusals. */
   plan: string;
   /** The run evidence that the closure line records. */
   closure: string;
@@ -529,7 +529,7 @@ export type BatchPublish =
  * Publish plan progress and its v10 trace as one recoverable transition.
  *
  * The run lock keeps its cursor/CAS stable. `applyLocalProposal` then performs
- * the plan-document CAS under the workspace lock. If a process dies after the
+ * the plan-document CAS under the hub lock. If a process dies after the
  * document write but before the run-state write, the identical retry observes
  * `already_applied` and seals the trace; if either base moved it refuses stale.
  */
@@ -550,7 +550,7 @@ export async function publishPlanExecBatch(
     );
   }
   // Persist the sealed before/after pair first. The plan write deliberately
-  // happens OUTSIDE this lock: `applyLocalProposal` has its own workspace lock,
+  // happens OUTSIDE this lock: `applyLocalProposal` has its own hub lock,
   // and a long nested lock would turn recovery into a deadlock. More importantly,
   // the staged state survives a crash between these two operations.
   const staged = await applyUnderLock<StagedBatchPublication>(

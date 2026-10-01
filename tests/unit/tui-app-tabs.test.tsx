@@ -58,7 +58,7 @@ function buildCtx(opts: CtxOpts = {}): CliContext {
       source: "default" as const,
     },
     paths: {
-      workspaceDir: () => "/home/test/project",
+      hubDir: () => "/home/test/project",
       userMcpConnectionsFile: () => "/tmp/non-existent-conns.json",
       userDsnFile: () => "/tmp/non-existent-dsn.env",
       userRoot: () => "/home/test/.workflow",
@@ -79,7 +79,7 @@ describe("App (tab-home)", () => {
   it("boot muestra la Status tab por default (sin palette)", async () => {
     const ctx = buildCtx();
     const { lastFrame } = render(<App version="9.9.9" ctx={ctx} onResult={() => {}} />);
-    // Wait for the boot effect to resolve projectName (basename of the mocked cwd).
+    // Wait for the boot effect to resolve hubName (basename of the mocked cwd).
     await new Promise((r) => setTimeout(r, 50));
     const frame = lastFrame() ?? "";
     // The palette is an opt-in overlay (^K). Boot renders the TabBar + StatusTab
@@ -87,7 +87,7 @@ describe("App (tab-home)", () => {
     expect(frame).not.toContain("type to filter");
     expect(frame).not.toContain("Go to Status");
     // Dynamic brand: the mock has cwd="/home/test/project" and fs.exists=false,
-    // so resolveProjectName falls back to the basename "project".
+    // so resolveHubName falls back to the basename "project".
     expect(frame).toContain("project");
     expect(frame).toContain("v9.9.9");
     expect(frame).toContain("Status");

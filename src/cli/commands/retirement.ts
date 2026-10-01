@@ -7,7 +7,7 @@
  * state mid-flight — the one shape this feature must not have.
  *
  * `prepare` is read-only and answers with the sealed proposal plus its digest.
- * `apply` demands that digest back, RE-computes everything under the workspace
+ * `apply` demands that digest back, RE-computes everything under the hub
  * lock, and only then delegates to the coordinator. Approving is not applying, and
  * the digest is what makes those two the same decision rather than two.
  *

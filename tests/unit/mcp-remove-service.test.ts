@@ -10,16 +10,16 @@ import { FakeEnv } from "../helpers/fake-env.js";
 const ALPHA = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
 
 describe("runMcpRemove", () => {
-  let workspace: string;
+  let hub: string;
   let env: FakeEnv;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "mcp-remove-svc-"));
+    hub = mkdtempSync(join(tmpdir(), "mcp-remove-svc-"));
     // Sandboxed under the test workspace: global-scope paths never leave tmp.
-    env = new FakeEnv(join(workspace, "home"), workspace);
+    env = new FakeEnv(join(hub, "home"), hub);
   });
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   it("remueve entradas existentes por host e instancia", () => {
@@ -27,7 +27,7 @@ describe("runMcpRemove", () => {
       hosts: ["claude", "codex"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
     if ("ok" in setup) throw new Error("setup refused");
 
@@ -35,7 +35,7 @@ describe("runMcpRemove", () => {
       hosts: ["claude", "codex"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
     if ("ok" in result) throw new Error("remove refused");
     expect(result.removed).toHaveLength(2);
@@ -61,7 +61,7 @@ describe("runMcpRemove", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
     if ("ok" in result) throw new Error("remove refused");
     expect(result.removed).toHaveLength(0);
@@ -70,7 +70,7 @@ describe("runMcpRemove", () => {
   });
 
   it("una entrada homónima ajena queda como conflicto y no se borra", () => {
-    const file = join(workspace, ".mcp.json");
+    const file = join(hub, ".mcp.json");
     const foreign = `${JSON.stringify(
       { mcpServers: { alpha: { command: "node", args: ["foreign.js"], env: {} } } },
       null,
@@ -82,7 +82,7 @@ describe("runMcpRemove", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
 
     if ("ok" in result) throw new Error("remove refused");
@@ -95,7 +95,7 @@ describe("runMcpRemove", () => {
   it("retira una forma DBHub legacy exacta publicada, sin ampliar la propiedad", () => {
     const legacy = knownLegacyMcpEntries(ALPHA.name, ALPHA.dsnVar)[0];
     if (legacy === undefined) throw new Error("expected published legacy descriptor");
-    const file = join(workspace, ".mcp.json");
+    const file = join(hub, ".mcp.json");
     writeFileSync(
       file,
       `${JSON.stringify(
@@ -109,7 +109,7 @@ describe("runMcpRemove", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
 
     if ("ok" in result) throw new Error("remove refused");
@@ -121,8 +121,8 @@ describe("runMcpRemove", () => {
   it("retira la misma forma exacta de la ubicación histórica de Claude", () => {
     const legacy = knownLegacyMcpEntries(ALPHA.name, ALPHA.dsnVar)[0];
     if (legacy === undefined) throw new Error("expected published legacy descriptor");
-    const legacyFile = join(workspace, ".claude", "settings.json");
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    const legacyFile = join(hub, ".claude", "settings.json");
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(
       legacyFile,
       `${JSON.stringify(
@@ -136,7 +136,7 @@ describe("runMcpRemove", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace,
+      hub,
     });
 
     if ("ok" in result) throw new Error("remove refused");

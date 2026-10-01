@@ -479,7 +479,7 @@ function runBinding(state: FlowRunState): RunBinding {
   return {
     session: state.session,
     // The FOLDER, never the bare number. `--code 047` matches both `047-<slug>`
-    // and a legacy `session047-<slug>`, so in a workspace holding both, the
+    // and a legacy `session047-<slug>`, so in a hub holding both, the
     // invocation this engine seals cannot be satisfied: running it verbatim
     // fails to resolve, and correcting it makes it a different invocation the
     // submit refuses. The folder is the one identity that always resolves to

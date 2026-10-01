@@ -632,7 +632,7 @@ function removeCodexMcpEntry(
 }
 
 /**
- * Warp file by scope: workspace = <scopeDir>/.warp/.mcp.json; global = the
+ * Warp file by scope: hub = <scopeDir>/.warp/.mcp.json; global = the
  * per-platform registry path (Linux/Windows differ from ~/.warp — DEC-W3).
  * scopeDir acts as homedir at global scope, so tests can inject a tmpdir.
  */

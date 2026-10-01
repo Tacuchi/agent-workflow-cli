@@ -1,5 +1,5 @@
-import { readWorkspaceBlock } from "../../application/parsers/project-block.js";
-import { runProjectMdUpsertWrite } from "../../application/project-md-upsert-service.js";
+import { runHubBlockUpsertWrite } from "../../application/hub-block-upsert-service.js";
+import { readHubBlock } from "../../application/parsers/hub-block.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
@@ -30,17 +30,13 @@ export const setPipelineCommand: CliCommand = {
     ) {
       return fail("INVALID_INPUT", `Uso: ${usage}`);
     }
-    const block = await readWorkspaceBlock(
-      ctx.fs,
-      ctx.paths.workspaceDir(),
-      ctx.paths.blockMarkers(),
-    );
+    const block = await readHubBlock(ctx.fs, ctx.paths.hubDir(), ctx.paths.blockMarkers());
     if (!block?.fuentes.some((source) => source.alias === alias)) {
       return fail("SOURCE_UNKNOWN", `${alias} no es una fuente declarada`, {
         aliases: block?.fuentes.map((source) => source.alias) ?? [],
       });
     }
-    const result = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
+    const result = await runHubBlockUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
       op: "init",
       pipeline: { [alias]: { [field]: command.trim() } },
       verbose: true,

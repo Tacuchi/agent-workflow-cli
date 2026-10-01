@@ -1,6 +1,6 @@
 import { resolveSourceBranches } from "../../application/branch-resolver.js";
-import { readWorkspaceBlock, requireSourcePath } from "../../application/parsers/project-block.js";
-import { runProjectMdUpsertWrite } from "../../application/project-md-upsert-service.js";
+import { runHubBlockUpsertWrite } from "../../application/hub-block-upsert-service.js";
+import { readHubBlock, requireSourcePath } from "../../application/parsers/hub-block.js";
 import {
   type WorkingBranchResolution,
   ensureWorkingBranch,
@@ -24,7 +24,7 @@ type BranchCheck =
 type PrepareBranch = (alias: string, rama: string, ctx: CliContext) => Promise<BranchCheck>;
 
 // set-working-branch and set-qa-branch are the same command modulo the label,
-// the WORKSPACE-block key they write and — for the working branch only — the
+// the hub-block key they write and — for the working branch only — the
 // branch it makes sure exists first; the factory keeps them in lockstep.
 function makeSetBranchCommand(
   name: string,
@@ -52,7 +52,7 @@ function makeSetBranchCommand(
       if (check !== null && "refusal" in check) return check.refusal;
 
       const branches = { [alias]: rama };
-      const data = await runProjectMdUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
+      const data = await runHubBlockUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
         op: "init",
         ...branchUpdate(key, branches),
         verbose: args.flags.has("--verbose"),
@@ -79,11 +79,7 @@ function withBranchCheck(
 
 /** The branch exists, is brought from its homonym, or is created from PROD — or nothing is registered. */
 const ensureDeclaredWorkingBranch: PrepareBranch = async (alias, rama, ctx) => {
-  const block = await readWorkspaceBlock(
-    ctx.fs,
-    ctx.paths.workspaceDir(),
-    ctx.paths.blockMarkers(),
-  );
+  const block = await readHubBlock(ctx.fs, ctx.paths.hubDir(), ctx.paths.blockMarkers());
   const source = block?.fuentes.find((s) => s.alias === alias);
   if (source === undefined) {
     return {
@@ -124,11 +120,7 @@ export const setQaBranchCommand = makeSetBranchCommand(
 );
 
 const checkExceptionBranch: PrepareBranch = async (alias, rama, ctx) => {
-  const block = await readWorkspaceBlock(
-    ctx.fs,
-    ctx.paths.workspaceDir(),
-    ctx.paths.blockMarkers(),
-  );
+  const block = await readHubBlock(ctx.fs, ctx.paths.hubDir(), ctx.paths.blockMarkers());
   const source = block?.fuentes.find((entry) => entry.alias === alias);
   if (!source || !rama.trim())
     return { refusal: fail("INVALID_INPUT", `fuente ${alias} desconocida o rama vacía`) };

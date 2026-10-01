@@ -92,7 +92,7 @@ export interface ApplyProposalInput {
 
 /** One destination and the bytes it held before a publication touched it. */
 export interface PublishedDestination {
-  /** Workspace-relative path. */
+  /** Hub-relative path. */
   path: string;
   /** `null` when nothing was there — the artifact is BORN by this publication. */
   previous: string | null;
@@ -103,13 +103,13 @@ export async function applyLocalProposal(
   paths: PathsService,
   input: ApplyProposalInput,
 ): Promise<ProposalApply> {
-  if (input.proposal.scope.hub_root && input.proposal.scope.hub_root !== paths.workspaceDir()) {
+  if (input.proposal.scope.hub_root && input.proposal.scope.hub_root !== paths.hubDir()) {
     return {
       ok: false,
       applied: [],
       failure: {
         code: "HUB_MISMATCH",
-        message: `Propuesta preparada en ${input.proposal.scope.hub_root}; hub actual ${paths.workspaceDir()}.`,
+        message: `Propuesta preparada en ${input.proposal.scope.hub_root}; hub actual ${paths.hubDir()}.`,
         action: "vuelve al hub de preparación o prepara una propuesta nueva aquí",
       },
     };
@@ -170,7 +170,7 @@ type CriticalProposalOutcome =
   | { kind: "written"; written: string[]; eol_only: string[] };
 
 /**
- * Re-read, seal and publish while holding the workspace lock.
+ * Re-read, seal and publish while holding the hub lock.
  *
  * `alreadyLanded` comes first on purpose: an idempotent retry observes the
  * exact finished bytes and succeeds even though its base was changed by that

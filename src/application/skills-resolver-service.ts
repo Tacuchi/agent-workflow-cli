@@ -19,9 +19,9 @@ const OFF = "off";
 
 /**
  * Resolve capability role → skill bindings via the cascade:
- *   built-in default → ~/.workflow/skills.toml (global) → .workflow/skills.toml (workspace)
+ *   built-in default → ~/.workflow/skills.toml (global) → .workflow/skills.toml (hub)
  *
- * Workspace overrides global; global overrides built-in default. A role bound to
+ * Hub overrides global; global overrides built-in default. A role bound to
  * "off" is disabled. Unknown role keys and parse errors are recorded as warnings
  * and never crash resolution (this runs for every command).
  */

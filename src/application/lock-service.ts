@@ -31,7 +31,7 @@ export interface LockOptions {
    * is a `LockBusyError` on the spot.
    *
    * Waiting is what a CLAIM needs and a reconciliation does not. `HISTORY.md` and
-   * the project block fail fast on purpose — their caller can retry a whole
+   * the hub block fail fast on purpose — their caller can retry a whole
    * command. A correlative mint and the process registry cannot: by the time they
    * take the lock the number is being handed out or the process is already
    * spawned, so losing the race there loses real work rather than a retry.
@@ -272,7 +272,7 @@ function makeHandle(
 /**
  * Acquire the cwd-level lock, run `fn`, release in finally. Centralizes the
  * acquire/try/release pattern used by services that touch HISTORY.md or the
- * CLAUDE.md/AGENTS.md project block.
+ * CLAUDE.md/AGENTS.md hub block.
  *
  * If the lock is busy, returns `{ error: "lock ocupado..." }` matching the
  * shape used by history-update-service. Other errors propagate.

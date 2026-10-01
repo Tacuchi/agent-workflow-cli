@@ -287,7 +287,7 @@ export interface ActiveSession {
 
 /**
  * Active sessions are non-`.closed` folders under `.workflow/sessions/`.
- * Sessions are no longer registered in the project block; state derives solely
+ * Sessions are no longer registered in the hub block; state derives solely
  * from the folder-local `.closed` sentinel (type-agnostic).
  */
 export async function findActiveSessions(

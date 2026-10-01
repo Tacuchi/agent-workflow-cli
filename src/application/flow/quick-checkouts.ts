@@ -1,12 +1,8 @@
 import { isAbsolute, relative } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
-import {
-  type ProjectFuente,
-  readWorkspaceBlock,
-  requireSourcePath,
-} from "../parsers/project-block.js";
-import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { type HubFuente, readHubBlock, requireSourcePath } from "../parsers/hub-block.js";
+import { type PathsService, resolveHubRootFrom } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { resolveCheckoutCandidates } from "./checkout-observation.js";
 import { locateRun, readRun } from "./run-state-service.js";
@@ -37,10 +33,10 @@ async function readQuickCheckouts(
   session: string,
   git: GitPort,
 ): Promise<Record<string, string> | null> {
-  const root = await resolveWorkspaceRootFrom(fs, paths);
-  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const root = await resolveHubRootFrom(fs, paths);
+  const block = await readHubBlock(fs, root, paths.blockMarkers());
   const units = await resolveCheckoutCandidates(fs, paths, session);
-  const sources: ProjectFuente[] = [
+  const sources: HubFuente[] = [
     { alias: "hub", path: root, main_branch: null },
     ...(block?.fuentes ?? []),
   ];

@@ -49,7 +49,7 @@ export interface PreparedDecision {
   note: DecisionNote;
   /** The eight sections and the one seal the answer is given over. */
   preview: DecisionPreview;
-  /** Workspace-relative path of the chain this note joins. */
+  /** Hub-relative path of the chain this note joins. */
   indexPath: string;
 }
 
@@ -79,7 +79,7 @@ export type DecisionCommit =
   | { ok: false; failure: CapabilityFailure; decision: DecisionNote; revalidate: string[] };
 
 export interface PrepareDecisionInput {
-  /** Workspace root; every path below is relative to it. */
+  /** Hub root; every path below is relative to it. */
   root: string;
   /** The producer's vocabulary for what is being proposed. */
   operation: string;

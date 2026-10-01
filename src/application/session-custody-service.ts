@@ -3,7 +3,7 @@
  *
  * Every mutation here is an APPEND of something that really happened plus a
  * re-seal, and never a recomputation of the record from the current state of the
- * workspace. That distinction is the whole value of the file: a custody rebuilt
+ * hub. That distinction is the whole value of the file: a custody rebuilt
  * from what exists now could only ever agree with what exists now, which is the
  * one thing a baseline must not do.
  */
@@ -98,10 +98,10 @@ export function birthCustody(input: BirthInput): SessionCustody {
  */
 export async function baselineOf(
   fs: FileSystemPort,
-  workspaceRoot: string,
+  hubRoot: string,
   relativePath: string,
 ): Promise<CustodyArtifact> {
-  const absolute = join(workspaceRoot, relativePath);
+  const absolute = join(hubRoot, relativePath);
   if (!(await fs.exists(absolute))) {
     return { path: relativePath, role: "input", before: ABSENT_BASELINE };
   }

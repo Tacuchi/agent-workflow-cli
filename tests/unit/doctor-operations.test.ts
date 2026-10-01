@@ -173,7 +173,7 @@ const CATALOG: readonly CatalogRow[] = [
   },
   {
     op: "hub.remove-retired-section",
-    module: "../../src/application/doctor/provider-workspace-block.js",
+    module: "../../src/application/doctor/provider-hub-block.js",
     delegates: "applyRetiredSectionRemoval",
     effects: ["destructive"],
     expected: "healthy",

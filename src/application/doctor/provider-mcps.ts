@@ -103,9 +103,9 @@ async function configuredEntries(
   const mcpHosts = hosts.map((host) => host.mcp_host as McpHost);
   const materialized =
     input.ctx.directory?.materialized ??
-    (await isWorklineRoot(input.ctx.fs, input.workspaceDir, input.ctx.namespace.namespace));
+    (await isWorklineRoot(input.ctx.fs, input.hubDir, input.ctx.namespace.namespace));
   // Primero gana: los dos scopes emiten un hallazgo por el mismo nombre y
-  // `workspace` se recorre antes, que es el orden que el cruce tenía.
+  // `hub` se recorre antes, que es el orden que el cruce tenía.
   const remember = (finding: DoctorFinding, entryName: string): void => {
     findings.set(finding.id, finding);
     const key = ownerKey(finding.host, entryName);
@@ -158,7 +158,7 @@ function driftReports(
 ): McpDriftReport[] {
   const doctor = runMcpDoctor(input.ctx.env, input.ctx.paths, {
     scope,
-    workspace: input.workspaceDir,
+    hub: input.hubDir,
     hosts,
     connections,
   });
@@ -363,7 +363,7 @@ async function fileEntryFindings(
   scope: Scope,
   ourNames: ReadonlySet<string>,
 ): Promise<FileSweep> {
-  const scopeDir = scope === "global" ? input.ctx.env.homeDir() : input.workspaceDir;
+  const scopeDir = scope === "global" ? input.ctx.env.homeDir() : input.hubDir;
   const entries: EntryFinding[] = [];
   const unreadable = new Map<string, string[]>();
   for (const host of hosts) {

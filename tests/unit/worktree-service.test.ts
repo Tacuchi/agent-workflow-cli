@@ -22,7 +22,7 @@ import {
   type WorktreeReleaseOutput,
   runWorktree,
 } from "../../src/application/worktree-service.js";
-import { workspaceKey } from "../../src/domain/isolation-unit.js";
+import { hubKey } from "../../src/domain/isolation-unit.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -71,13 +71,13 @@ _Stack sin detectar._
 describe("runWorktree — the isolation unit of a flow", () => {
   let root: string;
   let home: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let deps: Parameters<typeof runWorktree>[0];
   let paths: PathsService;
 
   function session(folder: string, closed = false): void {
-    const dir = join(workspace, ".workflow", "sessions", folder);
+    const dir = join(hub, ".workflow", "sessions", folder);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), `# SESSION — ${folder}\n`);
     if (closed) writeFileSync(join(dir, ".closed"), "");
@@ -86,10 +86,10 @@ describe("runWorktree — the isolation unit of a flow", () => {
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "worktree-svc-"));
     home = join(root, "home");
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, "acme");
     mkdirSync(home, { recursive: true });
-    mkdirSync(workspace, { recursive: true });
+    mkdirSync(hub, { recursive: true });
     mkdirSync(source, { recursive: true });
 
     git(source, "init", "--initial-branch=main");
@@ -99,17 +99,17 @@ describe("runWorktree — the isolation unit of a flow", () => {
     git(source, "add", "-A");
     git(source, "commit", "-m", "inicial");
 
-    writeFileSync(join(workspace, "CLAUDE.md"), block(source));
+    writeFileSync(join(hub, "CLAUDE.md"), block(source));
     session("103-uno-plan-exec");
 
-    const env = new FakeEnv(home, workspace);
-    paths = new PathsService(normalizeNamespace("workflow"), home, workspace);
+    const env = new FakeEnv(home, hub);
+    paths = new PathsService(normalizeNamespace("workflow"), home, hub);
     deps = { fs: new NodeFileSystem(), env, git: new GitCliAdapter(new NodeProcess()), paths };
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
   it("una fuente con ruta de otro host queda ilegible por alias, nunca ejecuta git en cwd", async () => {
-    writeFileSync(join(workspace, "CLAUDE.md"), block("C:/Source/acme"));
+    writeFileSync(join(hub, "CLAUDE.md"), block("C:/Source/acme"));
     const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
     expect(listed.unreadable).toEqual([
       expect.objectContaining({
@@ -122,7 +122,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
 
   it("lista e integra la fuente presente y reporta por separado la ausente", async () => {
     writeFileSync(
-      join(workspace, "CLAUDE.md"),
+      join(hub, "CLAUDE.md"),
       block(source).replace(
         `| acme | ${source} | main |`,
         `| acme | ${source} | main |\n| remoto | (local) | main |`,
@@ -159,18 +159,18 @@ describe("runWorktree — the isolation unit of a flow", () => {
     })) as WorktreeEnsureOutput;
 
     expect(unit.created).toBe(true);
-    expect(unit.branch).toBe(`aw/${workspaceKey(workspace).slice(-8)}/103-uno-plan-exec`);
+    expect(unit.branch).toBe(`aw/${hubKey(hub).slice(-8)}/103-uno-plan-exec`);
     expect(unit.path).toBe(
       join(
         realpathSync(join(home, ".workflow", "worktrees")),
-        workspaceKey(workspace),
+        hubKey(hub),
         "acme",
         "103-uno-plan-exec",
       ),
     );
     // git's own view is the registry: the unit is there, on its branch.
     expect(git(source, "worktree", "list", "--porcelain")).toContain(
-      `branch refs/heads/aw/${workspaceKey(workspace).slice(-8)}/103-uno-plan-exec`,
+      `branch refs/heads/aw/${hubKey(hub).slice(-8)}/103-uno-plan-exec`,
     );
     // The main checkout never moved.
     expect(git(source, "rev-parse", "--abbrev-ref", "HEAD").trim()).toBe("main");
@@ -204,7 +204,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
     git(source, "worktree", "remove", stolen);
 
     session("104-dos-plan-exec");
-    const occupiedBranch = `aw/${workspaceKey(workspace).slice(-8)}/104-dos-plan-exec`;
+    const occupiedBranch = `aw/${hubKey(hub).slice(-8)}/104-dos-plan-exec`;
     git(source, "branch", occupiedBranch);
     git(source, "worktree", "add", join(root, "ocupado"), occupiedBranch);
 
@@ -222,7 +222,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
     await runWorktree(deps, { action: "ensure", alias: "acme", sessionCode: "103" });
     session("104-dos-plan-exec");
     await runWorktree(deps, { action: "ensure", alias: "acme", sessionCode: "104" });
-    writeFileSync(join(workspace, ".workflow", "sessions", "104-dos-plan-exec", ".closed"), "");
+    writeFileSync(join(hub, ".workflow", "sessions", "104-dos-plan-exec", ".closed"), "");
 
     const listed = (await runWorktree(deps, { action: "list" })) as WorktreeListOutput;
 
@@ -266,9 +266,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
     });
     expect(refused).toMatchObject({ error: "unit_not_clean" });
     expect(readFileSync(join(unit.path, "nuevo.txt"), "utf-8")).toBe("sin commitear\n");
-    expect(readFileSync(join(workspace, ".claude", "settings.local.json"), "utf8")).toContain(
-      unit.path,
-    );
+    expect(readFileSync(join(hub, ".claude", "settings.local.json"), "utf8")).toContain(unit.path);
 
     git(unit.path, "add", "-A");
     git(unit.path, "commit", "-m", "trabajo del flujo");
@@ -280,12 +278,12 @@ describe("runWorktree — the isolation unit of a flow", () => {
 
     expect(released.released).toBe(true);
     expect(git(source, "worktree", "list", "--porcelain")).not.toContain(
-      `aw/${workspaceKey(workspace).slice(-8)}/103-uno-plan-exec`,
+      `aw/${hubKey(hub).slice(-8)}/103-uno-plan-exec`,
     );
   });
 
   it("gives the unit multi-root visibility on ensure and takes it back on release", async () => {
-    const settings = join(workspace, ".claude", "settings.local.json");
+    const settings = join(hub, ".claude", "settings.local.json");
 
     const unit = (await runWorktree(deps, {
       action: "ensure",
@@ -318,7 +316,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
       sessionCode: "104",
     });
     expect(second).toMatchObject({ created: true });
-    const settings = readFileSync(join(workspace, ".claude", "settings.local.json"), "utf8");
+    const settings = readFileSync(join(hub, ".claude", "settings.local.json"), "utf8");
     expect(settings).not.toContain(first.path);
     if ("path" in second) expect(settings).toContain(second.path);
   });
@@ -337,14 +335,14 @@ describe("runWorktree — the isolation unit of a flow", () => {
         sessionCode: "103",
       }),
     ).toMatchObject({ visibility: "detached" });
-    expect(readFileSync(join(workspace, ".claude", "settings.local.json"), "utf8")).not.toContain(
+    expect(readFileSync(join(hub, ".claude", "settings.local.json"), "utf8")).not.toContain(
       unit.path,
     );
   });
 
   it("informa el fallo del host en ensure y release sin ocultar el estado de la unidad", async () => {
-    const settings = join(workspace, ".claude", "settings.local.json");
-    mkdirSync(join(workspace, ".claude"), { recursive: true });
+    const settings = join(hub, ".claude", "settings.local.json");
+    mkdirSync(join(hub, ".claude"), { recursive: true });
     writeFileSync(settings, "{invalid");
     const unit = await runWorktree(deps, {
       action: "ensure",
@@ -407,7 +405,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
     }
 
     function close(folder: string): void {
-      writeFileSync(join(workspace, ".workflow", "sessions", folder, ".closed"), "");
+      writeFileSync(join(hub, ".workflow", "sessions", folder, ".closed"), "");
     }
 
     it("recoge en un solo acto la unidad de una sesión cerrada y la de una ausente, sin reabrir ninguna", async () => {
@@ -419,7 +417,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
       close("104-dos-plan-exec");
       // La sesión 105 desaparece del disco: su unidad queda sin dueño y `release`
       // nunca la alcanzaba porque su resolución no encuentra la carpeta.
-      rmSync(join(workspace, ".workflow", "sessions", "105-tres-plan-exec"), {
+      rmSync(join(hub, ".workflow", "sessions", "105-tres-plan-exec"), {
         recursive: true,
         force: true,
       });
@@ -433,17 +431,17 @@ describe("runWorktree — the isolation unit of a flow", () => {
       expect(swept.retained).toEqual([]);
       expect(swept.next).toBeNull();
       const trees = git(source, "worktree", "list", "--porcelain");
-      expect(trees).not.toContain(`aw/${workspaceKey(workspace).slice(-8)}/104-dos-plan-exec`);
+      expect(trees).not.toContain(`aw/${hubKey(hub).slice(-8)}/104-dos-plan-exec`);
       expect(trees).not.toContain("aw/105-tres-plan-exec");
       expect(existsSync(cerrada.path)).toBe(false);
       expect(existsSync(ausente.path)).toBe(false);
       // La unidad de la sesión viva ni se mira: el barrido del workspace actúa
       // sobre residuo, no sobre el árbol de trabajo de alguien.
-      expect(trees).toContain(`aw/${workspaceKey(workspace).slice(-8)}/103-uno-plan-exec`);
+      expect(trees).toContain(`aw/${hubKey(hub).slice(-8)}/103-uno-plan-exec`);
       // Y la sesión cerrada sigue cerrada: recoger no la reabrió.
-      expect(
-        existsSync(join(workspace, ".workflow", "sessions", "104-dos-plan-exec", ".closed")),
-      ).toBe(true);
+      expect(existsSync(join(hub, ".workflow", "sessions", "104-dos-plan-exec", ".closed"))).toBe(
+        true,
+      );
     });
 
     it("conserva la unidad con cambios sin commitear y dice qué la retiene", async () => {
@@ -487,7 +485,7 @@ describe("runWorktree — the isolation unit of a flow", () => {
       expect(swept.retained[0]).toMatchObject({ reason: "operation_in_progress" });
       expect(swept.retained[0]?.next).toContain("resolvé externamente");
       expect(git(source, "worktree", "list", "--porcelain")).toContain(
-        `aw/${workspaceKey(workspace).slice(-8)}/104-dos-plan-exec`,
+        `aw/${hubKey(hub).slice(-8)}/104-dos-plan-exec`,
       );
     });
 

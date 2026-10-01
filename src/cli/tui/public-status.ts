@@ -1,5 +1,5 @@
 import type { CliContext } from "../types.js";
-import { workspaceRoot } from "./workspace-root.js";
+import { hubRoot } from "./hub-root.js";
 
 /** Read only the public `aw status --format json` contract, never a flow session. */
 export interface PublicStatusSummary {
@@ -26,7 +26,7 @@ const count = (value: unknown): value is number =>
 export async function readPublicStatus(ctx: CliContext): Promise<PublicStatusSummary> {
   try {
     const result = await ctx.process.run(ctx.runtime.binName, ["status", "--format", "json"], {
-      cwd: workspaceRoot(ctx),
+      cwd: hubRoot(ctx),
       timeoutMs: 5000,
     });
     if (result.code !== 0) return UNAVAILABLE;

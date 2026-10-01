@@ -1,14 +1,14 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { runMultiroot } from "./multiroot-service.js";
-import { type ProjectFuente, readWorkspaceBlock } from "./parsers/project-block.js";
-import type { PathsService } from "./paths-service.js";
-import { runProjectMdUpsertWrite } from "./project-md-upsert-service.js";
-import { writeWorkspaceLocalConfig } from "./workspace-local-config.js";
+import { runHubBlockUpsertWrite } from "./hub-block-upsert-service.js";
+import { writeHubLocalConfig } from "./hub-local-config.js";
 import {
   type WorklineMaterialization,
   ensureWorklineMaterialized,
-} from "./workspace-materialization-service.js";
+} from "./hub-materialization-service.js";
+import { runMultiroot } from "./multiroot-service.js";
+import { type HubFuente, readHubBlock } from "./parsers/hub-block.js";
+import type { PathsService } from "./paths-service.js";
 
 export interface RemoveSourceDeps {
   fs: FileSystemPort;
@@ -28,14 +28,14 @@ export interface RemoveSourceError {
 }
 
 /**
- * Removes a source from the workspace entirely, composing existing services in
- * idempotent order: detach multi-root visibility, then prune the WORKSPACE
+ * Removes a source from the hub entirely, composing existing services in
+ * idempotent order: detach multi-root visibility, then prune the hub
  * block (Fuentes + working/qa branches). Legacy launch files and processes
  * belong to the operator and remain untouched.
  *
  * Does NOT delete the repo from the filesystem: it only removes it from the
- * workspace. Every step tolerates "already gone", so re-running never fails.
- * Leaving the workspace with 0 sources is allowed.
+ * hub. Every step tolerates "already gone", so re-running never fails.
+ * Leaving the hub with 0 sources is allowed.
  */
 export async function removeSource(
   deps: RemoveSourceDeps,
@@ -47,7 +47,7 @@ export async function removeSource(
     return { error: "alias_required" };
   }
 
-  // 1. Resolve alias → source from the WORKSPACE block. Fail fast when unknown.
+  // 1. Resolve alias → source from the hub block. Fail fast when unknown.
   const fuente = await findFuente(fs, paths, alias);
   if (!fuente) {
     return { error: `unknown_source: ${alias}` };
@@ -62,8 +62,8 @@ export async function removeSource(
   // 2. Remove multi-root visibility (claude/codex/warp/oz). Idempotent per host.
   if (fuente.path !== null) await runMultiroot(fs, env, paths, "detach", { paths: [fuente.path] });
 
-  // 3. Prune the WORKSPACE block: Fuentes + working_branches + qa_branches for the alias.
-  const updated = await runProjectMdUpsertWrite(fs, env, paths, {
+  // 3. Prune the hub block: Fuentes + working_branches + qa_branches for the alias.
+  const updated = await runHubBlockUpsertWrite(fs, env, paths, {
     op: "init",
     removeAliases: [alias],
   });
@@ -74,7 +74,7 @@ export async function removeSource(
           ? updated.error
           : (updated.results?.find((file) => file.error)?.error ?? "el bloque no se publicó"),
     };
-  await writeWorkspaceLocalConfig(fs, paths, { [alias]: null });
+  await writeHubLocalConfig(fs, paths, { [alias]: null });
 
   return {
     alias,
@@ -83,13 +83,13 @@ export async function removeSource(
   };
 }
 
-/** Read the WORKSPACE block (CLAUDE.md → AGENTS.md) and return the source for the alias. */
+/** Read the hub block (CLAUDE.md → AGENTS.md) and return the source for the alias. */
 async function findFuente(
   fs: FileSystemPort,
   paths: PathsService,
   alias: string,
-): Promise<ProjectFuente | null> {
-  const block = await readWorkspaceBlock(fs, paths.workspaceDir(), paths.blockMarkers(), (b) =>
+): Promise<HubFuente | null> {
+  const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers(), (b) =>
     b.fuentes.some((f) => f.alias === alias),
   );
   return block?.fuentes.find((f) => f.alias === alias) ?? null;

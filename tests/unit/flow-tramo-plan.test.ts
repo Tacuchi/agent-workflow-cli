@@ -79,7 +79,7 @@ const CODE = "031";
 
 const ALIAS = "acme";
 const PLAN_DOC = "docs/plans/031-plan-tramo.md";
-const WORKSPACE_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
+const HUB_BLOCK = `<!-- AGENT-WORKFLOW-HUB-START -->
 ## Hub
 
 Tramo plan.
@@ -498,7 +498,7 @@ describe("PLAN dirigido — sobre una corrida real en disco", () => {
     // El workspace de verdad, porque el scope se valida contra él: la tabla de
     // Fuentes es lo único que decide si un alias existe, y el plan es el
     // documento contra el que se comprueba que ese alias esté nombrado.
-    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), HUB_BLOCK, "utf8");
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
     await writeFile(
       join(workdir, PLAN_DOC),
@@ -1110,7 +1110,7 @@ describe("la evidencia de cierre se juzga al guardar el plan, no sólo al ejecut
         "utf8",
       );
     }
-    await writeFile(join(workdir, "CLAUDE.md"), WORKSPACE_BLOCK, "utf8");
+    await writeFile(join(workdir, "CLAUDE.md"), HUB_BLOCK, "utf8");
     await mkdir(join(workdir, "docs", "plans"), { recursive: true });
   });
 

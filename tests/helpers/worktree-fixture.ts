@@ -17,9 +17,9 @@ export function git(repo: string, ...args: string[]): string {
 export function worktreeFixture() {
   const root = mkdtempSync(join(tmpdir(), "aw-unit-lifecycle-"));
   const home = join(root, "home");
-  const workspace = join(root, "ws");
+  const hub = join(root, "ws");
   const repo = join(root, "repo");
-  for (const dir of [home, workspace, repo]) mkdirSync(dir);
+  for (const dir of [home, hub, repo]) mkdirSync(dir);
   git(repo, "init", "--initial-branch=main");
   git(repo, "config", "user.email", "test@example.com");
   git(repo, "config", "user.name", "Test");
@@ -40,8 +40,8 @@ Prueba.
 - Ramas de trabajo actuales:
   - acme: main
 <!-- WORKFLOW-HUB-END -->`;
-  writeFileSync(join(workspace, "CLAUDE.md"), block);
-  const session = join(workspace, ".workflow", "sessions", "101-test-plan-exec");
+  writeFileSync(join(hub, "CLAUDE.md"), block);
+  const session = join(hub, ".workflow", "sessions", "101-test-plan-exec");
   mkdirSync(session, { recursive: true });
   writeFileSync(
     join(session, "SESSION.md"),
@@ -49,16 +49,16 @@ Prueba.
   );
   const deps: WorktreeDeps = {
     fs: new NodeFileSystem(),
-    env: new FakeEnv(home, workspace),
+    env: new FakeEnv(home, hub),
     git: new GitCliAdapter(new NodeProcess()),
-    paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
+    paths: new PathsService(normalizeNamespace("workflow"), home, hub),
   };
   const run = (action: "ensure" | "release" | "integrate" | "reclaim") =>
     runWorktree(deps, { action, alias: "acme", sessionCode: "101" });
   return {
     root,
     home,
-    workspace,
+    hub,
     repo,
     session,
     deps,

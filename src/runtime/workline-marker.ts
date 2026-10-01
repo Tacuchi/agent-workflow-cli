@@ -4,27 +4,27 @@ import { dirname, join } from "node:path";
 import { NAMESPACE_REGEX } from "./namespace.js";
 
 /**
- * What tells a Workline workspace apart from a directory that merely shares the
+ * What tells a Workline hub apart from a directory that merely shares the
  * name of a subfolder.
  *
  * The canonical marker used to be `.<ns>/sessions/` alone, and that is a shape
  * the host tools imitate: `~/.claude/sessions`, `~/.codex/sessions` and
  * `~/.kimi-code/sessions` all exist on a normal machine. With three of them in
  * one home directory, every command launched from a path that was never
- * initialized read `$HOME` as three workspaces at once and died with
+ * initialized read `$HOME` as three hubs at once and died with
  * `WORKLINE_NAMESPACE_AMBIGUOUS` before any service was built.
  *
- * So the workspace gets a mark of its own, `.<ns>/workline.json`, written by the
+ * So the hub gets a mark of its own, `.<ns>/workline.json`, written by the
  * minimal materialization. No host tool writes it, which is the whole point.
  */
 export const WORKLINE_MARKER_FILE = "workline.json";
 
 /**
- * Evidence that a directory was a Workline workspace BEFORE the mark existed.
+ * Evidence that a directory was a Workline hub BEFORE the mark existed.
  *
- * A workspace already materialized has to keep resolving without anybody running
+ * A hub already materialized has to keep resolving without anybody running
  * a migration, and these are the runtime files only Workline puts at `.<ns>/`.
- * The first write into such a workspace adds the mark, so this reading is the
+ * The first write into such a hub adds the mark, so this reading is the
  * bridge and not a second contract: after it, the mark answers on its own.
  */
 export const LEGACY_WORKLINE_FILES = [
@@ -40,11 +40,11 @@ export function worklineMarkerContent(namespace: string): string {
 }
 
 /**
- * Whether `dir` holds the Workline workspace of `namespace`.
+ * Whether `dir` holds the Workline hub of `namespace`.
  *
  * Fails CLOSED in the direction that matters: a directory that only looks like
  * one — `sessions/` and nothing of Workline's beside it — is not adopted as a
- * workspace, so the command's own path is, which is what the person asked for.
+ * hub, so the command's own path is, which is what the person asked for.
  */
 type MarkerReader = { stat(path: string): Promise<{ type: string }> };
 

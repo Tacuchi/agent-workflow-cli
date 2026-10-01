@@ -1,6 +1,6 @@
 import type { GitPort } from "../ports/git.js";
 import { isPlainBranchName } from "./branch-resolver.js";
-import type { ProjectFuente } from "./parsers/project-block.js";
+import type { HubFuente } from "./parsers/hub-block.js";
 
 /**
  * How a source's declared working branch came to exist locally: it already
@@ -38,7 +38,7 @@ async function narrowFetch(git: GitPort, repo: string): Promise<string | null> {
  */
 export async function ensureWorkingBranch(
   git: GitPort,
-  source: ProjectFuente,
+  source: HubFuente,
   branch: string,
   prod: string,
 ): Promise<WorkingBranchResolution> {

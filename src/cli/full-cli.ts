@@ -2,6 +2,7 @@ import { GitCliAdapter } from "../adapters/git-cli.js";
 import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
 import { NodeProcess } from "../adapters/node-process.js";
+import { MaterializingHubFileSystem } from "../application/hub-materialization-service.js";
 import {
   formatCommandError,
   formatCommandInvocation,
@@ -9,16 +10,21 @@ import {
   formatTuiEvent,
 } from "../application/logging/log-events.js";
 import { Logger } from "../application/logging/logger.js";
-import { legacyBlockFiles } from "../application/parsers/project-block.js";
+import { legacyBlockFiles } from "../application/parsers/hub-block.js";
 import { PathsService } from "../application/paths-service.js";
 import { preparationMismatch, recordPreparation } from "../application/preparation-receipts.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
-import { MaterializingWorkspaceFileSystem } from "../application/workspace-materialization-service.js";
 import { encodeToolResponse, toolFailure } from "../domain/database-tools.js";
 import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
 import type { ResolvedSkills } from "../domain/skills.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
+import {
+  HubResolutionError,
+  hubMigrationRequired,
+  registerResolvedHub,
+  resolveHubDirectory,
+} from "../runtime/hub-resolution.js";
 import {
   DEFAULT_NAMESPACE,
   NamespaceResolver,
@@ -27,12 +33,6 @@ import {
 } from "../runtime/namespace-resolver.js";
 import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
-import {
-  WorkspaceResolutionError,
-  hubMigrationRequired,
-  registerResolvedWorkspace,
-  resolveWorkspaceDirectory,
-} from "../runtime/workspace-resolution.js";
 import { ALL_COMMANDS } from "./commands/index.js";
 import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
@@ -73,10 +73,10 @@ async function run(argv: string[]): Promise<ExitCode> {
     ...prepared,
     ctx: initialized.ctx,
     registry: commandRegistry(),
-    workspaceFs: initialized.workspaceFs,
+    hubFs: initialized.hubFs,
   });
   const warning = initialized.ctx.directory
-    ? await registerResolvedWorkspace(fs, env.homeDir(), initialized.ctx.directory)
+    ? await registerResolvedHub(fs, env.homeDir(), initialized.ctx.directory)
     : null;
   if (warning) writeStderr(warning);
   return exit;
@@ -150,14 +150,14 @@ async function initializeCliContext(
   env: NodeEnv,
   proc: NodeProcess,
   git: GitCliAdapter,
-): Promise<{ ctx: CliContext; workspaceFs: MaterializingWorkspaceFileSystem } | null> {
+): Promise<{ ctx: CliContext; hubFs: MaterializingHubFileSystem } | null> {
   const directory = await resolveWorklineDirectory(new NamespaceResolver(fs, env), parsed, fs, env);
   if (directory === null) return null;
-  const warning = await registerResolvedWorkspace(fs, env.homeDir(), directory);
+  const warning = await registerResolvedHub(fs, env.homeDir(), directory);
   if (warning) writeStderr(warning);
   const namespace = { namespace: directory.namespace, source: directory.namespaceSource };
   const paths = new PathsService(namespace.namespace, env.homeDir(), directory.root);
-  const workspaceFs = new MaterializingWorkspaceFileSystem(fs, paths);
+  const hubFs = new MaterializingHubFileSystem(fs, paths);
   const standaloneTransport = parsed.command === "tool" || isMcpStdioInvocation(parsed);
   const runtime = standaloneTransport
     ? defaultStandaloneRuntime()
@@ -166,9 +166,9 @@ async function initializeCliContext(
     ? ({} as ResolvedSkills)
     : (await resolveSkills(fs, paths)).skills;
   return {
-    workspaceFs,
+    hubFs,
     ctx: {
-      fs: workspaceFs,
+      fs: hubFs,
       rawFs: fs,
       env,
       git,
@@ -223,7 +223,7 @@ async function resolveWorklineDirectory(
   env: NodeEnv,
 ): Promise<WorklineDirectory | null> {
   try {
-    const directory = await resolveHubDirectory(resolver, parsed, fs, env);
+    const directory = await resolveCliDirectory(resolver, parsed, fs, env);
     if (directory !== null && !exemptFromHubMigration(parsed)) {
       const legacy = await legacyBlockFiles(fs, directory.root);
       if (legacy.length > 0) throw hubMigrationRequired(directory.root, legacy);
@@ -240,10 +240,10 @@ async function resolveWorklineDirectory(
  * commands and the stdio transports).
  */
 function exemptFromHubMigration(parsed: ParsedArgs): boolean {
-  return parsed.command === "hub-migrate" || runsWithoutWorkspace(parsed);
+  return parsed.command === "hub-migrate" || runsWithoutHub(parsed);
 }
 
-async function resolveHubDirectory(
+async function resolveCliDirectory(
   resolver: NamespaceResolver,
   parsed: ParsedArgs,
   fs: NodeFileSystem,
@@ -252,7 +252,7 @@ async function resolveHubDirectory(
   const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
   if (parsed.command === "hub-init") return directory;
   try {
-    return await resolveWorkspaceDirectory(
+    return await resolveHubDirectory(
       fs,
       directory,
       env.cwd(),
@@ -260,18 +260,18 @@ async function resolveHubDirectory(
       parsed.values.get("hub"),
     );
   } catch (error) {
-    if (!(error instanceof WorkspaceResolutionError)) throw error;
+    if (!(error instanceof HubResolutionError)) throw error;
     if (isHookCommand(parsed)) {
       writeStderr(error.message);
       return null;
     }
-    if (runsWithoutWorkspace(parsed)) return { ...directory, root: env.cwd(), materialized: false };
+    if (runsWithoutHub(parsed)) return { ...directory, root: env.cwd(), materialized: false };
     throw error;
   }
 }
 
 // A host runs these on its own events, $HOME included: a non-zero exit would
-// hold that event back, so without a workspace they only report on stderr.
+// hold that event back, so without a hub they only report on stderr.
 const HOOK_COMMANDS: ReadonlySet<string> = new Set(
   ALL_COMMANDS.filter((command) => command.hook === true).map((command) => command.name),
 );
@@ -281,7 +281,7 @@ function isHookCommand(parsed: ParsedArgs): boolean {
 }
 
 // Their scope is the user's machine (installation, host configs), not a
-// workspace, so any cwd works — $HOME included.
+// hub, so any cwd works — $HOME included.
 const MACHINE_SCOPED_COMMANDS: ReadonlySet<string> = new Set([
   "tool",
   "self",
@@ -289,7 +289,7 @@ const MACHINE_SCOPED_COMMANDS: ReadonlySet<string> = new Set([
   "doctor",
 ]);
 
-function runsWithoutWorkspace(parsed: ParsedArgs): boolean {
+function runsWithoutHub(parsed: ParsedArgs): boolean {
   return (
     parsed.command === undefined ||
     MACHINE_SCOPED_COMMANDS.has(parsed.command) ||
@@ -360,11 +360,11 @@ interface ParsedCommandDispatch {
   isTTY: boolean;
   hasHelp: boolean;
   output: OutputMode;
-  workspaceFs: MaterializingWorkspaceFileSystem;
+  hubFs: MaterializingHubFileSystem;
 }
 
 async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<ExitCode> {
-  const { parsed, ctx, registry, isTTY, hasHelp, output, workspaceFs } = input;
+  const { parsed, ctx, registry, isTTY, hasHelp, output, hubFs } = input;
   // The decision — menu, help or which command, alias included — belongs to
   // `planDispatch`, which is importable and therefore testable. What is left
   // here is carrying it out: no ordering and no command name of its own.
@@ -387,7 +387,7 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
     return 0;
   }
 
-  return await executeCommand(parsed, ctx, command, output, workspaceFs);
+  return await executeCommand(parsed, ctx, command, output, hubFs);
 }
 
 async function runInteractiveMenu(
@@ -408,7 +408,7 @@ async function executeCommand(
   ctx: CliContext,
   command: CliCommand,
   output: OutputMode,
-  workspaceFs: MaterializingWorkspaceFileSystem,
+  hubFs: MaterializingHubFileSystem,
 ): Promise<ExitCode> {
   await ctx.logger?.info(formatCommandInvocation(parsed));
   // Before `execute`, so a flag the command would ignore can never leave it
@@ -433,16 +433,13 @@ async function executeCommand(
     const commandCtx = commandOwnsMaterializationReceipt(command.name)
       ? { ...ctx, fs: ctx.rawFs ?? ctx.fs }
       : ctx;
-    const result = attachMaterializationReceipt(
-      await command.execute(parsed, commandCtx),
-      workspaceFs,
-    );
+    const result = attachMaterializationReceipt(await command.execute(parsed, commandCtx), hubFs);
     await recordCommandPreparation(result, command, parsed, ctx);
     await ctx.logger?.log(
       result.ok ? "info" : "error",
       formatCommandOutcome(command.name, result.exitCode),
     );
-    emit(result, command, output, adoptionNotice(command, workspaceFs));
+    emit(result, command, output, adoptionNotice(command, hubFs));
     return result.exitCode;
   } catch (err) {
     await ctx.logger?.error(formatCommandError(command.name, err));
@@ -451,7 +448,7 @@ async function executeCommand(
       return 1;
     }
     const message = redactSensitiveText(err instanceof Error ? err.message : String(err));
-    emit(fail("UNHANDLED", message), command, output, adoptionNotice(command, workspaceFs));
+    emit(fail("UNHANDLED", message), command, output, adoptionNotice(command, hubFs));
     return 1;
   }
 }
@@ -484,14 +481,11 @@ function commandOwnsMaterializationReceipt(command: string): boolean {
  * that: the human projection is each command's own `renderHuman`, and the only
  * one that printed the adoption was `hub-init` — the command nobody needs
  * to be told by. So adopting a directory was silent exactly where it matters,
- * and a command launched one folder down from a real workspace could found a
+ * and a command launched one folder down from a real hub could found a
  * second one inside it without a word. It is emitted once, by the dispatcher, so
  * no command has to remember; the two that declare it themselves are skipped.
  */
-function adoptionNotice(
-  command: CliCommand,
-  fs: MaterializingWorkspaceFileSystem,
-): string | undefined {
+function adoptionNotice(command: CliCommand, fs: MaterializingHubFileSystem): string | undefined {
   if (commandOwnsMaterializationReceipt(command.name)) return undefined;
   const materialization = fs.materialization();
   if (materialization === undefined || !materialization.materialized) return undefined;
@@ -499,13 +493,13 @@ function adoptionNotice(
 }
 
 /**
- * A generic workspace writer still needs to tell its caller that it created the
+ * A generic hub writer still needs to tell its caller that it created the
  * runtime marker.  Preserve every typed command payload and add the forward
  * receipt only when the payload is an object and does not already own that key.
  */
 function attachMaterializationReceipt(
   result: CommandResult,
-  fs: MaterializingWorkspaceFileSystem,
+  fs: MaterializingHubFileSystem,
 ): CommandResult {
   const materialization = fs.materialization();
   if (
@@ -638,7 +632,7 @@ async function dispatchMenuAction(
       return await run(["self", "update", "--yes", ...mark]);
     case "hub-init": {
       // The fallback pre-materializes the current implicit root.  Source
-      // configuration remains the Project tab's explicit secondary action.
+      // configuration remains the Hub tab's explicit secondary action.
       return await run(["hub-init", ...mark]);
     }
     case "help":
@@ -687,7 +681,7 @@ void run(process.argv.slice(2))
   });
 
 function directoryFailure(err: unknown, parsed: ParsedArgs): null {
-  if (err instanceof WorkspaceResolutionError) {
+  if (err instanceof HubResolutionError) {
     if (isHookCommand(parsed)) {
       writeStderr(err.message);
       return null;

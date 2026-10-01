@@ -54,7 +54,7 @@ import { listSessionFolders, readSessionState } from "./session-resolver.js";
 /**
  * What a numbered file that is not a document actually is.
  *
- * `reservation` carries an owner marker this workspace can attribute.
+ * `reservation` carries an owner marker this hub can attribute.
  * `legacy-placeholder` is the zero-byte file an older version left behind: it
  * holds a correlative and names nobody, so it can never be released on the
  * strength of its own bytes.
@@ -62,7 +62,7 @@ import { listSessionFolders, readSessionState } from "./session-resolver.js";
 type SlotKind = "reservation" | "legacy-placeholder";
 
 export interface SlotState {
-  /** Workspace-relative, always `docs/<category>/<NNN>-<name>`. */
+  /** Hub-relative, always `docs/<category>/<NNN>-<name>`. */
   path: string;
   kind: SlotKind;
   category: string;
@@ -238,7 +238,7 @@ export async function scanSlots(
   paths: PathsService,
   lockHeld = false,
 ): Promise<SlotScan> {
-  const docs = join(paths.workspaceDir(), "docs");
+  const docs = join(paths.hubDir(), "docs");
   const slots: SlotState[] = [];
   const ledger = await readClaimEvents(fs, paths, { lockHeld });
   if (ledger.unreadable > 0) {
@@ -336,7 +336,7 @@ export async function previewRecovery(
   return {
     proposal: sealRecovery({
       version: 1,
-      hub_root: paths.workspaceDir(),
+      hub_root: paths.hubDir(),
       target: slot.path,
       kind: slot.kind,
       claim: claimOfSlot(slot),
@@ -358,7 +358,7 @@ interface RecoveryApplied {
 /**
  * Seal the fence, then release — and never the other way round.
  *
- * The whole thing runs under the workspace lock, which is not decoration: the
+ * The whole thing runs under the hub lock, which is not decoration: the
  * check that the slot is still what the preview saw, the seal and the removal are
  * three separate awaits, and without the lock a sanctioned publication could pass
  * its own fence, take the lock, write its document and have this function delete
@@ -448,7 +448,7 @@ async function recoverUnderLock(
           : `aw claims recover: liberado tras revocar ${claimKey(claim)}`,
     });
   }
-  await fs.remove(join(paths.workspaceDir(), proposal.target));
+  await fs.remove(join(paths.hubDir(), proposal.target));
   return {
     applied: {
       target: proposal.target,

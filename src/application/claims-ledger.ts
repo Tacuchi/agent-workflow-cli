@@ -35,7 +35,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 
-/** Lives next to HISTORY.md: workspace state, never workspace corpus. */
+/** Lives next to HISTORY.md: hub state, never hub corpus. */
 const LEDGER_FILE = "claims.jsonl";
 const LEDGER_VERSION = 1;
 const CLAIM_EVENTS = new Set<ClaimEventKind>([
@@ -140,7 +140,7 @@ export function ledgerPath(paths: PathsService): string {
  * Two callers, two different guarantees, and the difference is worth stating
  * rather than glossing:
  *
- * - the **claim** appends inside the workspace lock that mints the slot, so the
+ * - the **claim** appends inside the hub lock that mints the slot, so the
  *   reservation and its record cannot separate;
  * - the **release** at session close does NOT hold that lock — the close's
  *   reservation sweep is deliberately outside it and non-fatal — so its record
@@ -181,7 +181,7 @@ export async function readClaimEvents(
 ): Promise<LedgerRead> {
   if (!options.skipRenumberRecovery) {
     try {
-      const { recoverRenumberJournal } = await import("./workspace-migrate/apply.js");
+      const { recoverRenumberJournal } = await import("./hub-migrate/apply.js");
       await recoverRenumberJournal(fs, paths, options.lockHeld === true);
     } catch {
       const raw = await readClaimEventsRaw(fs, paths);
@@ -200,7 +200,7 @@ export async function readClaimEvents(
   return result;
 }
 
-/** Raw reader for a caller already holding the workspace lock. */
+/** Raw reader for a caller already holding the hub lock. */
 export async function readClaimEventsRaw(
   fs: FileSystemPort,
   paths: PathsService,
@@ -302,7 +302,7 @@ export function openClaimsOf(events: readonly ClaimEvent[], owner: string): Clai
 }
 
 /**
- * The claim a workspace-relative `docs/<category>/<NNN>-<name>` path would be.
+ * The claim a hub-relative `docs/<category>/<NNN>-<name>` path would be.
  *
  * `null` for anything that is not a numbered document inside a category, which
  * is what keeps this from reading a claim out of an unrelated destination.
@@ -495,7 +495,7 @@ export function openOwnerOfSlot(
  *
  * The second reason this ledger exists. Minting used to compute `max + 1` and
  * probe forward only, so a correlative given back in the middle of the range was
- * lost forever — this workspace's own `docs/plans` has a permanent hole at `033`
+ * lost forever — this hub's own `docs/plans` has a permanent hole at `033`
  * from exactly that. Only the record can tell a number that came back from one
  * that never existed, because the disk looks identical either way.
  *
@@ -561,7 +561,7 @@ async function settleClaimTransfer(
   if (!safe.ok || !safe.path.startsWith("docs/")) {
     return false;
   }
-  const path = join(paths.workspaceDir(), safe.path);
+  const path = join(paths.hubDir(), safe.path);
   if (!(await fs.exists(path))) return false;
   const owner = reservationOwnerOf(await fs.readText(path));
   if (owner !== transfer.from && owner !== transfer.to) {

@@ -20,7 +20,7 @@ export interface CliContext {
   process: ProcessPort;
   runtime: ResolvedRuntime;
   namespace: ResolvedNamespace;
-  /** Bootstrap's one resolved workspace coordinate; optional for lightweight legacy test contexts. */
+  /** Bootstrap's one resolved hub coordinate; optional for lightweight legacy test contexts. */
   directory?: WorklineDirectory;
   paths: PathsService;
   /** Resolved capability role → skill bindings (skills.toml cascade). */

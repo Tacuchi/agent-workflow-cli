@@ -35,8 +35,8 @@ import {
   checkFlow,
   submitFlow,
 } from "../../application/flow/submit.js";
+import { runHubCommit } from "../../application/hub-commit-service.js";
 import { resolveSessionTarget } from "../../application/session-resolver.js";
-import { runWorkspaceCommit } from "../../application/workspace-commit-service.js";
 import type { FlowDirective } from "../../domain/flow/directive.js";
 import { renderDirectiveHuman } from "../../domain/flow/directive.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -669,7 +669,7 @@ async function projectWithCommit(
 ): Promise<CommandResult<FlowResult>> {
   if (!result.ok || result.directive.boundary.transition !== "chassis.commit-choice")
     return project(result);
-  const offer = await runWorkspaceCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
+  const offer = await runHubCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
     code: result.directive.session,
   });
   const directive = result.directive;

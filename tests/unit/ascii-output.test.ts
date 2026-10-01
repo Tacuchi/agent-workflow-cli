@@ -5,11 +5,11 @@ import { PathsService } from "../../src/application/paths-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
 import { toAscii } from "../../src/cli/ascii.js";
 import { exportDiagramsCommand } from "../../src/cli/commands/export.js";
+import { hubMigrateCommand } from "../../src/cli/commands/hub-migrate.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { sessionArtifactsCommand } from "../../src/cli/commands/session-artifacts.js";
 import { statusCommand } from "../../src/cli/commands/status.js";
 import { visibilityCommand } from "../../src/cli/commands/visibility.js";
-import { workspaceMigrateCommand } from "../../src/cli/commands/workspace-migrate.js";
 import { commandHelpText, globalHelpText } from "../../src/cli/help-groups.js";
 import { type OutputMode, resolveOutputMode } from "../../src/cli/output-mode.js";
 import { parseArgv } from "../../src/cli/parser.js";
@@ -56,7 +56,7 @@ async function migrateResult(): Promise<CommandResult> {
   const fs = new MemFs({ lenient: true });
   fs.file("/cwd/.workflow/HISTORY.md", "# Session History\n");
   const ctx = { fs, env, paths } as unknown as CliContext;
-  return workspaceMigrateCommand.execute(parseArgv(["workspace-migrate"]), ctx);
+  return hubMigrateCommand.execute(parseArgv(["workspace-migrate"]), ctx);
 }
 
 /**
@@ -67,11 +67,7 @@ async function migrateResult(): Promise<CommandResult> {
 async function humanSamples(): Promise<Array<[string, CliCommand, CommandResult]>> {
   return [
     ["Orchestration · status", statusCommand as CliCommand, await statusResult()],
-    [
-      "Doctor / Data · workspace-migrate",
-      workspaceMigrateCommand as CliCommand,
-      await migrateResult(),
-    ],
+    ["Doctor / Data · workspace-migrate", hubMigrateCommand as CliCommand, await migrateResult()],
     [
       "Exports · export-diagrams",
       exportDiagramsCommand as CliCommand,

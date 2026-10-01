@@ -9,10 +9,10 @@ import {
   resolveCheckoutCandidates,
 } from "../../src/application/flow/checkout-observation.js";
 import { runGitFlow } from "../../src/application/git-flow-service.js";
+import { buildHubTabData } from "../../src/application/hub-tab-data.js";
 import { runMergeState } from "../../src/application/merge-state-service.js";
 import { runMultiroot } from "../../src/application/multiroot-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { buildProjectTabData } from "../../src/application/project-tab-data.js";
 import { getDocsDir } from "../../src/application/release-data/common.js";
 import { runResume } from "../../src/application/resume-service.js";
 import { runSources } from "../../src/application/sources-service.js";
@@ -24,7 +24,7 @@ import { setWorkingBranchCommand } from "../../src/cli/commands/set-branch.js";
 import { statusCommand } from "../../src/cli/commands/status.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { unitPath, workspaceKey } from "../../src/domain/isolation-unit.js";
+import { hubKey, unitPath } from "../../src/domain/isolation-unit.js";
 import type { GitPort } from "../../src/ports/git.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -138,7 +138,7 @@ it("la observación del checkout no acredita una unidad si su fuente ya no resue
   const session = "103-una-plan-exec";
   await mkdir(paths.userUnitsDir(), { recursive: true });
   const unit = unitPath(await fs.realPath(paths.userUnitsDir()), {
-    workspaceKey: workspaceKey(paths.workspaceDir()),
+    hubKey: hubKey(paths.hubDir()),
     alias: "remoto",
     session,
   });
@@ -178,7 +178,7 @@ it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin inv
     hint: expect.stringContaining("remoto"),
   });
 
-  const visibility = await runVisibilityDoctor(fs, env, paths, { workspace: root });
+  const visibility = await runVisibilityDoctor(fs, env, paths, { hub: root });
   expect(visibility.reports[0]?.status).toBe("source-path-missing");
   expect(visibility.unreadable_sources?.[0]).toContain("aw add-source remoto:<ruta>");
 
@@ -187,7 +187,7 @@ it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin inv
       throw new Error("proc NO debe correr");
     },
   } as unknown as ProcessPort;
-  const project = await buildProjectTabData({ fs, env, git, process: proc, paths });
+  const project = await buildHubTabData({ fs, env, git, process: proc, paths });
   expect(project.git).toBeNull();
   expect(project.sources[0]?.error).toContain("la ruta de la fuente remoto no existe en este host");
 });

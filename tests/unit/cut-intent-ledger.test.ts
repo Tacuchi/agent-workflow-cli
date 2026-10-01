@@ -30,18 +30,18 @@ const P3 = { kind: "plan", key: "053" } as const;
  * offer was the correlative — an accident of minting presented as a decision.
  */
 describe("cut intent ledger", () => {
-  let workspace: string;
+  let hub: string;
   let paths: PathsService;
   let fs: NodeFileSystem;
 
   beforeEach(() => {
-    workspace = mkdtempSync(join(tmpdir(), "cut-intent-"));
-    paths = new PathsService(normalizeNamespace("workflow"), workspace, workspace);
+    hub = mkdtempSync(join(tmpdir(), "cut-intent-"));
+    paths = new PathsService(normalizeNamespace("workflow"), hub, hub);
     fs = new NodeFileSystem();
   });
 
   afterEach(() => {
-    rmSync(workspace, { recursive: true, force: true });
+    rmSync(hub, { recursive: true, force: true });
   });
 
   it("declara un corte con dos planes juntos y un tercero reservado, y lo devuelve completo", async () => {
@@ -67,7 +67,7 @@ describe("cut intent ledger", () => {
     });
 
     const path = cutIntentLedgerPath(paths);
-    expect(path).toBe(join(workspace, ".workflow", "cut-intents.jsonl"));
+    expect(path).toBe(join(hub, ".workflow", "cut-intents.jsonl"));
     expect(path).not.toContain(`${join("", "docs")}`);
   });
 

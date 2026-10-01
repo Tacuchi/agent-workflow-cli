@@ -18,8 +18,8 @@ import {
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
-function branchOf(workspace: string, session: string): string {
-  return `aw/${createHash("sha256").update(workspace.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session}`;
+function branchOf(hub: string, session: string): string {
+  return `aw/${createHash("sha256").update(hub.replaceAll("\\", "/")).digest("hex").slice(0, 8)}/${session}`;
 }
 
 function git(repo: string, ...args: string[]): string {
@@ -59,12 +59,12 @@ _Stack sin detectar._
 describe("integración al cierre y visibilidad de los flujos concurrentes", () => {
   let root: string;
   let home: string;
-  let workspace: string;
+  let hub: string;
   let source: string;
   let deps: { fs: NodeFileSystem; env: FakeEnv; git: GitCliAdapter; paths: PathsService };
 
   function session(folder: string, closed = false): void {
-    const dir = join(workspace, ".workflow", "sessions", folder);
+    const dir = join(hub, ".workflow", "sessions", folder);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), `# SESSION — ${folder}\n\n## Objective\nX\n`);
     if (closed) writeFileSync(join(dir, ".closed"), "");
@@ -73,9 +73,9 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "wt-integrate-"));
     home = join(root, "home");
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     source = join(root, "acme");
-    for (const d of [home, workspace, source]) mkdirSync(d, { recursive: true });
+    for (const d of [home, hub, source]) mkdirSync(d, { recursive: true });
 
     git(source, "init", "--initial-branch=main");
     git(source, "config", "user.email", "t@example.com");
@@ -84,16 +84,16 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
     git(source, "add", "-A");
     git(source, "commit", "-m", "inicial");
 
-    writeFileSync(join(workspace, "CLAUDE.md"), block(source));
-    mkdirSync(join(workspace, ".workflow"), { recursive: true });
+    writeFileSync(join(hub, "CLAUDE.md"), block(source));
+    mkdirSync(join(hub, ".workflow"), { recursive: true });
     session("103-uno-plan-exec");
     session("104-dos-plan-exec");
 
     deps = {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(home, workspace),
+      env: new FakeEnv(home, hub),
       git: new GitCliAdapter(new NodeProcess()),
-      paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
+      paths: new PathsService(normalizeNamespace("workflow"), home, hub),
     };
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -165,7 +165,7 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
       unit_path: second.path,
       merge_path: source,
       into: "main",
-      branch: branchOf(workspace, "104-dos-plan-exec"),
+      branch: branchOf(hub, "104-dos-plan-exec"),
       integrated: false,
       released: false,
     });
@@ -177,7 +177,7 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
     // La unidad SOBREVIVE: sus commits son la única copia de un lado del merge.
     expect(conflicted.released).toBe(false);
     expect(git(source, "worktree", "list", "--porcelain")).toContain(
-      branchOf(workspace, "104-dos-plan-exec"),
+      branchOf(hub, "104-dos-plan-exec"),
     );
     // El merge queda en curso para resolución externa; no hay abort automático.
     expect(git(source, "status", "--porcelain")).toContain("choque.txt");
@@ -250,13 +250,13 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
   it("aw status lleva la unidad por sesión activa y las huérfanas con su acción", async () => {
     await ensure("103");
     await ensure("104");
-    writeFileSync(join(workspace, ".workflow", "sessions", "104-dos-plan-exec", ".closed"), "");
+    writeFileSync(join(hub, ".workflow", "sessions", "104-dos-plan-exec", ".closed"), "");
 
     const status = await runStatusCommand(deps.fs, deps.env, deps.paths, { git: deps.git });
 
     const live = status.sessions.active.find((s) => s.folder === "103-uno-plan-exec");
     expect(live?.units).toEqual([
-      expect.objectContaining({ alias: "acme", branch: branchOf(workspace, "103-uno-plan-exec") }),
+      expect.objectContaining({ alias: "acme", branch: branchOf(hub, "103-uno-plan-exec") }),
     ]);
     expect(status.orphan_units).toHaveLength(1);
     expect(status.orphan_units[0]).toMatchObject({
@@ -280,7 +280,7 @@ describe("integrar una sesión entera: el residuo se recoge al terminar", () => 
   const ALIASES = ["alfa", "beta", "gamma"] as const;
   let root: string;
   let home: string;
-  let workspace: string;
+  let hub: string;
   let sources: Record<string, string>;
   let deps: { fs: NodeFileSystem; env: FakeEnv; git: GitCliAdapter; paths: PathsService };
 
@@ -315,9 +315,9 @@ ${work}
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "wt-integrate-multi-"));
     home = join(root, "home");
-    workspace = join(root, "ws");
+    hub = join(root, "ws");
     mkdirSync(home, { recursive: true });
-    mkdirSync(workspace, { recursive: true });
+    mkdirSync(hub, { recursive: true });
     sources = {};
     for (const alias of ALIASES) {
       const path = join(root, alias);
@@ -330,16 +330,16 @@ ${work}
       git(path, "commit", "-m", "inicial");
       sources[alias] = path;
     }
-    writeFileSync(join(workspace, "CLAUDE.md"), multiBlock(sources));
-    const dir = join(workspace, ".workflow", "sessions", "103-uno-plan-exec");
+    writeFileSync(join(hub, "CLAUDE.md"), multiBlock(sources));
+    const dir = join(hub, ".workflow", "sessions", "103-uno-plan-exec");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "SESSION.md"), "# SESSION — 103-uno-plan-exec\n");
 
     deps = {
       fs: new NodeFileSystem(),
-      env: new FakeEnv(home, workspace),
+      env: new FakeEnv(home, hub),
       git: new GitCliAdapter(new NodeProcess()),
-      paths: new PathsService(normalizeNamespace("workflow"), home, workspace),
+      paths: new PathsService(normalizeNamespace("workflow"), home, hub),
     };
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -374,7 +374,7 @@ ${work}
     expect(result.next).toContain("aw worktree integrate --source beta --code 103-uno-plan-exec");
     // La unidad que choca SOBREVIVE: sus commits son el único lado suyo del merge.
     expect(git(sources.beta as string, "worktree", "list", "--porcelain")).toContain(
-      branchOf(workspace, "103-uno-plan-exec"),
+      branchOf(hub, "103-uno-plan-exec"),
     );
     expect(readFileSync(join(units.beta as string, "choque.txt"), "utf-8")).toBe("unidad beta\n");
     // Y la recogida del cierre no la tocó, porque lo suyo no está en la rama de trabajo.

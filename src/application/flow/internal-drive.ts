@@ -140,7 +140,7 @@ interface PendingInternal {
 /**
  * The operation, with a thrown error turned into a refusal.
  *
- * A service that throws — an unreadable workspace, a lock nobody released — must
+ * A service that throws — an unreadable hub, a lock nobody released — must
  * not take the whole invocation down with a stack trace: the run is standing on a
  * boundary, and what the person needs is that boundary back with a cause and the
  * row's recovery. Fail-closed here means "nothing is credited AND the run is still
@@ -373,7 +373,7 @@ export const INTERNAL_ACTION_REFUSED = "FLOW_INTERNAL_ACTION_REFUSED";
  *
  * An operation that REFUSED is a precondition to repair, not evidence to send:
  * dressing it as the verdict of an external result told whoever had to fix the
- * workspace to "return each demanded validation". Any other verdict over an
+ * hub to "return each demanded validation". Any other verdict over an
  * operation that did complete — it applied less than the row declares — is a
  * defect of the CLI itself, and keeps the verdict's own code.
  */

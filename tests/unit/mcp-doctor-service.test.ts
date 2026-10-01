@@ -39,14 +39,14 @@ describe("runMcpDoctor", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     if ("ok" in setup) throw new Error("setup refused");
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     expect(result.summary.ok).toBe(1);
     expect(result.reports[0]?.status).toBe("ok");
@@ -58,7 +58,7 @@ describe("runMcpDoctor", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     expect(result.summary.missing_mcp).toBe(1);
     expect(result.reports[0]?.status).toBe("missing-mcp");
@@ -69,7 +69,7 @@ describe("runMcpDoctor", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     expect(result.summary.missing_dsn).toBe(1);
     expect(result.reports[0]?.status).toBe("missing-dsn");
@@ -80,13 +80,13 @@ describe("runMcpDoctor", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     expect(result.summary.dsn_mismatch).toBe(1);
     expect(result.reports[0]?.status).toBe("dsn-mismatch");
@@ -111,7 +111,7 @@ describe("runMcpDoctor", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     expect(result.summary.foreign_entry).toBe(1);
     expect(result.reports[0]?.status).toBe("foreign-entry");
@@ -139,7 +139,7 @@ describe("runMcpDoctor", () => {
       hosts: ["claude"],
       connections: [ALPHA],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
 
     expect(result.reports[0]?.detail).toContain("rotá esa credencial");
@@ -153,14 +153,14 @@ describe("runMcpDoctor", () => {
       hosts: ["claude"],
       connections: [tenantAlpha],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     if ("ok" in setup) throw new Error("setup refused");
     const result = runMcpDoctor(env, paths, {
       hosts: ["claude"],
       connections: [tenantAlpha],
       scope: "workspace",
-      workspace: root,
+      hub: root,
     });
     expect(result.reports[0]?.dsn.present).toBe(true);
     expect(result.reports[0]?.dsn.key).toBe("TENANT_ALPHA_DATABASE_URL");

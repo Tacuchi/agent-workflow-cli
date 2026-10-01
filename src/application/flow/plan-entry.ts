@@ -5,10 +5,10 @@ import { checkSafeRelativePath } from "../../domain/safe-path.js";
 import { nodeFromDocPath } from "../../domain/workline-node.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
+import { readHubBlock } from "../parsers/hub-block.js";
 import { parsePhases } from "../parsers/phases.js";
-import { readWorkspaceBlock } from "../parsers/project-block.js";
 import { parseTasks } from "../parsers/tasks.js";
-import { type PathsService, resolveWorkspaceRootFrom } from "../paths-service.js";
+import { type PathsService, resolveHubRootFrom } from "../paths-service.js";
 import { planBoundaryAction, planGrammarAtEntry } from "../plan-lint-service.js";
 import { deriveInputs } from "../session-create-service.js";
 import { readCustody } from "../session-custody-service.js";
@@ -52,14 +52,14 @@ export async function observePlanEntry(
   if (!canon.ok) return unknown;
   const plan = await entryPlan(fs, paths, state, canon.canon);
   if (plan === null || !checkSafeRelativePath(plan).ok) return unknown;
-  const root = await resolveWorkspaceRootFrom(fs, paths);
+  const root = await resolveHubRootFrom(fs, paths);
   let text: string;
   try {
     text = await fs.readText(join(root, plan));
   } catch {
     return { plan, phases_without_open_tasks: null };
   }
-  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const block = await readHubBlock(fs, root, paths.blockMarkers());
   const failure = planGrammarAtEntry(text, block?.fuentes.map((source) => source.alias) ?? [])[0];
   const grammar_failure =
     failure === undefined

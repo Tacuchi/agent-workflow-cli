@@ -144,7 +144,7 @@ function violation(
  *   and charging for it charges for the envelope.
  * - `evaluated` — the decision arrived and did not resolve the gap. An execution
  *   that did not complete or left its effect half-applied, a scope naming sources
- *   the workspace or the plan does not, a proposal reaching past what its row
+ *   the hub or the plan does not, a proposal reaching past what its row
  *   declares, or an answer that declares nothing at all. Unknown literals,
  *   malformed proofs, copied digests and invocations are envelope errors.
  * - `control` — a real answer that deliberately applies nothing, or the same
@@ -181,7 +181,7 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   // outside the allowlist, a duplicate, an oversized artifact.
   SEMANTIC_PATH_REJECTED: "envelope",
   SEMANTIC_RESPONSE_INVALID: "envelope",
-  // The workspace's documentation layout is invalid before the boundary can
+  // The hub's documentation layout is invalid before the boundary can
   // inspect an answer. The flow returns its corrective action, but no attempt
   // was made at the pending decision.
   DOCS_CANON_INVALID: "envelope",
@@ -230,7 +230,7 @@ export const FLOW_ANSWER_REJECTIONS: Readonly<
   PLAN_TEST_FAILURES_UNREADABLE: "evaluated",
   PLAN_TEST_FAILURE_NEW: "evaluated",
   // The scope boundary distinguishes malformed fields and unavailable documents
-  // from a proposed source set that the workspace or plan cannot accept.
+  // from a proposed source set that the hub or plan cannot accept.
   FLOW_SCOPE_INVALID: "evaluated",
   FLOW_SCOPE_SHAPE_INVALID: "envelope",
   FLOW_SCOPE_UNKNOWN_SOURCE: "evaluated",
@@ -605,7 +605,7 @@ function checkSubstance(
  *
  * What comes back is path and content and nothing else. Whether a destination
  * already exists — and therefore whether writing it REPLACES something — is a
- * fact about the workspace, so it is observed where the workspace is readable and
+ * fact about the hub, so it is observed where the hub is readable and
  * never asserted by the sender: a preview that said "creates" because somebody
  * typed so would be the one line of it a person most needs to trust.
  */

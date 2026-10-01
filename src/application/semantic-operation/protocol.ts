@@ -40,7 +40,7 @@ export interface SemanticRequest {
    * meaningful only to the operation.
    *
    * It exists because the three stages are stateless: `validate` and `apply`
-   * rebuild the request from the workspace, and anything the rebuild derives
+   * rebuild the request from the hub, and anything the rebuild derives
    * from the invocation (which sessions, which day, which pending number) is a
    * seal input the invoker would otherwise have to reproduce by hand. Copied
    * back VERBATIM in the answer, it lets the later stages rebuild THIS request
@@ -59,7 +59,7 @@ export interface SemanticRequest {
   contract: string;
   /** Operation-specific consultative data (never authoritative). */
   inventory: unknown;
-  /** Workspace-relative directories an artifact may land in. */
+  /** Hub-relative directories an artifact may land in. */
   allowed_destinations: string[];
   limits: SemanticLimits;
   /** Everything the CLI read to build this — visible, so the cost is auditable. */
@@ -70,7 +70,7 @@ export interface SemanticRequest {
 export type SemanticState = "proposed" | "ambiguous" | "unsupported";
 
 export interface SemanticArtifact {
-  /** Workspace-relative path inside one of `allowed_destinations`. */
+  /** Hub-relative path inside one of `allowed_destinations`. */
   path: string;
   content: string;
 }
@@ -349,7 +349,7 @@ export function parseSemanticArtifacts(
 }
 
 /**
- * A destination is only legal if it is workspace-relative and lands INSIDE one
+ * A destination is only legal if it is hub-relative and lands INSIDE one
  * of the declared directories. Absolute paths, `..`, backslashes and bare
  * prefix matches (`docs/specs-evil`) are all rejected — the allowlist is the
  * write boundary, so it is checked on normalized segments, never on a string

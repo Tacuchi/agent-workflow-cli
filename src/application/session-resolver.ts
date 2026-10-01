@@ -248,7 +248,7 @@ export function sessionNumericCode(folder: string): string | null {
 /**
  * The sessions that carry ONE numeric identity.
  *
- * More than one is a workspace the durable record cannot index: `HISTORY.md` is
+ * More than one is a hub the durable record cannot index: `HISTORY.md` is
  * keyed by number, so the row of `047-algo-quick` and the row of the legacy
  * `session047-legacy-x` are the same row. It only happens where a legacy series
  * was never brought over, and the honest answer there is to say so rather than
@@ -283,7 +283,7 @@ export async function sessionsSharingNumber(
  * folder with no row in the history was invisible and its number got handed out
  * a second time. `aw sessions` filtered for all-digit codes over a field that,
  * for the current model, holds the WHOLE folder name — so it counted only the
- * legacy folders and announced `001` in a workspace whose next session was
+ * legacy folders and announced `001` in a hub whose next session was
  * going to be `004`. Announcing one number and assigning another is not a
  * cosmetic divergence: whoever reads the announcement writes it into a document
  * name, and the session that follows takes a different identity.
@@ -398,7 +398,7 @@ async function establishBinding(
   // Optimistic, and deliberately so. The common case is an association that
   // already points here — a loop re-running `--code NNN` every turn. Reading is
   // lock-free, so an ordinary session-scoped read neither contends for the
-  // workspace lock nor starts failing while another operation holds it.
+  // hub lock nor starts failing while another operation holds it.
   const current = await lookupBinding(fs, paths, id);
   if (current.status === "bound" && current.folder === resolution.session.folder) return null;
   if (current.status === "invalid") return bindingFailure(resolution.session, current.reason);

@@ -36,7 +36,7 @@ export async function probePersistedMcpSetupEntries(
   const probes: McpLaunchProbeRecord[] = [];
   const errors: McpErrorRecord[] = [];
   // Only global descriptors have the absolute command/entrypoint guarantee
-  // that this lifecycle probe proves. Workspace descriptors are deliberately
+  // that this lifecycle probe proves. Hub descriptors are deliberately
   // portable and PATH-dependent, so their doctor state remains actionable.
   if (result.dry_run || result.scope !== "global") return { probes, errors };
   const receipts = openMcpHostReceiptService(paths);

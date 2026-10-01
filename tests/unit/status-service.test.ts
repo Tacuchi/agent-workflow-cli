@@ -26,7 +26,7 @@ const NOW = new Date(2026, 5, 21, 15, 0, 0); // Sun 2026-06-21 15:00 local
 
 // ── fixture ──────────────────────────────────────────────────────────────────
 
-function fullWorkspace(): FakeFs {
+function fullHub(): FakeFs {
   const fs = new FakeFs();
   fs.file(
     "/cwd/CLAUDE.md",
@@ -79,7 +79,7 @@ function fullWorkspace(): FakeFs {
 
 describe("runStatusCommand — full dashboard", () => {
   it("avisa fila de otra máquina y colisión local con salida de renumerado", async () => {
-    const fs = fullWorkspace();
+    const fs = fullHub();
     fs.file(
       "/cwd/.workflow/HISTORY.md",
       "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 001-remota-quick | 2026-01-01 | active | — |\n| 099-retirada-quick | 2026-01-01 | retired | — |\n",
@@ -106,7 +106,7 @@ describe("runStatusCommand — full dashboard", () => {
   });
 
   it("usa la fecha más reciente entre HISTORY y CHECKPOINT y sólo la primera línea del nombre", async () => {
-    const fs = fullWorkspace();
+    const fs = fullHub();
     fs.file(
       "/cwd/CLAUDE.md",
       "<!-- WORKFLOW-HUB-START -->\n## Hub\nNombre\n\nDescripción\n<!-- WORKFLOW-HUB-END -->\n",
@@ -134,7 +134,7 @@ describe("runStatusCommand — full dashboard", () => {
   });
 
   it("aggregates workspace, specs, plans, sessions, discarded", async () => {
-    const out = await runStatusCommand(fullWorkspace(), fakeEnv, paths(), { now: NOW });
+    const out = await runStatusCommand(fullHub(), fakeEnv, paths(), { now: NOW });
 
     expect(out.hub).toEqual({
       name: "mi-workspace",
@@ -229,7 +229,7 @@ describe("runStatusCommand — full dashboard", () => {
   // Read-only is an acceptance criterion, not a description: reading the
   // workspace must not create a session, a document or a binding registry.
   it("writes nothing at all", async () => {
-    const fs = fullWorkspace();
+    const fs = fullHub();
     await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
     expect([...fs.writes.keys()]).toEqual([]);
   });
@@ -275,7 +275,7 @@ describe("runStatusCommand — full dashboard", () => {
   });
 
   it("drops legacy NNN-spec-refined.md when the base spec exists", async () => {
-    const fs = fullWorkspace();
+    const fs = fullHub();
     fs.file(
       "/cwd/docs/specs/003-spec-refined.md",
       "# old refined\n",
@@ -433,7 +433,7 @@ describe("runStatusCommand — spec maturity", () => {
 
 describe("runStatusCommand — phase progress", () => {
   it("a legacy plan keeps its checkbox progress and reports no phases", async () => {
-    const out = await runStatusCommand(fullWorkspace(), fakeEnv, paths(), { now: NOW });
+    const out = await runStatusCommand(fullHub(), fakeEnv, paths(), { now: NOW });
     expect(out.plans[0]).toMatchObject({
       tasks_total: 5,
       tasks_done: 2,

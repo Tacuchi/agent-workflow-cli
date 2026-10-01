@@ -2,8 +2,8 @@ import { join } from "node:path";
 import { coreDocumentKindForPath } from "../domain/docs-canon.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { resolveCoreDocsCanon } from "./docs-canon-service.js";
-import { readWorkspaceBlock } from "./parsers/project-block.js";
-import { type PathsService, resolveWorkspaceRootFrom } from "./paths-service.js";
+import { readHubBlock } from "./parsers/hub-block.js";
+import { type PathsService, resolveHubRootFrom } from "./paths-service.js";
 import {
   type PlanLineageFailure,
   type PlanLineageSeal,
@@ -40,7 +40,7 @@ export interface PlanLintViolation {
 
 export interface PlanLintReport {
   plan: string;
-  /** `false` when the WORKSPACE block could not be read: publication then judges semantics only. */
+  /** `false` when the hub block could not be read: publication then judges semantics only. */
   hub_block: boolean;
   violations: PlanLintViolation[];
 }
@@ -120,7 +120,7 @@ function actionFor(
  * The whole plan grammar, judged the way both gates judge it — without a session.
  *
  * Publication runs the source policy over the proposed bytes (only its semantic
- * half when the WORKSPACE block cannot be read) plus the lineage seal; the
+ * half when the hub block cannot be read) plus the lineage seal; the
  * execution entry runs the full source policy against the declared aliases.
  * The lint calls those same functions over the plan on disk, so it cannot
  * disagree with either gate, and it writes nothing: no session, no run, no seal.
@@ -138,7 +138,7 @@ export async function lintPlan(
       "corregí [docs] para conservar el layout canónico y volvé a correr el lint",
     );
   }
-  const root = await resolveWorkspaceRootFrom(fs, paths);
+  const root = await resolveHubRootFrom(fs, paths);
   const located = await locatePlanDocument(fs, root, canon.canon.plan, target);
   if (!located.ok) return refuse(LOCATOR_CODES[located.reason], located.message, located.action);
   // The gates judge only plan Markdown: anything else under the folder is not
@@ -168,7 +168,7 @@ export async function lintPlan(
       "revisá los permisos del archivo y volvé a correr el lint",
     );
   }
-  const block = await readWorkspaceBlock(fs, root, paths.blockMarkers());
+  const block = await readHubBlock(fs, root, paths.blockMarkers());
   const declared = block === null ? null : block.fuentes.map((source) => source.alias);
 
   const publication = await planGrammarAtPublication(
@@ -195,7 +195,7 @@ export async function lintPlan(
  * What publication refuses in a plan's bytes, and the seal it would stamp.
  *
  * The source policy runs whole against the declared aliases, or only its
- * semantic half when the WORKSPACE block cannot be read: answering an unreadable
+ * semantic half when the hub block cannot be read: answering an unreadable
  * block with "that alias does not exist" would reject a plan for something the
  * plan did not do. Final validation still resolves against versioned pipelines
  * for the sources the plan names. The lineage seal runs in the same stage, so
@@ -243,7 +243,7 @@ export async function planGrammarAtPublication(
 
 /**
  * What the execution entry refuses: the full source policy, where only the
- * reserved `workspace` alias resolves when the WORKSPACE block is unreadable.
+ * reserved `hub` alias resolves when the hub block is unreadable.
  */
 export function planGrammarAtEntry(
   text: string,

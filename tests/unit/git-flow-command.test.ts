@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import type { GitFlowResult } from "../../src/application/git-flow-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { renderProjectBlock } from "../../src/application/render/project-block.js";
+import { renderHubBlock } from "../../src/application/render/hub-block.js";
 import {
   type ConfirmFn,
   createGitFlowCommand,
@@ -45,7 +45,7 @@ describe("git-flow command", () => {
 
   beforeEach(async () => {
     cwd = await mkdtemp(join(tmpdir(), "aw-git-flow-cmd-"));
-    const block = renderProjectBlock({
+    const block = renderHubBlock({
       proyecto: "Test",
       fuentes: [{ alias: "core", path: "/repo/core", main_branch: "certificacion" }],
       stack: {},
@@ -154,7 +154,7 @@ describe("git-flow command", () => {
    * the aggregate and a CLI reading the head instead of `data.status` passes.
    */
   async function writeTwoSources(): Promise<void> {
-    const block = renderProjectBlock({
+    const block = renderHubBlock({
       proyecto: "Test",
       fuentes: [
         { alias: "core", path: "/repo/core", main_branch: "main" },

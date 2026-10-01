@@ -832,7 +832,7 @@ describe("sin tercer protocolo paralelo (AC-COMP-01)", () => {
       contract_version: 1,
       operation: "validate",
       caller: { route: "direct", host: "claude-code", flow: null },
-      context: { workspace: null, target: null, base: null, profile: null },
+      context: { hub: null, target: null, base: null, profile: null },
       inputs: [],
       policy: { sensitive_sources: false, external_transmission: false },
       authorizations: [],

@@ -1,7 +1,7 @@
 /**
  * A pass to production, as its own object.
  *
- * The workspace could already say a plan was CLOSED. Closed is not released, and
+ * The hub could already say a plan was CLOSED. Closed is not released, and
  * conflating them is how "done" came to mean the most finished thing the arnés
  * could name while the work sat unshipped. A pass is the missing axis: which
  * plans travelled together, over which sources, and whether each of those
@@ -47,7 +47,7 @@ export interface ReleasePass {
 /**
  * What constitutes a source's arrival.
  *
- * Three kinds because this workspace's own two sources arrive differently and
+ * Three kinds because this hub's own two sources arrive differently and
  * both are ordinary: `agent-workflow-cli` arrives by publishing a package
  * version, `ui-spec-generator` by its work reaching its production branch. A
  * deployment is the third shape the same fact takes elsewhere. None of them is
@@ -75,7 +75,7 @@ export interface SourceArrival {
  * derives the release axis by crossing arrivals against `pass.sources`, and
  * those are CODE source aliases as `AGENTS.md > Fuentes` spells them. An
  * environment is not a source: naming one in `SourceArrival.source` would make
- * any workspace whose alias happened to match an environment's name read its
+ * any hub whose alias happened to match an environment's name read its
  * release axis as arrived when nothing arrived at all. Two axes that answer two
  * questions stay two axes.
  *

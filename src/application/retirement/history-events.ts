@@ -44,7 +44,7 @@ export interface TerminalEvent {
  *
  * Every cell comes from the object that was authorized: the command, the target,
  * what disappeared or was restored, and what happened in git. A row assembled from
- * a later reading of the workspace could describe something the person never
+ * a later reading of the hub could describe something the person never
  * approved.
  */
 export function eventOf(proposal: RetirementProposal, now: Date = new Date()): TerminalEvent {

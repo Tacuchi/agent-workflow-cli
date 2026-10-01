@@ -20,6 +20,10 @@ import {
   readHistoryRows,
 } from "./history-table.js";
 import { upsertHistoryRow } from "./history-update-service.js";
+import {
+  type WorklineMaterialization,
+  ensureWorklineMaterialized,
+} from "./hub-materialization-service.js";
 import { withCwdLock } from "./lock-service.js";
 import { parseDerivedFromPath, specCriteriaLines } from "./parsers/spec-relation.js";
 import type { PathsService } from "./paths-service.js";
@@ -34,10 +38,6 @@ import {
   sessionNumericCode,
 } from "./session-resolver.js";
 import { renderSessionMarkdown } from "./templates/session.js";
-import {
-  type WorklineMaterialization,
-  ensureWorklineMaterialized,
-} from "./workspace-materialization-service.js";
 
 const VALID_TYPES = ["research", "refine", "exec", "quick"] as const;
 
@@ -50,7 +50,7 @@ export interface SessionCreateInput {
   /** Opaque conversation id; the new session becomes its associated line. */
   contextId?: string;
   /**
-   * Workspace-relative artifacts the run RECEIVES and may modify.
+   * Hub-relative artifacts the run RECEIVES and may modify.
    *
    * Declared at creation because that is the only moment their previous bytes
    * still exist to be sealed. A run that names its input here can be reset to the
@@ -88,7 +88,7 @@ export interface SessionCreateRecordOutput {
   /** Why nothing was sealed, whenever the flow DID have a document to look for. */
   inputs_note?: string;
   origin?: string;
-  /** First-write effects, or the idempotent marker reading on an existing workspace. */
+  /** First-write effects, or the idempotent marker reading on an existing hub. */
   materialization: WorklineMaterialization;
 }
 
@@ -214,7 +214,7 @@ async function localRegistryWarning(
   paths: PathsService,
   git: GitPort,
 ): Promise<string | undefined> {
-  const root = paths.workspaceDir();
+  const root = paths.hubDir();
   const file = paths.cwdHistoryFile();
   const localText = (await fs.exists(file)) ? await fs.readText(file) : "";
   const localRows = readHistoryRows(localText);
@@ -282,7 +282,7 @@ async function seededCriteria(
   const fixed = flow === null ? undefined : FLOW_SUCCESS_CRITERIA[flow];
   if (fixed === undefined) return [];
   const read = async (path: string): Promise<string | null> => {
-    const absolute = join(paths.workspaceDir(), path);
+    const absolute = join(paths.hubDir(), path);
     return (await fs.exists(absolute)) ? await fs.readText(absolute) : null;
   };
   // The document the run rests on, whatever order the inputs came in.
@@ -386,7 +386,7 @@ export async function deriveInputs(
 
   const relativeDir = coreDocumentDirectory(canon, flow.kind);
   const wanted = new RegExp(`^${CORRELATIVE_SOURCE}-${flow.kind}-${escapeRegExp(slug)}\\.md$`, "i");
-  const found = await listNames(fs, join(paths.workspaceDir(), relativeDir), wanted);
+  const found = await listNames(fs, join(paths.hubDir(), relativeDir), wanted);
   const only = found.length === 1 ? found[0] : undefined;
   if (only !== undefined) return { paths: [`${relativeDir}/${only}`] };
   return {
@@ -425,7 +425,7 @@ type Baselines = { artifacts: CustodyArtifact[] } | SessionCreateError;
 /**
  * The sealed previous state of every declared input, or the refusal.
  *
- * The path guard is the workspace's own (`checkSafeRelativePath`), the same one
+ * The path guard is the hub's own (`checkSafeRelativePath`), the same one
  * every other write boundary uses: a second, hand-rolled version of "is this
  * relative" is how two boundaries end up disagreeing about which paths are
  * allowed. A repeated input is collapsed rather than sealed twice — the baseline
@@ -437,7 +437,7 @@ async function readBaselines(
   inputs: readonly string[],
 ): Promise<Baselines> {
   const artifacts: CustodyArtifact[] = [];
-  const root = paths.workspaceDir();
+  const root = paths.hubDir();
   for (const raw of inputs) {
     const safe = checkSafeRelativePath(raw);
     if (!safe.ok) {
@@ -558,7 +558,7 @@ async function claimSessionFolder(
       }),
     );
     // The number travels in the durable register from birth, while the same
-    // workspace lock still owns its claim. A failed row leaves no usable session.
+    // hub lock still owns its claim. A failed row leaves no usable session.
     try {
       await upsertHistoryRow(fs, paths, {
         code: number,
@@ -592,7 +592,7 @@ async function claimSessionFolder(
  *
  * An input is the document the run works ON, so the document IS its parent — and
  * the edge is provable, because the path was declared by the caller and its
- * identity is fixed by the workspace layout. An input that names no spec or plan
+ * identity is fixed by the hub layout. An input that names no spec or plan
  * (a checkpoint, a loose file) contributes no parent rather than a guessed one.
  */
 function parentsOf(artifacts: readonly CustodyArtifact[], canon: CoreDocsCanon): WorklineNodeId[] {

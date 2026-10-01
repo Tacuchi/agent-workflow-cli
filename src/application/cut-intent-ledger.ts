@@ -4,7 +4,7 @@
  *
  * Same shape and same reasons as the claims ledger next to it: append-only, one
  * JSON record per line, under `.workflow/` and deliberately OUTSIDE `docs/`. The
- * corpus is for documents somebody published; an intent is workspace state, not a
+ * corpus is for documents somebody published; an intent is hub state, not a
  * document, and putting it in `docs/` would make the record itself look like a
  * spec or a plan.
  *
@@ -28,7 +28,7 @@ import { type WorklineNodeId, formatNodeId, isWorklineKind } from "../domain/wor
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
 
-/** Lives next to HISTORY.md and claims.jsonl: workspace state, never corpus. */
+/** Lives next to HISTORY.md and claims.jsonl: hub state, never corpus. */
 const LEDGER_FILE = "cut-intents.jsonl";
 const LEDGER_VERSION = 1;
 
@@ -175,7 +175,7 @@ export function currentIntentForPlan(
 }
 
 /**
- * What the workspace answers about one plan — the explicit reading, never a list.
+ * What the hub answers about one plan — the explicit reading, never a list.
  *
  * The `declared: false` branch carries its reason because the three ways a plan
  * can have no declared place are not the same thing to the person reading it:

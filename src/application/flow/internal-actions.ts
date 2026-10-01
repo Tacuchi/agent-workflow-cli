@@ -59,10 +59,11 @@ import {
   readClaimEvents,
   revokedAmong,
 } from "../claims-ledger.js";
+import { runHubCommit } from "../hub-commit-service.js";
 import { applyLocalProposal } from "../local-proposal.js";
 import { parseMdSectionBilingual } from "../markdown.js";
 import { parsePhases } from "../parsers/phases.js";
-import { type PathsService, resolveWorkspaceRoot } from "../paths-service.js";
+import { type PathsService, resolveHubRoot } from "../paths-service.js";
 import {
   type BatchPhaseUpdate,
   inferNextPlanExecBatch,
@@ -83,7 +84,6 @@ import { recordPublication } from "../session-custody-recorder.js";
 import { readCustody } from "../session-custody-service.js";
 import { runStatusCommand } from "../status-service.js";
 import { buildWorklineIndex } from "../workline-index-service.js";
-import { runWorkspaceCommit } from "../workspace-commit-service.js";
 import { type IsolationUnit, classifyListedUnits, runWorktree } from "../worktree-service.js";
 import { commitBatch, verifyBatchGitState } from "./batch-commit.js";
 import { observeScopedFingerprints, resolveCheckoutCandidates } from "./checkout-observation.js";
@@ -213,7 +213,7 @@ async function ensureUnits(
   }
   const acquired: IsolationUnit[] = [];
   for (const alias of scope.isolation === "in-place" ? [] : scope.sources) {
-    // `workspace` is the documentary/control checkout itself. It is a valid
+    // `hub` is the documentary/control checkout itself. It is a valid
     // source-bounded proof surface, but never a source repository that needs a
     // per-session Git worktree.
     if (alias === "hub") continue;
@@ -342,7 +342,7 @@ async function publish(
       canonicalJson({ proposal: null }),
     );
   }
-  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const root = await resolveHubRoot(deps.fs, deps.env, deps.paths);
   const applied = await applyLocalProposal(deps.fs, deps.paths, {
     root,
     proposal,
@@ -653,7 +653,7 @@ async function refineDestination(
   for (const artifact of custody.custody.artifacts) {
     if (artifact.role !== "input" || !/^docs\/plans\/\d{3,}-plan-[^/]+\.md$/.test(artifact.path))
       continue;
-    if (await deps.fs.exists(join(deps.paths.workspaceDir(), artifact.path))) return "";
+    if (await deps.fs.exists(join(deps.paths.hubDir(), artifact.path))) return "";
   }
   return refusal(
     "session.artifacts",
@@ -733,7 +733,7 @@ async function inferBatch(
     );
   }
   const scope = run.scope;
-  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const root = await resolveHubRoot(deps.fs, deps.env, deps.paths);
   const location = locateRun(deps.paths, run.session);
   const inferred = await applyUnderLock<{
     batch: PlanExecBatch | null;
@@ -845,7 +845,7 @@ async function publishSettlement(
       canonicalJson({ scope: null }),
     );
   }
-  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const root = await resolveHubRoot(deps.fs, deps.env, deps.paths);
   const read = await readRun(deps.fs, locateRun(deps.paths, run.session));
   if (!read.ok) {
     return refusal(
@@ -982,7 +982,7 @@ async function closeBatch(
       canonicalJson({ expected: run.state_digest, actual: live.state.digest }),
     );
   }
-  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const root = await resolveHubRoot(deps.fs, deps.env, deps.paths);
   let text: string;
   try {
     text = await deps.fs.readText(join(root, run.scope.plan));
@@ -1128,7 +1128,7 @@ const PLAN_DONE_REQUIRED_TRANSITIONS = [
  *
  * This is intentionally an internal action rather than a request to edit a
  * Markdown line.  The caller cannot assert that the plan is done: every retry
- * rereads the run, rechecks the documentary closure under the workspace lock,
+ * rereads the run, rechecks the documentary closure under the hub lock,
  * and publishes only the deterministic `Estado` / `Cierre` pair.
  */
 async function sealPlanDone(
@@ -1161,7 +1161,7 @@ async function sealPlanDone(
   const prerequisiteFailure = planDonePrerequisiteFailure(live.state);
   if (prerequisiteFailure !== null) return prerequisiteFailure;
 
-  const root = await resolveWorkspaceRoot(deps.fs, deps.env, deps.paths);
+  const root = await resolveHubRoot(deps.fs, deps.env, deps.paths);
   let text: string;
   try {
     text = await deps.fs.readText(join(root, run.scope.plan));
@@ -1198,7 +1198,7 @@ async function sealPlanDone(
     proposal,
     approval: { digest: proposal.digest, granted: [] },
     selfAuthorized: ["mutate_overwrite"],
-    // The index is re-read while the document publication holds the workspace
+    // The index is re-read while the document publication holds the hub
     // lock.  This closes the decision-note race: a new compensatory obligation
     // cannot appear between the run's earlier reading and a `done` write.
     precondition: () => planDonePrecondition(deps, run.scope?.plan ?? "", run.session),
@@ -1775,7 +1775,7 @@ async function commitClosedSession(
   try {
     const accepted: unknown = JSON.parse(approval.summary);
     if (!isCommitApproval(accepted)) return;
-    const commit = await runWorkspaceCommit(deps.fs, deps.git, undefined, deps.paths, {
+    const commit = await runHubCommit(deps.fs, deps.git, undefined, deps.paths, {
       code: run.session,
       approval: accepted.approval,
       withEvidence:

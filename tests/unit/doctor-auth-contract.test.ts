@@ -318,7 +318,7 @@ describe("el proveedor DSN", () => {
       hosts: [],
       hostStates: [],
       currentHost: null,
-      workspaceDir: home,
+      hubDir: home,
       skipNative: false,
       verifyAuthorization: [],
     });
@@ -336,7 +336,7 @@ describe("el proveedor DSN", () => {
       hosts: [],
       hostStates: [],
       currentHost: null,
-      workspaceDir: home,
+      hubDir: home,
       skipNative: false,
       verifyAuthorization: ["network_external"],
     });
