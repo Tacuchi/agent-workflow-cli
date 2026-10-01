@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
@@ -21,6 +21,7 @@ import {
   USER_COMMANDS_BY_TARGET,
   isOwnedBundleDir,
   removeDirIfEmpty,
+  retiredCommandPaths,
   sweepOwnedSynthesizedSkills,
 } from "./install-skill.js";
 import {
@@ -265,7 +266,21 @@ async function removeSynthesizedCommandSkills(
       steps.push({ target, kind: "skill", path, status: dryRun ? "dry-run" : "removed" });
     }
   }
+  for (const path of retiredCommandPaths(target, home)) {
+    if (!(await exists(path))) continue;
+    if (!dryRun) await rm(path, { recursive: true, force: true });
+    steps.push({ target, kind: "skill", path, status: dryRun ? "dry-run" : "removed" });
+  }
   return steps;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function removeSkill(

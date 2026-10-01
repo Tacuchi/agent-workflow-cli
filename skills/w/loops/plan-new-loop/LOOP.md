@@ -82,7 +82,7 @@ A `### Fn` is a **verifiable state of the system**, never a list of layers, file
 ```markdown
 ### F1 — <result-oriented name>
 > Estado: pendiente
-> Fuentes: workspace, <declared-source>
+> Fuentes: hub, <declared-source>
 
 **Resultado:** <the new verifiable state of the system>
 **Trabajo:**
@@ -121,7 +121,7 @@ Replaces the spec taxonomy with a planning one:
 
 > **Author the Solution the laziest-that-works way** (chassis § *Minimality*, generative side): reuse what the codebase/stdlib/platform already provides before adding abstractions, layers or dependencies — the gate then *confirms* minimality instead of repairing over-engineering.
 
-Final validation uses source pipelines. Override under `## Validations`: `- Validación final · \`<alias>\` · build \`<comando>\` · tests \`<comando>\``. Either command may be omitted. Alias must be a phase source, not `workspace`; each clause needs local proof.
+Final validation uses source pipelines. Override under `## Validations`: `- Validación final · \`<alias>\` · build \`<comando>\` · tests \`<comando>\``. Either command may be omitted. Alias must be a phase source, not `hub`; each clause needs local proof.
 
 ## Delta 3 — What research investigates here
 

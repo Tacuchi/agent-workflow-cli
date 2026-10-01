@@ -138,7 +138,7 @@ describe("ConfigTab — sección RAMAS (workspace)", () => {
     );
     await tick();
     const frame = lastFrame() ?? "";
-    expect(frame).toContain("RAMAS (WORKSPACE)"); // SectionHead uppercases
+    expect(frame).toContain("RAMAS (HUB)"); // SectionHead uppercases
     for (const label of ["Rama principal", "Rama de desarrollo", "Rama QA"]) {
       expect(frame).toContain(label);
     }
@@ -294,7 +294,7 @@ describe("ConfigTab", () => {
       "Accent color",
       "ON OPEN",
       "Initial screen",
-      "WORKSPACE",
+      "HUB",
       "Namespace",
       "Profile",
       "Claude Code",

@@ -1,11 +1,11 @@
 ---
 name: export-reports
-description: "Executive/functional report consolidating N workspace sessions under `docs/reports/`. Publishes only the report and proposes an exact-path workspace commit, executed by the CLI only with approval. The prose follows ambient writing conventions. User-invoked via `/w:export-reports`."
+description: "Executive/functional report consolidating N hub sessions under `docs/reports/`. Publishes only the report and proposes an exact-path hub commit, executed by the CLI only with approval. The prose follows ambient writing conventions. User-invoked via `/w:export-reports`."
 ---
 
 # export-reports — executive/functional report from the session corpus + `docs/`
 
-Generates a single `.md` consolidating N workspace sessions into an **executive/functional** report: what was done, key decisions, results/conclusions and pending/roadmap. It does not mutate sessions or the source corpus; after publication the CLI proposes an optional approved commit.
+Generates a single `.md` consolidating N hub sessions into an **executive/functional** report: what was done, key decisions, results/conclusions and pending/roadmap. It does not mutate sessions or the source corpus; after publication the CLI proposes an optional approved commit.
 
 > `export-*` family (the only artifact→`docs/` path). It **merges** two legacy exports into one `docs/reports` output: the executive report and the cross-session recommendation dedup. Design: `docs/referencias/workflow-exports/export-reports.md`.
 
@@ -68,7 +68,7 @@ In plan mode it **describes**, never writes: the resolved audience/length, the c
 |---|---|
 | `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
 | `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
-| `--source <alias>` | Limits to one source (multi-source workspace) |
+| `--source <alias>` | Limits to one source (multi-source hub) |
 | `--audience gerencia\|tecnica` | Modulates length/lexicon: `gerencia` ≈ short/executive; `tecnica` ≈ detailed |
 | `--slug <kebab>` | Filename slug override (default: `export-reports`) |
 | `--dry-run` | Propositional report, no writing |
@@ -95,7 +95,7 @@ Render applying the ambient writing conventions (host): Executive summary · Wha
 
 ### Step 5 — Write or report
 
-`aw next-number docs/reports` → `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. With `--dry-run`: print; write nothing. After publication the CLI proposes `aw workspace-commit prepare --export <ruta>`; only an explicit approval runs `apply --approval <digest>` with exact paths and no push. Summary to the user: path, audience/length, covered sessions (count + range), consolidated R-items, and a note if a conditional section was omitted.
+`aw next-number docs/reports` → `docs/reports/NNN-<slug>-YYYY-MM-DD.md`. With `--dry-run`: print; write nothing. After publication the CLI proposes `aw hub-commit prepare --export <ruta>`; only an explicit approval runs `apply --approval <digest>` with exact paths and no push. Summary to the user: path, audience/length, covered sessions (count + range), consolidated R-items, and a note if a conditional section was omitted.
 
 ## Output location
 

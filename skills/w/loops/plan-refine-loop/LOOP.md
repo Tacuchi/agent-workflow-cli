@@ -129,7 +129,7 @@ The primary proof lives **inside its `### Fn` block** (`Validación de fase`); `
 This loop's instance of the chassis convergence gate — the same one `plan-exec` verifies on entry. Whatever fails comes back as a gap:
 
 - **Contract** — relevant inputs, outputs and observable states identified; the final behavior matches the spec; no functional criterion invented here.
-- **Journey** — main components identified, order reasonable, repo/process boundaries visible, the described architecture the one the project actually has.
+- **Journey** — main components identified, order reasonable, repo/process boundaries visible, the described architecture the one the system actually has.
 - **Phases** — each leaves a verifiable state with its exit condition, none is a list of layers or files, the order allows early integration, deferrals are explicit.
 - **Grammar** — `aw plan lint` reports no violation; it covers sources, closing clauses, the execution limit and lineage.
 - **Source-bounded semantics** — read the meaning of every task, phase validation and exit condition. A deployed product, installed host, MCP connection or remote URL may be research context or `Handoff operativo`, never a prerequisite or proof of closure; rewrite it as a fixture, ephemeral dependency or checkout inspection. This is semantic review, not a word denylist.

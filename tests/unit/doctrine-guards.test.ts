@@ -1388,13 +1388,13 @@ describe("Doctrine guards — G20 · what a pending item owes, and how the choic
     expect(doc).toContain("`validada`");
   });
 
-  it("`status` reports a loose session as a notice, and recognizes an empty implicit workspace", async () => {
+  it("`status` reports a loose session as a notice, and recognizes an empty implicit hub", async () => {
     const doc = await readSurface("commands/status.md");
     expect(doc).toContain("Sessions are not the user's work");
     expect(doc).toMatch(/\*\*notice\*\*/);
     expect(doc).toContain("never a pending row");
     expect(doc).toContain("Nothing pending");
-    expect(doc).toContain("implicit workspace");
+    expect(doc).toContain("implicit hub");
     expect(doc).toContain('genuinely "nothing pending"');
     expect(doc).toContain("this read creates no marker");
   });
@@ -1800,7 +1800,7 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     // de verdad protege: commitear, integrar, y recién entonces sellar.
     expect(exec).toContain("commit each unit, integrate it, and only then seal `done`");
     expect(exec).toContain("a session holding a live unit does NOT close");
-    expect(batches).toContain("`done` is sealed after git/integration in the workspace plan");
+    expect(batches).toContain("`done` is sealed after git/integration in the hub plan");
     expect(exec).toContain("if plan is not done:");
     expect(exec).toContain(
       "then CLI seals plan: > Estado: done + > Cierre: run evidence + > Assurance: verdict",

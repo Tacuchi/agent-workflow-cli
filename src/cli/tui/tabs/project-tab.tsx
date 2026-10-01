@@ -72,7 +72,7 @@ export function ProjectTab({ ctx, isActive, onRunAction }: ProjectTabProps) {
       // `warnings` instead of tanking the render — surface them to the daily log
       // so a degraded workspace view leaves a durable, greppable trace.
       for (const w of out.warnings) {
-        void ctx.logger?.warn(formatTuiEvent("workspace data", "warning", w));
+        void ctx.logger?.warn(formatTuiEvent("hub data", "warning", w));
       }
     } finally {
       setLoading(false);
@@ -452,7 +452,7 @@ function Initialized({
           : {
               kind: "notice",
               tone: "ok",
-              lines: [`Quitada ${alias} del workspace.`],
+              lines: [`Quitada ${alias} del hub.`],
             },
       );
       await onReload?.();
@@ -517,7 +517,7 @@ function Initialized({
 
   const detailActions: DetailAction[] = detailItems.map((it) => {
     if (it.kind === "remove") {
-      return { name: "Quitar del workspace", description: "detach + poda bloque" };
+      return { name: "Quitar del hub", description: "detach + poda bloque" };
     }
     const fa = FLOW_ACTIONS.find((a) => a.id === it.action);
     return { name: fa?.name ?? it.action, description: fa?.description ?? "" };
@@ -525,10 +525,7 @@ function Initialized({
 
   return (
     <Box flexDirection="column">
-      <PageHead
-        title={`Workspace · ${shortName}`}
-        action={<Text color={colors.faint}>{wsPath}</Text>}
-      />
+      <PageHead title={`Hub · ${shortName}`} action={<Text color={colors.faint}>{wsPath}</Text>} />
       {description ? (
         <Box marginBottom={1}>
           <Text color={colors.dim} wrap="truncate-end">
@@ -748,7 +745,7 @@ function renderProjectMode(
   if (mode.kind === "busy") {
     return (
       <Box flexDirection="column">
-        <SectionHead label="Workspace" hint={mode.label} />
+        <SectionHead label="Hub" hint={mode.label} />
         <Box marginLeft={2} marginTop={1}>
           <Text color={colors.warn}>
             {icons.spinner} {mode.label}
@@ -761,12 +758,12 @@ function renderProjectMode(
   if (mode.kind === "confirm-remove") {
     return (
       <Box flexDirection="column">
-        <SectionHead label="Quitar del workspace" marginTop={0} />
+        <SectionHead label="Quitar del hub" marginTop={0} />
         <Box marginLeft={2} marginTop={1} flexDirection="column">
-          <Text color={colors.warn}>¿Quitar {mode.alias} del workspace?</Text>
+          <Text color={colors.warn}>¿Quitar {mode.alias} del hub?</Text>
           <Box marginLeft={2} marginTop={1} flexDirection="column">
             <Text color={colors.dim}>
-              Sale del bloque WORKSPACE (Fuentes + ramas), de la visibilidad multi-root,
+              Sale del bloque del hub (Fuentes + ramas), de la visibilidad multi-root,
             </Text>
             <Text color={colors.dim}>conserva los artefactos y procesos locales anteriores.</Text>
             <Text color={colors.faint}>El repo en disco NO se borra.</Text>
@@ -890,7 +887,7 @@ function renderProjectWarnings(warnings: string[]) {
     <Box marginBottom={1} flexDirection="column">
       <Text color={colors.warn} wrap="truncate-end">
         {icons.alertDot} {warnings.length} advertencia
-        {warnings.length > 1 ? "s" : ""} al cargar el workspace (datos parciales)
+        {warnings.length > 1 ? "s" : ""} al cargar el hub (datos parciales)
       </Text>
       {warnings.slice(0, 3).map((w, i) => (
         <Text key={`${i}-${w.slice(0, 16)}`} color={colors.faint} wrap="truncate-end">

@@ -23,7 +23,7 @@ const DEFAULT_MAIN_BRANCH = "main";
  * No project/hub distinction: a workspace simply has 1+ sources.
  */
 type Step =
-  | { kind: "proyecto" }
+  | { kind: "nombre" }
   | { kind: "fuente"; proyecto: string; fuentes: WorkspaceSource[] }
   | { kind: "rama"; proyecto: string; fuentes: WorkspaceSource[] }
   | { kind: "working"; proyecto: string; fuentes: WorkspaceSource[]; mainBranch: string }
@@ -44,7 +44,7 @@ export function WorkspaceInitForm({
   onDone,
   onCancel,
 }: WorkspaceInitFormProps) {
-  const [step, setStep] = useState<Step>({ kind: "proyecto" });
+  const [step, setStep] = useState<Step>({ kind: "nombre" });
 
   // Esc cancels at any input step (not while the workspace is being written).
   useInput(
@@ -84,7 +84,7 @@ export function WorkspaceInitForm({
           ok: result.ok,
           summary: result.ok
             ? `Fuentes configuradas · ${fuentes.length}${multiroot}${migration}`
-            : "workspace-init no completó",
+            : "hub-init no completó",
         });
       } catch (err) {
         onDone({ ok: false, summary: (err as Error).message });
@@ -103,7 +103,7 @@ export function WorkspaceInitForm({
     );
   }
 
-  if (step.kind === "proyecto") {
+  if (step.kind === "nombre") {
     return (
       <Box flexDirection="column">
         <SectionHead
@@ -113,8 +113,8 @@ export function WorkspaceInitForm({
         />
         <Box marginLeft={2} marginTop={1}>
           <InputPrompt
-            key="proyecto"
-            message="Nombre del workspace:"
+            key="nombre"
+            message="Nombre del hub:"
             defaultValue={defaultProyecto}
             validate={(v) => v.trim().length > 0 || "El nombre no puede estar vacío"}
             onSubmit={(v) => setStep({ kind: "fuente", proyecto: v.trim(), fuentes: [] })}

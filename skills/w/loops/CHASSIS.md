@@ -97,7 +97,7 @@ Which resolver a gap gets is the kind of thing it is, and the CLI classifies it:
 Investigation runs **inside the run's current session**, never a separate session. It writes its artifacts (`ANALYSIS-FILE` → `CONCLUSIONS`, + read-only `SCRIPTS.sql` if it queries DB) **into the session's own folder**.
 
 - **Autonomous**: the AI investigates and reports **without asking permission**. The human keeps control via the `flow` control.
-- **Scope**: the current conversation (settled conclusions are reused, never re-derived) + workspace + associated repos + DB MCPs.
+- **Scope**: the current conversation (settled conclusions are reused, never re-derived) + hub + associated repos + DB MCPs.
 - **DB rule** — the single exception to autonomy: it lives in the `db` module and is loaded **before** any query runs.
 - **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes **`inconclusive`** in `CONCLUSIONS` with its reason. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — instead of re-firing it. Capping the attempts is the CLI's; declaring where a degraded gap GOES is doctrine's, because a gap dropped without a destination is this engine's promised convergence, faked.
 

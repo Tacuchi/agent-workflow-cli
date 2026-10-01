@@ -15,7 +15,7 @@ Output in the **user's language**.
    so a wrong target costs nothing.
 2. **You never decide the scope.** It comes from sealed custody and each document's
    `Derived from`; a descendant nobody can prove is a REFUSAL, not a guess.
-3. **One approval, over the exact digest.** `apply` recomputes under the workspace
+3. **One approval, over the exact digest.** `apply` recomputes under the hub
    lock and refuses if anything material moved. Approving is not applying.
 4. **Reverts are commits, never rewrites** — no `reset --hard`, rebase, amend, force
    or push; a published commit's revert leaves its push pending and external.

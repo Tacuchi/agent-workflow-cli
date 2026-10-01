@@ -172,7 +172,7 @@ function exportHelp(category: ExportCategory): CommandHelp {
             : {}),
         },
         output:
-          '{stage: "apply", category, written[], commit_proposal? (the workspace commit offer for the written paths), commit_proposal_error?}.',
+          '{stage: "apply", category, written[], commit_proposal? (the hub commit offer for the written paths), commit_proposal_error?}.',
         notes: ["The same envelope validate accepted goes on stdin again."],
       },
     },

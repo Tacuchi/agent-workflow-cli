@@ -219,7 +219,7 @@ export function ConfigTab({
         <InitialScreenValue currentId={prefs.initialScreen} />
       </FocusRow>
 
-      <SectionHead label="WORKSPACE" marginTop={1} />
+      <SectionHead label="HUB" marginTop={1} />
       {editing?.kind === "namespace" ? (
         <Box marginLeft={2}>
           <InputPrompt
@@ -277,7 +277,7 @@ export function ConfigTab({
       {branches ? (
         <>
           <SectionHead
-            label="RAMAS (workspace)"
+            label="RAMAS (hub)"
             hint="fallback por rol cuando la fuente no la declara"
             marginTop={1}
           />

@@ -18,7 +18,7 @@ One pass, in this order: **adopt** what the conversation already settled (never 
 **identify** the candidate sources, **look** at their surface, **stop**.
 
 - **Sources allowed** (a permission, not an obligation to read them all):
-  - the workspace's registered sources — `aw sources --no-git`, or the `WORKSPACE` block.
+  - the hub's registered sources — `aw sources --no-git`, or the hub block.
   - each candidate source's main instructions file, plus the head of its `README`.
   - build manifests: `package.json`, `pom.xml`, `build.gradle`, `requirements.txt`, equivalents.
   - a top-level directory listing per candidate source.
@@ -42,7 +42,7 @@ sources · apparent responsibility of each · coupling · independent acceptance
 exists so the cut is never intuitive but opaque; its only visible residue is what the filling
 notes admit.
 
-**Degrade safely.** A missing workspace, unreachable sources or contradictory evidence **never**
+**Degrade safely.** A missing hub, unreachable sources or contradictory evidence **never**
 block the command and **never** justify a speculative cut. Keep **one spec**, declare the
 assumption used, and record the uncertainty for `spec-refine`. Prefer the functional outcome the
 user declared over any inference drawn from the code.

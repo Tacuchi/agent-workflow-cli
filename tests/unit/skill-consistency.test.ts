@@ -574,14 +574,14 @@ describe("directed resume contract — resume.md optional argument (spec 004)", 
   });
 });
 
-describe("implicit workspace contract — code ↔ doctrine", () => {
+describe("implicit hub contract — code ↔ doctrine", () => {
   it("hub-init.md distinguishes runtime materialization from source configuration", async () => {
     const doc = await readSurface("commands/hub-init.md");
     expect(doc).toMatch(/minimal/i);
     expect(doc).toContain(".<namespace>/sessions/");
     expect(doc).toContain("does not create");
     expect(doc).toContain("skills.toml");
-    expect(doc).toContain("WORKSPACE block");
+    expect(doc).toContain("hub block");
     expect(doc).toContain("HISTORY.md");
     expect(doc).toContain("reserved");
   });
@@ -591,7 +591,7 @@ describe("implicit workspace contract — code ↔ doctrine", () => {
     // the two READMEs echo the same root rule.
     for (const rel of ["SKILL.md", "README.md", "commands/README.md"]) {
       const text = await readFile(join(SKILL_ROOT, rel), "utf8");
-      expect(text, `${rel} must describe the implicit root`).toMatch(/implicit workspace/i);
+      expect(text, `${rel} must describe the implicit root`).toMatch(/implicit hub/i);
       expect(text, `${rel} must not make init mandatory`).not.toMatch(/run .*hub-init.*once/i);
       expect(text, `${rel} must not promise the old scaffold`).not.toMatch(
         /`\.workflow\/` \+ `\.workflow\/skills\.toml`/,

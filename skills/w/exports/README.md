@@ -65,12 +65,12 @@ Exports read the corpus through the CLI — **never hard-coded paths**:
 
 - `aw sessions` — lists active sessions only; do not use it to enumerate the cross-session corpus.
 - `aw release-data [--since sessionNNN] [--source alias] [--include-graduated] [--standalone-sql]` — consolidated dump of sessions (corpus enumeration); `--include-graduated` adds the previous `docs/scripts` bundles (modern and legacy naming) and `--standalone-sql` the loose top-level `*.sql`.
-- `aw export-scripts prepare [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>]` — composes the origin and declares it: where it started, what stayed in, what stayed out and why. These three flags are this export's alone.
+- `aw export-scripts prepare [--from sessions|bundles|hub] [--exclude <nombre>] [--environment <ambiente>]` — composes the origin and declares it: where it started, what stayed in, what stayed out and why. These three flags are this export's alone.
 - `aw release-pass link --artifact <ruta> | applied --environment <ambiente>` — the book `--environment` reads: `link` attaches a bundle to a pass by path, `applied` records that its SQL RAN there. Nothing inspects a database.
 - `aw session-artifacts --code <NNN> [--dump [kinds]]` — counts by default; `--dump` returns `{path, content, size}` per artifact (objetivo, decisiones, conclusiones, tasks, checkpoint, backlog, scripts).
-- `aw next-number docs/<category>` — deterministic numbering of the output. It also **creates the category folder when missing** (workspace-init no longer scaffolds docs/ upfront) — this is what makes destination resolution a CLI guarantee. In plan/dry-run mode call it with `--dry-run` (pure query, creates nothing).
+- `aw next-number docs/<category>` — deterministic numbering of the output. It also **creates the category folder when missing** (hub-init no longer scaffolds docs/ upfront) — this is what makes destination resolution a CLI guarantee. In plan/dry-run mode call it with `--dry-run` (pure query, creates nothing).
 
-> The destination-folder resolution (workspace root, single- vs multi-source, on-demand creation) is handled by the CLI internally. If a specific flag is uncertain at implementation time, it is noted inline in each SKILL.
+> The destination-folder resolution (hub root, single- vs multi-source, on-demand creation) is handled by the CLI internally. If a specific flag is uncertain at implementation time, it is noted inline in each SKILL.
 
 ## 6 Hard invariants (never violate)
 

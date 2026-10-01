@@ -7,6 +7,7 @@ import {
   COMMAND_SKILL_MARKER,
   SKILL_DIR_NAME,
   TARGET_ROOTS,
+  retiredCommandPaths,
 } from "../../src/application/self/install-skill.js";
 import type { InstallTarget } from "../../src/application/self/install-skill.js";
 import { selfUninstall } from "../../src/application/self/uninstall.js";
@@ -111,6 +112,25 @@ describe("selfUninstall (full uninstall — 8 targets, hooks, flatten sweep)", (
       expect(await fs.exists(p)).toBe(false);
     }
   });
+
+  it.each(["codex", "warp", "oz", "gemini", "kimi"] as const)(
+    "desinstalar %s retira por nombre el w-workspace-init sin marcador",
+    async (target) => {
+      const ctx = buildCtx(home, fs);
+      await seedDir(skillDir(home, target));
+      const stale = retiredCommandPaths(target, home).filter((path) =>
+        path.endsWith("w-workspace-init"),
+      );
+      expect(stale.length).toBeGreaterThan(0);
+      for (const path of stale) {
+        await mkdir(path, { recursive: true });
+        await writeFile(join(path, "SKILL.md"), "---\nname: workspace-init\n---\nsin marcador\n");
+      }
+      const result = await selfUninstall(buildArgs({ target }, []), ctx);
+      expect(result.ok).toBe(true);
+      for (const path of stale) expect(await fs.exists(path), path).toBe(false);
+    },
+  );
 
   it("la ruta de uninstall que usa la TUI no modifica la configuración MCP global", async () => {
     const ctx = buildCtx(home, fs);

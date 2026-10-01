@@ -45,18 +45,18 @@ In plan mode do **not** call `prepare` (it reserves a folder): describe the orig
 **Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
-/w:export-scripts [--from sessions|bundles|workspace] [--exclude <nombre>]… [--environment <ambiente>]
+/w:export-scripts [--from sessions|bundles|hub] [--exclude <nombre>]… [--environment <ambiente>]
                   [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>] [--code <sesión>] [--catalog <conexión>]
 ```
 
 | Flag | Behavior |
 |---|---|
-| `--from <base>` | The base: `sessions` (default) · `bundles` · `workspace` (all three) |
+| `--from <base>` | The base: `sessions` (default) · `bundles` · `hub` (all three) |
 | `--exclude <nombre>` | Subtracts one piece by the name the inventory prints. **Repeatable** |
 | `--environment <ambiente>` | Subtracts bundles the book records as applied there; no record is reported as such |
 | `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
 | `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
-| `--source <alias>` | Limits to one source (multi-source workspace) |
+| `--source <alias>` | Limits to one source (multi-source hub) |
 | `--catalog <connection>` | Optional read-only target catalog check, repeated on validate and apply |
 | `--code <sesión>` | Owns the folder reservation; without it, the sealed operation owns it |
 
@@ -132,7 +132,7 @@ For every forward `<categoría>/NN-<nombre>.sql`, write `rollback/<categoría>/N
 
 ### Step 8 — Write or report
 
-Publish through the three stages (`prepare` → `validate` → `apply --approval`); in plan mode, describe instead. Once published, the CLI proposes `aw workspace-commit prepare --export <ruta>` and executes `apply --approval <digest>` only with explicit approval, with exact paths and no push. Summary: one line per file + the bundle path, naming the origin and what stayed out.
+Publish through the three stages (`prepare` → `validate` → `apply --approval`); in plan mode, describe instead. Once published, the CLI proposes `aw hub-commit prepare --export <ruta>` and executes `apply --approval <digest>` only with explicit approval, with exact paths and no push. Summary: one line per file + the bundle path, naming the origin and what stayed out.
 
 ## Output location
 

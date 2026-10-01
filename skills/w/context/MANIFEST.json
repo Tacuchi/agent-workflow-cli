@@ -15,7 +15,7 @@
     "simulation": "the change carries temporary behavior with a boundary to declare",
     "compaction": "the run is long enough that context pressure governs its pacing",
     "sessions": "a session other than this run's own has to be located, named or reopened",
-    "web": "the run needs evidence from outside the workspace",
+    "web": "the run needs evidence from outside the hub",
     "reconnaissance": "a draft is being cut from a raw prompt over unfamiliar terrain",
     "detection": "the CLI's automatic detection was wrong or ambiguous",
     "scaffold": "the target has materialized runtime or needs its materialization/configuration contract",
@@ -471,7 +471,7 @@
           "signal": "plan-mode"
         },
         {
-          "path": "modules/WORKSPACE-SCAFFOLD.md",
+          "path": "modules/HUB-SCAFFOLD.md",
           "signal": "scaffold"
         }
       ]

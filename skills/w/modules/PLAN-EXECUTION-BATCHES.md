@@ -59,7 +59,7 @@ action go to `CHECKPOINT`.
 
 A green batch proposes one message and exact paths per changed source. After its approval the CLI
 commits only those paths and verifies git before the next batch; approval alone is not a commit.
-No paths means no commit. `done` is sealed after git/integration in the workspace plan, not in a
-source commit; a later workspace-close commit may carry it. An unrun check is never green.
+No paths means no commit. `done` is sealed after git/integration in the hub plan, not in a
+source commit; a later hub-close commit may carry it. An unrun check is never green.
 
 > **What proves the batch was green is not this document's call:** `aw flow` decides — positionally, behind the delegated validation and the review, neither of which a narration can pass.

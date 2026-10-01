@@ -62,7 +62,7 @@ Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's
 
 > **Origin on escalation:** when the run is born from quick-loop's live escalation, the session's `## Origin` records "escalated from `/w:quick`" + the origin quick session if it exists (its `DECISION`/`SCRIPTS.sql` are referenceable context — never migrated).
 
-> **Compat (legacy):** old workspaces may hold `NNN-spec.md` / `NNN-spec-refined.md` and separate `*-research-*` sessions — historical, left as-is. The `NNN-spec*.md` glob still finds the base spec, and re-running spec-refine edits it in place from then on.
+> **Compat (legacy):** old hubs may hold `NNN-spec.md` / `NNN-spec-refined.md` and separate `*-research-*` sessions — historical, left as-is. The `NNN-spec*.md` glob still finds the base spec, and re-running spec-refine edits it in place from then on.
 
 ## Functional UI decisions
 
@@ -74,7 +74,7 @@ Research remains inline (chassis § *Research*) and the DB rule applies inside r
 
 ## Current-behavior baseline (brownfield first)
 
-When the project already exists, establish the current behavior the change rests on **before** describing the change: what happens today, which actor starts or receives it, which capabilities take part, which existing rules and observable limits shape the request — each with its source.
+When the system already exists, establish the current behavior the change rests on **before** describing the change: what happens today, which actor starts or receives it, which capabilities take part, which existing rules and observable limits shape the request — each with its source.
 
 **Stop when the baseline is enough to state and accept the functional change**, not when the system is documented. Architecture and tasks belong to `PLAN`; Greenfield has no baseline. An implemented spec is historical origin, not a competing contract: the new spec prevails. No re-refine, no reconcile or edit of that old spec to align it with the new one, before or after. Cite it in `## Origin`; state the replacement of existing behavior in `## Affected capabilities` and `## Behavioral changes`.
 

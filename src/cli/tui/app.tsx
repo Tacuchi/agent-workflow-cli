@@ -42,7 +42,7 @@ const TAB_BY_KEY: Record<string, TabId> = Object.fromEntries(TABS_LIST.map((t) =
 // Action ids that exit the TUI and hand off to the CLI (main's
 // `dispatchMenuAction`) as the mapped MenuAction.
 const EXIT_ACTIONS: Record<string, MenuAction | undefined> = {
-  "workspace-init": "hub-init",
+  "hub-init": "hub-init",
   "install-skill": "install-skill",
   "self:doctor": "doctor",
   "self:update": "update",
@@ -376,7 +376,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
               disabledHosts={prefs.disabledHosts}
             />
           ) : null}
-          {activeTab === "project" ? (
+          {activeTab === "hub" ? (
             <ProjectTab ctx={ctx} isActive={true} onRunAction={runAction} />
           ) : null}
           {activeTab === "mcp" ? (
@@ -425,7 +425,7 @@ async function resolveProjectName(ctx: CliContext): Promise<string> {
   } catch {
     // fallback below
   }
-  return basename(cwd) || "workspace";
+  return basename(cwd) || "hub";
 }
 
 async function loadWorkspaceContext(ctx: CliContext): Promise<WorkspaceContext> {

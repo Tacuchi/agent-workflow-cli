@@ -1,6 +1,6 @@
 ---
-description: Use to consolidate the workspace's pending SQL into a docs/scripts/ bundle from a declared origin — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes DML/DDL. Never automatic.
-argument-hint: "[--code <session>] [--from sessions|bundles|workspace] [--exclude <nombre>] [--environment <ambiente>] [--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
+description: Use to consolidate the hub's pending SQL into a docs/scripts/ bundle from a declared origin — continuous forwards plus rollback. `aw export-scripts` checks shape and NEVER executes DML/DDL. Never automatic.
+argument-hint: "[--code <session>] [--from sessions|bundles|hub] [--exclude <nombre>] [--environment <ambiente>] [--sessions <ids>] [--since <YYYY-MM-DD>] [--source <alias>]"
 allowed-tools: ["Bash", "Read"]
 ---
 

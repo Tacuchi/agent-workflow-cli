@@ -1,7 +1,7 @@
 // Shared types of the TUI shell — single source for the tab list, the
 // workspace context and the global keymap.
 
-export type TabId = "status" | "workflow" | "project" | "mcp" | "config";
+export type TabId = "status" | "workflow" | "hub" | "mcp" | "config";
 
 export interface TabConfig {
   id: TabId;
@@ -15,7 +15,7 @@ export interface TabConfig {
 export const TABS_LIST: readonly TabConfig[] = [
   { id: "status", key: "1", label: "Status" },
   { id: "workflow", key: "2", label: "Workline" },
-  { id: "project", key: "3", label: "Project" },
+  { id: "hub", key: "3", label: "Hub" },
   { id: "mcp", key: "4", label: "MCP" },
   { id: "config", key: "5", label: "Config" },
 ] as const;

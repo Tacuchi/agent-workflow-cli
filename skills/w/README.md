@@ -21,6 +21,6 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 | [`hooks/`](hooks/) | — | Host hook template (sql-mutation-guard, checkpoint, …) |
 | [`SKILL.md`](SKILL.md) | overview | The `w` orientation skill (guide to the full model) |
 
-## Workspace
+## Hub
 
-Every invoked directory is a usable implicit workspace. The closest `.<namespace>/sessions/` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:hub-init`](commands/hub-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.
+Every invoked directory is a usable implicit hub. The closest `.<namespace>/sessions/` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:hub-init`](commands/hub-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.

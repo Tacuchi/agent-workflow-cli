@@ -7,6 +7,7 @@ import {
   CLAUDE_PLUGIN_BUNDLE_ROOT,
   COMMAND_SKILL_MARKER,
   SKILL_DIR_NAME,
+  retiredCommandPaths,
   selfInstallSkill,
 } from "../../src/application/self/install-skill.js";
 import { INSTALL_TARGETS, TARGET_ROOTS } from "../../src/application/self/install-targets.js";
@@ -152,6 +153,28 @@ describe("selfInstallSkill", () => {
   afterEach(async () => {
     await rm(workdir, { recursive: true, force: true });
   });
+
+  it.each([...HOST_INSTALL_TARGETS])(
+    "instalar %s retira por nombre la copia de workspace-init, aunque perdió su marcador",
+    async (target) => {
+      const stale = retiredCommandPaths(target, home);
+      expect(stale.length).toBeGreaterThan(0);
+      for (const path of stale) {
+        await mkdir(path.endsWith(".md") || path.endsWith(".toml") ? join(path, "..") : path, {
+          recursive: true,
+        });
+        await writeFile(
+          path.endsWith(".md") || path.endsWith(".toml") ? path : join(path, "SKILL.md"),
+          "---\nname: workspace-init\n---\ncopia vieja sin marcador\n",
+        );
+      }
+      await seedCommandsFixture(source);
+      const ctx = buildCtx(home, new RealFs(), new FakeProcess());
+      const result = await selfInstallSkill(buildArgs({ from: source, target }, []), ctx);
+      expect(result.ok).toBe(true);
+      for (const path of stale) expect(await new RealFs().exists(path), path).toBe(false);
+    },
+  );
 
   it.each([...INSTALL_TARGETS])(
     "instalar %s informa y preserva un design ajeno en su raíz",

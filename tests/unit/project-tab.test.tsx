@@ -124,7 +124,7 @@ describe("ProjectTab — fuentes y Git sin lanzador", () => {
       "Enviar a Desarrollo",
       "Enviar a QA",
       "Enviar a PROD",
-      "Quitar del workspace",
+      "Quitar del hub",
     ])
       expect(lastFrame()).toContain(label);
     for (const retired of ["Lanzar en local", "Re-lanzar", "Detener", "Ver log"])
@@ -212,7 +212,7 @@ describe("ProjectTab — fuentes y Git sin lanzador", () => {
     const { stdin, lastFrame } = render(<ProjectTab ctx={context()} isActive />);
     await tick();
     await selectAction(stdin, 4);
-    expect(lastFrame()).toContain("¿Quitar alpha del workspace?");
+    expect(lastFrame()).toContain("¿Quitar alpha del hub?");
     expect(lastFrame()).toContain("conserva los artefactos y procesos locales anteriores");
     stdin.write(ESC);
     await tick();

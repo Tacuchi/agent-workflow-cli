@@ -22,13 +22,13 @@ Explain the **complete model** of Workline so an agent knows: what the user invo
 
 ## Composed by
 
-Anyone needing orientation — a loop at start, a new agent in the workspace, or the user asking "how does this work?".
+Anyone needing orientation — a loop at start, a new agent in the hub, or the user asking "how does this work?".
 
 ## Knowledge
 
-### Workspace (implicit first)
+### Hub (implicit first)
 
-A single concept: **workspace**. There is no project/hub split and no mandatory initialization. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit workspace** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `workspace` is the reserved source that points to the root, and any extra alias is explicit.
+One concept: the **hub** — the folder with `.<namespace>/` and the hub block in CLAUDE.md/AGENTS.md, declaring zero or more sources; it may live outside its sources or be the repo itself. No initialization is mandatory. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit hub** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `hub` is the reserved source that points to the root, and any extra alias is explicit.
 
 ### The 3-layer architecture + `docs/` zone
 
@@ -86,9 +86,9 @@ Both authoring entry points can **split** with consent: `spec-new` may split a m
 
 ### Operating context — where everything lands
 
-`aw workspace-init --source alias:path[:rama]` adds local sources; `--workspace <dir>` selects the exact hub from a source checkout (no silent parent fallback). `aw workspace-move <destino>` moves a hub; `--repair` reconciles an external move. Source paths are local and portable. A document's registered branch takes precedence over the source's work branch; never fall back to `development`.
+`aw hub-init --source alias:path[:rama]` adds local sources; `--hub <dir>` selects the exact hub from a source checkout (no silent parent fallback). `aw hub-move <destino>` moves a hub; `--repair` reconciles an external move. Source paths are local and portable. A document's registered branch takes precedence over the source's work branch; never fall back to `development`.
 
-Before any loop, the AI resolves the **workspace root** on every prompt (closest `.<ns>/sessions/` ancestor, otherwise the invoked directory) and then the session to continue. The marker is evidence of materialization, not permission to use Workline; pure reads stay byte-identical. That decides where artifacts land:
+Before any loop, the AI resolves the **hub root** on every prompt (closest `.<ns>/sessions/` ancestor, otherwise the invoked directory) and then the session to continue. The marker is evidence of materialization, not permission to use Workline; pure reads stay byte-identical. That decides where artifacts land:
 
 | Trigger | → Behavior + routing |
 |---|---|
@@ -145,8 +145,8 @@ With no flow command, recommend the **cheapest route that still covers the risk*
 
 **Flow-independent invocable** skills: triggered with `/w:` like any command, but they do **not** belong to SPEC/PLAN/QUICK, do **not** manage `docs/`, and do **not** count in **6 flow commands / 5 loops**. *(In the bundle they are packaged under `commands/` so `/w:` can invoke them; in the design they are the `workflow-skills/` category.)*
 
-- `/w:doctor` — read-only diagnosis of the Workline install, MCPs, skills, auth, hooks and workspace visibility across every detected host, with coverage per category and the verdict in the exit code; repairs only what is attributable to Workline, over a sealed batch the person approves by digest. Backed by `aw doctor`.
-- `/w:status` — read-only workspace dashboard (Done/Missing/Discarded, dates humanized in the user's language), opportunistically enriched with host context when the host exposes cheap memory. Writes nothing; backed by `aw status`.
+- `/w:doctor` — read-only diagnosis of the Workline install, MCPs, skills, auth, hooks and hub visibility across every detected host, with coverage per category and the verdict in the exit code; repairs only what is attributable to Workline, over a sealed batch the person approves by digest. Backed by `aw doctor`.
+- `/w:status` — read-only hub dashboard (Done/Missing/Discarded, dates humanized in the user's language), opportunistically enriched with host context when the host exposes cheap memory. Writes nothing; backed by `aw status`.
 - `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Never creates sessions; the host→`docs/` counterpart of `export-*` (which stays the only session→`docs/` path).
 - `/w:recall` — reports what the other hosts' curated memory learned about Workline (backed by `aw host-memory`, which only reads), contrasts each learning against the installed CLI and doctrine, applies what still holds in the session and offers to save it in the current host's own memory, with its origin mark, only after confirmation. Never writes another host's memory.
 - `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen); an optional artifact argument (spec/plan/session) skips the survey and gets its exact re-entry route. Writes nothing; the actionable sibling of `/w:status`.
@@ -179,7 +179,7 @@ A loop keeps its own contract and may use relevant help exposed by its host. `sk
 overview         = "w"                # Workline orientation
 ```
 
-**Resolution cascade**: built-in default → `~/.workflow/skills.toml` (global) → `.workflow/skills.toml` (workspace). Only owned names and `off` apply. Legacy external bindings are reported as inapplicable and left untouched. `[docs]` keeps its own independent cascade. Host-native skills may help without being required or credited by their mere presence.
+**Resolution cascade**: built-in default → `~/.workflow/skills.toml` (global) → `.workflow/skills.toml` (hub). Only owned names and `off` apply. Legacy external bindings are reported as inapplicable and left untouched. `[docs]` keeps its own independent cascade. Host-native skills may help without being required or credited by their mere presence.
 
 Role catalog and defaults:
 

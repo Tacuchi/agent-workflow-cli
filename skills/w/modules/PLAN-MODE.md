@@ -14,7 +14,7 @@ it would do and what it would touch, and stops:
   ask, the phases they would execute, the files they would touch and the commits they would
   propose. No session is created, no loop is started, no document is written.
 - **Direct surfaces** (`status`, `resume`, `persist`,
-  `workspace-init`, `export-*`): run their read-only `prepare` step if they have one and report
+  `hub-init`, `export-*`): run their read-only `prepare` step if they have one and report
   what it returned. Never `validate`, never `apply`.
 
 ## Two things it does NOT change

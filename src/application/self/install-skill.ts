@@ -211,6 +211,30 @@ async function cleanLegacySkillRoots(
 }
 
 /**
+ * Commands 29.0.0 renamed. Their installed copies go by NAME, marker or not:
+ * no current command owns that name, so a copy that lost its marker is still a
+ * stale `/w:` entry pointing at a command that answers RENAMED.
+ */
+export const RETIRED_COMMAND_NAMES = ["workspace-init"] as const;
+
+/** Every place `target` may hold a copy of a retired command: synthesized skill or native wrapper. */
+export function retiredCommandPaths(target: InstallTarget, home: string): string[] {
+  const paths: string[] = [];
+  if (COMMAND_SKILLS_HOSTS.has(target)) {
+    for (const root of [TARGET_ROOTS[target], ...LEGACY_SKILL_ROOTS_BY_TARGET[target]])
+      for (const name of RETIRED_COMMAND_NAMES)
+        paths.push(join(home, ...root, `${COMMAND_SKILL_PREFIX}${name}`));
+  }
+  const native = USER_COMMANDS_BY_TARGET[target];
+  if (native !== null) {
+    const extension = native.format === "gemini-toml" ? "toml" : "md";
+    for (const name of RETIRED_COMMAND_NAMES)
+      paths.push(join(home, native.relpath, `${name}.${extension}`));
+  }
+  return paths;
+}
+
+/**
  * Remove legacy artifacts from a prior install for `target`: the pre-rename
  * SKILL dirs (LEGACY_SKILL_NAMES), the old user-commands dir
  * (`/agent-workflow:*`), abandoned skill roots the host never reads
@@ -247,6 +271,7 @@ async function cleanLegacyArtifacts(
   }
   await cleanLegacySkillRoots(target, home, ctx, tryRemove, removed);
   await cleanLegacyCommandSkills(target, skillsRoot, tryRemove);
+  for (const path of retiredCommandPaths(target, home)) await tryRemove(path);
   return removed;
 }
 

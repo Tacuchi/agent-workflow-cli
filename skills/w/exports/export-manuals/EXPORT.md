@@ -70,7 +70,7 @@ In plan mode it **describes**, never writes: the inferred mode, topics and desti
 |---|---|
 | `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
 | `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
-| `--source <alias>` | Limits to one source (multi-source workspace) |
+| `--source <alias>` | Limits to one source (multi-source hub) |
 
 No args: the response determines the mode over the whole corpus.
 
@@ -104,7 +104,7 @@ For every filtered corpus session (`aw session-artifacts --code <NNN> --dump obj
 
 ### Step 5 — Write or report
 
-Publish via `aw export-manuals` prepare → validate → apply: index-only response → `complement`; dossier → `regenerate`. The CLI then proposes `aw workspace-commit prepare --export <ruta>`; only approval of the pathspec and message allows `apply --approval <digest>`, never push. Summarize mode and written paths.
+Publish via `aw export-manuals` prepare → validate → apply: index-only response → `complement`; dossier → `regenerate`. The CLI then proposes `aw hub-commit prepare --export <ruta>`; only approval of the pathspec and message allows `apply --approval <digest>`, never push. Summarize mode and written paths.
 
 ## Output location
 

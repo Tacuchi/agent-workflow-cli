@@ -3667,7 +3667,7 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     title: "materializar el runtime mínimo o configurar fuentes explícitas del hub",
     authority: "cli",
     ownership: "cli-owned",
-    document: "modules/WORKSPACE-SCAFFOLD.md",
+    document: "modules/HUB-SCAFFOLD.md",
     attribution: "CLI-owned `.gitignore`",
     effects: ["local_additive"],
   },

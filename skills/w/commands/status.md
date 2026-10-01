@@ -1,5 +1,5 @@
 ---
-description: Use when the user asks what got done, what is pending, or where the work stands. Read-only workspace dashboard: pending pipeline by default, full history under `detalle`. Backed by `aw status`; writes nothing.
+description: Use when the user asks what got done, what is pending, or where the work stands. Read-only hub dashboard: pending pipeline by default, full history under `detalle`. Backed by `aw status`; writes nothing.
 argument-hint: (none — pass `detalle` for the full inventory)
 allowed-tools:
   [
@@ -8,7 +8,7 @@ allowed-tools:
   ]
 ---
 
-# status — workspace state
+# status — hub state
 
 Read-only single pass: no loop, no session, no writes. Transversal.
 
@@ -26,7 +26,7 @@ Read-only single pass: no loop, no session, no writes. Transversal.
 
 > **Automation reads JSON.** Piped or with `--json` / `--format json` it emits its envelope; `--detail` is human-only.
 
-Nothing pending → one line, no empty section. In an implicit workspace that is genuinely "nothing pending"; this read creates no marker or other file.
+Nothing pending → one line, no empty section. In an implicit hub that is genuinely "nothing pending"; this read creates no marker or other file.
 
 ## More context
 

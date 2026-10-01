@@ -149,7 +149,7 @@ describe("App (tab-home)", () => {
     expect(lastFrame()).toContain("Next: no disponible");
     stdin.write("3");
     await new Promise((r) => setTimeout(r, 50));
-    expect(lastFrame()).toContain("Project");
+    expect(lastFrame()).toContain("Hub");
     expect(lastFrame()).toContain("git");
   });
 
