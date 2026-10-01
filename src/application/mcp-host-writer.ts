@@ -19,7 +19,11 @@ import {
   type McpWriteResult,
   mcpEntryShapeForHost,
 } from "../domain/mcp-entry.js";
-import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
+import {
+  crushGlobalMcpFile,
+  geminiGlobalMcpFile,
+  opencodeGlobalMcpFile,
+} from "./mcp-host-paths.js";
 import { backupFile, escapeRegex, purgeStaleBackups } from "./multiroot/paths.js";
 import { resolveWarpGlobalMcpPath, resolveWarpProjectMcpPath } from "./multiroot/warp.js";
 import { parseToml } from "./parsers/toml.js";
@@ -353,10 +357,12 @@ function assertNeverHost(host: never): never {
 
 // --- New-host MCP file locations ---
 // Global scope passes scopeDir = homedir(); OpenCode/Crush are XDG-based
-// (~/.config/<name>/…), so global differs from the project-root file. Gemini's
-// .gemini/settings.json is the same relative path for both scopes.
+// (~/.config/<name>/…), so global differs from the project-root file, and so
+// does Gemini/agy (see geminiGlobalMcpFile).
 function geminiMcpFile(scope: ScopeInput): string {
-  return join(scope.scopeDir, ".gemini", "settings.json");
+  return scope.kind === "global"
+    ? geminiGlobalMcpFile(scope.scopeDir)
+    : join(scope.scopeDir, ".gemini", "settings.json");
 }
 function opencodeMcpFile(scope: ScopeInput): string {
   return scope.kind === "global"

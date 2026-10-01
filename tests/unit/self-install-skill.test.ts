@@ -1,10 +1,11 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import {
   CLAUDE_PLUGIN_BUNDLE_ROOT,
+  COMMAND_SKILL_MARKER,
   SKILL_DIR_NAME,
   selfInstallSkill,
 } from "../../src/application/self/install-skill.js";
@@ -222,7 +223,8 @@ describe("selfInstallSkill", () => {
       expect(claudeDest?.dest).toBe(join(home, ".claude/skills", SKILL_DIR_NAME));
       expect(codexDest?.dest).toBe(join(home, ".codex/skills", SKILL_DIR_NAME));
       expect(opencodeDest?.dest).toBe(join(home, ".opencode/skills", SKILL_DIR_NAME));
-      expect(geminiDest?.dest).toBe(join(home, ".gemini/skills", SKILL_DIR_NAME));
+      // agy 1.2.x reads its global skills from ~/.gemini/config/skills only.
+      expect(geminiDest?.dest).toBe(join(home, ".gemini/config/skills", SKILL_DIR_NAME));
       // Crush global skills root is XDG (~/.config/crush/skills) on every OS;
       // ~/.crush/skills is a dead root crush never reads (v0.81.0 load.go).
       expect(crushDest?.dest).toBe(join(home, ".config/crush/skills", SKILL_DIR_NAME));
@@ -376,9 +378,9 @@ describe("selfInstallSkill", () => {
     expect(await fs.exists(join(home, ".warp/skills/w-quick/SKILL.md"))).toBe(true);
     expect(await fs.exists(join(home, ".agents/skills/w-status/SKILL.md"))).toBe(true);
     // Antigravity (agy) reads no commands dir: its command surface is the
-    // synthesized skills in ~/.gemini/skills (tier "Shared"); the TOML remains
-    // only as legacy Gemini CLI compat.
-    expect(await fs.exists(join(home, ".gemini/skills/w-quick/SKILL.md"))).toBe(true);
+    // synthesized skills in ~/.gemini/config/skills; the TOML remains only as
+    // legacy Gemini CLI compat.
+    expect(await fs.exists(join(home, ".gemini/config/skills/w-quick/SKILL.md"))).toBe(true);
     expect(await fs.exists(join(home, ".gemini/commands/w/quick.toml"))).toBe(true);
   });
 
@@ -400,9 +402,9 @@ describe("selfInstallSkill", () => {
     expect(toml).toContain('prompt = """');
     expect(toml).toContain("{{args}}");
     expect(toml).not.toContain("$ARGUMENTS");
-    expect(toml).toContain("../../skills/w/loops/quick-loop/LOOP.md");
-    expect(toml).toContain("../../skills/w/harness/HARNESS.md");
-    expect(toml).toContain(`--root "${portablePath(join(home, ".gemini/skills/w"))}"`);
+    expect(toml).toContain("../../config/skills/w/loops/quick-loop/LOOP.md");
+    expect(toml).toContain("../../config/skills/w/harness/HARNESS.md");
+    expect(toml).toContain(`--root "${portablePath(join(home, ".gemini/config/skills/w"))}"`);
     expect(toml).not.toContain(CLAUDE_PLUGIN_BUNDLE_ROOT);
     // TOML escapes: the description's quotes and backslash survive.
     const statusToml = await readFile(join(home, ".gemini/commands/w/status.toml"), "utf8");
@@ -494,6 +496,51 @@ describe("selfInstallSkill", () => {
     // Owned legacy bundle migrated away; the foreign dir has no fingerprint and survives.
     expect(await fs.exists(join(legacyRoot, "w"))).toBe(false);
     expect(await fs.exists(join(legacyRoot, "someones-w-skill", "SKILL.md"))).toBe(true);
+  });
+
+  it("gemini: installs to ~/.gemini/config/skills and migrates what it owns from ~/.gemini/skills", async () => {
+    await seedCommandsFixture(source);
+    const fs = new RealFs();
+    const ctx = buildCtx(home, fs, new FakeProcess());
+    // agy 1.0.x read ~/.gemini/skills; 1.2.x reads only ~/.gemini/config/skills.
+    const legacyRoot = join(home, ".gemini/skills");
+    await mkdir(join(legacyRoot, "w", "harness"), { recursive: true });
+    await writeFile(
+      join(legacyRoot, "w", "SKILL.md"),
+      "---\nname: w\ndescription: bundle\n---\n",
+      "utf8",
+    );
+    await writeFile(join(legacyRoot, "w", "harness", "HARNESS.md"), "# harness\n", "utf8");
+    for (const wrapper of ["w-quick", "w-status"]) {
+      await mkdir(join(legacyRoot, wrapper), { recursive: true });
+      await writeFile(
+        join(legacyRoot, wrapper, "SKILL.md"),
+        `---\nname: ${wrapper}\ndescription: old\n---\n\n> ${COMMAND_SKILL_MARKER}.\n`,
+        "utf8",
+      );
+    }
+    await mkdir(join(legacyRoot, "w-mine"), { recursive: true });
+    await writeFile(
+      join(legacyRoot, "w-mine", "SKILL.md"),
+      "---\nname: w-mine\ndescription: foreign\n---\n",
+      "utf8",
+    );
+    // A hand-made link into the legacy root, as a manual workaround leaves it.
+    const liveRoot = join(home, ".gemini/config/skills");
+    await mkdir(liveRoot, { recursive: true });
+    await symlink(join(legacyRoot, "w-status"), join(liveRoot, "w-status"));
+
+    const result = await selfInstallSkill(buildArgs({ from: source, target: "gemini" }, []), ctx);
+
+    expect(result.ok).toBe(true);
+    expect(await fs.exists(join(liveRoot, SKILL_DIR_NAME, "SKILL.md"))).toBe(true);
+    for (const wrapper of ["w-quick", "w-status"]) {
+      expect((await lstat(join(liveRoot, wrapper))).isDirectory()).toBe(true);
+      expect(await fs.exists(join(liveRoot, wrapper, "SKILL.md"))).toBe(true);
+      expect(await fs.exists(join(legacyRoot, wrapper))).toBe(false);
+    }
+    expect(await fs.exists(join(legacyRoot, "w"))).toBe(false);
+    expect(await fs.exists(join(legacyRoot, "w-mine", "SKILL.md"))).toBe(true);
   });
 
   it("crush: migrates the pre-v19 bundle form (name: workflow + harness/SKILL.md) from the dead root", async () => {

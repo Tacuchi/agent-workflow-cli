@@ -15,7 +15,7 @@ export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
   agents: [".agents", "skills"],
   warp: [".warp", "skills"],
   oz: [".agents", "skills"],
-  gemini: [".gemini", "skills"],
+  gemini: [".gemini", "config", "skills"],
   opencode: [".opencode", "skills"],
   crush: [".config", "crush", "skills"],
   kimi: [".kimi-code", "skills"],
@@ -28,7 +28,8 @@ export const LEGACY_SKILL_ROOTS_BY_TARGET: Record<InstallTarget, readonly (reado
   agents: [],
   warp: [],
   oz: [],
-  gemini: [],
+  // agy 1.0.x read it as its Shared tier; agy 1.2.x reads only ~/.gemini/config/skills.
+  gemini: [[".gemini", "skills"]],
   opencode: [],
   crush: [[".crush", "skills"]],
   kimi: [],

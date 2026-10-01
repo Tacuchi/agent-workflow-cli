@@ -24,6 +24,7 @@ export const LEGACY_SCAN_PATHS_BY_TARGET: Record<InstallTarget, readonly (readon
   oz: [[".agents", "skills"]],
   agents: [[".agents", "skills"]],
   gemini: [
+    [".gemini", "config", "skills"],
     [".agents", "skills"],
     [".gemini", "skills"],
   ],

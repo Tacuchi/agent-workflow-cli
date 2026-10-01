@@ -320,7 +320,9 @@ describe("selfMcpConfig", () => {
 
     expect(install.ok).toBe(true);
     if (!install.ok) throw new Error("expected ok");
-    const settings = JSON.parse(readFileSync(join(home, ".gemini", "settings.json"), "utf-8")) as {
+    const settings = JSON.parse(
+      readFileSync(join(home, ".gemini", "config", "mcp_config.json"), "utf-8"),
+    ) as {
       mcpServers: Record<string, { command?: unknown; args?: unknown; env?: unknown }>;
     };
     expectReliableDescriptor(settings.mcpServers.reporting ?? {}, "gemini", "research");
@@ -374,7 +376,7 @@ describe("selfMcpConfig", () => {
     expect(existsSync(join(project, ".codex", "config.toml"))).toBe(false);
   });
 
-  it("instala en Gemini escribiendo el settings.json global del home", async () => {
+  it("instala en Gemini escribiendo el mcp_config.json global que lee agy", async () => {
     const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
     await registerReporting(ctx);
 
@@ -386,7 +388,7 @@ describe("selfMcpConfig", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok");
-    const settings = readFileSync(join(home, ".gemini", "settings.json"), "utf-8");
+    const settings = readFileSync(join(home, ".gemini", "config", "mcp_config.json"), "utf-8");
     const gemini = JSON.parse(settings) as {
       mcpServers: Record<string, { command?: unknown; args?: unknown; env?: unknown }>;
     };
@@ -583,15 +585,15 @@ describe("selfMcpConfig", () => {
   });
 
   it("remove conserva la entrada global homónima ajena, la nombra y borra igual la conexión del registro", async () => {
-    // The user has THEIR OWN 'reporting' server in Gemini's global settings —
+    // The user has THEIR OWN 'reporting' server in agy's global MCP config —
     // this tool never wrote it. Remove must not touch it — and must not let it
     // keep the Workline connection alive either: it was never ours to resolve.
     const foreign = {
       mcpServers: { reporting: { command: "node", args: ["my-server.js"], env: {} } },
     };
-    mkdirSync(join(home, ".gemini"), { recursive: true });
+    mkdirSync(join(home, ".gemini", "config"), { recursive: true });
     writeFileSync(
-      join(home, ".gemini", "settings.json"),
+      join(home, ".gemini", "config", "mcp_config.json"),
       `${JSON.stringify(foreign, null, 2)}\n`,
       "utf-8",
     );
@@ -613,7 +615,9 @@ describe("selfMcpConfig", () => {
     if (!result.ok) throw new Error("expected ok");
     expect(result.data.preserved_foreign).toEqual(["gemini"]);
     // The foreign entry survives with its relevant bytes intact; ours in claude is gone.
-    const gemini = JSON.parse(readFileSync(join(home, ".gemini", "settings.json"), "utf-8"));
+    const gemini = JSON.parse(
+      readFileSync(join(home, ".gemini", "config", "mcp_config.json"), "utf-8"),
+    );
     expect(gemini.mcpServers.reporting.args).toEqual(["my-server.js"]);
     expect(readFileSync(join(home, ".claude.json"), "utf-8")).not.toContain('"reporting"');
     // A foreign homonym is not Workline's to resolve: the connection leaves the
@@ -621,7 +625,7 @@ describe("selfMcpConfig", () => {
     // so the person knows where to look — the TUI shows exactly this text.
     expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).not.toContain("reporting");
     expect(result.data.summary).toContain("Se conservó la entrada ajena homónima en: Gemini CLI");
-    expect(result.data.summary).toContain("~/.gemini/settings.json");
+    expect(result.data.summary).toContain("~/.gemini/config/mcp_config.json");
   });
 
   it("list nombra el archivo de la entrada ajena en conflicto, incluso en la ubicación legacy de Claude", async () => {

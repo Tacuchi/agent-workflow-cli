@@ -90,8 +90,8 @@ const ALL_INSTALL_TARGETS: readonly InstallTarget[] = HOST_INSTALL_TARGETS;
 // Gemini's successor Antigravity CLI (agy 1.0.16, verified vs its binary +
 // bundled agy-customizations doc, 2026-07) dropped user commands entirely —
 // slash commands are system-only and skills are the only user-installable
-// invocable unit; it reads ~/.gemini/skills as its "Shared" tier, so the
-// synthesized wrappers land next to the bundle there.
+// invocable unit, so the synthesized wrappers land next to the bundle in the
+// root agy reads (~/.gemini/config/skills since agy 1.2.x).
 // The set itself lives in install-targets.ts: uninstall.ts consumes the same
 // value so both sides stay symmetric by construction.
 export { COMMAND_SKILLS_HOSTS };
@@ -200,6 +200,9 @@ async function cleanLegacySkillRoots(
     const legacyBundle = join(root, SKILL_DIR_NAME);
     if (await isOwnedBundleDir(legacyBundle, ctx)) {
       await tryRemove(legacyBundle);
+    }
+    if (COMMAND_SKILLS_HOSTS.has(target)) {
+      removed.push(...(await sweepOwnedSynthesizedSkills(root, [COMMAND_SKILL_PREFIX])));
     }
     if (await removeDirIfEmpty(root)) {
       removed.push(root);
@@ -579,6 +582,36 @@ export async function isOwnedSynthesizedDir(dirPath: string, prefix: string): Pr
   return fmName !== undefined && `${prefix}${fmName}` === dirName;
 }
 
+/**
+ * Removes the entries of `root` that carry one of `prefixes` and are proven
+ * ours by `isOwnedSynthesizedDir` — a dir or a symlink to one (the link goes,
+ * never its target). Foreign entries with the prefix survive. Returns the
+ * paths removed (or that would be, under `dryRun`).
+ */
+export async function sweepOwnedSynthesizedSkills(
+  root: string,
+  prefixes: readonly string[],
+  dryRun = false,
+): Promise<string[]> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await readdir(root, { withFileTypes: true });
+  } catch {
+    return []; // root absent/unreadable — nothing to sweep.
+  }
+  const removed: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    const prefix = prefixes.find((p) => entry.name.startsWith(p));
+    if (prefix === undefined) continue;
+    const path = join(root, entry.name);
+    if (!(await isOwnedSynthesizedDir(path, prefix))) continue;
+    if (!dryRun) await rm(path, { recursive: true, force: true });
+    removed.push(path);
+  }
+  return removed;
+}
+
 // Splits a bundle command file (Claude-binding frontmatter + body). The
 // frontmatter schema is the Claude Code wrapper; other hosts re-wrap the
 // same contract (harness/HARNESS.md § Command packaging). Handles plain,
@@ -619,17 +652,7 @@ async function synthesizeCommandSkills(
   if (!COMMAND_SKILLS_HOSTS.has(target)) return { count: 0, warnings: [] };
   const targetRoot = dirname(skillDest);
   const warnings: string[] = [];
-  try {
-    for (const entry of await readdir(targetRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() || !entry.name.startsWith(COMMAND_SKILL_PREFIX)) continue;
-      const dirPath = join(targetRoot, entry.name);
-      if (await isOwnedSynthesizedDir(dirPath, COMMAND_SKILL_PREFIX)) {
-        await rm(dirPath, { recursive: true, force: true });
-      }
-    }
-  } catch {
-    // target root absent/unreadable — nothing to sweep.
-  }
+  await sweepOwnedSynthesizedSkills(targetRoot, [COMMAND_SKILL_PREFIX]);
   const srcDir = join(sourceSkillPath, "commands");
   let entries: import("node:fs").Dirent[];
   try {

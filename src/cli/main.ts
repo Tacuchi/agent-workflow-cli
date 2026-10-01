@@ -11,12 +11,14 @@ const scoped =
     (argv[0] === "self" && argv[1] === "namespace" && argv.includes("--pin")));
 
 async function scopedWorkspaceVisible(): Promise<boolean> {
+  const { homedir } = await import("node:os");
+  // $HOME is never a workspace, though the user-level ~/.workflow carries a marker.
+  if (process.cwd() === homedir()) return false;
   if (await hasWorklineMarker(process.cwd())) return true;
   // A source without its own marker can still belong to a registered hub.
   // Consult the user-level index without creating workspace runtime or invoking git.
   const { declaringHubs } = await import("../application/hub-registry.js");
   const { NodeFileSystem } = await import("../adapters/node-file-system.js");
-  const { homedir } = await import("node:os");
   const flag = argv.indexOf("--namespace");
   const namespace =
     flag < 0 ? (process.env.AW_NAMESPACE ?? "workflow") : (argv[flag + 1] ?? "workflow");

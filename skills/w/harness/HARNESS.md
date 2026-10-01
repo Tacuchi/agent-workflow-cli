@@ -174,7 +174,7 @@ Each command's **contract** (Flow, Trigger, Input, Mode, …) is agnostic. The *
 |---|---|---|
 | Claude Code | `~/.claude/commands/w/<cmd>.md` (frontmatter `description`/`argument-hint`/`allowed-tools`) | `/w:<cmd>` |
 | Codex | synthesized skill `~/.codex/skills/w-<cmd>/SKILL.md` (Codex reads no commands dir; custom prompts deprecated/removed since 0.14x) | `$w-<cmd>` mention |
-| Gemini/Antigravity | synthesized skill `~/.gemini/skills/w-<cmd>/SKILL.md` (agy reads NO commands dir — slash commands are system-only; verified vs agy 1.0.16 binary) + `~/.gemini/commands/w/<cmd>.toml` kept for legacy Gemini CLI | skill (agy) · `/w:<cmd>` (legacy CLI) |
+| Gemini/Antigravity | synthesized skill `~/.gemini/config/skills/w-<cmd>/SKILL.md` (agy reads NO commands dir — slash commands are system-only; verified vs agy 1.2.14) + `~/.gemini/commands/w/<cmd>.toml` kept for legacy Gemini CLI | skill (agy) · `/w:<cmd>` (legacy CLI) |
 | OpenCode | `~/.opencode/command/w/<cmd>.md` | `/w/<cmd>` |
 | Crush | `~/.crush/commands/w/<cmd>.md` (plain body — Crush parses no frontmatter) | palette `user:w:<cmd>` |
 | Warp/Oz | synthesized skill `w-<cmd>/SKILL.md` next to the bundle (Warp lists skills as `/name`) | `/w-<cmd>` |

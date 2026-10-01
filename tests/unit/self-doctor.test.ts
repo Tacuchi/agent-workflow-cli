@@ -56,7 +56,7 @@ describe("selfDoctor", () => {
       .dir("/home/u/.codex/skills/w")
       .dir("/home/u/.warp/skills/w")
       .dir("/home/u/.agents/skills/w")
-      .dir("/home/u/.gemini/skills/w")
+      .dir("/home/u/.gemini/config/skills/w")
       .dir("/home/u/.opencode/skills/w")
       .dir("/home/u/.config/crush/skills/w")
       .dir("/home/u/.kimi-code/skills/w");

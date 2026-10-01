@@ -2,7 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { harnessForMcpHost } from "../domain/harnesses.js";
 import type { McpHost } from "../domain/mcp-entry.js";
-import { crushGlobalMcpFile, opencodeGlobalMcpFile } from "./mcp-host-paths.js";
+import {
+  crushGlobalMcpFile,
+  geminiGlobalMcpFile,
+  opencodeGlobalMcpFile,
+} from "./mcp-host-paths.js";
 import { resolveWarpGlobalMcpPath } from "./multiroot/warp.js";
 import { parseToml } from "./parsers/toml.js";
 
@@ -83,6 +87,9 @@ function mcpEntryContainers(
   }
   if (host === "opencode" || host === "crush") {
     return [{ target: mcpKeyTarget(host, scopeDir, kind), key: "mcp", format: "json" }];
+  }
+  if (host === "gemini" && kind === "global") {
+    return [{ target: geminiGlobalMcpFile(scopeDir), key: "mcpServers", format: "json" }];
   }
   if (host === "warp" && kind === "global") {
     const globalPath = resolveWarpGlobalMcpPath(process.platform, () => scopeDir);

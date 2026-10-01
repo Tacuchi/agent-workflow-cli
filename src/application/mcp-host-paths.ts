@@ -36,3 +36,13 @@ export function crushGlobalMcpFile(
   }
   return join(xdgConfigBase(homeDir, env), "crush", "crush.json");
 }
+
+/**
+ * agy's global MCP config (Antigravity 1.2.x keeps its global customizations in
+ * ~/.gemini/config/; verified 2026-09 with its bundled doc and `agy mcp list`).
+ * agy has no project MCP file: the workspace scope keeps the legacy Gemini CLI
+ * `.gemini/settings.json` (HarnessSpec.projectMcpPath).
+ */
+export function geminiGlobalMcpFile(homeDir: string): string {
+  return join(homeDir, ".gemini", "config", "mcp_config.json");
+}

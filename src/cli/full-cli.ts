@@ -64,7 +64,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   if (typeof prepared === "number") return prepared;
   const initialized = await initializeCliContext(prepared.parsed, fs, env, proc, git);
   if (initialized === null)
-    return prepared.parsed.command === "hook" ? 0 : transportExitCode(prepared.parsed);
+    return isHookCommand(prepared.parsed) ? 0 : transportExitCode(prepared.parsed);
 
   const exit = await dispatchParsedCommand({
     ...prepared,
@@ -217,14 +217,6 @@ async function resolveWorklineDirectory(
   try {
     const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
     if (parsed.command === "workspace-init") return directory;
-    const bypass =
-      parsed.command === "tool" ||
-      parsed.command === "self" ||
-      parsed.command === "context-budget" ||
-      isMcpStdioInvocation(parsed) ||
-      parsed.flags.has("--help") ||
-      parsed.flags.has("-h") ||
-      parsed.command === undefined;
     try {
       return await resolveWorkspaceDirectory(
         fs,
@@ -234,18 +226,48 @@ async function resolveWorklineDirectory(
         parsed.values.get("workspace"),
       );
     } catch (error) {
-      if (error instanceof WorkspaceResolutionError && (bypass || parsed.command === "hook")) {
-        if (parsed.command === "hook") {
-          writeStderr(error.message);
-          return null;
-        }
-        return { ...directory, root: env.cwd(), materialized: false };
+      if (!(error instanceof WorkspaceResolutionError)) throw error;
+      if (isHookCommand(parsed)) {
+        writeStderr(error.message);
+        return null;
       }
+      if (runsWithoutWorkspace(parsed))
+        return { ...directory, root: env.cwd(), materialized: false };
       throw error;
     }
   } catch (err) {
     return directoryFailure(err, parsed);
   }
+}
+
+// A host runs these on its own events, $HOME included: a non-zero exit would
+// hold that event back, so without a workspace they only report on stderr.
+const HOOK_COMMANDS: ReadonlySet<string> = new Set(
+  ALL_COMMANDS.filter((command) => command.hook === true).map((command) => command.name),
+);
+
+function isHookCommand(parsed: ParsedArgs): boolean {
+  return parsed.command !== undefined && HOOK_COMMANDS.has(parsed.command);
+}
+
+// Their scope is the user's machine (installation, host configs), not a
+// workspace, so any cwd works — $HOME included.
+const MACHINE_SCOPED_COMMANDS: ReadonlySet<string> = new Set([
+  "tool",
+  "self",
+  "context-budget",
+  "doctor",
+]);
+
+function runsWithoutWorkspace(parsed: ParsedArgs): boolean {
+  return (
+    parsed.command === undefined ||
+    MACHINE_SCOPED_COMMANDS.has(parsed.command) ||
+    (parsed.command === "mcp" && parsed.flags.has("--global")) ||
+    isMcpStdioInvocation(parsed) ||
+    parsed.flags.has("--help") ||
+    parsed.flags.has("-h")
+  );
 }
 
 function emitToolEarlyFailure(code: string, message: string): void {
@@ -636,7 +658,7 @@ void run(process.argv.slice(2))
 
 function directoryFailure(err: unknown, parsed: ParsedArgs): null {
   if (err instanceof WorkspaceResolutionError) {
-    if (parsed.command === "hook") {
+    if (isHookCommand(parsed)) {
       writeStderr(err.message);
       return null;
     }

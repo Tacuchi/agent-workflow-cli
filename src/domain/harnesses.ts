@@ -593,11 +593,13 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // reuses ~/.gemini/). agy 1.0.16 (verified vs binary + bundled
     // agy-customizations doc): NO user commands — slash commands are
     // system-only, the ~/.gemini/commands/*.toml dir is legacy Gemini CLI
-    // only; skills are the invocable unit, tiers Workspace <repo>/.agents/
-    // skills · Global ~/.gemini/antigravity-cli/skills · Shared
-    // ~/.gemini/skills (agy does NOT read user-level ~/.agents/skills).
+    // only; skills are the invocable unit. agy 1.2.14 (bundled doc + `agy mcp
+    // list` + a discovery probe, 2026-09-30) keeps its global customizations
+    // in ~/.gemini/config/: skills in config/skills (symlinks followed), MCP in
+    // config/mcp_config.json. It no longer reads ~/.gemini/skills, nor
+    // user-level ~/.agents/skills.
     // ANTIGRAVITY_* markers are the env vars agy exports to subprocesses.
-    // MCP in settings.json (mcpServers, Claude-compatible shape).
+    // MCP entries use the Claude-compatible mcpServers shape.
     id: "gemini",
     label: "Gemini CLI / Antigravity",
     glyph: "G",
@@ -642,15 +644,16 @@ export const HARNESSES: readonly HarnessSpec[] = [
     ],
     mcpHostId: "gemini",
     globalMcpPaths: {
-      darwin: "~/.gemini/settings.json",
-      linux: "~/.gemini/settings.json",
-      win32: "~/.gemini/settings.json",
+      darwin: "~/.gemini/config/mcp_config.json",
+      linux: "~/.gemini/config/mcp_config.json",
+      win32: "~/.gemini/config/mcp_config.json",
     },
+    // agy has no project MCP file; this is the legacy Gemini CLI one.
     projectMcpPath: ".gemini/settings.json",
     pluginManifest: null, // Gemini uses Extensions (gemini-extension.json) — Phase 2
     pluginHooksDir: null, // agy's hooks are its own hooks.json, not extension-bundled
     skillsDirs: [".agents/skills", ".gemini/skills"],
-    globalSkillsDirs: [".gemini/skills", ".gemini/antigravity-cli/skills"],
+    globalSkillsDirs: [".gemini/config/skills"],
     installTarget: "gemini",
     invocation: MENTION,
     // The tool is `AskQuestion`, NOT the deprecated Gemini CLI's `ask_user`: the

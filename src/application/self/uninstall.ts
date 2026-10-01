@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { ParsedArgs } from "../../cli/parser.js";
@@ -20,8 +20,8 @@ import {
   TARGET_ROOTS,
   USER_COMMANDS_BY_TARGET,
   isOwnedBundleDir,
-  isOwnedSynthesizedDir,
   removeDirIfEmpty,
+  sweepOwnedSynthesizedSkills,
 } from "./install-skill.js";
 import {
   COMMAND_SKILLS_HOSTS,
@@ -237,7 +237,7 @@ async function uninstallOneTarget(
   if (!flags.skipCommands) {
     // Synthesized w-* wrappers ARE the command surface on codex/warp/oz —
     // gated like the native command dirs (mirror of installOneTarget).
-    steps.push(...(await removeSynthesizedCommandSkills(ctx, home, target, flags.dryRun)));
+    steps.push(...(await removeSynthesizedCommandSkills(home, target, flags.dryRun)));
     steps.push(...(await removeUserCommands(ctx, home, target, flags.includeLegacy, flags.dryRun)));
   }
   if (flags.withHooks && !flags.skillOnly) {
@@ -248,34 +248,22 @@ async function uninstallOneTarget(
 }
 
 async function removeSynthesizedCommandSkills(
-  ctx: CliContext,
   home: string,
   target: InstallTarget,
   dryRun: boolean,
 ): Promise<UninstallStep[]> {
   if (!COMMAND_SKILLS_HOSTS.has(target)) return [];
-  const targetRoot = join(home, ...TARGET_ROOTS[target]);
-  if (!(await ctx.fs.exists(targetRoot))) return [];
-  let entries: import("node:fs").Dirent[];
-  try {
-    entries = await readdir(targetRoot, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+  const roots = [TARGET_ROOTS[target], ...LEGACY_SKILL_ROOTS_BY_TARGET[target]];
   const steps: UninstallStep[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const prefix = SYNTHESIZED_SKILL_PREFIXES.find((p) => entry.name.startsWith(p));
-    if (prefix === undefined) continue;
-    const path = join(targetRoot, entry.name);
-    if (!(await isOwnedSynthesizedDir(path, prefix))) continue;
-    if (!dryRun) await rm(path, { recursive: true, force: true });
-    steps.push({
-      target,
-      kind: "skill",
-      path,
-      status: dryRun ? "dry-run" : "removed",
-    });
+  for (const root of roots) {
+    const removed = await sweepOwnedSynthesizedSkills(
+      join(home, ...root),
+      SYNTHESIZED_SKILL_PREFIXES,
+      dryRun,
+    );
+    for (const path of removed) {
+      steps.push({ target, kind: "skill", path, status: dryRun ? "dry-run" : "removed" });
+    }
   }
   return steps;
 }
