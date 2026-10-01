@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -13,7 +13,8 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
 /**
  * A hub whose block still wears the pre-29 `<NS>-PROJECT-*` markers answers no
  * command until `aw hub-migrate --apply` runs — in the hub and from a source
- * that declares it — except the migration itself, doctor and help (plan 086, F3).
+ * that declares it — except the migration itself, doctor, help and the SQL
+ * guard (plan 086, F3).
  *
  * Run after `npm run build`: the guard lives in the binary's entry.
  */
@@ -60,6 +61,30 @@ async function aw(cwd: string, ...args: string[]) {
     ? (JSON.parse(outcome.stdout) as Record<string, unknown>)
     : { text: outcome.stdout };
   return { code: outcome.code, body };
+}
+
+async function configureSqlGuard() {
+  const config = join(home, ".workflow", "agent-workflow");
+  await mkdir(config, { recursive: true });
+  await writeFile(
+    join(config, "runtime.json"),
+    JSON.stringify({
+      packageName: "@tacuchi/agent-workflow-cli",
+      binName: "agent-workflow",
+      mcpGuards: {
+        sqlMutation: { toolPattern: "^mcp__.+__execute_sql$", serverPattern: "^mcp__(.+?)__" },
+      },
+    }),
+  );
+}
+
+function sqlGuard(cwd: string, sql: string) {
+  return spawnSync(process.execPath, [CLI, "hook", "sql-mutation-guard"], {
+    cwd,
+    encoding: "utf8",
+    input: JSON.stringify({ tool_name: "mcp__db__execute_sql", tool_input: { sql } }),
+    env: { ...process.env, HOME: home, AW_NAMESPACE: "workflow" },
+  });
 }
 
 function errorOf(body: Record<string, unknown>) {
@@ -113,6 +138,16 @@ describe("a hub with PROJECT markers demands the migration", () => {
     const help = await aw(hub, "status", "--help");
     expect(help.code).toBe(0);
     expect(String(help.body.text)).toContain("Usage: aw status");
+  });
+
+  it("the SQL guard still blocks a mutation, in the hub and from its source", async () => {
+    await configureSqlGuard();
+    for (const cwd of [hub, source]) {
+      const blocked = sqlGuard(cwd, "DELETE FROM data");
+      expect([cwd, blocked.status]).toEqual([cwd, 2]);
+      expect(blocked.stderr).toContain("DELETE");
+      expect(sqlGuard(cwd, "SELECT 1").status).toBe(0);
+    }
   });
 
   it("after hub-migrate --apply the block wears HUB markers and status answers", async () => {

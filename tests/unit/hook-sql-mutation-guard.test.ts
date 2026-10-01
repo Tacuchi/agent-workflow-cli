@@ -67,6 +67,20 @@ function guardPostgres(sql: string) {
 }
 
 describe("runSqlMutationGuard", () => {
+  it("blocks when a configured pattern is not a valid regex, since it cannot clear the call", () => {
+    const result = runSqlMutationGuard({
+      stdin: JSON.stringify({ tool_name: UNKNOWN_TOOL, tool_input: { sql: "SELECT 1" } }),
+      env: new FakeEnv(registeredHome, registeredHome, {}),
+      runtime: {
+        ...runtime,
+        mcpGuards: { sqlMutation: { toolPattern: "(", serverPattern: "^mcp__(.+?)__" } },
+      },
+      paths: new PathsService(normalizeNamespace("workflow"), registeredHome, registeredHome),
+    });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain("regex inválida");
+  });
+
   it.each([
     // S051/AC-07: mutation words inside a literal, a quoted identifier or a comment.
     "SELECT has_database_privilege(current_user, 'esq', 'CREATE')",

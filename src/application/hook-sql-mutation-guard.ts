@@ -67,6 +67,9 @@ const DIALECT_DISPLAY: Record<SqlDialect, string> = {
     "sin declarar: el servidor no está registrado en aw self mcp y se lee también como MySQL",
 };
 
+const INVALID_PATTERNS_MESSAGE =
+  "agent-workflow: la guarda SQL no pudo evaluar la llamada y la bloquea: mcpGuards.sqlMutation de runtime.json trae una regex inválida\n";
+
 export interface SqlGuardResult {
   exitCode: 0 | 2;
   stderr?: string;
@@ -92,7 +95,9 @@ export function runSqlMutationGuard(input: SqlGuardInput): SqlGuardResult {
   if (!payload) return { exitCode: 0 };
 
   const compiled = compilePatterns(patterns);
-  if (!compiled) return { exitCode: 0 };
+  // The host only sends tool calls its matcher already took for SQL, so a
+  // pattern that does not compile cannot clear one: block it instead.
+  if (!compiled) return { exitCode: 2, stderr: INVALID_PATTERNS_MESSAGE };
 
   const toolName = typeof payload.tool_name === "string" ? payload.tool_name : "";
   if (!compiled.tool.test(toolName)) return { exitCode: 0 };

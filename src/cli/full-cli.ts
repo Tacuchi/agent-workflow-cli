@@ -30,7 +30,9 @@ import {
   NamespaceResolver,
   type WorklineDirectory,
   WorklineDirectoryError,
+  namespaceConfigFile,
 } from "../runtime/namespace-resolver.js";
+import { normalizeNamespace } from "../runtime/namespace.js";
 import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
 import { ALL_COMMANDS } from "./commands/index.js";
@@ -66,8 +68,10 @@ async function run(argv: string[]): Promise<ExitCode> {
   const prepared = prepareInvocation(argv);
   if (typeof prepared === "number") return prepared;
   const initialized = await initializeCliContext(prepared.parsed, fs, env, proc, git);
-  if (initialized === null)
+  if (initialized === null) {
+    if (isSqlMutationGuard(prepared.parsed)) return sqlGuardFailedClosed();
     return isHookCommand(prepared.parsed) ? 0 : transportExitCode(prepared.parsed);
+  }
 
   const exit = await dispatchParsedCommand({
     ...prepared,
@@ -95,7 +99,7 @@ function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
   const retired = renamedInvocation(parsed);
   if (retired !== null) {
     emitError(retired);
-    return 1;
+    return isSqlMutationGuard(parsed) ? sqlGuardFailedClosed() : 1;
   }
   const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
   // `--help` never starts a stdio server: it is answered like any other help.
@@ -120,10 +124,27 @@ function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
 }
 
 function rawTransportExitCode(argv: readonly string[]): ExitCode {
+  if (looksLikeSqlGuardInvocation(argv)) return sqlGuardFailedClosed();
   return looksLikeMcpStdioInvocation(argv) || looksLikeToolInvocation(argv) ? 2 : 1;
 }
 
+// The host blocks a tool call only on exit 2: a guard that cannot evaluate
+// fails closed, or any crash would let the mutation through.
+function sqlGuardFailedClosed(): ExitCode {
+  process.stderr.write(
+    "agent-workflow: la guarda SQL no pudo evaluar la llamada y la bloquea; revisá la configuración de runtime\n",
+  );
+  return 2;
+}
+
+function looksLikeSqlGuardInvocation(argv: readonly string[]): boolean {
+  return (
+    firstCommandToken(argv) === "hook" && argv[argv.indexOf("hook") + 1] === "sql-mutation-guard"
+  );
+}
+
 function outputModeFailure(parsed: ParsedArgs, message: string): ExitCode {
+  if (isSqlMutationGuard(parsed)) return sqlGuardFailedClosed();
   if (parsed.command === "tool") {
     emitToolEarlyFailure("INVALID_INPUT", message);
     return 2;
@@ -236,11 +257,42 @@ async function resolveWorklineDirectory(
 
 /**
  * What still answers in a hub whose block wears pre-29 markers: the migration
- * itself, and what does not operate on a hub (doctor, help, the machine-scoped
- * commands and the stdio transports).
+ * itself, what does not operate on a hub (doctor, help, the machine-scoped
+ * commands and the stdio transports), and the SQL guard.
  */
 function exemptFromHubMigration(parsed: ParsedArgs): boolean {
-  return parsed.command === "hub-migrate" || runsWithoutHub(parsed);
+  return parsed.command === "hub-migrate" || runsWithoutHub(parsed) || isSqlMutationGuard(parsed);
+}
+
+// The guard reads only the user's runtime config, so no hub is needed. A hook
+// exits 0 on a resolution error: refusing the guard on one ($HOME, an invalid
+// --hub, a source no hub declares or two hubs declare, an unmigrated hub, two
+// namespaces marked in one folder) would let every mutation through.
+function isSqlMutationGuard(parsed: ParsedArgs): boolean {
+  return parsed.command === "hook" && parsed.rest[0] === "sql-mutation-guard";
+}
+
+async function resolveNamespaceDirectory(
+  resolver: NamespaceResolver,
+  parsed: ParsedArgs,
+  fs: NodeFileSystem,
+  env: NodeEnv,
+): Promise<WorklineDirectory> {
+  try {
+    return await resolver.resolveDirectory(parsed.values.get("namespace"));
+  } catch (error) {
+    if (!(error instanceof WorklineDirectoryError) || !isSqlMutationGuard(parsed)) throw error;
+    // Two namespaces marked here name no single user config: read the one a
+    // folder without a marker would, the pinned namespace or else the default.
+    const pin = namespaceConfigFile(env.homeDir());
+    const pinned = (await fs.exists(pin)) ? await fs.readText(pin) : null;
+    return {
+      root: env.cwd(),
+      namespace: normalizeNamespace(pinned ?? DEFAULT_NAMESPACE),
+      namespaceSource: pinned === null ? "default" : "config",
+      materialized: false,
+    };
+  }
 }
 
 async function resolveCliDirectory(
@@ -249,7 +301,7 @@ async function resolveCliDirectory(
   fs: NodeFileSystem,
   env: NodeEnv,
 ): Promise<WorklineDirectory | null> {
-  const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
+  const directory = await resolveNamespaceDirectory(resolver, parsed, fs, env);
   if (parsed.command === "hub-init") return directory;
   try {
     return await resolveHubDirectory(
@@ -261,11 +313,13 @@ async function resolveCliDirectory(
     );
   } catch (error) {
     if (!(error instanceof HubResolutionError)) throw error;
+    const withoutHub = { ...directory, root: env.cwd(), materialized: false };
+    if (isSqlMutationGuard(parsed)) return withoutHub;
     if (isHookCommand(parsed)) {
       writeStderr(error.message);
       return null;
     }
-    if (runsWithoutHub(parsed)) return { ...directory, root: env.cwd(), materialized: false };
+    if (runsWithoutHub(parsed)) return withoutHub;
     throw error;
   }
 }
@@ -446,14 +500,25 @@ async function executeCommand(
     return result.exitCode;
   } catch (err) {
     await ctx.logger?.error(formatCommandError(command.name, err));
-    if (isMcpStdioInvocation(parsed)) {
-      process.stderr.write("aw mcp: el servidor stdio no pudo iniciar\n");
-      return 1;
-    }
-    const message = redactSensitiveText(err instanceof Error ? err.message : String(err));
-    emit(fail("UNHANDLED", message), command, output, adoptionNotice(command, hubFs));
+    return commandCrashExit(err, parsed, command, output, hubFs);
+  }
+}
+
+function commandCrashExit(
+  err: unknown,
+  parsed: ParsedArgs,
+  command: CliCommand,
+  output: OutputMode,
+  hubFs: MaterializingHubFileSystem,
+): ExitCode {
+  if (isSqlMutationGuard(parsed)) return sqlGuardFailedClosed();
+  if (isMcpStdioInvocation(parsed)) {
+    process.stderr.write("aw mcp: el servidor stdio no pudo iniciar\n");
     return 1;
   }
+  const message = redactSensitiveText(err instanceof Error ? err.message : String(err));
+  emit(fail("UNHANDLED", message), command, output, adoptionNotice(command, hubFs));
+  return 1;
 }
 
 const HUB_SEALED_COMMANDS = new Set([
@@ -673,6 +738,10 @@ void run(process.argv.slice(2))
   })
   .catch(() => {
     const argv = process.argv.slice(2);
+    if (looksLikeSqlGuardInvocation(argv)) {
+      process.exitCode = sqlGuardFailedClosed();
+      return;
+    }
     if (looksLikeMcpStdioInvocation(argv)) {
       process.stderr.write("aw mcp: el servidor stdio no pudo iniciar\n");
       process.exitCode = 2;
