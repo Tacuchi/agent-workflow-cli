@@ -224,7 +224,7 @@ function findHistoryCollisions(
       historyCollisions.push({
         local: session.folder,
         registered: row.key,
-        action: "aw workspace-migrate --renumber",
+        action: "aw hub-migrate --renumber",
       });
     }
   }

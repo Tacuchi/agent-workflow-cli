@@ -99,7 +99,7 @@ describe("resolveSessionTarget — el nombre exacto de la carpeta termina la bú
     if (result.outcome !== "error") throw new Error("expected a write collision");
     expect(result.code).toBe("SESSION_AMBIGUOUS");
     expect(result.candidates.map((candidate) => candidate.folder)).toEqual(COLLIDING);
-    expect(result.action).toContain("workspace-migrate");
+    expect(result.action).toContain("hub-migrate");
     expect(result.action).toContain("--renumber");
   });
 

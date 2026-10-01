@@ -458,7 +458,7 @@ function showHost(out, id) {
   out(`  home: ${plan.home}`);
   out(`  workspace: ${plan.workspace} (git repo, no remote)`);
   out(
-    `  shims first on PATH: command -v aw → ${join(root, "bin", "aw")}, command -v agent-workflow → ${join(root, "bin", "agent-workflow")} (both exec ${plan.node} ${plan.cliMain}, the root's own copy of the checkout, through ${join(root, "bin", "aw-guard.mjs")}, which refuses any --root/--workspace whose realpath is outside the root)`,
+    `  shims first on PATH: command -v aw → ${join(root, "bin", "aw")}, command -v agent-workflow → ${join(root, "bin", "agent-workflow")} (both exec ${plan.node} ${plan.cliMain}, the root's own copy of the checkout, through ${join(root, "bin", "aw-guard.mjs")}, which refuses any --root/--hub whose realpath is outside the root)`,
   );
   out(
     `  without the shims that PATH would resolve: aw → ${commandV("aw", without) ?? "(none)"}, agent-workflow → ${commandV("agent-workflow", without) ?? "(none)"}`,

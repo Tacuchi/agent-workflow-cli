@@ -15,7 +15,7 @@
 // real path, the Workline MCP tools (a read-only server on an unreachable DSN,
 // so the PreToolUse step reaches the SQL guard hook), the exact `pwd`, and the
 // Workline invocations the scenario makes (CLAUDE_SHELL_ALLOW). Any of those
-// carrying --workspace, --root or --approval, and `doctor apply`, ASK.
+// carrying --hub, --root or --approval, and `doctor apply`, ASK.
 
 import { PROBE_MCP } from "../scenario.mjs";
 import { CLAUDE_SHELL_ALLOW, DENIAL_CATEGORIES } from "./denials.mjs";
@@ -35,7 +35,7 @@ const denials = DENIAL_CATEGORIES.flatMap((c) => [
  */
 const cliAsk = (realHome, siblingRoots = []) =>
   ["aw", "agent-workflow"].flatMap((cli) => [
-    `Bash(${cli} *--workspace*)`,
+    `Bash(${cli} *--hub*)`,
     `Bash(${cli} *--approval*)`,
     `Bash(${cli} doctor apply:*)`,
     ...["~", "$HOME", "..", ...(realHome ? [realHome] : []), ...siblingRoots].flatMap((p) => [
@@ -81,7 +81,7 @@ export default {
   paneArgs: [],
   limitations: [
     "only the scenario's Workline calls are pre-approved; every other command asks you in the pane",
-    "a Workline call with --workspace or --approval, `doctor apply`, or a --root naming your real HOME, ~, $HOME, a parent dir or another host's root, asks you; --root at the disposable bundle does not",
+    "a Workline call with --hub or --approval, `doctor apply`, or a --root naming your real HOME, ~, $HOME, a parent dir or another host's root, asks you; --root at the disposable bundle does not",
     "a Workline call piped into another program (`aw flow … | python3 …`) asks you: claude matches every command of a pipeline, and the second one is arbitrary code the run cannot pre-approve",
     "editing the workspace's CLAUDE.md/AGENTS.md, Workline marker, .git or host configs asks you",
     "nothing under your real HOME can be read",

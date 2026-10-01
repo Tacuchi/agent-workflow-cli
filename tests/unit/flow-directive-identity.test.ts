@@ -65,7 +65,7 @@ describe("la identidad que emite una directiva resuelve a una sola sesión", () 
     if (attempted.ok) return;
     if (!("session" in attempted)) throw new Error("expected a session resolution refusal");
     expect(attempted.session.code).toBe("SESSION_AMBIGUOUS");
-    expect(attempted.session.action).toContain("workspace-migrate");
+    expect(attempted.session.action).toContain("hub-migrate");
     expect(attempted.session.action).toContain("--renumber");
   });
 });

@@ -104,7 +104,7 @@ export function renderMigrationPreview(preview: WorkspaceMigrationPreview): stri
   }
   lines.push(...conflictLines(preview.conflicts));
   if (preview.pending > 0) {
-    lines.push("", "Para aplicarlo:", "  aw workspace-migrate --apply");
+    lines.push("", "Para aplicarlo:", "  aw hub-migrate --apply");
   }
   return lines.join("\n");
 }

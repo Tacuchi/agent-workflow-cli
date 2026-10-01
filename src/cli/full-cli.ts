@@ -40,6 +40,7 @@ import { nextStepOfError, nextStepOfRoots } from "./next-step-emit.js";
 import { ASCII_ENV, type OutputMode, resolveOutputMode } from "./output-mode.js";
 import { type ParsedArgs, parseArgv } from "./parser.js";
 import { type CliCommand, CommandRegistry } from "./registry.js";
+import { renamedInvocation } from "./renamed.js";
 import {
   emitError,
   fail,
@@ -89,6 +90,11 @@ interface PreparedInvocation {
 function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
   const parsed = parseCli(argv);
   if (parsed === null) return rawTransportExitCode(argv);
+  const retired = renamedInvocation(parsed);
+  if (retired !== null) {
+    emitError(retired);
+    return 1;
+  }
   const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
   // `--help` never starts a stdio server: it is answered like any other help.
   if (isMcpStdioInvocation(parsed) && parsed.flags.has("--version") && !hasHelp) {
@@ -216,14 +222,14 @@ async function resolveWorklineDirectory(
 ): Promise<WorklineDirectory | null> {
   try {
     const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
-    if (parsed.command === "workspace-init") return directory;
+    if (parsed.command === "hub-init") return directory;
     try {
       return await resolveWorkspaceDirectory(
         fs,
         directory,
         env.cwd(),
         env.homeDir(),
-        parsed.values.get("workspace"),
+        parsed.values.get("hub"),
       );
     } catch (error) {
       if (!(error instanceof WorkspaceResolutionError)) throw error;
@@ -295,7 +301,7 @@ function firstCommandToken(argv: readonly string[]): string | undefined {
     // can precede it. Skip its value while detecting a parse-time tool error so
     // the CLI never falls back to the generic `{ ok, error }` envelope.
     "--format",
-    "--workspace",
+    "--hub",
   ]);
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
@@ -306,7 +312,7 @@ function firstCommandToken(argv: readonly string[]): string | undefined {
     }
     if (
       token.startsWith("--namespace=") ||
-      token.startsWith("--workspace=") ||
+      token.startsWith("--hub=") ||
       token.startsWith("--plugin-")
     )
       continue;
@@ -444,7 +450,7 @@ const WORKSPACE_SEALED_COMMANDS = new Set([
 
 /** Services whose public output already declares the exact first-write effects. */
 function commandOwnsMaterializationReceipt(command: string): boolean {
-  return command === "workspace-init" || command === "session-create";
+  return command === "hub-init" || command === "session-create";
 }
 
 /**
@@ -452,7 +458,7 @@ function commandOwnsMaterializationReceipt(command: string): boolean {
  *
  * The receipt already travelled in `result.data`, and in a terminal nobody reads
  * that: the human projection is each command's own `renderHuman`, and the only
- * one that printed the adoption was `workspace-init` — the command nobody needs
+ * one that printed the adoption was `hub-init` — the command nobody needs
  * to be told by. So adopting a directory was silent exactly where it matters,
  * and a command launched one folder down from a real workspace could found a
  * second one inside it without a word. It is emitted once, by the dispatcher, so
@@ -606,10 +612,10 @@ async function dispatchMenuAction(
       // suppresses the redundant inquirer prompt (which also races with
       // ink's stdin teardown and can phantom-cancel).
       return await run(["self", "update", "--yes", ...mark]);
-    case "workspace-init": {
+    case "hub-init": {
       // The fallback pre-materializes the current implicit root.  Source
       // configuration remains the Project tab's explicit secondary action.
-      return await run(["workspace-init", ...mark]);
+      return await run(["hub-init", ...mark]);
     }
     case "help":
       printHelp(registry.list(), output);

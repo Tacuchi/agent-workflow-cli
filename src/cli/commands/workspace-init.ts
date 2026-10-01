@@ -12,11 +12,11 @@ import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
-  name: "workspace-init",
+  name: "hub-init",
   flags: {
     known: [
-      "workspace",
-      "proyecto",
+      "hub",
+      "nombre",
       "source",
       "fuente",
       "main-branch",
@@ -29,10 +29,10 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
   },
   help: {
     purpose:
-      "Materialize the minimal Workline runtime in a directory, or configure its sources when --source is given.",
+      "Materialize the minimal Workline runtime in a hub, or configure its sources when --source is given.",
     flags: {
-      workspace: { value: "<dir>", effect: "Directory to initialize instead of the resolved one." },
-      proyecto: { value: "<name>", effect: "Project name recorded in the WORKSPACE block." },
+      hub: { value: "<dir>", effect: "Hub directory to initialize instead of the resolved one." },
+      nombre: { value: "<name>", effect: "Hub name recorded in the hub block." },
       source: {
         value: "<alias:path[:branch]>",
         effect: "Declare a source with its path and optional main branch.",
@@ -53,7 +53,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     output:
       "{ok, dry_run, workspace, sources, source_actions[]? {alias, action, error?}, scaffold, materialization, untrack?, skills_toml (created|exists|skipped), project_md, attach_multiroot, detached_removed?}.",
     notes: [
-      "Without sources it creates only the sessions marker and, in a Git repository, the runtime ignore block. With sources it reconciles the WORKSPACE block, the branches and the multi-root visibility; re-running is idempotent.",
+      "Without sources it creates only the sessions marker and, in a Git repository, the runtime ignore block. With sources it reconciles the hub block, the branches and the multi-root visibility; re-running is idempotent.",
       "A partial failure returns ok:false with error code WORKSPACE_INIT_FAILED and the full data.",
     ],
   },
@@ -69,9 +69,9 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     if ("error" in parsed) return fail<WorkspaceInitResult>("INVALID_INPUT", parsed.error);
     const sources = parsed.fuentes.map(toWorkspaceSource);
 
-    const proyecto = args.values.get("proyecto");
+    const proyecto = args.values.get("nombre");
     const mainBranch = args.values.get("main-branch");
-    const workspace = args.values.get("workspace");
+    const workspace = args.values.get("hub");
     const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);
     const qaBranches = parseWorkingBranches(args.valuesMulti.get("qa-branch") ?? []);
 
@@ -118,7 +118,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
     const data = result.data;
     if (data === undefined) return "";
     const lines = [
-      `workspace-init${data.dry_run ? " · dry-run (no escribe)" : ""} · ${data.workspace}`,
+      `hub-init${data.dry_run ? " · dry-run (no escribe)" : ""} · ${data.workspace}`,
       `  Fuentes    ${data.sources}`,
       `  skills.toml ${data.skills_toml}`,
     ];
@@ -146,7 +146,7 @@ export const workspaceInitCommand: CliCommand<WorkspaceInitResult> = {
 };
 
 function workspaceInitFailureMessage(data: WorkspaceInitResult): string {
-  const lines = ["workspace-init no completó exitosamente"];
+  const lines = ["hub-init no completó exitosamente"];
   if ("results" in data.project_md) {
     for (const file of data.project_md.results ?? []) {
       lines.push(

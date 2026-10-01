@@ -93,7 +93,7 @@ describe("mcp commands use the resolved Workline root", () => {
     expect(existsSync(join(workspace, ".mcp.json"))).toBe(false);
   });
 
-  it("warp-status reads the resolved root, while --workspace remains an override", async () => {
+  it("warp-status reads the resolved root, while --hub remains an override", async () => {
     const rootFile = join(workspace, ".warp", ".mcp.json");
     const override = join(sandbox, "override");
     const overrideFile = join(override, ".warp", ".mcp.json");
@@ -111,10 +111,7 @@ describe("mcp commands use the resolved Workline root", () => {
       }),
     );
 
-    const overridden = await mcpCommand.execute(
-      args(["warp-status"], { workspace: override }),
-      ctx,
-    );
+    const overridden = await mcpCommand.execute(args(["warp-status"], { hub: override }), ctx);
     expect(overridden.data).toEqual(
       expect.objectContaining({
         reports: expect.arrayContaining([

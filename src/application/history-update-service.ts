@@ -122,7 +122,7 @@ export function sharedNumberError(
     code: "SESSION_AMBIGUOUS",
     message: `el número ${sessionNumericCode(code) ?? code} lo comparten ${sharing.length} carpetas y el registro se indexa por número: escribir la fila de una pisaría la de la otra`,
     candidates: sharing,
-    action: `ejecutá \`aw workspace-migrate --renumber\` antes de registrar la fila: ${folders.join(", ")}`,
+    action: `ejecutá \`aw hub-migrate --renumber\` antes de registrar la fila: ${folders.join(", ")}`,
   };
 }
 

@@ -89,7 +89,7 @@ describe("runStatusCommand — full dashboard", () => {
     expect(status.history_collisions).toContainEqual({
       local: "001-spec-refine",
       registered: "001-remota-quick",
-      action: "aw workspace-migrate --renumber",
+      action: "aw hub-migrate --renumber",
     });
   });
 
@@ -1017,7 +1017,7 @@ describe("status human — un root implícito sigue siendo Workline", () => {
 
     expect(data.workspace.initialized).toBe(false);
     expect(text).toContain("sin pendientes");
-    expect(text).not.toContain("/w:workspace-init");
+    expect(text).not.toContain("/w:hub-init");
   });
 });
 

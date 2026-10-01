@@ -641,7 +641,7 @@ describe("host-run profiles — third review", () => {
       "discard",
       "amend",
       "persist",
-      "workspace-init",
+      "hub-init",
     ]) {
       expect(
         shell.some((r: string) => r.startsWith(`Bash(aw ${words}`)),
@@ -649,7 +649,7 @@ describe("host-run profiles — third review", () => {
       ).toBe(false);
     }
     const ask = PROFILES["claude-code"].effective(ctx).ask;
-    expect(ask).toContain("Bash(aw *--workspace*)");
+    expect(ask).toContain("Bash(aw *--hub*)");
     expect(ask).toContain("Bash(aw doctor apply:*)");
     for (const broad of ["Bash(aw:*)", "Bash(aw *)", "Bash(agent-workflow:*)"]) {
       const leaky = { ...PROFILES["claude-code"], allowedIn: () => [...allowed, broad] };
@@ -866,7 +866,7 @@ describe("host-run — fifth review", () => {
       for (const entry of cp.read_set)
         expect(entry.absolute.startsWith(`${root}/`), entry.absolute).toBe(true);
       spawnSync("git", ["init", "-q", "-b", "main"], { cwd: plan.workspace, env: plan.env });
-      expect(aw("workspace-init").status).toBe(0);
+      expect(aw("hub-init").status).toBe(0);
       const started = JSON.parse(
         aw("flow", "start", "--flow", "quick", "--name", "probe", "--objetivo", "x").stdout,
       );

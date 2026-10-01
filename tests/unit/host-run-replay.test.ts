@@ -485,7 +485,7 @@ describe("host-run replay: the profiles and invocations the run needed", () => {
     expect(ask).not.toContain("Bash(aw *--root*)");
     expect(ask).toContain("Bash(aw *--root /Users/someone*)");
     expect(ask).toContain("Bash(aw *--root /r/other*)");
-    expect(ask).toContain("Bash(aw *--workspace*)");
+    expect(ask).toContain("Bash(aw *--hub*)");
   });
 
   it("codex's bare invocations carry text after the mention, so Enter submits them", () => {
@@ -500,7 +500,7 @@ describe("host-run replay: the profiles and invocations the run needed", () => {
 });
 
 describe("host-run review AC1–AC6", () => {
-  it("AC1: the root's aw refuses every --root/--workspace outside the root, whatever its form", async () => {
+  it("AC1: the root's aw refuses every --root/--hub outside the root, whatever its form", async () => {
     const { symlinkSync } = await import("node:fs");
     const { spawnSync } = await import("node:child_process");
     const dir = temp();
@@ -536,8 +536,8 @@ describe("host-run review AC1–AC6", () => {
       ["context-plan", "--root", "../.."],
       ["context-plan", "--root", `${root}/../elsewhere`],
       ["context-plan", "--root", "escape/skills"],
-      ["status", "--workspace", "/etc"],
-      ["status", "--workspace="],
+      ["status", "--hub", "/etc"],
+      ["status", "--hub="],
     ];
     for (const args of outside) {
       const r = aw(...args);
@@ -549,7 +549,7 @@ describe("host-run review AC1–AC6", () => {
     for (const args of [
       ["context-plan", "--root", `${root}/home/.claude/skills/w`],
       ["context-plan", `--root=${root}/cli`],
-      ["status", "--workspace", p.workspace],
+      ["status", "--hub", p.workspace],
     ]) {
       const r = aw(...args);
       expect(r.status, args.join(" ")).toBe(0);

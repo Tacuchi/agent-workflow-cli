@@ -463,8 +463,8 @@
         }
       ]
     },
-    "workspace-init": {
-      "core": ["commands/workspace-init.md"],
+    "hub-init": {
+      "core": ["commands/hub-init.md"],
       "modules": [
         {
           "path": "modules/PLAN-MODE.md",

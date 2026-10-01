@@ -145,7 +145,7 @@ export const workspaceBlockProvider: DoctorProvider = {
         remediation: {
           kind: "manual",
           action: null,
-          guidance: ["aw project-md-upsert --init reescribe el par tras revisar ambas versiones"],
+          guidance: ["aw hub-block --init reescribe el par tras revisar ambas versiones"],
         },
       });
     }

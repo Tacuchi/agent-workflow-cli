@@ -432,7 +432,7 @@ describe("renumerado asistido de sesiones", () => {
       { from: "session009-antigua", to: "011-antigua", reason: "legacy" },
     ]);
     const preview = await workspaceMigrateCommand.execute(
-      parseArgv(["workspace-migrate", "--renumber"]),
+      parseArgv(["hub-migrate", "--renumber"]),
       context(fs),
     );
     expect(preview.data).toMatchObject({
@@ -837,25 +837,22 @@ describe("un workspace sano no cambia de comportamiento", () => {
 
 // ─── la superficie del comando ───────────────────────────────────────────────
 
-describe("aw workspace-migrate", () => {
+describe("aw hub-migrate", () => {
   it("sin --apply es de sólo lectura y ofrece el comando que aplica", async () => {
     const fs = hub({
       claude: `${RICH_BLOCK}\n`,
       folders: [{ name: "session007-triage" }],
     });
-    const result = await workspaceMigrateCommand.execute(
-      parseArgv(["workspace-migrate"]),
-      context(fs),
-    );
+    const result = await workspaceMigrateCommand.execute(parseArgv(["hub-migrate"]), context(fs));
     expect(result.ok).toBe(true);
     expect(fs.writes.size).toBe(0);
     if (result.data?.action !== "preview") throw new Error("esperaba una vista previa");
     expect(result.data.pending).toBe(2);
-    expect(result.data.next).toBe("aw workspace-migrate --apply");
+    expect(result.data.next).toBe("aw hub-migrate --apply");
     expect(result.data.markers[0]?.file).toBe("CLAUDE.md");
 
     const human = workspaceMigrateCommand.renderHuman?.(result, { detail: false }) ?? "";
-    expect(human).toContain("aw workspace-migrate --apply");
+    expect(human).toContain("aw hub-migrate --apply");
     expect(human).toContain("AGENT-WORKFLOW → WORKFLOW");
   });
 
@@ -866,7 +863,7 @@ describe("aw workspace-migrate", () => {
       folders: [{ name: "session007-triage" }],
     });
     const result = await workspaceMigrateCommand.execute(
-      parseArgv(["workspace-migrate", "--apply"]),
+      parseArgv(["hub-migrate", "--apply"]),
       context(fs),
     );
     expect(result.ok).toBe(true);
@@ -876,7 +873,7 @@ describe("aw workspace-migrate", () => {
   });
 
   it("`--apply` seguido de un positional no se traga el token y sigue aplicando", async () => {
-    const args = parseArgv(["workspace-migrate", "--apply", "algo"]);
+    const args = parseArgv(["hub-migrate", "--apply", "algo"]);
     expect(args.flags.has("--apply")).toBe(true);
     expect(args.values.has("apply")).toBe(false);
   });
@@ -885,7 +882,7 @@ describe("aw workspace-migrate", () => {
     const fs = hub({ claude: `${RICH_BLOCK}\n` });
     const result = await dispatch(
       workspaceMigrateCommand,
-      parseArgv(["workspace-migrate", "--force"]),
+      parseArgv(["hub-migrate", "--force"]),
       context(fs),
     );
     expect(result.ok).toBe(false);

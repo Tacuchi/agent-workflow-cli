@@ -51,7 +51,7 @@ it("persist validado en A no aplica en B aun si ambos tienen docs idénticos", a
   }
   const cli = fileURLToPath(new URL("../../dist/cli/main.js", import.meta.url));
   const run = (hub: string, stage: string, input?: string, approval?: string) => {
-    const args = [cli, "persist", stage, "--workspace", hub, "--json"];
+    const args = [cli, "persist", stage, "--hub", hub, "--json"];
     if (approval) args.push("--approval", approval);
     const output = spawnSync(process.execPath, args, {
       cwd: base,

@@ -12,7 +12,7 @@ afterEach(() => {
 });
 const cli = fileURLToPath(new URL("../../dist/cli/main.js", import.meta.url));
 
-it("--workspace nombra la raíz exacta desde otro cwd y rechaza una subcarpeta", () => {
+it("--hub nombra la raíz exacta desde otro cwd y rechaza una subcarpeta", () => {
   root = mkdtempSync(join(tmpdir(), "aw-flag-"));
   const home = join(root, "home");
   const outside = join(root, "outside");
@@ -23,7 +23,7 @@ it("--workspace nombra la raíz exacta desde otro cwd y rechaza una subcarpeta",
   mkdirSync(join(hub, "docs"));
   writeFileSync(join(hub, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
   const run = (workspace: string) =>
-    spawnSync(process.execPath, [cli, "status", "--workspace", workspace, "--json"], {
+    spawnSync(process.execPath, [cli, "status", "--hub", workspace, "--json"], {
       cwd: outside,
       env: { ...process.env, HOME: home, AW_NAMESPACE: "workflow" },
       encoding: "utf8",

@@ -150,7 +150,7 @@ export async function runWorkspaceInit(
   ) {
     return {
       error: "no_sources",
-      hint: "las opciones de rama requieren una fuente; --proyecto puede usarse solo",
+      hint: "las opciones de rama requieren una fuente; --nombre puede usarse solo",
     };
   }
   const validation = input.sources.length > 0 ? validateSources(input.sources) : null;
@@ -399,7 +399,7 @@ function validateSources(sources: WorkspaceSource[]): WorkspaceInitInputError | 
   if (!sources || sources.length < 1) {
     return {
       error: "no_sources",
-      hint: "declará una fuente con aw add-source <alias>:<ruta>:<rama>; workspace-init --proyecto <nombre> funciona sin fuentes",
+      hint: "declará una fuente con aw add-source <alias>:<ruta>:<rama>; hub-init --nombre <nombre> funciona sin fuentes",
     };
   }
   const aliases = new Set<string>();
@@ -438,7 +438,7 @@ async function materializeWithoutSources(
   if (metadataRequested) {
     return {
       error: "no_sources",
-      hint: "las opciones de rama requieren al menos una fuente (--source alias:path[:rama]); sin fuentes workspace-init sólo materializa el runtime",
+      hint: "las opciones de rama requieren al menos una fuente (--source alias:path[:rama]); sin fuentes hub-init sólo materializa el runtime",
     };
   }
   const materialization = await initMaterialization(fs, wsPaths, input.dryRun === true);

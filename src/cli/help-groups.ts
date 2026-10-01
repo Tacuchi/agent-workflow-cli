@@ -26,7 +26,7 @@ const GROUPS: readonly CommandGroup[] = [
       "session-close",
       "session-pause",
       "session-artifacts",
-      "workspace-commit",
+      "hub-commit",
     ],
   },
   {
@@ -36,8 +36,8 @@ const GROUPS: readonly CommandGroup[] = [
   {
     name: "Sources / Branches",
     commands: [
-      "workspace-init",
-      "workspace-move",
+      "hub-init",
+      "hub-move",
       "sources",
       "doc-branch",
       "set-working-branch",
@@ -139,11 +139,11 @@ const GROUPS: readonly CommandGroup[] = [
       "history-update",
       "release-data",
       "code-scan",
-      "project-md-upsert",
-      // Lives with the record-repair family and not with `workspace-init`: it
-      // does not create a workspace, it repairs the durable state of one that a
+      "hub-block",
+      // Lives with the record-repair family and not with `hub-init`: it
+      // does not create a hub, it repairs the durable state of one that a
       // previous namespace left unreadable.
-      "workspace-migrate",
+      "hub-migrate",
     ],
   },
   { name: "MCP", commands: ["mcp", "tool"] },
@@ -366,7 +366,7 @@ export function globalHelpText(
     "aw — Workline runtime CLI",
     "",
     "Usage:",
-    "  aw [--namespace <name>] [--workspace <path>] <command> [<action>] [args...]",
+    "  aw [--namespace <name>] [--hub <path>] <command> [<action>] [args...]",
     "     [--plugin-root <path>] [--plugin-version <semver>] [--compat <range>]",
     "  aw <command> [<action>] --help   its purpose, flags, output shape and exit codes",
     "",
@@ -382,9 +382,9 @@ export function globalHelpText(
     "",
     "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
     "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
-    `default '${defaultNamespace}'. --workspace selects an explicit workspace. Without`,
+    `default '${defaultNamespace}'. --hub selects an explicit hub. Without`,
     "a marker, a directory outside a git checkout is an implicit root; inside",
-    "an unclaimed checkout, specify --workspace or initialize a workspace.",
+    "an unclaimed checkout, specify --hub or initialize a hub.",
     "",
     "Commands:",
     "",

@@ -234,7 +234,7 @@ export const BLOCK_PLACEHOLDER_PROYECTO = "_Describe el proyecto aquí: qué es 
 export const BLOCK_PLACEHOLDER_FUENTES =
   "_Sin fuentes declaradas. Usa `aw add-source <alias>:<ruta>:<rama>`._";
 const LEGACY_FUENTES_PLACEHOLDER =
-  "_Sin fuentes declaradas. Edita manualmente o usa `project-md-upsert --init`._";
+  "_Sin fuentes declaradas. Edita manualmente o usa `hub-block --init`._";
 export const BLOCK_PLACEHOLDER_STACK = "_Stack sin detectar._";
 /** Emitted by the pre-TypeScript generator for an undetectable stack. */
 const LEGACY_STACK_PLACEHOLDER = "Edita manualmente si aplica.";

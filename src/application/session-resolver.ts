@@ -506,7 +506,7 @@ function writeCollisionError(code: string, candidates: SessionCandidate[]): Sess
     code: "SESSION_AMBIGUOUS",
     message: `el correlativo ${code} corresponde a ${candidates.length} carpetas; una escritura no puede elegir qué registro durable actualizar`,
     candidates,
-    action: `ejecutá \`aw workspace-migrate --renumber\` para resolver el número compartido: ${folders.join(", ")}`,
+    action: `ejecutá \`aw hub-migrate --renumber\` para resolver el número compartido: ${folders.join(", ")}`,
   };
 }
 

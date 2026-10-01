@@ -107,8 +107,7 @@ async function validateMoveDestination(
   home: string,
   next: string,
 ): Promise<void> {
-  if (!options.repair && !options.destination)
-    throw new Error("Indica un destino para workspace-move.");
+  if (!options.repair && !options.destination) throw new Error("Indica un destino para hub-move.");
   if (!options.repair && (await fs.exists(next))) throw new Error(`El destino ${next} ya existe.`);
   if (
     next === home ||
@@ -180,7 +179,7 @@ async function renameWorkspaceRoot(
     const code = (error as NodeJS.ErrnoException).code;
     if (code === "EXDEV")
       throw new Error(
-        "No se puede renombrar entre discos: mueve el hub a mano y ejecuta workspace-move --repair.",
+        "No se puede renombrar entre discos: mueve el hub a mano y ejecuta hub-move --repair.",
       );
     if (code === "EPERM" || code === "EBUSY")
       throw new Error(

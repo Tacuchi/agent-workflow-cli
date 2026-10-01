@@ -84,7 +84,7 @@ const HOST_VALUES: ReadonlySet<string> = new Set([...FILE_HOSTS, "all"]);
 // `--dsn-var` and a valued `--all-connections` are known on purpose: each is
 // refused with the reason it is wrong, which says more than "unknown flag".
 const MCP_CONNECTION_FLAGS = ["instance", "all-connections", "dsn-var"];
-const MCP_SCOPE_FLAGS = ["host", ...MCP_CONNECTION_FLAGS, "workspace", "global"];
+const MCP_SCOPE_FLAGS = ["host", ...MCP_CONNECTION_FLAGS, "hub", "global"];
 // The stdio servers are launched by the host from a descriptor another version
 // may have written, like a hook: an unknown flag there warns on stderr (stdout
 // is JSON-RPC) instead of leaving the host with a dead server.
@@ -114,11 +114,11 @@ const SCOPE_FLAGS = {
     effect: `Host config to act on: ${[...FILE_HOSTS, "all"].join(", ")}; defaults to the host running this command.`,
   },
   ...CONNECTION_HELP,
-  workspace: {
+  hub: {
     value: "<path>",
-    effect: "Workspace whose config is used; defaults to the resolved one.",
+    effect: "Hub whose config is used; defaults to the resolved one.",
   },
-  global: { effect: "Act on the host's global config instead of the workspace one." },
+  global: { effect: "Act on the host's global config instead of the hub one." },
 } as const;
 
 const SERVE_DB_FLAGS = {
@@ -147,7 +147,7 @@ export const mcpCommand: CliCommand = {
       remove: { known: [...MCP_SCOPE_FLAGS, "dry-run", "force"] },
       doctor: { known: [...MCP_SCOPE_FLAGS, "probe"] },
       migrate: { known: [...MCP_SCOPE_FLAGS, "dry-run", "apply", "force"] },
-      "warp-status": { known: ["workspace"] },
+      "warp-status": { known: ["hub"] },
     },
   },
   help: {
@@ -241,11 +241,11 @@ export const mcpCommand: CliCommand = {
       },
       "warp-status": {
         purpose:
-          "Report whether Warp's file-based MCP configs exist in the workspace and home, with the activation hint.",
+          "Report whether Warp's file-based MCP configs exist in the hub and home, with the activation hint.",
         flags: {
-          workspace: {
+          hub: {
             value: "<path>",
-            effect: "Workspace whose .warp/.mcp.json is read; defaults to the resolved one.",
+            effect: "Hub whose .warp/.mcp.json is read; defaults to the resolved one.",
           },
         },
         output:
@@ -424,9 +424,9 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   if (!("value" in connections)) return connections;
 
   // All workspace-scoped MCP artifacts share Workline's resolved root. An
-  // explicit --workspace remains an intentional override; raw process cwd is
+  // explicit --hub remains an intentional override; raw process cwd is
   // only the invocation coordinate and may be a source subdirectory.
-  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
   const scopeInput = args.flags.has("--global")
     ? ({ scope: "global" } as const)
     : ({ scope: "workspace", workspace } as const);
@@ -623,7 +623,7 @@ function buildWarpHintsFor(
 }
 
 async function runWarpStatusSub(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
-  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
   const projectFile = resolveWarpProjectMcpPath(resolve(workspace));
   const globalFile = resolveWarpGlobalMcpPath() ?? `${homedir()}/.warp/.mcp.json`;
   const sources = [
@@ -667,7 +667,7 @@ async function runRemoveSub(args: ParsedArgs, ctx: CliContext): Promise<CommandR
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
 
-  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
   const scopeInput = args.flags.has("--global")
     ? ({ scope: "global" } as const)
     : ({ scope: "workspace", workspace } as const);
@@ -738,7 +738,7 @@ function resolveDoctorInput(
   if (!("value" in connections)) return connections;
   const probeMode = resolveDoctorProbeMode(args);
   if (!("value" in probeMode)) return probeMode;
-  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
   return {
     value: {
       hosts: hosts.value,
@@ -1017,7 +1017,7 @@ function resolveMigrationInput(
   if (!("value" in hosts)) return hosts;
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
-  const workspace = args.values.get("workspace") ?? ctx.paths.workspaceDir();
+  const workspace = args.values.get("hub") ?? ctx.paths.workspaceDir();
   return {
     value: {
       apply,

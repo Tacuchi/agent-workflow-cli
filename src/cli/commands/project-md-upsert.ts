@@ -12,20 +12,20 @@ import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 export const projectMdUpsertCommand: CliCommand = {
-  name: "project-md-upsert",
+  name: "hub-block",
   flags: {
-    known: ["init", "read", "proyecto", "fuente", "main-branch", "working-branch", "verbose"],
+    known: ["init", "read", "nombre", "fuente", "main-branch", "working-branch", "verbose"],
     exclusive: [["read", "init"]],
     repeatable: ["fuente", "working-branch"],
   },
   help: {
-    purpose: "Read or update the workspace block that CLAUDE.md and AGENTS.md carry.",
+    purpose: "Read or update the hub block that CLAUDE.md and AGENTS.md carry.",
     flags: {
       init: { effect: "Write the block, merging the given values over the existing ones." },
       read: { effect: "Read the block without writing." },
-      proyecto: {
+      nombre: {
         value: "<name>",
-        effect: "Project description; a single line renames the workspace.",
+        effect: "Hub description; a single line renames the hub.",
       },
       fuente: { value: "<alias:path[:branch]>", effect: "Declare a source with --init." },
       "main-branch": { value: "<branch>", effect: "Main branch for sources that declare none." },
@@ -64,7 +64,7 @@ function buildUpsertInput(
 ): { input: ProjectMdUpsertInput } | { error: string } {
   const input: ProjectMdUpsertInput = { op: "init", verbose };
 
-  const proyecto = args.values.get("proyecto");
+  const proyecto = args.values.get("nombre");
   if (proyecto !== undefined) input.proyecto = proyecto;
 
   const workingBranches = parseWorkingBranches(args.valuesMulti.get("working-branch") ?? []);

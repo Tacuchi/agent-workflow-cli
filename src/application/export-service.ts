@@ -178,9 +178,9 @@ export interface ExportScope {
  * before this existed. `bundles` re-consolidates what `docs/scripts` already
  * published, and `workspace` sweeps everything the workspace holds.
  */
-export type ExportBase = "sessions" | "bundles" | "workspace";
+export type ExportBase = "sessions" | "bundles" | "hub";
 
-const EXPORT_BASES: readonly ExportBase[] = ["sessions", "bundles", "workspace"];
+const EXPORT_BASES: readonly ExportBase[] = ["sessions", "bundles", "hub"];
 
 /** Where one piece of the material actually came from — the base resolves into these. */
 export type MaterialOrigin = "sessions" | "standalone-sql" | "bundles";
@@ -805,7 +805,7 @@ async function composeMaterial(
     // previous exports and re-exporting them would duplicate what already lives
     // in docs/. The other bases are asking for exactly that material.
     includeGraduated: base !== "sessions",
-    includeStandaloneSql: base === "workspace",
+    includeStandaloneSql: base === "hub",
     ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
     ...(selection.since !== undefined ? { since: selection.since } : {}),
     ...(selection.source !== undefined ? { sourceAlias: selection.source } : {}),
@@ -814,11 +814,11 @@ async function composeMaterial(
   if ("error" in data) return { error: data.error };
 
   const sessions = base === "bundles" ? [] : (data.sessions as MaterialSession[]);
-  const standalone = base === "workspace" ? (data.standalone_sql ?? []) : [];
+  const standalone = base === "hub" ? (data.standalone_sql ?? []) : [];
   const bundles = base === "sessions" ? [] : (data.graduated_bundles ?? []);
   const origins: MaterialOrigin[] = [
     ...(base === "bundles" ? [] : (["sessions"] as const)),
-    ...(base === "workspace" ? (["standalone-sql"] as const) : []),
+    ...(base === "hub" ? (["standalone-sql"] as const) : []),
     ...(base === "sessions" ? [] : (["bundles"] as const)),
   ];
 

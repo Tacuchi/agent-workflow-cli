@@ -8,13 +8,13 @@
 
 ## Workspace
 
-Every invoked directory is a usable implicit workspace. The closest ancestor with `.<namespace>/sessions/` is reused; otherwise the invoked directory is the root. [`/w:workspace-init`](workspace-init.md) is optional: without sources it materializes only the runtime, and with sources it configures metadata.
+Every invoked directory is a usable implicit workspace. The closest ancestor with `.<namespace>/sessions/` is reused; otherwise the invoked directory is the root. [`/w:hub-init`](hub-init.md) is optional: without sources it materializes only the runtime, and with sources it configures metadata.
 
 ## Index
 
 | Command | What it does | Mode |
 |---|---|---|
-| [`workspace-init`](workspace-init.md) | Materialize runtime or configure explicit sources | single-pass, interactive |
+| [`hub-init`](hub-init.md) | Materialize runtime or configure explicit sources | single-pass, interactive |
 | [`spec-new`](spec-new.md) | Generates the spec draft (`docs/specs/NNN-spec-<slug>.md`) | single-pass, no loop |
 | [`spec-refine`](spec-refine.md) | Refines the spec **in place** until it is `ready-for-plan` | starts `spec-refine-loop` |
 | [`plan-new`](plan-new.md) | Derives the executable plan (`docs/plans/PPP-plan-<slug>.md`) from the spec | starts `plan-new-loop` |

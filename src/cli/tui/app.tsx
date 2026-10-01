@@ -42,7 +42,7 @@ const TAB_BY_KEY: Record<string, TabId> = Object.fromEntries(TABS_LIST.map((t) =
 // Action ids that exit the TUI and hand off to the CLI (main's
 // `dispatchMenuAction`) as the mapped MenuAction.
 const EXIT_ACTIONS: Record<string, MenuAction | undefined> = {
-  "workspace-init": "workspace-init",
+  "workspace-init": "hub-init",
   "install-skill": "install-skill",
   "self:doctor": "doctor",
   "self:update": "update",

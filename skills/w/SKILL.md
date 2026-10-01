@@ -28,7 +28,7 @@ Anyone needing orientation — a loop at start, a new agent in the workspace, or
 
 ### Workspace (implicit first)
 
-A single concept: **workspace**. There is no project/hub split and no mandatory initialization. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit workspace** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:workspace-init` is an optional early materialization; explicit sources add configured metadata. `workspace` is the reserved source that points to the root, and any extra alias is explicit.
+A single concept: **workspace**. There is no project/hub split and no mandatory initialization. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit workspace** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `workspace` is the reserved source that points to the root, and any extra alias is explicit.
 
 ### The 3-layer architecture + `docs/` zone
 
@@ -132,7 +132,7 @@ With no flow command, recommend the **cheapest route that still covers the risk*
 
 ### The commands (`/w:` namespace)
 
-- `/w:workspace-init` — materializes the runtime early, or configures explicit sources.
+- `/w:hub-init` — materializes the runtime early, or configures explicit sources.
 - `/w:spec-new` — generates an initial spec (single-pass, no loop; a bounded reconnaissance of the sources precedes the scope decision).
 - `/w:spec-refine` — starts `spec-refine-loop` to refine the spec until it is `ready-for-plan`: the blocking functional decisions closed, the architecture/implementation ones declared for PLAN.
 - `/w:plan-new` — starts `plan-new-loop` to derive an executable plan from the ready spec.

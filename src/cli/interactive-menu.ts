@@ -15,4 +15,4 @@ export type MenuAction =
   | "update"
   | "help"
   | "exit"
-  | "workspace-init";
+  | "hub-init";

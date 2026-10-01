@@ -453,7 +453,7 @@ async function validateMaterializationRoot(
   ) {
     throw new WorkspaceResolutionError(
       "WORKSPACE_IN_SOURCE",
-      `${root} cae dentro de una unidad; indica --workspace <ruta> del hub.`,
+      `${root} cae dentro de una unidad; indica --hub <ruta> del hub.`,
     );
   }
   // Guard every writer, including commands that create their own PathsService.
@@ -468,7 +468,7 @@ async function validateMaterializationRoot(
     if (claimants.some((hub) => hub.root !== canonical)) {
       throw new WorkspaceResolutionError(
         "WORKSPACE_IN_SOURCE",
-        `${root} pertenece a una fuente declarada; usa --workspace <ruta> del hub.`,
+        `${root} pertenece a una fuente declarada; usa --hub <ruta> del hub.`,
       );
     }
   }

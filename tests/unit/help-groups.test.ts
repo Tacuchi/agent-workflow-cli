@@ -141,10 +141,10 @@ describe("commandHelpText", () => {
     );
   });
 
-  it("la ayuda global anuncia --workspace sin prometer una raíz implícita en un checkout", () => {
+  it("la ayuda global anuncia --hub sin prometer una raíz implícita en un checkout", () => {
     const help = globalHelpText([], "workflow");
-    expect(help).toContain("[--workspace <path>]");
-    expect(help).toContain("inside\nan unclaimed checkout, specify --workspace");
+    expect(help).toContain("[--hub <path>]");
+    expect(help).toContain("inside\nan unclaimed checkout, specify --hub");
     expect(help).not.toContain("the invoked directory is the\nimplicit root");
   });
 
@@ -198,12 +198,12 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
     }
   });
 
-  it("project-md-upsert exige exactamente uno, y rechaza ambas operaciones juntas", async () => {
+  it("hub-block exige exactamente uno, y rechaza ambas operaciones juntas", async () => {
     const help = commandHelpText(projectMdUpsertCommand);
     expect(help).toContain("exactly one of: --read | --init");
     expect(help).toMatch(/--fuente <[^>]+> +Declare a source with --init\. \(repeatable\)/);
     const result = await projectMdUpsertCommand.execute(
-      parseArgv(["project-md-upsert", "--read", "--init"]),
+      parseArgv(["hub-block", "--read", "--init"]),
       {} as CliContext,
     );
     expect(result).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });

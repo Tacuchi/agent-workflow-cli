@@ -65,7 +65,7 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
 
   // /w: slash commands — `ls skills/w/commands/*.md` (excl. README).
   slashCommands: [
-    "/w:workspace-init",
+    "/w:hub-init",
     "/w:spec-new",
     "/w:spec-refine",
     "/w:plan-new",

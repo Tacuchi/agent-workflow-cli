@@ -1,5 +1,5 @@
 /**
- * `aw workspace-migrate`: bring a hub that carries a legacy session series up to
+ * `aw hub-migrate`: bring a hub that carries a legacy session series up to
  * the model the rest of the CLI operates.
  *
  * Read-only by default and explicit by design. It is a PUNCTUAL operation, not
@@ -56,21 +56,21 @@ export type WorkspaceMigrateOutput =
     };
 
 export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
-  name: "workspace-migrate",
+  name: "hub-migrate",
   flags: FLAGS,
   help: {
     purpose:
-      "Bring a workspace with a legacy session series up to the current model: markers, closing sentinels and reserved numbers.",
+      "Bring a hub with a legacy session series up to the current model: markers, closing sentinels and reserved numbers.",
     flags: {
       apply: {
-        effect: "Write the migration under the workspace lock; without it nothing is written.",
+        effect: "Write the migration under the hub lock; without it nothing is written.",
       },
       renumber: { effect: "Instead, renumber colliding session folders (preview unless --apply)." },
     },
     output:
       "{action: preview, workspace, markers[], sentinels[], rows[], conflicts[], legacy[], next_correlative, pending, next} | {action: apply, workspace, markers_renamed[], duplicates_dropped[], sentinels_seeded[], rows_seeded[], rows_without_date[], conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
     notes: [
-      "Renames the project block markers to the current namespace, seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
+      "Renames the hub block markers to the current namespace, seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
     ],
   },
 
@@ -82,7 +82,7 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
           data: {
             action: "renumber-preview",
             ...(await planRenumber(ctx.fs, ctx.paths, ctx.git)),
-            next: "aw workspace-migrate --renumber --apply",
+            next: "aw hub-migrate --renumber --apply",
           },
           exitCode: 0,
         };
@@ -103,7 +103,7 @@ export const workspaceMigrateCommand: CliCommand<WorkspaceMigrateOutput> = {
         data: {
           action: "preview",
           ...migrationPreview(plan),
-          next: "aw workspace-migrate --apply",
+          next: "aw hub-migrate --apply",
         },
         exitCode: 0,
       };

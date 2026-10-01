@@ -8,15 +8,14 @@ import type { CliCommand } from "../registry.js";
 import type { CliContext } from "../types.js";
 
 export const workspaceCommitCommand: CliCommand<WorkspaceCommitResult> = {
-  name: "workspace-commit",
+  name: "hub-commit",
   flags: {
     known: ["code", "export", "approval", "with-evidence"],
     exclusive: [["code", "export"]],
     actions: { prepare: { known: [] }, apply: { known: [] } },
   },
   help: {
-    purpose:
-      "Commit a session's or an export's workspace files with an exact pathspec, after approval.",
+    purpose: "Commit a session's or an export's hub files with an exact pathspec, after approval.",
     flags: {
       code: { value: "<code>", effect: "Commit the files of this session." },
       export: { value: "<docs-path>", effect: "Commit the files of this export under docs/." },

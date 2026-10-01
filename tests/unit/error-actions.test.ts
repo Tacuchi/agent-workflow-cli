@@ -123,7 +123,7 @@ describe("the typed next step", () => {
 
   it("offers no retry of a command that reads stdin, wherever the global flags sit", () => {
     const data = { choose: true, candidates: [{ folder: "001-x-quick" }] };
-    expect(nextStepOfError(data, ["--workspace", "/w", "flow", "submit"])).toBeNull();
+    expect(nextStepOfError(data, ["--hub", "/w", "flow", "submit"])).toBeNull();
     expect(nextStepOfError(data, ["export-scripts", "apply"])).toBeNull();
     expect(nextStepOfError(data, ["flow", "advance"])?.next_step).toEqual({
       command: "aw flow advance --code 001-x-quick",
@@ -142,7 +142,7 @@ describe("the typed next step", () => {
   it("only publishes a command the CLI's own contract accepts as written", () => {
     expect(fitsContract("aw status")).toBe(true);
     expect(fitsContract("aw flow advance --session 001-x-quick --flow quick --adopt")).toBe(true);
-    expect(fitsContract("aw workspace-migrate --renumber")).toBe(true);
+    expect(fitsContract("aw hub-migrate --renumber")).toBe(true);
     expect(fitsContract("aw session-create")).toBe(false);
     expect(fitsContract("aw discard")).toBe(false);
     expect(fitsContract("aw flow")).toBe(false);
@@ -205,7 +205,7 @@ describe("determinable errors name the exact command — through the binary", ()
     await session("session001-viejo");
     const out = await aw(ws, "flow", "advance", "--code", "001");
     expect(out.error?.code).toBe("SESSION_AMBIGUOUS");
-    expect(out.data?.next_step).toEqual({ command: "aw workspace-migrate --renumber" });
+    expect(out.data?.next_step).toEqual({ command: "aw hub-migrate --renumber" });
   });
 
   it("FLOW_RUN_ABSENT: --session and --flow come from the adoptable session", async () => {
@@ -228,9 +228,9 @@ describe("determinable errors name the exact command — through the binary", ()
   });
 
   it("WORKSPACE_INVALID inside a workspace: the same invocation on its root", async () => {
-    const out = await aw(root, "status", "--workspace", join(ws, "sub"));
+    const out = await aw(root, "status", "--hub", join(ws, "sub"));
     expect(out.error?.code).toBe("WORKSPACE_INVALID");
-    expect(out.data?.next_step?.command).toMatch(/^aw status --json --workspace \S+\/ws$/);
+    expect(out.data?.next_step?.command).toMatch(/^aw status --json --hub \S+\/ws$/);
   });
 });
 

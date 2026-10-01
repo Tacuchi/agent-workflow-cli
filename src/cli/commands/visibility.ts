@@ -12,13 +12,13 @@ import type { CliContext } from "../types.js";
 
 export const visibilityCommand: CliCommand<VisibilityDoctorResult> = {
   name: "visibility",
-  flags: { known: ["workspace", "global"], actions: { doctor: { known: [] } } },
+  flags: { known: ["hub", "global"], actions: { doctor: { known: [] } } },
   help: {
-    purpose: "Inspect whether every host sees the workspace's sources as multi-root paths.",
+    purpose: "Inspect whether every host sees the hub's sources as multi-root paths.",
     flags: {
-      workspace: {
+      hub: {
         value: "<dir>",
-        effect: "Read by doctor: workspace to inspect instead of the resolved one.",
+        effect: "Read by doctor: hub to inspect instead of the resolved one.",
       },
       global: { effect: "Read by doctor: also inspect the global scope of each host." },
     },
@@ -56,7 +56,7 @@ async function runDoctorSub(
   args: ParsedArgs,
   ctx: CliContext,
 ): Promise<CommandResult<VisibilityDoctorResult>> {
-  const workspace = args.values.get("workspace");
+  const workspace = args.values.get("hub");
   const data = await runVisibilityDoctor(ctx.fs, ctx.env, ctx.paths, {
     ...(workspace !== undefined ? { workspace } : {}),
     global: args.flags.has("--global"),
@@ -160,7 +160,7 @@ function renderFixes(reports: VisibilityHostReport[]): string[] {
     fixes.push("  aw detach-multiroot --global --from-sources limpia el scope global");
   }
   if (reports.some((r) => r.status === "no-project-block")) {
-    fixes.push("  aw workspace-init --source <alias>:<path>   declara las fuentes del workspace");
+    fixes.push("  aw hub-init --source <alias>:<path>         declara las fuentes del hub");
   }
   return fixes.length === 0 ? [] : ["", "Para corregir:", ...fixes];
 }

@@ -231,7 +231,7 @@ async function localRegistryWarning(
     );
   });
   if (collision)
-    return `HISTORY registra el número ${sessionNumericCode(collision.key)} dos veces; aw workspace-migrate --renumber`;
+    return `HISTORY registra el número ${sessionNumericCode(collision.key)} dos veces; aw hub-migrate --renumber`;
   if (!(await git.isGitRepo(root))) return "registro local sin upstream";
   const branch = await git.currentBranch(root);
   const upstream = branch ? await git.upstreamBranch(root, branch) : null;
@@ -256,7 +256,7 @@ async function localRegistryWarning(
     );
   });
   if (mismatched)
-    return `HISTORY local comparte el número ${sessionNumericCode(mismatched.key)} con ${upstream} (${mismatched.key}); aw workspace-migrate --renumber`;
+    return `HISTORY local comparte el número ${sessionNumericCode(mismatched.key)} con ${upstream} (${mismatched.key}); aw hub-migrate --renumber`;
   const remote = maxHistoryCorrelativeFromText(remoteText);
   const local = await maxHistoryCorrelative(fs, paths.cwdHistoryFile());
   const remoteValue = remote === null ? null : correlativeValue(remote);

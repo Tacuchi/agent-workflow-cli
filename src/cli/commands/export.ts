@@ -118,9 +118,9 @@ function exportHelp(category: ExportCategory): CommandHelp {
       ...(category === "scripts"
         ? {
             from: {
-              value: "<sessions|bundles|workspace>",
+              value: "<sessions|bundles|hub>",
               effect:
-                "Base of the material: session SQL (default), the bundles docs/scripts already published, or everything the workspace holds.",
+                "Base of the material: session SQL (default), the bundles docs/scripts already published, or everything the hub holds.",
             },
             exclude: {
               value: "<name>",
@@ -249,7 +249,7 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
         lines.push(`  Commit propuesto: ${data.commit_proposal.message}`);
         for (const path of data.commit_proposal.paths) lines.push(`    ${path}`);
         lines.push(
-          `  aw workspace-commit apply --export ${data.written[0]?.split("/").slice(0, 3).join("/")} --approval ${data.commit_proposal.approval}`,
+          `  aw hub-commit apply --export ${data.written[0]?.split("/").slice(0, 3).join("/")} --approval ${data.commit_proposal.approval}`,
         );
       } else if (data.commit_proposal_error)
         lines.push(`  Commit no disponible: ${data.commit_proposal_error}`);
@@ -301,7 +301,7 @@ function renderPrepare(
     ),
     ...(inventory.unbundled_sql ?? []).map(
       (file) =>
-        `  SQL suelto ${file.name}: incluir con aw export-scripts prepare --from workspace${(inventory.available_bundles ?? []).map((name) => ` --exclude ${name}`).join("")}`,
+        `  SQL suelto ${file.name}: incluir con aw export-scripts prepare --from hub${(inventory.available_bundles ?? []).map((name) => ` --exclude ${name}`).join("")}`,
     ),
   ];
   if (context.detail) lines.push("", request.contract);

@@ -3662,8 +3662,8 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
     effects: ["mutate_overwrite"],
   },
   {
-    id: "workspace-init.materialize-or-configure",
-    scope: cmd("workspace-init"),
+    id: "hub-init.materialize-or-configure",
+    scope: cmd("hub-init"),
     title: "materializar el runtime mínimo o configurar fuentes explícitas del workspace",
     authority: "cli",
     ownership: "cli-owned",
@@ -3708,12 +3708,12 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
  */
 export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
-    command: "workspace-commit",
+    command: "hub-commit",
     reason:
       "comando transversal sin corrida propia: prepare sella mensaje y pathspec del workspace y apply exige ese digest; el cierre del chasis también lo invoca sólo después del consentimiento humano",
   },
   {
-    command: "workspace-move",
+    command: "hub-move",
     reason:
       "mudanza o reparación puntual de un hub; valida el destino y las referencias vivas antes de mover, sin abrir una corrida adicional",
   },
@@ -3823,9 +3823,9 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
     reason: "marca explícita de pausa por decisión humana, fuera de recorridos",
   },
   { command: "history", reason: "reconciliación de sólo lectura del registro de sesiones" },
-  { command: "project-md-upsert", reason: "escritura del bloque de proyecto en el host" },
+  { command: "hub-block", reason: "escritura del bloque del hub en el host" },
   {
-    command: "workspace-migrate",
+    command: "hub-migrate",
     reason:
       "puesta al día puntual de un hub con serie legacy: no abre recorrido ni sesión, y su autoridad es su propio contrato — sin `--apply` no escribe nada, y una sesión sobre la que el histórico y el disco se contradicen queda intacta",
   },

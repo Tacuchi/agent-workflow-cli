@@ -74,7 +74,7 @@
         "bytes": 326
       },
       {
-        "path": "commands/workspace-init.md",
+        "path": "commands/hub-init.md",
         "bytes": 412
       }
     ]
@@ -143,7 +143,7 @@
         "bytes": 2636
       },
       {
-        "command": "workspace-init",
+        "command": "hub-init",
         "bytes": 4195
       }
     ]
@@ -287,9 +287,9 @@
       "files": ["commands/status.md"]
     },
     {
-      "command": "workspace-init",
+      "command": "hub-init",
       "bytes": 4195,
-      "files": ["commands/workspace-init.md"]
+      "files": ["commands/hub-init.md"]
     }
   ],
   "modules": {

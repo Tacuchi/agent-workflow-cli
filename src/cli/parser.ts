@@ -160,7 +160,7 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   // `aw flow advance --adopt` is presence-only; without this the verb or the
   // session code that follows it would be swallowed as its value.
   "adopt",
-  // `aw workspace-migrate --apply` is presence-only, and the swallow is worse
+  // `aw hub-migrate --apply` is presence-only, and the swallow is worse
   // here than a lost positional: the flag would land in `values`, the command
   // would see no `--apply` and print a preview while its author asked for the
   // migration.

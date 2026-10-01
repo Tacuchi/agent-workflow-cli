@@ -1,6 +1,6 @@
 ---
-description: "Use to materialize Workline runtime early, or configure explicit workspace sources. Flows work without a prior init. Backed by `aw workspace-init`."
-argument-hint: --source alias:path[:branch] [--proyecto <name>] [--main-branch <branch>] [--dry-run]
+description: "Use to materialize Workline runtime early, or configure explicit workspace sources. Flows work without a prior init. Backed by `aw hub-init`."
+argument-hint: --source alias:path[:branch] [--nombre <name>] [--main-branch <branch>] [--dry-run]
 allowed-tools:
   [
     "Bash",
@@ -8,11 +8,11 @@ allowed-tools:
   ]
 ---
 
-# workspace-init — materialize or configure
+# hub-init — materialize or configure
 
 Workline already has an implicit workspace at the resolved root: the nearest ancestor with `.<namespace>/sessions/`, or exactly the invoked directory when none exists. It never guesses a Git root.
 
-`aw workspace-init [--source alias:path[:branch]] [flags above] --format human`
+`aw hub-init [--source alias:path[:branch]] [flags above] --format human`
 
 > **The CLI writes; this wrapper does not** — `Write` and `Edit` are absent from `allowed-tools` on purpose. `--dry-run` previews; re-run without it. Relay the output, never re-render it.
 
@@ -30,6 +30,6 @@ Done → the user can run `/w:spec-new`, `/w:plan-new` or `/w:quick`.
 
 ## More context
 
-`aw context-plan --command workspace-init --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` lists the case-specific documents to read:
+`aw context-plan --command hub-init --signal <s> --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` lists the case-specific documents to read:
 
 - `scaffold` — the folder already carries a workspace, or you need what init versions, ignores and prunes → [`../modules/WORKSPACE-SCAFFOLD.md`](../modules/WORKSPACE-SCAFFOLD.md)

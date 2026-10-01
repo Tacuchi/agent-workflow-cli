@@ -81,7 +81,7 @@
         "bytes": 2078
       },
       {
-        "command": "workspace-init",
+        "command": "hub-init",
         "bytes": 2185
       }
     ]

@@ -112,11 +112,11 @@ exec ${shellQuote(node)} ${shellQuote(guard ?? cliMain)} "$@"
 }
 
 /** The flags whose value is a path the CLI reads or writes: it must lie inside the root. */
-export const PATH_FLAGS = ["--root", "--workspace"];
+export const PATH_FLAGS = ["--root", "--hub"];
 
 /**
  * The root's own entry point for `aw`/`agent-workflow`: it refuses, with exit 2
- * and one line, any --root/--workspace (also `--flag=value`) whose realpath is
+ * and one line, any --root/--hub (also `--flag=value`) whose realpath is
  * not inside the disposable root — whatever quoting, `//`, `..` or symlink the
  * command used — and then runs the root's copy of the CLI in the same process.
  * The permission rules of each host are defense in depth; this is the rule.
@@ -291,7 +291,7 @@ export function planIsolation({
         keychain: host.keychain,
       },
       { kind: "git", args: ["init", "-q", "-b", "main"], cwd: workspace },
-      aw("workspace-init"),
+      aw("hub-init"),
       // `aw flow` measures the checkout against HEAD: a repo with no commit fails
       // quick.branch-precondition with «bad revision 'HEAD'» (observed s280).
       { kind: "git", args: ["add", "-A"], cwd: workspace },

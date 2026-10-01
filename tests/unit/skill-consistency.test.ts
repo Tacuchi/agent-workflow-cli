@@ -575,8 +575,8 @@ describe("directed resume contract — resume.md optional argument (spec 004)", 
 });
 
 describe("implicit workspace contract — code ↔ doctrine", () => {
-  it("workspace-init.md distinguishes runtime materialization from source configuration", async () => {
-    const doc = await readSurface("commands/workspace-init.md");
+  it("hub-init.md distinguishes runtime materialization from source configuration", async () => {
+    const doc = await readSurface("commands/hub-init.md");
     expect(doc).toMatch(/minimal/i);
     expect(doc).toContain(".<namespace>/sessions/");
     expect(doc).toContain("does not create");
@@ -592,9 +592,7 @@ describe("implicit workspace contract — code ↔ doctrine", () => {
     for (const rel of ["SKILL.md", "README.md", "commands/README.md"]) {
       const text = await readFile(join(SKILL_ROOT, rel), "utf8");
       expect(text, `${rel} must describe the implicit root`).toMatch(/implicit workspace/i);
-      expect(text, `${rel} must not make init mandatory`).not.toMatch(
-        /run .*workspace-init.*once/i,
-      );
+      expect(text, `${rel} must not make init mandatory`).not.toMatch(/run .*hub-init.*once/i);
       expect(text, `${rel} must not promise the old scaffold`).not.toMatch(
         /`\.workflow\/` \+ `\.workflow\/skills\.toml`/,
       );

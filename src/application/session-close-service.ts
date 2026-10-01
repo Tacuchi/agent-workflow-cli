@@ -567,7 +567,7 @@ async function closeUnderLock(
       return {
         ok: false,
         failure: {
-          error: `el número de ${session.folder} volvió a colisionar; ejecutá aw workspace-migrate --renumber`,
+          error: `el número de ${session.folder} volvió a colisionar; ejecutá aw hub-migrate --renumber`,
           code: "SESSION_AMBIGUOUS",
         },
       };

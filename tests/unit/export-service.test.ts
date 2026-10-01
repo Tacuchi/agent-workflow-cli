@@ -1016,7 +1016,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
 
   it("la base de barrido del workspace junta sesiones, SQL suelto y bundles", async () => {
     const inventory = inventoryOf(
-      await prepare(withMaterial(), "scripts", { from: "workspace", date: DATE }),
+      await prepare(withMaterial(), "scripts", { from: "hub", date: DATE }),
     );
 
     expect(inventory.origins).toEqual(["sessions", "standalone-sql", "bundles"]);
@@ -1028,7 +1028,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
   it("la exclusión por nombre resta la pieza del material", async () => {
     const inventory = inventoryOf(
       await prepare(withMaterial(), "scripts", {
-        from: "workspace",
+        from: "hub",
         exclude: [BUNDLE_B, "041-otra-plan-exec"],
         date: DATE,
       }),
@@ -1042,7 +1042,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
   it("una exclusión que no restó nada se declara, en vez de pasar por cumplida", async () => {
     const inventory = inventoryOf(
       await prepare(withMaterial(), "scripts", {
-        from: "workspace",
+        from: "hub",
         exclude: [BUNDLE_B, "099-export-scripts-2026-01-01"],
         date: DATE,
       }),
@@ -1058,7 +1058,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
   it("una exclusión que sí restó no se declara sin efecto", async () => {
     const inventory = inventoryOf(
       await prepare(withMaterial(), "scripts", {
-        from: "workspace",
+        from: "hub",
         exclude: [BUNDLE_B],
         date: DATE,
       }),
@@ -1070,7 +1070,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
   it("el inventario declara los orígenes y lo que quedó dentro y fuera, con el motivo", async () => {
     const inventory = inventoryOf(
       await prepare(withMaterial(), "scripts", {
-        from: "workspace",
+        from: "hub",
         exclude: [BUNDLE_B],
         date: DATE,
       }),
@@ -1092,7 +1092,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
 
   it("el sello cubre el material nuevo: un bundle que aparece entre etapas vence la propuesta", async () => {
     const fs = withMaterial();
-    const prepared = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const prepared = await prepare(fs, "scripts", { from: "hub", date: DATE });
     const raw = answer(prepared, scriptsDossier(prepared));
 
     // Under the old seal — the session corpus alone — this bundle appearing
@@ -1108,15 +1108,15 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
 
   it("un byte cambiado en un SQL suelto o de un bundle vence el sello", async () => {
     const fs = withMaterial();
-    const before = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const before = await prepare(fs, "scripts", { from: "hub", date: DATE });
     fs.file(`${SCRIPTS}/suelto-limpieza.sql`, "DELETE FROM tmp WHERE id = 1;");
-    const changedStandalone = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const changedStandalone = await prepare(fs, "scripts", { from: "hub", date: DATE });
     expect(changedStandalone.request.input_digest).not.toBe(before.request.input_digest);
     fs.file(`${SCRIPTS}/${BUNDLE_A}/01-alter.sql`, "ALTER TABLE t ADD d int;");
-    const changedBundle = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const changedBundle = await prepare(fs, "scripts", { from: "hub", date: DATE });
     expect(changedBundle.request.input_digest).not.toBe(changedStandalone.request.input_digest);
     fs.file(`${SCRIPTS}/${BUNDLE_A}/README.md`, "# Revisado\n");
-    const changedDossier = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const changedDossier = await prepare(fs, "scripts", { from: "hub", date: DATE });
     expect(changedDossier.request.input_digest).not.toBe(changedBundle.request.input_digest);
   });
 
@@ -1131,16 +1131,14 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
 
   it("un alcance contradictorio se rechaza nombrando el flag que lo contradice", async () => {
     const prepared = await prepare(withMaterial(), "scripts", {
-      from: "workspace",
+      from: "hub",
       exclude: [BUNDLE_B],
       environment: "certificación",
       date: DATE,
     });
 
     expect(conflictingScopeFlags(prepared.scope, { date: DATE })).toEqual([]);
-    expect(
-      conflictingScopeFlags(prepared.scope, { from: "workspace", exclude: [BUNDLE_B] }),
-    ).toEqual([]);
+    expect(conflictingScopeFlags(prepared.scope, { from: "hub", exclude: [BUNDLE_B] })).toEqual([]);
     expect(
       conflictingScopeFlags(prepared.scope, {
         from: "bundles",
@@ -1152,7 +1150,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
 
   it("componer el origen es del bundle de SQL, y una base inventada se nombra", async () => {
     const otra = await prepareExport(withMaterial(), env, paths(), "manuals", {
-      from: "workspace",
+      from: "hub",
       date: DATE,
     });
     if (otra.ok) throw new Error("expected a rejection");
@@ -1341,7 +1339,7 @@ describe("bundle.json · manifiesto derivado y aprobado por el CLI", () => {
 
   it("genera el manifiesto con sha256: de bytes, lo muestra y sella antes de publicar", async () => {
     const fs = withNamedBundle();
-    const prepared = await prepare(fs, "scripts", { from: "workspace", date: DATE });
+    const prepared = await prepare(fs, "scripts", { from: "hub", date: DATE });
     const raw = proposed(prepared, { supersedes: [named], requires: [] });
     const validation = validateExport(raw, prepared);
     if (!validation.ok) throw new Error(validation.failure.message);

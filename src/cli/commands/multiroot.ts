@@ -21,7 +21,7 @@ const MULTIROOT_FLAGS = {
     "from-sources",
     "global",
     "dry-run",
-    "workspace",
+    "hub",
     "skip-claude",
     "skip-codex",
     "skip-warp",
@@ -40,7 +40,7 @@ function buildInput(args: ParsedArgs): MultirootInput {
   if (args.flags.has("--from-sources")) input.fromSources = true;
   if (args.flags.has("--global")) input.useGlobal = true;
   if (args.flags.has("--dry-run")) input.dryRun = true;
-  const ws = args.values.get("workspace");
+  const ws = args.values.get("hub");
   if (ws !== undefined) input.workspace = ws;
   if (args.flags.has("--skip-claude")) input.skipClaude = true;
   if (args.flags.has("--skip-codex")) input.skipCodex = true;
@@ -58,10 +58,10 @@ export const attachMultirootCommand: CliCommand = {
     flags: {
       path: { value: "<dir>", effect: "Directory to register." },
       paths: { value: "<csv>", effect: "Directories to register, comma separated." },
-      "from-sources": { effect: "Use the workspace's declared sources as the directories." },
-      global: { effect: "Work on each host's global scope instead of the workspace." },
+      "from-sources": { effect: "Use the hub's declared sources as the directories." },
+      global: { effect: "Work on each host's global scope instead of the hub." },
       "dry-run": { effect: "Report the change without writing." },
-      workspace: { value: "<dir>", effect: "Workspace whose host settings change." },
+      hub: { value: "<dir>", effect: "Hub whose host settings change." },
       "skip-claude": { effect: "Leave Claude Code untouched." },
       "skip-codex": { effect: "Leave Codex CLI untouched." },
       "skip-warp": { effect: "Leave Warp untouched." },
@@ -83,10 +83,10 @@ export const detachMultirootCommand: CliCommand = {
     flags: {
       path: { value: "<dir>", effect: "Directory to remove." },
       paths: { value: "<csv>", effect: "Directories to remove, comma separated." },
-      "from-sources": { effect: "Use the workspace's declared sources as the directories." },
-      global: { effect: "Work on each host's global scope instead of the workspace." },
+      "from-sources": { effect: "Use the hub's declared sources as the directories." },
+      global: { effect: "Work on each host's global scope instead of the hub." },
       "dry-run": { effect: "Report the change without writing." },
-      workspace: { value: "<dir>", effect: "Workspace whose host settings change." },
+      hub: { value: "<dir>", effect: "Hub whose host settings change." },
       "skip-claude": { effect: "Leave Claude Code untouched." },
       "skip-codex": { effect: "Leave Codex CLI untouched." },
       "skip-warp": { effect: "Leave Warp untouched." },

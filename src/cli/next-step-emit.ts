@@ -36,7 +36,7 @@ export function retryWith(
 
 /** The runtime flags that take a value, so their value is never read as a positional. */
 const RUNTIME_VALUES: ReadonlySet<string> = new Set([
-  "--workspace",
+  "--hub",
   "--namespace",
   "--format",
   "--plugin-root",
@@ -150,13 +150,13 @@ export function nextStepOfError(
   return command !== null && fitsContract(command) ? { next_step: { command } } : null;
 }
 
-/** The next step of a workspace that could not be resolved: the same invocation per known root. */
+/** The next step of a hub that could not be resolved: the same invocation per known root. */
 export function nextStepOfRoots(
   roots: readonly string[],
   argv: readonly string[],
 ): { action: string; next_step: NextStep } | null {
   if (readsStdin(argv)) return null;
-  const retries = roots.map((root) => retryWith(argv, ["--workspace"], root));
+  const retries = roots.map((root) => retryWith(argv, ["--hub"], root));
   const step = nextStepOf(retries);
   if (step === null) return null;
   const action =

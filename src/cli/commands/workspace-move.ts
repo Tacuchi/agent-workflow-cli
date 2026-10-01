@@ -7,16 +7,16 @@ import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 
 export const workspaceMoveCommand: CliCommand<WorkspaceMoveResult> = {
-  name: "workspace-move",
+  name: "hub-move",
   flags: { known: ["repair", "from", "dry-run"] },
   help: {
-    purpose: "Move a workspace and repair its references, or repair one that was moved by hand.",
+    purpose: "Move a hub and repair its references, or repair one that was moved by hand.",
     args: "[<destination>]",
     flags: {
-      repair: { effect: "Repair a workspace already moved by hand; takes no destination." },
+      repair: { effect: "Repair a hub already moved by hand; takes no destination." },
       from: {
         value: "<old-path>",
-        effect: "With --repair, the path the workspace was moved from.",
+        effect: "With --repair, the path the hub was moved from.",
       },
       "dry-run": { effect: "Report the changes without applying them." },
     },
@@ -29,7 +29,7 @@ export const workspaceMoveCommand: CliCommand<WorkspaceMoveResult> = {
     if (repair === (args.rest[0] !== undefined) || args.rest.length > 1) {
       return fail(
         "ARGS_INVALID",
-        "Usa workspace-move <destino> o workspace-move --repair [--from <ruta vieja>].",
+        "Usa hub-move <destino> o hub-move --repair [--from <ruta vieja>].",
       );
     }
     try {
@@ -48,7 +48,7 @@ export const workspaceMoveCommand: CliCommand<WorkspaceMoveResult> = {
     if (!result.ok || !result.data) return "";
     const data = result.data;
     return [
-      `workspace-move ${data.dry_run ? "· simulación" : "· realizado"}: ${data.from} → ${data.to}`,
+      `hub-move ${data.dry_run ? "· simulación" : "· realizado"}: ${data.from} → ${data.to}`,
       ...data.changes.map((change) => `  ${change}`),
       ...data.warnings.map((warning) => `  Aviso: ${warning}`),
       "",

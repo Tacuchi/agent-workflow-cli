@@ -23,4 +23,4 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 
 ## Workspace
 
-Every invoked directory is a usable implicit workspace. The closest `.<namespace>/sessions/` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:workspace-init`](commands/workspace-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.
+Every invoked directory is a usable implicit workspace. The closest `.<namespace>/sessions/` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:hub-init`](commands/hub-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.

@@ -1099,7 +1099,7 @@ async function decide(
         cost,
       );
     if (parsed.answer.decisions.commit_approval !== prepared.proposal.approval) {
-      const command = `aw workspace-commit prepare --code ${state.session}${withEvidence ? " --with-evidence" : ""}`;
+      const command = `aw hub-commit prepare --code ${state.session}${withEvidence ? " --with-evidence" : ""}`;
       return reject(
         state,
         resolved,

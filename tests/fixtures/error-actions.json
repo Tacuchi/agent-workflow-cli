@@ -93,7 +93,7 @@
     },
     {
       "file": "src/cli/commands/visibility.ts",
-      "text": "aw workspace-init --source <alias>",
+      "text": "aw hub-init --source <alias>",
       "class": "not-determinable",
       "reason": "las fuentes a declarar son de la persona"
     },
