@@ -7,6 +7,7 @@
  * materializes a hub in the folder the command was launched from.
  */
 
+import { HerdrCli } from "../../adapters/herdr-cli.js";
 import {
   type HubScan,
   type RegisteredHub,
@@ -18,6 +19,7 @@ import {
 } from "../../application/hub-registry.js";
 import { type HubsStatusOutput, runHubsStatus } from "../../application/hubs-status-service.js";
 import { type HubsSyncOutput, runHubsSync } from "../../application/hubs-sync-service.js";
+import type { StatusOutput } from "../../application/status-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
@@ -32,7 +34,8 @@ type HubsOutput =
   | ({ action: "status" } & HubsStatusOutput)
   | ({ action: "sync" } & HubsSyncOutput);
 
-const USAGE = "uso: hubs [scan [<carpeta>…] [--apply] | prune | status | sync --ide [--dry-run]]";
+const USAGE =
+  "uso: hubs [scan [<carpeta>…] [--apply] | prune | status | sync [--ide] [--herdr] [--dry-run]]";
 
 export const hubsCommand: CliCommand<HubsOutput> = {
   name: "hubs",
@@ -42,7 +45,7 @@ export const hubsCommand: CliCommand<HubsOutput> = {
       scan: { known: ["apply"] },
       prune: { known: [] },
       status: { known: [] },
-      sync: { known: ["ide", "dry-run"] },
+      sync: { known: ["ide", "herdr", "dry-run"] },
     },
   },
   help: {
@@ -83,19 +86,27 @@ export const hubsCommand: CliCommand<HubsOutput> = {
       },
       sync: {
         purpose:
-          "Project every ok hub onto the tools around it: --ide writes <hub>/<folder>.code-workspace with the hub and its sources.",
+          "Project every ok hub onto the tools around it: --ide writes <hub>/<folder>.code-workspace with the hub and its sources, --herdr keeps one Herdr workspace per hub with its pending work in the sidebar. At least one of the two.",
         flags: {
           ide: {
             effect:
               "Write the .code-workspace of each ok hub: the hub first, under its registry name, then each source with a resolved path. Only folders is replaced; every other key is kept.",
           },
-          "dry-run": { effect: "Report what would change without writing anything." },
+          herdr: {
+            effect:
+              "Ensure one Herdr workspace labelled hub:<name> per ok hub, creating only the missing ones, and report pending and next as sidebar metadata that expires in 15 minutes. Herdr 0.9.x only.",
+          },
+          "dry-run": {
+            effect: "Report what would change without writing anything; Herdr is only read.",
+          },
         },
         output:
-          "{action: sync, dry_run, ide: {hubs[] {name, root, action: created|updated|unchanged|skipped, file, reason?, omitted_sources?[] {alias, reason}}} | null}.",
+          "{action: sync, dry_run, ide: {hubs[] {name, root, action: created|updated|unchanged|skipped, file, reason?, omitted_sources?[] {alias, reason}}} | null, herdr: {degradation: null | {kind: missing|unreachable|unsupported-version|cli-changed, detail}, hubs[] {name, root, action: created|unchanged|conflict|skipped, workspace_id?, published, reason?}} | null}. Exit 0 also with a declared degradation.",
         notes: [
           "A hub that is not ok is skipped with its state as the reason, and so is a .code-workspace that is not a readable JSON object. A source path is relative when hub and source share a folder other than / and $HOME.",
-          "In a hub inside a git repository, /<folder>.code-workspace is added to <hub>/.gitignore. The registry and each hub block are the only inputs: nothing is read back from the file.",
+          "In a hub inside a git repository, /<folder>.code-workspace is added to <hub>/.gitignore. The registry and each hub block are the only inputs: nothing is read back from the file or from Herdr as a source.",
+          "A Herdr workspace is matched by its label and confirmed by a pane whose cwd is in the hub; a label without one, or used twice, is a conflict and left untouched. Nothing is ever closed or renamed. pending and next come from the aw hubs status reading; next is cut at 80 characters and cleared when null.",
+          "Without herdr, with its server down, on another version or with an unexpected answer, the herdr section declares the degradation, stops calling Herdr and the IDE part still runs.",
         ],
       },
     },
@@ -122,18 +133,30 @@ export const hubsCommand: CliCommand<HubsOutput> = {
       return { ok: true, data: { action: "prune", removed }, exitCode: 0 };
     }
     if (action === "sync") {
-      if (!args.flags.has("--ide")) return fail("INVALID_INPUT", USAGE);
-      const sync = await runHubsSync(fs, home, namespace, await systemTempRoots(), {
-        ide: true,
-        dryRun: args.flags.has("--dry-run"),
-      });
+      const ide = args.flags.has("--ide");
+      const herdr = args.flags.has("--herdr");
+      if (!ide && !herdr) return fail("INVALID_INPUT", USAGE);
+      const sync = await runHubsSync(
+        {
+          fs,
+          home,
+          namespace,
+          tempRoots: await systemTempRoots(),
+          herdr: {
+            cli: new HerdrCli(ctx.process),
+            status: () =>
+              runHubsStatus({ fs, env: ctx.env, git: ctx.git }, namespace, countNotices),
+          },
+        },
+        { ide, herdr, dryRun: args.flags.has("--dry-run") },
+      );
       return { ok: true, data: { action: "sync", ...sync }, exitCode: 0 };
     }
     if (action === "status") {
       const status = await runHubsStatus(
         { fs, env: ctx.env, git: ctx.git },
         namespace,
-        (board) => statusNotices(board).length,
+        countNotices,
       );
       return { ok: true, data: { action: "status", ...status }, exitCode: 0 };
     }
@@ -173,14 +196,30 @@ export const hubsCommand: CliCommand<HubsOutput> = {
   },
 };
 
+const countNotices = (board: StatusOutput) => statusNotices(board).length;
+
 function renderSync(data: HubsSyncOutput): string {
-  const rows = (data.ide?.hubs ?? []).map((hub) =>
+  const ide = (data.ide?.hubs ?? []).map((hub) =>
     [
       `ide  ${hub.name}  ${hub.action}`,
       hub.reason !== undefined ? `  (${hub.reason})` : `  ${hub.file}`,
       ...(hub.omitted_sources ?? []).map((source) => `  · sin ${source.alias}: ${source.reason}`),
     ].join(""),
   );
+  const herdr = (data.herdr?.hubs ?? []).map((hub) =>
+    [
+      `herdr  ${hub.name}  ${hub.action}`,
+      hub.workspace_id !== undefined ? `  ${hub.workspace_id}` : "",
+      hub.published ? "  · estado publicado" : "",
+      hub.reason !== undefined ? `  (${hub.reason})` : "",
+    ].join(""),
+  );
+  const degradation = data.herdr?.degradation;
+  const rows = [
+    ...ide,
+    ...herdr,
+    ...(degradation ? [`herdr degradado: ${degradation.kind} — ${degradation.detail}`] : []),
+  ];
   return lines(data.dry_run ? [...rows, "", "--dry-run: no se escribió nada"] : rows);
 }
 

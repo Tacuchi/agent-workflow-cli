@@ -46,7 +46,10 @@ function fixture() {
     );
   // The fixture lives under the system temp folder; no temp roots keeps its hubs `ok`.
   const sync = (dryRun = false) =>
-    runHubsSync(new NodeFileSystem(), home, "workflow", [], { ide: true, dryRun });
+    runHubsSync(
+      { fs: new NodeFileSystem(), home, namespace: "workflow", tempRoots: [] },
+      { ide: true, herdr: false, dryRun },
+    );
   return { root, home, hub, register, sync };
 }
 
@@ -152,6 +155,7 @@ describe("aw hubs sync --ide", () => {
 
     expect(out).toEqual({
       dry_run: true,
+      herdr: null,
       ide: {
         hubs: [
           {

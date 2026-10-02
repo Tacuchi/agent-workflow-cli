@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [29.1.0] — sin publicar
 
-**`aw hubs` administra el registro de hubs de la máquina y da el estado de todos en una línea por hub, y llegan los arreglos que la 29.0.0 dejó pendientes.**
+**`aw hubs` administra el registro de hubs de la máquina, da el estado de todos en una línea por hub y lo proyecta al IDE y a Herdr con `aw hubs sync`, y llegan los arreglos que la 29.0.0 dejó pendientes.**
 
 ### Contrato
 
@@ -27,6 +27,8 @@ Ninguno.
 - `aw hubs prune` quita del registro los hubs borrados, los que perdieron su marcador y los efímeros.
 - `aw hubs status` da por hub `{name, root, ok, pending, next, notices, last_activity}`, o `{name, root, ok: false, reason}` si no se puede leer. El tamaño depende del número de hubs, no de su historia. `/w:status todos` lo releva.
 - `aw hub-init` registra el hub que inicializa, salvo con `--dry-run`.
+- `aw hubs sync --ide` escribe en cada hub `ok` su `<carpeta>.code-workspace`: primero el hub, con el nombre de `aw hubs`, y después cada fuente con ruta resuelta, relativa si comparten una carpeta que no es `/` ni `$HOME`. Si el archivo existe sólo reemplaza `folders` y conserva el resto; uno que no es JSON legible no se toca. Si el hub está en git, la entrada `/<carpeta>.code-workspace` va a su `.gitignore`.
+- `aw hubs sync --herdr` asegura con Herdr 0.9.x un workspace `hub:<nombre>` por hub `ok`: lo crea sólo si falta, confirma los existentes por el `cwd` de sus paneles y publica `pending` y `next` en la barra lateral con `report-metadata` y un TTL de 15 minutos. Nunca cierra ni renombra nada; un label sin panel en el hub o repetido sale `conflict`. Sin `herdr`, con su servidor caído, en otra versión o con otra forma de respuesta, declara la degradación, sale con 0 y `--ide` sigue igual. `--dry-run` no escribe nada y a Herdr sólo lo lee. `aw hubs status` sigue sin llamar a Herdr.
 
 ### Changed
 

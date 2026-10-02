@@ -1,11 +1,18 @@
-import { basename, dirname, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import type {
+  HerdrCli,
+  HerdrDegradation,
+  HerdrPane,
+  HerdrWorkspace,
+} from "../adapters/herdr-cli.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import {
   RUNTIME_GITIGNORE_HEADER,
   appendGitignoreEntries,
   belongsToGit,
 } from "./hub-materialization-service.js";
-import { listRegisteredHubs } from "./hub-registry.js";
+import { type RegisteredHub, listRegisteredHubs } from "./hub-registry.js";
+import type { HubStatus, HubsStatusOutput } from "./hubs-status-service.js";
 import { hubBlockMarkers, readHubBlock } from "./parsers/hub-block.js";
 
 export type IdeAction = "created" | "updated" | "unchanged" | "skipped";
@@ -19,14 +26,36 @@ export interface IdeHubResult {
   omitted_sources?: { alias: string; reason: string }[];
 }
 
+export type HerdrAction = "created" | "unchanged" | "conflict" | "skipped";
+
+export interface HerdrHubResult {
+  name: string;
+  root: string;
+  action: HerdrAction;
+  workspace_id?: string;
+  published: boolean;
+  reason?: string;
+}
+
 export interface HubsSyncOutput {
   dry_run: boolean;
   ide: { hubs: IdeHubResult[] } | null;
+  herdr: { degradation: HerdrDegradation | null; hubs: HerdrHubResult[] } | null;
 }
 
 export interface HubsSyncOptions {
   ide: boolean;
+  herdr: boolean;
   dryRun: boolean;
+}
+
+export interface HubsSyncDeps {
+  fs: FileSystemPort;
+  home: string;
+  namespace: string;
+  tempRoots: readonly string[];
+  /** Required with `options.herdr`: the adapter and the `aw hubs status` reading. */
+  herdr?: { cli: HerdrCli; status: () => Promise<HubsStatusOutput> };
 }
 
 interface WorkspaceFolder {
@@ -40,25 +69,169 @@ interface WorkspaceFolder {
  * is ours and never read back as a source, so a second run changes nothing.
  */
 export async function runHubsSync(
-  fs: FileSystemPort,
-  home: string,
-  namespace: string,
-  tempRoots: readonly string[],
+  deps: HubsSyncDeps,
   options: HubsSyncOptions,
 ): Promise<HubsSyncOutput> {
-  const hubs = await listRegisteredHubs(fs, home, namespace, tempRoots);
-  const ide: IdeHubResult[] = [];
+  const { fs, home, namespace } = deps;
+  const hubs = await listRegisteredHubs(fs, home, namespace, deps.tempRoots);
+  let ide: { hubs: IdeHubResult[] } | null = null;
+  if (options.ide) {
+    ide = { hubs: [] };
+    for (const hub of hubs) {
+      const file = join(hub.root, `${basename(hub.root)}.code-workspace`);
+      ide.hubs.push(
+        hub.state === "ok"
+          ? await syncWorkspaceFile(fs, home, namespace, hub, file, options.dryRun)
+          : { name: hub.name, root: hub.root, action: "skipped", file, reason: hub.state },
+      );
+    }
+  }
+  const herdr =
+    options.herdr && deps.herdr !== undefined
+      ? await syncHerdr(fs, hubs, deps.herdr.cli, deps.herdr.status, options.dryRun)
+      : null;
+  return { dry_run: options.dryRun, ide, herdr };
+}
+
+/**
+ * One workspace per hub, matched by its `hub:<name>` label and confirmed by
+ * the cwd of its panes, because Herdr 0.9 lists workspaces without one. A
+ * label that does not confirm, or appears twice, is left alone as a conflict.
+ * The first degradation stops every later call to Herdr.
+ */
+async function syncHerdr(
+  fs: FileSystemPort,
+  hubs: RegisteredHub[],
+  cli: HerdrCli,
+  readStatus: () => Promise<HubsStatusOutput>,
+  dryRun: boolean,
+): Promise<NonNullable<HubsSyncOutput["herdr"]>> {
+  const probe = await cli.probe();
+  if (probe !== null) return { degradation: probe, hubs: [] };
+  const listed = await cli.listWorkspaces();
+  if (!listed.ok) return { degradation: listed.degradation, hubs: [] };
+  const status = new Map((await readStatus()).hubs.map((hub) => [hub.root, hub]));
+
+  const results: HerdrHubResult[] = [];
+  let degradation: HerdrDegradation | null = null;
   for (const hub of hubs) {
-    const file = join(hub.root, `${basename(hub.root)}.code-workspace`);
-    if (hub.state !== "ok") {
-      if (options.ide)
-        ide.push({ name: hub.name, root: hub.root, action: "skipped", file, reason: hub.state });
+    if (degradation !== null) {
+      results.push({ ...herdrBase(hub), action: "skipped", reason: `herdr ${degradation.kind}` });
       continue;
     }
-    if (options.ide)
-      ide.push(await syncWorkspaceFile(fs, home, namespace, hub, file, options.dryRun));
+    const step = await syncHerdrHub(fs, cli, hub, status.get(hub.root), listed.value, dryRun);
+    results.push(step.result);
+    degradation = step.degradation;
   }
-  return { dry_run: options.dryRun, ide: options.ide ? { hubs: ide } : null };
+  return { degradation, hubs: results };
+}
+
+interface HerdrStep {
+  result: HerdrHubResult;
+  degradation: HerdrDegradation | null;
+}
+
+async function syncHerdrHub(
+  fs: FileSystemPort,
+  cli: HerdrCli,
+  hub: RegisteredHub,
+  tokens: HubStatus | undefined,
+  listed: HerdrWorkspace[],
+  dryRun: boolean,
+): Promise<HerdrStep> {
+  const base = herdrBase(hub);
+  if (hub.state !== "ok") return done({ ...base, action: "skipped", reason: hub.state });
+  if (tokens === undefined || !tokens.ok) {
+    return done({
+      ...base,
+      action: "skipped",
+      reason: tokens?.ok === false ? tokens.reason : "sin estado",
+    });
+  }
+  const label = `hub:${hub.name}`;
+  const matches = listed.filter((workspace) => workspace.label === label);
+  if (matches.length > 1) {
+    return done({
+      ...base,
+      action: "conflict",
+      reason: `${matches.length} workspaces con ${label}`,
+    });
+  }
+  const workspace = await ensureWorkspace(fs, cli, hub, label, matches[0], dryRun);
+  if ("result" in workspace) return workspace;
+  const { action, id } = workspace;
+  if (dryRun || id === undefined) {
+    return done({ ...base, action, ...(id !== undefined ? { workspace_id: id } : {}) });
+  }
+  const report = await cli.reportMetadata(id, { pending: tokens.pending, next: tokens.next });
+  return {
+    result: { ...base, action, workspace_id: id, published: report.ok },
+    degradation: report.ok ? null : report.degradation,
+  };
+}
+
+/** The workspace to report on, or the step that ends this hub. A dry run creates nothing and has no id. */
+async function ensureWorkspace(
+  fs: FileSystemPort,
+  cli: HerdrCli,
+  hub: RegisteredHub,
+  label: string,
+  match: HerdrWorkspace | undefined,
+  dryRun: boolean,
+): Promise<{ action: HerdrAction; id?: string } | HerdrStep> {
+  const base = herdrBase(hub);
+  if (match !== undefined) {
+    const panes = await cli.listPanes(match.id);
+    if (!panes.ok) return degraded(base, panes.degradation);
+    if (!(await anyPaneUnder(fs, hub.root, panes.value))) {
+      return done({
+        ...base,
+        action: "conflict",
+        workspace_id: match.id,
+        reason: "ningún panel en el hub",
+      });
+    }
+    return { action: "unchanged", id: match.id };
+  }
+  if (dryRun) return { action: "created" };
+  const created = await cli.createWorkspace(hub.root, label);
+  return created.ok
+    ? { action: "created", id: created.value }
+    : degraded(base, created.degradation);
+}
+
+function herdrBase(hub: RegisteredHub): Pick<HerdrHubResult, "name" | "root" | "published"> {
+  return { name: hub.name, root: hub.root, published: false };
+}
+
+function done(result: HerdrHubResult): HerdrStep {
+  return { result, degradation: null };
+}
+
+function degraded(
+  base: Pick<HerdrHubResult, "name" | "root" | "published">,
+  degradation: HerdrDegradation,
+): HerdrStep {
+  return {
+    result: { ...base, action: "skipped", reason: `herdr ${degradation.kind}` },
+    degradation,
+  };
+}
+
+async function anyPaneUnder(
+  fs: FileSystemPort,
+  root: string,
+  panes: HerdrPane[],
+): Promise<boolean> {
+  const hub = await fs.realPath(root);
+  for (const pane of panes) {
+    for (const cwd of [pane.cwd, pane.foreground_cwd]) {
+      if (cwd === null) continue;
+      const inside = relative(hub, await fs.realPath(cwd));
+      if (inside === "" || (!inside.startsWith("..") && !isAbsolute(inside))) return true;
+    }
+  }
+  return false;
 }
 
 async function syncWorkspaceFile(
