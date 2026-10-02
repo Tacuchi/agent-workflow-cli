@@ -43,7 +43,7 @@ This file provides guidance to AI coding agents working with code in this reposi
 
 ## Tooling note
 
-The hub block (`<!-- WORKFLOW-HUB-START/END -->`, sections Hub/Fuentes/Stack/Status) is a managed block written into CLAUDE.md/AGENTS.md by `/w:hub-init`. If it appears, treat it as tool-owned — keep hand-authored guidance outside it.
+The hub block (`<!-- WORKFLOW-HUB-START/END -->`, sections Hub/Workline/Fuentes/Stack/Status) is a managed block written into a hub's AGENTS.md only, by `aw hub-init` and the commands that update it. If it appears, treat it as tool-owned — keep hand-authored guidance outside it. A pre-30 hub may still mirror it in CLAUDE.md until `aw hub-migrate` retires that copy.
 
 ## dev-conventions (universal — aplica también en subagentes/teams)
 

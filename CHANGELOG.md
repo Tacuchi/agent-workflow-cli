@@ -12,6 +12,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [30.0.0] — sin publicar
+
+**El bloque del hub vive solo en `AGENTS.md`: Claude Code lo lee por sí mismo desde 2.1.277, `aw hub-migrate` retira la copia de `CLAUDE.md` y `aw doctor` avisa lo que todavía la tapa.**
+
+### Contrato
+
+- **Deja de valer:** el bloque del hub escrito a la vez en `CLAUDE.md` y `AGENTS.md`. **Lo reemplaza:** `AGENTS.md` como único archivo del bloque; ningún comando crea ni modifica `CLAUDE.md`, y un hub sin migrar se sigue leyendo desde su `CLAUDE.md`. **Qué hacer:** corré `aw hub-migrate` en cada hub para ver qué hará y después `aw hub-migrate --apply`; si los dos bloques difieren, elegí el que vale con `aw hub-migrate --apply --keep AGENTS.md` o `aw hub-migrate --apply --keep CLAUDE.md`. Con Claude Code anterior a 2.1.277, actualizalo o dejá en el hub un `CLAUDE.md` con `@AGENTS.md`.
+- **Deja de valer:** la columna `Rama de trabajo` de la tabla `## Fuentes`. **Lo reemplaza:** `## Status > Ramas de trabajo actuales`, que ya era la que se leía; una tabla de cuatro columnas se sigue leyendo y se reescribe con tres. **Qué hacer:** quien lea la tabla a mano lee la rama en `## Status`.
+- **Deja de valer:** el hallazgo `hub/hub-visibility/bloques-divergentes` de `aw doctor`. **Lo reemplaza:** `hub/hub-visibility/claude-md-heredado`, `hub/hub-visibility/agents-md-tapado` y `claude-code/hub-visibility/claude-sin-agents-md`. **Qué hacer:** quien filtre la salida de `aw doctor` por id usa los nuevos.
+
+### Added
+
+- `aw hub-migrate` retira el `CLAUDE.md` heredado: borra el que solo tenía el bloque, quita el bloque y suma `@AGENTS.md` al inicio del que tiene contenido propio, y no toca el que solo importa `@AGENTS.md`. El bloque que queda se reescribe en `AGENTS.md` con el formato actual y sin `Última actividad`. Si las dos copias difieren, la vista previa lista las líneas que declara cada una y nada se escribe hasta que `--keep` elige. Las líneas que el CLI no puede honrar se declaran en `dropped_lines`; un `CLAUDE.md` enlazado a `AGENTS.md` no se toca y un archivo con dos bloques se reporta sin escribir.
+- `aw doctor` reporta un `CLAUDE.md` del hub que todavía tiene el bloque, cualquier `CLAUDE.md`, `.claude/CLAUDE.md` o `CLAUDE.local.md` en el hub o más arriba que tape su `AGENTS.md` (`~/.claude/CLAUDE.md` no cuenta) y una versión de Claude Code anterior a 2.1.277.
+- El bloque del hub suma una sección `## Workline` con punteros para agentes sin los skills (`aw status`, `aw resume`, `docs/` y `.workflow/sessions/`) y, cuando alguna fuente figura como `(local)`, una línea que dice dónde se resuelve su ruta. Las notas de una persona dentro de `## Workline` se conservan.
+
+### Changed
+
+- Los lectores del bloque (`hub-block`, pipelines, índice, estado) toman `AGENTS.md` primero y `CLAUDE.md` solo como respaldo de un hub sin migrar.
+- La doctrina (`HARNESS.md`, el skill `w`, `hub-init`) describe `AGENTS.md` como único archivo del hub y ya no recomienda el symlink `CLAUDE.md`.
+
+### Migration
+
+- Después de instalar, en cada hub: `aw hub-migrate`, `aw hub-migrate --apply` y `aw doctor`. Hasta migrar, las escrituras van solo a `AGENTS.md` y el `CLAUDE.md` viejo queda desactualizado; Claude Code lo sigue leyendo porque lo tapa.
+
 ## [29.1.0] — 2026-10-01
 
 **`aw hubs` administra el registro de hubs de la máquina, da el estado de todos en una línea por hub y lo proyecta al IDE y a Herdr con `aw hubs sync`, y llegan los arreglos que la 29.0.0 dejó pendientes.**

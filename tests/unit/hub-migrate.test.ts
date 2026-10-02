@@ -1,4 +1,8 @@
+import { lstat, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import {
   appendClaimEvent,
   openClaimsOf,
@@ -1324,6 +1328,7 @@ describe("hub-migrate retira el CLAUDE.md heredado y deja el bloque solo en AGEN
       agents: "written",
       source: "AGENTS.md",
       adds_import: false,
+      dropped_lines: [],
     });
   });
 
@@ -1405,6 +1410,200 @@ describe("hub-migrate retira el CLAUDE.md heredado y deja el bloque solo en AGEN
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("INVALID_INPUT");
     expect(fs.writes.size).toBe(0);
+  });
+
+  it("un par que solo cambia el orden de las fuentes se reporta como tal, no como (nada)", async () => {
+    const fs = hub({ claude: `${legacyBlock(["api", "web"])}\n` });
+    fs.file(AGENTS, `${legacyBlock(["web", "api"])}\n`);
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.block_divergence?.difference).toBe("order");
+    expect(plan.conflicts[0]?.detail).toContain("las mismas líneas en otro orden");
+  });
+
+  it("la vista previa de un par divergente no dice «nada que migrar» y ofrece el comando con --keep", async () => {
+    const fs = hub({ claude: `${legacyBlock(["api", "admin"])}\n` });
+    fs.file(AGENTS, `${legacyBlock(["api"])}\n`);
+    const preview = await hubMigrateCommand.execute(parseArgv(["hub-migrate"]), context(fs));
+    if (preview.data?.action !== "preview") throw new Error("esperaba una vista previa");
+    expect(preview.data.pending).toBe(1);
+    // Nothing runnable while the person has not chosen: a `|` would be a shell pipe.
+    expect(preview.data.next).toBeNull();
+    expect(preview.data.choices).toEqual([
+      "aw hub-migrate --apply --keep AGENTS.md",
+      "aw hub-migrate --apply --keep CLAUDE.md",
+    ]);
+    expect(JSON.stringify(preview.data)).not.toContain("AGENTS.md|CLAUDE.md");
+    const human = hubMigrateCommand.renderHuman?.(preview, { detail: false }) ?? "";
+    expect(human).not.toContain("Nada que migrar");
+    expect(human).toContain("solo en CLAUDE.md: | admin | /repos/admin | main |");
+    expect(human).not.toContain("el histórico y el disco");
+    expect(human).toContain(
+      "Elegí uno para aplicarlo:\n  aw hub-migrate --apply --keep AGENTS.md\n  aw hub-migrate --apply --keep CLAUDE.md",
+    );
+
+    const chosen = await hubMigrateCommand.execute(
+      parseArgv(["hub-migrate", "--keep", "CLAUDE.md"]),
+      context(fs),
+    );
+    if (chosen.data?.action !== "preview") throw new Error("esperaba una vista previa");
+    expect(chosen.data.next).toBe("aw hub-migrate --apply --keep CLAUDE.md");
+    expect(chosen.data.block_file?.claude).toBe("retire");
+  });
+
+  it("las líneas que el CLI no puede honrar se declaran al migrar, no desaparecen en silencio", async () => {
+    const block = legacyBlock(["api"]);
+    const fs = hub({
+      claude: `${block.replace("  - api: main", "  - api: main\n  - web: feature/x")}\n`,
+    });
+    fs.file(AGENTS, `${block}\n`);
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.block_file?.dropped_lines).toEqual(["  - web: feature/x"]);
+    const applied = await applyHubMigration(fs, paths);
+    if ("error" in applied) throw new Error(applied.error);
+    expect(applied.block_file?.dropped_lines).toEqual(["  - web: feature/x"]);
+  });
+
+  it("el contenido propio de CLAUDE.md queda byte a byte: sangría, espacios finales y un solo hueco", async () => {
+    const block = legacyBlock(["api"]);
+    const fs = hub({ claude: `\n\n    code\n\n${block}\n\n## B\n\nTexto   \n` });
+    fs.file(AGENTS, `${block}\n`);
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(HUB)).toBe("@AGENTS.md\n\n    code\n\n## B\n\nTexto   \n");
+  });
+
+  it("un CLAUDE.md con fin de línea CRLF conserva su fin de línea", async () => {
+    const block = legacyBlock(["api"]);
+    const fs = hub({ claude: `# Reglas\r\n\r\n- uno\r\n\r\n${block}\r\n` });
+    fs.file(AGENTS, `${block}\n`);
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(HUB)).toBe("@AGENTS.md\r\n\r\n# Reglas\r\n\r\n- uno\r\n");
+  });
+
+  it("un @AGENTS.md dentro de un bloque de código no cuenta como import; @./AGENTS.md sí", async () => {
+    const block = legacyBlock(["api"]);
+    const fenced = "```\n@AGENTS.md\n```\n";
+    const fs = hub({ claude: `${fenced}\n${block}\n` });
+    fs.file(AGENTS, `${block}\n`);
+    expect((await planHubMigration(fs, paths)).block_file?.adds_import).toBe(true);
+
+    const relative = hub({ claude: `@./AGENTS.md\n\n${block}\n` });
+    relative.file(AGENTS, `${block}\n`);
+    expect((await planHubMigration(relative, paths)).block_file?.adds_import).toBe(false);
+  });
+
+  it("un AGENTS.md vacío recibe el bloque sin líneas en blanco delante", async () => {
+    const fs = hub({ claude: `${legacyBlock(["api"])}\n` });
+    fs.file(AGENTS, "");
+    await applyHubMigration(fs, paths);
+    expect((await fs.readText(AGENTS)).startsWith("<!-- WORKFLOW-HUB-START -->")).toBe(true);
+  });
+
+  it("dos bloques en CLAUDE.md no se migran: se reporta y no se escribe nada", async () => {
+    const block = legacyBlock(["api"]);
+    const fs = hub({ claude: `${block}\n\n${legacyBlock(["web"])}\n` });
+    fs.file(AGENTS, `${block}\n`);
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.block_file).toBeNull();
+    expect(plan.conflicts.map((conflict) => conflict.reason)).toEqual(["bloque_duplicado"]);
+    await applyHubMigration(fs, paths);
+    expect(fs.writes.has(HUB)).toBe(false);
+  });
+
+  it("--keep sin valor o junto con --renumber se rechaza", async () => {
+    const fs = hub({ claude: `${legacyBlock(["api"])}\n` });
+    for (const argv of [
+      ["hub-migrate", "--apply", "--keep"],
+      ["hub-migrate", "--renumber", "--keep", "AGENTS.md"],
+    ]) {
+      const result = await hubMigrateCommand.execute(parseArgv(argv), context(fs));
+      expect(result.error?.code).toBe("INVALID_INPUT");
+    }
+    expect(fs.writes.size).toBe(0);
+  });
+
+  it("un CLAUDE.md enlazado a AGENTS.md no se reemplaza por una copia", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aw-migrate-link-"));
+    try {
+      const disk = new NodeFileSystem();
+      const local = new PathsService(normalizeNamespace("workflow"), root, root);
+      await disk.mkdirp(join(root, ".workflow", "sessions"));
+      await writeFile(join(root, "AGENTS.md"), `# Propio\n\n${legacyBlock(["api"])}\n`);
+      await symlink("AGENTS.md", join(root, "CLAUDE.md"));
+      const plan = await planHubMigration(disk, local);
+      expect(plan.block_file).toBeNull();
+      await applyHubMigration(disk, local);
+      expect((await lstat(join(root, "CLAUDE.md"))).isSymbolicLink()).toBe(true);
+      expect(await readFile(join(root, "AGENTS.md"), "utf8")).toContain("# Propio");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("un par que difiere solo en una línea en blanco no se presenta como reordenado", async () => {
+    const block = legacyBlock(["api"]).replace(
+      "## Status",
+      "## Notas\n\nUna nota.\nOtra nota.\n\n## Status",
+    );
+    const fs = hub({ claude: `${block}\n` });
+    fs.file(AGENTS, `${block.replace("Una nota.\nOtra", "Una nota.\n\nOtra")}\n`);
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.block_divergence?.difference).toBe("blank-lines");
+  });
+
+  it("un @AGENTS.md sangrado como código no cuenta, y una valla ``` no la cierra ~~~", async () => {
+    const block = legacyBlock(["api"]);
+    for (const own of ["    @AGENTS.md\n", "```\n~~~\n@AGENTS.md\n```\n"]) {
+      const fs = hub({ claude: `${own}\n${block}\n` });
+      fs.file(AGENTS, `${block}\n`);
+      expect((await planHubMigration(fs, paths)).block_file?.adds_import).toBe(true);
+    }
+  });
+
+  it("un marcador citado en la prosa no corta el contenido de la persona", async () => {
+    const block = legacyBlock(["api"]);
+    const prose = "El bloque empieza con `<!-- WORKFLOW-HUB-START -->` y el fin.\n";
+    const fs = hub({ claude: `${prose}\n${block}\n` });
+    fs.file(AGENTS, `${block}\n`);
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(HUB)).toBe(`@AGENTS.md\n\n${prose}`);
+  });
+
+  it("un AGENTS.md sin bloque conserva los espacios finales de su última línea y su CRLF", async () => {
+    const fs = hub({ claude: `${legacyBlock(["api"])}\n` });
+    fs.file(AGENTS, "# Guía\r\n\r\nÚltima línea   \r\n");
+    await applyHubMigration(fs, paths);
+    const agents = await fs.readText(AGENTS);
+    expect(
+      agents.startsWith("# Guía\r\n\r\nÚltima línea   \r\n\r\n<!-- WORKFLOW-HUB-START -->\r\n"),
+    ).toBe(true);
+    expect(agents.replace(/\r\n/g, "")).not.toContain("\n");
+  });
+
+  it("un CLAUDE.md enlazado a un archivo sin bloque no es un conflicto", async () => {
+    const root = await mkdtemp(join(tmpdir(), "aw-migrate-link-team-"));
+    try {
+      const disk = new NodeFileSystem();
+      const local = new PathsService(normalizeNamespace("workflow"), root, root);
+      await disk.mkdirp(join(root, ".workflow", "sessions"));
+      await writeFile(join(root, "AGENTS.md"), `${legacyBlock(["api"])}\n`);
+      await writeFile(join(root, "equipo.md"), "# Reglas del equipo\n");
+      await symlink("equipo.md", join(root, "CLAUDE.md"));
+      const plan = await planHubMigration(disk, local);
+      expect(plan.conflicts).toEqual([]);
+      expect(plan.block_file).toBeNull();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("un marcador de fin escrito tras contenido sigue cerrando el bloque, como lo leen los parsers", async () => {
+    const block = legacyBlock(["api"]).replace(
+      "`.workflow/HISTORY.md`\n<!-- WORKFLOW-HUB-END -->",
+      "`.workflow/HISTORY.md` <!-- WORKFLOW-HUB-END -->",
+    );
+    const fs = hub({ claude: `${block}\n` });
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.block_file?.legacy.action).toBe("retire");
   });
 
   it("migrar dos veces no vuelve a cambiar nada", async () => {

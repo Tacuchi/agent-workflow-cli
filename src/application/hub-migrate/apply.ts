@@ -79,6 +79,7 @@ export interface HubMigrationApplied {
     agents: "written" | "unchanged";
     source: KeepChoice;
     adds_import: boolean;
+    dropped_lines: string[];
   } | null;
   conflicts: MigrationConflict[];
   next_correlative: string;
@@ -435,6 +436,7 @@ function summarize(plan: HubMigrationPlan): HubMigrationApplied {
             agents: plan.block_file.agents === null ? "unchanged" : "written",
             source: plan.block_file.source,
             adds_import: plan.block_file.adds_import,
+            dropped_lines: plan.block_file.dropped_lines,
           },
     conflicts: plan.conflicts,
     next_correlative: plan.next_correlative,

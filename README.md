@@ -211,6 +211,7 @@ Hub artifacts live under `.<namespace>/`. Resolution order (first match wins):
 ## Commands (selected)
 
 - `hub-init` — materialize the runtime early; with sources, configure/reconcile hub metadata.
+- `hub-migrate [--apply] [--keep <AGENTS.md|CLAUDE.md>]` — bring a hub to the current model; it also retires the pre-30 `CLAUDE.md` copy of the hub block, which now lives only in `AGENTS.md`.
 - `hubs` / `hubs scan` / `hubs prune` / `hubs status` / `hubs sync --ide|--herdr [--dry-run]` — the machine's hub registry: list hubs, find and register them, drop stale ones, one-line status per hub, and project them to the IDE (`.code-workspace`) and to Herdr workspaces.
 - `skills` — show resolved capability → skill bindings.
 - `sessions` / `session-create --type <research|refine|exec|quick>` / `session-close` / `session-load` / `session-artifacts` — internal session lifecycle (used by the loops).

@@ -22,7 +22,7 @@ Without sources, it only materializes the minimal runtime under the lock: the CL
 
 With `--source`, it configures/reconciles the metadata, branches and multiroot visibility. `hub` is the reserved implicit source pointing at the root and cannot be configured as an alias. A hub `skills.toml` is created only when there is a real capability override.
 
-After declaring a source, use `aw set-pipeline <alias> <build|test> <comando|ninguno>` for each field. Both mirrors keep its versioned `## Pipeline` record; `ninguno` declares an explicit omission.
+After declaring a source, use `aw set-pipeline <alias> <build|test> <comando|ninguno>` for each field. `AGENTS.md` keeps its versioned `## Pipeline` record; `ninguno` declares an explicit omission.
 
 Both modes are idempotent. A normal first mutation also materializes the same runtime automatically, so this command is optional rather than a gate.
 

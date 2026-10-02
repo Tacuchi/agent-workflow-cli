@@ -11,6 +11,7 @@
 import { relpath } from "../paths.js";
 import { aliasLocations } from "./aliases.js";
 import type { HubMigrationApplied } from "./apply.js";
+import { KEEP_CHOICE_TEXT, KEEP_COMMANDS, type KeepChoice } from "./block-file.js";
 import { type HubMigrationPlan, type MigrationConflict, pendingChanges } from "./plan.js";
 
 export interface PreviewMarker {
@@ -40,6 +41,8 @@ export interface PreviewBlockFile {
   agents_changes: boolean;
   source: string;
   adds_import: boolean;
+  /** CLI records neither block can honour; they do not survive the rewrite. */
+  dropped_lines: string[];
 }
 
 export interface HubMigrationPreview {
@@ -53,15 +56,25 @@ export interface HubMigrationPreview {
   rows: PreviewRow[];
   block_file: PreviewBlockFile | null;
   /** Lines only one mirror declares, when the pair diverges and waits for `--keep`. */
-  block_divergence: { only_claude: string[]; only_agents: string[] } | null;
+  block_divergence: {
+    only_claude: string[];
+    only_agents: string[];
+    difference: "lines" | "order" | "blank-lines";
+  } | null;
   conflicts: MigrationConflict[];
   legacy: string[];
   next_correlative: string;
   /** How many writes the migration holds. Zero = the hub is already current. */
   pending: number;
+  /**
+   * The exact command that performs exactly this, or null while a divergent pair
+   * waits for the person: then `choices` holds the two commands, never one to run.
+   */
+  next: string | null;
+  choices: string[];
 }
 
-export function migrationPreview(plan: HubMigrationPlan): HubMigrationPreview {
+export function migrationPreview(plan: HubMigrationPlan, keep?: KeepChoice): HubMigrationPreview {
   return {
     hub: plan.hub,
     markers: plan.markers.map((hub) => ({
@@ -86,6 +99,7 @@ export function migrationPreview(plan: HubMigrationPlan): HubMigrationPreview {
             agents_changes: plan.block_file.agents !== null,
             source: plan.block_file.source,
             adds_import: plan.block_file.adds_import,
+            dropped_lines: plan.block_file.dropped_lines,
           },
     block_divergence:
       plan.block_divergence === null
@@ -93,6 +107,7 @@ export function migrationPreview(plan: HubMigrationPlan): HubMigrationPreview {
         : {
             only_claude: plan.block_divergence.only_claude,
             only_agents: plan.block_divergence.only_agents,
+            difference: plan.block_divergence.difference,
           },
     conflicts: plan.conflicts.map((conflict) => ({
       ...conflict,
@@ -101,7 +116,17 @@ export function migrationPreview(plan: HubMigrationPlan): HubMigrationPreview {
     legacy: plan.legacy,
     next_correlative: plan.next_correlative,
     pending: pendingChanges(plan),
+    ...applyCommand(plan, keep),
   };
+}
+
+function applyCommand(
+  plan: HubMigrationPlan,
+  keep: KeepChoice | undefined,
+): { next: string | null; choices: string[] } {
+  if (keep !== undefined) return { next: `aw hub-migrate --apply --keep ${keep}`, choices: [] };
+  if (plan.block_divergence !== null) return { next: null, choices: [...KEEP_COMMANDS] };
+  return { next: "aw hub-migrate --apply", choices: [] };
 }
 
 export function renderMigrationPreview(preview: HubMigrationPreview): string {
@@ -133,13 +158,19 @@ export function renderMigrationPreview(preview: HubMigrationPreview): string {
       "CLAUDE.md heredado: el bloque del hub queda solo en AGENTS.md:",
       preview.block_file === null ? [] : blockFileLines(preview.block_file),
     ),
+    ...section(
+      `CLAUDE.md y AGENTS.md declaran bloques distintos; nada se escribe hasta elegir con ${KEEP_CHOICE_TEXT}:`,
+      preview.block_divergence === null ? [] : divergenceLines(preview.block_divergence),
+    ),
   ];
   if (preview.pending === 0) {
     lines.push("", "Nada que migrar: el hub ya opera con el modelo actual.");
   }
   lines.push(...conflictLines(preview.conflicts));
   if (preview.pending > 0) {
-    lines.push("", "Para aplicarlo:", "  aw hub-migrate --apply");
+    const commands = preview.next === null ? preview.choices : [preview.next];
+    lines.push("", preview.next === null ? "Elegí uno para aplicarlo:" : "Para aplicarlo:");
+    lines.push(...commands.map((command) => `  ${command}`));
   }
   return lines.join("\n");
 }
@@ -152,7 +183,21 @@ function blockFileLines(block: PreviewBlockFile): string[] {
   const agents = block.agents_changes
     ? `AGENTS.md — recibe el bloque de ${block.source}, con el formato actual`
     : "AGENTS.md — ya tiene ese bloque: no cambia";
-  return [claude, agents];
+  const dropped = block.dropped_lines.map(
+    (line) => `no se conserva (el CLI no puede honrarla): ${line}`,
+  );
+  return [claude, agents, ...dropped];
+}
+
+function divergenceLines(
+  divergence: NonNullable<HubMigrationPreview["block_divergence"]>,
+): string[] {
+  if (divergence.difference === "order") return ["las mismas líneas, en otro orden"];
+  if (divergence.difference === "blank-lines") return ["difieren solo en líneas en blanco"];
+  return [
+    ...divergence.only_claude.map((line) => `solo en CLAUDE.md: ${line.trim()}`),
+    ...divergence.only_agents.map((line) => `solo en AGENTS.md: ${line.trim()}`),
+  ];
 }
 
 /** A titled, indented list, or nothing when the list is empty. */
@@ -183,13 +228,7 @@ export function renderMigrationApplied(applied: HubMigrationApplied): string {
   if (applied.rows_seeded.length > 0) {
     lines.push(`Filas reservadas: ${applied.rows_seeded.join(", ")}`);
   }
-  if (applied.block_file !== null) {
-    const claude = applied.block_file.claude === "retired" ? "borrado" : "sin el bloque";
-    const imported = applied.block_file.adds_import ? ", con @AGENTS.md al inicio" : "";
-    lines.push(
-      `CLAUDE.md heredado: ${claude}${imported}; bloque en AGENTS.md (${applied.block_file.agents === "written" ? "reescrito" : "sin cambios"})`,
-    );
-  }
+  lines.push(...blockFileAppliedLines(applied));
   if (applied.rows_without_date.length > 0) {
     lines.push(`Sin fecha declarada — su fila conserva —: ${applied.rows_without_date.join(", ")}`);
   }
@@ -199,7 +238,25 @@ export function renderMigrationApplied(applied: HubMigrationApplied): string {
   return lines.join("\n");
 }
 
-function conflictLines(conflicts: readonly MigrationConflict[]): string[] {
+function blockFileAppliedLines(applied: HubMigrationApplied): string[] {
+  const lines: string[] = [];
+  const block = applied.block_file;
+  if (block !== null) {
+    const claude = block.claude === "retired" ? "borrado" : "sin el bloque";
+    const imported = block.adds_import ? ", con @AGENTS.md al inicio" : "";
+    const agents = block.agents === "written" ? "reescrito" : "sin cambios";
+    lines.push(`CLAUDE.md heredado: ${claude}${imported}; bloque en AGENTS.md (${agents})`);
+    for (const line of block.dropped_lines) lines.push(`No se conservó: ${line}`);
+  }
+  if (applied.conflicts.some((conflict) => conflict.reason === "bloques_divergentes")) {
+    lines.push(`CLAUDE.md y AGENTS.md siguen con bloques distintos: elegí con ${KEEP_CHOICE_TEXT}`);
+  }
+  return lines;
+}
+
+/** The divergent pair has its own section: it is a choice to make, not a record/disk mismatch. */
+function conflictLines(all: readonly MigrationConflict[]): string[] {
+  const conflicts = all.filter((conflict) => conflict.reason !== "bloques_divergentes");
   if (conflicts.length === 0) return [];
   const lines = ["", "Sin tocar, porque el histórico y el disco no dicen lo mismo:"];
   for (const conflict of conflicts) {

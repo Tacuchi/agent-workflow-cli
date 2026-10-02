@@ -28,7 +28,7 @@ Anyone needing orientation — a loop at start, a new agent in the hub, or the u
 
 ### Hub (implicit first)
 
-One concept: the **hub** — the folder with `.<namespace>/` and the hub block in CLAUDE.md/AGENTS.md, declaring zero or more sources; it may live outside its sources or be the repo itself. No initialization is mandatory. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit hub** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `hub` is the reserved source that points to the root, and any extra alias is explicit.
+One concept: the **hub** — the folder with `.<namespace>/` and the hub block in AGENTS.md, declaring zero or more sources; it may live outside its sources or be the repo itself. No initialization is mandatory. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit hub** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `hub` is the reserved source that points to the root, and any extra alias is explicit.
 
 ### The 3-layer architecture + `docs/` zone
 
@@ -201,7 +201,7 @@ Key capabilities:
 - **compaction** — shrink the context without losing the thread; its context-pressure signal feeds the loops' self-regulation (chassis § *Compact / resume*). Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
 - **command-invocation** · **procedure-loading** · **subagent-dispatch** (opt.) · **persistent-context** · **external-data** (MCP) · **dry-run/preview**.
 
-The only `must` capabilities for a loop's cycle are **structured-choice** and **compaction**, and both degrade to text → any harness with chat + files runs the full model. Detail, binding matrix and distribution (canonical `AGENTS.md` + `CLAUDE.md` symlink): see `harness/HARNESS.md`.
+The only `must` capabilities for a loop's cycle are **structured-choice** and **compaction**, and both degrade to text → any harness with chat + files runs the full model. Detail, binding matrix and distribution (one canonical `AGENTS.md`): see `harness/HARNESS.md`.
 
 ### Language policy (per surface)
 

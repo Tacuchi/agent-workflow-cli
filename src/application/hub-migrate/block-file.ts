@@ -23,6 +23,18 @@ import { blockFromParsed } from "../render/hub-block.js";
 
 /** The line that makes Claude Code read AGENTS.md from a CLAUDE.md that must stay. */
 export const AGENTS_IMPORT = "@AGENTS.md";
+const AGENTS_IMPORT_LINE = /^@(\.\/)?AGENTS\.md$/;
+
+/**
+ * The two commands that resolve a divergent pair. Never one string with `|`:
+ * a shell reads that as a pipe and would run `--keep AGENTS.md` unasked.
+ */
+export const KEEP_COMMANDS = [
+  "aw hub-migrate --apply --keep AGENTS.md",
+  "aw hub-migrate --apply --keep CLAUDE.md",
+] as const;
+/** How the choice is named in prose: the two commands, joined by words. */
+export const KEEP_CHOICE_TEXT = `\`${KEEP_COMMANDS[0]}\` o \`${KEEP_COMMANDS[1]}\``;
 
 /** Which block survives a divergent pair: the person's answer to `--keep`. */
 export type KeepChoice = typeof BLOCK_FILE | typeof LEGACY_BLOCK_FILE;
@@ -36,18 +48,33 @@ export interface BlockFileMigration {
   adds_import: boolean;
   /** Which file the surviving block came from. */
   source: KeepChoice;
+  /** CLI records neither block can honour (the parser's `dropped_lines`): declared, never silent. */
+  dropped_lines: string[];
 }
 
 export interface BlockFileDivergence {
   path: string;
   only_claude: string[];
   only_agents: string[];
+  /** `lines`: each side declares something the other lacks; `order`: same lines, reordered; `blank-lines`: they differ only in blank lines. */
+  difference: "lines" | "order" | "blank-lines";
 }
 
 export type BlockFileOutcome =
   | { kind: "migrate"; migration: BlockFileMigration }
   | { kind: "divergent"; divergence: BlockFileDivergence }
+  | {
+      kind: "refused";
+      path: string;
+      reason: "bloque_duplicado" | "claude_md_enlazado";
+      detail: string;
+    }
   | { kind: "nothing" };
+
+interface Rendered {
+  block: string;
+  dropped: string[];
+}
 
 /**
  * What the legacy mirror of one hub needs. `texts` are the files as the marker
@@ -62,92 +89,206 @@ export function planBlockFile(
   const legacy = texts.claude === null ? null : splitBlock(texts.claude, render.markers);
   if (legacy === null) return { kind: "nothing" };
   const agents = texts.agents === null ? null : splitBlock(texts.agents, render.markers);
+  const duplicated = duplicatedBlock(hub, { legacy, agents }, render.markers);
+  if (duplicated !== null) return duplicated;
   const legacyBlock = renderedBlock(legacy.block, render);
   const agentsBlock = agents === null ? null : renderedBlock(agents.block, render);
   if (legacyBlock === null) return { kind: "nothing" };
 
-  let source: KeepChoice = LEGACY_BLOCK_FILE;
-  if (agentsBlock !== null && agentsBlock !== legacyBlock) {
-    if (keep === undefined) {
-      return {
-        kind: "divergent",
-        divergence: {
-          path: join(hub, LEGACY_BLOCK_FILE),
-          only_claude: linesMissing(legacyBlock, agentsBlock),
-          only_agents: linesMissing(agentsBlock, legacyBlock),
-        },
-      };
-    }
-    source = keep;
-  } else if (agentsBlock !== null) {
-    source = BLOCK_FILE;
-  }
-  const surviving = source === BLOCK_FILE && agentsBlock !== null ? agentsBlock : legacyBlock;
+  const differs = agentsBlock !== null && agentsBlock.block !== legacyBlock.block;
+  if (differs && keep === undefined)
+    return divergentOutcome(hub, legacyBlock.block, agentsBlock.block);
+  return migrateOutcome(
+    hub,
+    texts,
+    { legacy, agents },
+    { legacy: legacyBlock, agents: agentsBlock },
+    differs ? keep : undefined,
+  );
+}
+
+/** `keep` only matters when the two blocks differ; equal blocks keep AGENTS.md's bytes. */
+function migrateOutcome(
+  hub: string,
+  texts: { agents: string | null; claude: string | null },
+  splits: {
+    legacy: { remainder: string };
+    agents: { before: string; after: string } | null;
+  },
+  rendered: { legacy: Rendered; agents: Rendered | null },
+  keep: KeepChoice | undefined,
+): BlockFileOutcome {
+  let source: KeepChoice = rendered.agents === null ? LEGACY_BLOCK_FILE : BLOCK_FILE;
+  if (keep !== undefined) source = keep;
+  const surviving =
+    source === BLOCK_FILE && rendered.agents !== null ? rendered.agents : rendered.legacy;
+  const remainder = splits.legacy.remainder;
   return {
     kind: "migrate",
     migration: {
-      legacy: legacyPlan(hub, legacy.outside),
-      agents: agentsPlan(hub, texts.agents, agents, surviving),
-      adds_import: needsImport(legacy.outside),
+      legacy: legacyPlan(hub, texts.claude ?? "", splits.legacy),
+      agents: agentsPlan(hub, texts.agents, splits.agents, surviving.block),
+      adds_import: hasOwnContent(remainder) && !importsAgents(remainder),
       source,
+      dropped_lines: [
+        ...new Set([...rendered.legacy.dropped, ...(rendered.agents?.dropped ?? [])]),
+      ],
     },
   };
 }
 
-function legacyPlan(hub: string, outside: string): BlockFileMigration["legacy"] {
-  const path = join(hub, LEGACY_BLOCK_FILE);
-  const own = outside.trim();
-  if (own.length === 0) return { path, action: "retire", text: null };
-  const text = needsImport(outside) ? `${AGENTS_IMPORT}\n\n${own}\n` : `${own}\n`;
-  return { path, action: "strip", text };
+/** A file with a second block left after the first: which one stays is the person's call. */
+function duplicatedBlock(
+  hub: string,
+  splits: { legacy: { remainder: string }; agents: { remainder: string } | null },
+  markers: HubBlockMarkers,
+): BlockFileOutcome | null {
+  const has = (text: string | undefined) =>
+    text !== undefined && lineStart(text, markers.start, 0) >= 0;
+  const file = has(splits.legacy.remainder)
+    ? LEGACY_BLOCK_FILE
+    : has(splits.agents?.remainder)
+      ? BLOCK_FILE
+      : null;
+  if (file === null) return null;
+  return {
+    kind: "refused",
+    path: join(hub, file),
+    reason: "bloque_duplicado",
+    detail: `${file} tiene más de un bloque del hub: dejá uno solo y reintentá`,
+  };
 }
 
-function needsImport(outside: string): boolean {
-  const own = outside.trim();
-  return own.length > 0 && !own.split("\n").some((line) => line.trim() === AGENTS_IMPORT);
+function divergentOutcome(hub: string, claude: string, agents: string): BlockFileOutcome {
+  const onlyClaude = linesMissing(claude, agents);
+  const onlyAgents = linesMissing(agents, claude);
+  return {
+    kind: "divergent",
+    divergence: {
+      path: join(hub, LEGACY_BLOCK_FILE),
+      only_claude: onlyClaude,
+      only_agents: onlyAgents,
+      difference: differenceOf(claude, agents, onlyClaude.length + onlyAgents.length),
+    },
+  };
+}
+
+function differenceOf(
+  claude: string,
+  agents: string,
+  missing: number,
+): BlockFileDivergence["difference"] {
+  if (missing > 0) return "lines";
+  const sorted = (text: string) => text.split("\n").sort().join("\n");
+  return sorted(claude) === sorted(agents) ? "order" : "blank-lines";
+}
+
+/** The person's content stays byte for byte: only the block leaves, and the gap it left closes. */
+function legacyPlan(
+  hub: string,
+  original: string,
+  split: { remainder: string },
+): BlockFileMigration["legacy"] {
+  const path = join(hub, LEGACY_BLOCK_FILE);
+  if (!hasOwnContent(split.remainder)) return { path, action: "retire", text: null };
+  if (importsAgents(split.remainder)) return { path, action: "strip", text: split.remainder };
+  const eol = original.includes("\r\n") ? "\r\n" : "\n";
+  return { path, action: "strip", text: `${AGENTS_IMPORT}${eol}${eol}${split.remainder}` };
+}
+
+function hasOwnContent(text: string): boolean {
+  return text.trim().length > 0;
+}
+
+/**
+ * An `@AGENTS.md` line outside code: Claude Code ignores imports inside a fence
+ * or an indented code block (four spaces or a tab), so those do not count.
+ */
+function importsAgents(text: string): boolean {
+  let fence: string | null = null;
+  for (const raw of text.split(/\r?\n/)) {
+    const marker = /^ {0,3}(`{3,}|~{3,})/.exec(raw)?.[1]?.charAt(0) ?? null;
+    if (marker !== null) {
+      if (fence === null) fence = marker;
+      else if (fence === marker) fence = null;
+    } else if (fence === null && /^ {0,3}\S/.test(raw) && AGENTS_IMPORT_LINE.test(raw.trim()))
+      return true;
+  }
+  return false;
 }
 
 function agentsPlan(
   hub: string,
   current: string | null,
-  split: { block: string; outside: string; before: string; after: string } | null,
+  split: { before: string; after: string } | null,
   block: string,
 ): BlockFileMigration["agents"] {
   const path = join(hub, BLOCK_FILE);
   let text: string;
-  if (current === null) text = `${block}\n`;
-  else if (split === null) text = `${current.replace(/\n*$/, "")}\n\n${block}\n`;
-  else text = `${split.before}${block}${split.after}`;
+  const eol = current?.includes("\r\n") ? "\r\n" : "\n";
+  const own = block.replace(/\n/g, eol);
+  if (current === null || current.trim().length === 0) text = `${own}${eol}`;
+  else if (split === null) text = `${current.replace(/(\r?\n)+$/, "")}${eol}${eol}${own}${eol}`;
+  else text = `${split.before}${own}${split.after}`;
   return text === current ? null : { path, text };
 }
 
-/** The block (markers included) and what surrounds it; null when the file has none. */
+/**
+ * The block (markers included), what surrounds it, and the file without it:
+ * the gap closes to one blank line, as `dropBlock` does for a duplicated block.
+ */
 function splitBlock(
   text: string,
   markers: HubBlockMarkers,
-): { block: string; outside: string; before: string; after: string } | null {
-  const start = text.indexOf(markers.start);
+): { block: string; before: string; after: string; remainder: string } | null {
+  const start = lineStart(text, markers.start, 0);
+  // Only the start is anchored to a line: an end marker typed after content still closes the block, as the parsers read it.
   const end = start < 0 ? -1 : text.indexOf(markers.end, start + markers.start.length);
   if (start < 0 || end < 0) return null;
   const stop = end + markers.end.length;
   const before = text.slice(0, start);
   const after = text.slice(stop);
-  return { block: text.slice(start, stop), outside: `${before}\n${after}`, before, after };
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const head = before.replace(/(\r?\n)+$/, "").replace(/^(\r?\n)+/, "");
+  const tail = after.replace(/^(\r?\n)+/, "");
+  let remainder: string;
+  if (head.trim() === "") remainder = tail;
+  else if (tail.trim() === "") remainder = `${head}${eol}`;
+  else remainder = `${head}${eol}${eol}${tail}`;
+  return { block: text.slice(start, stop), before, after, remainder };
+}
+
+/** A marker counts only at the start of a line: one quoted in the person's prose is prose. */
+function lineStart(text: string, marker: string, from: number): number {
+  let index = text.indexOf(marker, from);
+  while (index > 0 && text.charAt(index - 1) !== "\n") index = text.indexOf(marker, index + 1);
+  return index;
 }
 
 function renderedBlock(
   block: string,
   render: { markers: HubBlockMarkers; historicoPath?: string },
-): string | null {
-  const parsed = parseHubBlock(block, render.markers);
+): Rendered | null {
+  const parsed = parseHubBlock(block.replace(/\r\n/g, "\n"), render.markers);
   if (parsed === null) return null;
-  return blockFromParsed(parsed, {
-    markers: render.markers,
-    ...(render.historicoPath !== undefined ? { historicoPath: render.historicoPath } : {}),
-  });
+  return {
+    block: blockFromParsed(parsed, {
+      markers: render.markers,
+      ...(render.historicoPath !== undefined ? { historicoPath: render.historicoPath } : {}),
+    }),
+    dropped: parsed.dropped_lines ?? [],
+  };
 }
 
+/** Lines of `from` that `other` lacks, counting repeats, so a duplicated line is not hidden. */
 function linesMissing(from: string, other: string): string[] {
-  const present = new Set(other.split("\n"));
-  return from.split("\n").filter((line) => line.trim().length > 0 && !present.has(line));
+  const available = new Map<string, number>();
+  for (const line of other.split("\n")) available.set(line, (available.get(line) ?? 0) + 1);
+  const missing: string[] = [];
+  for (const line of from.split("\n")) {
+    const count = available.get(line) ?? 0;
+    if (count > 0) available.set(line, count - 1);
+    else if (line.trim().length > 0) missing.push(line);
+  }
+  return missing;
 }

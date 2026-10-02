@@ -56,6 +56,7 @@ import {
   type BlockFileDivergence,
   type BlockFileMigration,
   type BlockFileOutcome,
+  KEEP_CHOICE_TEXT,
   type KeepChoice,
   planBlockFile,
 } from "./block-file.js";
@@ -91,6 +92,8 @@ export type ConflictReason =
   | "estado_ilegible"
   | "commit_de_lote_pendiente"
   | "bloques_divergentes"
+  | "bloque_duplicado"
+  | "claude_md_enlazado"
   | HubMarkerRefusal["reason"];
 
 /** Something the migration deliberately left exactly as it found it. */
@@ -176,7 +179,9 @@ export function pendingChanges(plan: HubMigrationPlan): number {
     plan.runs.length +
     plan.sentinels.length +
     plan.rows.length +
-    (plan.block_file === null ? 0 : 1)
+    (plan.block_file === null ? 0 : 1) +
+    // Not a write until `--keep` names a side, but a hub with two blocks is not current either.
+    (plan.block_divergence === null ? 0 : 1)
   );
 }
 
@@ -198,7 +203,7 @@ export async function planHubMigration(
   const sentinels: SentinelSeed[] = [];
   const rows: RowSeed[] = [];
   const conflicts: MigrationConflict[] = [...markers.conflicts];
-  if (blockFile.kind === "divergent") conflicts.push(divergenceConflict(hub, blockFile.divergence));
+  conflicts.push(...blockFileConflicts(hub, blockFile));
   const legacy: string[] = [];
 
   for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
@@ -264,10 +269,24 @@ async function planLegacyMirror(
       null
     );
   };
+  const agents = textOf(BLOCK_FILE);
+  const claude = textOf(LEGACY_BLOCK_FILE);
+  const link = await fs.lstat(join(hub, LEGACY_BLOCK_FILE));
+  if (link?.isSymlink === true && claude?.includes(paths.blockMarkers().start) === true) {
+    // A CLAUDE.md linked to AGENTS.md already reads it once; any other link is not ours to replace.
+    if (claude === agents) return { kind: "nothing" };
+    return {
+      kind: "refused",
+      path: join(hub, LEGACY_BLOCK_FILE),
+      reason: "claude_md_enlazado",
+      detail:
+        "CLAUDE.md es un enlace simbólico a otro archivo: reemplazalo a mano por un CLAUDE.md con @AGENTS.md",
+    };
+  }
   const history = `.${paths.namespace}/HISTORY.md`;
   return planBlockFile(
     hub,
-    { agents: textOf(BLOCK_FILE), claude: textOf(LEGACY_BLOCK_FILE) },
+    { agents, claude },
     {
       markers: paths.blockMarkers(),
       ...((await fs.exists(join(hub, history))) ? { historicoPath: history } : {}),
@@ -276,12 +295,24 @@ async function planLegacyMirror(
   );
 }
 
+function blockFileConflicts(hub: string, outcome: BlockFileOutcome): MigrationConflict[] {
+  if (outcome.kind === "divergent") return [divergenceConflict(hub, outcome.divergence)];
+  if (outcome.kind === "refused")
+    return [{ subject: outcome.path, reason: outcome.reason, detail: outcome.detail }];
+  return [];
+}
+
 function divergenceConflict(hub: string, divergence: BlockFileDivergence): MigrationConflict {
   const side = (lines: string[]) => (lines.length === 0 ? "(nada)" : lines.join(" · "));
+  const what = {
+    order: "CLAUDE.md y AGENTS.md declaran las mismas líneas en otro orden.",
+    "blank-lines": "CLAUDE.md y AGENTS.md difieren solo en líneas en blanco.",
+    lines: `CLAUDE.md y AGENTS.md declaran bloques distintos. Solo en CLAUDE.md: ${side(divergence.only_claude)}. Solo en AGENTS.md: ${side(divergence.only_agents)}.`,
+  }[divergence.difference];
   return {
     subject: join(hub, LEGACY_BLOCK_FILE),
     reason: "bloques_divergentes",
-    detail: `CLAUDE.md y AGENTS.md declaran bloques distintos. Solo en CLAUDE.md: ${side(divergence.only_claude)}. Solo en AGENTS.md: ${side(divergence.only_agents)}. Elegí el que vale con aw hub-migrate --apply --keep CLAUDE.md|AGENTS.md`,
+    detail: `${what} Elegí el que vale con ${KEEP_CHOICE_TEXT}`,
   };
 }
 

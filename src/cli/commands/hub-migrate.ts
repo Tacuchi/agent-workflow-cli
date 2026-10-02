@@ -15,7 +15,7 @@ import {
   applyHubMigration,
   applyRenumber,
 } from "../../application/hub-migrate/apply.js";
-import type { KeepChoice } from "../../application/hub-migrate/block-file.js";
+import { KEEP_CHOICE_TEXT, type KeepChoice } from "../../application/hub-migrate/block-file.js";
 import { planHubMigration, planRenumber } from "../../application/hub-migrate/plan.js";
 import {
   type HubMigrationPreview,
@@ -35,8 +35,6 @@ const KEEP_CHOICES: readonly KeepChoice[] = [BLOCK_FILE, LEGACY_BLOCK_FILE];
 
 export interface MigratePreviewOutput extends HubMigrationPreview {
   action: "preview";
-  /** The exact command that performs exactly this. */
-  next: string;
 }
 
 export interface MigrateApplyOutput extends HubMigrationApplied {
@@ -75,14 +73,26 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
       },
     },
     output:
-      "{action: preview, hub, markers[], aliases[], runs[], sentinels[], rows[], block_file, block_divergence, conflicts[], legacy[], next_correlative, pending, next} | {action: apply, hub, markers_renamed[], duplicates_dropped[], aliases_rewritten[], runs_rewritten[], sentinels_seeded[], rows_seeded[], rows_without_date[], block_file, conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
+      "{action: preview, hub, markers[], aliases[], runs[], sentinels[], rows[], block_file, block_divergence, conflicts[], legacy[], next_correlative, pending, next, choices[]} — next is null while a divergent pair waits for --keep, and choices[] then lists the two commands | {action: apply, hub, markers_renamed[], duplicates_dropped[], aliases_rewritten[], runs_rewritten[], sentinels_seeded[], rows_seeded[], rows_without_date[], block_file, conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
     notes: [
       "Renames the block markers to <NS>-HUB-START/END (also from a PROJECT block or an older namespace) and its ## Proyecto heading to ## Hub, renames the reserved alias workspace to hub in open plans and open runs (closed ones stay byte for byte), seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
-      "Retires the legacy CLAUDE.md copy of the hub block: a CLAUDE.md holding only the block is deleted; one with other content keeps it, loses the block and gains an @AGENTS.md import at its top; one that only imports @AGENTS.md is left alone. The surviving block is rewritten in AGENTS.md with the current format. When the two copies differ, the preview lists the lines only one declares and nothing is written for them until --keep names the copy that wins.",
+      "Retires the legacy CLAUDE.md copy of the hub block: a CLAUDE.md holding only the block is deleted; one with other content keeps it, loses the block and gains an @AGENTS.md import at its top; one that only imports @AGENTS.md is left alone. The surviving block is rewritten in AGENTS.md with the current format. When the two copies differ, the preview lists the lines only one declares and nothing is written for them until --keep names the copy that wins. Lines the CLI cannot honour are reported in dropped_lines; a CLAUDE.md symlinked to AGENTS.md is left alone and a file with two blocks is reported, not written.",
     ],
   },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<HubMigrateOutput>> {
+    const keep = args.values.get("keep");
+    const keepGiven = keep !== undefined || args.flags.has("--keep");
+    if (keepGiven && (args.flags.has("--renumber") || !KEEP_CHOICES.includes(keep as KeepChoice))) {
+      return failSemantic<HubMigrateOutput>({
+        code: "INVALID_INPUT",
+        message: args.flags.has("--renumber")
+          ? "--keep no se combina con --renumber"
+          : `--keep acepta ${KEEP_CHOICES.join(" o ")}, no '${keep ?? ""}'`,
+        action: `usá ${KEEP_CHOICE_TEXT}`,
+      });
+    }
+    const choice = keep as KeepChoice | undefined;
     if (args.flags.has("--renumber")) {
       if (!args.flags.has("--apply")) {
         return {
@@ -104,23 +114,13 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
         });
       return { ok: true, data: { action: "renumber-apply", ...result }, exitCode: 0 };
     }
-    const keep = args.values.get("keep");
-    if (keep !== undefined && !KEEP_CHOICES.includes(keep as KeepChoice)) {
-      return failSemantic<HubMigrateOutput>({
-        code: "INVALID_INPUT",
-        message: `--keep acepta ${KEEP_CHOICES.join(" o ")}, no '${keep}'`,
-        action: "aw hub-migrate --apply --keep AGENTS.md|CLAUDE.md",
-      });
-    }
-    const choice = keep as KeepChoice | undefined;
     if (!args.flags.has("--apply")) {
       const plan = await planHubMigration(ctx.fs, ctx.paths, undefined, choice);
       return {
         ok: true,
         data: {
           action: "preview",
-          ...migrationPreview(plan),
-          next: "aw hub-migrate --apply",
+          ...migrationPreview(plan, choice),
         },
         exitCode: 0,
       };
