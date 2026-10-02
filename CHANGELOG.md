@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
-## [30.0.0] — sin publicar
+## [30.0.0] — 2026-10-02
 
 **El bloque del hub vive solo en `AGENTS.md`: Claude Code lo lee por sí mismo desde 2.1.277, `aw hub-migrate` retira la copia de `CLAUDE.md` y `aw doctor` avisa lo que todavía la tapa.**
 
