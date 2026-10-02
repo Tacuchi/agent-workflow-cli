@@ -393,7 +393,7 @@ async function gitignoreEffectStatus(
  * nested implicit Workline remains rooted at its invoked cwd; Git only decides
  * whether that root's own `.gitignore` should receive the runtime block.
  */
-async function belongsToGit(fs: FileSystemPort, start: string): Promise<boolean> {
+export async function belongsToGit(fs: FileSystemPort, start: string): Promise<boolean> {
   let dir = start;
   while (true) {
     if (await fs.exists(join(dir, ".git"))) return true;

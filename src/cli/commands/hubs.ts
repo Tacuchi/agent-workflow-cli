@@ -17,6 +17,7 @@ import {
   systemTempRoots,
 } from "../../application/hub-registry.js";
 import { type HubsStatusOutput, runHubsStatus } from "../../application/hubs-status-service.js";
+import { type HubsSyncOutput, runHubsSync } from "../../application/hubs-sync-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand } from "../registry.js";
@@ -28,15 +29,21 @@ type HubsOutput =
   | { action: "list"; hubs: RegisteredHub[] }
   | ({ action: "scan"; applied: boolean } & HubScan)
   | { action: "prune"; removed: RegisteredHub[] }
-  | ({ action: "status" } & HubsStatusOutput);
+  | ({ action: "status" } & HubsStatusOutput)
+  | ({ action: "sync" } & HubsSyncOutput);
 
-const USAGE = "uso: hubs [scan [<carpeta>…] [--apply] | prune | status]";
+const USAGE = "uso: hubs [scan [<carpeta>…] [--apply] | prune | status | sync --ide [--dry-run]]";
 
 export const hubsCommand: CliCommand<HubsOutput> = {
   name: "hubs",
   flags: {
     known: [],
-    actions: { scan: { known: ["apply"] }, prune: { known: [] }, status: { known: [] } },
+    actions: {
+      scan: { known: ["apply"] },
+      prune: { known: [] },
+      status: { known: [] },
+      sync: { known: ["ide", "dry-run"] },
+    },
   },
   help: {
     purpose:
@@ -74,6 +81,23 @@ export const hubsCommand: CliCommand<HubsOutput> = {
           "pending and notices are the counts of the default aw status board; next is the command aw resume proposes, or null with nothing pending. The size follows the number of hubs, never their history.",
         ],
       },
+      sync: {
+        purpose:
+          "Project every ok hub onto the tools around it: --ide writes <hub>/<folder>.code-workspace with the hub and its sources.",
+        flags: {
+          ide: {
+            effect:
+              "Write the .code-workspace of each ok hub: the hub first, under its registry name, then each source with a resolved path. Only folders is replaced; every other key is kept.",
+          },
+          "dry-run": { effect: "Report what would change without writing anything." },
+        },
+        output:
+          "{action: sync, dry_run, ide: {hubs[] {name, root, action: created|updated|unchanged|skipped, file, reason?, omitted_sources?[] {alias, reason}}} | null}.",
+        notes: [
+          "A hub that is not ok is skipped with its state as the reason, and so is a .code-workspace that is not a readable JSON object. A source path is relative when hub and source share a folder other than / and $HOME.",
+          "In a hub inside a git repository, /<folder>.code-workspace is added to <hub>/.gitignore. The registry and each hub block are the only inputs: nothing is read back from the file.",
+        ],
+      },
     },
   },
 
@@ -96,6 +120,14 @@ export const hubsCommand: CliCommand<HubsOutput> = {
     if (action === "prune") {
       const removed = await pruneHubs(fs, home, namespace, await systemTempRoots());
       return { ok: true, data: { action: "prune", removed }, exitCode: 0 };
+    }
+    if (action === "sync") {
+      if (!args.flags.has("--ide")) return fail("INVALID_INPUT", USAGE);
+      const sync = await runHubsSync(fs, home, namespace, await systemTempRoots(), {
+        ide: true,
+        dryRun: args.flags.has("--dry-run"),
+      });
+      return { ok: true, data: { action: "sync", ...sync }, exitCode: 0 };
     }
     if (action === "status") {
       const status = await runHubsStatus(
@@ -129,6 +161,7 @@ export const hubsCommand: CliCommand<HubsOutput> = {
       if (data.removed.length === 0) return "nada que podar\n";
       return lines(data.removed.map((hub) => `quitado  ${hub.name}  ${hub.state}  ${hub.root}`));
     }
+    if (data.action === "sync") return renderSync(data);
     if (data.hubs.length === 0) return "sin hubs registrados\n";
     return lines(
       data.hubs.map((hub) =>
@@ -139,6 +172,17 @@ export const hubsCommand: CliCommand<HubsOutput> = {
     );
   },
 };
+
+function renderSync(data: HubsSyncOutput): string {
+  const rows = (data.ide?.hubs ?? []).map((hub) =>
+    [
+      `ide  ${hub.name}  ${hub.action}`,
+      hub.reason !== undefined ? `  (${hub.reason})` : `  ${hub.file}`,
+      ...(hub.omitted_sources ?? []).map((source) => `  · sin ${source.alias}: ${source.reason}`),
+    ].join(""),
+  );
+  return lines(data.dry_run ? [...rows, "", "--dry-run: no se escribió nada"] : rows);
+}
 
 function lines(rows: string[]): string {
   return rows.length === 0 ? "nada que mostrar\n" : `${rows.join("\n")}\n`;

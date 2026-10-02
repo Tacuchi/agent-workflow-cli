@@ -128,6 +128,8 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   "verify-connection",
   "verbose",
   "dry-run",
+  // `aw hubs sync` destinations, presence-only.
+  "ide",
   "folder",
   "deep",
   "force",
