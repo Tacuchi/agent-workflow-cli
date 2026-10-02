@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
-## [29.1.0] — sin publicar
+## [29.1.0] — 2026-10-01
 
 **`aw hubs` administra el registro de hubs de la máquina, da el estado de todos en una línea por hub y lo proyecta al IDE y a Herdr con `aw hubs sync`, y llegan los arreglos que la 29.0.0 dejó pendientes.**
 
