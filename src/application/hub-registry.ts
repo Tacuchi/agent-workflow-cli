@@ -309,6 +309,8 @@ export async function gitCommonDirectory(start: string): Promise<string | null> 
 export interface DeclaringHub {
   root: string;
   alias: string;
+  /** The source's declared path, resolved against its hub. */
+  path: string;
   workingBranch: string | null;
 }
 
@@ -359,6 +361,7 @@ async function hubsDeclaring(
           result.push({
             root,
             alias: source.alias,
+            path: source.path,
             workingBranch: block?.working_branches[source.alias] ?? null,
           });
         }

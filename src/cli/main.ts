@@ -1,11 +1,19 @@
 #!/usr/bin/env node
 import { hasWorklineMarker } from "../runtime/workline-marker.js";
+import { firstCommandToken, hookTarget } from "./argv-scan.js";
 const argv = process.argv.slice(2);
 // Help reads no hub, so it is served wherever it is asked for.
 const asksHelp = argv.includes("--help") || argv.includes("-h");
 // The lifecycle targets a host runs everywhere: outside a hub they stay silent.
 const LIFECYCLE_HOOKS = new Set(["pre-compact", "post-compact", "session-end"]);
-const lifecycleHook = argv[0] === "hook" && LIFECYCLE_HOOKS.has(argv[1] ?? "");
+// The hook's target is its first positional, so `hook --namespace x
+// sql-mutation-guard` is the guard here exactly as on the full CLI's parse-error
+// path, and never the "unknown subcommand" that lets the call pass. Scanned
+// without the parser: a parse error here would exit 1 before the guard ran.
+const target = hookTarget(argv);
+const isHook = firstCommandToken(argv) === "hook";
+const lifecycleHook = LIFECYCLE_HOOKS.has(target ?? "");
+const sqlGuard = target === "sql-mutation-guard";
 const scoped =
   !asksHelp &&
   (argv[0] === "checkpoint-write" ||
@@ -33,19 +41,29 @@ async function scopedHubVisible(): Promise<boolean> {
   }
 }
 
-if (argv[0] === "hook" && argv[1] !== "sql-mutation-guard" && !lifecycleHook && !asksHelp) {
+if (isHook && !sqlGuard && !lifecycleHook && !asksHelp) {
   // A retired hook invoked by an old host config must not materialize runtime
   // or block an edit. Refuse it directly, without loading the full CLI.
   process.stdout.write(
     `${JSON.stringify({
       ok: false,
-      error: { code: "INVALID_INPUT", message: `hook: unknown subcommand '${argv[1] ?? ""}'` },
+      error: { code: "INVALID_INPUT", message: `hook: unknown subcommand '${target ?? ""}'` },
     })}\n`,
   );
   process.exitCode = 1;
 } else if (scoped) {
   if (await scopedHubVisible()) await import("./full-cli.js");
+} else if (sqlGuard) {
+  // sql-mutation-guard protects user-level connections, even without a hub. The
+  // host blocks only on exit 2, so a CLI that cannot even load blocks the call.
+  try {
+    await import("./full-cli.js");
+  } catch {
+    process.stderr.write(
+      "agent-workflow: la guarda SQL no pudo evaluar la llamada y la bloquea; revisá la instalación\n",
+    );
+    process.exitCode = 2;
+  }
 } else {
-  // sql-mutation-guard protects user-level connections, even without a hub.
   await import("./full-cli.js");
 }

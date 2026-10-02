@@ -1,9 +1,9 @@
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DirEntry, FileStat, FileSystemPort, LinkStat } from "../ports/file-system.js";
 import { HubResolutionError, repositoryRoot } from "../runtime/hub-resolution.js";
-import { worklineMarkerContent } from "../runtime/workline-marker.js";
-import { declaringHubs, hubsFile, readHubs } from "./hub-registry.js";
+import { isWorklineRoot, worklineMarkerContent } from "../runtime/workline-marker.js";
+import { type DeclaringHub, declaringHubs, hubsFile, readHubs } from "./hub-registry.js";
 import { acquireLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 
@@ -436,6 +436,62 @@ export async function appendGitignoreEntries(
   return true;
 }
 
+/**
+ * Whether a declared source owns `root`, which shares its git repository.
+ *
+ * Sharing the repository is not enough: a sibling hub of a monorepo, whose
+ * neighbour declares its own folder (`.`), must still be able to materialize.
+ * So both are placed relative to the top of their own worktree, which also
+ * covers the copy of a source in a linked worktree. The root is owned when it
+ * falls inside the source, or when it contains one: a marker above a source
+ * would win the walk-up from it. The exception is a source that is the folder
+ * of the hub declaring it, whose own marker answers that walk-up first.
+ */
+async function claimsRoot(
+  fs: FileSystemPort,
+  hub: DeclaringHub,
+  root: string,
+  namespace: string,
+): Promise<boolean> {
+  const source = await canonicalPath(fs, hub.path);
+  const [rootTop, sourceTop] = [await repositoryRoot(root), await repositoryRoot(source)];
+  // A root or a source that cannot be placed in a worktree is owned: fail closed.
+  if (rootTop === null || sourceTop === null) return true;
+  const rootInRepo = relative(rootTop, root);
+  const sourceInRepo = relative(sourceTop, source);
+  if (within(sourceInRepo, rootInRepo)) return true;
+  if (!within(rootInRepo, sourceInRepo)) return false;
+  // The exception holds only where that hub's marker is actually there: in a
+  // linked worktree its copy may have none, and then the root would win.
+  const ownFolder = source === (await canonicalPath(fs, hub.root));
+  return !(ownFolder && (await isWorklineRoot(fs, join(rootTop, sourceInRepo), namespace)));
+}
+
+/** Whether repository-relative `inner` is `outer` or below it. */
+function within(outer: string, inner: string): boolean {
+  const rest = relative(join(sep, outer), join(sep, inner));
+  return rest === "" || (rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest));
+}
+
+/**
+ * The real path of `path` even when it does not exist yet: the deepest existing
+ * ancestor is resolved (symlinks, case on a case-insensitive volume) and the
+ * missing tail is put back. A root about to be created is judged where it lands.
+ */
+async function canonicalPath(fs: FileSystemPort, path: string): Promise<string> {
+  const missing: string[] = [];
+  let current = resolve(path);
+  while (true) {
+    // The port answers a missing path with its raw spelling instead of failing,
+    // so existence is asked first: only an existing ancestor has a real path.
+    if (await fs.exists(current)) return join(await fs.realPath(current), ...missing.reverse());
+    const parent = dirname(current);
+    if (parent === current) return resolve(path);
+    missing.push(basename(current));
+    current = parent;
+  }
+}
+
 async function validateMaterializationRoot(
   fs: FileSystemPort,
   paths: PathsService,
@@ -461,11 +517,18 @@ async function validateMaterializationRoot(
   const marked = await fs.exists(paths.cwdMarkerFile());
   if (!marked && typeof paths.userRoot === "function")
     await readHubs(hubsFile(home, paths.namespace));
-  const repo = !marked && typeof paths.userRoot === "function" ? await repositoryRoot(root) : null;
+  // The real path, not the spelling: a symlink to a source sits outside its repository.
+  const canonical = await canonicalPath(fs, root);
+  const repo =
+    !marked && typeof paths.userRoot === "function" ? await repositoryRoot(canonical) : null;
   if (repo !== null) {
     const claimants = await declaringHubs(fs, home, paths.namespace, repo);
-    const canonical = await fs.realPath(root).catch(() => root);
-    if (claimants.some((hub) => hub.root !== canonical)) {
+    const claimed = await Promise.all(
+      claimants.map(
+        (hub) => hub.root !== canonical && claimsRoot(fs, hub, canonical, paths.namespace),
+      ),
+    );
+    if (claimed.some(Boolean)) {
       throw new HubResolutionError(
         "HUB_IN_SOURCE",
         `${root} pertenece a una fuente declarada; usa --hub <ruta> del hub.`,

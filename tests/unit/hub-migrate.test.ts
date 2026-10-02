@@ -10,6 +10,7 @@ import { applyHubMigration, applyRenumber } from "../../src/application/hub-migr
 import { planHubMigration, planRenumber } from "../../src/application/hub-migrate/plan.js";
 import { parseHubBlock } from "../../src/application/parsers/hub-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { sealedPlanPath } from "../../src/application/plan-exec-plan-diff.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import { birthCustody, writeCustody } from "../../src/application/session-custody-service.js";
@@ -24,7 +25,7 @@ import {
   serializeRunState,
   withProposal,
 } from "../../src/domain/flow/run-state.js";
-import { sealProposal } from "../../src/domain/proposal.js";
+import { baseDigest, matchTextSeal, sealProposal } from "../../src/domain/proposal.js";
 import { reservationMarker } from "../../src/domain/reservation.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -1014,6 +1015,54 @@ describe("hub-migrate reescribe el alias sólo donde el lector lo lee (revisión
     fs.file(RUN, text);
     await applyHubMigration(fs, paths);
     expect(await fs.readText(RUN)).toBe(text);
+  });
+
+  describe("plan 088 F6 · el lote abierto se re-sella sobre el plan migrado", () => {
+    const DIR = `${SESSIONS}/003-abierta-plan-exec`;
+    const sealed = openPlan([
+      "### F1 — algo",
+      "> Estado: pendiente",
+      "> Fuentes: workspace",
+      "- [ ] T1.1 — tarea _(fuentes: workspace)_",
+    ]);
+
+    function openBatchHub(plan: string, stage = "implementing"): MemFs {
+      const fs = hub({});
+      fs.file(PLAN, plan);
+      fs.file(`${DIR}/SESSION.md`, "# SESSION\n");
+      fs.file(sealedPlanPath(DIR, baseDigest(sealed)), sealed);
+      fs.file(RUN, runWith({ batches: [batch({ stage, plan_digest: baseDigest(sealed) })] }));
+      return fs;
+    }
+
+    async function openBatch(fs: MemFs) {
+      const run = await readRun(fs, locateRun(paths, "003-abierta-plan-exec"));
+      if (!run.ok) throw new Error(run.failure.message);
+      return run.state.batches?.[0];
+    }
+
+    it("si el plan sólo cambia por el alias, el sello del lote coincide con el plan vigente", async () => {
+      const fs = openBatchHub(sealed);
+      await applyHubMigration(fs, paths);
+      const migrated = await fs.readText(PLAN);
+      expect(migrated).toContain("> Fuentes: hub");
+      const current = await openBatch(fs);
+      expect(matchTextSeal(current?.plan_digest ?? "", migrated)).not.toBeNull();
+      expect(await fs.readText(sealedPlanPath(DIR, current?.plan_digest ?? ""))).toBe(migrated);
+    });
+
+    it("un plan con otro cambio además del alias no se re-sella", async () => {
+      const moved = sealed.replace("— algo", "— otra cosa");
+      const fs = openBatchHub(moved);
+      await applyHubMigration(fs, paths);
+      expect((await openBatch(fs))?.plan_digest).toBe(baseDigest(sealed));
+    });
+
+    it("un lote ya cerrado conserva su sello", async () => {
+      const fs = openBatchHub(sealed, "closed");
+      await applyHubMigration(fs, paths);
+      expect((await openBatch(fs))?.plan_digest).toBe(baseDigest(sealed));
+    });
   });
 });
 

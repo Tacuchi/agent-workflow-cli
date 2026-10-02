@@ -356,7 +356,17 @@ async function writePlan(
     );
     if (!published.ok) throw new Error(published.failure.message);
   }
-  for (const run of plan.runs) await fs.writeText(run.path, run.text);
+  for (const run of plan.runs) {
+    // The copy first, as the inference stores it: a state naming a seal whose
+    // copy is missing would be refused as an unauthenticated plan.
+    for (const seal of run.seals) {
+      await fs.mkdirp(dirname(seal.path));
+      const saved = await fs.publishTextExclusive(seal.path, seal.text);
+      if (!saved.created && (await fs.readText(seal.path)) !== seal.text)
+        throw new Error(`la copia sellada ${seal.path} ya existe con otro contenido`);
+    }
+    await fs.writeText(run.path, run.text);
+  }
   for (const seed of plan.sentinels) {
     // Empty, byte for byte what `session-close` writes: the sentinel says
     // "closed" by EXISTING, and giving it content here would be redesigning it.

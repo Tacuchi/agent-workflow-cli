@@ -202,7 +202,8 @@ export async function planHubMigration(
     if (outcome.kind === "conflict") conflicts.push(outcome.conflict);
   }
 
-  const runs = await runScopeRewrites(fs, paths, lockedRuns);
+  const aliases = await planAliasRewrites(fs, paths, hub);
+  const runs = await runScopeRewrites(fs, paths, lockedRuns, aliases);
   for (const conflict of runs.conflicts) {
     conflicts.push({
       subject: conflict.path,
@@ -214,7 +215,7 @@ export async function planHubMigration(
   return {
     hub,
     markers: markers.rewrites,
-    aliases: await planAliasRewrites(fs, paths, hub),
+    aliases,
     runs: runs.rewrites,
     sentinels,
     rows,

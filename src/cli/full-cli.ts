@@ -1,3 +1,4 @@
+import { dirname, resolve } from "node:path";
 import { GitCliAdapter } from "../adapters/git-cli.js";
 import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
@@ -35,6 +36,8 @@ import {
 import { normalizeNamespace } from "../runtime/namespace.js";
 import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
+import { isWorklineRoot } from "../runtime/workline-marker.js";
+import { firstCommandToken, hookTarget } from "./argv-scan.js";
 import { ALL_COMMANDS } from "./commands/index.js";
 import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
@@ -138,9 +141,7 @@ function sqlGuardFailedClosed(): ExitCode {
 }
 
 function looksLikeSqlGuardInvocation(argv: readonly string[]): boolean {
-  return (
-    firstCommandToken(argv) === "hook" && argv[argv.indexOf("hook") + 1] === "sql-mutation-guard"
-  );
+  return hookTarget(argv) === "sql-mutation-guard";
 }
 
 function outputModeFailure(parsed: ParsedArgs, message: string): ExitCode {
@@ -373,37 +374,6 @@ function looksLikeMcpStdioInvocation(argv: readonly string[]): boolean {
   return subcommand === "serve" || subcommand === "serve-db" || subcommand === "dbhub";
 }
 
-function firstCommandToken(argv: readonly string[]): string | undefined {
-  const globalOptionsWithValue = new Set([
-    "--namespace",
-    "--plugin-root",
-    "--plugin-version",
-    "--compat",
-    // `tool` always renders its own raw JSON, but this global projection flag
-    // can precede it. Skip its value while detecting a parse-time tool error so
-    // the CLI never falls back to the generic `{ ok, error }` envelope.
-    "--format",
-    "--hub",
-  ]);
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-    if (token === undefined) return undefined;
-    if (globalOptionsWithValue.has(token)) {
-      index += 1;
-      continue;
-    }
-    if (
-      token.startsWith("--namespace=") ||
-      token.startsWith("--hub=") ||
-      token.startsWith("--plugin-")
-    )
-      continue;
-    if (token.startsWith("-")) continue;
-    return token;
-  }
-  return undefined;
-}
-
 function isMcpStdioInvocation(parsed: ParsedArgs): boolean {
   return (
     parsed.command === "mcp" &&
@@ -488,9 +458,11 @@ async function executeCommand(
         return refused.exitCode;
       }
     }
-    const commandCtx = commandOwnsMaterializationReceipt(command.name)
-      ? { ...ctx, fs: ctx.rawFs ?? ctx.fs }
-      : ctx;
+    const commandCtx =
+      commandOwnsMaterializationReceipt(command.name) ||
+      (await machineScopedWithoutHub(command.name, ctx))
+        ? { ...ctx, fs: ctx.rawFs ?? ctx.fs }
+        : ctx;
     const result = attachMaterializationReceipt(await command.execute(parsed, commandCtx), hubFs);
     await recordCommandPreparation(result, command, parsed, ctx);
     await ctx.logger?.log(
@@ -518,7 +490,10 @@ function commandCrashExit(
     return 1;
   }
   const message = redactSensitiveText(err instanceof Error ? err.message : String(err));
-  emit(fail("UNHANDLED", message), command, output, adoptionNotice(command, hubFs));
+  // A hub refused mid-command (a materializing write, a guarded path) keeps its
+  // own code, as when resolution refuses it before the command runs.
+  const code = err instanceof HubResolutionError ? err.code : "UNHANDLED";
+  emit(fail(code, message), command, output, adoptionNotice(command, hubFs));
   return 1;
 }
 
@@ -539,6 +514,20 @@ const HUB_SEALED_COMMANDS = new Set([
 ]);
 
 /** Services whose public output already declares the exact first-write effects. */
+/**
+ * A machine-scoped command launched where no hub resolved writes host and user
+ * state (`~/.claude/settings.json`, `~/.<ns>/hubs.json`), never a hub: with the
+ * materializing port, a write under the cwd — `$HOME` itself — would try to
+ * found one there and fail with «$HOME no es un hub».
+ */
+async function machineScopedWithoutHub(command: string, ctx: CliContext): Promise<boolean> {
+  if (!MACHINE_SCOPED_COMMANDS.has(command)) return false;
+  const root = resolve(ctx.paths.hubDir());
+  // ~/.<ns> carries the user-level marker, yet $HOME is never a hub.
+  if (root === dirname(ctx.paths.userRoot())) return true;
+  return !(await isWorklineRoot(ctx.rawFs ?? ctx.fs, root, ctx.paths.namespace));
+}
+
 function commandOwnsMaterializationReceipt(command: string): boolean {
   return command === "hub-init" || command === "session-create";
 }

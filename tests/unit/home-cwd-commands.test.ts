@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -53,6 +53,17 @@ describe("aw desde $HOME", { timeout: 60_000 }, () => {
     const result = runFromHome(args);
     expect(result.stdout + result.stderr).not.toContain("HUB_INVALID");
   });
+
+  it.each([["claude"], ["kimi"]])(
+    "self install-hooks --target %s instala desde $HOME sin fundar un hub (plan 088 F5)",
+    (target) => {
+      const result = runFromHome(["self", "install-hooks", "--target", target, "--json"]);
+      expect(result.stdout + result.stderr).not.toContain("$HOME no es un hub");
+      expect(result.status, result.stdout + result.stderr).toBe(0);
+      expect(JSON.parse(result.stdout).status).toBe("installed");
+      expect(existsSync(join(home, ".workflow", "sessions"))).toBe(false);
+    },
+  );
 
   it("un comando del workspace sigue rechazado", () => {
     const result = runFromHome(["mcp", "setup", "--host", "kimi", "--dry-run"]);

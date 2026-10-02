@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [29.1.0] — sin publicar
 
-**`aw hubs` administra el registro de hubs de la máquina y da el estado de todos en una línea por hub.**
+**`aw hubs` administra el registro de hubs de la máquina y da el estado de todos en una línea por hub, y llegan los arreglos que la 29.0.0 dejó pendientes.**
 
 ### Contrato
 
@@ -31,6 +31,13 @@ Ninguno.
 ### Changed
 
 - El registro implícito de cada invocación ya no agrega un hub bajo el temporal del sistema (`os.tmpdir()`, `/tmp`, `/private/tmp`), donde caen los scratchpads de los agentes y las carpetas de prueba. `aw hub-init` y `aw hubs scan --apply` sí lo registran, porque se piden a propósito.
+
+### Fixed
+
+- Un hub sin marcador ya se materializa aunque otro hub del mismo repositorio declare su propia carpeta como fuente (`.`). La guarda reclamaba todo el repositorio. Ahora reclama sólo lo que cae dentro del path declarado, o los worktrees de un repositorio que una fuente declara entero. El rechazo sale como `HUB_IN_SOURCE` y no como `UNHANDLED`.
+- `aw self install` y `aw self install-hooks`, corridos desde `$HOME`, instalan los hooks de claude y kimi. Antes la escritura de `~/.claude/settings.json` intentaba fundar un hub en `$HOME` y fallaba con «$HOME no es un hub». Un comando de alcance de máquina que corre sin hub ya no materializa ninguno.
+- `aw hub-migrate --apply` re-sella el lote abierto de un `plan-exec` cuyo plan sólo cambió por la reescritura del alias `workspace` → `hub`. Antes, el cierre de ese lote respondía `PLAN_EXEC_BATCH_STALE`, y `aw flow recover --reinfer-batch` rechazaba un lote que ya había empezado a publicar. Un plan con cualquier otro cambio sigue detectándose como movido.
+- `aw hook … sql-mutation-guard` evalúa la llamada aunque haya flags antes del nombre de la guarda (por ejemplo `hook --namespace x sql-mutation-guard`). Antes, la entrada del binario respondía «unknown subcommand» con exit 1 y el host dejaba pasar la llamada. Si el CLI completo no se puede cargar, la guarda sale con 2 y lo avisa por stderr. Un payload vacío o ilegible sigue pasando con 0, como dice el contrato de la 29.0.0.
 
 ## [29.0.0] — 2026-10-01
 

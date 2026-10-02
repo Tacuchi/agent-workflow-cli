@@ -15,10 +15,12 @@ import {
   sealRunState,
   serializeRunState,
 } from "../../domain/flow/run-state.js";
+import { baseDigest, canonicalEol } from "../../domain/proposal.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { resolveCoreDocsCanon } from "../docs-canon-service.js";
 import { parsePlanStatus } from "../parsers/plan-status.js";
 import type { PathsService } from "../paths-service.js";
+import { sealedPlanPath } from "../plan-exec-plan-diff.js";
 import { CLOSED_MARKER, listSessionFolders } from "../session-resolver.js";
 import { sourceDeclarationLines } from "../source-boundary-policy.js";
 
@@ -50,6 +52,8 @@ export interface RunScopeRewrite {
   session: string;
   /** The exact bytes the file will hold, resealed. */
   text: string;
+  /** Sealed plan copies of the batches re-sealed over the migrated plan, written before the state. */
+  seals: Array<{ path: string; text: string }>;
 }
 
 /** The same line with the legacy alias renamed inside its source declarations only. */
@@ -125,6 +129,8 @@ export async function runScopeRewrites(
   paths: PathsService,
   /** When given, only these sessions — the ones whose lock the caller holds — are rewritten. */
   locked?: ReadonlySet<string>,
+  /** The open plans this same migration rewrites, so a batch sealed over one is re-sealed. */
+  plans: readonly PlanAliasRewrite[] = [],
 ): Promise<{ rewrites: RunScopeRewrite[]; conflicts: RunScopeConflict[] }> {
   const rewrites: RunScopeRewrite[] = [];
   const conflicts: RunScopeConflict[] = [];
@@ -132,13 +138,86 @@ export async function runScopeRewrites(
     const path = join(folder.path, ".flow-run.json");
     if ((await fs.exists(join(folder.path, CLOSED_MARKER))) || !(await fs.exists(path))) continue;
     if (locked !== undefined && !locked.has(folder.name)) continue;
-    const outcome = runAliasRewrite(await fs.readText(path), folder.name);
-    if (outcome.kind === "rewrite")
-      rewrites.push({ path, session: folder.name, text: outcome.text });
-    if (outcome.kind === "conflict")
+    const raw = await fs.readText(path);
+    const outcome = runAliasRewrite(raw, folder.name);
+    if (outcome.kind === "conflict") {
       conflicts.push({ path, session: folder.name, detail: outcome.detail });
+      continue;
+    }
+    const text = outcome.kind === "rewrite" ? outcome.text : raw;
+    const resealed = await resealOpenBatches(fs, folder.path, folder.name, text, plans);
+    if (resealed !== null) rewrites.push({ path, session: folder.name, ...resealed });
+    else if (outcome.kind === "rewrite")
+      rewrites.push({ path, session: folder.name, text, seals: [] });
   }
   return { rewrites, conflicts };
+}
+
+/** A batch that has not published nor started a commit still judges the plan against its seal. */
+const OPEN_BATCH_STAGES: ReadonlySet<PlanExecBatch["stage"]> = new Set([
+  "inferred",
+  "isolated",
+  "implementing",
+  "deviation",
+  "validating",
+  "reviewing",
+]);
+
+/**
+ * The open batches whose sealed plan differs from the migrated one only by this
+ * migration's own alias rewrite, re-sealed over the migrated plan.
+ *
+ * Without it the batch close compares its old seal against a plan the
+ * migration moved and refuses with PLAN_EXEC_BATCH_STALE, while `recover
+ * --reinfer-batch` refuses a batch that started publishing. Any other
+ * difference leaves the batch as it was, so a plan moved by someone else is
+ * still caught.
+ */
+async function resealOpenBatches(
+  fs: FileSystemPort,
+  sessionDir: string,
+  session: string,
+  text: string,
+  plans: readonly PlanAliasRewrite[],
+): Promise<{ text: string; seals: Array<{ path: string; text: string }> } | null> {
+  if (plans.length === 0) return null;
+  const read = parseRunState(text, session);
+  if (!read.ok || read.state.batches === undefined) return null;
+  const seals: Array<{ path: string; text: string }> = [];
+  const batches: PlanExecBatch[] = [];
+  for (const batch of read.state.batches) {
+    const migrated =
+      OPEN_BATCH_STAGES.has(batch.stage) && !commitInFlight(batch)
+        ? await migratedSeal(fs, sessionDir, batch.plan_digest, plans)
+        : null;
+    if (migrated === null) {
+      batches.push(batch);
+      continue;
+    }
+    const digest = baseDigest(migrated);
+    seals.push({ path: sealedPlanPath(sessionDir, digest), text: migrated });
+    batches.push({ ...batch, plan_digest: digest });
+  }
+  if (seals.length === 0) return null;
+  const { digest: _seal, ...state } = { ...read.state, batches };
+  return { text: serializeRunState(sealRunState(state)), seals };
+}
+
+async function migratedSeal(
+  fs: FileSystemPort,
+  sessionDir: string,
+  digest: string,
+  plans: readonly PlanAliasRewrite[],
+): Promise<string | null> {
+  const copy = sealedPlanPath(sessionDir, digest);
+  if (!(await fs.exists(copy))) return null;
+  const sealed = await fs.readText(copy);
+  for (const plan of plans) {
+    const rewritten = planAliasRewrite(plan.path, sealed);
+    if (rewritten !== null && canonicalEol(rewritten.text) === canonicalEol(plan.text))
+      return plan.text;
+  }
+  return null;
 }
 
 export type RunAliasOutcome =
