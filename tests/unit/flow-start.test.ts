@@ -28,10 +28,12 @@ const run = promisify(execFile);
 const fs = new NodeFileSystem();
 
 let root: string;
+let home: string;
 let paths: PathsService;
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aw-flow-start-"));
+  home = mkdtempSync(join(tmpdir(), "aw-flow-start-home-"));
   paths = new PathsService(normalizeNamespace("workflow"), root, root);
   mkdirSync(join(root, ".workflow", "sessions"), { recursive: true });
   writeFileSync(join(root, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
@@ -42,7 +44,10 @@ beforeEach(() => {
   );
 });
 
-afterEach(() => rmSync(root, { recursive: true, force: true }));
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+  rmSync(home, { recursive: true, force: true });
+});
 
 describe("aw flow start — one invocation opens the run", () => {
   it("creates the session, seeds it, adopts the run and hands the read-set and the first directive", async () => {
@@ -116,7 +121,7 @@ describe("aw flow start — one invocation opens the run", () => {
         "001",
         "--json",
       ],
-      { cwd: root, encoding: "utf8" },
+      { cwd: root, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } },
     ).catch((error: { stdout: string }) => error);
     expect(JSON.parse(out.stdout).error.code).toBe("ARGS_INVALID");
   });
@@ -125,7 +130,7 @@ describe("aw flow start — one invocation opens the run", () => {
     const { stdout } = await run(
       process.execPath,
       [CLI, "flow", "start", "--flow", "plan-new", "--name", "correo", "--objetivo", "x", "--json"],
-      { cwd: root, encoding: "utf8" },
+      { cwd: root, encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } },
     );
     const data = JSON.parse(stdout);
     expect(data.session.folder).toMatch(/-correo-plan-new$/);

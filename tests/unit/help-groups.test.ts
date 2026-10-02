@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hubBlockUpsertCommand } from "../../src/cli/commands/hub-block.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
@@ -228,15 +230,18 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
 
   it("el dispatcher entrega la ayuda del subverbo solicitado, sin ejecutarlo", () => {
     const cli = resolve(__dirname, "../../dist/cli/main.js");
+    const home = mkdtempSync(join(tmpdir(), "aw-help-groups-home-"));
+    const env = { ...process.env, HOME: home, USERPROFILE: home };
     for (const [args, expected] of [
       [["self", "update", "--help"], "aw self update"],
       [["doctor", "prepare", "--help"], "aw doctor prepare"],
       [["flow", "advance", "--help"], "aw flow advance"],
     ] as const) {
-      const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+      const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env });
       expect(result.status, args.join(" ")).toBe(0);
       expect(result.stdout, args.join(" ")).toContain(expected);
     }
+    rmSync(home, { recursive: true, force: true });
   });
 });
 

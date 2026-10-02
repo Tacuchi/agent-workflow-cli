@@ -28,6 +28,7 @@ const REPO = resolve(__dirname, "..", "..");
 const CLI = join(REPO, "dist", "cli", "main.js");
 const FIXTURE = join(REPO, "tests", "fixtures", "error-actions.json");
 const run = promisify(execFile);
+let home: string;
 
 interface Classified {
   file: string;
@@ -57,6 +58,7 @@ async function aw(cwd: string, ...args: string[]) {
   const outcome = await run(process.execPath, [CLI, ...args, "--json"], {
     cwd,
     encoding: "utf8",
+    env: { ...process.env, HOME: home, USERPROFILE: home },
   }).catch((error: { stdout: string }) => error);
   return JSON.parse(outcome.stdout) as {
     error?: { code: string };
@@ -159,6 +161,8 @@ describe("determinable errors name the exact command — through the binary", ()
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "aw-error-actions-"));
     ws = join(root, "ws");
+    home = join(root, "home");
+    await mkdir(home, { recursive: true });
     await mkdir(join(ws, ".workflow", "sessions"), { recursive: true });
     await mkdir(join(ws, "sub"), { recursive: true });
     await writeFile(join(ws, ".workflow", "workline.json"), worklineMarkerContent("workflow"));

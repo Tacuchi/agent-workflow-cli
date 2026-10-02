@@ -15,9 +15,13 @@ afterEach(() => {
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "aw-no-tui-"));
   roots.push(root);
-  const session = join(root, ".workflow/sessions/001-sin-tui-quick");
+  mkdirSync(join(root, "home"));
+  const session = join(root, "hub/.workflow/sessions/001-sin-tui-quick");
   mkdirSync(session, { recursive: true });
-  writeFileSync(join(root, ".workflow/workline.json"), '{"workline":1,"namespace":"workflow"}\n');
+  writeFileSync(
+    join(root, "hub/.workflow/workline.json"),
+    '{"workline":1,"namespace":"workflow"}\n',
+  );
   writeFileSync(
     join(session, "SESSION.md"),
     "# SESSION — sin-tui-quick\n\n## Objective\nVerificar QUICK sin UI\n\n## Origin\nFixture local\n",
@@ -30,9 +34,14 @@ function command(root: string, args: string[]) {
     process.execPath,
     ["--no-warnings", "--experimental-loader", LOADER, ENTRY, ...args],
     {
-      cwd: root,
+      cwd: join(root, "hub"),
       encoding: "utf8",
-      env: { ...process.env, AW_NAMESPACE: "workflow" },
+      env: {
+        ...process.env,
+        HOME: join(root, "home"),
+        USERPROFILE: join(root, "home"),
+        AW_NAMESPACE: "workflow",
+      },
     },
   );
 }

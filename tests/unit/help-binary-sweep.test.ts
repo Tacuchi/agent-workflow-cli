@@ -36,7 +36,7 @@ function label({ command, action }: Target): string {
 async function helpOf(target: Target, cwd: string) {
   const argv = [CLI, target.command.name, ...(target.action ? [target.action] : []), "--help"];
   try {
-    const { stdout } = await run(process.execPath, argv, { cwd, encoding: "utf8" });
+    const { stdout } = await run(process.execPath, argv, { cwd, encoding: "utf8", env });
     return { code: 0, stdout };
   } catch (error) {
     const failed = error as { code?: number; stdout?: string };
@@ -62,11 +62,14 @@ async function pooled<T, R>(items: T[], limit: number, fn: (item: T) => Promise<
 let root: string;
 let bare: string;
 let hub: string;
+let env: NodeJS.ProcessEnv;
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "aw-help-sweep-"));
   bare = join(root, "bare");
   hub = join(root, "ws");
+  env = { ...process.env, HOME: join(root, "home"), USERPROFILE: join(root, "home") };
+  await mkdir(join(root, "home"), { recursive: true });
   await mkdir(bare, { recursive: true });
   await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
   await writeFile(
@@ -109,6 +112,7 @@ describe("errors and directives stay in Spanish", () => {
     const { stdout } = await run(process.execPath, [CLI, "status", "--bogus", "--json"], {
       cwd: hub,
       encoding: "utf8",
+      env,
     }).catch((error: { stdout: string }) => error);
     expect(stdout).toContain("no es un flag de este comando");
   });
@@ -120,7 +124,7 @@ describe("errors and directives stay in Spanish", () => {
     const { stdout } = await run(
       process.execPath,
       [CLI, "flow", "advance", "--session", "001", "--flow", "quick", "--adopt", "--json"],
-      { cwd: hub, encoding: "utf8" },
+      { cwd: hub, encoding: "utf8", env },
     );
     expect(JSON.parse(stdout).next_action).toMatch(/respondé|ejecutá|corré/);
   });

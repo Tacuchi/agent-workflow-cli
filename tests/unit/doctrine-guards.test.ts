@@ -2235,3 +2235,40 @@ describe("Doctrine guards — AC-13 · the doctrine points to the CLI (plan 082 
     }
   });
 });
+
+describe("Doctrine guards — plan 088 F1 · the suite never launches the CLI with the real HOME", () => {
+  const TESTS_ROOT = resolve(__dirname, "..");
+  const CHILD_PROCESS = /^import\s+(?!type\b)[^;]*from\s+"node:child_process"/m;
+  const CLI_ENTRY = /dist\/cli\/main\.js|"dist",\s*"cli",\s*"main\.js"/;
+  const OWN_HOME = /\bHOME\s*:/;
+
+  // A child that inherits HOME registers its fixture hubs in the
+  // ~/.workflow/hubs.json of whoever runs the suite.
+  function launchesCliWithRealHome(text: string): boolean {
+    return CHILD_PROCESS.test(text) && CLI_ENTRY.test(text) && !OWN_HOME.test(text);
+  }
+
+  it("every test that spawns dist/cli/main.js passes its own HOME", async () => {
+    const offenders: string[] = [];
+    for (const rel of await readdir(TESTS_ROOT, { recursive: true })) {
+      if (!rel.endsWith(".ts")) continue;
+      const text = await readFile(join(TESTS_ROOT, rel), "utf8");
+      if (launchesCliWithRealHome(text)) offenders.push(rel);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("flags a spawn of the binary without HOME, and not a type-only import", () => {
+    const spawn =
+      'import { spawnSync } from "node:child_process";\nconst CLI = "dist/cli/main.js";\n';
+    expect(launchesCliWithRealHome(spawn)).toBe(true);
+    expect(launchesCliWithRealHome(`${spawn}spawnSync(n, [CLI], { env: { HOME: h } });\n`)).toBe(
+      false,
+    );
+    expect(
+      launchesCliWithRealHome(
+        'import type { ChildProcess } from "node:child_process";\nconst CLI = "dist/cli/main.js";\n',
+      ),
+    ).toBe(false);
+  });
+});
