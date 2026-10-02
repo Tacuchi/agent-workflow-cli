@@ -260,7 +260,7 @@ async function resumeSession(
  * tie-break are untouched: what a tie still changes is whether one item can be
  * called the recommendation at all.
  */
-function resumePipeline(index: WorklineIndex): ResumeOutcome {
+export function resumePipeline(index: WorklineIndex): ResumeOutcome {
   const [head] = index.pipeline;
   if (head === undefined) {
     return { status: "idle", action: "no hay trabajo pendiente: el pipeline está vacío" };

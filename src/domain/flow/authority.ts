@@ -3734,6 +3734,11 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
       "mudanza o reparación puntual de un hub; valida el destino y las referencias vivas antes de mover, sin abrir una corrida adicional",
   },
   {
+    command: "hubs",
+    reason:
+      "registro de hubs de la máquina, sin corrida propia: la lista, scan sin --apply y status sólo leen; scan --apply y prune escriben ~/.<ns>/hubs.json por la escritura atómica del registro",
+  },
+  {
     command: "spec-new",
     reason:
       "comando `/w:` de una sola pasada que no abre loop: sin corrida que dirigir, su gate de división lo aplica el propio comando con la regla de modules/SPLIT-GATE.md, que por eso conserva su enunciado",

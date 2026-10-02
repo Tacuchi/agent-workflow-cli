@@ -40,7 +40,9 @@ it("persist apply desde el checkout resuelve el único hub incluso con marcador 
       error: output.stderr,
     };
   };
-  expect(run(hub, ["status"]).status).toBe(0); // records the hub in HOME, without writing in source
+  expect(run(hub, ["status"]).status).toBe(0); // reads the hub without writing in source
+  // A hub under the system temp folder is never registered implicitly (plan 088).
+  expect(run(home, ["hubs", "scan", hub, "--apply"]).status).toBe(0);
   const prepared = run(hub, ["persist", "prepare"]);
   expect(prepared.status).toBe(0);
   const request = prepared.body.request as { input_digest: string };

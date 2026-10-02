@@ -1,4 +1,4 @@
-import { basename, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { ProcessPort } from "../ports/process.js";
@@ -17,6 +17,7 @@ import {
   previewWorklineMaterialization,
   reconcileRuntimeGitignore,
 } from "./hub-materialization-service.js";
+import { registerHub } from "./hub-registry.js";
 import { type HubUntrack, hubUntrack } from "./hub-untrack-service.js";
 import { DEFAULT_LOCK_TTL_MS, isExpired, parseLock } from "./lock-service.js";
 import { type MultirootError, type MultirootResult, runMultiroot } from "./multiroot-service.js";
@@ -89,6 +90,8 @@ export interface HubInitResult {
   ok: boolean;
   dry_run: boolean;
   hub: string;
+  /** Present only when the hub could not be added to `~/.<ns>/hubs.json`. */
+  registry_warning?: string;
   sources: number;
   source_actions?: { alias: string; action: "added" | "updated"; error?: string }[];
   scaffold: ScaffoldSummary;
@@ -136,7 +139,11 @@ export async function runHubInit(
   // status/resume or every flow.  It deliberately does not create skills.toml,
   // a hub block, docs/, launch artifacts, HISTORY, or a Git repository.
   if (input.sources.length === 0 && input.proyecto === undefined) {
-    return materializeWithoutSources(fs, wsPaths, hub, input, process);
+    return registered(
+      fs,
+      wsPaths,
+      await materializeWithoutSources(fs, wsPaths, hub, input, process),
+    );
   }
 
   // Source declarations are additive; omitted aliases keep their branches and visibility.
@@ -171,18 +178,44 @@ export async function runHubInit(
     return { ...preview, source_actions: sourceActions, ...(untrack ? { untrack } : {}) };
   }
 
-  return applyHubInit(
+  return registered(
     fs,
-    env,
     wsPaths,
-    hub,
-    input,
-    process,
-    sources,
-    sourceActions,
-    existing,
-    upsertInput,
+    await applyHubInit(
+      fs,
+      env,
+      wsPaths,
+      hub,
+      input,
+      process,
+      sources,
+      sourceActions,
+      existing,
+      upsertInput,
+    ),
   );
+}
+
+/** An initialized hub enters the registry, so `aw hubs` knows it before any other command runs there. */
+async function registered<T extends HubInitResult | HubInitInputError>(
+  fs: FileSystemPort,
+  wsPaths: PathsService,
+  result: T,
+): Promise<T> {
+  // $HOME is never a hub, as in the implicit registration.
+  if ("error" in result || result.dry_run || resolve(result.hub) === dirname(wsPaths.userRoot()))
+    return result;
+  // The hub is already materialized: a registry that cannot be written is
+  // reported, as the implicit registration does, instead of failing the init.
+  try {
+    await registerHub(fs, wsPaths, result.hub);
+    return result;
+  } catch (error) {
+    return {
+      ...result,
+      registry_warning: `No se pudo registrar el hub ${result.hub}: ${String(error)}`,
+    };
+  }
 }
 
 async function initMaterialization(

@@ -36,6 +36,7 @@ import { hubCommitCommand } from "./hub-commit.js";
 import { hubInitCommand } from "./hub-init.js";
 import { hubMigrateCommand } from "./hub-migrate.js";
 import { hubMoveCommand } from "./hub-move.js";
+import { hubsCommand } from "./hubs.js";
 import { mcpCommand } from "./mcp.js";
 import { mergeStateCommand } from "./merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./multiroot.js";
@@ -91,6 +92,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   hubInitCommand,
   hubCommitCommand,
   hubMoveCommand,
+  hubsCommand,
   addSourceCommand,
   contextBudgetCommand,
   contextPlanCommand,

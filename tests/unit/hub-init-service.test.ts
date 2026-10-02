@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -11,6 +19,7 @@ import {
   pruneReleasedLock,
   runHubInit,
 } from "../../src/application/hub-init-service.js";
+import { hubsFile, readHubs } from "../../src/application/hub-registry.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { hubInitCommand } from "../../src/cli/commands/hub-init.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -484,8 +493,10 @@ describe("runWorkspaceInit", () => {
   it("--workspace ≠ env.cwd() escribe en workspace, no en cwd", async () => {
     const callerCwd = mkdtempSync(join(tmpdir(), "caller-cwd-"));
     const target = mkdtempSync(join(tmpdir(), "target-ws-"));
-    const callerEnv = new FakeEnv(callerCwd);
-    const callerPaths = new PathsService(normalizeNamespace("workflow"), callerCwd, callerCwd);
+    // Its own home: hub-init registers the hub there, and the cwd must stay untouched.
+    const callerHome = mkdtempSync(join(tmpdir(), "caller-home-"));
+    const callerEnv = new FakeEnv(callerHome, callerCwd);
+    const callerPaths = new PathsService(normalizeNamespace("workflow"), callerHome, callerCwd);
     try {
       const result = await runHubInit(fs, callerEnv, callerPaths, {
         sources: [{ alias: "app", path: source("app") }],
@@ -501,6 +512,7 @@ describe("runWorkspaceInit", () => {
     } finally {
       rmSync(callerCwd, { recursive: true, force: true });
       rmSync(target, { recursive: true, force: true });
+      rmSync(callerHome, { recursive: true, force: true });
     }
   });
 
@@ -731,5 +743,37 @@ describe("lo que la reescritura no pudo conservar llega al humano", () => {
   it("y no inventa la sección cuando no se retiró nada", () => {
     const text = humanOf({ ...withDropped, hub_block_files: {} }, false);
     expect(text).not.toMatch(/retiraron/);
+  });
+});
+
+describe("plan 088 F2 · hub-init registra el hub", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+
+  function fixture() {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "aw-hub-init-registry-")));
+    roots.push(root);
+    const home = join(root, "home");
+    const hub = join(root, "hub");
+    mkdirSync(home);
+    mkdirSync(hub);
+    const env = new FakeEnv(home, hub);
+    const paths = new PathsService(normalizeNamespace("workflow"), home, hub);
+    return { home, hub, env, paths };
+  }
+
+  it("sin fuentes registra el hub, aunque esté bajo el temporal del sistema", async () => {
+    const { home, hub, env, paths } = fixture();
+    const result = await runHubInit(new NodeFileSystem(), env, paths, { sources: [], hub });
+    expect("error" in result).toBe(false);
+    expect(await readHubs(hubsFile(home, "workflow"))).toEqual([hub]);
+  });
+
+  it("con --dry-run no registra nada", async () => {
+    const { home, hub, env, paths } = fixture();
+    await runHubInit(new NodeFileSystem(), env, paths, { sources: [], hub, dryRun: true });
+    expect(existsSync(hubsFile(home, "workflow"))).toBe(false);
   });
 });

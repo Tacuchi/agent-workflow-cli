@@ -3,8 +3,10 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import {
   declaringHubs,
   gitCommonDirectory,
+  isEphemeralRoot,
   legacyDeclaringHubs,
   registerHub,
+  systemTempRoots,
 } from "../application/hub-registry.js";
 import { legacyBlockFiles } from "../application/parsers/hub-block.js";
 import { PathsService } from "../application/paths-service.js";
@@ -102,6 +104,8 @@ export async function registerResolvedHub(
     return null;
   try {
     await access(directory.root);
+    // Only an explicit `hub-init` or `hubs scan --apply` registers a throwaway copy.
+    if (isEphemeralRoot(await realpath(directory.root), await systemTempRoots())) return null;
     await registerHub(
       fs,
       new PathsService(directory.namespace, home, directory.root),

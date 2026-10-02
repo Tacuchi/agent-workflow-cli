@@ -344,6 +344,7 @@ const MACHINE_SCOPED_COMMANDS: ReadonlySet<string> = new Set([
   "self",
   "context-budget",
   "doctor",
+  "hubs",
 ]);
 
 function runsWithoutHub(parsed: ParsedArgs): boolean {

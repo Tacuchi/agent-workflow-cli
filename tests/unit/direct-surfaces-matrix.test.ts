@@ -174,6 +174,9 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // F7: la propuesta del commit exhibe las rutas, exclusiones, mensaje y
     // digest que la persona aprueba; JSON y vista humana proyectan el mismo sello.
     "hub-commit",
+    // plan 088: el registro de hubs. La lista, el escaneo, la poda y el estado
+    // dan una línea por hub en humano, del mismo objeto que viaja en el JSON.
+    "hubs",
   ];
 
   it("no undeclared command acquired a human projection", () => {

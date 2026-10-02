@@ -12,6 +12,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [29.1.0] — sin publicar
+
+**`aw hubs` administra el registro de hubs de la máquina y da el estado de todos en una línea por hub.**
+
+### Contrato
+
+Ninguno.
+
+### Added
+
+- `aw hubs` lista los hubs registrados en `~/.<ns>/hubs.json` con su nombre y su estado (`ok`, `missing`, `not-a-hub` o `ephemeral`), desde cualquier carpeta, `$HOME` incluido. Un hub se llama como su carpeta; si dos registrados la comparten, los dos pasan a `<padre>/<carpeta>`.
+- `aw hubs scan [<carpeta>…]` busca hubs hasta 3 niveles, sin entrar en `node_modules`, `.git` ni carpetas ocultas, y los registra sólo con `--apply`. Un `.<ns>/` sin marcador de hub se informa como rechazado y nunca se registra. Sin carpeta, recorre los padres de los hubs registrados.
+- `aw hubs prune` quita del registro los hubs borrados, los que perdieron su marcador y los efímeros.
+- `aw hubs status` da por hub `{name, root, ok, pending, next, notices, last_activity}`, o `{name, root, ok: false, reason}` si no se puede leer. El tamaño depende del número de hubs, no de su historia. `/w:status todos` lo releva.
+- `aw hub-init` registra el hub que inicializa, salvo con `--dry-run`.
+
+### Changed
+
+- El registro implícito de cada invocación ya no agrega un hub bajo el temporal del sistema (`os.tmpdir()`, `/tmp`, `/private/tmp`), donde caen los scratchpads de los agentes y las carpetas de prueba. `aw hub-init` y `aw hubs scan --apply` sí lo registran, porque se piden a propósito.
+
 ## [29.0.0] — 2026-10-01
 
 **«hub» es el único nombre de la unidad de Workline, `status` y `doctor` emiten por defecto sólo lo pendiente, `status` lee un solo documento, y los «resume» y los hooks tienen nombres que dicen quién los usa.** Corte limpio, sin alias: un comando o un flag viejo falla con `RENAMED` y su reemplazo, nunca en silencio. «workspace» y «project» quedan sólo para conceptos ajenos a Workline (Herdr, `.code-workspace`, npm workspaces, el proyecto de Codex o Antigravity y la MCP de proyecto del host) y en los ids de operación que guardan las corridas (`workspace.board`, `workspace.commit-approved` y `workspace.evidence-approved`), para que las corridas vivas se sigan leyendo.

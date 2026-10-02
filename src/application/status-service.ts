@@ -17,6 +17,7 @@ import {
   type PendingRetirement,
   type PipelineItem,
   type SessionUnit,
+  type WorklineIndex,
   buildWorklineIndex,
 } from "./workline-index-service.js";
 import type { OrphanUnit, WorktreeListOutput } from "./worktree-service.js";
@@ -147,7 +148,15 @@ export async function runStatusCommand(
   paths: PathsService,
   input: StatusInput = {},
 ): Promise<StatusOutput> {
-  const index = await buildWorklineIndex(fs, env, paths, input);
+  return statusOfIndex(fs, paths, await buildWorklineIndex(fs, env, paths, input));
+}
+
+/** The board over an index already built, so a caller that also routes `resume` builds it once. */
+export async function statusOfIndex(
+  fs: FileSystemPort,
+  paths: PathsService,
+  index: WorklineIndex,
+): Promise<StatusOutput> {
   const events = await readEvents(fs, paths);
 
   const { active, closed, paused, abandoned } = await statusSessions(fs, paths, index);

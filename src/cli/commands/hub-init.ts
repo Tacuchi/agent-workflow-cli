@@ -51,8 +51,9 @@ export const hubInitCommand: CliCommand<HubInitResult> = {
       untrack: { effect: "Remove the runtime paths Git still tracks from its index." },
     },
     output:
-      "{ok, dry_run, hub, sources, source_actions[]? {alias, action, error?}, scaffold, materialization, untrack?, skills_toml (created|exists|skipped), hub_block_files, attach_multiroot, detached_removed?}.",
+      "{ok, dry_run, hub, sources, source_actions[]? {alias, action, error?}, scaffold, materialization, untrack?, skills_toml (created|exists|skipped), hub_block_files, attach_multiroot, detached_removed?, registry_warning?}.",
     notes: [
+      "Except with --dry-run, it registers the hub in ~/.<ns>/hubs.json; registry_warning says why when that write fails.",
       "Without sources it creates only the sessions marker and, in a Git repository, the runtime ignore block. With sources it reconciles the hub block, the branches and the multi-root visibility; re-running is idempotent.",
       "A partial failure returns ok:false with error code HUB_INIT_FAILED and the full data.",
     ],
@@ -141,6 +142,7 @@ export const hubInitCommand: CliCommand<HubInitResult> = {
         `  fuente ${source.alias}: ${source.error ? "revertida" : source.action}${source.error ? ` · error: ${source.error}` : ""}`,
       );
     appendHubMigration(lines, hubBlock);
+    if (data.registry_warning !== undefined) lines.push(`  Registro   ${data.registry_warning}`);
     return `${lines.join("\n")}\n`;
   },
 };

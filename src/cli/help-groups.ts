@@ -41,6 +41,7 @@ const GROUPS: readonly CommandGroup[] = [
     commands: [
       "hub-init",
       "hub-move",
+      "hubs",
       "sources",
       "doc-branch",
       "set-working-branch",
