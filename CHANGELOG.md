@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
-## [29.0.0] — sin publicar
+## [29.0.0] — 2026-10-01
 
 **«hub» es el único nombre de la unidad de Workline, `status` y `doctor` emiten por defecto sólo lo pendiente, `status` lee un solo documento, y los «resume» y los hooks tienen nombres que dicen quién los usa.** Corte limpio, sin alias: un comando o un flag viejo falla con `RENAMED` y su reemplazo, nunca en silencio. «workspace» y «project» quedan sólo para conceptos ajenos a Workline (Herdr, `.code-workspace`, npm workspaces, el proyecto de Codex o Antigravity y la MCP de proyecto del host) y en los ids de operación que guardan las corridas (`workspace.board`, `workspace.commit-approved` y `workspace.evidence-approved`), para que las corridas vivas se sigan leyendo.
 
