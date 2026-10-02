@@ -39,7 +39,7 @@ it("add-source agrega una fuente sin podar las existentes y escribe la ruta en l
   ).toBe(false);
   const block = await readHubBlock(fs, root, paths.blockMarkers());
   expect(block?.fuentes.map((f) => f.alias)).toEqual(["a", "b"]);
-  expect((await readFile(join(root, "CLAUDE.md"), "utf8")).includes("| a | a | main |")).toBe(true);
+  expect((await readFile(join(root, "AGENTS.md"), "utf8")).includes("| a | a | main |")).toBe(true);
   const local = JSON.parse(await readFile(paths.cwdLocalConfigFile(), "utf8"));
   expect(local.sources).toEqual({ a: repoA, b: repoB });
 });
@@ -139,6 +139,6 @@ it("rechaza un alta cuya ruta no existe antes de escribir bloque, local.json o c
   } as CliContext);
   expect(result.ok).toBe(false);
   expect(result.error?.message).toContain("la ruta de la fuente repo no existe en este host");
-  expect(await fs.exists(join(root, "CLAUDE.md"))).toBe(false);
+  expect(await fs.exists(join(root, "AGENTS.md"))).toBe(false);
   expect(await fs.exists(paths.cwdLocalConfigFile())).toBe(false);
 });

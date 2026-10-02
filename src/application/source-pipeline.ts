@@ -1,7 +1,12 @@
 import { join } from "node:path";
 import type { FinalValidationCommand, FinalValidationSource } from "../domain/flow/run-state.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { BLOCK_MIRROR_FILES, type ParsedHubBlock, parseHubBlock } from "./parsers/hub-block.js";
+import {
+  BLOCK_FILE,
+  BLOCK_READ_FILES,
+  type ParsedHubBlock,
+  parseHubBlock,
+} from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { finalValidationOverrides } from "./source-boundary-policy.js";
 
@@ -14,14 +19,14 @@ export interface SourcePipeline {
   alias: string;
   build: PipelineValue;
   test: PipelineValue;
-  /** Mirror from which this declaration was read. */
+  /** Block file from which this declaration was read. */
   origin: string;
 }
 
 export function sourcePipeline(
   block: ParsedHubBlock,
   alias: string,
-  origin = "CLAUDE.md",
+  origin: string = BLOCK_FILE,
 ): SourcePipeline {
   const declaration = block.pipeline?.[alias];
   const value = (field: "build" | "test"): PipelineValue => {
@@ -35,20 +40,19 @@ export function sourcePipeline(
   return { alias, build: value("build"), test: value("test"), origin };
 }
 
-/** The first mirror declaring a field wins; a second mirror can supply a missing field. */
+/** Pipelines come from the file the hub block is read from: AGENTS.md, else a legacy CLAUDE.md. */
 export async function readSourcePipelines(
   fs: FileSystemPort,
   paths: PathsService,
 ): Promise<SourcePipeline[]> {
-  const result = new Map<string, SourcePipeline>();
-  for (const name of BLOCK_MIRROR_FILES) {
+  for (const name of BLOCK_READ_FILES) {
     const file = join(paths.hubDir(), name);
     if (!(await fs.exists(file))) continue;
     const block = parseHubBlock(await fs.readText(file), paths.blockMarkers());
     if (block === null) continue;
-    mergeSourcePipelines(result, block, name);
+    return block.fuentes.map(({ alias }) => sourcePipeline(block, alias, name));
   }
-  return [...result.values()];
+  return [];
 }
 
 /** A plan override is per command and per source; `ninguno` is never a runnable command. */
@@ -77,26 +81,4 @@ export function resolveFinalValidation(
       };
       return { alias, build: command("build"), test: command("test") };
     });
-}
-
-function mergeSourcePipelines(
-  result: Map<string, SourcePipeline>,
-  block: ParsedHubBlock,
-  name: string,
-): void {
-  for (const { alias } of block.fuentes) {
-    const candidate = sourcePipeline(block, alias, name);
-    const existing = result.get(alias);
-    if (!existing) result.set(alias, candidate);
-    else
-      result.set(alias, {
-        ...existing,
-        build: existing.build.kind === "undeclared" ? candidate.build : existing.build,
-        test: existing.test.kind === "undeclared" ? candidate.test : existing.test,
-        origin:
-          existing.build.kind === "undeclared" && existing.test.kind === "undeclared"
-            ? candidate.origin
-            : existing.origin,
-      });
-  }
 }

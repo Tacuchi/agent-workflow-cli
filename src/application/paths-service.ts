@@ -149,7 +149,7 @@ export class PathsService {
     return join(this.cwdRoot(), "skills.toml");
   }
 
-  // CLAUDE.md / AGENTS.md hub block markers
+  // AGENTS.md hub block markers
   blockMarkers(): HubBlockMarkers {
     return hubBlockMarkers(this.ns);
   }

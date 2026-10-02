@@ -48,14 +48,14 @@ describe("set-qa-branch command", () => {
   it("upserts qa_branches[alias] into the WORKSPACE block", async () => {
     const result = await setQaBranchCommand.execute(args(["core", "desarrollo"]), ctx());
     expect(result.ok).toBe(true);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("- Ramas QA actuales:");
-    expect(claude).toContain("  - core: desarrollo");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("- Ramas QA actuales:");
+    expect(agentsMd).toContain("  - core: desarrollo");
   });
 
   it("declara hotfix y rechaza desarrollo/PROD como excepción", async () => {
     await writeFile(
-      join(cwd, "CLAUDE.md"),
+      join(cwd, "AGENTS.md"),
       `<!-- AGENT-WORKFLOW-HUB-START -->\n## Hub\nTest\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| core | ${cwd} | main |\n## Status\n- Ramas por defecto:\n  - desarrollo: development\n<!-- AGENT-WORKFLOW-HUB-END -->`,
     );
     expect((await setExceptionBranchCommand.execute(args(["core", "development"]), ctx())).ok).toBe(
@@ -68,7 +68,7 @@ describe("set-qa-branch command", () => {
     expect((await setExceptionBranchCommand.execute(args(["core", "hotfix/two"]), ctx())).ok).toBe(
       true,
     );
-    const text = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    const text = await readFile(join(cwd, "AGENTS.md"), "utf8");
     expect(text).toContain("  - core: hotfix/two");
     expect(text).not.toContain("hotfix/one");
   });

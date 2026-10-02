@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -67,24 +68,24 @@ describe("runWorkspaceInit", () => {
     // default `principal` del workspace → el control de [Config] sería inerte,
     // y un re-init pisaría una celda dejada vacía a propósito.
     await init();
-    const claude = readFileSync(join(hub, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| app | (local) |  |");
-    expect(claude).not.toMatch(/\| app \| \(local\) \| \S+ \|/);
+    const agentsMd = readFileSync(join(hub, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| app | (local) |  |");
+    expect(agentsMd).not.toMatch(/\| app \| \(local\) \| \S+ \|/);
   });
 
-  it("--main-branch explícito SÍ se escribe, y un re-init conserva la rama desde el espejo restante", async () => {
+  it("--main-branch explícito SÍ se escribe, y un re-init conserva la rama desde un CLAUDE.md heredado", async () => {
     await init({ mainBranch: "trunk" });
-    expect(readFileSync(join(hub, "CLAUDE.md"), "utf8")).toContain("| app | (local) | trunk |");
+    expect(readFileSync(join(hub, "AGENTS.md"), "utf8")).toContain("| app | (local) | trunk |");
 
-    // La otra copia del bloque todavía declara trunk: reescribir no la pierde.
-    rmSync(join(hub, "CLAUDE.md"), { force: true });
+    // Un hub sin migrar tiene el bloque solo en CLAUDE.md: reescribir no pierde su rama.
+    renameSync(join(hub, "AGENTS.md"), join(hub, "CLAUDE.md"));
     await init();
     await runHubInit(fs, env, paths, {
       sources: [{ alias: "app", path: source("app") }],
       hub,
       lastActivity: "2026-01-01 00:00",
     });
-    const after = readFileSync(join(hub, "CLAUDE.md"), "utf8");
+    const after = readFileSync(join(hub, "AGENTS.md"), "utf8");
     expect(after).toContain("| app | (local) | trunk |");
     expect(after).not.toContain("| app | (local) | main |");
   });
@@ -110,11 +111,11 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(join(hub, ".workflow", "skills.toml"))).toBe(false);
 
     // block written, no Mode line, has the source
-    const claude = readFileSync(join(hub, "CLAUDE.md"), "utf-8");
-    expect(claude).toContain("## Fuentes");
-    expect(claude).toContain("app");
-    expect(claude).not.toContain("Mode: hub");
-    expect(claude).not.toMatch(/^Mode:/m);
+    const agentsMd = readFileSync(join(hub, "AGENTS.md"), "utf-8");
+    expect(agentsMd).toContain("## Fuentes");
+    expect(agentsMd).toContain("app");
+    expect(agentsMd).not.toContain("Mode: hub");
+    expect(agentsMd).not.toMatch(/^Mode:/m);
 
     // external source (workspace folder ≠ the source) → DOES configure visibility
     expect(existsSync(join(hub, ".claude", "settings.local.json"))).toBe(true);
@@ -186,11 +187,11 @@ describe("runWorkspaceInit", () => {
         JSON.stringify({ dependencies: { react: "^18" }, devDependencies: { typescript: "^5" } }),
       );
       await init({ sources: [{ alias: "app", path: source }] });
-      const claude = readFileSync(join(hub, "CLAUDE.md"), "utf-8");
-      expect(claude).toContain("## Stack");
-      expect(claude).toContain("Lenguaje: TypeScript");
-      expect(claude).toContain("Framework: React");
-      expect(claude).not.toContain("Stack sin detectar");
+      const agentsMd = readFileSync(join(hub, "AGENTS.md"), "utf-8");
+      expect(agentsMd).toContain("## Stack");
+      expect(agentsMd).toContain("Lenguaje: TypeScript");
+      expect(agentsMd).toContain("Framework: React");
+      expect(agentsMd).not.toContain("Stack sin detectar");
     } finally {
       rmSync(source, { recursive: true, force: true });
     }
@@ -248,11 +249,11 @@ describe("runWorkspaceInit", () => {
       workingBranches: { app: "feature/x" },
       qaBranches: { app: "desarrollo" },
     });
-    const claude = readFileSync(join(hub, "CLAUDE.md"), "utf-8");
-    expect(claude).toContain("- Ramas de trabajo actuales:");
-    expect(claude).toContain("  - app: feature/x");
-    expect(claude).toContain("- Ramas QA actuales:");
-    expect(claude).toContain("  - app: desarrollo");
+    const agentsMd = readFileSync(join(hub, "AGENTS.md"), "utf-8");
+    expect(agentsMd).toContain("- Ramas de trabajo actuales:");
+    expect(agentsMd).toContain("  - app: feature/x");
+    expect(agentsMd).toContain("- Ramas QA actuales:");
+    expect(agentsMd).toContain("  - app: desarrollo");
   });
 
   it("multi source: configura visibilidad multi-root + .gitignore", async () => {
@@ -277,8 +278,8 @@ describe("runWorkspaceInit", () => {
 
   it("proyecto por defecto = basename del workspace", async () => {
     await init();
-    const claude = readFileSync(join(hub, "CLAUDE.md"), "utf-8");
-    expect(claude).toContain(join(hub).split("/").pop() as string);
+    const agentsMd = readFileSync(join(hub, "AGENTS.md"), "utf-8");
+    expect(agentsMd).toContain(join(hub).split("/").pop() as string);
   });
 
   it("idempotente: re-correr no duplica el runtime ni crea skills.toml vacío", async () => {
@@ -321,7 +322,7 @@ describe("runWorkspaceInit", () => {
     const selected = eight[3];
     if (!selected) throw new Error("faltó la cuarta fuente");
     await init({ sources: [selected], proyecto: "Proyecto renombrado" });
-    const block = readFileSync(join(hub, "CLAUDE.md"), "utf8");
+    const block = readFileSync(join(hub, "AGENTS.md"), "utf8");
     expect(block).toContain("Proyecto renombrado");
     for (const item of eight) expect(block).toContain(`| ${item.alias} | (local) |`);
     const settings = JSON.parse(readFileSync(join(hub, ".claude", "settings.local.json"), "utf8"));
@@ -341,7 +342,7 @@ describe("runWorkspaceInit", () => {
     const local = JSON.parse(readFileSync(paths.cwdLocalConfigFile(), "utf8"));
     expect(local.sources.a).toBe(source("c"));
     expect(local.sources.b).toBe(source("b"));
-    const block = readFileSync(join(hub, "CLAUDE.md"), "utf8");
+    const block = readFileSync(join(hub, "AGENTS.md"), "utf8");
     expect(block).toContain("| a | (local) |");
     expect(block).toContain("| b | (local) |");
   });
@@ -354,18 +355,18 @@ describe("runWorkspaceInit", () => {
         { alias: "lib", path: source("lib-fake") },
       ],
     });
-    const before = readFileSync(join(hub, "CLAUDE.md"), "utf-8");
+    const before = readFileSync(join(hub, "AGENTS.md"), "utf-8");
     const second = await runHubInit(fs, env, paths, {
       sources: [],
       hub,
       lastActivity: "2026-01-02 00:00",
     });
     expect(second).toMatchObject({ error: "no_sources" });
-    const claude = readFileSync(join(hub, "CLAUDE.md"), "utf-8");
-    expect(claude).toBe(before);
-    expect(claude).toContain("Mi Proyecto");
-    expect(claude).toContain("| app | (local) |");
-    expect(claude).toContain("| lib | (local) |");
+    const agentsMd = readFileSync(join(hub, "AGENTS.md"), "utf-8");
+    expect(agentsMd).toBe(before);
+    expect(agentsMd).toContain("Mi Proyecto");
+    expect(agentsMd).toContain("| app | (local) |");
+    expect(agentsMd).toContain("| lib | (local) |");
   });
 
   it("reconcile con una fuente: conserva la rama de trabajo y QA de la omitida", async () => {
@@ -378,28 +379,24 @@ describe("runWorkspaceInit", () => {
       qaBranches: { a: "desarrollo", b: "qa/b" },
     });
 
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-      const path = join(hub, file);
-      writeFileSync(
-        path,
-        readFileSync(path, "utf-8").replace(
-          "<!-- WORKFLOW-HUB-END -->",
-          "## Pipeline\n\n- a: build `npm run build`\n- b: test `npm test`\n<!-- WORKFLOW-HUB-END -->",
-        ),
-      );
-    }
+    const path = join(hub, "AGENTS.md");
+    writeFileSync(
+      path,
+      readFileSync(path, "utf-8").replace(
+        "<!-- WORKFLOW-HUB-END -->",
+        "## Pipeline\n\n- a: build `npm run build`\n- b: test `npm test`\n<!-- WORKFLOW-HUB-END -->",
+      ),
+    );
 
     const second = await init({ sources: [{ alias: "a", path: source("a") }] });
 
-    // Ni en el bloque (los dos archivos) ni en el JSON que devuelve el comando.
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-      const text = readFileSync(join(hub, file), "utf-8");
-      expect(text).toContain("  - a: feature/a");
-      expect(text).toContain("feature/b");
-      expect(text).toContain("qa/b");
-      expect(text).toContain("- a: build `npm run build`");
-      expect(text).toContain("- b: test `npm test`");
-    }
+    // Ni en el bloque ni en el JSON que devuelve el comando.
+    const text = readFileSync(join(hub, "AGENTS.md"), "utf-8");
+    expect(text).toContain("  - a: feature/a");
+    expect(text).toContain("feature/b");
+    expect(text).toContain("qa/b");
+    expect(text).toContain("- a: build `npm run build`");
+    expect(text).toContain("- b: test `npm test`");
     const hubBlock = second.hub_block_files;
     if ("error" in hubBlock) throw new Error(hubBlock.error);
     expect(hubBlock.working_branches).toEqual({ a: "feature/a", b: "feature/b" });
@@ -409,10 +406,10 @@ describe("runWorkspaceInit", () => {
 
   it("--proyecto sobre un workspace descrito: renombra y PRESERVA la descripción", async () => {
     await init({ proyecto: "Nombre viejo" });
-    const claude = join(hub, "CLAUDE.md");
+    const agentsMd = join(hub, "AGENTS.md");
     writeFileSync(
-      claude,
-      readFileSync(claude, "utf-8").replace(
+      agentsMd,
+      readFileSync(agentsMd, "utf-8").replace(
         "Nombre viejo",
         "Nombre viejo\n\nEste workspace coordina dos repos.\n\n- Regla: nunca pushear desde acá.",
       ),
@@ -420,7 +417,7 @@ describe("runWorkspaceInit", () => {
 
     await init({ proyecto: "Nombre nuevo" });
 
-    const after = readFileSync(claude, "utf-8");
+    const after = readFileSync(agentsMd, "utf-8");
     expect(after).toContain("Nombre nuevo");
     expect(after).not.toContain("Nombre viejo");
     expect(after).toContain("Este workspace coordina dos repos.");
@@ -430,29 +427,39 @@ describe("runWorkspaceInit", () => {
   it("una nota humana en el bloque sobrevive al reconcile y la 2a corrida no cambia nada", async () => {
     await init({ workingBranches: { app: "feature/x" } });
     const nota = "- Nota: la ruta de app apunta a mi clon local";
-    const claude = join(hub, "CLAUDE.md");
+    const agentsMd = join(hub, "AGENTS.md");
     writeFileSync(
-      claude,
-      readFileSync(claude, "utf-8").replace(
+      agentsMd,
+      readFileSync(agentsMd, "utf-8").replace(
         "- Ramas de trabajo actuales:",
         `${nota}\n- Ramas de trabajo actuales:`,
       ),
     );
 
     await init();
-    const first = readFileSync(claude, "utf-8");
+    const first = readFileSync(agentsMd, "utf-8");
     await init();
-    const second = readFileSync(claude, "utf-8");
+    const second = readFileSync(agentsMd, "utf-8");
 
     expect(first).toContain(`${nota}\n- Ramas de trabajo actuales:`);
     expect(first).not.toContain(`  ${nota}`);
     expect(second).toBe(first);
   });
 
+  it("un hub nuevo deja el bloque solo en AGENTS.md y no toca un CLAUDE.md ajeno", async () => {
+    const own = "# Reglas del equipo\n\n- Nunca pushear a main.\n";
+    writeFileSync(join(hub, "CLAUDE.md"), own);
+
+    await init();
+
+    expect(readFileSync(join(hub, "AGENTS.md"), "utf-8")).toContain("<!-- WORKFLOW-HUB-START -->");
+    expect(readFileSync(join(hub, "CLAUDE.md"), "utf-8")).toBe(own);
+  });
+
   it("--dry-run no escribe nada y devuelve preview", async () => {
     const result = await init({ dryRun: true });
     expect(result.dry_run).toBe(true);
-    expect(existsSync(join(hub, "CLAUDE.md"))).toBe(false);
+    expect(existsSync(join(hub, "AGENTS.md"))).toBe(false);
     expect(existsSync(join(hub, ".workflow"))).toBe(false);
     expect(existsSync(join(hub, "docs"))).toBe(false);
     expect(result.scaffold.created.length).toBeGreaterThan(0);
@@ -467,7 +474,7 @@ describe("runWorkspaceInit", () => {
     expect(virgin.skills_toml).toBe("skipped");
     const virginMd = virgin.hub_block_files;
     if ("error" in virginMd) throw new Error(virginMd.error);
-    expect(virginMd.results?.map((r) => r.action)).toEqual(["created", "created"]);
+    expect(virginMd.results?.map((r) => r.action)).toEqual(["created"]);
 
     await init();
     const initialized = await init({ dryRun: true });
@@ -477,7 +484,7 @@ describe("runWorkspaceInit", () => {
     const initializedMd = initialized.hub_block_files;
     if ("error" in initializedMd) throw new Error(initializedMd.error);
     // Mismo input → el bloque ya está escrito: la vista previa no lo llama creación.
-    expect(initializedMd.results?.map((r) => r.action)).toEqual(["unchanged", "unchanged"]);
+    expect(initializedMd.results?.map((r) => r.action)).toEqual(["unchanged"]);
   });
 
   it("--dry-run anuncia 'updated' cuando el bloque existe pero cambiaría", async () => {
@@ -485,9 +492,9 @@ describe("runWorkspaceInit", () => {
     const preview = await init({ dryRun: true, proyecto: "Otro nombre" });
     const hubBlock = preview.hub_block_files;
     if ("error" in hubBlock) throw new Error(hubBlock.error);
-    expect(hubBlock.results?.map((r) => r.action)).toEqual(["updated", "updated"]);
+    expect(hubBlock.results?.map((r) => r.action)).toEqual(["updated"]);
     // Sigue siendo una vista previa: el nombre no llegó al disco.
-    expect(readFileSync(join(hub, "CLAUDE.md"), "utf-8")).not.toContain("Otro nombre");
+    expect(readFileSync(join(hub, "AGENTS.md"), "utf-8")).not.toContain("Otro nombre");
   });
 
   it("--workspace ≠ env.cwd() escribe en workspace, no en cwd", async () => {
@@ -504,10 +511,11 @@ describe("runWorkspaceInit", () => {
         lastActivity: "2026-01-01 00:00",
       });
       if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
-      expect(existsSync(join(target, "CLAUDE.md"))).toBe(true);
+      expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
+      expect(existsSync(join(target, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(target, ".workflow", "skills.toml"))).toBe(false);
       expect(existsSync(join(target, ".workflow", "sessions"))).toBe(true);
-      expect(existsSync(join(callerCwd, "CLAUDE.md"))).toBe(false);
+      expect(existsSync(join(callerCwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(callerCwd, ".workflow"))).toBe(false);
     } finally {
       rmSync(callerCwd, { recursive: true, force: true });
@@ -529,7 +537,7 @@ describe("runWorkspaceInit", () => {
     });
     if ("error" in result) throw new Error(`unexpected error: ${result.error}`);
 
-    expect(readFileSync(join(hub, "CLAUDE.md"), "utf-8")).toContain("| app | repo |  |");
+    expect(readFileSync(join(hub, "AGENTS.md"), "utf-8")).toContain("| app | repo |  |");
     expect(result.attach_multiroot).toEqual({ skipped: true, reason: "no_external_sources" });
     expect(existsSync(join(nestedCwd, "repo"))).toBe(false);
   });
@@ -540,16 +548,16 @@ describe("runWorkspaceInit", () => {
     expect(result.sources).toBe(0);
     expect(result.hub_block_files).toEqual({ skipped: true, reason: "materialization_only" });
     expect(existsSync(join(hub, ".workflow", "sessions"))).toBe(true);
-    expect(existsSync(join(hub, "CLAUDE.md"))).toBe(false);
+    expect(existsSync(join(hub, "AGENTS.md"))).toBe(false);
   });
 
   it("--proyecto configura un workspace sin fuentes y no fabrica filas", async () => {
     const result = await runHubInit(fs, env, paths, { sources: [], proyecto: "Sin fuentes" });
     if ("error" in result) throw new Error(result.error);
     expect(result.ok).toBe(true);
-    const claude = readFileSync(join(hub, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("Sin fuentes");
-    expect(claude).toContain("Sin fuentes declaradas");
+    const agentsMd = readFileSync(join(hub, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("Sin fuentes");
+    expect(agentsMd).toContain("Sin fuentes declaradas");
   });
 
   it("rechaza si alias duplicado", async () => {

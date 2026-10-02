@@ -38,22 +38,18 @@ describe("pipeline versionado en el bloque", () => {
 
   it("lee y conserva dos líneas distintas con comandos idénticos, también tras la deduplicación legacy", async () => {
     const { paths, env } = await setup();
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-      const text = await readFile(join(cwd, file), "utf8");
-      const oldCliPreserved = [...new Set(text.split("\n"))].join("\n");
-      expect(oldCliPreserved).toContain("- core: build `npm run build` · test `npm test`");
-      expect(oldCliPreserved).toContain("- plugin: build `npm run build` · test `npm test`");
-      expect(parseHubBlock(oldCliPreserved)?.pipeline.plugin?.test).toBe("npm test");
-    }
+    const original = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    const oldCliPreserved = [...new Set(original.split("\n"))].join("\n");
+    expect(oldCliPreserved).toContain("- core: build `npm run build` · test `npm test`");
+    expect(oldCliPreserved).toContain("- plugin: build `npm run build` · test `npm test`");
+    expect(parseHubBlock(oldCliPreserved)?.pipeline.plugin?.test).toBe("npm test");
     await runHubBlockUpsertWrite(fs, env, paths, { op: "init", lastActivity: "2026-01-01" });
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-      const text = await readFile(join(cwd, file), "utf8");
-      expect(text.match(/## Pipeline/g)).toHaveLength(1);
-      expect(text).toContain("- plugin: build `npm run build` · test `npm test`");
-      const parsed = parseHubBlock(text);
-      if (parsed === null) throw new Error("expected a parsed block");
-      expect(blockFromParsed(parsed)).toBe(text.trimEnd());
-    }
+    const text = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(text.match(/## Pipeline/g)).toHaveLength(1);
+    expect(text).toContain("- plugin: build `npm run build` · test `npm test`");
+    const parsed = parseHubBlock(text);
+    if (parsed === null) throw new Error("expected a parsed block");
+    expect(blockFromParsed(parsed)).toBe(text.trimEnd());
   });
 
   it("conserva notas sueltas y poda registros de fuentes reemplazadas o eliminadas", async () => {
@@ -75,11 +71,9 @@ describe("pipeline versionado en el bloque", () => {
     expect("error" in replaced).toBe(false);
     if ("error" in replaced) return;
     expect(replaced.dropped_lines).toContain("- plugin: build `npm run build` · test `npm test`");
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-      const text = await readFile(join(cwd, file), "utf8");
-      expect(text).not.toContain("- plugin: build");
-      expect(text).toContain("Nota: revisar Jenkins");
-    }
+    const text = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(text).not.toContain("- plugin: build");
+    expect(text).toContain("Nota: revisar Jenkins");
     const removed = await runHubBlockUpsertWrite(fs, env, paths, {
       op: "init",
       removeAliases: ["core"],
@@ -88,6 +82,6 @@ describe("pipeline versionado en el bloque", () => {
     expect("error" in removed).toBe(false);
     if ("error" in removed) return;
     expect(removed.dropped_lines).toContain("- core: build `npm run build` · test `npm test`");
-    expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).not.toContain("- core: build");
+    expect(await readFile(join(cwd, "AGENTS.md"), "utf8")).not.toContain("- core: build");
   });
 });

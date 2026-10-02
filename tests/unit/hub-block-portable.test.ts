@@ -49,7 +49,8 @@ describe("migración por máquina de la tabla Fuentes", () => {
     expect(await readFile(join(root, "CLAUDE.md"), "utf8")).toBe(original);
     expect(await fs.exists(paths.cwdLocalConfigFile())).toBe(false);
     await runHubBlockUpsertWrite(fs, env, paths, input);
-    const block = await readFile(join(root, "CLAUDE.md"), "utf8");
+    expect(await readFile(join(root, "CLAUDE.md"), "utf8")).toBe(original);
+    const block = await readFile(join(root, "AGENTS.md"), "utf8");
     expect(block).toContain("| nested | nested | main |");
     expect(block).toContain("| external | (local) | main |");
     expect(block).toContain("| windows | C:/Source/windows | main |");

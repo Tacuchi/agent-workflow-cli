@@ -111,7 +111,7 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
       qaBranches: {},
       markers: paths.blockMarkers(),
     });
-    writeFileSync(join(hub, "CLAUDE.md"), block, "utf8");
+    writeFileSync(join(hub, "AGENTS.md"), block, "utf8");
     return {
       fs: new NodeFileSystem(),
       env: new FakeEnv(hub),
@@ -121,7 +121,7 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
   }
 
   const registered = (branch: string) =>
-    readFileSync(join(hub, "CLAUDE.md"), "utf8").includes(`  - core: ${branch}`);
+    readFileSync(join(hub, "AGENTS.md"), "utf8").includes(`  - core: ${branch}`);
 
   it("una rama que ya existe en local se registra como hoy", async () => {
     git(source, "branch", "feature/local", PROD);
@@ -250,6 +250,6 @@ describe("aw set-working-branch resuelve la rama antes de registrarla", () => {
     expect((result.data as { working_branch: { notice: string } }).working_branch.notice).toMatch(
       /otra no es una fuente declarada: la rama feature\/z se registró sin comprobarla ni crearla/,
     );
-    expect(readFileSync(join(hub, "CLAUDE.md"), "utf8")).toContain("  - otra: feature/z");
+    expect(readFileSync(join(hub, "AGENTS.md"), "utf8")).toContain("  - otra: feature/z");
   });
 });

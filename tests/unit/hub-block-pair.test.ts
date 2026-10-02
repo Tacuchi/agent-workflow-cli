@@ -28,15 +28,14 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-it("si falla el segundo archivo al publicarse, los dos vuelven byte a byte a su contenido anterior", async () => {
+it("si falla la publicación de AGENTS.md, vuelve byte a byte a su contenido anterior", async () => {
   const initial = await runHubBlockUpsertWrite(fs, env, paths, {
     op: "init",
     proyecto: "Anterior",
   });
   expect("error" in initial).toBe(false);
-  const claude = join(root, "CLAUDE.md");
   const agents = join(root, "AGENTS.md");
-  const before = await Promise.all([readFile(claude, "utf8"), readFile(agents, "utf8")]);
+  const before = await readFile(agents, "utf8");
   let failed = false;
   const injected: FileSystemPort = new Proxy(fs, {
     get(target, property) {
@@ -61,9 +60,10 @@ it("si falla el segundo archivo al publicarse, los dos vuelven byte a byte a su 
   expect("error" in output).toBe(false);
   if ("error" in output) throw new Error(output.error);
   expect(output.ok).toBe(false);
-  expect(output.results?.map((item) => item.action)).toEqual([undefined, undefined]);
+  expect(output.results?.map((item) => item.action)).toEqual([undefined]);
   expect(output.results?.every((item) => item.error?.includes("revertida"))).toBe(true);
-  expect(await Promise.all([readFile(claude, "utf8"), readFile(agents, "utf8")])).toEqual(before);
+  expect(await readFile(agents, "utf8")).toEqual(before);
+  expect(await fs.exists(join(root, "CLAUDE.md"))).toBe(false);
 
   failed = false;
   const command = await hubInitCommand.execute(
@@ -72,9 +72,8 @@ it("si falla el segundo archivo al publicarse, los dos vuelven byte a byte a su 
   );
   expect(command.ok).toBe(false);
   const human = renderHumanError(command.error, command.data);
-  expect(human).toContain("CLAUDE.md: revertido");
   expect(human).toContain("AGENTS.md: revertido");
-  expect(human).toContain(`· ${claude}`);
+  expect(human).toContain(`· ${agents}`);
   expect(human).toContain("fuente core:");
 });
 
@@ -85,8 +84,8 @@ it("sin HISTORY dos escrituras con tiempo distinto son idénticas; con HISTORY u
     lastActivity: "2026-01-01 00:00",
   });
   expect("error" in first).toBe(false);
-  const claude = join(root, "CLAUDE.md");
-  const before = await readFile(claude, "utf8");
+  const agents = join(root, "AGENTS.md");
+  const before = await readFile(agents, "utf8");
   expect(before).not.toContain("Última actividad:");
   expect(before).not.toContain("Histórico:");
   const second = await runHubBlockUpsertWrite(fs, env, paths, {
@@ -95,12 +94,12 @@ it("sin HISTORY dos escrituras con tiempo distinto son idénticas; con HISTORY u
     verbose: true,
   });
   if ("error" in second) throw new Error(second.error);
-  expect(second.results?.map((item) => item.action)).toEqual(["unchanged", "unchanged"]);
-  expect(await readFile(claude, "utf8")).toBe(before);
+  expect(second.results?.map((item) => item.action)).toEqual(["unchanged"]);
+  expect(await readFile(agents, "utf8")).toBe(before);
 
   await fs.writeText(paths.cwdHistoryFile(), "# HISTORY\n");
   await runHubBlockUpsertWrite(fs, env, paths, { op: "init" });
-  const after = await readFile(claude, "utf8");
+  const after = await readFile(agents, "utf8");
   expect(after).toContain("- Histórico: `.agent-workflow/HISTORY.md`");
   expect(after).not.toContain("Última actividad:");
 });

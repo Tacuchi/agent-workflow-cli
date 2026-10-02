@@ -34,7 +34,7 @@ import {
 import { readHistoryRows } from "./history-table.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
-import { parseHubBlock } from "./parsers/hub-block.js";
+import { BLOCK_READ_FILES, parseHubBlock } from "./parsers/hub-block.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
 import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
 import { functionalSpecDigest, unclosedSpecFence } from "./parsers/spec-functional.js";
@@ -1399,7 +1399,7 @@ function compareDeclaredOrder(a: PipelineItem, b: PipelineItem): number {
 async function readHub(fs: FileSystemPort, paths: PathsService, cwd: string): Promise<IndexedHub> {
   let name = basename(cwd);
   let configured = false;
-  for (const file of [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")]) {
+  for (const file of BLOCK_READ_FILES.map((name) => join(cwd, name))) {
     try {
       if (!(await fs.exists(file))) continue;
       const block = parseHubBlock(await fs.readText(file), paths.blockMarkers());

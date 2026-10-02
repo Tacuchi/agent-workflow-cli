@@ -49,9 +49,9 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
         { alias: "angular", path: angular, mainBranch: "main" },
       ],
     });
-    const claude = join(cwd, "CLAUDE.md");
-    expect(await readFile(claude, "utf8")).toContain("- Lenguaje: Java, TypeScript");
-    expect(await readFile(claude, "utf8")).toContain("- Framework: Spring Boot, Angular");
+    const agentsMd = join(cwd, "AGENTS.md");
+    expect(await readFile(agentsMd, "utf8")).toContain("- Lenguaje: Java, TypeScript");
+    expect(await readFile(agentsMd, "utf8")).toContain("- Framework: Spring Boot, Angular");
 
     await runHubBlockUpsertWrite(fs, env, paths, {
       op: "init",
@@ -59,13 +59,13 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     });
     await fs.remove(java);
     await runHubBlockUpsertWrite(fs, env, paths, { op: "init" });
-    expect(await readFile(claude, "utf8")).toContain("- Lenguaje: TypeScript, Java");
+    expect(await readFile(agentsMd, "utf8")).toContain("- Lenguaje: TypeScript, Java");
 
     await runHubBlockUpsertWrite(fs, env, paths, {
       op: "init",
       removeAliases: ["java", "ausente"],
     });
-    const remaining = await readFile(claude, "utf8");
+    const remaining = await readFile(agentsMd, "utf8");
     expect(remaining).toContain("- Lenguaje: TypeScript");
     expect(remaining).not.toContain("Java");
     expect(remaining).toContain("- Framework: Angular");
@@ -78,8 +78,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | ../repo/core | main |");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| core | ../repo/core | main |");
   });
 
   it("writes defaultBranches and merges them per role across calls", async () => {
@@ -96,11 +96,11 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
 
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("  - principal: main");
-    expect(claude).toContain("  - desarrollo: development");
-    expect(claude).toContain("  - qa: release/qa");
-    expect(claude).not.toContain("  - qa: qa\n");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("  - principal: main");
+    expect(agentsMd).toContain("  - desarrollo: development");
+    expect(agentsMd).toContain("  - qa: release/qa");
+    expect(agentsMd).not.toContain("  - qa: qa\n");
   });
 
   it("leaves the block without a defaults entry when none is given", async () => {
@@ -109,8 +109,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       lastActivity: FIXED_TS,
     });
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).not.toContain("Ramas por defecto");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).not.toContain("Ramas por defecto");
   });
 
   it("renders 2 fuentes with shared --main-branch fallback", async () => {
@@ -124,9 +124,9 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | ../repo/core | certificacion |");
-    expect(claude).toContain("| plugin | ../repo/plugin | certificacion |");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| core | ../repo/core | certificacion |");
+    expect(agentsMd).toContain("| plugin | ../repo/plugin | certificacion |");
   });
 
   it("renders 3 fuentes with mixed per-fuente rama and --main-branch fallback", async () => {
@@ -141,10 +141,10 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | ../repo/core | main |");
-    expect(claude).toContain("| plugin | ../repo/plugin | certificacion |");
-    expect(claude).toContain("| marketplace | ../repo/marketplace | stable |");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| core | ../repo/core | main |");
+    expect(agentsMd).toContain("| plugin | ../repo/plugin | certificacion |");
+    expect(agentsMd).toContain("| marketplace | ../repo/marketplace | stable |");
   });
 
   it("deja la celda VACÍA cuando no hay ni rama por fuente ni --main-branch", async () => {
@@ -157,12 +157,12 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | ../repo/core |  |");
-    expect(claude).not.toContain("certificacion");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| core | ../repo/core |  |");
+    expect(agentsMd).not.toContain("certificacion");
 
     // Y la fuente resuelve entonces por el default del workspace.
-    const parsed = parseHubBlock(claude, paths.blockMarkers());
+    const parsed = parseHubBlock(agentsMd, paths.blockMarkers());
     const fuente = parsed?.fuentes[0];
     if (!fuente || !parsed) throw new Error("expected a parsed fuente");
     expect(fuente.main_branch).toBeNull();
@@ -183,11 +183,11 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
     // No `Mode:` line is ever emitted (the project/hub mode concept is gone).
-    expect(claude).not.toMatch(/^Mode:/m);
-    expect(claude).toContain("- core: feature/upgrade");
-    expect(claude).toContain("- plugin: feature/upgrade");
+    expect(agentsMd).not.toMatch(/^Mode:/m);
+    expect(agentsMd).toContain("- core: feature/upgrade");
+    expect(agentsMd).toContain("- plugin: feature/upgrade");
   });
 
   it("merges --qa-branch entries (multi-flag) into Status", async () => {
@@ -202,10 +202,10 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("- Ramas QA actuales:");
-    expect(claude).toContain("  - core: desarrollo");
-    expect(claude).toContain("  - plugin: desarrollo");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("- Ramas QA actuales:");
+    expect(agentsMd).toContain("  - core: desarrollo");
+    expect(agentsMd).toContain("  - plugin: desarrollo");
   });
 
   it("preserves existing qa_branches and merges new ones on re-init", async () => {
@@ -221,9 +221,9 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("  - core: desarrollo");
-    expect(claude).toContain("  - plugin: qa/plugin");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("  - core: desarrollo");
+    expect(agentsMd).toContain("  - plugin: qa/plugin");
   });
 
   it("preserves existing fuentes and overrides matching alias on re-init", async () => {
@@ -241,10 +241,10 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | ../repo/new-core | stable |");
-    expect(claude).toContain("| extra | ../repo/extra | main |");
-    expect(claude).not.toContain("../repo/old-core");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| core | ../repo/new-core | stable |");
+    expect(agentsMd).toContain("| extra | ../repo/extra | main |");
+    expect(agentsMd).not.toContain("../repo/old-core");
   });
 
   it("removeAliases prunes a source from fuentes + working + qa branches", async () => {
@@ -264,13 +264,13 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | ../repo/core | main |");
-    expect(claude).not.toContain("../repo/plugin");
-    expect(claude).toContain("- core: feature/a");
-    expect(claude).not.toContain("plugin: feature/b");
-    expect(claude).toContain("  - core: desarrollo");
-    expect(claude).not.toContain("qa/plugin");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| core | ../repo/core | main |");
+    expect(agentsMd).not.toContain("../repo/plugin");
+    expect(agentsMd).toContain("- core: feature/a");
+    expect(agentsMd).not.toContain("plugin: feature/b");
+    expect(agentsMd).toContain("  - core: desarrollo");
+    expect(agentsMd).not.toContain("qa/plugin");
   });
 
   it("una nota humana dentro del bloque sobrevive al re-init en LOS DOS archivos", async () => {
@@ -282,10 +282,10 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
     });
     // Una persona anota dentro del bloque, en el archivo que lee su host.
     const nota = "- Nota: la ruta de core es local a esta máquina";
-    const claude = join(cwd, "CLAUDE.md");
+    const agentsMd = join(cwd, "AGENTS.md");
     await fs.writeText(
-      claude,
-      (await readFile(claude, "utf8")).replace(
+      agentsMd,
+      (await readFile(agentsMd, "utf8")).replace(
         "- Ramas de trabajo actuales:",
         `${nota}\n- Ramas de trabajo actuales:`,
       ),
@@ -293,32 +293,31 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
 
     await runHubBlockUpsertWrite(fs, env, paths, { op: "init", lastActivity: FIXED_TS });
 
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-      const text = await readFile(join(cwd, file), "utf8");
-      expect(text).toContain(`${nota}\n- Ramas de trabajo actuales:`);
-      // Y no se adoptó como rama: no aparece anidada bajo el encabezado.
-      expect(text).not.toContain(`  ${nota}`);
-    }
+    const text = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(text).toContain(`${nota}\n- Ramas de trabajo actuales:`);
+    // Y no se adoptó como rama: no aparece anidada bajo el encabezado.
+    expect(text).not.toContain(`  ${nota}`);
   });
 
-  it("una nota escrita SÓLO en AGENTS.md no se pierde (el bloque vive en dos archivos)", async () => {
+  it("la primera escritura en un hub heredado lleva a AGENTS.md el bloque y las notas de CLAUDE.md, sin tocarlo", async () => {
     await runHubBlockUpsertWrite(fs, env, paths, {
       op: "init",
       fuentes: [{ alias: "core", path: "../repo/core", mainBranch: "main" }],
       lastActivity: FIXED_TS,
     });
     const nota = "- Recordatorio: pedir acceso al repo de plugins";
-    const agents = join(cwd, "AGENTS.md");
-    await fs.writeText(
-      agents,
-      (await readFile(agents, "utf8")).replace("## Status\n\n", `## Status\n\n${nota}\n`),
-    );
+    const legacy = join(cwd, "CLAUDE.md");
+    const block = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    await fs.writeText(legacy, block.replace("## Status\n\n", `## Status\n\n${nota}\n`));
+    await fs.remove(join(cwd, "AGENTS.md"));
+    const legacyBefore = await readFile(legacy, "utf8");
 
     await runHubBlockUpsertWrite(fs, env, paths, { op: "init", lastActivity: FIXED_TS });
 
-    for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-      expect(await readFile(join(cwd, file), "utf8")).toContain(nota);
-    }
+    const written = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(written).toContain(nota);
+    expect(written).toContain("| core |");
+    expect(await readFile(legacy, "utf8")).toBe(legacyBefore);
   });
 
   it("--proyecto renombra el workspace y PRESERVA su descripción", async () => {
@@ -335,11 +334,11 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("Nombre nuevo");
-    expect(claude).not.toContain("Nombre viejo");
-    expect(claude).toContain("Descripción larga escrita a mano.");
-    expect(claude).toContain("- Un detalle importante.");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("Nombre nuevo");
+    expect(agentsMd).not.toContain("Nombre viejo");
+    expect(agentsMd).toContain("Descripción larga escrita a mano.");
+    expect(agentsMd).toContain("- Un detalle importante.");
   });
 
   it("replaceFuentes poda las ramas de una fuente que ya no se declara y lo DECLARA", async () => {
@@ -370,9 +369,9 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       "  - plugin: qa/plugin",
       "- plugin: build ninguno",
     ]);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).not.toContain("plugin");
-    expect(claude).toContain("- core: test `npm test`");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).not.toContain("plugin");
+    expect(agentsMd).toContain("- core: test `npm test`");
   });
 
   it("removeAliases of the last source leaves an empty fuentes table", async () => {
@@ -387,8 +386,8 @@ describe("project-md-upsert --init with --fuente / --main-branch", () => {
       lastActivity: FIXED_TS,
     });
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).not.toContain("../repo/core");
-    expect(claude).toContain("Sin fuentes declaradas");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).not.toContain("../repo/core");
+    expect(agentsMd).toContain("Sin fuentes declaradas");
   });
 });

@@ -131,20 +131,51 @@ describe("project-block · el bloque no borra lo ajeno (AC-02)", () => {
 });
 
 describe("project-block · idempotencia y compatibilidad (AC-09, AC-10)", () => {
-  it("la cuarta columna proyecta Status: una edición manual se declara y se descarta", () => {
+  it("una tabla heredada de cuatro columnas se lee, declara la edición manual y se reescribe con tres", () => {
     const clean = renderHubBlock({
       ...BASE,
       workingBranches: { core: "feature/real" },
     });
-    expect(clean).toContain("| Alias | Path | Rama principal | Rama de trabajo |");
-    expect(clean).toContain("| core | /p | main | feature/real |");
-    const edited = clean.replace(
-      "| core | /p | main | feature/real |",
-      "| core | /p | main | main |",
+    expect(clean).toContain(
+      "| Alias | Path | Rama principal |\n|---|---|---|\n| core | /p | main |\n",
     );
-    expect(parseHubBlock(edited)?.working_branches).toEqual({ core: "feature/real" });
-    expect(parseHubBlock(edited)?.dropped_lines).toEqual(["| core | /p | main | main |"]);
-    expect(rewrite(edited)).toContain("| core | /p | main | feature/real |");
+    const legacy = clean.replace(
+      "| Alias | Path | Rama principal |\n|---|---|---|\n| core | /p | main |",
+      "| Alias | Path | Rama principal | Rama de trabajo |\n|---|---|---|---|\n| core | /p | main | main |",
+    );
+    expect(parseHubBlock(legacy)?.working_branches).toEqual({ core: "feature/real" });
+    expect(parseHubBlock(legacy)?.dropped_lines).toEqual(["| core | /p | main | main |"]);
+    const rewritten = rewrite(legacy);
+    expect(rewritten).toBe(clean);
+    expect(rewritten).not.toContain("Rama de trabajo |");
+  });
+
+  it("la nota de rutas (local) aparece solo si una fuente la usa, una vez, y la reescritura es un punto fijo", () => {
+    const withoutLocal = renderHubBlock(BASE);
+    expect(withoutLocal).not.toContain("Rutas `(local)`");
+    const withLocal = renderHubBlock({
+      ...BASE,
+      fuentes: [
+        ...BASE.fuentes,
+        { alias: "app", path: "/q", declared_path: "(local)", main_branch: null },
+      ],
+    });
+    expect(withLocal).toContain(
+      "| app | (local) |  |\n\nRutas `(local)`: viven en `.workflow/local.json` de cada máquina; `aw sources` las muestra.",
+    );
+    expect(rewrite(withLocal)).toBe(withLocal);
+    expect(rewrite(rewrite(withLocal)).match(/Rutas `\(local\)`/g)).toHaveLength(1);
+  });
+
+  it("la sección Workline orienta con punteros, conserva la nota de una persona y no se duplica", () => {
+    const clean = renderHubBlock(BASE);
+    expect(clean).toContain(
+      "## Workline\n\n- Estado y pendientes: `aw status`; cómo retomar: `aw resume`.\n- `docs/` es la zona permanente: specs, planes y entregables.\n- `.workflow/sessions/` es interno del CLI: no se edita a mano.\n",
+    );
+    const noted = clean.replace("no se edita a mano.\n", `no se edita a mano.\n${NOTA}\n`);
+    expect(parseHubBlock(noted)?.preserved_lines).toEqual([{ slot: "workline", text: NOTA }]);
+    expect(rewrite(noted)).toBe(noted);
+    expect(rewrite(noted).match(/## Workline/g)).toHaveLength(1);
   });
 
   it("un bloque limpio no gana campos nuevos ni cambia al reescribirse", () => {

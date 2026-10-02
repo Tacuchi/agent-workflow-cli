@@ -366,7 +366,7 @@ function baseNoBlock(
     missing: [],
     extra: [],
     status: "no-hub-block",
-    detail: "bloque del hub no encontrado o sin fuentes en CLAUDE.md/AGENTS.md",
+    detail: "bloque del hub no encontrado o sin fuentes en AGENTS.md",
   };
 }
 

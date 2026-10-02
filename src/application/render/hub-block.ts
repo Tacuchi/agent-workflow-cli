@@ -14,6 +14,9 @@ import {
   BLOCK_PLACEHOLDER_STACK,
   DEFAULT_HUB_BLOCK_MARKERS,
   formatPipelineRecord,
+  localPathsNote,
+  namespaceOfMarkers,
+  orientationLines,
 } from "../parsers/hub-block.js";
 
 export interface RenderHubBlockInput {
@@ -38,6 +41,7 @@ export interface RenderHubBlockInput {
 
 export function renderHubBlock(input: RenderHubBlockInput): string {
   const markers = input.markers ?? DEFAULT_HUB_BLOCK_MARKERS;
+  const namespace = namespaceOfMarkers(markers);
   const kept = input.preservedLines;
   const proyectoSection =
     input.proyecto.trim().length > 0 ? input.proyecto.trim() : BLOCK_PLACEHOLDER_PROYECTO;
@@ -84,11 +88,13 @@ export function renderHubBlock(input: RenderHubBlockInput): string {
     "",
     proyectoSection,
     "",
+    "## Workline",
+    "",
+    [...orientationLines(namespace), ...slotLines(kept, "workline")].join("\n"),
+    "",
     "## Fuentes",
     "",
-    [formatFuentesTable(input.fuentes, input.workingBranches), ...slotLines(kept, "fuentes")].join(
-      "\n",
-    ),
+    [formatFuentesTable(input.fuentes, namespace), ...slotLines(kept, "fuentes")].join("\n"),
     "",
     "## Stack",
     "",
@@ -142,22 +148,21 @@ export function blockFromParsed(
   return renderHubBlock(input);
 }
 
-function formatFuentesTable(
-  fuentes: HubFuente[],
-  workingBranches: Record<string, string> | undefined,
-): string {
+/** The working branch is not repeated here: `## Status` is the only place that declares it. */
+function formatFuentesTable(fuentes: HubFuente[], namespace: string): string {
   if (fuentes.length === 0) {
     return BLOCK_PLACEHOLDER_FUENTES;
   }
-  const lines = ["| Alias | Path | Rama principal | Rama de trabajo |", "|---|---|---|---|"];
+  const lines = ["| Alias | Path | Rama principal |", "|---|---|---|"];
+  let local = false;
   for (const f of fuentes) {
-    const alias = f.alias;
     const path = f.declared_path ?? f.path ?? "(local)";
+    local ||= path === "(local)";
     // Undeclared base branch → empty cell (round-trips back to null; the
     // hub default `principal` is what resolves it, not a literal here).
-    const main = f.main_branch ?? "";
-    lines.push(`| ${alias} | ${path} | ${main} | ${workingBranches?.[alias] ?? ""} |`);
+    lines.push(`| ${f.alias} | ${path} | ${f.main_branch ?? ""} |`);
   }
+  if (local) lines.push("", localPathsNote(namespace));
   return lines.join("\n");
 }
 

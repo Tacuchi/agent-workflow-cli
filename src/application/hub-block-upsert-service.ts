@@ -9,7 +9,8 @@ import {
 } from "./hub-local-config.js";
 import { withCwdLock } from "./lock-service.js";
 import {
-  BLOCK_MIRROR_FILES,
+  BLOCK_FILE,
+  BLOCK_READ_FILES,
   type DefaultBranches,
   type HubBlockMarkers,
   type HubFuente,
@@ -139,8 +140,9 @@ export async function previewHubBlockUpsert(
   return composePayload({ ...input, verbose: true }, { results, hasError: false }, plan);
 }
 
+/** Workline writes the block to AGENTS.md only; a legacy CLAUDE.md is left for `aw hub-migrate`. */
 function blockFiles(cwd: string): string[] {
-  return BLOCK_MIRROR_FILES.map((name) => join(cwd, name));
+  return [join(cwd, BLOCK_FILE)];
 }
 
 function fileInfo(file: string): { file: string; path: string } {
@@ -148,7 +150,7 @@ function fileInfo(file: string): { file: string; path: string } {
 }
 
 interface UpsertPlan {
-  /** The rendered block, byte for byte what a write would put in both files. */
+  /** The rendered block, byte for byte what a write would put in AGENTS.md. */
   block: string;
   render: RenderHubBlockInput;
   /** CLI records this rewrite drops; declared by the caller, never silent. */
@@ -165,7 +167,7 @@ async function buildUpsertPlan(
   input: HubBlockUpsertInput,
 ): Promise<UpsertPlan> {
   const existing = await readHubBlock(fs, cwd, markers);
-  const mirrored = await readMirroredExtras(fs, cwd, markers);
+  const extras = await readBlockExtras(fs, cwd, markers);
   const render = await buildRenderInput(fs, cwd, input, existing);
   const local = await readHubLocalConfig(
     fs,
@@ -181,8 +183,8 @@ async function buildUpsertPlan(
   );
   render.fuentes = migration.fuentes;
   render.markers = markers;
-  if (mirrored.preserved.length > 0) render.preservedLines = mirrored.preserved;
-  for (const [alias, declaration] of Object.entries(mirrored.pipeline)) {
+  if (extras.preserved.length > 0) render.preservedLines = extras.preserved;
+  for (const [alias, declaration] of Object.entries(extras.pipeline)) {
     render.pipeline ??= {};
     render.pipeline[alias] = { ...declaration, ...render.pipeline[alias] };
   }
@@ -191,7 +193,7 @@ async function buildUpsertPlan(
   if (await fs.exists(join(cwd, history))) render.historicoPath = history;
 
   const dropped = [
-    ...mirrored.dropped,
+    ...extras.dropped,
     ...pruneUndeclaredBranches(input, render),
     ...prunePipeline(render),
   ];
@@ -274,35 +276,29 @@ async function portableSources(
 }
 
 /**
- * Foreign and unhonourable lines from BOTH mirrors of the block. The same block
- * lives in CLAUDE.md and AGENTS.md, and a person edits whichever file their host
- * reads — collecting only from the first one would wipe a note left in the other.
+ * Foreign and unhonourable lines of the block being rewritten, taken from the
+ * file it is read from: AGENTS.md, or the legacy CLAUDE.md of a hub not yet
+ * migrated, so the first write there carries its notes into AGENTS.md.
  */
-async function readMirroredExtras(
+async function readBlockExtras(
   fs: FileSystemPort,
   cwd: string,
   markers: HubBlockMarkers,
 ): Promise<{ preserved: PreservedLine[]; dropped: string[]; pipeline: HubPipeline }> {
-  const preserved: PreservedLine[] = [];
-  const dropped: string[] = [];
-  const pipeline: HubPipeline = {};
-  const seenPreserved = new Set<string>();
-  const seenDropped = new Set<string>();
-  for (const file of blockFiles(cwd)) {
+  for (const name of BLOCK_READ_FILES) {
+    const file = join(cwd, name);
     if (!(await fs.exists(file))) continue;
     const block = parseHubBlock(await fs.readText(file), markers);
     if (block === null) continue;
-    for (const [alias, declaration] of Object.entries(block.pipeline ?? {})) {
-      pipeline[alias] = { ...declaration, ...pipeline[alias] };
-    }
-    collectPreservedLines(block.preserved_lines ?? [], seenPreserved, preserved);
-    for (const line of block.dropped_lines ?? []) {
-      if (seenDropped.has(line)) continue;
-      seenDropped.add(line);
-      dropped.push(line);
-    }
+    const preserved: PreservedLine[] = [];
+    collectPreservedLines(block.preserved_lines ?? [], new Set<string>(), preserved);
+    return {
+      preserved,
+      dropped: [...new Set(block.dropped_lines ?? [])],
+      pipeline: { ...block.pipeline },
+    };
   }
-  return { preserved, dropped, pipeline };
+  return { preserved: [], dropped: [], pipeline: {} };
 }
 
 function prunePipeline(render: RenderHubBlockInput): string[] {

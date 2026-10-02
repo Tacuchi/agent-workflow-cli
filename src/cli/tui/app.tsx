@@ -118,7 +118,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
     triggerAction,
   } = useNotifications();
 
-  // Branch defaults live in the hub block of CLAUDE.md/AGENTS.md (the same
+  // Branch defaults live in the hub block of AGENTS.md (the same
   // "database" git-flow reads), never in the user-global TUI prefs. The upsert
   // merges per role, so one edited role never clears the others.
   //
@@ -131,7 +131,7 @@ function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
         op: "init",
         defaultBranches,
       });
-      const detail = "error" in res ? res.error : res.ok ? null : "CLAUDE.md/AGENTS.md";
+      const detail = "error" in res ? res.error : res.ok ? null : "AGENTS.md";
       if (detail !== null) {
         pushToast({ tone: "err", title: "No se guardaron las ramas", body: detail });
         return false;

@@ -272,7 +272,7 @@ function makeHandle(
 /**
  * Acquire the cwd-level lock, run `fn`, release in finally. Centralizes the
  * acquire/try/release pattern used by services that touch HISTORY.md or the
- * CLAUDE.md/AGENTS.md hub block.
+ * AGENTS.md hub block.
  *
  * If the lock is busy, returns `{ error: "lock ocupado..." }` matching the
  * shape used by history-update-service. Other errors propagate.

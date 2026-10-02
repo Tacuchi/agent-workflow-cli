@@ -4,9 +4,9 @@ import { absoluteOnAnyHost, localSourcePath, readHubLocalConfig } from "../hub-l
 import { parseMdSection } from "../markdown.js";
 
 /**
- * Read the hub hub block from `<dir>/CLAUDE.md` or `<dir>/AGENTS.md`
- * (first file whose parsed block satisfies `accept` wins) — the single home of
- * the read loop previously pasted per service.
+ * Read the hub block from `<dir>/AGENTS.md`, falling back to the legacy
+ * `<dir>/CLAUDE.md` of a hub not yet migrated (first file whose parsed block
+ * satisfies `accept` wins) — the single home of the read loop.
  */
 export async function readHubBlock(
   fs: FileSystemPort,
@@ -16,7 +16,7 @@ export async function readHubBlock(
 ): Promise<ParsedHubBlock | null> {
   const namespace = namespaceOfMarkers(markers);
   const local = await readHubLocalConfig(fs, join(dir, `.${namespace}`, "local.json"));
-  for (const name of BLOCK_MIRROR_FILES) {
+  for (const name of BLOCK_READ_FILES) {
     const path = join(dir, name);
     if (!(await fs.exists(path))) continue;
     const parsed = parseHubBlock(await fs.readText(path), markers);
@@ -26,8 +26,12 @@ export async function readHubBlock(
   return null;
 }
 
-/** The block is written to both files at once; a reader takes the first that has it. */
-export const BLOCK_MIRROR_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
+/** The only file Workline writes the hub block to; every host reads it, Claude Code since 2.1.277. */
+export const BLOCK_FILE = "AGENTS.md";
+/** Where pre-30 hubs mirrored the block; read as a fallback until `aw hub-migrate` retires it. */
+export const LEGACY_BLOCK_FILE = "CLAUDE.md";
+/** Read order: the block file first, then the legacy mirror of a hub not yet migrated. */
+export const BLOCK_READ_FILES = [BLOCK_FILE, LEGACY_BLOCK_FILE] as const;
 
 export interface HubFuente {
   alias: string;
@@ -154,6 +158,7 @@ export function formatPipelineRecord(alias: string, value: SourcePipelineDeclara
  * written note back exactly where its author left it.
  */
 export type PreservedSlot =
+  | "workline"
   | "fuentes"
   | "stack"
   | "pipeline"
@@ -247,10 +252,10 @@ export function legacyBlockMarkers(text: string): HubBlockMarkers | null {
   return null;
 }
 
-/** The block mirror files under `dir` that still carry a pre-29 block. */
+/** The block files under `dir` that still carry a pre-29 block. */
 export async function legacyBlockFiles(fs: FileSystemPort, dir: string): Promise<string[]> {
   const found: string[] = [];
-  for (const name of BLOCK_MIRROR_FILES) {
+  for (const name of BLOCK_READ_FILES) {
     const path = join(dir, name);
     if ((await fs.exists(path)) && legacyBlockMarkers(await fs.readText(path)) !== null)
       found.push(name);
@@ -258,12 +263,12 @@ export async function legacyBlockFiles(fs: FileSystemPort, dir: string): Promise
   return found;
 }
 
-/** The pre-29 block of the first mirror file that has one, read only to answer "does it declare X". */
+/** The pre-29 block of the first block file that has one, read only to answer "does it declare X". */
 export async function readLegacyBlock(
   fs: FileSystemPort,
   dir: string,
 ): Promise<ParsedHubBlock | null> {
-  for (const name of BLOCK_MIRROR_FILES) {
+  for (const name of BLOCK_READ_FILES) {
     const path = join(dir, name);
     if (!(await fs.exists(path))) continue;
     const text = await fs.readText(path);
@@ -285,6 +290,22 @@ export const BLOCK_PLACEHOLDER_FUENTES =
 const LEGACY_FUENTES_PLACEHOLDER =
   "_Sin fuentes declaradas. Edita manualmente o usa `hub-block --init`._";
 export const BLOCK_PLACEHOLDER_STACK = "_Stack sin detectar._";
+/** Starts the CLI line under `## Fuentes` that says where `(local)` paths resolve. */
+const LOCAL_PATHS_NOTE_PREFIX = "Rutas `(local)`:";
+
+/** Where a `(local)` source path lives: emitted under the table only when a row uses it. */
+export function localPathsNote(namespace: string): string {
+  return `${LOCAL_PATHS_NOTE_PREFIX} viven en \`.${namespace}/local.json\` de cada máquina; \`aw sources\` las muestra.`;
+}
+
+/** `## Workline`: pointers for an agent without the Workline skills, never doctrine. */
+export function orientationLines(namespace: string): string[] {
+  return [
+    "- Estado y pendientes: `aw status`; cómo retomar: `aw resume`.",
+    "- `docs/` es la zona permanente: specs, planes y entregables.",
+    `- \`.${namespace}/sessions/\` es interno del CLI: no se edita a mano.`,
+  ];
+}
 /** Emitted by the pre-TypeScript generator for an undetectable stack. */
 const LEGACY_STACK_PLACEHOLDER = "Edita manualmente si aplica.";
 
@@ -318,6 +339,7 @@ function parseWithMarkers(text: string, markers: HubBlockMarkers): ParsedHubBloc
   const stackText = parseMdSection(inner, "Stack") ?? "";
   const statusText = parseMdSection(inner, "Status") ?? "";
   const pipelineText = parseMdSection(inner, "Pipeline") ?? "";
+  const worklineText = parseMdSection(inner, "Workline") ?? "";
 
   const fuentes = parseFuentesTable(fuentesText);
   const stack = parseStackList(stackText);
@@ -344,6 +366,7 @@ function parseWithMarkers(text: string, markers: HubBlockMarkers): ParsedHubBloc
     last_activity: status.lastActivity,
   };
   const preserved = [
+    ...orientationNotes(worklineText, namespaceOfMarkers(markers)),
     ...fuentes.preserved,
     ...stack.preserved,
     ...status.preserved,
@@ -363,9 +386,10 @@ function parseWithMarkers(text: string, markers: HubBlockMarkers): ParsedHubBloc
   return block;
 }
 
-/** The four `##` sections this block owns; anything else under a heading is somebody else's. */
+/** The `##` sections this block owns; anything else under a heading is somebody else's. */
 const OWNED_SECTIONS: ReadonlySet<string> = new Set([
   "hub",
+  "workline",
   "fuentes",
   "stack",
   "status",
@@ -397,6 +421,15 @@ function foreignSections(inner: string): PreservedLine[] {
   return kept;
 }
 
+/** What a person added under `## Workline`; the CLI's own pointers are re-rendered, not carried. */
+function orientationNotes(text: string, namespace: string): PreservedLine[] {
+  const own = new Set(orientationLines(namespace));
+  return text
+    .split("\n")
+    .filter((raw) => raw.trim().length > 0 && !own.has(raw.trim()))
+    .map((raw) => ({ slot: "workline", text: trimTrailing(raw) }));
+}
+
 /** Trailing blanks carry nothing and would churn the rewrite; indentation is content. */
 function trimTrailing(raw: string): string {
   return raw.replace(/\s+$/, "");
@@ -417,7 +450,11 @@ function parseFuentesTable(text: string): FuentesParse {
     const line = raw.trim();
     if (line.length === 0) continue;
     if (!line.startsWith("|")) {
-      if (line !== BLOCK_PLACEHOLDER_FUENTES && line !== LEGACY_FUENTES_PLACEHOLDER) {
+      if (
+        line !== BLOCK_PLACEHOLDER_FUENTES &&
+        line !== LEGACY_FUENTES_PLACEHOLDER &&
+        !line.startsWith(LOCAL_PATHS_NOTE_PREFIX)
+      ) {
         preserved.push({ slot: "fuentes", text: trimTrailing(raw) });
       }
       continue;

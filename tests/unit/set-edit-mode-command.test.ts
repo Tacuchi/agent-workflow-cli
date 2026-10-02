@@ -30,6 +30,6 @@ it("declara el modo sin reemplazar las fuentes y lo cambia de nuevo", async () =
   expect((await readHubBlock(fs, root, paths.blockMarkers()))?.edit_mode).toBe("in-place");
   expect((await setEditModeCommand.execute(args("unit"), ctx)).ok).toBe(true);
   expect((await readHubBlock(fs, root, paths.blockMarkers()))?.edit_mode).toBe("unit");
-  expect(await readFile(join(root, "CLAUDE.md"), "utf8")).toContain("- Modo de edición: unit");
+  expect(await readFile(join(root, "AGENTS.md"), "utf8")).toContain("- Modo de edición: unit");
   expect((await setEditModeCommand.execute(args("bad"), ctx)).ok).toBe(false);
 });

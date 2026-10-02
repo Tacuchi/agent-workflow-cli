@@ -60,13 +60,13 @@ describe("removeSource", () => {
     const result = await removeSource({ fs, env, paths }, "plugin");
 
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("| core | ../repo/core | main |");
-    expect(claude).not.toContain("../repo/plugin");
-    expect(claude).not.toContain("feature/x");
-    expect(claude).not.toContain("- plugin: desarrollo");
-    expect(claude).not.toContain("- plugin: test `npm test`");
-    expect(claude).toContain("- core: build `npm run build`");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).toContain("| core | ../repo/core | main |");
+    expect(agentsMd).not.toContain("../repo/plugin");
+    expect(agentsMd).not.toContain("feature/x");
+    expect(agentsMd).not.toContain("- plugin: desarrollo");
+    expect(agentsMd).not.toContain("- plugin: test `npm test`");
+    expect(agentsMd).toContain("- core: build `npm run build`");
     expect(await readFile(launchFile, "utf8")).toBe("{legacy: edited}\n");
     expect(await readFile(processFile, "utf8")).toBe("registro legacy ilegible\n");
     expect(await readFile(logFile, "utf8")).toBe("log anterior\n");
@@ -86,9 +86,9 @@ describe("removeSource", () => {
     await seedBlock(env, paths);
     const result = await removeSource({ fs, env, paths }, "core");
     expect("error" in result).toBe(false);
-    const claude = await readFile(join(cwd, "CLAUDE.md"), "utf8");
-    expect(claude).not.toContain("../repo/core");
-    expect(claude).toContain("../repo/plugin");
+    const agentsMd = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    expect(agentsMd).not.toContain("../repo/core");
+    expect(agentsMd).toContain("../repo/plugin");
   });
 
   it("elimina la entrada local aunque la ruta no exista en este host", async () => {
@@ -104,7 +104,7 @@ describe("removeSource", () => {
     const local = JSON.parse(await readFile(paths.cwdLocalConfigFile(), "utf8"));
     expect(local.sources.core).toBeUndefined();
     expect(local.otra_clave).toBe(true);
-    expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).not.toContain("| core |");
+    expect(await readFile(join(cwd, "AGENTS.md"), "utf8")).not.toContain("| core |");
   });
 
   it("al quitar la única fuente Java recalcula el Stack sin conservar Java", async () => {
@@ -123,12 +123,12 @@ describe("removeSource", () => {
         { alias: "angular", path: angular, mainBranch: "main" },
       ],
     });
-    expect(await readFile(join(cwd, "CLAUDE.md"), "utf8")).toContain(
+    expect(await readFile(join(cwd, "AGENTS.md"), "utf8")).toContain(
       "- Lenguaje: Java, TypeScript",
     );
     const removed = await removeSource({ fs, env, paths }, "java");
     expect("error" in removed).toBe(false);
-    const block = await readFile(join(cwd, "CLAUDE.md"), "utf8");
+    const block = await readFile(join(cwd, "AGENTS.md"), "utf8");
     expect(block).toContain("- Lenguaje: TypeScript");
     expect(block).not.toContain("Java");
     expect(block).toContain("- Framework: Angular");

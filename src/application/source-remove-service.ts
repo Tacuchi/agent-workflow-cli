@@ -83,7 +83,7 @@ export async function removeSource(
   };
 }
 
-/** Read the hub block (CLAUDE.md → AGENTS.md) and return the source for the alias. */
+/** Read the hub block (AGENTS.md, else a legacy CLAUDE.md) and return the source for the alias. */
 async function findFuente(
   fs: FileSystemPort,
   paths: PathsService,

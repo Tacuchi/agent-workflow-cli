@@ -44,7 +44,7 @@ export interface HubTabData {
   /** Absolute resolved Workline root. */
   hubPath: string;
   /**
-   * True when the hub has a hub block in CLAUDE.md/AGENTS.md.
+   * True when the hub has a hub block in AGENTS.md (or a legacy CLAUDE.md).
    * Kept as data for the configuration affordance; it no longer gates the
    * normal Hub tab view.
    */

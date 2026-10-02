@@ -19,7 +19,7 @@ export const hubBlockUpsertCommand: CliCommand = {
     repeatable: ["fuente", "working-branch"],
   },
   help: {
-    purpose: "Read or update the hub block that CLAUDE.md and AGENTS.md carry.",
+    purpose: "Read or update the hub block in AGENTS.md.",
     flags: {
       init: { effect: "Write the block, merging the given values over the existing ones." },
       read: { effect: "Read the block without writing." },

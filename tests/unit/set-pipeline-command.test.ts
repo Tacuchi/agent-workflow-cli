@@ -35,9 +35,7 @@ it("declara build y test, ninguno explícito, en los dos espejos y rechaza alias
   ).toBe("SOURCE_UNKNOWN");
   expect((await setPipelineCommand.execute(args(["core", "build", "ninguno"]), ctx)).ok).toBe(true);
   expect((await setPipelineCommand.execute(args(["core", "test", "npm test"]), ctx)).ok).toBe(true);
-  for (const file of ["CLAUDE.md", "AGENTS.md"]) {
-    expect(await readFile(join(cwd, file), "utf8")).toContain(
-      "- core: build ninguno · test `npm test`",
-    );
-  }
+  expect(await readFile(join(cwd, "AGENTS.md"), "utf8")).toContain(
+    "- core: build ninguno · test `npm test`",
+  );
 });

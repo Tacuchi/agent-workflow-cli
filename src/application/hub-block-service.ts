@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { type ParsedHubBlock, readHubBlock } from "./parsers/hub-block.js";
+import { BLOCK_READ_FILES, type ParsedHubBlock, readHubBlock } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
 
@@ -18,7 +18,7 @@ export async function runHubBlockRead(
   options: { verbose?: boolean } = {},
 ): Promise<HubReadOutput> {
   const cwd = paths.hubDir();
-  const files = [join(cwd, "CLAUDE.md"), join(cwd, "AGENTS.md")];
+  const files = BLOCK_READ_FILES.map((name) => join(cwd, name));
   const block: ParsedHubBlock | null = await readHubBlock(fs, cwd, paths.blockMarkers());
   const payload: HubReadOutput = {
     block,

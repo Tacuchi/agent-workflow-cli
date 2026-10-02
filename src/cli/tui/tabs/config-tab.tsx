@@ -84,7 +84,7 @@ export function ConfigTab({
   const [namespace, setNamespace] = useState<string>(ctx.namespace.namespace);
   const focused = controls[cursor];
 
-  // Hydrate the branch defaults from the hub block (CLAUDE.md/AGENTS.md).
+  // Hydrate the branch defaults from the hub block (AGENTS.md).
   // Any failure (no hub, unreadable file) leaves the section hidden.
   useEffect(() => {
     let alive = true;
