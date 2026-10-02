@@ -101,4 +101,42 @@ describe("HerdrCli", () => {
       "900000",
     ]);
   });
+
+  it("un spawn que rechaza se degrada: ENOENT es missing y lo demás unreachable", async () => {
+    const enoent = Object.assign(new Error("spawn herdr ENOENT"), { code: "ENOENT" });
+    const gone = fakeHerdr([], {
+      run: () => {
+        throw enoent;
+      },
+    });
+    expect(await new HerdrCli(gone.process).probe()).toMatchObject({ kind: "missing" });
+    const busy = fakeHerdr([], {
+      run: (args) => {
+        if (args[0] === "--version") return undefined;
+        throw Object.assign(new Error("spawn EAGAIN"), { code: "EAGAIN" });
+      },
+    });
+    const cli = new HerdrCli(busy.process);
+    expect(await cli.probe()).toBeNull();
+    expect(await cli.listWorkspaces()).toMatchObject({
+      ok: false,
+      degradation: { kind: "unreachable" },
+    });
+    expect(await cli.reportMetadata("w1", { pending: 0, next: null })).toMatchObject({
+      ok: false,
+      degradation: { kind: "unreachable" },
+    });
+  });
+
+  it("cada llamada a Herdr lleva un tope de tiempo", async () => {
+    const herdr = fakeHerdr([{ workspace_id: "w1", label: "hub:a", panes: [] }]);
+    const cli = new HerdrCli(herdr.process);
+    await cli.probe();
+    await cli.listWorkspaces();
+    await cli.listPanes("w1");
+    await cli.createWorkspace("/h/a", "hub:a");
+    await cli.reportMetadata("w1", { pending: 0, next: null });
+    expect(herdr.timeouts).toHaveLength(5);
+    for (const timeout of herdr.timeouts) expect(timeout).toBeGreaterThan(0);
+  });
 });

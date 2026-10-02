@@ -81,7 +81,13 @@ export function fakeHerdr(
       );
     },
   });
+  const timeouts: (number | undefined)[] = [];
+  const answer = process.run.bind(process);
+  process.run = async (cmd, args, opts) => {
+    if (cmd === "herdr") timeouts.push(opts?.timeoutMs);
+    return answer(cmd, args);
+  };
   const herdrCalls = () =>
     process.calls.filter((call) => call.cmd === "herdr").map((call) => call.args);
-  return { process, herdrCalls };
+  return { process, herdrCalls, timeouts };
 }

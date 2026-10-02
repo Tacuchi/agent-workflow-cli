@@ -1,4 +1,4 @@
-import type { ProcessPort } from "../ports/process.js";
+import type { ProcessPort, RunResult } from "../ports/process.js";
 
 /**
  * The only module that knows Herdr's CLI syntax and answer shapes, read from
@@ -40,6 +40,8 @@ const VERIFIED_MAJOR_MINOR = "0.9";
 const METADATA_SOURCE = "aw-hubs";
 const METADATA_TTL_MS = "900000";
 const NEXT_MAX_CHARS = 80;
+/** A server that accepts and never answers must not hang the sync. */
+const CALL_TIMEOUT_MS = 5000;
 
 export class HerdrCli {
   constructor(private readonly process: ProcessPort) {}
@@ -49,7 +51,9 @@ export class HerdrCli {
     if ((await this.process.which(BINARY)) === undefined) {
       return { kind: "missing", detail: `${BINARY} no está en el PATH` };
     }
-    const run = await this.process.run(BINARY, ["--version"]);
+    const answer = await this.exec(["--version"]);
+    if (!answer.ok) return answer.degradation;
+    const run = answer.value;
     const version = /\b(\d+)\.(\d+)\.(\d+)\b/.exec(run.stdout);
     if (run.code !== 0 || version === null) {
       return { kind: "cli-changed", detail: `${BINARY} --version no informa una versión` };
@@ -116,7 +120,7 @@ export class HerdrCli {
       tokens.next === null
         ? ["--clear-token", "next"]
         : ["--token", `next=${tokens.next.slice(0, NEXT_MAX_CHARS)}`];
-    const run = await this.process.run(BINARY, [
+    const answer = await this.exec([
       "workspace",
       "report-metadata",
       workspace,
@@ -128,6 +132,8 @@ export class HerdrCli {
       "--ttl-ms",
       METADATA_TTL_MS,
     ]);
+    if (!answer.ok) return answer;
+    const run = answer.value;
     return run.code === 0
       ? { ok: true, value: undefined }
       : {
@@ -136,9 +142,28 @@ export class HerdrCli {
         };
   }
 
+  /** A spawn that fails (binary gone, EAGAIN, timeout) is a degradation, never a throw. */
+  private async exec(args: string[]): Promise<HerdrResult<RunResult>> {
+    try {
+      return {
+        ok: true,
+        value: await this.process.run(BINARY, args, { timeoutMs: CALL_TIMEOUT_MS }),
+      };
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      const detail = `${args.slice(0, 2).join(" ")}: ${(error as Error).message}`;
+      return {
+        ok: false,
+        degradation: { kind: code === "ENOENT" ? "missing" : "unreachable", detail },
+      };
+    }
+  }
+
   /** Runs a JSON command and returns its `result`; a failed run means the server did not answer. */
   private async call(args: string[]): Promise<HerdrResult<unknown>> {
-    const run = await this.process.run(BINARY, args);
+    const answer = await this.exec(args);
+    if (!answer.ok) return answer;
+    const run = answer.value;
     if (run.code !== 0) {
       return {
         ok: false,

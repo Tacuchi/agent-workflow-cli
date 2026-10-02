@@ -6,6 +6,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -199,5 +200,57 @@ describe("aw hubs sync --ide", () => {
       expect.objectContaining({ name: "scratch", action: "skipped", reason: "ephemeral" }),
     ]);
     expect(existsSync(join(scratch, "scratch.code-workspace"))).toBe(false);
+  });
+
+  it("la raíz del hub escrita con barra final o por un symlink no se repite, y $HOME se compara canónico", async () => {
+    const { root, home, hub, register } = fixture();
+    const alias = join(root, "alias");
+    const main = hub(join(home, "lab", "omicron"), [
+      `| slash | ${join(home, "lab", "omicron")}/ | main |`,
+      `| link | ${join(alias, "omicron")} | main |`,
+      `| far | ${join(home, "far")} | main |`,
+    ]);
+    symlinkSync(join(home, "lab"), alias);
+    mkdirSync(join(home, "far"));
+    register(main);
+    await runHubsSync(
+      { fs: new NodeFileSystem(), home: `${home}/`, namespace: "workflow", tempRoots: [] },
+      { ide: true, herdr: false, dryRun: false },
+    );
+    expect(workspace(join(main, "omicron.code-workspace")).folders).toEqual([
+      { name: "omicron", path: "." },
+      { name: "far", path: join(home, "far") },
+    ]);
+  });
+
+  it("un .code-workspace que es carpeta se salta sin cortar a los demás, y un BOM no lo vuelve ilegible", async () => {
+    const { root, hub, register, sync } = fixture();
+    const folder = hub(join(root, "pi"), []);
+    const bom = hub(join(root, "rho"), []);
+    mkdirSync(join(folder, "pi.code-workspace"));
+    writeFileSync(
+      join(bom, "rho.code-workspace"),
+      `\uFEFF${JSON.stringify({ folders: [], settings: { a: 1 } })}`,
+    );
+    register(folder, bom);
+    const out = await sync();
+    expect(out.ide?.hubs.map((entry) => entry.action)).toEqual(["skipped", "updated"]);
+    expect(workspace(join(bom, "rho.code-workspace")).settings).toEqual({ a: 1 });
+  });
+
+  it("con la raíz del hub registrada por un symlink, una fuente vecina se escribe absoluta", async () => {
+    const { home, hub, register, sync } = fixture();
+    const source = join(home, "real", "sigma-src");
+    mkdirSync(source, { recursive: true });
+    const real = hub(join(home, "real", "sigma"), [`| src | ${source} | main |`]);
+    mkdirSync(join(home, "links"));
+    const link = join(home, "links", "sigma");
+    symlinkSync(real, link);
+    register(link);
+    await sync();
+    expect(workspace(join(link, "sigma.code-workspace")).folders).toEqual([
+      { name: "sigma", path: "." },
+      { name: "src", path: source },
+    ]);
   });
 });

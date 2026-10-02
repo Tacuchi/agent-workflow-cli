@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { HerdrCli } from "../../src/adapters/herdr-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
@@ -254,5 +254,71 @@ describe("aw hubs sync --herdr", () => {
     const result = await hubsCommand.execute(parseArgv(["hubs", "status"]), ctx);
     expect(result.data).toMatchObject({ action: "status", counts: { hubs: 1 } });
     expect(herdr.process.calls).toEqual([]);
+  });
+
+  it("un cwd de panel ilegible o relativo no confirma nada ni lanza", async () => {
+    const { root, home, hubs } = fixture(["lambda", "mu"]);
+    const [lambda = "", mu = ""] = hubs;
+    writeFileSync(join(root, "a-file"), "x");
+    const herdr = fakeHerdr([
+      {
+        workspace_id: "w1",
+        label: "hub:lambda",
+        panes: [{ cwd: join(root, "a-file", "below"), foreground_cwd: join(root, "a-file", "x") }],
+      },
+      {
+        workspace_id: "w2",
+        label: "hub:mu",
+        panes: [{ cwd: relative(process.cwd(), mu), foreground_cwd: "" }],
+      },
+    ]);
+    const out = await sync(home, herdr, [healthy(lambda, 0, null), healthy(mu, 0, null)]);
+    expect(out.herdr?.hubs.map((hub) => [hub.name, hub.action])).toEqual([
+      ["lambda", "conflict"],
+      ["mu", "conflict"],
+    ]);
+  });
+
+  it("dos hubs con el mismo nombre no crean dos workspaces con un mismo label", async () => {
+    const { root, home } = fixture([]);
+    const one = join(root, "a", "x", "nu");
+    const two = join(root, "b", "x", "nu");
+    for (const path of [one, two]) {
+      mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
+      writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    }
+    writeFileSync(
+      join(home, ".workflow", "hubs.json"),
+      JSON.stringify({ version: 1, roots: [one, two] }),
+    );
+    const herdr = fakeHerdr([]);
+    const out = await sync(home, herdr, [healthy(one, 0, null), healthy(two, 0, null)]);
+    expect(out.herdr?.hubs.map((hub) => [hub.action, hub.reason])).toEqual([
+      ["created", undefined],
+      ["skipped", "nombre repetido: hub:x/nu"],
+    ]);
+    expect(verbs(herdr.herdrCalls()).filter((verb) => verb === "workspace create")).toHaveLength(1);
+  });
+
+  it("un homónimo en conflict no le quita el label al hub que sí tiene su workspace", async () => {
+    const { root, home } = fixture([]);
+    const one = join(root, "a", "x", "xi");
+    const two = join(root, "b", "x", "xi");
+    for (const path of [one, two]) {
+      mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
+      writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    }
+    writeFileSync(
+      join(home, ".workflow", "hubs.json"),
+      JSON.stringify({ version: 1, roots: [one, two] }),
+    );
+    const herdr = fakeHerdr([
+      { workspace_id: "w9", label: "hub:x/xi", panes: [{ cwd: two, foreground_cwd: two }] },
+    ]);
+    const out = await sync(home, herdr, [healthy(one, 0, null), healthy(two, 1, null)]);
+    expect(out.herdr?.hubs.map((hub) => [hub.action, hub.workspace_id, hub.published])).toEqual([
+      ["conflict", "w9", false],
+      ["unchanged", "w9", true],
+    ]);
   });
 });

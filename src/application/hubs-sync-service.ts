@@ -1,4 +1,4 @@
-import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type {
   HerdrCli,
   HerdrDegradation,
@@ -113,13 +113,22 @@ async function syncHerdr(
   const status = new Map((await readStatus()).hubs.map((hub) => [hub.root, hub]));
 
   const results: HerdrHubResult[] = [];
+  const labels = new Set<string>();
   let degradation: HerdrDegradation | null = null;
   for (const hub of hubs) {
     if (degradation !== null) {
       results.push({ ...herdrBase(hub), action: "skipped", reason: `herdr ${degradation.kind}` });
       continue;
     }
+    // Two hubs can share a name (hubNames adds only one parent): the label goes
+    // to the first one that holds a workspace, never to one left in conflict.
+    const label = `hub:${hub.name}`;
+    if (labels.has(label)) {
+      results.push({ ...herdrBase(hub), action: "skipped", reason: `nombre repetido: ${label}` });
+      continue;
+    }
     const step = await syncHerdrHub(fs, cli, hub, status.get(hub.root), listed.value, dryRun);
+    if (step.result.action === "created" || step.result.action === "unchanged") labels.add(label);
     results.push(step.result);
     degradation = step.degradation;
   }
@@ -223,15 +232,32 @@ async function anyPaneUnder(
   root: string,
   panes: HerdrPane[],
 ): Promise<boolean> {
-  const hub = await fs.realPath(root);
+  const hub = await canonical(fs, root);
+  if (hub === null) return false;
   for (const pane of panes) {
     for (const cwd of [pane.cwd, pane.foreground_cwd]) {
-      if (cwd === null) continue;
-      const inside = relative(hub, await fs.realPath(cwd));
-      if (inside === "" || (!inside.startsWith("..") && !isAbsolute(inside))) return true;
+      if (await cwdUnder(fs, hub, cwd)) return true;
     }
   }
   return false;
+}
+
+async function cwdUnder(fs: FileSystemPort, hub: string, cwd: string | null): Promise<boolean> {
+  // A relative cwd would resolve against wherever aw runs, not where the pane is.
+  if (cwd === null || !isAbsolute(cwd)) return false;
+  const path = await canonical(fs, cwd);
+  if (path === null) return false;
+  const inside = relative(hub, path);
+  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
+}
+
+/** The real path, or null when it cannot be resolved (EACCES, ENOTDIR, ELOOP). */
+async function canonical(fs: FileSystemPort, path: string): Promise<string | null> {
+  try {
+    return await fs.realPath(resolve(path));
+  } catch {
+    return null;
+  }
 }
 
 async function syncWorkspaceFile(
@@ -246,18 +272,10 @@ async function syncWorkspaceFile(
   const { folders, omitted } = await workspaceFolders(fs, home, namespace, hub);
   const extra = omitted.length > 0 ? { omitted_sources: omitted } : {};
 
-  let current: Record<string, unknown> | null = null;
-  if (await fs.exists(file)) {
-    current = parseWorkspace(await fs.readText(file));
-    if (current === null) {
-      return {
-        ...base,
-        action: "skipped",
-        reason: "el archivo no es un objeto JSON legible",
-        ...extra,
-      };
-    }
-  }
+  const existing = await readWorkspace(fs, file);
+  if ("reason" in existing)
+    return { ...base, action: "skipped", reason: existing.reason, ...extra };
+  const current = existing.current;
   const action: IdeAction =
     current === null ? "created" : sameFolders(current.folders, folders) ? "unchanged" : "updated";
   if (!dryRun) {
@@ -280,13 +298,24 @@ async function workspaceFolders(
   const folders: WorkspaceFolder[] = [{ name: hub.name, path: "." }];
   const omitted: { alias: string; reason: string }[] = [];
   const block = await readHubBlock(fs, hub.root, hubBlockMarkers(namespace));
+  // Compared as real paths: a source spelled through a symlink or with a trailing
+  // slash is still the hub itself, and $HOME may come with either.
+  const root = (await canonical(fs, hub.root)) ?? resolve(hub.root);
+  // VS Code joins a relative path onto the file's folder as spelled: from a root
+  // reached through a symlink, only an absolute path lands where it should.
+  const spelledAsReal = root === resolve(hub.root);
+  const realHome = (await canonical(fs, home)) ?? resolve(home);
   for (const source of block?.fuentes ?? []) {
     if (source.path === null) {
       omitted.push({ alias: source.alias, reason: source.path_reason ?? "sin ruta local" });
       continue;
     }
-    if (source.path === hub.root) continue;
-    folders.push({ name: source.alias, path: folderPath(hub.root, source.path, home) });
+    const path = (await canonical(fs, source.path)) ?? resolve(source.path);
+    if (path === root) continue;
+    folders.push({
+      name: source.alias,
+      path: spelledAsReal ? folderPath(root, path, realHome) : path,
+    });
   }
   return { folders, omitted };
 }
@@ -310,9 +339,27 @@ function commonAncestor(left: string, right: string): string | null {
   return a.slice(0, shared).join(sep) || sep;
 }
 
+/** The current file as an object, null when absent, or why it is left alone. */
+async function readWorkspace(
+  fs: FileSystemPort,
+  file: string,
+): Promise<{ current: Record<string, unknown> | null } | { reason: string }> {
+  if (!(await fs.exists(file))) return { current: null };
+  let text: string;
+  try {
+    text = await fs.readText(file);
+  } catch (error) {
+    return {
+      reason: `el archivo no se puede leer (${(error as NodeJS.ErrnoException).code ?? "error"})`,
+    };
+  }
+  const current = parseWorkspace(text);
+  return current === null ? { reason: "el archivo no es un objeto JSON legible" } : { current };
+}
+
 function parseWorkspace(text: string): Record<string, unknown> | null {
   try {
-    const value: unknown = JSON.parse(text);
+    const value: unknown = JSON.parse(text.replace(/^\uFEFF/, ""));
     return typeof value === "object" && value !== null && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
