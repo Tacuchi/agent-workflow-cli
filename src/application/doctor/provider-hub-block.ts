@@ -1,17 +1,29 @@
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { compareVersions, parseVersion } from "../../domain/changelog-contract.js";
 import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
 import { RETIRED_WORKLINE_SKILLS } from "../../domain/skills.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { HUB_MIGRATE_ACTION } from "../../runtime/hub-resolution.js";
-import { legacyBlockMarkers } from "../parsers/hub-block.js";
+import {
+  BLOCK_FILE,
+  BLOCK_READ_FILES,
+  type HubBlockMarkers,
+  LEGACY_BLOCK_FILE,
+  legacyBlockMarkers,
+} from "../parsers/hub-block.js";
+import type { HostStateReport } from "../self/host-states.js";
 import { resolveBundledSkillPath } from "../self/install-skill.js";
 import type { DoctorProvider, DoctorProviderInput } from "./types.js";
 import { coverage } from "./types.js";
 
 const CATEGORY = "hub-visibility" as const;
-const MIRRORS = ["CLAUDE.md", "AGENTS.md"] as const;
-const OWNED_SECTIONS = new Set(["hub", "fuentes", "stack", "status", "pipeline"]);
+const OWNED_SECTIONS = new Set(["hub", "workline", "fuentes", "stack", "status", "pipeline"]);
+/** First Claude Code release that reads AGENTS.md by itself (code.claude.com/docs/en/memory). */
+const CLAUDE_READS_AGENTS_MD = [2, 1, 277] as const;
+/** Files that make Claude Code read CLAUDE.md files only, in the hub or any folder above it. */
+const CLAUDE_INSTRUCTION_FILES = ["CLAUDE.md", join(".claude", "CLAUDE.md"), "CLAUDE.local.md"];
+const AGENTS_IMPORT = "@AGENTS.md";
 
 interface RetiredSection {
   from: number;
@@ -110,7 +122,7 @@ export const hubBlockProvider: DoctorProvider = {
     const fs = input.ctx.fs;
     const markers = input.ctx.paths.blockMarkers();
     const files = await Promise.all(
-      MIRRORS.map(async (file) => {
+      BLOCK_READ_FILES.map(async (file) => {
         const path = join(input.hubDir, file);
         return { file, path, text: (await fs.exists(path)) ? await fs.readText(path) : null };
       }),
@@ -120,37 +132,9 @@ export const hubBlockProvider: DoctorProvider = {
         coverage: [coverage(CATEGORY, "hub", "not-applicable", "sin archivos de proyecto")],
         findings: [],
       };
-    const findings: DoctorFinding[] = [];
-    const block = (text: string | null): string | null => {
-      if (text === null) return null;
-      const start = text.indexOf(markers.start);
-      const end = text.indexOf(markers.end, start + markers.start.length);
-      return start < 0 || end < 0 ? null : text.slice(start, end + markers.end.length);
-    };
-    const left = block(files[0]?.text ?? null);
-    const right = block(files[1]?.text ?? null);
-    if (left !== right && (left !== null || right !== null)) {
-      findings.push({
-        id: doctorFindingId("hub", CATEGORY, "bloques-divergentes"),
-        host: "hub",
-        category: CATEGORY,
-        resource: {
-          kind: "hub-block",
-          name: "CLAUDE.md / AGENTS.md",
-          locator: input.hubDir,
-        },
-        state: "warning",
-        summary: "los bloques del hub de CLAUDE.md y AGENTS.md divergen",
-        impact: "dos hosts leen declaraciones distintas del mismo hub",
-        evidence: ["los contenidos entre marcadores no coinciden"],
-        ownership: "ours",
-        remediation: {
-          kind: "manual",
-          action: null,
-          guidance: ["aw hub-block --init reescribe el par tras revisar ambas versiones"],
-        },
-      });
-    }
+    const findings = await blockFileFindings(input, files, markers);
+    const outdated = outdatedClaudeCode(input.hostStates);
+    if (outdated !== null) findings.push(outdatedClaudeFinding(outdated));
     for (const file of files) {
       if (file.text === null || legacyBlockMarkers(file.text) === null) continue;
       findings.push(legacyBlockFinding(file.file, file.path));
@@ -181,6 +165,129 @@ export const hubBlockProvider: DoctorProvider = {
     return { coverage: [coverage(CATEGORY, "hub", "checked")], findings };
   },
 };
+
+/** The legacy CLAUDE.md mirror, or whatever keeps Claude Code from reading AGENTS.md. */
+async function blockFileFindings(
+  input: DoctorProviderInput,
+  files: readonly { file: string; text: string | null }[],
+  markers: HubBlockMarkers,
+): Promise<DoctorFinding[]> {
+  const findings: DoctorFinding[] = [];
+  const agents = files.find((file) => file.file === BLOCK_FILE)?.text ?? null;
+  const claude = files.find((file) => file.file === LEGACY_BLOCK_FILE)?.text ?? null;
+  const legacyMirror = claude !== null && hasBlock(claude, markers);
+  if (legacyMirror) findings.push(legacyMirrorFinding(input.hubDir));
+  if (agents === null || !hasBlock(agents, markers)) return findings;
+  const home = input.ctx.env.homeDir();
+  const shadows = await shadowingFiles(input.ctx.fs, input.hubDir, home, claude);
+  // The hub's own CLAUDE.md with the block is already the finding above, with its remedy.
+  const legacyPath = join(input.hubDir, LEGACY_BLOCK_FILE);
+  const others = shadows.filter((path) => !legacyMirror || path !== legacyPath);
+  if (others.length > 0) findings.push(shadowFinding(input.hubDir, others));
+  return findings;
+}
+
+function hasBlock(text: string, markers: HubBlockMarkers): boolean {
+  const start = text.indexOf(markers.start);
+  return start >= 0 && text.indexOf(markers.end, start + markers.start.length) >= 0;
+}
+
+/**
+ * Every CLAUDE.md, .claude/CLAUDE.md or CLAUDE.local.md in the hub or above it:
+ * any of them makes Claude Code read CLAUDE.md files only. `~/.claude/CLAUDE.md`
+ * is user scope and does not count; a hub CLAUDE.md that imports AGENTS.md
+ * brings the block in, so nothing is shadowed then.
+ */
+async function shadowingFiles(
+  fs: FileSystemPort,
+  hubDir: string,
+  home: string,
+  hubClaude: string | null,
+): Promise<string[]> {
+  if (hubClaude?.split("\n").some((line) => line.trim() === AGENTS_IMPORT)) return [];
+  const found: string[] = [];
+  let dir = hubDir;
+  for (;;) {
+    for (const name of CLAUDE_INSTRUCTION_FILES) {
+      const path = join(dir, name);
+      if (path === join(home, ".claude", "CLAUDE.md")) continue;
+      if (await fs.exists(path)) found.push(path);
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return found;
+    dir = parent;
+  }
+}
+
+/** The Claude Code version the catalog read, when it is older than the AGENTS.md reader. */
+function outdatedClaudeCode(states: readonly HostStateReport[]): string | null {
+  const raw = states.find((state) => state.host === "claude-code")?.runtime.version ?? null;
+  const version = parseVersion(/\d+\.\d+\.\d+/.exec(raw ?? "")?.[0] ?? "");
+  if (raw === null || version === null) return null;
+  return compareVersions(version, CLAUDE_READS_AGENTS_MD) < 0 ? raw : null;
+}
+
+function legacyMirrorFinding(hubDir: string): DoctorFinding {
+  const path = join(hubDir, LEGACY_BLOCK_FILE);
+  return {
+    id: doctorFindingId("hub", CATEGORY, "claude-md-heredado"),
+    host: "hub",
+    category: CATEGORY,
+    resource: { kind: "project-file", name: LEGACY_BLOCK_FILE, locator: path },
+    state: "warning",
+    summary: "CLAUDE.md conserva el bloque del hub: falta migrarlo a AGENTS.md",
+    impact:
+      "Claude Code lee CLAUDE.md en lugar de AGENTS.md y ve un bloque que Workline ya no actualiza",
+    evidence: [`${path} tiene el bloque del hub`],
+    ownership: "ours",
+    remediation: {
+      kind: "manual",
+      action: null,
+      guidance: ["aw hub-migrate muestra lo que hará", HUB_MIGRATE_ACTION],
+    },
+  };
+}
+
+function shadowFinding(hubDir: string, shadows: readonly string[]): DoctorFinding {
+  return {
+    id: doctorFindingId("hub", CATEGORY, "agents-md-tapado"),
+    host: "hub",
+    category: CATEGORY,
+    resource: { kind: "project-file", name: BLOCK_FILE, locator: join(hubDir, BLOCK_FILE) },
+    state: "warning",
+    summary: "un archivo de instrucciones de Claude tapa el AGENTS.md del hub",
+    impact: "Claude Code lee solo los CLAUDE.md y no ve el bloque del hub",
+    evidence: shadows.map((path) => `${path} existe`),
+    ownership: "foreign",
+    remediation: {
+      kind: "manual",
+      action: null,
+      guidance: [
+        `crear ${join(hubDir, LEGACY_BLOCK_FILE)} con la línea ${AGENTS_IMPORT}`,
+        "o elegir claude-md-and-agents-md en /config > Project instructions de Claude Code",
+      ],
+    },
+  };
+}
+
+function outdatedClaudeFinding(version: string): DoctorFinding {
+  return {
+    id: doctorFindingId("claude-code", CATEGORY, "claude-sin-agents-md"),
+    host: "claude-code",
+    category: CATEGORY,
+    resource: { kind: "host-runtime", name: "Claude Code", locator: version },
+    state: "warning",
+    summary: `Claude Code ${version} no lee AGENTS.md: hace falta 2.1.277 o posterior`,
+    impact: "esa versión no ve el bloque del hub",
+    evidence: [`versión detectada: ${version}`],
+    ownership: "foreign",
+    remediation: {
+      kind: "manual",
+      action: null,
+      guidance: ["actualizar Claude Code", `o crear en el hub un CLAUDE.md con ${AGENTS_IMPORT}`],
+    },
+  };
+}
 
 /** Every hub command fails with HUB_MIGRATION_REQUIRED until the block is migrated. */
 function legacyBlockFinding(file: string, path: string): DoctorFinding {
