@@ -34,6 +34,7 @@ import {
 import { readHubLocalConfig } from "../hub-local-config.js";
 import type { HubBlockMarkers } from "../parsers/hub-block.js";
 import { readHubBlock } from "../parsers/hub-block.js";
+import { BLOCK_FILE, LEGACY_BLOCK_FILE } from "../parsers/hub-block.js";
 import type { PathsService } from "../paths-service.js";
 import { resolveHubRootFrom } from "../paths-service.js";
 import {
@@ -51,6 +52,13 @@ import {
   planAliasRewrites,
   runScopeRewrites,
 } from "./aliases.js";
+import {
+  type BlockFileDivergence,
+  type BlockFileMigration,
+  type BlockFileOutcome,
+  type KeepChoice,
+  planBlockFile,
+} from "./block-file.js";
 import {
   type HubMarkerRefusal,
   type HubMarkerRewrite,
@@ -82,6 +90,7 @@ export type ConflictReason =
   | "estado_divergente"
   | "estado_ilegible"
   | "commit_de_lote_pendiente"
+  | "bloques_divergentes"
   | HubMarkerRefusal["reason"];
 
 /** Something the migration deliberately left exactly as it found it. */
@@ -101,6 +110,10 @@ export interface HubMigrationPlan {
   runs: RunScopeRewrite[];
   sentinels: SentinelSeed[];
   rows: RowSeed[];
+  /** The legacy CLAUDE.md mirror of the block, retired or stripped into AGENTS.md. */
+  block_file: BlockFileMigration | null;
+  /** Both mirrors declare different blocks: nothing is written until `--keep` names one. */
+  block_divergence: BlockFileDivergence | null;
   conflicts: MigrationConflict[];
   /** Every legacy folder the hub holds, whether or not it needs anything. */
   legacy: string[];
@@ -162,7 +175,8 @@ export function pendingChanges(plan: HubMigrationPlan): number {
     plan.aliases.length +
     plan.runs.length +
     plan.sentinels.length +
-    plan.rows.length
+    plan.rows.length +
+    (plan.block_file === null ? 0 : 1)
   );
 }
 
@@ -171,19 +185,20 @@ export async function planHubMigration(
   paths: PathsService,
   /** The sessions whose run lock `--apply` holds; only those runs are rewritten. */
   lockedRuns?: ReadonlySet<string>,
+  /** The person's choice for a divergent CLAUDE.md / AGENTS.md pair. */
+  keep?: KeepChoice,
 ): Promise<HubMigrationPlan> {
   const hub = await resolveHubRootFrom(fs, paths);
   const local = await readHubLocalConfig(fs, join(hub, `.${paths.namespace}`, "local.json"));
-  const markers = planMarkers(
-    await readHubFiles(fs, hub),
-    paths.blockMarkers(),
-    local.config?.sources ?? {},
-  );
+  const files = await readHubFiles(fs, hub);
+  const markers = planMarkers(files, paths.blockMarkers(), local.config?.sources ?? {});
+  const blockFile = await planLegacyMirror(fs, paths, hub, files, markers, keep);
   const recorded = await readRecord(fs, paths);
 
   const sentinels: SentinelSeed[] = [];
   const rows: RowSeed[] = [];
   const conflicts: MigrationConflict[] = [...markers.conflicts];
+  if (blockFile.kind === "divergent") conflicts.push(divergenceConflict(hub, blockFile.divergence));
   const legacy: string[] = [];
 
   for (const folder of await listSessionFolders(fs, paths.cwdSessionsDir())) {
@@ -219,9 +234,54 @@ export async function planHubMigration(
     runs: runs.rewrites,
     sentinels,
     rows,
+    block_file: blockFile.kind === "migrate" ? blockFile.migration : null,
+    block_divergence: blockFile.kind === "divergent" ? blockFile.divergence : null,
     conflicts,
     legacy,
     next_correlative: await nextSessionCorrelative(fs, paths),
+  };
+}
+
+/** The mirror as the marker rename leaves it, so both steps of the migration agree on the bytes. */
+async function planLegacyMirror(
+  fs: FileSystemPort,
+  paths: PathsService,
+  hub: string,
+  files: readonly { path: string; text: string }[],
+  markers: { rewrites: HubMarkerRewrite[]; conflicts: MigrationConflict[] },
+  keep: KeepChoice | undefined,
+): Promise<BlockFileOutcome> {
+  // A file the marker rename refused to touch is not touched by the mirror step either.
+  const refused = new Set(markers.conflicts.map((conflict) => conflict.subject));
+  if ([BLOCK_FILE, LEGACY_BLOCK_FILE].some((name) => refused.has(join(hub, name))))
+    return { kind: "nothing" };
+  const rewrites = markers.rewrites;
+  const textOf = (name: string): string | null => {
+    const path = join(hub, name);
+    return (
+      rewrites.find((rewrite) => rewrite.path === path)?.text ??
+      files.find((file) => file.path === path)?.text ??
+      null
+    );
+  };
+  const history = `.${paths.namespace}/HISTORY.md`;
+  return planBlockFile(
+    hub,
+    { agents: textOf(BLOCK_FILE), claude: textOf(LEGACY_BLOCK_FILE) },
+    {
+      markers: paths.blockMarkers(),
+      ...((await fs.exists(join(hub, history))) ? { historicoPath: history } : {}),
+    },
+    keep,
+  );
+}
+
+function divergenceConflict(hub: string, divergence: BlockFileDivergence): MigrationConflict {
+  const side = (lines: string[]) => (lines.length === 0 ? "(nada)" : lines.join(" · "));
+  return {
+    subject: join(hub, LEGACY_BLOCK_FILE),
+    reason: "bloques_divergentes",
+    detail: `CLAUDE.md y AGENTS.md declaran bloques distintos. Solo en CLAUDE.md: ${side(divergence.only_claude)}. Solo en AGENTS.md: ${side(divergence.only_agents)}. Elegí el que vale con aw hub-migrate --apply --keep CLAUDE.md|AGENTS.md`,
   };
 }
 

@@ -15,6 +15,7 @@ import {
   applyHubMigration,
   applyRenumber,
 } from "../../application/hub-migrate/apply.js";
+import type { KeepChoice } from "../../application/hub-migrate/block-file.js";
 import { planHubMigration, planRenumber } from "../../application/hub-migrate/plan.js";
 import {
   type HubMigrationPreview,
@@ -22,13 +23,15 @@ import {
   renderMigrationApplied,
   renderMigrationPreview,
 } from "../../application/hub-migrate/preview.js";
+import { BLOCK_FILE, LEGACY_BLOCK_FILE } from "../../application/parsers/hub-block.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import type { CliCommand, CommandFlags } from "../registry.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const FLAGS: CommandFlags = { known: ["apply", "renumber"] };
+const FLAGS: CommandFlags = { known: ["apply", "renumber", "keep"] };
+const KEEP_CHOICES: readonly KeepChoice[] = [BLOCK_FILE, LEGACY_BLOCK_FILE];
 
 export interface MigratePreviewOutput extends HubMigrationPreview {
   action: "preview";
@@ -60,17 +63,22 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
   flags: FLAGS,
   help: {
     purpose:
-      "Bring a hub up to the current model: block markers and heading, the reserved hub alias of open plans and runs, closing sentinels and reserved numbers.",
+      "Bring a hub up to the current model: block markers and heading, the hub block only in AGENTS.md, the reserved hub alias of open plans and runs, closing sentinels and reserved numbers.",
     flags: {
       apply: {
         effect: "Write the migration under the hub lock; without it nothing is written.",
       },
       renumber: { effect: "Instead, renumber colliding session folders (preview unless --apply)." },
+      keep: {
+        value: "<AGENTS.md|CLAUDE.md>",
+        effect: "Block that survives when CLAUDE.md and AGENTS.md declare different hub blocks.",
+      },
     },
     output:
-      "{action: preview, hub, markers[], aliases[], runs[], sentinels[], rows[], conflicts[], legacy[], next_correlative, pending, next} | {action: apply, hub, markers_renamed[], duplicates_dropped[], aliases_rewritten[], runs_rewritten[], sentinels_seeded[], rows_seeded[], rows_without_date[], conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
+      "{action: preview, hub, markers[], aliases[], runs[], sentinels[], rows[], block_file, block_divergence, conflicts[], legacy[], next_correlative, pending, next} | {action: apply, hub, markers_renamed[], duplicates_dropped[], aliases_rewritten[], runs_rewritten[], sentinels_seeded[], rows_seeded[], rows_without_date[], block_file, conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
     notes: [
       "Renames the block markers to <NS>-HUB-START/END (also from a PROJECT block or an older namespace) and its ## Proyecto heading to ## Hub, renames the reserved alias workspace to hub in open plans and open runs (closed ones stay byte for byte), seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
+      "Retires the legacy CLAUDE.md copy of the hub block: a CLAUDE.md holding only the block is deleted; one with other content keeps it, loses the block and gains an @AGENTS.md import at its top; one that only imports @AGENTS.md is left alone. The surviving block is rewritten in AGENTS.md with the current format. When the two copies differ, the preview lists the lines only one declares and nothing is written for them until --keep names the copy that wins.",
     ],
   },
 
@@ -96,8 +104,17 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
         });
       return { ok: true, data: { action: "renumber-apply", ...result }, exitCode: 0 };
     }
+    const keep = args.values.get("keep");
+    if (keep !== undefined && !KEEP_CHOICES.includes(keep as KeepChoice)) {
+      return failSemantic<HubMigrateOutput>({
+        code: "INVALID_INPUT",
+        message: `--keep acepta ${KEEP_CHOICES.join(" o ")}, no '${keep}'`,
+        action: "aw hub-migrate --apply --keep AGENTS.md|CLAUDE.md",
+      });
+    }
+    const choice = keep as KeepChoice | undefined;
     if (!args.flags.has("--apply")) {
-      const plan = await planHubMigration(ctx.fs, ctx.paths);
+      const plan = await planHubMigration(ctx.fs, ctx.paths, undefined, choice);
       return {
         ok: true,
         data: {
@@ -109,7 +126,7 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
       };
     }
 
-    const applied = await applyHubMigration(ctx.fs, ctx.paths);
+    const applied = await applyHubMigration(ctx.fs, ctx.paths, choice);
     if ("error" in applied) {
       return failSemantic<HubMigrateOutput>({
         code: "LOCK_BUSY",

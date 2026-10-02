@@ -33,6 +33,15 @@ export interface PreviewRow {
   date: string;
 }
 
+export interface PreviewBlockFile {
+  /** `retire`: CLAUDE.md goes away; `strip`: it keeps the person's content without the block. */
+  claude: "retire" | "strip";
+  /** Whether AGENTS.md is rewritten with the surviving block. */
+  agents_changes: boolean;
+  source: string;
+  adds_import: boolean;
+}
+
 export interface HubMigrationPreview {
   hub: string;
   markers: PreviewMarker[];
@@ -42,6 +51,9 @@ export interface HubMigrationPreview {
   runs: string[];
   sentinels: PreviewSentinel[];
   rows: PreviewRow[];
+  block_file: PreviewBlockFile | null;
+  /** Lines only one mirror declares, when the pair diverges and waits for `--keep`. */
+  block_divergence: { only_claude: string[]; only_agents: string[] } | null;
   conflicts: MigrationConflict[];
   legacy: string[];
   next_correlative: string;
@@ -66,6 +78,22 @@ export function migrationPreview(plan: HubMigrationPlan): HubMigrationPreview {
       state: seed.state,
       date: seed.date,
     })),
+    block_file:
+      plan.block_file === null
+        ? null
+        : {
+            claude: plan.block_file.legacy.action,
+            agents_changes: plan.block_file.agents !== null,
+            source: plan.block_file.source,
+            adds_import: plan.block_file.adds_import,
+          },
+    block_divergence:
+      plan.block_divergence === null
+        ? null
+        : {
+            only_claude: plan.block_divergence.only_claude,
+            only_agents: plan.block_divergence.only_agents,
+          },
     conflicts: plan.conflicts.map((conflict) => ({
       ...conflict,
       subject: relpath(conflict.subject, plan.hub),
@@ -101,6 +129,10 @@ export function renderMigrationPreview(preview: HubMigrationPreview): string {
       "Filas a reservar en el histórico, para que el número no se reasigne:",
       preview.rows.map((row) => `${row.folder} — ${row.state}, ${dateNote(row.date)}`),
     ),
+    ...section(
+      "CLAUDE.md heredado: el bloque del hub queda solo en AGENTS.md:",
+      preview.block_file === null ? [] : blockFileLines(preview.block_file),
+    ),
   ];
   if (preview.pending === 0) {
     lines.push("", "Nada que migrar: el hub ya opera con el modelo actual.");
@@ -110,6 +142,17 @@ export function renderMigrationPreview(preview: HubMigrationPreview): string {
     lines.push("", "Para aplicarlo:", "  aw hub-migrate --apply");
   }
   return lines.join("\n");
+}
+
+function blockFileLines(block: PreviewBlockFile): string[] {
+  const claude =
+    block.claude === "retire"
+      ? "CLAUDE.md — se borra: solo tenía el bloque"
+      : `CLAUDE.md — conserva tu contenido sin el bloque${block.adds_import ? " y suma @AGENTS.md al inicio" : ""}`;
+  const agents = block.agents_changes
+    ? `AGENTS.md — recibe el bloque de ${block.source}, con el formato actual`
+    : "AGENTS.md — ya tiene ese bloque: no cambia";
+  return [claude, agents];
 }
 
 /** A titled, indented list, or nothing when the list is empty. */
@@ -139,6 +182,13 @@ export function renderMigrationApplied(applied: HubMigrationApplied): string {
   }
   if (applied.rows_seeded.length > 0) {
     lines.push(`Filas reservadas: ${applied.rows_seeded.join(", ")}`);
+  }
+  if (applied.block_file !== null) {
+    const claude = applied.block_file.claude === "retired" ? "borrado" : "sin el bloque";
+    const imported = applied.block_file.adds_import ? ", con @AGENTS.md al inicio" : "";
+    lines.push(
+      `CLAUDE.md heredado: ${claude}${imported}; bloque en AGENTS.md (${applied.block_file.agents === "written" ? "reescrito" : "sin cambios"})`,
+    );
   }
   if (applied.rows_without_date.length > 0) {
     lines.push(`Sin fecha declarada — su fila conserva —: ${applied.rows_without_date.join(", ")}`);

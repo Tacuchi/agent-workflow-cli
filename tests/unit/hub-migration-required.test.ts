@@ -1,4 +1,5 @@
 import { execFile, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -152,10 +153,11 @@ describe("a hub with PROJECT markers demands the migration", () => {
 
   it("after hub-migrate --apply the block wears HUB markers and status answers", async () => {
     expect((await aw(hub, "hub-migrate", "--apply")).code).toBe(0);
-    const claude = await readFile(join(hub, "CLAUDE.md"), "utf8");
-    expect(claude).toContain("<!-- WORKFLOW-HUB-START -->");
-    expect(claude).toContain("## Hub\n");
-    expect(claude).not.toContain("PROJECT");
+    const agents = await readFile(join(hub, "AGENTS.md"), "utf8");
+    expect(agents).toContain("<!-- WORKFLOW-HUB-START -->");
+    expect(agents).toContain("## Hub\n");
+    expect(agents).not.toContain("PROJECT");
+    expect(existsSync(join(hub, "CLAUDE.md"))).toBe(false);
     expect((await aw(hub, "status")).code).toBe(0);
     expect((await aw(source, "status")).code).toBe(0);
   });

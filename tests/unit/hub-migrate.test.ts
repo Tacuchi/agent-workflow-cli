@@ -50,6 +50,7 @@ const paths = new PathsService(normalizeNamespace("workflow"), "/home/u", "/cwd"
 const SESSIONS = "/cwd/.workflow/sessions";
 const HISTORY = "/cwd/.workflow/HISTORY.md";
 const HUB = "/cwd/CLAUDE.md";
+const AGENTS = "/cwd/AGENTS.md";
 
 describe("renumerado asistido de sesiones", () => {
   it("reconoce y transfiere un marcador intacto que nació sin evento claimed", async () => {
@@ -604,10 +605,11 @@ describe("un hub con serie legacy queda operable después de migrarlo", () => {
     const applied = await applyHubMigration(fs, paths);
     if ("error" in applied) throw new Error(applied.error);
 
-    const text = await fs.readText(HUB);
+    const text = await fs.readText(AGENTS);
     expect(text).not.toContain("AGENT-WORKFLOW-PROJECT-START");
     expect(text.match(/WORKFLOW-HUB-START/g)).toHaveLength(1);
-    expect(text).toContain("# CLAUDE.md");
+    // CLAUDE.md conserva lo suyo, sin bloque y leyendo AGENTS.md.
+    expect(await fs.readText(HUB)).toBe("@AGENTS.md\n\n# CLAUDE.md\n");
 
     // Y lo que el CLI lee ahora es el bloque rico, no el vacío que había agregado.
     const parsed = parseHubBlock(text, paths.blockMarkers());
@@ -758,7 +760,7 @@ describe("hub-migrate lleva el bloque, el encabezado y el alias a hub", () => {
     const applied = await applyHubMigration(fs, paths);
     if ("error" in applied) throw new Error(applied.error);
 
-    const claude = await fs.readText(HUB);
+    const claude = await fs.readText(AGENTS);
     expect(claude).toContain("<!-- WORKFLOW-HUB-START -->\n## Hub\n");
     expect(claude).not.toContain("## Proyecto");
     expect(parseHubBlock(claude, paths.blockMarkers())?.proyecto).toBe(
@@ -1086,7 +1088,8 @@ describe("cuando el histórico y el disco se contradicen, la sesión no se toca"
     expect(await fs.readText(HUB)).toBe(text);
     const applied = await applyHubMigration(fs, paths);
     if ("error" in applied) throw new Error(applied.error);
-    expect((await fs.readText(HUB)).match(/WORKFLOW-HUB-START/g)).toHaveLength(1);
+    expect((await fs.readText(AGENTS)).match(/WORKFLOW-HUB-START/g)).toHaveLength(1);
+    expect(await fs.exists(HUB)).toBe(false);
   });
 
   it("sin la ruta local no adivina que (local) equivale a una absoluta vieja", async () => {
@@ -1165,16 +1168,17 @@ describe("cuando el histórico y el disco se contradicen, la sesión no se toca"
 describe("un workspace sano no cambia de comportamiento", () => {
   it("sin serie legacy y con los marcadores vigentes no hay nada que migrar", async () => {
     const fs = hub({
-      claude: `# CLAUDE.md\n\n${APPENDED_STUB}\n`,
       history: history("| 001-uno-quick | 2026-01-01 | closed | — |"),
       folders: [{ name: "001-uno-quick", closed: true }, { name: "002-dos-quick" }],
     });
+    fs.file(AGENTS, `# AGENTS.md\n\n${APPENDED_STUB}\n`);
     const plan = await planHubMigration(fs, paths);
     expect(plan.markers).toEqual([]);
     expect(plan.sentinels).toEqual([]);
     expect(plan.rows).toEqual([]);
     expect(plan.conflicts).toEqual([]);
     expect(plan.legacy).toEqual([]);
+    expect(plan.block_file).toBeNull();
 
     await applyHubMigration(fs, paths);
     // Sólo el candado de la operación tocó el disco.
@@ -1218,13 +1222,15 @@ describe("aw hub-migrate", () => {
     expect(result.ok).toBe(true);
     expect(fs.writes.size).toBe(0);
     if (result.data?.action !== "preview") throw new Error("esperaba una vista previa");
-    expect(result.data.pending).toBe(2);
+    expect(result.data.pending).toBe(3);
     expect(result.data.next).toBe("aw hub-migrate --apply");
     expect(result.data.markers[0]?.file).toBe("CLAUDE.md");
+    expect(result.data.block_file).toMatchObject({ claude: "retire", agents_changes: true });
 
     const human = hubMigrateCommand.renderHuman?.(result, { detail: false }) ?? "";
     expect(human).toContain("aw hub-migrate --apply");
     expect(human).toContain("AGENT-WORKFLOW-PROJECT → WORKFLOW-HUB");
+    expect(human).toContain("CLAUDE.md — se borra: solo tenía el bloque");
   });
 
   it("con --apply escribe y reporta lo que hizo", async () => {
@@ -1260,5 +1266,156 @@ describe("aw hub-migrate", () => {
     expect(result.error?.code).toBe("UNKNOWN_FLAG");
     expect(result.error?.message).toContain("--force");
     expect(fs.writes.size).toBe(0);
+  });
+});
+
+// ─── 30.0.0: el bloque del hub vive solo en AGENTS.md ───────────────────────
+
+describe("hub-migrate retira el CLAUDE.md heredado y deja el bloque solo en AGENTS.md", () => {
+  /** A current-marker block as a pre-30 CLI wrote it: four columns and a volatile activity line. */
+  function legacyBlock(sources: readonly string[], proyecto = "Hub de prueba."): string {
+    const rows = sources.map((alias) => `| ${alias} | /repos/${alias} | main | main |`);
+    const branches = sources.map((alias) => `  - ${alias}: main`);
+    return [
+      "<!-- WORKFLOW-HUB-START -->",
+      "## Hub",
+      "",
+      proyecto,
+      "",
+      "## Fuentes",
+      "",
+      "| Alias | Path | Rama principal | Rama de trabajo |",
+      "|---|---|---|---|",
+      ...rows,
+      "",
+      "## Stack",
+      "",
+      "_Stack sin detectar._",
+      "",
+      "## Status",
+      "",
+      "- Ramas de trabajo actuales:",
+      ...branches,
+      "- Última actividad: 2026-07-26 09:20",
+      "- Histórico: `.workflow/HISTORY.md`",
+      "<!-- WORKFLOW-HUB-END -->",
+    ].join("\n");
+  }
+
+  it("un par idéntico pierde CLAUDE.md y AGENTS.md queda con el formato actual, sin Última actividad", async () => {
+    const block = legacyBlock(["api", "data"]);
+    const fs = hub({ claude: `${block}\n` });
+    fs.file(AGENTS, `${block}\n`);
+    const applied = await applyHubMigration(fs, paths);
+    if ("error" in applied) throw new Error(applied.error);
+
+    expect(await fs.exists(HUB)).toBe(false);
+    const agents = await fs.readText(AGENTS);
+    expect(agents).toContain("| api | /repos/api | main |\n");
+    expect(agents).not.toContain("Rama de trabajo |");
+    expect(agents).not.toContain("Última actividad");
+    expect(agents).toContain("- Histórico: `.workflow/HISTORY.md`");
+    expect(parseHubBlock(agents, paths.blockMarkers())?.working_branches).toEqual({
+      api: "main",
+      data: "main",
+    });
+    expect(applied.block_file).toEqual({
+      claude: "retired",
+      agents: "written",
+      source: "AGENTS.md",
+      adds_import: false,
+    });
+  });
+
+  it("un hub con el bloque solo en CLAUDE.md lo pasa a AGENTS.md y conserva el resto de AGENTS.md", async () => {
+    const fs = hub({ claude: `${legacyBlock(["api"])}\n` });
+    fs.file(AGENTS, "# Guía del repo\n\nReglas propias.\n");
+    await applyHubMigration(fs, paths);
+    expect(await fs.exists(HUB)).toBe(false);
+    const agents = await fs.readText(AGENTS);
+    expect(
+      agents.startsWith("# Guía del repo\n\nReglas propias.\n\n<!-- WORKFLOW-HUB-START -->"),
+    ).toBe(true);
+    expect(parseHubBlock(agents, paths.blockMarkers())?.fuentes.map((f) => f.alias)).toEqual([
+      "api",
+    ]);
+  });
+
+  it("un CLAUDE.md con contenido propio pierde solo el bloque y suma @AGENTS.md al inicio", async () => {
+    const block = legacyBlock(["api"]);
+    const fs = hub({ claude: `# Reglas del equipo\n\n- Nunca pushear a main.\n\n${block}\n` });
+    fs.file(AGENTS, `${block}\n`);
+    const preview = await planHubMigration(fs, paths);
+    expect(preview.block_file?.legacy.action).toBe("strip");
+    expect(preview.block_file?.adds_import).toBe(true);
+    expect(fs.writes.size).toBe(0);
+
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(HUB)).toBe(
+      "@AGENTS.md\n\n# Reglas del equipo\n\n- Nunca pushear a main.\n",
+    );
+  });
+
+  it("un CLAUDE.md que solo importa @AGENTS.md no se toca", async () => {
+    const fs = hub({ claude: "@AGENTS.md\n" });
+    fs.file(AGENTS, `${legacyBlock(["api"])}\n`);
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.block_file).toBeNull();
+    expect(plan.block_divergence).toBeNull();
+    await applyHubMigration(fs, paths);
+    expect(await fs.readText(HUB)).toBe("@AGENTS.md\n");
+    expect(fs.writes.has(HUB)).toBe(false);
+  });
+
+  it("un par divergente no se escribe sin --keep y muestra lo que declara cada lado", async () => {
+    const claude = `${legacyBlock(["api", "data", "admin", "cli"])}\n`;
+    const agents = `${legacyBlock(["api", "data"])}\n`;
+    const fs = hub({ claude });
+    fs.file(AGENTS, agents);
+
+    const plan = await planHubMigration(fs, paths);
+    expect(plan.block_file).toBeNull();
+    expect(plan.block_divergence?.only_claude).toEqual([
+      "| admin | /repos/admin | main |",
+      "| cli | /repos/cli | main |",
+      "  - admin: main",
+      "  - cli: main",
+    ]);
+    expect(plan.block_divergence?.only_agents).toEqual([]);
+    expect(plan.conflicts.map((conflict) => conflict.reason)).toEqual(["bloques_divergentes"]);
+
+    await applyHubMigration(fs, paths);
+    expect([await fs.readText(HUB), await fs.readText(AGENTS)]).toEqual([claude, agents]);
+
+    const applied = await applyHubMigration(fs, paths, "CLAUDE.md");
+    if ("error" in applied) throw new Error(applied.error);
+    expect(await fs.exists(HUB)).toBe(false);
+    expect(
+      parseHubBlock(await fs.readText(AGENTS), paths.blockMarkers())?.fuentes.map((f) => f.alias),
+    ).toEqual(["api", "data", "admin", "cli"]);
+    expect(applied.block_file?.source).toBe("CLAUDE.md");
+  });
+
+  it("--keep acepta solo AGENTS.md o CLAUDE.md", async () => {
+    const fs = hub({ claude: `${legacyBlock(["api"])}\n` });
+    const result = await hubMigrateCommand.execute(
+      parseArgv(["hub-migrate", "--apply", "--keep", "claude"]),
+      context(fs),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("INVALID_INPUT");
+    expect(fs.writes.size).toBe(0);
+  });
+
+  it("migrar dos veces no vuelve a cambiar nada", async () => {
+    const block = legacyBlock(["api"]);
+    const fs = hub({ claude: `# Reglas\n\n${block}\n` });
+    fs.file(AGENTS, `${block}\n`);
+    await applyHubMigration(fs, paths);
+    const before = [await fs.readText(HUB), await fs.readText(AGENTS)];
+    const second = await planHubMigration(fs, paths);
+    expect(second.block_file).toBeNull();
+    await applyHubMigration(fs, paths);
+    expect([await fs.readText(HUB), await fs.readText(AGENTS)]).toEqual(before);
   });
 });

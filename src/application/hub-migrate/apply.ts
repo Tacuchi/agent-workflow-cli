@@ -38,6 +38,7 @@ import { publishArtifacts } from "../semantic-operation/publish.js";
 import { renameBindingsTo } from "../session-binding-service.js";
 import { readCustody, writeCustody } from "../session-custody-service.js";
 import { CLOSED_MARKER, listSessionFolders } from "../session-resolver.js";
+import type { KeepChoice } from "./block-file.js";
 import {
   type HubMigrationPlan,
   type MigrationConflict,
@@ -72,6 +73,13 @@ export interface HubMigrationApplied {
    * the migration date is never presented as evidence about the session.
    */
   rows_without_date: string[];
+  /** The legacy CLAUDE.md mirror: retired, or stripped down to the person's content. */
+  block_file: {
+    claude: "retired" | "stripped";
+    agents: "written" | "unchanged";
+    source: KeepChoice;
+    adds_import: boolean;
+  } | null;
   conflicts: MigrationConflict[];
   next_correlative: string;
 }
@@ -290,10 +298,11 @@ async function moveSessionIdentityLocked(
 export async function applyHubMigration(
   fs: FileSystemPort,
   paths: PathsService,
+  keep?: KeepChoice,
 ): Promise<HubMigrationApplied | { error: string }> {
   return withCwdLock(fs, paths, async () =>
     withOpenRunLocks(fs, paths, async (locked) => {
-      const plan = await planHubMigration(fs, paths, locked);
+      const plan = await planHubMigration(fs, paths, locked, keep);
       await writePlan(fs, paths, plan);
       return summarize(plan);
     }),
@@ -367,6 +376,7 @@ async function writePlan(
     }
     await fs.writeText(run.path, run.text);
   }
+  await writeBlockFile(fs, plan);
   for (const seed of plan.sentinels) {
     // Empty, byte for byte what `session-close` writes: the sentinel says
     // "closed" by EXISTING, and giving it content here would be redesigning it.
@@ -386,6 +396,27 @@ async function writePlan(
   }
 }
 
+/**
+ * AGENTS.md first: if the second step fails, the hub still has a readable block
+ * and the mirror is still there to retry from — never the other way round.
+ */
+async function writeBlockFile(fs: FileSystemPort, plan: HubMigrationPlan): Promise<void> {
+  const migration = plan.block_file;
+  if (migration === null) return;
+  if (migration.agents !== null) {
+    const published = await publishArtifacts(fs, plan.hub, [
+      {
+        path: relative(plan.hub, migration.agents.path),
+        content: migration.agents.text,
+        overwrite: true,
+      },
+    ]);
+    if (!published.ok) throw new Error(published.failure.message);
+  }
+  if (migration.legacy.text === null) await fs.remove(migration.legacy.path);
+  else await fs.writeText(migration.legacy.path, migration.legacy.text);
+}
+
 function summarize(plan: HubMigrationPlan): HubMigrationApplied {
   return {
     hub: plan.hub,
@@ -396,6 +427,15 @@ function summarize(plan: HubMigrationPlan): HubMigrationApplied {
     sentinels_seeded: plan.sentinels.map((seed) => seed.folder),
     rows_seeded: plan.rows.map((seed) => seed.folder),
     rows_without_date: plan.rows.filter((seed) => seed.date === "—").map((seed) => seed.folder),
+    block_file:
+      plan.block_file === null
+        ? null
+        : {
+            claude: plan.block_file.legacy.action === "retire" ? "retired" : "stripped",
+            agents: plan.block_file.agents === null ? "unchanged" : "written",
+            source: plan.block_file.source,
+            adds_import: plan.block_file.adds_import,
+          },
     conflicts: plan.conflicts,
     next_correlative: plan.next_correlative,
   };
