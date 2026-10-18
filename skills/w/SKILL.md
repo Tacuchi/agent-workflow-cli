@@ -1,13 +1,9 @@
 ---
 name: w
 description: >-
-  Orientation skill for Workline (`w` = *workline*), default for the `overview`
-  role. Load it to understand the whole model: the 3 layers (commands → loops →
-  sessions/artifacts) plus docs/, the 3 flows (SPEC / PLAN / QUICK), the `/w:`
-  commands, the 5 loops and their chassis, the `export-*` family, the capability
-  skills + `.workflow/skills.toml` cascade, and the 6 hard invariants. Use it to
-  know how the pieces fit, where a deliverable lands, or which command/loop/skill
-  to reach for.
+  Workline orientation (`w`, overview role). Use to locate commands, loops,
+  sessions/artifacts and docs/: SPEC/PLAN/QUICK, `/w:`, five loops and chassis,
+  exports, capabilities, skills.toml and six hard invariants.
 ---
 
 # w — Workline overview
@@ -19,6 +15,8 @@ description: >-
 ## Purpose
 
 Explain the **complete model** of Workline so an agent knows: what the user invokes, what the AI runs, where every deliverable lands, and which rules never break. This is the map; the fine detail lives in each loop/command/export/role.
+
+[`/w:hub-compact`](commands/hub-compact.md) synthesizes hub knowledge and archives recoverable originals with approval; conversation `Compactar` keeps its existing meaning.
 
 ## Composed by
 

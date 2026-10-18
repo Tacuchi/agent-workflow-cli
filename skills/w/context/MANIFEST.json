@@ -65,6 +65,10 @@
     "quick.db-touched": "the task mutates a database; derive its DDL or DML into the session script"
   },
   "commands": {
+    "hub-compact": {
+      "core": ["commands/hub-compact.md"],
+      "modules": []
+    },
     "doctor": {
       "core": ["commands/doctor.md"],
       "modules": [{ "path": "modules/PLAN-MODE.md", "signal": "plan-mode" }]

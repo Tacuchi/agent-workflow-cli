@@ -1,6 +1,7 @@
 import { join, relative, win32 } from "node:path";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
+import { catalogOriginals } from "../hub-compaction/catalog.js";
 import type { PathsService } from "../paths-service.js";
 import { type ArtifactKind, findArtifact } from "../session-artifacts.js";
 import { type SessionResolutionError, resolveSessionTarget } from "../session-resolver.js";
@@ -74,6 +75,12 @@ export async function readSessionArtifacts(
   };
 
   const targetKinds = kinds ?? [...Object.keys(KIND_TO_ARTIFACT), "scripts"];
+  const archived = await catalogOriginals(
+    fs,
+    paths,
+    relative(paths.hubDir(), sessionPath).replaceAll("\\", "/"),
+  );
+  if (archived.length > 0) result.archived_originals = archived;
   for (const kind of targetKinds) {
     if (kind === "scripts") {
       result.scripts = await readScriptsArtifacts(fs, sessionPath);

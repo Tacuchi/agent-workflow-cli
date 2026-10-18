@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { compareCorrelatives, sameCorrelative } from "../../domain/correlative.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { ResolvedRuntime } from "../../runtime/types.js";
+import { type CatalogOriginal, catalogOriginals } from "../hub-compaction/catalog.js";
 import { SessionsCsvError, validateSessionsExist } from "../parsers/sessions-csv.js";
 import type { PathsService } from "../paths-service.js";
 import { relpath } from "../paths.js";
@@ -10,6 +11,7 @@ import { type SessionEntry, buildSessionEntry, listSessionFolders } from "../ses
 import { sessionCorrelative } from "./common.js";
 
 export interface ReleaseSession extends SessionEntry {
+  archived_originals?: CatalogOriginal[];
   is_legacy_format?: boolean;
   release_eligible?: boolean;
   legacy_warning?: string;
@@ -50,6 +52,8 @@ export async function listSessionsForRelease(
     const entry = (await buildSessionEntry(fs, folder.path, folder.name)) as ReleaseSession;
     if (!includeReleaseEntry(entry, filter)) continue;
     await annotateReleaseEntry(entry, folder.path, fs);
+    const archived = await catalogOriginals(fs, paths, relpath(folder.path, paths.hubDir()));
+    if (archived.length > 0) entry.archived_originals = archived;
     result.push(entry);
   }
   return result;

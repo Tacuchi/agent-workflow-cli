@@ -73,6 +73,7 @@ const GROUPS: readonly CommandGroup[] = [
       // the substrate `/w:recall` judges, as `status` is for `/w:status`.
       "host-memory",
       "persist",
+      "hub-compact",
       "stack",
       "skills",
       // The deterministic direction engine: advances a journey to its first

@@ -1,5 +1,6 @@
 import { dirname, resolve } from "node:path";
 import { GitCliAdapter } from "../adapters/git-cli.js";
+import { NodeArchive } from "../adapters/node-archive.js";
 import { NodeEnv } from "../adapters/node-env.js";
 import { NodeFileSystem } from "../adapters/node-file-system.js";
 import { NodeProcess } from "../adapters/node-process.js";
@@ -190,6 +191,7 @@ async function initializeCliContext(
   return {
     hubFs,
     ctx: {
+      archive: new NodeArchive(),
       fs: hubFs,
       rawFs: fs,
       env,
@@ -499,6 +501,7 @@ function commandCrashExit(
 
 const HUB_SEALED_COMMANDS = new Set([
   "persist",
+  "hub-compact",
   "export-scripts",
   "export-diagrams",
   "export-reports",
@@ -610,6 +613,12 @@ function effectiveCommandName(parsed: ParsedArgs): string | undefined {
  */
 function isStrictReadCommand(parsed: ParsedArgs): boolean {
   const command = effectiveCommandName(parsed);
+  if (
+    command === "hub-compact" &&
+    parsed.rest[0] !== "apply" &&
+    !(parsed.rest[0] === "restore" && parsed.values.has("approval"))
+  )
+    return true;
   // `host-memory` reads other hosts' private memory: its trace stays out of the log too.
   if (command === "status" || command === "resume" || command === "host-memory") return true;
   return command === "doctor" && parsed.rest.length === 0;

@@ -15,6 +15,7 @@ Every invoked directory is a usable implicit hub. The closest ancestor with `.<n
 | Command | What it does | Mode |
 |---|---|---|
 | [`hub-init`](hub-init.md) | Materialize runtime or configure explicit sources | single-pass, interactive |
+| [`hub-compact`](hub-compact.md) | Review knowledge and recoverable original archives | transversal, explicit approval |
 | [`spec-new`](spec-new.md) | Generates the spec draft (`docs/specs/NNN-spec-<slug>.md`) | single-pass, no loop |
 | [`spec-refine`](spec-refine.md) | Refines the spec **in place** until it is `ready-for-plan` | starts `spec-refine-loop` |
 | [`plan-new`](plan-new.md) | Derives the executable plan (`docs/plans/PPP-plan-<slug>.md`) from the spec | starts `plan-new-loop` |

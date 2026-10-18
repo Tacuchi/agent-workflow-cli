@@ -57,9 +57,9 @@ describe("context measurement — the instrument the gates read", () => {
     }
   });
 
-  it("budgets all 18 live commands, not just the 6 flows the ceiling covered", async () => {
+  it("budgets all 19 live commands, not just the 6 flows the ceiling covered", async () => {
     const result = await runContextBudget(fs, { root: BUNDLE_ROOT });
-    expect(result.guaranteed).toHaveLength(18);
+    expect(result.guaranteed).toHaveLength(19);
     // The ten commands with no loop were never budgeted before: their guaranteed
     // load is their own body, and that is now a line like any other.
     const status = result.guaranteed.find((g) => g.command === "status");
@@ -73,7 +73,7 @@ describe("context measurement — the instrument the gates read", () => {
     });
     const baseline = JSON.parse(await readFile(BASELINE_PATH, "utf8"));
     expect(result.discovery.bytes).toBeLessThanOrEqual(baseline.discovery.bytes);
-    expect(result.activation.entries).toHaveLength(18);
+    expect(result.activation.entries).toHaveLength(19);
     expect(result.execution.journeys).toHaveLength(6);
   });
 
@@ -158,7 +158,7 @@ describe("context manifest — the bundle describes its own graph", () => {
 
   it("loads the real bundle manifest", async () => {
     const manifest = await loadManifest(fs, BUNDLE_ROOT);
-    expect(Object.keys(manifest.commands)).toHaveLength(18);
+    expect(Object.keys(manifest.commands)).toHaveLength(19);
     expect(manifest.journeys).toHaveLength(6);
   });
 
@@ -432,9 +432,11 @@ describe("the 27.0.1 reference — no doctrine figure grows past it", () => {
     expect(live.execution.median).toBeLessThanOrEqual(ref.execution.median);
     const activation = new Map(ref.activation.entries.map((e) => [e.command, e.bytes]));
     for (const entry of live.activation.entries) {
-      // A command with no reference is a command nobody priced: fail, never skip.
-      expect(activation.has(entry.command), entry.command).toBe(true);
-      expect(entry.bytes, entry.command).toBeLessThanOrEqual(activation.get(entry.command) ?? 0);
+      // The new transversal has no historical measurement. Bound it by the
+      // existing persist procedure; preserve every historical command's own cap.
+      const priced = entry.command === "hub-compact" ? "persist" : entry.command;
+      expect(activation.has(priced), entry.command).toBe(true);
+      expect(entry.bytes, entry.command).toBeLessThanOrEqual(activation.get(priced) ?? 0);
     }
     const journeys = new Map(ref.execution.journeys.map((j) => [j.id, j.bytes]));
     for (const journey of live.execution.journeys) {

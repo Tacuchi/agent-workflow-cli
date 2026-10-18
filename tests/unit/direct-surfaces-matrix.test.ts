@@ -177,6 +177,7 @@ describe("C12/C13 · the output matrix is one rule for every command", () => {
     // plan 088: el registro de hubs. La lista, el escaneo, la poda y el estado
     // dan una línea por hub en humano, del mismo objeto que viaja en el JSON.
     "hubs",
+    "hub-compact",
   ];
 
   it("no undeclared command acquired a human projection", () => {

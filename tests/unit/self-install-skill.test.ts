@@ -997,6 +997,53 @@ describe("selfInstallSkill", () => {
   });
 });
 
+describe("selfInstallSkill · /w:hub-compact reaches every host in temporary installs", () => {
+  it.each([...HOST_INSTALL_TARGETS])(
+    "%s receives the approval and recovery procedure",
+    async (target) => {
+      const root = await mkdtemp(join(tmpdir(), "aw-hub-compact-install-"));
+      try {
+        const source = join(root, "source");
+        const home = join(root, "home");
+        await mkdir(home);
+        await makeFakeRepo(source);
+        await seedCommandsFixture(source);
+        await writeFile(
+          join(source, "commands/hub-compact.md"),
+          await readFile(join(__dirname, "../../skills/w/commands/hub-compact.md")),
+        );
+        const result = await selfInstallSkill(
+          buildArgs({ from: source, target }, []),
+          buildCtx(home, new RealFs(), new FakeProcess()),
+        );
+        expect(result.ok, target).toBe(true);
+        const find = async (path: string): Promise<string[]> => {
+          const files: string[] = [];
+          for (const entry of await readdir(path, { withFileTypes: true })) {
+            const child = join(path, entry.name);
+            if (entry.isDirectory()) files.push(...(await find(child)));
+            else if (/(hub-compact\.(md|toml)|w-hub-compact\/SKILL\.md)$/.test(portablePath(child)))
+              files.push(child);
+          }
+          return files;
+        };
+        const surfaces = (await find(home)).filter(
+          (path) => !portablePath(path).includes("/w/commands/"),
+        );
+        expect(surfaces.length, target).toBeGreaterThan(0);
+        for (const path of surfaces) {
+          const body = await readFile(path, "utf8");
+          expect(body).toContain("hub-compact prepare --input-json -");
+          expect(body).toContain("--approval");
+          expect(body).toContain("hub-compact restore");
+        }
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
 describe("selfInstallSkill · /w:recall reaches every host bound to it (plan 062)", () => {
   let workdir: string;
 

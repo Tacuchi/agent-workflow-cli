@@ -33,6 +33,7 @@ import { hostDoctorCommand } from "./host-doctor.js";
 import { hostMemoryCommand } from "./host-memory.js";
 import { hubBlockUpsertCommand } from "./hub-block.js";
 import { hubCommitCommand } from "./hub-commit.js";
+import { hubCompactCommand } from "./hub-compact.js";
 import { hubInitCommand } from "./hub-init.js";
 import { hubMigrateCommand } from "./hub-migrate.js";
 import { hubMoveCommand } from "./hub-move.js";
@@ -133,6 +134,7 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   // flow and create no session, because a retirement can end by deleting the very
   // session that drove it.
   discardCommand,
+  hubCompactCommand,
   resetCommand,
   // The cheap exit a legitimate baseline divergence has: re-sealing a plan whose
   // review concluded it still holds, instead of walking a whole plan-refine to

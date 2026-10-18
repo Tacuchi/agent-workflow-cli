@@ -5,6 +5,7 @@ import { type CheckpointFields, readLatestCheckpoint } from "./checkpoint-servic
 import { type RunReopen, reopenRun } from "./flow/reopen-run.js";
 import { locateRun } from "./flow/run-state-service.js";
 import { upsertHistoryRow } from "./history-update-service.js";
+import { type CatalogOriginal, catalogOriginals } from "./hub-compaction/catalog.js";
 import { withCwdLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
 import { relpath } from "./paths.js";
@@ -40,6 +41,7 @@ export interface SessionLoadInput {
 }
 
 export interface SessionLoadOutput {
+  archived_originals?: CatalogOriginal[];
   code: string | null;
   folder: string;
   path: string;
@@ -343,6 +345,7 @@ async function resumedSessionOutput(
 
   // Resume context comes from the folder-local CHECKPOINT.md, not the hub block.
   const checkpoint = await readLatestCheckpoint(fs, session.path);
+  const archived = await catalogOriginals(fs, paths, relpath(session.path, cwd));
 
   return {
     code: session.code,
@@ -352,6 +355,7 @@ async function resumedSessionOutput(
     objetivo: objetivoText,
     objetivo_text: objetivoText,
     checkpoint,
+    ...(archived.length > 0 ? { archived_originals: archived } : {}),
     ...(resumesAt !== null ? { run: { resumes_at: resumesAt } } : {}),
   };
 }

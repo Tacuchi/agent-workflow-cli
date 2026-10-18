@@ -3724,6 +3724,11 @@ export const FLOW_DECISIONS: readonly FlowDecision[] = [
  */
 export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
+    command: "hub-compact",
+    reason:
+      "capacidad transversal sin WorklineFlow ni sesión: inventory y prepare leen; apply exige el digest exacto, revalida bajo bloqueo y conserva originales recuperables; restore tiene su propia propuesta aprobada",
+  },
+  {
     command: "hub-commit",
     reason:
       "comando transversal sin corrida propia: prepare sella mensaje y pathspec del hub y apply exige ese digest; el cierre del chasis también lo invoca sólo después del consentimiento humano",

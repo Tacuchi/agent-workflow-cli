@@ -1,6 +1,7 @@
 import type { Logger } from "../application/logging/logger.js";
 import type { PathsService } from "../application/paths-service.js";
 import type { ResolvedSkills } from "../domain/skills.js";
+import type { ArchivePort } from "../ports/archive.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -9,6 +10,7 @@ import type { ResolvedNamespace, WorklineDirectory } from "../runtime/namespace-
 import type { ResolvedRuntime } from "../runtime/types.js";
 
 export interface CliContext {
+  archive?: ArchivePort;
   fs: FileSystemPort;
   /**
    * The unguarded port for the two services that materialize themselves and
