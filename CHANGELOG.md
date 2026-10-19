@@ -12,6 +12,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [30.1.0] — 2026-10-18
+
+**`/w:hub-compact` guía la síntesis del conocimiento del hub y el archivo recuperable de originales, con aprobación previa.**
+
+### Contrato
+
+Ninguno.
+
+### Added
+
+- `aw hub-compact inventory` informa pesos, procedencia, elegibilidad, protecciones y exclusiones sin escribir.
+- `prepare --input-json -` recibe la síntesis del host, valida afirmaciones y referencias, y muestra la vista `docs/context/hub.md` y los efectos exactos antes de aprobar.
+- `apply --input-json - --approval <digest>` revalida las fuentes, archiva por elemento con gzip estándar y conserva un manifiesto recuperable. El ahorro neto incluye la vista, el catálogo y los originales retenidos.
+- `inspect <id>` comprueba integridad y permite consultar originales; `restore <id>` prepara la restauración total o por ruta y exige su propio digest para aplicarla sin sobrescribir contenido posterior.
+- `/w:hub-compact` distribuye el procedimiento completo en el bundle, sin proveedor de IA interno, nuevo flujo ni sesión.
+
+### Changed
+
+- Las consultas de artefactos, datos de release y reanudación exponen `archived_originals` cuando existe material catalogado. Conservan el corpus canónico y no restauran archivos al leer.
+
 ## [30.0.0] — 2026-10-02
 
 **El bloque del hub vive solo en `AGENTS.md`: Claude Code lo lee por sí mismo desde 2.1.277, `aw hub-migrate` retira la copia de `CLAUDE.md` y `aw doctor` avisa lo que todavía la tapa.**
