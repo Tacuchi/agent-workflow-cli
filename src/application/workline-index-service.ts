@@ -79,7 +79,7 @@ import { type OrphanUnit, type WorktreeListOutput, runWorktree } from "./worktre
  * Read-only by construction: nothing here opens a file for writing.
  */
 
-const SPEC_STATUSES = ["draft", "refining", "ready-for-plan", "superseded"] as const;
+const SPEC_STATUSES = ["draft", "refining", "ready-for-plan", "superseded", "abandoned"] as const;
 
 /** Spec maturity: how ready the spec is for `plan-new` to design against it. */
 export type SpecStatus = (typeof SPEC_STATUSES)[number];
@@ -88,9 +88,10 @@ export type SpecStatus = (typeof SPEC_STATUSES)[number];
  * Whole-plan closure, derived — never declared alone and never inferred from
  * the counters. `open` = there is still something to do or to validate;
  * `done` = the plan declares it AND the counters back the declaration;
- * `inconsistent` = the document contradicts itself and a human must repair it.
+ * `inconsistent` = the document contradicts itself and a human must repair it;
+ * `abandoned` = the plan declares it was discarded and owes nothing.
  */
-export type PlanState = "open" | "done" | "inconsistent";
+export type PlanState = "open" | "done" | "inconsistent" | "abandoned";
 
 /**
  * The spec a plan derives from, resolved against the real spec inventory.
@@ -760,7 +761,7 @@ function derivePipeline(
 ): PipelineItem[] {
   const items: PipelineItem[] = [];
   for (const spec of specs) {
-    if (spec.status === "superseded") continue;
+    if (spec.status === "superseded" || spec.status === "abandoned") continue;
     const detail = specDetail(spec, plans);
     if (spec.status !== "ready-for-plan") {
       items.push(specItem(spec, 1, "spec-unrefined", "/w:spec-refine", detail));
@@ -1244,6 +1245,7 @@ function liveHandoffs(plan: IndexedPlan): number {
  * printing its live handoff.
  */
 export function planIsPending(plan: IndexedPlan): boolean {
+  if (plan.plan_state === "abandoned") return false;
   return plan.plan_state !== "done" || liveHandoffs(plan) > 0 || pendingPasses(plan).length > 0;
 }
 
@@ -1778,6 +1780,7 @@ function derivePlanState(
   reconciliation: PlanReconciliation | null,
 ): PlanState {
   if (declared === "unknown") return "inconsistent";
+  if (declared === "abandoned") return "abandoned";
   if (declared !== "done") return "open";
   if (tasks.closed !== tasks.total) return "inconsistent";
   // A decision left compensatory work owing, so the counters agreeing is not the

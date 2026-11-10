@@ -11,6 +11,11 @@ import {
 } from "./plan-lineage-seal.js";
 import { type PlanLocatorReason, locatePlanDocument } from "./plan-locator.js";
 import {
+  HUB_MIGRATE_COMMAND,
+  type PlanStatusContractFailure,
+  validatePlanStatusContract,
+} from "./plan-status-contract.js";
+import {
   type SourceBoundaryFailure,
   finalValidationOverrides,
   parsePlanSourceBoundary,
@@ -25,11 +30,14 @@ export type PlanGrammarFailure = SourceBoundaryFailure | PlanLineageFailure;
 
 export type PlanGrammarCode = PlanGrammarFailure["code"];
 
+/** Everything the lint reports: the gates' grammar plus the plan's own state contract. */
+export type PlanLintCode = PlanGrammarCode | PlanStatusContractFailure["code"];
+
 /** Which gate judges a violation: saving the plan, entering its execution, or both. */
 export type PlanLintMoment = "publication" | "execution-entry" | "both";
 
 export interface PlanLintViolation {
-  code: PlanGrammarCode;
+  code: PlanLintCode;
   /** One-based line, when the rule is tied to one. */
   line: number | null;
   message: string;
@@ -77,7 +85,7 @@ export function planBoundaryAction(
 }
 
 /** The same rule said about a plan on disk: there is no preview to re-propose yet. */
-function lintRule(code: PlanGrammarCode, moment: PlanLintMoment): string {
+function lintRule(code: PlanLintCode, moment: PlanLintMoment): string {
   const then =
     moment === "execution-entry"
       ? "corregilo con /w:plan-refine antes de entrar a ejecución"
@@ -86,7 +94,7 @@ function lintRule(code: PlanGrammarCode, moment: PlanLintMoment): string {
 }
 
 function actionFor(
-  code: PlanGrammarCode,
+  code: PlanLintCode,
   moment: "proposal" | "execution-entry",
   then: string,
 ): string {
@@ -111,6 +119,16 @@ function actionFor(
       return `declará build y tests para esa fuente en su pipeline versionado o juntos en una viñeta de ## Validations — ${then}`;
     case "PLAN_FINAL_VALIDATION_SPLIT":
       return `reuní build y tests de esa fuente en una sola viñeta de Validación final — ${then}`;
+    case "PLAN_STATUS_UNMIGRATED":
+      return `el hub sigue en el modelo de sesiones: migralo con '${HUB_MIGRATE_COMMAND}', que normaliza el estado de cada plan con tu confirmación`;
+    case "PLAN_STATUS_INVALID":
+      return `escribí bajo el título '> Estado: draft | ready | in-progress | done | abandoned', sin sufijos — ${then}`;
+    case "PLAN_NEXT_STEP_MISSING":
+    case "PLAN_NEXT_STEP_MISPLACED":
+      return `'> Próximo paso: Tn.m — <frase>' va bajo '> Estado:' sólo mientras el plan está in-progress — ${then}`;
+    case "PLAN_BATCH_EVIDENCE_TOO_LONG":
+    case "PLAN_BATCH_EVIDENCE_INVALID":
+      return `cada lote de '## Evidencia de lotes' lleva '- Bn · <hash por fuente>' y hasta cuatro sub-viñetas Validado:, Fallido:, Pendiente:, Externo sin comprobar: — ${then}`;
     default:
       return then;
   }
@@ -186,7 +204,10 @@ export async function lintPlan(
     report: {
       plan: located.path,
       hub_block: declared !== null,
-      violations: mergeMoments(publication.failures, entry),
+      violations: [
+        ...mergeMoments(publication.failures, entry),
+        ...validatePlanStatusContract(text).map((failure) => violationOf(failure, "publication")),
+      ].sort((a, b) => (a.line ?? 0) - (b.line ?? 0)),
     },
   };
 }
@@ -272,7 +293,10 @@ function mergeMoments(
   return violations.sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 }
 
-function violationOf(failure: PlanGrammarFailure, moment: PlanLintMoment): PlanLintViolation {
+function violationOf(
+  failure: PlanGrammarFailure | PlanStatusContractFailure,
+  moment: PlanLintMoment,
+): PlanLintViolation {
   return {
     code: failure.code,
     line: failure.line ?? null,

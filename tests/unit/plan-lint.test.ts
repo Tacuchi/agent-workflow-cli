@@ -54,7 +54,7 @@ const PLAN_TEXT = [
   "# Plan 055 — lint",
   "",
   `> Derived from ${SPEC}`,
-  "> Estado: open",
+  "> Estado: ready",
   "> Límite de ejecución: checkout",
   "",
   "## Tasks",
@@ -345,5 +345,58 @@ describe("aw plan lint — la gramática entera de un plan, sin corrida", () => 
     } as unknown as Parameters<typeof planCommand.execute>[1]);
     expect(result.ok).toBe(false);
     expect(JSON.stringify(result)).toContain("plan lint <ruta del plan|correlativo>");
+  });
+
+  describe("el contrato de estado del plan (spec 066)", () => {
+    const CLEAN = PLAN_TEXT.replace(
+      "**Validación de fase:** la rúbrica queda verde.",
+      "**Validación de fase:** `npx vitest run tests/unit/b.test.ts` pasa.",
+    ).replace(
+      "- AC-04: la spec queda cubierta.",
+      "- AC-04: `npx vitest run tests/unit/c.test.ts`.",
+    );
+    const codes = async (text: string) => {
+      await writeFile(join(root, PLAN), text, "utf8");
+      const result = await run(PLAN);
+      return (result.data?.violations ?? []).map((v) => [v.code, v.rule] as const);
+    };
+
+    it("acepta un plan in-progress con su próximo paso y evidencia de cinco líneas", async () => {
+      const text = `${CLEAN.replace(
+        "> Estado: ready",
+        "> Estado: in-progress\n> Próximo paso: T2.1 — sellar el linaje",
+      )}\n## Evidencia de lotes\n\n- B1 · cli abc1234\n  - Validado: vitest a.test.ts 12/12\n  - Fallido: ninguno nuevo\n  - Pendiente: F2\n  - Externo sin comprobar: despliegue\n`;
+      expect(await codes(text)).toEqual([]);
+    });
+
+    it("rechaza un plan del modelo de sesiones nombrando aw hub-migrate", async () => {
+      for (const declared of ["> Estado: open", "> Estado: done — 2026-07-27 · sesión 123"]) {
+        const found = await codes(CLEAN.replace("> Estado: ready", declared));
+        expect(
+          found.map(([code]) => code),
+          declared,
+        ).toEqual(["PLAN_STATUS_UNMIGRATED"]);
+        expect(found[0]?.[1]).toContain("aw hub-migrate");
+      }
+    });
+
+    it("rechaza más de cinco líneas de evidencia por lote", async () => {
+      const text = `${CLEAN}\n## Evidencia de lotes\n\n- B1 · cli abc1234\n  - Validado: a\n  - Fallido: b\n  - Pendiente: c\n  - Externo sin comprobar: d\n  - Validado: e\n`;
+      expect((await codes(text)).map(([code]) => code)).toEqual([
+        "PLAN_BATCH_EVIDENCE_TOO_LONG",
+        "PLAN_BATCH_EVIDENCE_INVALID",
+      ]);
+    });
+
+    it("exige el próximo paso sólo mientras el plan está in-progress", async () => {
+      expect(
+        (await codes(CLEAN.replace("> Estado: ready", "> Estado: in-progress"))).map(([c]) => c),
+      ).toEqual(["PLAN_NEXT_STEP_MISSING"]);
+      expect(
+        (
+          await codes(CLEAN.replace("> Estado: ready", "> Estado: done\n> Próximo paso: T1.1 — x"))
+        ).map(([c]) => c),
+      ).toEqual(["PLAN_NEXT_STEP_MISPLACED"]);
+    });
   });
 });

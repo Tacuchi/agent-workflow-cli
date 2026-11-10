@@ -25,6 +25,9 @@ describe("parsePlanStatus — the plan's own state, told apart by position", () 
       closure: null,
       legacy: false,
       assurance: null,
+      unmigrated: null,
+      line: null,
+      next_step: null,
     });
   });
 
@@ -36,17 +39,23 @@ describe("parsePlanStatus — the plan's own state, told apart by position", () 
       closure: "2026-07-27 · sesión 123",
       legacy: false,
       assurance: null,
+      unmigrated: null,
+      line: 3,
+      next_step: null,
     });
   });
 
   it("reads the legacy one-line form and flags it for migration", () => {
-    // Compatibility is for READING old plans; `legacy: true` is what tells the
-    // loop to rewrite the mark the next time it touches the document.
+    // Compatibility is for READING old plans: only `aw hub-migrate` may act on
+    // them, and `unmigrated` is what lets every other surface say so.
     expect(parsePlanStatus(planWithPreamble("> Estado: done — 2026-07-27 · sesión 123"))).toEqual({
       declared: "done",
       closure: "2026-07-27 · sesión 123",
       legacy: true,
       assurance: null,
+      unmigrated: "legacy-suffix",
+      line: 3,
+      next_step: null,
     });
   });
 
@@ -96,6 +105,9 @@ describe("parsePlanStatus — the plan's own state, told apart by position", () 
       closure: null,
       legacy: false,
       assurance: null,
+      unmigrated: null,
+      line: null,
+      next_step: null,
     });
   });
 
