@@ -157,14 +157,16 @@ export async function statusOfIndex(
   paths: PathsService,
   index: WorklineIndex,
 ): Promise<StatusOutput> {
-  const events = await readEvents(fs, paths);
+  // The documents model reads `docs/`, git and the pass ledger only: neither
+  // HISTORY.md nor the session folders are opened (spec 066, AC-09).
+  const legacy = index.model === "sessions";
+  const events = legacy ? await readEvents(fs, paths) : [];
 
   const { active, closed, paused, abandoned } = await statusSessions(fs, paths, index);
 
   const historyPath = paths.cwdHistoryFile();
-  const rows = (await fs.exists(historyPath))
-    ? readHistoryRows(await fs.readText(historyPath))
-    : [];
+  const rows =
+    legacy && (await fs.exists(historyPath)) ? readHistoryRows(await fs.readText(historyPath)) : [];
   const localFolders = new Set(index.sessions.map((session) => session.folder));
   const sameFolder = (rowKey: string) =>
     localFolders.has(rowKey) ||

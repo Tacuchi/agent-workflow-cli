@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runStatusCommand } from "../../src/application/status-service.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
-import { statusCommand } from "../../src/cli/commands/status.js";
 import { reservationMarker } from "../../src/domain/reservation.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -24,7 +22,7 @@ const OWNER = "145-claims-con-propietario-plan-new";
 
 const paths = (): PathsService => new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
 const index = (fs: MemFs) =>
-  buildWorklineIndex(fs, new FakeEnv("/home", "/cwd"), paths(), { now: NOW });
+  buildWorklineIndex(fs, new FakeEnv("/home", "/cwd"), paths(), { now: NOW, sessions: "legacy" });
 
 const hub = (): MemFs =>
   new MemFs({ lenient: true })
@@ -89,30 +87,5 @@ describe("el tablero distingue reserva, documento y placeholder legacy", () => {
 
     expect(result.specs.map((s) => s.number)).toEqual(["004"]);
     expect(result.reservations).toEqual([]);
-  });
-
-  it("el tablero HUMANO los nombra: pasar de equivocado a mudo no era arreglarlo", async () => {
-    const fs = hub()
-      .file("/cwd/docs/plans/036-plan-reservado.md", reservationMarker(OWNER))
-      .file("/cwd/docs/specs/003-spec-vacia.md", "");
-
-    const data = await runStatusCommand(fs, new FakeEnv("/home", "/cwd"), paths(), {});
-    const rendered = statusCommand.renderHuman?.(
-      { ok: true, data, exitCode: 0 },
-      { detail: false },
-    );
-    if (rendered === undefined) throw new Error("esperaba una proyección humana");
-
-    // Antes de F6 el tablero ofrecía `/w:plan-exec` sobre un marcador; después de
-    // sacarlo del corpus, la vista humana no decía NADA y el único caso que pide
-    // decisión de una persona —el placeholder sin dueño— no tenía rastro.
-    expect(rendered).toContain("Correlativos reservados (2)");
-    expect(rendered).toContain("docs/plans/036-plan-reservado.md");
-    expect(rendered).toContain(OWNER);
-    expect(rendered).toContain("placeholder legacy ambiguo");
-    expect(rendered).toContain("--confirm-no-producer");
-    expect(rendered).not.toContain("sin pendientes");
-    // Y sigue sin ser trabajo ejecutable.
-    expect(rendered).not.toContain("/w:plan-exec");
   });
 });

@@ -11,9 +11,7 @@ import { runCheckBranch } from "../../src/application/check-branch-service.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { submitFlow } from "../../src/application/flow/submit.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runResume } from "../../src/application/resume-service.js";
 import { runSources } from "../../src/application/sources-service.js";
-import { runStatusCommand } from "../../src/application/status-service.js";
 import { type WorktreeListOutput, runWorktree } from "../../src/application/worktree-service.js";
 import { FLOW_RUN_STATE_FILE } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -371,36 +369,6 @@ describe("F2 — cada plan-exec edita y acredita sólo sus unidades", () => {
     // Una sesión que no se puede resolver no ensancha la lista: se rechaza.
     const nadie = await runWorktree(deps, { action: "list", sessionCode: "999" });
     expect("error" in nadie && nadie.error).toBe("session_unresolved");
-  });
-
-  it("status y resume identifican por separado plan, sesión, checkpoint, rama y path", async () => {
-    const units = await bothIsolated();
-    commitIn(units.uno, "export const base = 1;\nexport const alpha = true;\n", "alpha");
-
-    const board = await runStatusCommand(deps.fs, deps.env, deps.paths, { git: deps.git });
-    const sesion = (folder: string) => board.sessions.active.find((s) => s.folder === folder);
-    expect(sesion(UNO.folder)?.flow?.scope?.plan).toBe(UNO.plan);
-    expect(sesion(DOS.folder)?.flow?.scope?.plan).toBe(DOS.plan);
-    expect(sesion(UNO.folder)?.units.map((u) => u.path)).toEqual([units.uno]);
-    expect(sesion(DOS.folder)?.units.map((u) => u.path)).toEqual([units.dos]);
-    expect(board.orphan_units).toEqual([]);
-
-    for (const [run, unit] of [
-      [UNO, units.uno],
-      [DOS, units.dos],
-    ] as const) {
-      const resumed = await runResume(deps.fs, deps.env, deps.paths, {
-        code: run.code,
-        git: deps.git,
-      });
-      if (resumed.status !== "proposal") throw new Error(`esperaba una propuesta para ${run.code}`);
-      expect(resumed.proposal.file).toBe(run.folder);
-      expect(resumed.proposal.scope?.plan).toBe(run.plan);
-      expect(resumed.proposal.units?.map((u) => u.path)).toEqual([unit]);
-      expect(resumed.proposal.units?.map((u) => u.branch)).toEqual([
-        expectedUnitBranch(hub, run.folder),
-      ]);
-    }
   });
 
   it("la evidencia de rama y commit no puede quedar verde leyendo el checkout principal", async () => {

@@ -135,11 +135,10 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(board.plans).toEqual([]);
     expect(board.sessions.active).toEqual([]);
     expect(board.pipeline).toEqual([]);
-    expect(board.terminal_events).toHaveLength(1);
-    expect(board.terminal_events[0]?.command).toBe("discard");
-    // Y NO se mezcla con `discarded`, que significa lo que una sesión postergó.
+    // El tablero ya no lee HISTORY.md (spec 066, AC-09): el evento terminal vive
+    // en el ledger, no en el tablero.
+    expect(board.terminal_events).toEqual([]);
     expect(board.discarded).toEqual([]);
-    expect(board.counts.terminal_events).toBe(1);
   });
 
   it("2 · rechazar la reversión deja plan, sesiones, árbol e HISTORY sin cambios", async () => {
@@ -194,7 +193,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
     expect(board.plans.map((p) => p.number)).toEqual(["024"]);
     expect(board.pipeline.some((i) => i.command === `/w:plan-exec ${planPath}`)).toBe(true);
-    expect(board.terminal_events[0]?.command).toBe("reset");
+    expect(board.terminal_events).toEqual([]);
   });
 
   it("4 · un efecto compartido bloquea e informa, sin tocar nada", async () => {
@@ -230,7 +229,7 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(existsSync(join(hub, ".workflow", "sessions", quick))).toBe(false);
     const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
     expect(board.sessions.active).toEqual([]);
-    expect(board.terminal_events).toHaveLength(1);
+    expect(board.terminal_events).toEqual([]);
   });
 
   it("las guardas del comando: verbo, objetivo y aprobación son obligatorios", async () => {
@@ -293,11 +292,9 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(rejected.result.error?.message).not.toContain("no existe ningún nodo");
     expect(rejected.result.error?.message).toContain(held);
     expect(rejected.result.error?.message).toContain(owner);
-    // Y entrega la acción sancionada que el tablero ya calcula para ESE slot.
-    const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
-    const slot = board.reservations.find((r) => r.file === held);
-    expect(slot?.next).toBe(`aw session-close --code ${owner}`);
-    expect(rejected.result.error?.details?.action).toContain(slot?.next ?? "");
+    // Y entrega la acción sancionada para ESE slot. El tablero ya no lee claims
+    // (spec 066): la acción la da el propio rechazo.
+    expect(rejected.result.error?.details?.action).toContain(`aw session-close --code ${owner}`);
     // Nada se tocó: sigue siendo una reserva de su dueño.
     expect(existsSync(join(hub, held))).toBe(true);
   });

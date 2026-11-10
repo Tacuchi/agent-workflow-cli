@@ -925,7 +925,10 @@ async function publishSettlement(
  * gives and the same one the closure gave before this row existed.
  */
 async function settlementSnapshot(deps: InternalActionDeps, plan: string): Promise<FlowSettlement> {
-  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, { git: deps.git });
+  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, {
+    git: deps.git,
+    sessions: "legacy",
+  });
   const found = index.plans.find((candidate) => candidate.file === plan);
   // A lineage that does not COMPOSE reports its own refusal as what is owed — an
   // unreadable chain, an overlap — and those pending entries name no note.
@@ -1273,7 +1276,10 @@ export async function planDonePrecondition(
   path: string,
   session: string,
 ): Promise<CapabilityFailure | null> {
-  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, { git: deps.git });
+  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, {
+    git: deps.git,
+    sessions: "legacy",
+  });
   if (index.docs_canon_error !== undefined) {
     return {
       code: "PLAN_EXEC_DONE_DOCS_CANON_INVALID",

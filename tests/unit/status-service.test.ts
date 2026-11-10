@@ -78,21 +78,6 @@ function fullHub(): FakeFs {
 // ── tests ──────────────────────────────────────────────────────────────────
 
 describe("runStatusCommand — full dashboard", () => {
-  it("avisa fila de otra máquina y colisión local con salida de renumerado", async () => {
-    const fs = fullHub();
-    fs.file(
-      "/cwd/.workflow/HISTORY.md",
-      "# Session History\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 001-remota-quick | 2026-01-01 | active | — |\n| 099-retirada-quick | 2026-01-01 | retired | — |\n",
-    );
-    const status = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
-    expect(status.history_remote_rows).toEqual(["001-remota-quick"]);
-    expect(status.history_collisions).toContainEqual({
-      local: "001-spec-refine",
-      registered: "001-remota-quick",
-      action: "aw hub-migrate --renumber",
-    });
-  });
-
   it("una carpeta legacy y su fila normalizada son la misma sesión", async () => {
     const fs = new FakeFs({ lenient: true });
     fs.file("/cwd/.workflow/sessions/session007-triage/SESSION.md", "# SESSION\n");
@@ -103,127 +88,6 @@ describe("runStatusCommand — full dashboard", () => {
     const status = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
     expect(status.history_remote_rows).toEqual([]);
     expect(status.history_collisions).toEqual([]);
-  });
-
-  it("usa la fecha más reciente entre HISTORY y CHECKPOINT y sólo la primera línea del nombre", async () => {
-    const fs = fullHub();
-    fs.file(
-      "/cwd/CLAUDE.md",
-      "<!-- WORKFLOW-HUB-START -->\n## Hub\nNombre\n\nDescripción\n<!-- WORKFLOW-HUB-END -->\n",
-    );
-    fs.file(
-      "/cwd/.workflow/HISTORY.md",
-      "# HISTORY\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 002-plan-exec | 2026-06-22 | cerrada | — |\n",
-    );
-    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
-    expect(out.hub.name).toBe("Nombre");
-    expect(out.last_activity).toBe("2026-06-22");
-    const rendered = statusCommand.renderHuman?.({ ok: true, data: out, exitCode: 0 }, {
-      detail: false,
-    } as never);
-    expect(rendered).toContain("Última actividad: 2026-06-22");
-
-    fs.file(
-      "/cwd/.workflow/HISTORY.md",
-      "# HISTORY\n\n| Sesión | Fecha | Estado | Refs |\n|---|---|---|---|\n| 002-plan-exec | 2026-06-19 | cerrada | — |\n",
-      new Date(2026, 11, 1),
-    );
-    expect((await runStatusCommand(fs, fakeEnv, paths(), { now: NOW })).last_activity).toBe(
-      "2026-06-20",
-    );
-  });
-
-  it("aggregates workspace, specs, plans, sessions, discarded", async () => {
-    const out = await runStatusCommand(fullHub(), fakeEnv, paths(), { now: NOW });
-
-    expect(out.hub).toEqual({
-      name: "mi-workspace",
-      root: "/cwd",
-      path: "/cwd",
-      mode: "configured",
-      initialized: true,
-    });
-
-    // specs
-    expect(out.specs).toHaveLength(2);
-    const foo = out.specs.find((s) => s.number === "003");
-    const bar = out.specs.find((s) => s.number === "004");
-    expect(foo).toMatchObject({
-      slug: "foo",
-      status: "ready-for-plan",
-      refined: true,
-      open_questions: 0,
-      file: "docs/specs/003-spec-foo.md",
-      relative: "la semana pasada",
-    });
-    expect(bar).toMatchObject({
-      slug: "bar",
-      status: "draft",
-      refined: false,
-      open_questions: 2,
-    });
-    expect(bar?.relative).toBe("hoy en la mañana");
-
-    // plans
-    expect(out.plans).toHaveLength(1);
-    expect(out.plans[0]).toMatchObject({
-      number: "007",
-      slug: "foo",
-      tasks_total: 5,
-      tasks_done: 2,
-      progress_pct: 40,
-      relative: "hace 2 días",
-    });
-
-    // sessions
-    expect(out.sessions.active).toHaveLength(1);
-    expect(out.sessions.closed).toHaveLength(1);
-    expect(out.sessions.active[0]).toMatchObject({
-      folder: "001-spec-refine",
-      type: "refine",
-      relative: "hoy en la mañana",
-    });
-    expect(out.sessions.closed[0]).toMatchObject({
-      folder: "002-plan-exec",
-      type: "exec",
-      relative: "ayer en la tarde",
-    });
-
-    // discarded — 1 deferred (BACKLOG) + 1 excluded (CHECKPOINT, loose `(list):` heading)
-    expect(out.discarded).toHaveLength(2);
-    const deferred = out.discarded.find((d) => d.kind === "deferred");
-    const excluded = out.discarded.find((d) => d.kind === "excluded");
-    expect(deferred).toMatchObject({
-      text: "soporte XP: baja prioridad",
-      source: "001-spec-refine",
-    });
-    expect(excluded).toMatchObject({ text: "fase 9: fuera de alcance", source: "002-plan-exec" });
-
-    // counts — `pending` is the additive pipeline counter
-    expect(out.counts).toEqual({
-      specs: 2,
-      specs_refined: 1,
-      // El ledger de retiros arranca vacío y se cuenta aparte de `discarded`:
-      // uno es lo que una sesión postergó, el otro lo que ya no existe.
-      terminal_events: 0,
-      plans: 1,
-      sessions_active: 1,
-      sessions_closed: 1,
-      sessions_paused: 0,
-      sessions_abandoned: 0,
-      discarded: 2,
-      pending: 3,
-    });
-
-    // pipeline: spec 004 is draft, spec 003 has no plan proving it, plan 007 is open.
-    // The closed session and the checkpoint-less active one contribute nothing.
-    expect(out.pipeline.map((p) => [p.kind, p.number])).toEqual([
-      ["spec-unrefined", "004"],
-      ["spec-unplanned", "003"],
-      ["plan-open", "007"],
-    ]);
-    expect(out.pipeline[0]?.command).toBe("/w:spec-refine docs/specs/004-spec-bar.md");
-    expect(out.pipeline[2]?.command).toBe("/w:plan-exec docs/plans/007-plan-foo.md");
   });
 
   // Read-only is an acceptance criterion, not a description: reading the
@@ -258,20 +122,6 @@ describe("runStatusCommand — full dashboard", () => {
     // A legacy mark now reads as the frontmatter-era `ready-for-plan`.
     expect(out.specs.find((s) => s.number === "005")?.status).toBe("ready-for-plan");
     expect(out.specs.find((s) => s.number === "006")?.status).toBe("ready-for-plan");
-  });
-
-  it("session type falls back to the folder suffix when SESSION.md has no ## Type", async () => {
-    const fs = new FakeFs();
-    fs.file(
-      "/cwd/.workflow/sessions/003-otp-plan-exec/SESSION.md",
-      "# SESSION — 003-otp-plan-exec\n\n## Objective\nEjecutar plan\n\n## Success criteria\n- [ ]\n",
-      NOW,
-    );
-    const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
-    expect(out.sessions.active[0]).toMatchObject({
-      folder: "003-otp-plan-exec",
-      type: "exec",
-    });
   });
 
   it("drops legacy NNN-spec-refined.md when the base spec exists", async () => {
@@ -811,7 +661,7 @@ describe("runStatusCommand — edge cases", () => {
 
   it("missing docs/specs and a plan with 0 tasks", async () => {
     const fs = new FakeFs();
-    fs.file("/cwd/.workflow/sessions/.keep", ""); // initialized, no sessions
+    fs.file("/cwd/.workflow/workline.json", '{"workline":1}\n'); // hub marker
     fs.file("/cwd/docs/plans/001-plan-empty.md", "# Plan\n\n## Tasks\n(none yet)\n", NOW);
     const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
     expect(out.hub.initialized).toBe(true);
@@ -958,35 +808,6 @@ describe("status human — cada pendiente dice cuál es su paso siguiente", () =
 });
 
 describe("status human — las sesiones dejan de ser trabajo del usuario", () => {
-  function loose(): FakeFs {
-    const fs = pending();
-    fs.file(
-      "/cwd/.workflow/sessions/013-suelta-quick/SESSION.md",
-      "# SESSION\n\n## Objective\nalgo suelto\n\n## Origin\n- prompt directo\n",
-      NOW,
-    );
-    fs.file(
-      "/cwd/.workflow/sessions/013-suelta-quick/CHECKPOINT.md",
-      "# CHECKPOINT\n\n## Completed\n- algo\n\n## Pending / Next\n- seguir\n",
-      NOW,
-    );
-    return fs;
-  }
-
-  it("el plan es el pendiente y la sesión suelta es un aviso con su cuenta y cómo verla", async () => {
-    const fs = loose();
-    fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n", NOW);
-
-    const text = render(await board(fs));
-    expect(text).toContain("Planes abiertos (1)");
-    expect(text).toContain("Sesiones con trabajo y sin documento (1)");
-    expect(text).toContain("1 sesión(es) con trabajo y sin documento asociado");
-    expect(text).toContain("→ aw status --detail");
-    // La carpeta no se enumera en la vista por defecto; --detail ya las lista.
-    expect(text).not.toContain("013-suelta-quick");
-    expect(render(await board(fs), true)).toContain("013-suelta-quick");
-  });
-
   it("sin ninguna sesión suelta no imprime un aviso vacío", async () => {
     const fs = pending();
     fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n", NOW);

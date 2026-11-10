@@ -5,6 +5,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import { projectRun } from "./flow/run-projection.js";
 import { parseMdSectionBilingual } from "./markdown.js";
+import { readHubBlock } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
 import { buildSessionNarrative } from "./session-narrative.js";
 import { resolveSessionTarget, sessionReadRequest } from "./session-resolver.js";
@@ -88,6 +89,22 @@ export interface ResumeProposal {
    * `status` projects — never a second derivation.
    */
   scope?: FlowRunScope;
+  /**
+   * Uncommitted changes in each source the plan declares, read from git when
+   * the plan is `in-progress` (spec 066, AC-03): what a crash mid-batch left
+   * behind is in the working trees, not in any record of the run.
+   */
+  uncommitted?: SourceChanges[];
+}
+
+/** The working-tree state of one source of a plan being executed. */
+export interface SourceChanges {
+  alias: string;
+  path: string | null;
+  /** `git status` paths, as git spells them; empty when the tree is clean. */
+  changes: string[];
+  /** Why the source could not be inspected, when it could not. */
+  error?: string;
 }
 
 export type ResumeOutcome = (
@@ -140,8 +157,9 @@ export async function runResume(
         : resumePipeline(index);
   const readyToClose = await sessionsReadyToClose(fs, index);
 
+  const withChanges = await attachUncommitted(fs, paths, index, outcome, input.git);
   return {
-    ...outcome,
+    ...withChanges,
     ...(readyToClose.length > 0 ? { ready_to_close: readyToClose } : {}),
     ...(index.sessions.some((session) => session.state === "paused")
       ? {
@@ -434,4 +452,65 @@ function sessionLoadCommand(
           ? run.command
           : `aw session-load --code ${folder} --reopen`;
   return command;
+}
+
+/**
+ * Adds, to every proposal that is an `in-progress` plan, the uncommitted
+ * changes of the sources it declares. Without git the proposal is returned as
+ * it was: the board never invents a clean tree it did not look at.
+ */
+async function attachUncommitted(
+  fs: FileSystemPort,
+  paths: PathsService,
+  index: WorklineIndex,
+  outcome: ResumeOutcome,
+  git: GitPort | undefined,
+): Promise<ResumeOutcome> {
+  if (git === undefined) return outcome;
+  const running = new Map(
+    index.plans.filter((plan) => plan.declared_state === "in-progress").map((p) => [p.file, p]),
+  );
+  if (running.size === 0) return outcome;
+  const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers());
+  const pathOf = (alias: string): string | null =>
+    alias === "hub"
+      ? paths.hubDir()
+      : (block?.fuentes.find((source) => source.alias === alias)?.path ?? null);
+  const enrich = async (proposal: ResumeProposal): Promise<ResumeProposal> => {
+    const plan = running.get(proposal.file);
+    if (plan === undefined) return proposal;
+    const uncommitted: SourceChanges[] = [];
+    for (const alias of plan.pass_sources ?? []) {
+      const path = pathOf(alias);
+      if (path === null) {
+        uncommitted.push({ alias, path, changes: [], error: "la fuente no resuelve a una ruta" });
+        continue;
+      }
+      try {
+        const changes = (await git.localChanges(path)).map((change) => change.path);
+        uncommitted.push({ alias, path, changes });
+      } catch (error) {
+        uncommitted.push({
+          alias,
+          path,
+          changes: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return { ...proposal, uncommitted };
+  };
+  if (outcome.status === "proposal") {
+    return {
+      ...outcome,
+      proposal: await enrich(outcome.proposal),
+      ...(outcome.candidates !== undefined
+        ? { candidates: await Promise.all(outcome.candidates.map(enrich)) }
+        : {}),
+    };
+  }
+  if (outcome.status === "candidates") {
+    return { ...outcome, candidates: await Promise.all(outcome.candidates.map(enrich)) };
+  }
+  return outcome;
 }

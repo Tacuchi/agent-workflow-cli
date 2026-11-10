@@ -21,7 +21,7 @@ function index(fs: MemFs) {
     fs,
     fakeEnv,
     new PathsService(normalizeNamespace("workflow"), "/home", "/cwd"),
-    { now: NOW },
+    { now: NOW, sessions: "legacy" },
   );
 }
 

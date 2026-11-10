@@ -29,7 +29,7 @@ function paths(): PathsService {
 }
 
 function index(fs: MemFs) {
-  return buildWorklineIndex(fs, fakeEnv, paths(), { now: NOW });
+  return buildWorklineIndex(fs, fakeEnv, paths(), { now: NOW, sessions: "legacy" });
 }
 
 // ── spec→plan evidence ───────────────────────────────────────────────────────

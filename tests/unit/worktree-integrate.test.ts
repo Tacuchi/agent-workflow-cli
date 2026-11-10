@@ -247,25 +247,6 @@ describe("integración al cierre y visibilidad de los flujos concurrentes", () =
     expect(existsSync(unit.path)).toBe(true);
   });
 
-  it("aw status lleva la unidad por sesión activa y las huérfanas con su acción", async () => {
-    await ensure("103");
-    await ensure("104");
-    writeFileSync(join(hub, ".workflow", "sessions", "104-dos-plan-exec", ".closed"), "");
-
-    const status = await runStatusCommand(deps.fs, deps.env, deps.paths, { git: deps.git });
-
-    const live = status.sessions.active.find((s) => s.folder === "103-uno-plan-exec");
-    expect(live?.units).toEqual([
-      expect.objectContaining({ alias: "acme", branch: branchOf(hub, "103-uno-plan-exec") }),
-    ]);
-    expect(status.orphan_units).toHaveLength(1);
-    expect(status.orphan_units[0]).toMatchObject({
-      session: "104-dos-plan-exec",
-      reason: "session_closed",
-    });
-    expect(status.orphan_units[0]?.release).toContain("aw worktree reclaim");
-  });
-
   it("sin puerto git, aw status devuelve exactamente la salida de antes", async () => {
     await ensure("103");
 

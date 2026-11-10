@@ -4,14 +4,12 @@ import { locateRun } from "../../src/application/flow/run-state-service.js";
 import { reconcileHistory } from "../../src/application/history-reconcile-service.js";
 import { readHistoryRows } from "../../src/application/history-table.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runResume } from "../../src/application/resume-service.js";
 import { lookupBinding } from "../../src/application/session-binding-service.js";
 import { runSessionClose } from "../../src/application/session-close-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { runSessionLoad } from "../../src/application/session-load-service.js";
 import { runSessionPause } from "../../src/application/session-pause-service.js";
 import { SessionsService } from "../../src/application/sessions-service.js";
-import { runStatusCommand } from "../../src/application/status-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -138,33 +136,6 @@ describe("estados que sólo marca el usuario", () => {
       code: "SESSION_NOT_ACTIVE",
     });
     expect(await fs.exists(`${fs.target}/.paused`)).toBe(false);
-  });
-
-  it("resume ofrece cerrar una sesión con todos sus criterios marcados", async () => {
-    const fs = new MemFs({ lenient: true });
-    const created = await runSessionCreate(fs, paths, {
-      type: "quick",
-      name: "terminada-quick",
-      objetivo: "terminar",
-    });
-    if ("error" in created) throw new Error(created.error);
-    fs.file(
-      created.sessionCreate.session_path,
-      "# SESSION\n\n## Objective\nTerminar\n\n## Origin\n- petición\n\n## Success criteria\n- [x] probado\n",
-    );
-    const result = await runResume(fs, env, paths);
-    expect(result.ready_to_close).toEqual([
-      {
-        session: created.sessionCreate.folder,
-        command: `aw session-close --code ${created.sessionCreate.folder}`,
-      },
-    ]);
-    await runSessionPause(fs, paths, created.sessionCreate.folder);
-    const paused = await runStatusCommand(fs, env, paths);
-    expect(paused.counts).toMatchObject({ sessions_active: 0, sessions_paused: 1 });
-    const proposed = await runResume(fs, env, paths);
-    expect(proposed.paused_sessions).toEqual([created.sessionCreate.folder]);
-    expect(proposed.ready_to_close).toBeUndefined();
   });
 
   it("pausada no es candidata y vuelve a activa; abandonada exige reapertura expresa", async () => {

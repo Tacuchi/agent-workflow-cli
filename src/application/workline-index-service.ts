@@ -34,9 +34,19 @@ import {
 import { readHistoryRows } from "./history-table.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
 import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
-import { BLOCK_READ_FILES, parseHubBlock } from "./parsers/hub-block.js";
+import {
+  BLOCK_READ_FILES,
+  parseHubBlock,
+  readHubBlock,
+  requireSourcePath,
+} from "./parsers/hub-block.js";
 import { type ParsedPhases, parsePhases } from "./parsers/phases.js";
-import { type ParsedPlanStatus, parsePlanStatus } from "./parsers/plan-status.js";
+import {
+  type ParsedPlanStatus,
+  type PlanStateValue,
+  isPlanStateValue,
+  parsePlanStatus,
+} from "./parsers/plan-status.js";
 import { functionalSpecDigest, unclosedSpecFence } from "./parsers/spec-functional.js";
 import {
   type SpecEvidence,
@@ -169,6 +179,16 @@ export interface IndexedPlan {
   phases_validated: number;
   /** the plan's third axis: closure, derived from the declaration AND the two counters */
   plan_state: PlanState;
+  /**
+   * The single state field the plan declares (spec 066): `draft` | `ready` |
+   * `in-progress` | `done` | `abandoned`. `null` when absent, unreadable or
+   * written in the session model's vocabulary (see `unmigrated`).
+   */
+  declared_state: PlanStateValue | null;
+  /** `true` when the state line is a session-model value: the hub must be migrated. */
+  unmigrated: boolean;
+  /** The `> Próximo paso:` line, the re-entry point the plan itself declares. */
+  next_step: { task: string | null; text: string } | null;
   /** Closure assurance, kept independent from the plan's done/open state. */
   assurance: AssuranceStatus | null;
   /** phases whose exact mark is `> Estado: bloqueada` */
@@ -453,6 +473,8 @@ export interface PipelineItem {
 
 export interface WorklineIndex {
   hub: IndexedHub;
+  /** `documents`: read from `docs/`, git and the pass ledger only; `sessions`: legacy engine. */
+  model: "documents" | "sessions";
   /** Newest declared HISTORY date or CHECKPOINT modification day; no stored block timestamp. */
   last_activity: string | null;
   specs: IndexedSpec[];
@@ -544,6 +566,13 @@ export interface WorklineIndexInput {
    * care about them keeps its output byte for byte.
    */
   git?: GitPort;
+  /**
+   * `legacy` reads the session model too (sessions, HISTORY, claims, runs,
+   * retirement journals and session-owned units). Only the flow engine of the
+   * session model still asks for it; `aw status` and `aw resume` never do, so
+   * the board derives from `docs/`, git and the pass ledger alone (spec 066).
+   */
+  sessions?: "legacy";
 }
 
 /**
@@ -569,23 +598,22 @@ export async function buildWorklineIndex(
   // which. Their paths are then excluded from the corpus rather than filtered out
   // of it afterwards, so nothing downstream — pipeline, resume, the TUI — can see
   // a held number as executable work.
-  const slotScan = await scanSlots(fs, paths);
+  const legacy = input.sessions === "legacy";
+  const slotScan: Awaited<ReturnType<typeof scanSlots>> = legacy
+    ? await scanSlots(fs, paths)
+    : { slots: [] };
   const heldPaths = new Set(slotScan.slots.map((slot) => slot.path));
+  // In the documents model `docs/` is the only record: an unreadable folder is
+  // never reported as an empty board.
+  if (!legacy && docs !== null) {
+    for (const dir of [docs.spec, docs.plan]) await assertListable(fs, join(cwd, dir));
+  }
   const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now, heldPaths);
   const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now, heldPaths);
-  const sessions = await readSessions(fs, env, paths, now, docs);
-  const lastActivity = await hubLastActivity(fs, paths, sessions);
-  const isolation = await readIsolation(fs, env, paths, input.git);
-  for (const session of sessions) {
-    session.units = isolation.bySession.get(session.folder) ?? [];
-  }
-  // One pass over the live runs for every plan, rather than one scan per plan:
-  // the answer is the same map either way, and this is the reading `aw settle`
-  // refuses on, so the board and the command cannot disagree about who holds what.
-  const runs = await readHoldingRuns(fs, paths);
-  for (const plan of plans) {
-    plan.holding_run = holdingRunOf(runs, plan.file);
-  }
+  const model = legacy
+    ? await readSessionModel(fs, env, paths, { git: input.git, now, docs, plans, cwd })
+    : await readDocumentsModel(fs, paths, { git: input.git, specs, plans });
+  const { sessions, isolation } = model;
   // One read of the pass ledger for the whole board, like the runs above: every
   // document's production axis derives from the same facts, so a second read
   // here would be a second chance for two rows to disagree.
@@ -594,6 +622,99 @@ export async function buildWorklineIndex(
   // same reason: two reads are two chances for two rows to disagree.
   const cuts = await readCutIntents(fs, paths);
   const livePlans = new Set(plans.map((plan) => formatNodeId({ kind: "plan", key: plan.number })));
+  attachProduction(specs, plans, passes);
+  return {
+    hub,
+    model: legacy ? "sessions" : "documents",
+    last_activity: model.lastActivity,
+    specs,
+    plans,
+    sessions,
+    discarded: model.discarded,
+    pipeline: derivePipeline(specs, plans, { cuts, passes, live: livePlans }),
+    loose_sessions: looseSessions(sessions),
+    orphan_units: isolation.orphans,
+    ...(isolation.unreadable.length > 0 ? { unreadable_sources: isolation.unreadable } : {}),
+    ...(isolation.error !== undefined ? { isolation_error: isolation.error } : {}),
+    pending_retirements: model.pendingRetirements,
+    reservations: slotScan.slots.map((slot) => ({
+      file: slot.path,
+      kind: slot.kind,
+      correlative: slot.correlative,
+      owner: slot.owner,
+      ownerActive: slot.ownerActive,
+      intact: slot.intact,
+      revoked: slot.revoked,
+      next: sanctionedActionFor(slot),
+    })),
+    ...(slotScan.error !== undefined ? { reservations_error: slotScan.error } : {}),
+    ...(canon.ok ? {} : { docs_canon_error: canon.error }),
+  };
+}
+
+interface ModelReading {
+  sessions: IndexedSession[];
+  lastActivity: string | null;
+  isolation: Awaited<ReturnType<typeof readIsolation>>;
+  discarded: IndexedDiscarded[];
+  pendingRetirements: PendingRetirement[];
+}
+
+/** The session model's records: only the legacy flow engine still reads them. */
+async function readSessionModel(
+  fs: FileSystemPort,
+  env: EnvPort,
+  paths: PathsService,
+  input: {
+    git: GitPort | undefined;
+    now: Date;
+    docs: CoreDocsCanon | null;
+    plans: IndexedPlan[];
+    cwd: string;
+  },
+): Promise<ModelReading> {
+  const sessions = await readSessions(fs, env, paths, input.now, input.docs);
+  const isolation = await readIsolation(fs, env, paths, input.git);
+  for (const session of sessions) {
+    session.units = isolation.bySession.get(session.folder) ?? [];
+  }
+  // One pass over the live runs for every plan, rather than one scan per plan:
+  // the answer is the same map either way, and this is the reading `aw settle`
+  // refuses on, so the board and the command cannot disagree about who holds what.
+  const runs = await readHoldingRuns(fs, paths);
+  for (const plan of input.plans) {
+    plan.holding_run = holdingRunOf(runs, plan.file);
+  }
+  return {
+    sessions,
+    lastActivity: await hubLastActivity(fs, paths, sessions),
+    isolation,
+    discarded: await readDiscarded(fs, sessions, input.cwd, input.now),
+    pendingRetirements: await readPendingRetirements(fs, paths),
+  };
+}
+
+/** The documents model: `docs/`, git and the pass ledger, nothing under the sessions. */
+async function readDocumentsModel(
+  fs: FileSystemPort,
+  paths: PathsService,
+  input: { git: GitPort | undefined; specs: IndexedSpec[]; plans: IndexedPlan[] },
+): Promise<ModelReading> {
+  return {
+    sessions: [],
+    lastActivity: documentsLastActivity(input.specs, input.plans),
+    isolation: await readSourceReachability(fs, paths, input.git),
+    discarded: [],
+    pendingRetirements: [],
+  };
+}
+
+/** Every document's production axis, derived from the same pass facts. */
+function attachProduction(
+  specs: IndexedSpec[],
+  plans: IndexedPlan[],
+  passes: readonly DerivedPass[],
+): void {
   for (const plan of plans) {
     plan.production = productionStandingOf(passes, { kind: "plan", key: plan.number });
     plan.passes = standingOfPlanPasses(plan.passes ?? [], passes, {
@@ -608,33 +729,17 @@ export async function buildWorklineIndex(
         .map((plan) => plan.production),
     );
   }
-  const discarded = await readDiscarded(fs, sessions, cwd, now);
-  return {
-    hub,
-    last_activity: lastActivity,
-    specs,
-    plans,
-    sessions,
-    discarded,
-    pipeline: derivePipeline(specs, plans, { cuts, passes, live: livePlans }),
-    loose_sessions: looseSessions(sessions),
-    orphan_units: isolation.orphans,
-    ...(isolation.unreadable.length > 0 ? { unreadable_sources: isolation.unreadable } : {}),
-    ...(isolation.error !== undefined ? { isolation_error: isolation.error } : {}),
-    pending_retirements: await readPendingRetirements(fs, paths),
-    reservations: slotScan.slots.map((slot) => ({
-      file: slot.path,
-      kind: slot.kind,
-      correlative: slot.correlative,
-      owner: slot.owner,
-      ownerActive: slot.ownerActive,
-      intact: slot.intact,
-      revoked: slot.revoked,
-      next: sanctionedActionFor(slot),
-    })),
-    ...(slotScan.error !== undefined ? { reservations_error: slotScan.error } : {}),
-    ...(canon.ok ? {} : { docs_canon_error: canon.error }),
-  };
+}
+
+/** Newest date any spec or plan of `docs/` carries: the documents are the only record. */
+function documentsLastActivity(
+  specs: readonly IndexedSpec[],
+  plans: readonly IndexedPlan[],
+): string | null {
+  const dates = [...specs, ...plans]
+    .map((doc) => doc.date)
+    .filter((date): date is string => typeof date === "string" && /^\d{4}-\d{2}-\d{2}/.test(date));
+  return dates.sort().at(-1)?.slice(0, 10) ?? null;
 }
 
 async function hubLastActivity(
@@ -736,6 +841,40 @@ async function readIsolation(
     bySession.set(unit.session, current);
   }
   return { bySession, orphans: listed.orphans, unreadable: listed.unreadable };
+}
+
+/**
+ * The documents model's reading of the sources: which declared source does not
+ * resolve to a path on this host. Units are not listed here — in this model they
+ * belong to a plan's batch, not to a session — but a missing source is never
+ * silently dropped from the board.
+ */
+async function readSourceReachability(
+  fs: FileSystemPort,
+  paths: PathsService,
+  git: GitPort | undefined,
+): Promise<{
+  bySession: Map<string, SessionUnit[]>;
+  orphans: OrphanUnit[];
+  unreadable: WorktreeListOutput["unreadable"];
+  error?: string;
+}> {
+  const empty = { bySession: new Map<string, SessionUnit[]>(), orphans: [] as OrphanUnit[] };
+  if (git === undefined) return { ...empty, unreadable: [] };
+  const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers());
+  const unreadable: WorktreeListOutput["unreadable"] = [];
+  for (const source of block?.fuentes ?? []) {
+    try {
+      await requireSourcePath(fs, source);
+    } catch (err) {
+      unreadable.push({
+        alias: source.alias,
+        error: (err as Error).message,
+        code: "SOURCE_PATH_MISSING",
+      });
+    }
+  }
+  return { ...empty, unreadable };
 }
 
 // ── pipeline ─────────────────────────────────────────────────────────────────
@@ -962,7 +1101,8 @@ function planSummary(plan: IndexedPlan): string {
   const phases =
     plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
   const blocked = plan.phases_blocked > 0 ? `, ${plan.phases_blocked} bloqueada(s)` : "";
-  return `plan ${plan.number} — tareas ${plan.tasks_done}/${plan.tasks_total}${phases}${blocked}`;
+  const state = plan.declared_state !== null ? `${plan.declared_state} · ` : "";
+  return `plan ${plan.number} — ${state}tareas ${plan.tasks_done}/${plan.tasks_total}${phases}${blocked}`;
 }
 
 function pendingPasses(plan: IndexedPlan): DeclaredPlanPass[] {
@@ -1027,9 +1167,10 @@ export function planPresentation(plan: IndexedPlan): {
 } {
   const phases =
     plan.phases_total > 0 ? ` · fases ${plan.phases_validated}/${plan.phases_total}` : "";
+  const state = plan.declared_state !== null ? `estado ${plan.declared_state} · ` : "";
   const base = {
     objective: `plan ${plan.number}${plan.slug ? ` — ${plan.slug}` : ""}`,
-    progress: `tareas ${plan.tasks_done}/${plan.tasks_total}${phases}`,
+    progress: `${state}tareas ${plan.tasks_done}/${plan.tasks_total}${phases}`,
   };
   // A closed plan is documentary history.  In particular, a legacy plan with
   // no baseline seal is not retroactively made owing or executable merely
@@ -1290,6 +1431,11 @@ function normalPlanNext(plan: IndexedPlan): Pick<PipelineItemDetail, "next" | "o
   if (plan.final_validation_pending) {
     return { next: "todo ejecutado: falta la validación final y el cierre", obligation: false };
   }
+  // The re-entry point the plan declares wins: it is rewritten at every batch
+  // close, so it is the freshest record there is (spec 066, AC-03).
+  if (plan.next_step !== null) {
+    return { next: `próximo paso ${plan.next_step.text}`, obligation: false };
+  }
   return { next: "continuar por la primera fase no validada", obligation: false };
 }
 
@@ -1414,9 +1560,11 @@ async function readHub(fs: FileSystemPort, paths: PathsService, cwd: string): Pr
       // ignore; fall back to basename
     }
   }
+  // The hub marker, never the session folder: a hub of the documents model has
+  // no `.workflow/sessions/` at all (spec 066).
   let materialized = false;
   try {
-    materialized = (await fs.stat(paths.cwdSessionsDir())).type === "dir";
+    materialized = await fs.exists(paths.cwdMarkerFile());
   } catch {
     // A bare namespace directory is intentionally not a hub marker.
   }
@@ -1654,6 +1802,13 @@ async function readPlans(
         phases_total: p.total,
         phases_validated: p.validated,
         plan_state: planState,
+        declared_state:
+          status.unmigrated === null && isPlanStateValue(status.declared) ? status.declared : null,
+        unmigrated: status.unmigrated !== null,
+        next_step:
+          status.next_step === null
+            ? null
+            : { task: status.next_step.task, text: status.next_step.text },
         assurance: status.assurance,
         phases_blocked: p.blocked,
         blocked_phases: p.items
@@ -2002,6 +2157,18 @@ interface DocFile {
   path: string;
   number: string;
   slug: string;
+}
+
+/** Throws when the folder exists and cannot be listed. */
+async function assertListable(fs: FileSystemPort, dir: string): Promise<void> {
+  if (!(await safeExists(fs, dir))) return;
+  try {
+    await fs.list(dir);
+  } catch (error) {
+    throw new Error(
+      `no se pudo leer ${dir}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 async function listMarkdown(fs: FileSystemPort, dir: string, re: RegExp): Promise<DocFile[]> {

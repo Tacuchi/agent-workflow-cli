@@ -433,7 +433,10 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
       }),
     );
 
-    const index = await buildWorklineIndex(fs, deps.env, paths, { git: deps.git });
+    const index = await buildWorklineIndex(fs, deps.env, paths, {
+      git: deps.git,
+      sessions: "legacy",
+    });
     expect(index.pending_retirements).toEqual([
       {
         digest: proposal.digest,
@@ -1114,7 +1117,7 @@ describe("coordinador de retiro — dos estados estables y una sola huella", () 
     // tablero lo contaba como una spec publicada. Ninguna superficie lo resolvía.
     expect(existsSync(join(hub, held))).toBe(false);
     expect(outcome.result.reservations_released).toEqual([held]);
-    const index = await buildWorklineIndex(fs, deps.env, paths, {});
+    const index = await buildWorklineIndex(fs, deps.env, paths, { sessions: "legacy" });
     expect(index.specs.map((s) => s.file)).not.toContain(held);
     expect(index.reservations).toEqual([]);
   });

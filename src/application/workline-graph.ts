@@ -158,6 +158,7 @@ export async function buildWorklineGraph(
 ): Promise<BuiltWorklineGraph> {
   const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths, {
     ...(deps.git !== undefined ? { git: deps.git } : {}),
+    sessions: "legacy",
   });
   const graph = new WorklineGraph(index.reservations, canon);
   const root = deps.paths.hubDir();

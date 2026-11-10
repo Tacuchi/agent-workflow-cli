@@ -100,6 +100,15 @@ function renderProposal(proposal: ResumeProposal, detail: boolean): string {
     `  Siguiente  ${proposal.next}`,
     `  Comando    ${command}`,
   ];
+  for (const source of proposal.uncommitted ?? []) {
+    const state =
+      source.error !== undefined
+        ? `no verificable: ${source.error}`
+        : source.changes.length === 0
+          ? "sin cambios sin commit"
+          : `${source.changes.length} cambio(s) sin commit: ${source.changes.join(", ")}`;
+    lines.push(`  Fuente     ${source.alias} · ${state}`);
+  }
   if (detail) {
     if (proposal.postponed !== undefined) {
       lines.push(`  Postergado ${proposal.postponed.reason}`);

@@ -65,26 +65,6 @@ describe("aw status por defecto — sólo lo pendiente, en humano y en JSON", ()
     expect(human(await status(fs))).toContain("— sin pendientes");
   });
 
-  it("los avisos son los mismos en humano y en JSON, cada uno con kind, message y next", async () => {
-    const fs = largeHub();
-    fs.file(
-      "/cwd/.workflow/sessions/200-apartada-quick/SESSION.md",
-      "# SESSION — apartada\n\n## Objective\nEsperar\n\n## Type\nquick\n",
-      new Date(2026, 0, 10, 9, 0, 0),
-    );
-    fs.file("/cwd/.workflow/sessions/200-apartada-quick/.paused", "", new Date(2026, 0, 10));
-    const result = await status(fs);
-    const body = JSON.parse(json(result));
-    expect(body.notices).toEqual(statusNotices(await full(fs)));
-    expect(body.notices.length).toBeGreaterThan(0);
-    const text = human(result);
-    for (const notice of body.notices) {
-      expect(Object.keys(notice).sort()).toEqual(["kind", "message", "next"]);
-      expect(text).toContain(notice.message);
-      expect(text).toContain(`→ ${notice.next}`);
-    }
-  });
-
   it("sumar 100 planes cerrados no cambia los bytes de la vista humana ni el tamaño del JSON", async () => {
     const fs = largeHub();
     const before = await status(fs);
