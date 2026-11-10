@@ -24,8 +24,10 @@ import { RuntimeConfigService } from "../runtime/config-service.js";
 import {
   HubResolutionError,
   hubMigrationRequired,
+  hubSessionsMigrationRequired,
   registerResolvedHub,
   resolveHubDirectory,
+  sessionModelLeftovers,
 } from "../runtime/hub-resolution.js";
 import {
   DEFAULT_NAMESPACE,
@@ -251,6 +253,8 @@ async function resolveWorklineDirectory(
     if (directory !== null && !exemptFromHubMigration(parsed)) {
       const legacy = await legacyBlockFiles(fs, directory.root);
       if (legacy.length > 0) throw hubMigrationRequired(directory.root, legacy);
+      const leftovers = await sessionModelLeftovers(fs, directory.root, directory.namespace);
+      if (leftovers.length > 0) throw hubSessionsMigrationRequired(directory.root, leftovers);
     }
     return directory;
   } catch (err) {

@@ -100,7 +100,7 @@ beforeEach(async () => {
   await mkdir(home);
   await mkdir(source);
   await run("git", ["init", "-q", "-b", "main", source]);
-  await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
+  await mkdir(join(hub, ".workflow"), { recursive: true });
   await writeFile(join(hub, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
   await writeFile(join(hub, "CLAUDE.md"), legacyBlock("workflow"));
   await writeFile(join(hub, "AGENTS.md"), legacyBlock("workflow"));

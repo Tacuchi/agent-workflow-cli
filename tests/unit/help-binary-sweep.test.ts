@@ -71,7 +71,7 @@ beforeAll(async () => {
   env = { ...process.env, HOME: join(root, "home"), USERPROFILE: join(root, "home") };
   await mkdir(join(root, "home"), { recursive: true });
   await mkdir(bare, { recursive: true });
-  await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
+  await mkdir(join(hub, ".workflow"), { recursive: true });
   await writeFile(
     join(hub, ".workflow", "workline.json"),
     worklineMarkerContent("workflow"),

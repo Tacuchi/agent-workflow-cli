@@ -28,8 +28,9 @@ import type { ParsedArgs } from "../parser.js";
 import type { CliCommand, CommandFlags } from "../registry.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
+import { type SessionMigrationOutput, sessionsMigrationVerb } from "./hub-migrate-sessions.js";
 
-const FLAGS: CommandFlags = { known: ["apply", "keep"] };
+const FLAGS: CommandFlags = { known: ["apply", "keep", "documents", "commit", "approval"] };
 const KEEP_CHOICES: readonly KeepChoice[] = [BLOCK_FILE, LEGACY_BLOCK_FILE];
 
 export interface MigratePreviewOutput extends HubMigrationPreview {
@@ -40,7 +41,7 @@ export interface MigrateApplyOutput extends HubMigrationApplied {
   action: "apply";
 }
 
-export type HubMigrateOutput = MigratePreviewOutput | MigrateApplyOutput;
+export type HubMigrateOutput = MigratePreviewOutput | MigrateApplyOutput | SessionMigrationOutput;
 
 export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
   name: "hub-migrate",
@@ -51,6 +52,18 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
     flags: {
       apply: {
         effect: "Write the migration under the hub lock; without it nothing is written.",
+      },
+      documents: {
+        effect:
+          "Bring a 30.x hub to the documents model of 31.0.0: preview each plan's state mapping, the open runs and the legacy records to delete; nothing is written without the answers.",
+      },
+      commit: {
+        effect: "With --documents: make the single migration commit its --apply proposed.",
+      },
+      approval: {
+        value: "<digest>",
+        effect:
+          "With --documents --apply: the preview's digest; with --commit: the commit's digest.",
       },
       keep: {
         value: "<AGENTS.md|CLAUDE.md>",
@@ -66,6 +79,7 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
   },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<HubMigrateOutput>> {
+    if (args.flags.has("--documents")) return sessionsMigrationVerb(args, ctx);
     const keep = args.values.get("keep");
     const keepGiven = keep !== undefined || args.flags.has("--keep");
     if (keepGiven && !KEEP_CHOICES.includes(keep as KeepChoice)) {
@@ -102,10 +116,14 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
   renderHuman(result, context): string {
     if (!result.ok || result.data === undefined) return "";
     const data = result.data;
+    if (data.action.startsWith("sessions-")) return `${JSON.stringify(data, null, 2)}\n`;
+    const legacy = data as MigratePreviewOutput | MigrateApplyOutput;
     const lines =
-      data.action === "apply" ? [renderMigrationApplied(data)] : [renderMigrationPreview(data)];
-    if (context.detail && data.action === "preview") {
-      lines.push("", `Serie legacy: ${data.legacy.join(", ") || "(ninguna)"}`);
+      legacy.action === "apply"
+        ? [renderMigrationApplied(legacy)]
+        : [renderMigrationPreview(legacy as MigratePreviewOutput)];
+    if (context.detail && legacy.action === "preview") {
+      lines.push("", `Serie legacy: ${legacy.legacy.join(", ") || "(ninguna)"}`);
     }
     // The writer emits this verbatim, so the trailing newline belongs here.
     return `${lines.join("\n").trimEnd()}\n`;

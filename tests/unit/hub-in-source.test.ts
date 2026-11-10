@@ -29,7 +29,7 @@ it("persist apply desde el checkout resuelve el único hub incluso con marcador 
   for (const dir of [home, hub, source]) mkdirSync(dir);
   mkdirSync(join(home, ".workflow"));
   writeFileSync(join(home, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
-  mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
+  mkdirSync(join(hub, ".workflow"), { recursive: true });
   writeFileSync(join(hub, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
   writeFileSync(
     join(hub, "AGENTS.md"),
@@ -150,7 +150,7 @@ describe("plan 088 F5 · la guarda de materialización reclama por contención",
       return path;
     };
     const hubDeclaring = (path: string, alias: string, source: string) => {
-      mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
+      mkdirSync(join(path, ".workflow"), { recursive: true });
       writeFileSync(
         join(path, ".workflow", "workline.json"),
         '{"workline":1,"namespace":"workflow"}',

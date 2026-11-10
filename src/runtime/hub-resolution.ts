@@ -39,6 +39,39 @@ export function hubMigrationRequired(root: string, files: readonly string[]): Hu
   );
 }
 
+/** The command that turns a session-model hub into one of the documents model. */
+export const HUB_SESSIONS_MIGRATE_ACTION = "aw hub-migrate --documents";
+
+/** What a hub still holds of the session model, as hub-relative paths that exist. */
+export async function sessionModelLeftovers(
+  fs: FileSystemPort,
+  root: string,
+  namespace: string,
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const rel of [
+    `.${namespace}/sessions`,
+    `.${namespace}/HISTORY.md`,
+    `.${namespace}/claims.jsonl`,
+  ]) {
+    if (await fs.exists(join(root, rel))) out.push(rel);
+  }
+  return out;
+}
+
+/** 31.0.0 refuses a hub of the session model until it is migrated (spec 066, AC-19). */
+export function hubSessionsMigrationRequired(
+  root: string,
+  leftovers: readonly string[],
+): HubResolutionError {
+  return new HubResolutionError(
+    "HUB_MIGRATION_REQUIRED",
+    `El hub ${root} sigue en el modelo de sesiones (${leftovers.join(", ")}); Workline 31.0.0 no lo opera hasta migrarlo: ejecutá ${HUB_SESSIONS_MIGRATE_ACTION} en el hub`,
+    [],
+    HUB_SESSIONS_MIGRATE_ACTION,
+  );
+}
+
 function contains(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
