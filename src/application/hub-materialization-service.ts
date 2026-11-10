@@ -189,7 +189,10 @@ export async function hasCanonicalSessionsMarker(
   fs: FileSystemPort,
   paths: PathsService,
 ): Promise<boolean> {
+  // The documents model recognizes a hub by its marker; an old hub of the
+  // session model still by its `sessions/` folder (spec 066).
   try {
+    if (await fs.exists(paths.cwdMarkerFile())) return true;
     return (await fs.stat(paths.cwdSessionsDir())).type === "dir";
   } catch {
     return false;
@@ -227,7 +230,7 @@ export async function ensureWorklineMaterialized(
       materialized: false,
       effects: [
         { kind: "marker", path: paths.cwdMarkerFile(), status: adopted },
-        { kind: "sessions", path: paths.cwdSessionsDir(), status: "existing" },
+        ...(await legacySessionsEffect(fs, paths)),
       ],
     };
   }
@@ -250,7 +253,7 @@ export async function ensureWorklineMaterialized(
         materialized: false,
         effects: [
           { kind: "marker", path: paths.cwdMarkerFile(), status: adopted },
-          { kind: "sessions", path: paths.cwdSessionsDir(), status: "existing" },
+          ...(await legacySessionsEffect(fs, paths)),
         ],
       };
     }
@@ -285,10 +288,10 @@ export async function ensureWorklineMaterialized(
     // `acquireLock` created the parent `.<ns>/` if necessary.  The mark goes
     // first and `sessions/` last, so a reader either sees an implicit root or a
     // directory already recognizable as Workline's own.
+    // The marker is the whole materialization: the documents model writes no
+    // `sessions/` folder (spec 066, AC-01).
     await fs.writeText(paths.cwdMarkerFile(), worklineMarkerContent(paths.namespace));
     effects.push({ kind: "marker", path: paths.cwdMarkerFile(), status: "created" });
-    await fs.mkdirp(paths.cwdSessionsDir());
-    effects.push({ kind: "sessions", path: paths.cwdSessionsDir(), status: "created" });
     return { ...base, materialized: true, effects };
   } finally {
     await lock.release();
@@ -318,7 +321,7 @@ export async function previewWorklineMaterialization(
           : await gitignoreEffectStatus(fs, root, runtimeGitignoreEntries(paths.namespace)),
       },
       { kind: "marker", path: paths.cwdMarkerFile(), status: marked ? "existing" : "created" },
-      { kind: "sessions", path: paths.cwdSessionsDir(), status: sessions ? "existing" : "created" },
+      ...(await legacySessionsEffect(fs, paths)),
     ],
   };
 }
@@ -347,6 +350,19 @@ export async function reconcileRuntimeGitignore(
  * Writing it is the whole migration: there is no command to run and no state to
  * convert, because the mark says nothing the directory did not already mean.
  */
+/** The `sessions/` folder of an old hub, reported only when it is really there. */
+async function legacySessionsEffect(
+  fs: FileSystemPort,
+  paths: PathsService,
+): Promise<MaterializationEffect[]> {
+  try {
+    if ((await fs.stat(paths.cwdSessionsDir())).type !== "dir") return [];
+  } catch {
+    return [];
+  }
+  return [{ kind: "sessions", path: paths.cwdSessionsDir(), status: "existing" }];
+}
+
 async function adoptMarker(
   fs: FileSystemPort,
   paths: PathsService,

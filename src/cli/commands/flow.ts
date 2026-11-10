@@ -46,6 +46,7 @@ import { type ParsedArgs, flagValue, sessionCodeFlag } from "../parser.js";
 import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { failSemantic, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
+import { type DocumentVerbResult, documentVerb, renderDocumentHuman } from "./flow-documents.js";
 
 /**
  * The deterministic direction engine, as a public command.
@@ -73,6 +74,7 @@ import type { CliContext } from "../types.js";
  * moved when nothing did.
  */
 type FlowResult =
+  | DocumentVerbResult
   | FlowDirective
   | CheckoutProofReceipt
   | AnnulPreview
@@ -219,6 +221,8 @@ export const flowCommand: CliCommand<FlowResult> = {
   flags: {
     known: ["code", "session", "flow", "host"],
     actions: {
+      read: { known: ["doc"] },
+      save: { known: ["doc", "slug", "read-digest", "approval"] },
       advance: { known: ["adopt"] },
       submit: { known: ["approval", "check"] },
       prove: { known: ["source", "artifact"] },
@@ -252,6 +256,38 @@ export const flowCommand: CliCommand<FlowResult> = {
       "Order of a walk: advance returns a directive; answer its boundary with submit (JSON on stdin); for evidence `workline.source-bounded`, run the sealed invocation, then prove, then submit. Every directive carries state_digest, the seal an answer quotes back as input_digest.",
     ],
     actions: {
+      read: {
+        purpose:
+          "Read where a document flow stands from the document alone, with the digest this instance read. Creates no session and writes nothing.",
+        flags: {
+          doc: {
+            value: "<path>",
+            effect: "Hub-relative spec or plan the flow reads; spec-new takes none.",
+          },
+        },
+        output: "{flow, doc, read_digest, state, next, destination}.",
+        notes: [
+          "--flow is spec-new, spec-refine, plan-new or plan-refine. The read_digest lives in the conversation: quote it back on save.",
+        ],
+      },
+      save: {
+        purpose:
+          "Save a document flow's result from stdin: without --approval it returns the sealed preview and its approval digest; with that digest it writes only the flow's document.",
+        flags: {
+          doc: { value: "<path>", effect: "The document read; plan-new reads its spec." },
+          slug: { value: "<slug>", effect: "Slug of the new document (spec-new, plan-new)." },
+          "read-digest": {
+            value: "<digest>",
+            effect: "The read_digest 'aw flow read' returned; a changed document is refused.",
+          },
+          approval: { value: "<digest>", effect: "The approval digest the preview returned." },
+        },
+        output:
+          "Preview {status: preview, flow, target, approval, content_digest, state}; written {status: written, flow, path, digest, state}.",
+        notes: [
+          "The CLI seals the state: spec-new draft, spec-refine ready-for-plan, plan-new and plan-refine ready (draft while Open questions remain). New documents take the next correlative of docs/ by exclusive creation. A document changed since its read is refused with DOC_CHANGED_SINCE_READ and nothing is written. A refused answer costs nothing.",
+        ],
+      },
       start: {
         purpose:
           "Open a run in one call: create or resume its session, seed its criteria, adopt the run and return the read-set and the first directive.",
@@ -378,6 +414,9 @@ export const flowCommand: CliCommand<FlowResult> = {
   },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<FlowResult>> {
+    // The stateless document flows: no session, no run file, no attempts.
+    const head = args.rest[0];
+    if (head === "read" || head === "save") return documentVerb(head, args, ctx);
     const parsed = readFlowArgs(args, ctx);
     if (!parsed.ok) return parsed.failure;
     const { verb, flow, session } = parsed;
@@ -464,11 +503,13 @@ export const flowCommand: CliCommand<FlowResult> = {
     if ("reinfer_batch" in data)
       return `Lote ${data.batch}: ${data.old_digest} → ${data.new_digest}\n${data.diff}\nDigest de aprobación: ${data.approval_digest}\n${data.next}\n`;
     if ("batches" in data) return `${renderAnnulHuman(data)}\n`;
+    const document = renderDocumentHuman(data);
+    if (document !== null) return document;
     if ("read_set" in data) {
       const read = data.read_set.filter((entry) => !entry.loaded).map((entry) => entry.path);
       return `${data.session.resumed ? "sesión retomada" : "sesión creada"}: ${data.session.folder}\nleé antes de contestar: ${read.join(", ")}\n${renderDirectiveHuman(data.directive, context.detail)}\n`;
     }
-    return `${renderDirectiveHuman(data, context.detail)}\n`;
+    return `${renderDirectiveHuman(data as FlowDirective, context.detail)}\n`;
   },
 };
 

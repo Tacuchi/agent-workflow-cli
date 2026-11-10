@@ -27,7 +27,6 @@ describe("Workline implicit materialization", () => {
     expect(preview.effects).toEqual([
       { kind: "gitignore", path: "/cwd/.gitignore", status: "skipped" },
       { kind: "marker", path: "/cwd/.workflow/workline.json", status: "created" },
-      { kind: "sessions", path: "/cwd/.workflow/sessions", status: "created" },
     ]);
     expect(fs.writes).toEqual(new Map());
     expect(await fs.exists("/cwd/.workflow")).toBe(false);
@@ -43,10 +42,9 @@ describe("Workline implicit materialization", () => {
     expect(result.effects).toEqual([
       { kind: "gitignore", path: "/repo/.gitignore", status: "created" },
       { kind: "marker", path: "/repo/.workflow/workline.json", status: "created" },
-      { kind: "sessions", path: "/repo/.workflow/sessions", status: "created" },
     ]);
     await expect(fs.readText("/repo/.gitignore")).resolves.toContain(".workflow/sessions/");
-    expect(await fs.exists("/repo/.workflow/sessions")).toBe(true);
+    expect(await fs.exists("/repo/.workflow/workline.json")).toBe(true);
     // La marca propia del workspace: lo que lo distingue de la carpeta de un
     // host que apenas comparte el nombre de una subcarpeta.
     await expect(fs.readText("/repo/.workflow/workline.json")).resolves.toContain(
@@ -83,7 +81,6 @@ describe("Workline implicit materialization", () => {
     expect(second.materialized).toBe(false);
     expect(second.effects).toEqual([
       { kind: "marker", path: "/cwd/.workflow/workline.json", status: "existing" },
-      { kind: "sessions", path: "/cwd/.workflow/sessions", status: "existing" },
     ]);
     expect(fs.writes).toEqual(new Map());
   });
@@ -118,7 +115,7 @@ describe("Workline implicit materialization", () => {
     ]);
 
     expect(results.map((result) => result.materialized).sort()).toEqual([false, true]);
-    expect(await fs.exists("/cwd/.workflow/sessions")).toBe(true);
+    expect(await fs.exists("/cwd/.workflow/workline.json")).toBe(true);
     expect(await fs.exists("/cwd/.workflow/.lock")).toBe(false);
   });
 
@@ -129,7 +126,7 @@ describe("Workline implicit materialization", () => {
 
     await fs.writeText("/cwd/docs/specs/001-spec-x.md", "# x\n");
 
-    expect(await raw.exists("/cwd/.workflow/sessions")).toBe(true);
+    expect(await raw.exists("/cwd/.workflow/workline.json")).toBe(true);
     expect(await raw.readText("/cwd/docs/specs/001-spec-x.md")).toBe("# x\n");
     expect(fs.materialization()).toMatchObject({ materialized: true });
     expect(await raw.exists("/cwd/CLAUDE.md")).toBe(false);
@@ -159,7 +156,7 @@ describe("Workline implicit materialization", () => {
     expect(result.sources).toBe(0);
     expect(result.hub_block_files).toEqual({ skipped: true, reason: "materialization_only" });
     expect(result.skills_toml).toBe("skipped");
-    expect(await fs.exists("/cwd/.workflow/sessions")).toBe(true);
+    expect(await fs.exists("/cwd/.workflow/workline.json")).toBe(true);
     expect(await fs.exists("/cwd/CLAUDE.md")).toBe(false);
     expect(await fs.exists("/cwd/AGENTS.md")).toBe(false);
   });

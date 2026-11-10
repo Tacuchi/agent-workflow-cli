@@ -324,6 +324,36 @@
       "text": "aw status --spec <NNN>",
       "class": "not-determinable",
       "reason": "plan-new puede correr sin spec; la recuperación no liga un número que la corrida no tiene"
+    },
+    {
+      "file": "src/application/doc-flow/doc-flow-service.ts",
+      "text": "aw flow save --flow spec-new --slug <slug>",
+      "class": "not-determinable",
+      "reason": "el slug de una spec nueva es de quien la redacta"
+    },
+    {
+      "file": "src/application/doc-flow/doc-flow-service.ts",
+      "text": "aw flow save --flow plan-new --doc <spec>",
+      "class": "usage",
+      "reason": "forma de uso: guía el paso siguiente del flujo, no repara un error"
+    },
+    {
+      "file": "src/application/doc-flow/doc-flow-service.ts",
+      "text": "aw flow save --flow spec-refine --doc <spec>",
+      "class": "usage",
+      "reason": "forma de uso: guía el paso siguiente del flujo, no repara un error"
+    },
+    {
+      "file": "src/application/doc-flow/doc-flow-service.ts",
+      "text": "aw flow save --flow plan-refine --doc <plan>",
+      "class": "usage",
+      "reason": "forma de uso: guía el paso siguiente del flujo, no repara un error"
+    },
+    {
+      "file": "src/cli/commands/flow-documents.ts",
+      "text": "aw flow ${verb} --flow <flow>",
+      "class": "usage",
+      "reason": "forma de uso: el flujo es la entrada de quien invoca"
     }
   ]
 }

@@ -260,10 +260,11 @@ function scaffoldFromMaterialization(
   materialization: WorklineMaterialization,
   paths: PathsService,
 ): ScaffoldSummary {
-  const sessions = materialization.effects.find((effect) => effect.kind === "sessions");
+  // The hub marker is the activation mark of the documents model (spec 066).
+  const marker = materialization.effects.find((effect) => effect.kind === "marker");
   return {
-    created: sessions?.status === "created" ? [paths.cwdSessionsDir()] : [],
-    existing: sessions?.status === "existing" ? [paths.cwdSessionsDir()] : [],
+    created: marker?.status === "created" ? [paths.cwdMarkerFile()] : [],
+    existing: marker?.status === "existing" ? [paths.cwdMarkerFile()] : [],
     pruned: [],
   };
 }
