@@ -40,7 +40,9 @@ export const discardCommand: CliCommand<DiscardOutput> = {
         notes: ["A document changed since the preview is refused with DOC_CHANGED_SINCE_READ."],
       },
     },
-    notes: ["Opens no flow and creates no session. Recovering the document is a git operation."],
+    notes: [
+      "Opens no flow and stores nothing but the document. Recovering the document is a git operation.",
+    ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<DiscardOutput>> {
     const [action, target] = args.rest;

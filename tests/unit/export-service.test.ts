@@ -87,8 +87,6 @@ async function restage(
   return await prepare(fs, category, echoed.value, now);
 }
 
-const clock = (iso: string) => (): Date => new Date(iso);
-
 function dossier(prepared: ExportPrepared, extra: Array<[string, string]> = []) {
   return [
     [`${prepared.unit}/README.md`, "# Dossier\n\nqué contiene\n"] as [string, string],
@@ -104,139 +102,9 @@ function approvalOf(prepared: ExportPrepared, raw: string): string {
 
 // ── corpus ───────────────────────────────────────────────────────────────────
 
-describe("prepareExport — the corpus decides whether there is anything to export", () => {
-  it("rechaza un corpus vacío en vez de publicar un dossier hueco", async () => {
-    const fs = new MemFs();
-    fs.file("/cwd/.workflow/sessions/.keep", "");
-    const result = await prepareExport(fs, env, paths(), "manuals", { date: DATE });
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("EXPORT_CORPUS_EMPTY");
-    expect(result.failure.action).toContain("--since");
-  });
-
-  it("no escribe nada al preparar", async () => {
-    const fs = hub();
-    await prepare(fs, "diagrams");
-    expect([...fs.writes.keys()]).toEqual([]);
-  });
-
-  it("cada categoría declara SOLO su carpeta como destino", async () => {
-    const fs = hub();
-    for (const category of ["diagrams", "manuals", "reports", "scripts"] as ExportCategory[]) {
-      const prepared = await prepare(fs, category);
-      for (const destination of prepared.request.allowed_destinations) {
-        expect(destination.startsWith(`docs/${category}`)).toBe(true);
-      }
-    }
-  });
-});
-
 // ── per-category shape ───────────────────────────────────────────────────────
 
 describe("validateExport — each category enforces its own shape", () => {
-  it("un informe indivisible supera 512 KiB; un forward grande indica cómo partirlo", async () => {
-    const fs = hub();
-    const report = await prepare(fs, "reports");
-    const largeReport = validateExport(
-      answer(report, [
-        [`${report.dir}/${report.next}-informe.md`, `# Informe\n${"a".repeat(600_000)}`],
-      ]),
-      report,
-    );
-    expect(largeReport.ok).toBe(true);
-    const scripts = await prepare(fs, "scripts");
-    const raw = answer(scripts, [
-      [`${scripts.unit}/README.md`, "# Bundle\n"],
-      [`${scripts.unit}/rollback/00-global/00-ROLLBACK.sql`, "-- rollback\n"],
-      [`${scripts.unit}/01-ddl-tablas/01-forward.sql`, `-- forward\n${"x".repeat(600_000)}`],
-    ]);
-    const invalid = validateExport(raw, scripts);
-    expect(invalid).toMatchObject({
-      ok: false,
-      failure: {
-        code: "EXPORT_LIMIT_EXCEEDED",
-        message: expect.stringContaining("524288"),
-        action: expect.stringContaining("partí"),
-      },
-    });
-    const globalRollback = validateExport(
-      answer(scripts, [
-        [`${scripts.unit}/README.md`, "# Bundle\n"],
-        [
-          `${scripts.unit}/rollback/00-global/00-ROLLBACK.sql`,
-          `-- rollback\n${"x".repeat(600_000)}`,
-        ],
-        [`${scripts.unit}/01-ddl-tablas/01-forward.sql`, "CREATE TABLE esq.nueva (id int);\n"],
-        [
-          `${scripts.unit}/rollback/01-ddl-tablas/01-forward.rollback.sql`,
-          "DROP TABLE esq.nueva;\n",
-        ],
-      ]),
-      scripts,
-    );
-    expect(globalRollback.ok).toBe(true);
-  });
-  it("diagrams exige README y admite Markdown más DSL", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const ok = validateExport(
-      answer(prepared, dossier(prepared, [[`${prepared.unit}/c4.dsl`, "workspace {}\n"]])),
-      prepared,
-    );
-    expect(ok.ok).toBe(true);
-
-    const missing = validateExport(
-      answer(prepared, [[`${prepared.unit}/c4.dsl`, "workspace {}\n"]]),
-      prepared,
-    );
-    if (missing.ok) throw new Error("expected a rejection");
-    expect(missing.failure.message).toContain("README.md");
-  });
-
-  it("publica un diagrama Graphviz de un corpus local sin exigir C4 ni Mermaid", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const source = "digraph flujo { Cliente -> API -> BaseDeDatos }\n";
-    const raw = answer(prepared, dossier(prepared, [[`${prepared.unit}/flujo.dot`, source]]));
-    const checked = validateExport(raw, prepared);
-    if (!checked.ok) throw new Error(checked.failure.message);
-    const published = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: checked.value.approval_digest,
-    });
-    if (!published.ok) throw new Error(published.failure.message);
-    expect(await fs.readText(`/cwd/${prepared.unit}/flujo.dot`)).toBe(source);
-    expect(published.value.written).toEqual([
-      `${prepared.unit}/README.md`,
-      `${prepared.unit}/flujo.dot`,
-    ]);
-  });
-
-  it("reports publica UN documento, no un dossier", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "reports");
-    const result = validateExport(
-      answer(prepared, [
-        ["docs/reports/001-informe-x-2026-07-29.md", "# Informe\n\nAudiencia: dirección\n"],
-        ["docs/reports/001-informe-y-2026-07-29.md", "# Otro\n"],
-      ]),
-      prepared,
-    );
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.message).toContain("UN documento");
-  });
-
-  it("reports exige el número preparado en la ruta del documento", async () => {
-    const prepared = await prepare(hub(), "reports");
-    const bad = validateExport(
-      answer(prepared, [["docs/reports/002-informe.md", "# Informe\n"]]),
-      prepared,
-    );
-    if (bad.ok) throw new Error("expected wrong number to be refused");
-    expect(bad.failure.message).toContain("001-<slug>.md");
-  });
-
   it("scripts exige rollback global, acoplados y forwards numerados dentro de cada categoría", async () => {
     const fs = hub();
     const prepared = await prepare(fs, "scripts");
@@ -315,144 +183,11 @@ describe("validateExport — each category enforces its own shape", () => {
     expect(result.failure.message).toContain("guia.md");
     expect(result.failure.message).not.toContain("bundle.json");
   });
-
-  it("rechaza una extensión fuera de la categoría", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const result = validateExport(
-      answer(prepared, dossier(prepared, [[`${prepared.unit}/notas.sql`, "select 1;\n"]])),
-      prepared,
-    );
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.message).toContain("extensión");
-  });
-
-  it("rechaza un archivo vacío", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const result = validateExport(
-      answer(prepared, [[`${prepared.unit}/README.md`, "   \n"]]),
-      prepared,
-    );
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.message).toContain("vacío");
-  });
-
-  it("rechaza escribir en la carpeta de otra categoría", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const result = validateExport(
-      answer(prepared, [["docs/manuals/README.md", "# Ajeno\n"]]),
-      prepared,
-    );
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("SEMANTIC_PATH_REJECTED");
-  });
-
-  it("el preview es determinista: mismo digest de aprobación en dos pasadas", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, dossier(prepared));
-    expect(approvalOf(prepared, raw)).toBe(approvalOf(prepared, raw));
-  });
 });
 
 // ── publication ──────────────────────────────────────────────────────────────
 
 describe("applyExport — publishes the dossier as a unit, or nothing", () => {
-  it("manuals complement publica sólo INDEX.md sin dossier", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, [["docs/manuals/INDEX.md", "# Manuales\n\nListado actual\n"]]);
-    const checked = validateExport(raw, prepared);
-    if (!checked.ok) throw new Error(checked.failure.message);
-    expect(checked.value.preview.mode).toBe("complement");
-    expect(checked.value.preview.destination).toBe("docs/manuals");
-    const published = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: checked.value.approval_digest,
-    });
-    if (!published.ok) throw new Error(published.failure.message);
-    expect(published.value.written).toEqual(["docs/manuals/INDEX.md"]);
-    expect(await fs.exists(`/cwd/${prepared.unit}/README.md`)).toBe(false);
-  });
-
-  it("manuals planos listan todos los reemplazos y exigen --overwrite sólo para ellos", async () => {
-    const fs = hub();
-    fs.file("/cwd/docs/manuals/guia.md", "# Vieja\n");
-    fs.file("/cwd/docs/manuals/operacion.md", "# Vieja\n");
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, [
-      ["docs/manuals/guia.md", "# Guía nueva\n"],
-      ["docs/manuals/operacion.md", "# Operación nueva\n"],
-      ["docs/manuals/nuevo.md", "# Nuevo\n"],
-    ]);
-    const checked = validateExport(raw, prepared);
-    if (!checked.ok) throw new Error(checked.failure.message);
-    expect(checked.value.preview.mode).toBe("flat");
-    expect(checked.value.preview.replacements).toEqual([
-      "docs/manuals/guia.md",
-      "docs/manuals/operacion.md",
-    ]);
-    const denied = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: checked.value.approval_digest,
-    });
-    if (denied.ok) throw new Error("expected explicit overwrite");
-    expect(denied.failure.code).toBe("OVERWRITE_NOT_AUTHORIZED");
-    const published = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: checked.value.approval_digest,
-      allowOverwrite: true,
-    });
-    if (!published.ok) throw new Error(published.failure.message);
-    expect(await fs.readText("/cwd/docs/manuals/guia.md")).toBe("# Guía nueva\n");
-    expect(await fs.readText("/cwd/docs/manuals/nuevo.md")).toBe("# Nuevo\n");
-  });
-
-  it("publica el dossier con el número asignado dentro del lock", async () => {
-    const fs = hub();
-    fs.file("/cwd/docs/manuals/001-export-manuals-2026-01-01/README.md", "# Viejo\n");
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, dossier(prepared, [[`${prepared.unit}/guia.md`, "# Guía\n"]]));
-
-    const result = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: approvalOf(prepared, raw),
-    });
-    if (!result.ok) throw new Error(`expected it to apply: ${result.failure.message}`);
-    expect(result.value.written).toEqual([
-      `docs/manuals/002-export-manuals-${DATE}/README.md`,
-      `docs/manuals/002-export-manuals-${DATE}/guia.md`,
-    ]);
-    expect(await fs.readText("/cwd/docs/manuals/001-export-manuals-2026-01-01/README.md")).toBe(
-      "# Viejo\n",
-    );
-  });
-
-  it("rechaza el correlativo ocupado por otra fecha sin renumerar ni escribir", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    expect(prepared.unit).toBe(`docs/diagrams/001-export-diagrams-${DATE}`);
-    const raw = answer(prepared, dossier(prepared));
-    const approval = approvalOf(prepared, raw);
-
-    fs.file("/cwd/docs/diagrams/001-export-diagrams-2026-01-01/README.md", "# Ajeno\n");
-
-    const result = await applyExport(fs, env, paths(), { raw, prepared, approval });
-    if (result.ok) throw new Error("expected the approved number to be occupied");
-    expect(result.failure.code).toBe("EXPORT_NUMBER_TAKEN");
-    expect(result.failure.message).toContain("001-export-diagrams-2026-01-01");
-    expect(await fs.exists(`/cwd/docs/diagrams/002-export-diagrams-${DATE}`)).toBe(false);
-    expect(await fs.readText("/cwd/docs/diagrams/001-export-diagrams-2026-01-01/README.md")).toBe(
-      "# Ajeno\n",
-    );
-  });
-
   it("rechaza un número publicado aunque su carpeta haya sido borrada", async () => {
     const fs = hub();
     const prepared = await prepare(fs, "scripts");
@@ -477,128 +212,8 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
     expect(result.failure.code).toBe("EXPORT_NUMBER_TAKEN");
   });
 
-  it("rechaza un correlativo enlazado en el libro de pases aunque no haya carpeta", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const raw = answer(prepared, dossier(prepared));
-    const linked = {
-      version: 1,
-      at: "2026-01-01",
-      event: "linked",
-      pass_version: "v1",
-      artifact: `${prepared.unit}/README.md`,
-    };
-    fs.file("/cwd/.workflow/release-passes.jsonl", `${JSON.stringify(linked)}\n`);
-    const result = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: approvalOf(prepared, raw),
-    });
-    if (result.ok) throw new Error("expected linked number to be refused");
-    expect(result.failure.code).toBe("EXPORT_NUMBER_TAKEN");
-  });
-
-  it("un approval que no corresponde no escribe un solo byte", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const raw = answer(prepared, dossier(prepared));
-    const result = await applyExport(fs, env, paths(), { raw, prepared, approval: "otro" });
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("APPROVAL_MISMATCH");
-    expect([...fs.writes.keys()]).toEqual([]);
-  });
-
   // The INDEX is the one file an export may replace, and only on purpose.
-  it("manuals exige --overwrite para reemplazar INDEX.md", async () => {
-    const fs = hub();
-    fs.file("/cwd/docs/manuals/INDEX.md", "# Índice viejo\n");
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, [
-      ...dossier(prepared),
-      ["docs/manuals/INDEX.md", "# Índice nuevo\n"],
-    ]);
-    const approval = approvalOf(prepared, raw);
-
-    const denied = await applyExport(fs, env, paths(), { raw, prepared, approval });
-    if (denied.ok) throw new Error("expected a rejection");
-    expect(denied.failure.code).toBe("OVERWRITE_NOT_AUTHORIZED");
-    expect(await fs.readText("/cwd/docs/manuals/INDEX.md")).toBe("# Índice viejo\n");
-
-    const allowed = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval,
-      allowOverwrite: true,
-    });
-    if (!allowed.ok) throw new Error(`expected it to apply: ${allowed.failure.message}`);
-    expect(await fs.readText("/cwd/docs/manuals/INDEX.md")).toBe("# Índice nuevo\n");
-  });
-
   // The dossier guarantee: injecting a failure mid-publish leaves ZERO files.
-  it("un fallo a mitad de la publicación deja cero archivos finales", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const raw = answer(
-      prepared,
-      dossier(prepared, [
-        [`${prepared.unit}/a.md`, "# A\n"],
-        [`${prepared.unit}/boom.md`, "# Boom\n"],
-      ]),
-    );
-    const approval = approvalOf(prepared, raw);
-
-    const realWrite = fs.writeTextExclusive.bind(fs);
-    fs.writeTextExclusive = async (path: string, content: string) => {
-      if (path.endsWith("/boom.md")) throw new Error("disco lleno");
-      return await realWrite(path, content);
-    };
-
-    const result = await applyExport(fs, env, paths(), { raw, prepared, approval });
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("PUBLISH_FAILED");
-    for (const name of ["README.md", "a.md", "boom.md"]) {
-      expect(await fs.exists(`/cwd/docs/diagrams/001-export-diagrams-${DATE}/${name}`)).toBe(false);
-    }
-  });
-
-  it("no toca sesiones ni otra carpeta de docs", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "reports");
-    const raw = answer(prepared, [
-      ["docs/reports/001-informe-x-2026-07-29.md", "# Informe\n\nAudiencia: dirección\n"],
-    ]);
-    await applyExport(fs, env, paths(), { raw, prepared, approval: approvalOf(prepared, raw) });
-
-    // The workspace lock is machinery and the index row is the publication's own
-    // record — the only two writes outside the category, and naming both here
-    // keeps the boundary honest.
-    const touched = [...fs.writes.keys()].filter(
-      (p) => !p.endsWith("/.lock") && p !== "/cwd/.workflow/HISTORY.md",
-    );
-    expect(touched.every((p) => p.startsWith("/cwd/docs/reports/"))).toBe(true);
-    expect(touched.some((p) => p.includes("/sessions/"))).toBe(false);
-    expect(touched.some((p) => p.startsWith("/cwd/docs/reports/"))).toBe(true);
-  });
-
-  it("deja su fila en el índice del workspace, sin flujo activo que la escriba", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "reports");
-    const raw = answer(prepared, [
-      ["docs/reports/001-informe-x-2026-07-29.md", "# Informe\n\nAudiencia: dirección\n"],
-    ]);
-
-    const applied = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: approvalOf(prepared, raw),
-    });
-
-    expect(applied.ok).toBe(true);
-    const index = await fs.readText("/cwd/.workflow/HISTORY.md");
-    expect(index).toContain("## Publicaciones");
-    expect(index).toContain("docs/reports/001-informe-x-2026-07-29.md");
-    expect(index).toContain("export-reports");
-  });
 });
 
 // ── the scope travels with what was prepared ─────────────────────────────────
@@ -611,135 +226,6 @@ describe("applyExport — publishes the dossier as a unit, or nothing", () => {
  * failing.
  */
 describe("el alcance viaja con lo preparado — los tres disparadores del vencimiento", () => {
-  it("(a) validar sin repetir los flags de alcance opera sobre el alcance preparado", async () => {
-    const fs = hub();
-    closedSession(fs, "041-otra-plan-exec");
-    const prepared = await prepare(fs, "manuals", {
-      sessions: ["040-algo-plan-exec"],
-      date: DATE,
-    });
-    expect(prepared.request.read_set).toHaveLength(1);
-    const raw = answer(prepared, dossier(prepared));
-
-    // The invocation repeats NOTHING: no --sessions, no --date.
-    const second = await restage(fs, "manuals", raw);
-    expect(second.request.input_digest).toBe(prepared.request.input_digest);
-    expect(validateExport(raw, second).ok).toBe(true);
-
-    // And the counter-proof that the echo is what carried it: a stage that
-    // re-derives the scope from an empty invocation sees the other session.
-    const rederived = await prepare(fs, "manuals", { date: DATE });
-    expect(rederived.request.read_set).toHaveLength(2);
-    expect(rederived.request.input_digest).not.toBe(prepared.request.input_digest);
-  });
-
-  it("(b) que alguien numere en el destino entre dos etapas ya no vence", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const raw = answer(prepared, dossier(prepared));
-
-    fs.file("/cwd/docs/diagrams/001-export-diagrams-2026-01-01/README.md", "# Ajeno\n");
-
-    const second = await restage(fs, "diagrams", raw);
-    expect(second.unit).toBe(prepared.unit);
-    expect(second.request.input_digest).toBe(prepared.request.input_digest);
-    expect(validateExport(raw, second).ok).toBe(true);
-  });
-
-  it("(c) cruzar la medianoche entre preparar y aplicar ya no vence", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams", {}, clock("2026-07-29T23:59:30"));
-    expect(prepared.unit).toBe(`docs/diagrams/001-export-diagrams-${DATE}`);
-    const raw = answer(prepared, dossier(prepared));
-
-    const second = await restage(fs, "diagrams", raw, clock("2026-07-30T00:00:30"));
-    expect(second.unit).toBe(prepared.unit);
-    expect(second.request.input_digest).toBe(prepared.request.input_digest);
-
-    const applied = await applyExport(fs, env, paths(), {
-      raw,
-      prepared: second,
-      approval: approvalOf(second, raw),
-    });
-    if (!applied.ok) throw new Error(`expected it to apply: ${applied.failure.message}`);
-    expect(applied.value.written).toEqual([`docs/diagrams/001-export-diagrams-${DATE}/README.md`]);
-  });
-
-  it("un cambio real del contenido que el alcance abarca sigue venciendo, y dice qué cambió", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "diagrams");
-    const raw = answer(prepared, dossier(prepared));
-
-    // A session lands inside the scope: what the dossier should have contained
-    // is not what it contains.
-    closedSession(fs, "041-otra-plan-exec");
-
-    const second = await restage(fs, "diagrams", raw);
-    const result = validateExport(raw, second);
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("SEMANTIC_STALE");
-    // The seal names the MATERIAL now, not only the session corpus: it covers
-    // the loose SQL and the previously published bundles too.
-    expect(result.failure.message).toContain("material");
-    expect(result.failure.message).toContain("cambió entre preparar y responder");
-  });
-
-  it("una invocación que repite los mismos flags en las tres etapas sigue funcionando igual", async () => {
-    const fs = hub();
-    const flags = { sessions: ["040-algo-plan-exec"], date: DATE };
-    const prepared = await prepare(fs, "manuals", flags);
-    const raw = answer(prepared, dossier(prepared));
-
-    const validateStage = await prepare(fs, "manuals", flags);
-    expect(validateExport(raw, validateStage).ok).toBe(true);
-
-    const applyStage = await prepare(fs, "manuals", flags);
-    const applied = await applyExport(fs, env, paths(), {
-      raw,
-      prepared: applyStage,
-      approval: approvalOf(applyStage, raw),
-    });
-    if (!applied.ok) throw new Error(`expected it to apply: ${applied.failure.message}`);
-    expect(applied.value.written).toEqual([`docs/manuals/001-export-manuals-${DATE}/README.md`]);
-  });
-
-  it("un sobre sin scope sellado se rechaza por clave faltante", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, dossier(prepared), { scope: undefined });
-    const echoed = readExportScope(raw);
-    if (!echoed.ok) throw new Error("expected it to read");
-    expect(echoed.value).toBeNull();
-    const validated = validateExport(raw, prepared);
-    if (validated.ok) throw new Error("expected missing scope to fail");
-    expect(validated.failure.code).toBe("EXPORT_SCOPE_MISMATCH");
-  });
-
-  it("un scope reescrito se rechaza nombrando el campo, no se usa a medias", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, dossier(prepared), {
-      scope: { ...prepared.scope, date: "ayer" },
-    });
-    const echoed = readExportScope(raw);
-    if (echoed.ok) throw new Error("expected a rejection");
-    expect(echoed.failure.message).toContain("'date'");
-  });
-
-  it("detecta claves añadidas, eliminadas y alteradas antes de comparar el digest", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    for (const scope of [
-      { ...prepared.scope, extra: "otro" },
-      { seal: prepared.scope.seal, next: prepared.scope.next },
-      { ...prepared.scope, date: "2026-07-30" },
-    ]) {
-      const result = validateExport(answer(prepared, dossier(prepared), { scope }), prepared);
-      if (result.ok) throw new Error("expected scope mismatch");
-      expect(result.failure.message).toMatch(/extra|date/);
-    }
-  });
-
   it("el contenido SQL de docs/scripts/ vence el sello; una sesión nueva no", async () => {
     const fs = hub();
     const prepared = await prepare(fs, "scripts");
@@ -750,52 +236,13 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
     const changed = await prepare(fs, "scripts");
     expect(changed.request.input_digest).not.toBe(prepared.request.input_digest);
   });
-
-  it("un flag de alcance que contradice el sobre se nombra en vez de ignorarse", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals", { sessions: ["040-algo-plan-exec"], date: DATE });
-    expect(conflictingScopeFlags(prepared.scope, { date: DATE })).toEqual([]);
-    expect(conflictingScopeFlags(prepared.scope, { sessions: ["040-algo-plan-exec"] })).toEqual([]);
-    expect(conflictingScopeFlags(prepared.scope, { sessions: ["099-otra"] })).toEqual([
-      "--sessions",
-    ]);
-    expect(conflictingScopeFlags(prepared.scope, { date: "2026-01-01", source: "cli" })).toEqual([
-      "--source",
-      "--date",
-    ]);
-  });
 });
 
 // ── the envelope, readable before it is attempted ────────────────────────────
 
 describe("el sobre y el rechazo se entienden sin gastar un intento", () => {
-  it.each([
-    ["version", { version: undefined }],
-    ["operation", { operation: undefined }],
-    ["input_digest", { input_digest: undefined }],
-    ["state", { state: undefined }],
-  ])("omitir '%s' nombra el campo que falta", async (field, over) => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const result = validateExport(answer(prepared, dossier(prepared), over), prepared);
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("SEMANTIC_RESPONSE_INVALID");
-    expect(result.failure.message).toContain(`falta el campo obligatorio '${field}'`);
-  });
-
   // The old message for a missing `state` was `estado desconocido: undefined`:
   // it named the value, so the reader could not tell `state` from `status`.
-  it("un estado inventado sigue siendo un estado inventado", async () => {
-    const fs = hub();
-    const prepared = await prepare(fs, "manuals");
-    const result = validateExport(
-      answer(prepared, dossier(prepared), { state: "maybe" }),
-      prepared,
-    );
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.message).toContain("estado desconocido: maybe");
-  });
-
   it("la ayuda del comando publica las cabeceras con su nombre exacto", () => {
     const help = [undefined, "prepare", "validate", "apply"]
       .map((action) => commandHelpText(exportScriptsCommand, action))
@@ -809,106 +256,6 @@ describe("el sobre y el rechazo se entienden sin gastar un intento", () => {
 });
 
 // ── destination and doctrine ─────────────────────────────────────────────────
-
-describe("el destino de una categoría se alinea con el canon del workspace", () => {
-  function withCanon(fs: MemFs, toml: string): MemFs {
-    fs.file("/cwd/.workflow/skills.toml", toml);
-    return fs;
-  }
-
-  it("publica en la carpeta que el workspace declara, sin dejar un árbol paralelo", async () => {
-    const fs = withCanon(hub(), '[docs]\nmanuals = "documentacion/manuales"\n');
-    const prepared = await prepare(fs, "manuals");
-    expect(prepared.dir).toBe("documentacion/manuales");
-    expect(prepared.unit).toBe(`documentacion/manuales/001-export-manuals-${DATE}`);
-    // The flat canon and optional INDEX move with the category: one tree, not two.
-    expect(prepared.request.allowed_destinations).toEqual([
-      prepared.unit,
-      "documentacion/manuales",
-    ]);
-
-    const raw = answer(prepared, dossier(prepared));
-    const applied = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: approvalOf(prepared, raw),
-    });
-    if (!applied.ok) throw new Error(`expected it to apply: ${applied.failure.message}`);
-    expect(applied.value.written).toEqual([`${prepared.unit}/README.md`]);
-    expect(await fs.exists(`/cwd/docs/manuals/001-export-manuals-${DATE}/README.md`)).toBe(false);
-  });
-
-  it("el canon configurable también aloja manuales planos sin dossier paralelo", async () => {
-    const fs = withCanon(hub(), '[docs]\nmanuals = "documentacion/manuales"\n');
-    const prepared = await prepare(fs, "manuals");
-    const raw = answer(prepared, [["documentacion/manuales/guia.md", "# Guía\n"]]);
-    const approved = approvalOf(prepared, raw);
-    const result = await applyExport(fs, env, paths(), { raw, prepared, approval: approved });
-    if (!result.ok) throw new Error(result.failure.message);
-    expect(result.value.written).toEqual(["documentacion/manuales/guia.md"]);
-    expect(await fs.exists("/cwd/docs/manuals/guia.md")).toBe(false);
-  });
-
-  // El canon volvió configurable la carpeta de la categoría, y la renumeración
-  // del apply sustituía el PRIMER `/NNN-` de la ruta entera: con un canon
-  // numerado se comía ese número y publicaba en una carpeta que nadie aprobó ni
-  // figura en los destinos permitidos — y nada aguas abajo lo re-verifica.
-  it("un canon NUMERADO no se come la renumeración: se escribe donde se aprobó", async () => {
-    const fs = withCanon(hub(), '[docs]\nmanuals = "docs/003-manuales"\n');
-    const prepared = await prepare(fs, "manuals");
-    expect(prepared.unit).toBe(`docs/003-manuales/001-export-manuals-${DATE}`);
-
-    const raw = answer(prepared, dossier(prepared));
-    const applied = await applyExport(fs, env, paths(), {
-      raw,
-      prepared,
-      approval: approvalOf(prepared, raw),
-    });
-    if (!applied.ok) throw new Error(`expected it to apply: ${applied.failure.message}`);
-    for (const written of applied.value.written) {
-      expect(written.startsWith("docs/003-manuales/")).toBe(true);
-    }
-    expect(await fs.exists("/cwd/docs/001-manuales")).toBe(false);
-  });
-
-  // El canon mueve documentos, no estado de la herramienta. Una unidad publicada
-  // bajo el runtime se llama `NNN-export-…`, así que el workspace pasaría a
-  // enumerarla como sesión y quedaría con una línea abierta fantasma.
-  it("rechaza un canon que apunta al estado interno de la herramienta", async () => {
-    const fs = withCanon(hub(), '[docs]\nmanuals = ".workflow/sessions"\n');
-    const result = await prepareExport(fs, env, paths(), "manuals");
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.failure.message).toContain("oculto");
-  });
-
-  it("una fecha malformada se rechaza al preparar, no al validar la respuesta", async () => {
-    const result = await prepareExport(fs0(), env, paths(), "manuals", { date: "lunes" });
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.failure.code).toBe("EXPORT_SCOPE_INVALID");
-  });
-
-  it("un workspace que no declara nada conserva el destino de siempre", async () => {
-    const prepared = await prepare(withCanon(hub(), '[docs]\nscripts = "sql"\n'), "manuals");
-    expect(prepared.dir).toBe("docs/manuals");
-  });
-
-  it("un destino que se escapa del workspace se rechaza, no se corrige solo", async () => {
-    const fs = withCanon(hub(), '[docs]\nmanuals = "../fuera"\n');
-    const result = await prepareExport(fs, env, paths(), "manuals", { date: DATE });
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.code).toBe("EXPORT_DESTINATION_INVALID");
-    expect(result.failure.message).toContain("[docs].manuals");
-  });
-
-  it("una categoría que no existe se nombra en vez de no hacer nada", async () => {
-    const fs = withCanon(hub(), '[docs]\nmanueles = "docs/manuales"\n');
-    const result = await prepareExport(fs, env, paths(), "manuals", { date: DATE });
-    if (result.ok) throw new Error("expected a rejection");
-    expect(result.failure.message).toContain("manueles");
-  });
-});
 
 /**
  * The net-final-state doctrine rides in the CONTRACT and not in the `skills/w`
@@ -925,17 +272,7 @@ describe("la consolidación de scripts declara el estado final neto", () => {
       expect(contract, clause).toContain(clause);
     }
   });
-
-  it("las otras categorías no heredan una doctrina que no es suya", async () => {
-    const fs = hub();
-    expect((await prepare(fs, "manuals")).request.contract).not.toContain("ESTADO FINAL NETO");
-  });
 });
-
-/** Un workspace sin canon declarado, para los casos que no lo necesitan. */
-function fs0(): MemFs {
-  return hub();
-}
 
 // ── the origin, composed ─────────────────────────────────────────────────────
 
@@ -1153,33 +490,6 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
         environment: "producción",
       }),
     ).toEqual(["--exclude", "--from", "--environment"]);
-  });
-
-  it("componer el origen es del bundle de SQL, y una base inventada se nombra", async () => {
-    const otra = await prepareExport(withMaterial(), env, paths(), "manuals", {
-      from: "hub",
-      date: DATE,
-    });
-    if (otra.ok) throw new Error("expected a rejection");
-    expect(otra.failure.code).toBe("EXPORT_SCOPE_INVALID");
-    expect(otra.failure.message).toContain("export-manuals");
-
-    const inventada = await prepareExport(withMaterial(), env, paths(), "scripts", {
-      from: "todo" as never,
-      date: DATE,
-    });
-    if (inventada.ok) throw new Error("expected a rejection");
-    expect(inventada.failure.code).toBe("EXPORT_SCOPE_INVALID");
-    expect(inventada.failure.message).toContain("--from 'todo'");
-
-    // Belonging beats validity: naming the three bases to a category that never
-    // reads one sends the person to fix a value that is rejected all the same.
-    const ambas = await prepareExport(withMaterial(), env, paths(), "manuals", {
-      from: "todo" as never,
-      date: DATE,
-    });
-    if (ambas.ok) throw new Error("expected a rejection");
-    expect(ambas.failure.message).toContain("export-manuals");
   });
 });
 

@@ -8,7 +8,7 @@
 
 ## Hub
 
-Every invoked directory is a usable implicit hub. The closest ancestor with `.<namespace>/sessions/` is reused; otherwise the invoked directory is the root. [`/w:hub-init`](hub-init.md) is optional: without sources it materializes only the runtime, and with sources it configures metadata.
+Every invoked directory is a usable implicit hub. The closest ancestor with `.<namespace>/workline.json` is reused; otherwise the invoked directory is the root. [`/w:hub-init`](hub-init.md) is optional: without sources it materializes only the runtime, and with sources it configures metadata.
 
 ## Index
 
@@ -27,10 +27,7 @@ Every invoked directory is a usable implicit hub. The closest ancestor with `.<n
 | [`persist`](persist.md) | Persists in-conversation work into `docs/` (classify → `research` · spec draft · plan adoption) | single-pass (transversal) |
 | [`resume`](resume.md) | Summary (composes `/status`) + proposes how to resume pending work | single-pass (transversal) |
 | [`recall`](recall.md) | What the other hosts learned about Workline: contrasted, applied, offered for saving | single-pass (transversal) |
-| [`export-scripts`](export-scripts.md) | Promotes session SQL migrations to `docs/scripts/` | single-pass, read-only |
-| [`export-manuals`](export-manuals.md) | Generates manuals in `docs/manuals/` | single-pass, read-only |
-| [`export-diagrams`](export-diagrams.md) | Publishes evidence-backed diagrams in `docs/diagrams/` | single-pass, read-only over sessions |
-| [`export-reports`](export-reports.md) | Generates reports in `docs/reports/` | single-pass, read-only |
+| [`export-scripts`](export-scripts.md) | Consolidates the loose SQL of `docs/scripts/` into a bundle | single-pass |
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.
 >

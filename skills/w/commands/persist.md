@@ -1,5 +1,5 @@
 ---
-description: Use when work already produced in this conversation (analysis, conclusions, a plan) should be saved into docs/ — classifies its shape and routes it to research, spec draft or plan adoption. Backed by `aw persist`, which owns the inventory, numbering, destination and the write. Transversal: no flow, no loop, no session.
+description: Use when work already produced in this conversation (analysis, conclusions, a plan) should be saved into docs/ — classifies its shape and routes it to research, spec draft or plan adoption. Backed by `aw persist`, which owns the inventory, numbering, destination and the write. Transversal: no flow, no loop.
 argument-hint: [what to persist — empty = the conversation's latest finished deliverable]
 allowed-tools:
   [
@@ -17,7 +17,7 @@ Captures **work already produced in this conversation** — with or without host
 > 1. **Adopt, don't re-derive** — single pass, **NO RESEARCH**: transcribe/organize what the conversation already established. New investigation is flow work (`spec-refine`, `quick`), never this command's.
 > 2. **You classify and write; the CLI decides everything else** — inventory, anti-duplicate, numbering, destination, authorization and the write itself belong to `aw persist`. Never write into `docs/` with a file tool here; `Write`/`Edit` are deliberately not in `allowed-tools`.
 > 3. **Never invent the number** — the `NNN` you put in the path is consultative; `apply` reassigns it inside the lock. Do not renumber it.
-> 4. **Confirm before writing** — classification and destination go through **structured-choice** (canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) + [per-host binding](../harness/HARNESS.md#harness-binding-matrix)); `apply` refuses without the digest `validate` returned. **Never creates sessions** (sessions are loop-created only).
+> 4. **Confirm before writing** — classification and destination go through **structured-choice** (canonical [option shape](../loops/CHASSIS.md#structured-choice-design--batching) + [per-host binding](../harness/HARNESS.md#harness-binding-matrix)); `apply` refuses without the digest `validate` returned.
 > 5. **Language** — headings in English (parse contract); content in the **user's language**.
 
 ## Input

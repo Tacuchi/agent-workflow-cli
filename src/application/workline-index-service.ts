@@ -22,7 +22,7 @@ import { type WorklineNodeId, formatNodeId } from "../domain/workline-node.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { type SlotState, sanctionedActionFor, scanSlots } from "./claims-recovery.js";
+import { type SlotState, sanctionedActionFor } from "./claims-recovery.js";
 import { type CutIntentRead, readCutIntents, readingForPlan } from "./cut-intent-ledger.js";
 import { localDateIso } from "./dates.js";
 import { noteIndexPath, readNoteIndex } from "./decision-note-service.js";
@@ -31,9 +31,8 @@ import {
   DEFAULT_DOCS_CANON,
   resolveCoreDocsCanon,
 } from "./docs-canon-service.js";
-import { readHistoryRows } from "./history-table.js";
 import { humanizeRelativeEs } from "./humanize-es.js";
-import { firstNonEmptyLine, parseMdSection, parseMdSectionBilingual } from "./markdown.js";
+import { firstNonEmptyLine, parseMdSection } from "./markdown.js";
 import {
   BLOCK_READ_FILES,
   parseHubBlock,
@@ -57,7 +56,7 @@ import {
 import { type ParsedTasks, parseTasks } from "./parsers/tasks.js";
 import type { PathsService } from "./paths-service.js";
 import { resumePointOf } from "./plan-current-point.js";
-import { type HoldingRun, holdingRunOf, readHoldingRuns } from "./plan-open-run.js";
+import type { HoldingRun } from "./plan-open-run.js";
 import {
   type DeclaredPlanPass,
   planPassDeclarations,
@@ -71,12 +70,8 @@ import {
   productionStandingOf,
   readReleasePasses,
 } from "./release-pass-ledger.js";
-import { listPendingJournals } from "./retirement/journal.js";
-import { findArtifact } from "./session-artifacts.js";
-import { readSessionPhase } from "./session-narrative.js";
-import { SessionsService } from "./sessions-service.js";
 import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
-import { type OrphanUnit, type WorktreeListOutput, runWorktree } from "./worktree-service.js";
+import type { OrphanUnit, WorktreeListOutput } from "./worktree-service.js";
 
 /**
  * The one reading of the hub's Workline documents.
@@ -566,13 +561,6 @@ export interface WorklineIndexInput {
    * care about them keeps its output byte for byte.
    */
   git?: GitPort;
-  /**
-   * `legacy` reads the session model too (sessions, HISTORY, claims, runs,
-   * retirement journals and session-owned units). Only the flow engine of the
-   * session model still asks for it; `aw status` and `aw resume` never do, so
-   * the board derives from `docs/`, git and the pass ledger alone (spec 066).
-   */
-  sessions?: "legacy";
 }
 
 /**
@@ -582,7 +570,7 @@ export interface WorklineIndexInput {
  */
 export async function buildWorklineIndex(
   fs: FileSystemPort,
-  env: EnvPort,
+  _env: EnvPort,
   paths: PathsService,
   input: WorklineIndexInput = {},
 ): Promise<WorklineIndex> {
@@ -598,21 +586,16 @@ export async function buildWorklineIndex(
   // which. Their paths are then excluded from the corpus rather than filtered out
   // of it afterwards, so nothing downstream — pipeline, resume, the TUI — can see
   // a held number as executable work.
-  const legacy = input.sessions === "legacy";
-  const slotScan: Awaited<ReturnType<typeof scanSlots>> = legacy
-    ? await scanSlots(fs, paths)
-    : { slots: [] };
+  const slotScan: { slots: SlotState[]; error?: string } = { slots: [] };
   const heldPaths = new Set(slotScan.slots.map((slot) => slot.path));
-  // In the documents model `docs/` is the only record: an unreadable folder is
-  // never reported as an empty board.
-  if (!legacy && docs !== null) {
+  // `docs/` is the only record: an unreadable folder is never reported as an
+  // empty board.
+  if (docs !== null) {
     for (const dir of [docs.spec, docs.plan]) await assertListable(fs, join(cwd, dir));
   }
   const specs = docs === null ? [] : await readSpecs(fs, cwd, docs.spec, now, heldPaths);
   const plans = docs === null ? [] : await readPlans(fs, cwd, specs, docs, now, heldPaths);
-  const model = legacy
-    ? await readSessionModel(fs, env, paths, { git: input.git, now, docs, plans, cwd })
-    : await readDocumentsModel(fs, paths, { git: input.git, specs, plans });
+  const model = await readDocumentsModel(fs, paths, { git: input.git, specs, plans });
   const { sessions, isolation } = model;
   // One read of the pass ledger for the whole board, like the runs above: every
   // document's production axis derives from the same facts, so a second read
@@ -625,7 +608,7 @@ export async function buildWorklineIndex(
   attachProduction(specs, plans, passes);
   return {
     hub,
-    model: legacy ? "sessions" : "documents",
+    model: "documents",
     last_activity: model.lastActivity,
     specs,
     plans,
@@ -655,43 +638,9 @@ export async function buildWorklineIndex(
 interface ModelReading {
   sessions: IndexedSession[];
   lastActivity: string | null;
-  isolation: Awaited<ReturnType<typeof readIsolation>>;
+  isolation: Awaited<ReturnType<typeof readSourceReachability>>;
   discarded: IndexedDiscarded[];
   pendingRetirements: PendingRetirement[];
-}
-
-/** The session model's records: only the legacy flow engine still reads them. */
-async function readSessionModel(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  input: {
-    git: GitPort | undefined;
-    now: Date;
-    docs: CoreDocsCanon | null;
-    plans: IndexedPlan[];
-    cwd: string;
-  },
-): Promise<ModelReading> {
-  const sessions = await readSessions(fs, env, paths, input.now, input.docs);
-  const isolation = await readIsolation(fs, env, paths, input.git);
-  for (const session of sessions) {
-    session.units = isolation.bySession.get(session.folder) ?? [];
-  }
-  // One pass over the live runs for every plan, rather than one scan per plan:
-  // the answer is the same map either way, and this is the reading `aw settle`
-  // refuses on, so the board and the command cannot disagree about who holds what.
-  const runs = await readHoldingRuns(fs, paths);
-  for (const plan of input.plans) {
-    plan.holding_run = holdingRunOf(runs, plan.file);
-  }
-  return {
-    sessions,
-    lastActivity: await hubLastActivity(fs, paths, sessions),
-    isolation,
-    discarded: await readDiscarded(fs, sessions, input.cwd, input.now),
-    pendingRetirements: await readPendingRetirements(fs, paths),
-  };
 }
 
 /** The documents model: `docs/`, git and the pass ledger, nothing under the sessions. */
@@ -740,107 +689,6 @@ function documentsLastActivity(
     .map((doc) => doc.date)
     .filter((date): date is string => typeof date === "string" && /^\d{4}-\d{2}-\d{2}/.test(date));
   return dates.sort().at(-1)?.slice(0, 10) ?? null;
-}
-
-async function hubLastActivity(
-  fs: FileSystemPort,
-  paths: PathsService,
-  sessions: IndexedSession[],
-): Promise<string | null> {
-  const dates: string[] = [];
-  try {
-    if (await fs.exists(paths.cwdHistoryFile())) {
-      for (const row of readHistoryRows(await fs.readText(paths.cwdHistoryFile()))) {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(row.date)) dates.push(row.date);
-      }
-    }
-  } catch {
-    // A missing/unreadable record cannot contribute a date.
-  }
-  for (const session of sessions) {
-    if (!session.has_checkpoint) continue;
-    try {
-      dates.push(localDateIso((await fs.stat(join(session.path, "CHECKPOINT.md"))).mtime));
-    } catch {
-      // A checkpoint not stat-able contributes no evidence of activity.
-    }
-  }
-  return dates.sort().at(-1) ?? null;
-}
-
-/**
- * The retirements in flight, as the board has to show them.
- *
- * A journal that cannot be parsed is reported as pending too, with its reason: an
- * unreadable journal is the one case where we know least and must say most, since
- * the operation it describes may have passed its commit point.
- */
-async function readPendingRetirements(
-  fs: FileSystemPort,
-  paths: PathsService,
-): Promise<PendingRetirement[]> {
-  const pending = await listPendingJournals(fs, paths);
-  const out: PendingRetirement[] = pending.journals.map((journal) => ({
-    digest: journal.digest,
-    command: journal.proposal.event.command,
-    target: journal.proposal.event.key,
-    phase: journal.phase,
-    opened: journal.opened,
-    next: `aw ${journal.proposal.event.command} apply ${journal.proposal.event.key} --approval ${journal.digest}`,
-  }));
-  for (const broken of pending.unreadable) {
-    out.push({
-      digest: "ilegible",
-      command: "retiro",
-      target: broken.path,
-      phase: "ilegible",
-      opened: "",
-      next: `inspeccioná ${broken.path}: ${broken.reason}`,
-    });
-  }
-  return out;
-}
-
-/**
- * Isolation units of this hub, grouped by the session that owns each one.
- *
- * `aw worktree list` is the single reading — the same one the command surface
- * answers with — so `status`, `resume` and `worktree list` can never disagree
- * about which flow is editing where.
- */
-async function readIsolation(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  git: GitPort | undefined,
-): Promise<{
-  bySession: Map<string, SessionUnit[]>;
-  orphans: OrphanUnit[];
-  unreadable: WorktreeListOutput["unreadable"];
-  error?: string;
-}> {
-  const empty = {
-    bySession: new Map<string, SessionUnit[]>(),
-    orphans: [] as OrphanUnit[],
-    unreadable: [] as WorktreeListOutput["unreadable"],
-  };
-  if (git === undefined) return empty;
-  let listed: Awaited<ReturnType<typeof runWorktree>>;
-  try {
-    listed = await runWorktree({ fs, env, git, paths }, { action: "list" });
-  } catch (err) {
-    return { ...empty, error: `no se pudieron listar las unidades: ${(err as Error).message}` };
-  }
-  if ("error" in listed) return { ...empty, error: listed.message };
-  if (!("units" in listed))
-    return { ...empty, error: "aw worktree list devolvió un inventario inesperado" };
-  const bySession = new Map<string, SessionUnit[]>();
-  for (const unit of listed.units) {
-    const current = bySession.get(unit.session) ?? [];
-    current.push({ alias: unit.alias, path: unit.path, branch: unit.branch });
-    bySession.set(unit.session, current);
-  }
-  return { bySession, orphans: listed.orphans, unreadable: listed.unreadable };
 }
 
 /**
@@ -2044,112 +1892,7 @@ interface PlanContractReading {
 
 // ── sessions ─────────────────────────────────────────────────────────────────
 
-async function readSessions(
-  fs: FileSystemPort,
-  env: EnvPort,
-  paths: PathsService,
-  now: Date,
-  docs: CoreDocsCanon | null,
-): Promise<IndexedSession[]> {
-  let list: Awaited<ReturnType<SessionsService["list"]>>;
-  try {
-    list = await new SessionsService(fs, env, paths).list({ state: "all", verbose: true });
-  } catch {
-    return [];
-  }
-
-  const out: IndexedSession[] = [];
-  for (const s of list.sessions) {
-    const primary = (await findArtifact(s.path, "session", fs)) ?? s.path;
-    const ts = await resolveTimestamp(fs, primary, s.date, now);
-    const checkpoint = await findArtifact(s.path, "checkpoint", fs);
-    out.push({
-      code: s.code,
-      folder: s.folder,
-      path: s.path,
-      type: s.type ?? null,
-      summary: s.summary ?? s.folder,
-      state: s.state,
-      phase: await readSessionPhase(fs, s.path, s.state),
-      has_checkpoint: checkpoint !== null && checkpoint !== undefined,
-      linked_doc: docs === null ? null : await readLinkedDoc(fs, primary, docs),
-      date: ts.date,
-      relative: ts.relative,
-      units: [],
-    });
-  }
-  return out;
-}
-
-/** The spec/plan a session's `## Origin` points at — `null` when it points at none. */
-async function readLinkedDoc(
-  fs: FileSystemPort,
-  sessionFile: string,
-  docs: Pick<CoreDocsCanon, "spec" | "plan">,
-): Promise<string | null> {
-  try {
-    const origin = parseMdSectionBilingual(await fs.readText(sessionFile), "Origin");
-    return origin === undefined ? null : (linkedDocPattern(docs).exec(origin)?.[0] ?? null);
-  } catch {
-    return null;
-  }
-}
-
-function linkedDocPattern(docs: Pick<CoreDocsCanon, "spec" | "plan">): RegExp {
-  const escapePattern = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const alternatives = [
-    `${escapePattern(docs.spec)}/${CORRELATIVE_SOURCE}-spec`,
-    `${escapePattern(docs.plan)}/${CORRELATIVE_SOURCE}-plan`,
-  ].join("|");
-  return new RegExp(`(?:${alternatives})[^\\s\`)"']*\\.md`);
-}
-
 // ── discarded ────────────────────────────────────────────────────────────────
-
-async function readDiscarded(
-  fs: FileSystemPort,
-  sessions: IndexedSession[],
-  cwd: string,
-  now: Date,
-): Promise<IndexedDiscarded[]> {
-  const out: IndexedDiscarded[] = [];
-  for (const s of sessions) {
-    await collectDiscarded(fs, s, "backlog", "Deferred", "deferred", cwd, now, out);
-    await collectDiscarded(fs, s, "checkpoint", "Excluded", "excluded", cwd, now, out);
-  }
-  return out;
-}
-
-async function collectDiscarded(
-  fs: FileSystemPort,
-  session: IndexedSession,
-  artifact: "backlog" | "checkpoint",
-  heading: string,
-  kind: DiscardedKind,
-  cwd: string,
-  now: Date,
-  out: IndexedDiscarded[],
-): Promise<void> {
-  try {
-    const path = await findArtifact(session.path, artifact, fs);
-    if (!path) return;
-    const items = listItems(parseMdSectionLooseBilingual(await fs.readText(path), heading));
-    if (items.length === 0) return;
-    const ts = await resolveTimestamp(fs, path, undefined, now);
-    for (const text of items) {
-      out.push({
-        source: session.code ?? session.folder,
-        source_path: relFromCwd(session.path, cwd),
-        kind,
-        text,
-        date: ts.date,
-        relative: ts.relative,
-      });
-    }
-  } catch {
-    // skip unreadable artifact
-  }
-}
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -2277,18 +2020,6 @@ function relFromCwd(path: string, cwd: string): string {
 const parseMdSectionLoose = (text: string, heading: string): string | undefined =>
   parseMdSection(text, heading, normalizeHeading);
 
-/**
- * Both halves at once: the bilingual aliases AND the loose heading normalization
- * above. The discarded list is the reader that needs both.
- *
- * Kept apart from {@link parseMdSectionLoose} on purpose. Making that one
- * bilingual would also have changed what counts as a legacy ready mark and how
- * open questions are found — two behaviours nobody asked to move, on documents
- * this change has no business reinterpreting.
- */
-const parseMdSectionLooseBilingual = (text: string, heading: string): string | undefined =>
-  parseMdSectionBilingual(text, heading, normalizeHeading);
-
 function normalizeHeading(raw: string): string {
   return raw
     .trim()
@@ -2296,24 +2027,6 @@ function normalizeHeading(raw: string): string {
     .replace(/\s*\([^)]*\)\s*:?\s*$/, "")
     .replace(/:\s*$/, "")
     .trim();
-}
-
-/** List-item lines of a section, dropping the `List of …` template placeholder. */
-function listItems(section: string | undefined): string[] {
-  if (!section) return [];
-  const out: string[] = [];
-  for (const raw of section.split("\n")) {
-    // Ordered lists count too. A `## Deferred` whose items were written `1.`/`2.`
-    // used to be dropped whole, in silence — and it was the two items naming how
-    // to unblock a plan that vanished that way.
-    const m = /^\s*(?:[-*]|\d+[.)])\s+(.+?)\s*$/.exec(raw);
-    if (!m?.[1]) continue;
-    const text = m[1].trim();
-    if (text.length === 0) continue;
-    if (/^list of\b/i.test(text)) continue; // template placeholder
-    out.push(text);
-  }
-  return out;
 }
 
 function countOpenQuestions(text: string): number {

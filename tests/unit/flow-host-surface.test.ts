@@ -1,11 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  FLOW_BOUNDARY_KINDS,
-  FLOW_DIRECTIVE_KEYS,
-  type FlowBoundaryKind,
-} from "../../src/domain/flow/directive.js";
+import { FLOW_BOUNDARY_KINDS, type FlowBoundaryKind } from "../../src/domain/flow/directive.js";
 import { HARNESSES } from "../../src/domain/harnesses.js";
 
 /**
@@ -89,27 +85,6 @@ describe("la superficie de host solo invoca, transporta y presenta", () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
-
-  it("lo que la presentación no puede perder son campos reales de la directiva", async () => {
-    const section = await presentation();
-    const keys = new Set<string>(FLOW_DIRECTIVE_KEYS);
-    // The four AC-HOST-01 names, each pinned to the field that carries it: a
-    // requirement written against a field that does not exist would be prose.
-    const required: Array<[string, string]> = [
-      ["choices", "las opciones con su consecuencia"],
-      ["request", "la explicación de lo que se pide"],
-      ["effects", "los efectos en juego"],
-      ["state_digest", "la evidencia de reanudación"],
-    ];
-    for (const [key, what] of required) {
-      expect(keys.has(key), `${key} no es un campo de la directiva`).toBe(true);
-      expect(section, what).toContain(`\`${key}\``);
-    }
-    expect(section).toContain("`session`");
-    expect(section).toContain("`authorizations`");
-    expect(keys.has("route")).toBe(true);
-    expect(section).toContain("`route.proposal`");
   });
 
   it("presenta una propuesta de solución y reserva los ids internos para diagnóstico", async () => {

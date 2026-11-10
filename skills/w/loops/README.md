@@ -2,7 +2,7 @@
 
 > **Loops** are the pieces the **AI runs whole** to produce deliverables and orchestrate the work. A `/w:…` command (Layer 1) starts them and, from there, **the AI drives them**, not the user.
 >
-> Siblings: `../commands/` (Layer 1, `/w:…` commands) · `.workflow/sessions/` (Layer 3, sessions + internal artifacts) · the `export-*` family (the only artifact→`docs/` path) · `../roles/` (overview orientation).
+> Siblings: `../commands/` (Layer 1, `/w:…` commands) · `/w:export-scripts` (SQL consolidation) · `../roles/` (overview orientation).
 
 ---
 
@@ -10,7 +10,7 @@
 
 A loop is an **operating manual** that teaches the AI *how to iterate* until it produces a deliverable. **It is not invocable by name** as a standalone skill — its file is deliberately named `LOOP.md`, **not** `SKILL.md`, so no harness indexes it as a user-facing skill (several scan skill roots recursively): it is the body of its `/w:…` command, which **loads it by reading `<loop>/LOOP.md`** and executes it inline.
 
-The 5 loops run the same **common engine**, whose canon lives in [`CHASSIS.md`](CHASSIS.md): persistent objective + verification-first, gap-driven convergent, single session per run with inline research, structured-choice + `flow` control (`Compactar`/`Cerrar`, always present), compact/resume, artifacts as a live log, convergence gate and the `docs/` boundary. Each loop is an **heir**: its `## Inherits` orders the chassis read before its deltas — nothing of the engine is repeated here.
+The 5 loops run the same **common engine**, whose canon lives in [`CHASSIS.md`](CHASSIS.md): persistent objective + verification-first, gap-driven convergent, the document as the only record, inline research, structured-choice + `flow` control (`Compactar`/`Cerrar`, always present), compact/resume, the document as the live record, convergence gate and the `docs/` boundary. Each loop is an **heir**: its `## Inherits` orders the chassis read before its deltas — nothing of the engine is repeated here.
 
 ## Loops and their flow
 
@@ -20,7 +20,7 @@ The 5 loops run the same **common engine**, whose canon lives in [`CHASSIS.md`](
 | [`plan-new-loop`](plan-new-loop/LOOP.md) | PLAN | `/w:plan-new` | `docs/specs/NNN-spec-*.md` | `docs/plans/PPP-plan-<slug>.md`, **or N sibling plans** (accepted split) |
 | [`plan-refine-loop`](plan-refine-loop/LOOP.md) | PLAN | `/w:plan-refine` *(aux, optional)* | `docs/plans/PPP-plan-*.md` (the plan itself) | `docs/plans/PPP-plan-<slug>.md` (in place) **plus the extracted sibling plans** (accepted split) |
 | [`plan-exec-loop`](plan-exec-loop/LOOP.md) | PLAN | `/w:plan-exec` | `docs/plans/PPP-plan-*.md` | `docs/plans/PPP-plan-<slug>.md` (update); the rest via `export-*` |
-| [`quick-loop`](quick-loop/LOOP.md) | QUICK | `/w:quick` | — (prompt) | edits code + light session; **no** `docs/` |
+| [`quick-loop`](quick-loop/LOOP.md) | QUICK | `/w:quick` | — (prompt) | edits code; git is its record; **no** `docs/` document |
 
 > `/w:spec-new` has no loop (single-pass). Hence **6 commands / 5 loops**.
 
@@ -39,7 +39,6 @@ Every loop writes **only** its own flow's doc (SPEC→`docs/specs` · PLAN→`do
 | `## Started by` | The `/w:…` command that starts it (resumable) |
 | `## Reads` | Input document(s) |
 | `## Writes` | Output document(s) (`generate` / `read-update`) |
-| `## Internal sessions` | Sessions it creates and their artifacts |
 | `## Sequence` | The loop's pseudocode |
 | `## Convergence / exit` | When it stops |
 

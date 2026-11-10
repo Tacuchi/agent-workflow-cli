@@ -31,7 +31,15 @@ describe("context-plan — the resolver returns what the doctrine already orders
     );
     expect(frozen.size).toBe(16);
     for (const [command, expected] of frozen) {
-      if (command === "fix-git" || command === "generate-launch") {
+      // 31.0.0 retired the copying exports (spec 066, ID06): their read-set is gone with them.
+      const retired = [
+        "fix-git",
+        "generate-launch",
+        "export-diagrams",
+        "export-manuals",
+        "export-reports",
+      ];
+      if (retired.includes(command)) {
         await expect(runContextPlan(fs, { command, root: BUNDLE_ROOT })).rejects.toThrow(
           /no está en el manifiesto/,
         );
@@ -61,7 +69,7 @@ describe("context-plan — the resolver returns what the doctrine already orders
     const commandFiles = (await readdir(COMMANDS_ROOT))
       .filter((name) => name.endsWith(".md") && name !== "README.md")
       .sort();
-    expect(commandFiles).toHaveLength(19);
+    expect(commandFiles).toHaveLength(15);
 
     const offenders: string[] = [];
     for (const file of commandFiles) {

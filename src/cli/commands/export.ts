@@ -16,7 +16,6 @@ import {
   readExportScope,
   validateExportWithCatalog,
 } from "../../application/export-service.js";
-import { type HubCommitProposal, runHubCommit } from "../../application/hub-commit-service.js";
 import type { SemanticFailure } from "../../application/semantic-operation/protocol.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
@@ -31,8 +30,7 @@ type ExportData =
   | ({ stage: "validate" } & ExportValidation)
   | ({
       stage: "apply";
-      commit_proposal?: HubCommitProposal;
-      commit_proposal_error?: string;
+      next_commit?: string;
     } & ExportApplied);
 
 const PURPOSES: Record<ExportCategory, string> = {
@@ -81,12 +79,9 @@ const SCRIPTS_ENVELOPE_NOTE =
  * where the publication happens.
  */
 function exportFlags(category: ExportCategory): CommandFlags {
-  const scope = ["sessions", "since", "source", "date"];
+  const scope = ["source", "date"];
   return {
-    known:
-      category === "scripts"
-        ? [...scope, "from", "exclude", "environment", "code", "catalog"]
-        : scope,
+    known: category === "scripts" ? [...scope, "from", "exclude", "environment", "catalog"] : scope,
     repeatable: category === "scripts" ? ["exclude"] : [],
     actions: {
       apply: {
@@ -105,8 +100,6 @@ function exportHelp(category: ExportCategory): CommandHelp {
   return {
     purpose: PURPOSES[category],
     flags: {
-      sessions: { value: "<a,b>", effect: "Only the material of these sessions, comma separated." },
-      since: { value: "<YYYY-MM-DD>", effect: "Only sessions from this date on." },
       source: { value: "<alias>", effect: "Only the material of this source." },
       date: {
         value: "<YYYY-MM-DD>",
@@ -115,9 +108,9 @@ function exportHelp(category: ExportCategory): CommandHelp {
       ...(category === "scripts"
         ? {
             from: {
-              value: "<sessions|bundles|hub>",
+              value: "<hub|bundles>",
               effect:
-                "Base of the material: session SQL (default), the bundles docs/scripts already published, or everything the hub holds.",
+                "Base of the material: hub (default) is the loose SQL of docs/scripts/ plus the bundles already published; bundles is only those bundles.",
             },
             exclude: {
               value: "<name>",
@@ -128,10 +121,6 @@ function exportHelp(category: ExportCategory): CommandHelp {
               effect:
                 "Destination environment: bundles the release book records as applied there drop out.",
             },
-            code: {
-              value: "<code>",
-              effect: "Active session that owns the bundle number reservation.",
-            },
             catalog: {
               value: "<connection>",
               effect: "Check tables and columns read-only against this database connection.",
@@ -140,7 +129,7 @@ function exportHelp(category: ExportCategory): CommandHelp {
         : {}),
     },
     notes: [
-      "Stages: prepare returns the request; the agent answers it; validate checks the answer and returns the approval digest; apply publishes with that digest. Each stage rebuilds the request from the hub, so a session that moved meanwhile makes the answer stale. It writes ONLY to its own folder and never creates a session.",
+      "Stages: prepare returns the request; the agent answers it; validate checks the answer and returns the approval digest; apply publishes with that digest. Each stage rebuilds the request from the hub, so material that moved meanwhile makes the answer stale. It writes ONLY to its own folder.",
     ],
     actions: {
       prepare: {
@@ -242,14 +231,7 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
         `export-${category} · publicados ${data.written.length} archivo(s):`,
         ...data.written.map((w) => `  ${w}`),
       ];
-      if (data.commit_proposal) {
-        lines.push(`  Commit propuesto: ${data.commit_proposal.message}`);
-        for (const path of data.commit_proposal.paths) lines.push(`    ${path}`);
-        lines.push(
-          `  aw hub-commit apply --export ${data.written[0]?.split("/").slice(0, 3).join("/")} --approval ${data.commit_proposal.approval}`,
-        );
-      } else if (data.commit_proposal_error)
-        lines.push(`  Commit no disponible: ${data.commit_proposal_error}`);
+      if (data.next_commit) lines.push(`  Para commitear: ${data.next_commit}`);
       return `${lines.join("\n")}\n`;
     },
   };
@@ -407,28 +389,20 @@ async function runApply(
     catalog,
   );
   if (!result.ok) return failSemantic(result.failure);
-  const destination = result.value.written[0]?.split("/").slice(0, 3).join("/");
-  const offer = destination
-    ? await runHubCommit(ctx.fs, ctx.git, ctx.process, ctx.paths, {
-        exportPath: destination,
-      })
-    : { error: "el export no informó sus rutas" };
+  // The bundle travels in the hub's commit, proposed and approved by digest.
+  const paths = result.value.written.map((path) => `--path ${path}`).join(" ");
   return {
     ok: true,
     data: {
       stage: "apply",
       ...result.value,
-      ...("proposal" in offer
-        ? { commit_proposal: offer.proposal }
-        : { commit_proposal_error: offer.error }),
+      next_commit: `aw flow propose-commit --source hub --message "<mensaje>" ${paths}`,
     },
     exitCode: 0,
   };
 }
 
 function selection(args: ParsedArgs): ExportSelection {
-  const sessions = args.values.get("sessions");
-  const since = args.values.get("since");
   // `source` is a MULTI_VALUE flag: `values.get` would silently miss it.
   const source = flagValue(args, "source");
   const date = args.values.get("date");
@@ -439,31 +413,17 @@ function selection(args: ParsedArgs): ExportSelection {
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
   const environment = args.values.get("environment");
-  const code = args.values.get("code");
   const catalog = args.values.get("catalog");
   return {
-    ...(sessions !== undefined
-      ? {
-          sessions: sessions
-            .split(",")
-            .map((s) => s.trim())
-            .filter((s) => s.length > 0),
-        }
-      : {}),
-    ...(since !== undefined ? { since } : {}),
     ...(source !== undefined ? { source } : {}),
     ...(date !== undefined ? { date } : {}),
     ...(from !== undefined ? { from: from as ExportBase } : {}),
     ...(exclude.length > 0 ? { exclude } : {}),
     ...(environment !== undefined ? { environment } : {}),
-    ...(code !== undefined ? { code } : {}),
     ...(catalog !== undefined ? { catalog } : {}),
   };
 }
 
-export const exportDiagramsCommand = exportCommand("diagrams");
-export const exportManualsCommand = exportCommand("manuals");
-export const exportReportsCommand = exportCommand("reports");
 export const exportScriptsCommand = exportCommand("scripts");
 
 function exportCatalog(

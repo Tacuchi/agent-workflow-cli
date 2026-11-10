@@ -6,11 +6,11 @@ allowed-tools: ["Bash", "Read"]
 
 # hub-compact
 
-No flow/session. Use the user's language; read `aw hub-compact --help`.
+No flow; only `docs/` specs and plans are inventoried. Use the user's language; read `aw hub-compact --help`.
 `aw context-plan --command hub-compact --root "${CLAUDE_PLUGIN_ROOT}/skills/w"` resolves this guide.
 
 1. Run `aw hub-compact inventory --json`; explain coverage, exclusions, protections and limitations before synthesis.
-2. Read sources selectively. Preserve specs, plans, SQL, custody and canonical artifacts. Use current originals, not previous summaries.
+2. Read sources selectively. Only historical specs and plans are eligible; use current originals, not summaries.
 3. Draft this JSON in conversation or host temporary storage:
 
 ```json

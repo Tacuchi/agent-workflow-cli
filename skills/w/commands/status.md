@@ -10,7 +10,7 @@ allowed-tools:
 
 # status — hub state
 
-Read-only single pass: no loop, no session, no writes. Transversal.
+Read-only single pass: no loop, no writes. Transversal.
 
 ## Run
 
@@ -18,11 +18,11 @@ Read-only single pass: no loop, no session, no writes. Transversal.
 2. **Relay it verbatim**: never paraphrase, re-sort, add or drop a line.
 3. **Host context, opportunistic.** Cheap host-memory → append a `▸ CONTEXTO DEL HOST` section with a few recent-focus signals. Otherwise omit silently; never scan transcripts, never ask.
 
-> **The default view is what is LEFT TO DO** — unrefined specs, refined specs with no plan, plans not `done` — and each says **what it still owes**, under its title. `--detail` brings back history, sessions and discarded items: re-run, never explain an absence.
+> **The default view is what is LEFT TO DO** — unrefined specs, refined specs with no plan, plans not `done` — and each says **what it still owes**, under its title. `--detail` brings back finished and abandoned documents: re-run, never explain an absence.
 
 > **An obligation comes before the percentage.** What leaves an item neither runnable nor closable — an unresolvable design reference, a pending reconciliation, an unprovable baseline — takes the title, and the progress drops below it. A plan at `100%` with every phase `validada` is not finished either: it owes its final validation and its close.
 
-> **Sessions are not the user's work.** One carrying work with no document of its own is a **notice**, never a pending row.
+> **The board reads `docs/`, git and the pass ledger only.** A plan's state is its single `> Estado:` field; `in-progress` shows its next step.
 
 > **Automation reads JSON** (piped or `--json`): the human view's scope; `--detail` the full inventory; `--plan`/`--spec` one record.
 

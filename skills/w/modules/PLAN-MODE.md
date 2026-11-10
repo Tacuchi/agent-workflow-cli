@@ -12,7 +12,7 @@ it would do and what it would touch, and stops:
 - **Flow commands** (`spec-new`, `spec-refine`, `plan-new`, `plan-refine`, `plan-exec`, `quick`):
   describe the loop actions they would run — the gaps they would close, the questions they would
   ask, the phases they would execute, the files they would touch and the commits they would
-  propose. No session is created, no loop is started, no document is written.
+  propose. No loop is started, no document is written.
 - **Direct surfaces** (`status`, `resume`, `persist`,
   `hub-init`, `export-*`): run their read-only `prepare` step if they have one and report
   what it returned. Never `validate`, never `apply`.

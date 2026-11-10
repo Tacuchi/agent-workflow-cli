@@ -199,19 +199,6 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
     });
   });
 
-  it("en crush y gemini viaja la guarda SQL sin los hooks de sesión", () => {
-    for (const id of ["crush", "gemini"] as const) {
-      const hooks = HARNESSES.find((h) => h.id === id)?.hooks;
-      expect(hooks?.events.PreToolUse.state, id).toBe("carried");
-      for (const event of ["SessionStart", "SessionEnd", "PreCompact", "PostCompact"] as const) {
-        expect(hooks?.events[event].state, `${id}/${event}`).toBe("omitted");
-      }
-    }
-    expect(HARNESSES.find((h) => h.id === "opencode")?.hooks?.events.PreToolUse.state).toBe(
-      "omitted",
-    );
-  });
-
   it("el SessionStart degradado de kimi es exactamente la pérdida que reporta su conversión a TOML", async () => {
     const raw = await readFile(join(process.cwd(), "skills/w/hooks/hooks.template.json"), "utf8");
     const { degraded, skipped } = hooksTemplateToToml(JSON.parse(raw));
@@ -224,14 +211,6 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
     expect(declared).toEqual(["SessionStart"]);
     expect(skipped).toEqual([]);
     expect(hookCoverage(hooks)).toContain("partial: SessionStart");
-  });
-
-  it("kimi lleva PostCompact completo y sin pérdida de prompt", () => {
-    const hooks = HARNESSES.find((h) => h.id === "kimi")?.hooks;
-    expect(hooks?.events.PostCompact).toEqual({ state: "carried", native: "PostCompact" });
-    expect(hooks === null || hooks === undefined ? "" : hookCoverage(hooks)).not.toContain(
-      "partial: PostCompact",
-    );
   });
 
   it("la asimetría se proyecta: el estado de hooks dice qué lleva y qué omite", () => {
@@ -276,7 +255,7 @@ describe("reglas de estado de hooks, compactación y memoria del host", () => {
     for (const spec of HARNESSES) {
       const compaction = capabilitiesFor(spec).find((c) => c.id === "compaction");
       if (compaction?.status === "native") continue;
-      expect(compaction?.detail, spec.id).toContain("CHECKPOINT + resume");
+      expect(compaction?.detail, spec.id).toContain("document + aw resume");
     }
   });
 

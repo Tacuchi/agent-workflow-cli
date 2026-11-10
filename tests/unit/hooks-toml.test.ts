@@ -192,6 +192,36 @@ describe("bloque gestionado en config.toml", () => {
     );
   });
 
+  it("una reinstalación quita los hooks de sesión ya instalados y deja los del usuario (spec 066, ID07)", () => {
+    const legacy = [
+      USER_CONFIG.trimEnd(),
+      "",
+      MANAGED_BLOCK_BEGIN,
+      "[[hooks]]",
+      'event = "PreCompact"',
+      'command = "agent-workflow hook pre-compact"',
+      "",
+      "[[hooks]]",
+      'event = "SessionEnd"',
+      'command = "agent-workflow hook session-end"',
+      MANAGED_BLOCK_END,
+      "",
+    ].join("\n");
+    const { entries } = hooksTemplateToToml(TEMPLATE);
+    const { text } = upsertManagedHooksBlock(legacy, entries);
+    const parsed = parseToml(text) as { hooks: { event: string; command: string }[] };
+    expect(parsed.hooks.map((hook) => hook.command)).not.toContain(
+      "agent-workflow hook pre-compact",
+    );
+    expect(parsed.hooks.map((hook) => hook.command)).not.toContain(
+      "agent-workflow hook session-end",
+    );
+    expect(parsed.hooks.filter((hook) => hook.command === "my-own-script.sh")).toHaveLength(1);
+    expect(parsed.hooks.filter((hook) => hook.command.startsWith("agent-workflow"))).toHaveLength(
+      entries.length,
+    );
+  });
+
   it("un hook del usuario cuyo comando NO es nuestro sobrevive al barrido", () => {
     const mixed = [
       "[[hooks]]",

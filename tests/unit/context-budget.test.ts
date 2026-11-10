@@ -57,9 +57,9 @@ describe("context measurement — the instrument the gates read", () => {
     }
   });
 
-  it("budgets all 19 live commands, not just the 6 flows the ceiling covered", async () => {
+  it("budgets all 15 live commands, not just the 6 flows the ceiling covered", async () => {
     const result = await runContextBudget(fs, { root: BUNDLE_ROOT });
-    expect(result.guaranteed).toHaveLength(19);
+    expect(result.guaranteed).toHaveLength(15);
     // The ten commands with no loop were never budgeted before: their guaranteed
     // load is their own body, and that is now a line like any other.
     const status = result.guaranteed.find((g) => g.command === "status");
@@ -73,7 +73,7 @@ describe("context measurement — the instrument the gates read", () => {
     });
     const baseline = JSON.parse(await readFile(BASELINE_PATH, "utf8"));
     expect(result.discovery.bytes).toBeLessThanOrEqual(baseline.discovery.bytes);
-    expect(result.activation.entries).toHaveLength(19);
+    expect(result.activation.entries).toHaveLength(15);
     expect(result.execution.journeys).toHaveLength(6);
   });
 
@@ -158,7 +158,7 @@ describe("context manifest — the bundle describes its own graph", () => {
 
   it("loads the real bundle manifest", async () => {
     const manifest = await loadManifest(fs, BUNDLE_ROOT);
-    expect(Object.keys(manifest.commands)).toHaveLength(19);
+    expect(Object.keys(manifest.commands)).toHaveLength(15);
     expect(manifest.journeys).toHaveLength(6);
   });
 
@@ -344,7 +344,7 @@ describe("hard floor — present in the compact profile AND in the fallback", ()
       const core = manifest.commands[command]?.core ?? [];
       const body = await readFile(join(BUNDLE_ROOT, core[0] ?? ""), "utf8");
       expect(body, command).toContain("Minimum context — a guide; only Git/DB is fixed.");
-      expect(body, command).toContain("--objetivo");
+      expect(body, command).toContain("aw flow ");
       expect(body, command).toContain("user's language");
     }
   });
@@ -375,7 +375,8 @@ describe("baseline honesty — two freeze points, two stamps, never mixed", () =
     // The conditional tree is real and priced: it is not an empty set that
     // passes because there is nothing in it.
     expect(result.modules.count).toBeGreaterThan(20);
-    expect(result.modules.bytes).toBeGreaterThan(50_000);
+    // 31.0.0 retired the session modules: the floor follows what remains.
+    expect(result.modules.bytes).toBeGreaterThan(40_000);
   });
 });
 

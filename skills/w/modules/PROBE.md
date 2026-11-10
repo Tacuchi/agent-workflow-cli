@@ -8,5 +8,5 @@ A **probe** (PoC / spike) is the resolver for **executable doubt**: research *re
 
 - **When**: risky assumption + not answerable by reading + failure would invalidate downstream work. Proposed via **structured-choice**.
 - **Lifecycle** (verification-first applies to the probe): seed question + pass/fail check **BEFORE** → run minimal → verdict in `CONCLUSIONS` (consequences → `DECISION`) → **discard** or promote to a real task/test.
-- **Isolation**: probe code lives in the **session folder** (gitignored) — never the source tree, **never committed**; DB probes are read-only (never DDL/DML).
+- **Isolation**: probe code lives in a scratch folder outside the sources — never the source tree, **never committed**; DB probes are read-only (never DDL/DML).
 - A **failed probe is a finding, not a failure** — report it; the human decides if the plan reshapes.

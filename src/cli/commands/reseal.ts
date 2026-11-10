@@ -92,7 +92,7 @@ export const resealCommand: CliCommand<ResealOutput> = {
       },
     },
     notes: [
-      "Cross-cutting: it opens no flow and creates no session. Approving asserts a person read the plan against the current spec; a divergence that needs a redesign belongs to /w:plan-refine.",
+      "Cross-cutting: it opens no flow and stores no run state. Approving asserts a person read the plan against the current spec; a divergence that needs a redesign belongs to /w:plan-refine.",
     ],
   },
 

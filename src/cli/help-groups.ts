@@ -2,7 +2,7 @@ import type { FlagContract } from "./commands/unknown-flags.js";
 import type { CliCommand, FlagHelp, HelpContract } from "./registry.js";
 
 // Help grouping for `aw --help` (Propuesta 002 G4 H-06). Commands are organized by
-// family so users can scan by intent (session lifecycle, checkpoint workflow,
+// family so users can scan by intent (sources, orchestration, exports,
 // orchestration helpers, etc.) instead of one long alphabetical list.
 //
 // Adding a new command? Decide which family it belongs to and append it to the
@@ -20,22 +20,6 @@ export interface CommandGroup {
 const DEV_ONLY_GROUP = "Dev-only";
 
 const GROUPS: readonly CommandGroup[] = [
-  {
-    name: "Session lifecycle",
-    commands: [
-      "sessions",
-      "session-create",
-      "session-load",
-      "session-close",
-      "session-pause",
-      "session-artifacts",
-      "hub-commit",
-    ],
-  },
-  {
-    name: "Checkpoint",
-    commands: ["checkpoint-read", "checkpoint-write"],
-  },
   {
     name: "Sources / Branches",
     commands: [
@@ -57,9 +41,6 @@ const GROUPS: readonly CommandGroup[] = [
       "detach-multiroot",
       "visibility",
       "check-branch",
-      // The isolation unit of a flow: a worktree per (source, session) so two
-      // flows never share a working tree.
-      "worktree",
     ],
   },
   {
@@ -76,15 +57,10 @@ const GROUPS: readonly CommandGroup[] = [
       "hub-compact",
       "stack",
       "skills",
-      // The deterministic direction engine: advances a journey to its first
-      // non-deterministic boundary and hands back that boundary's directive.
+      // The stateless flow verbs: each call derives its position from the
+      // document and git; approvals travel in the conversation as digests.
       "flow",
       "next-number",
-      // The reservations of numbered documents nobody is finishing, and the one
-      // authorized way to give a correlative back: it revokes the claim durably
-      // before releasing it, so a late sealed publication is rejected rather
-      // than colliding on a number somebody else now holds.
-      "claims",
       // The order and grouping a person meant for a cut of plans, declared once
       // and corrected by declaring again. It sits beside the board it reorders
       // because it is the only input the board's recommendation takes from a
@@ -100,10 +76,8 @@ const GROUPS: readonly CommandGroup[] = [
       // to load, and which documents it actually has to load.
       "context-budget",
       "context-plan",
-      // Retirement: `discard` takes a node and everything it exclusively owns;
-      // `reset` puts an incomplete session's inputs back. Both all-or-nothing.
+      // `discard` marks a spec or plan abandoned in place; reverting is git's.
       "discard",
-      "reset",
       // Documentary maintenance of the same graph those two retire from: it
       // rewrites the `> Baseline:` line of a plan whose review concluded it
       // still holds, so a legitimate divergence stops costing a whole
@@ -130,7 +104,7 @@ const GROUPS: readonly CommandGroup[] = [
   {
     name: "Exports",
     // Each writes into exactly one docs/ folder and nowhere else.
-    commands: ["export-diagrams", "export-manuals", "export-reports", "export-scripts"],
+    commands: ["export-scripts"],
   },
   {
     name: "Doctor / Data",
@@ -142,7 +116,6 @@ const GROUPS: readonly CommandGroup[] = [
       "host-doctor",
       "history",
       "history-update",
-      "release-data",
       "code-scan",
       "hub-block",
       // Lives with the record-repair family and not with `hub-init`: it
@@ -207,7 +180,7 @@ export const INTENTS: readonly { intent: string; command: string }[] = [
   { intent: "number a new document", command: "next-number" },
   { intent: "diagnose the installation", command: "doctor" },
   { intent: "consolidate SQL", command: "export-scripts" },
-  { intent: "open a run", command: "flow start" },
+  { intent: "read where a flow stands", command: "flow read" },
 ];
 
 /**
@@ -391,7 +364,7 @@ export function globalHelpText(
     "                       it for every invocation. Refused with an explicit --json/--format json",
     "",
     "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
-    "ancestor marker (.<ns>/sessions/) > ~/.config/agent-workflow/namespace >",
+    "ancestor marker (.<ns>/workline.json) > ~/.config/agent-workflow/namespace >",
     `default '${defaultNamespace}'. --hub selects an explicit hub. Without`,
     "a marker, a directory outside a git checkout is an implicit root; inside",
     "an unclaimed checkout, specify --hub or initialize a hub.",

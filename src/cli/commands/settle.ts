@@ -129,7 +129,7 @@ export const settleCommand: CliCommand<SettleOutput> = {
       },
     },
     notes: [
-      "Cross-cutting: it opens no flow and creates no session. With an execution run open on the plan it refuses and names that run. Approving asserts the work was done, or was somebody else's.",
+      "Cross-cutting: it opens no flow and stores no run state. With an execution run open on the plan it refuses and names that run. Approving asserts the work was done, or was somebody else's.",
     ],
   },
 

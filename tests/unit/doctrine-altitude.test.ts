@@ -3,13 +3,12 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import {
-  parsePlanBaselineSeal,
   parseSpecCriteria,
   parseSpecRelation,
 } from "../../src/application/parsers/spec-relation.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { commandHelpText } from "../../src/cli/help-groups.js";
-import { alignSpecBaseline, specBaselineDigest } from "../../src/domain/lineage.js";
+import { specBaselineDigest } from "../../src/domain/lineage.js";
 
 // Doctrine ALTITUDE guards (lote G — the spec is the functional "what", the plan
 // the technical "how").
@@ -161,73 +160,6 @@ describe("doctrine altitude — the seal, and the exit a divergent one has", () 
       });
     }
     expect(mentions).toBeGreaterThan(0);
-  });
-});
-
-describe("doctrine altitude — a standalone plan and the board that reads it", () => {
-  it("the MARKER's landing is what decides which claim gets pinned", async () => {
-    const plan = [
-      "# Plan 040 — standalone x",
-      "",
-      "> Standalone: conversacion del host · sesion 012-standalone-x",
-      "> Limite de ejecucion: checkout",
-      "",
-      "## Origin",
-      "adopted from host conversation",
-      "",
-    ].join("\n");
-    const board = await readSrc("application/workline-index-service.ts");
-    // The condition is the RELATION, not the alignment. A standalone plan has no
-    // seal and never will, so `alignSpecBaseline` answers `unsealed` whether or
-    // not the route landed — the first version of this guard conditioned on that
-    // and could therefore never flip, which would have left it pinning "the notice
-    // does reach it" after the notice stopped reaching it.
-    if (parseSpecRelation(plan).status === "standalone") {
-      // It landed, so what is pinned is the NEW claim: this plan is routed by its
-      // own declared origin, and the legacy notice belongs to the plan that
-      // carries no marker — the one whose provenance nobody can prove.
-      expect(board).toContain('plan.spec.status === "standalone"');
-      expect(board).toContain('mode: "standalone"');
-      expect(board).toContain("WORKLINE_BASELINE_LEGACY_UNSEALED");
-      // And the seal is STILL absent: the board did not start claiming an
-      // alignment nobody computed, it stopped reading the absence as a defect.
-      expect(alignSpecBaseline(parsePlanBaselineSeal(plan), null).status).toBe("unsealed");
-
-      // The doctrine half, and the reason this branch is not a pin on source
-      // strings: the marker the documents SPELL has to be the marker the parser
-      // reads. A document that writes the label one way while the CLI accepts
-      // another sends every plan born from it to the `absent` route — the notice
-      // it was told it would not get, and a deviation gate that demands a lineage
-      // the plan does not have.
-      const marker = /`(> Standalone:[^`]+)`/.exec(await read("modules/PLAN-INPUT.md"))?.[1];
-      expect(marker, "PLAN-INPUT tiene que deletrear el marcador").toBeDefined();
-      const asDoctrineSpellsIt = [
-        "# Plan 040 — standalone x",
-        "",
-        marker ?? "",
-        "",
-        "## Origin",
-        "adopted from host conversation",
-        "",
-      ].join("\n");
-      expect(parseSpecRelation(asDoctrineSpellsIt)).toEqual({ status: "standalone" });
-      // And the destination it promises for a deviation is the one the gate really
-      // writes to: the session's own file, never a `docs/decisions/` note.
-      expect(await read("modules/PLAN-INPUT.md")).toContain("`DECISION.md`");
-      expect(await readSrc("application/flow/submit.ts")).toContain("DECISION.md de la sesión");
-      return;
-    }
-
-    expect(board).toContain("WORKLINE_BASELINE_LEGACY_UNSEALED");
-    expect(board).toContain('mode: "compatible"');
-    // The notice DOES reach it, so no doctrine file may say it does not, and the
-    // module that owns the mode has to say what the board reports instead.
-    for (const file of await listMd(SKILL_ROOT)) {
-      expect(await readFile(file, "utf8"), file).not.toMatch(/no unsealed-baseline notice/);
-    }
-    const input = await read("modules/PLAN-INPUT.md");
-    expect(input).toContain("`compatible` mode");
-    expect(input).toContain("`> Derived from …`");
   });
 });
 

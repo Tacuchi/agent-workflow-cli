@@ -1,7 +1,3 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { hubBlockUpsertCommand } from "../../src/cli/commands/hub-block.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
@@ -16,26 +12,6 @@ import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 
 describe("groupCommands", () => {
-  it("groups known commands into their family with declared order", () => {
-    const groups = groupCommands([
-      "sessions",
-      "session-create",
-      "session-load",
-      "session-close",
-      "session-artifacts",
-      "self",
-    ]);
-    const sessionGroup = groups.find((g) => g.name === "Session lifecycle");
-    expect(sessionGroup?.commands).toEqual([
-      "sessions",
-      "session-create",
-      "session-load",
-      "session-close",
-      "session-artifacts",
-    ]);
-    expect(groups.find((g) => g.name === "Self")?.commands).toEqual(["self"]);
-  });
-
   it("omits empty groups when none of their commands are present", () => {
     const groups = groupCommands(["self"]);
     expect(groups.map((g) => g.name)).toEqual(["Self"]);
@@ -61,15 +37,6 @@ describe("groupCommands", () => {
     expect(sources?.commands).toContain("git-flow");
     // Not leaked into the catch-all Other group.
     expect(groups.find((g) => g.name === "Other")).toBeUndefined();
-  });
-
-  it("preserves the input order of commands within their group", () => {
-    const groups = groupCommands(["session-create", "sessions", "session-close"]);
-    expect(groups.find((g) => g.name === "Session lifecycle")?.commands).toEqual([
-      "sessions",
-      "session-create",
-      "session-close",
-    ]);
   });
 });
 
@@ -124,25 +91,7 @@ describe("renderGroupedCommandLines with purposes", () => {
   });
 });
 
-function byName(name: string) {
-  const command = ALL_COMMANDS.find((item) => item.name === name);
-  if (!command) throw new Error(name);
-  return command;
-}
-
 describe("commandHelpText", () => {
-  it("generates the usage line from the contract, positionals and exclusive groups included", () => {
-    expect(commandHelpText(byName("set-pipeline"))).toContain(
-      "Usage: aw set-pipeline <alias> <build|test> <command|ninguno>",
-    );
-    expect(commandHelpText(byName("doc-branch"), "set")).toContain(
-      "Usage: aw doc-branch set (--code <code> | --doc <spec|plan|quick:NNN>) (--rama <branch> | --from <spec|plan|quick:NNN>) [--session <code>] --source <alias>",
-    );
-    expect(commandHelpText(byName("doc-branch"), "show")).toContain(
-      "Usage: aw doc-branch show (--code <code> | --doc <spec|plan|quick:NNN>) [--session <code>]",
-    );
-  });
-
   it("la ayuda global anuncia --hub sin prometer una raíz implícita en un checkout", () => {
     const help = globalHelpText([], "workflow");
     expect(help).toContain("[--hub <path>]");
@@ -210,39 +159,6 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
     );
     expect(result).toMatchObject({ ok: false, error: { code: "INVALID_INPUT" } });
   });
-
-  it("no ofrece overwrite en scripts, doctor nombra sus subverbos y self sólo los propios", () => {
-    expect(commandHelpText(byName("export-scripts"))).not.toContain("--overwrite");
-    expect(commandHelpText(byName("export-scripts"))).toMatch(/--exclude <name> +.*\(repeatable\)/);
-    expect(commandHelpText(byName("export-scripts"))).toContain("--sessions <a,b>");
-    expect(commandHelpText(byName("export-manuals"), "apply")).toContain("--overwrite");
-    expect(commandHelpText(byName("doctor"))).toMatch(/^ {2}prepare {2}/m);
-    expect(commandHelpText(byName("doctor"))).toMatch(/^ {2}apply {4}/m);
-    for (const flag of ["--host", "--only", "--skip-native"]) {
-      expect(commandHelpText(byName("doctor"))).toContain(flag);
-    }
-    expect(commandHelpText(byName("doctor"), "prepare")).toContain("--select");
-    expect(commandHelpText(byName("doctor"), "apply")).toContain("--approval");
-    expect(Object.keys(byName("self").flags.actions ?? {})).toHaveLength(12);
-    expect(commandHelpText(byName("self"), "update")).toContain("--dry-run");
-    expect(commandHelpText(byName("flow"), "advance")).toContain("--adopt");
-  });
-
-  it("el dispatcher entrega la ayuda del subverbo solicitado, sin ejecutarlo", () => {
-    const cli = resolve(__dirname, "../../dist/cli/main.js");
-    const home = mkdtempSync(join(tmpdir(), "aw-help-groups-home-"));
-    const env = { ...process.env, HOME: home, USERPROFILE: home };
-    for (const [args, expected] of [
-      [["self", "update", "--help"], "aw self update"],
-      [["doctor", "prepare", "--help"], "aw doctor prepare"],
-      [["flow", "advance", "--help"], "aw flow advance"],
-    ] as const) {
-      const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env });
-      expect(result.status, args.join(" ")).toBe(0);
-      expect(result.stdout, args.join(" ")).toContain(expected);
-    }
-    rmSync(home, { recursive: true, force: true });
-  });
 });
 
 describe("aw --help — contract once, one command per intent, hook targets apart", () => {
@@ -282,7 +198,7 @@ describe("aw --help — contract once, one command per intent, hook targets apar
       "number a new document",
       "diagnose the installation",
       "consolidate SQL",
-      "open a run",
+      "read where a flow stands",
     ]);
     const commands = INTENTS.map((row) => row.command);
     expect(new Set(commands).size).toBe(commands.length);

@@ -39,10 +39,10 @@ phase is missing, duplicated, reordered or grouped across an ineligible boundary
 Before editing, `plan-exec` repeats the inference over pending phases using the plan plus live
 dependencies, branches, working trees, blockers and risks: current evidence wins over the declared
 partition. The declared section remains planning structure;
-the effective batches and any difference are recorded in `CHECKPOINT`.
+the effective batches and any difference are said in the report.
 
 A legacy plan without `## Execution batches` is valid. Execution infers effective batches and
-records them in `CHECKPOINT`; it does not normalize the plan merely to add the section.
+says them in the report; it does not normalize the plan merely to add the section.
 
 ## Continuous cycle
 
@@ -53,7 +53,7 @@ what keep it resumable. The order of those closing steps is the CLI's, per the n
 
 A real blocker or structural/functional deviation stops immediately. No unproven phase becomes
 `validada`; the combined changes remain uncommitted and the actual states plus the unblocking
-action go to `CHECKPOINT`.
+action go to the plan's `> Próximo paso:`.
 
 ## Git authorization
 

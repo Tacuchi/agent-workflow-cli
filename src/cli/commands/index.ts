@@ -8,9 +8,6 @@ import type { CliCommand } from "../registry.js";
 import { addSourceCommand } from "./add-source.js";
 import { amendCommand } from "./amend.js";
 import { checkBranchCommand } from "./check-branch.js";
-import { checkpointReadCommand } from "./checkpoint-read.js";
-import { checkpointWriteCommand } from "./checkpoint-write.js";
-import { claimsCommand } from "./claims.js";
 import { codeScanCommand } from "./code-scan.js";
 import { contextBudgetCommand } from "./context-budget.js";
 import { contextPlanCommand } from "./context-plan.js";
@@ -19,21 +16,13 @@ import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from 
 import { discardCommand } from "./discard.js";
 import { docBranchCommand } from "./doc-branch.js";
 import { doctorCommand } from "./doctor.js";
-import {
-  exportDiagramsCommand,
-  exportManualsCommand,
-  exportReportsCommand,
-  exportScriptsCommand,
-} from "./export.js";
+import { exportScriptsCommand } from "./export.js";
 import { flowCommand } from "./flow.js";
 import { gitFlowCommand } from "./git-flow.js";
-import { historyUpdateCommand } from "./history-update.js";
-import { historyCommand } from "./history.js";
 import { hookCommand } from "./hook.js";
 import { hostDoctorCommand } from "./host-doctor.js";
 import { hostMemoryCommand } from "./host-memory.js";
 import { hubBlockUpsertCommand } from "./hub-block.js";
-import { hubCommitCommand } from "./hub-commit.js";
 import { hubCompactCommand } from "./hub-compact.js";
 import { hubInitCommand } from "./hub-init.js";
 import { hubMigrateCommand } from "./hub-migrate.js";
@@ -45,19 +34,11 @@ import { attachMultirootCommand, detachMultirootCommand } from "./multiroot.js";
 import { persistCommand } from "./persist.js";
 import { planCommand } from "./plan.js";
 import { pluginDoctorCommand } from "./plugin-doctor.js";
-import { releaseDataCommand } from "./release-data.js";
 import { releasePassCommand } from "./release-pass.js";
 import { removeSourceCommand } from "./remove-source.js";
 import { resealCommand } from "./reseal.js";
 import { resumeCommand } from "./resume.js";
-import { resetCommand } from "./retirement.js";
 import { selfCommand } from "./self.js";
-import { sessionArtifactsCommand } from "./session-artifacts.js";
-import { sessionCloseCommand } from "./session-close.js";
-import { sessionCreateCommand } from "./session-create.js";
-import { sessionLoadCommand } from "./session-load.js";
-import { sessionPauseCommand } from "./session-pause.js";
-import { sessionsCommand } from "./sessions.js";
 import {
   setExceptionBranchCommand,
   setQaBranchCommand,
@@ -72,27 +53,15 @@ import { stackCommand } from "./stack.js";
 import { statusCommand } from "./status.js";
 import { toolCommand } from "./tool.js";
 import { visibilityCommand } from "./visibility.js";
-import { worktreeCommand } from "./worktree.js";
 
 export const ALL_COMMANDS: readonly CliCommand[] = [
-  sessionsCommand,
   statusCommand,
   resumeCommand,
   hostMemoryCommand,
   persistCommand,
-  exportDiagramsCommand,
-  exportManualsCommand,
-  exportReportsCommand,
   exportScriptsCommand,
-  historyCommand,
-  historyUpdateCommand,
-  sessionArtifactsCommand,
-  sessionCloseCommand,
-  sessionCreateCommand,
-  sessionPauseCommand,
   stackCommand,
   hubInitCommand,
-  hubCommitCommand,
   hubMoveCommand,
   hubsCommand,
   addSourceCommand,
@@ -110,18 +79,14 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   removeSourceCommand,
   gitFlowCommand,
   mergeStateCommand,
-  checkpointReadCommand,
   checkBranchCommand,
-  checkpointWriteCommand,
   hookCommand,
   mcpCommand,
   toolCommand,
   visibilityCommand,
-  worktreeCommand,
   harnessCommand,
   profilesCommand,
   logsCommand,
-  claimsCommand,
   // The one place a human intention enters the hub: how a cut of plans
   // born from one spec was meant to be executed. Everything that orders the
   // board derives from it, so it is declared here and nowhere else.
@@ -136,7 +101,6 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   // session that drove it.
   discardCommand,
   hubCompactCommand,
-  resetCommand,
   // The cheap exit a legitimate baseline divergence has: re-sealing a plan whose
   // review concluded it still holds, instead of walking a whole plan-refine to
   // make the publication recompute one line.
@@ -150,13 +114,11 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   pluginDoctorCommand,
   hostDoctorCommand,
   doctorCommand,
-  releaseDataCommand,
   attachMultirootCommand,
   detachMultirootCommand,
   hubBlockUpsertCommand,
   // The punctual way into the current model for a hub that carries a legacy
   // series. Read-only without `--apply`.
   hubMigrateCommand,
-  sessionLoadCommand,
   selfCommand,
 ];

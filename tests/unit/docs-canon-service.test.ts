@@ -5,7 +5,6 @@ import {
   resolveDocsCanon,
 } from "../../src/application/docs-canon-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { runSessionCreate } from "../../src/application/session-create-service.js";
 import { nodeFromDocPath } from "../../src/domain/workline-node.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -54,20 +53,6 @@ describe("DocsCanon", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.error).toContain("no reconoce 'unknown'");
-  });
-
-  it("does not let custody create a session when the core canon is invalid", async () => {
-    const fs = new MemFs();
-    fs.file("/cwd/.workflow/skills.toml", '[docs]\nplan = "knowledge/plans"\n');
-
-    const result = await runSessionCreate(fs, paths(), {
-      type: "exec",
-      name: "x-plan-exec",
-      objetivo: "probar el límite",
-    });
-
-    expect(result).toMatchObject({ code: "DOCS_CANON_INVALID" });
-    expect(await fs.exists("/cwd/.workflow/sessions")).toBe(false);
   });
 
   it("lets domain readers receive their roots instead of rebuilding docs/specs|plans", () => {

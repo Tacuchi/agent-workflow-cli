@@ -3,15 +3,10 @@ import type { FlowRunScope } from "../domain/flow/run-state.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { projectRun } from "./flow/run-projection.js";
-import { parseMdSectionBilingual } from "./markdown.js";
 import { readHubBlock } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
-import { buildSessionNarrative } from "./session-narrative.js";
-import { resolveSessionTarget, sessionReadRequest } from "./session-resolver.js";
 import {
   type IndexedPlan,
-  type IndexedSession,
   type IndexedSpec,
   type PipelineAction,
   type PipelineItem,
@@ -41,9 +36,6 @@ import type { WorktreeListOutput } from "./worktree-service.js";
 export interface ResumeInput {
   /** A doc path (`docs/plans/009-…md`) or a bare document number. */
   target?: string;
-  /** A session folder or code — resolved read-only. */
-  code?: string;
-  contextId?: string;
   now?: Date;
   /** Read isolation units too, so two concurrent flows are told apart. */
   git?: GitPort;
@@ -144,37 +136,17 @@ export async function runResume(
   if (index.docs_canon_error !== undefined) {
     return {
       status: "invalid_target",
-      target: input.target ?? input.code ?? "",
+      target: input.target ?? "",
       action: `el canon documental no es válido: ${index.docs_canon_error}. Corregilo antes de reanudar trabajo`,
     };
   }
 
   const outcome =
-    input.code !== undefined
-      ? await resumeSession(fs, paths, index, input)
-      : input.target !== undefined
-        ? resumeTarget(index, input.target)
-        : resumePipeline(index);
-  const readyToClose = await sessionsReadyToClose(fs, index);
+    input.target !== undefined ? resumeTarget(index, input.target) : resumePipeline(index);
 
   const withChanges = await attachUncommitted(fs, paths, index, outcome, input.git);
   return {
     ...withChanges,
-    ...(readyToClose.length > 0 ? { ready_to_close: readyToClose } : {}),
-    ...(index.sessions.some((session) => session.state === "paused")
-      ? {
-          paused_sessions: index.sessions
-            .filter((session) => session.state === "paused")
-            .map((session) => session.folder),
-        }
-      : {}),
-    ...(index.sessions.some((session) => session.state === "abandoned")
-      ? {
-          abandoned_sessions: index.sessions
-            .filter((session) => session.state === "abandoned")
-            .map((session) => session.folder),
-        }
-      : {}),
     ...(index.unreadable_sources !== undefined
       ? { unreadable_sources: index.unreadable_sources }
       : {}),
@@ -239,32 +211,6 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
     };
   }
   return { status: "proposal", via: "explicit", proposal: first };
-}
-
-async function resumeSession(
-  fs: FileSystemPort,
-  paths: PathsService,
-  index: WorklineIndex,
-  input: ResumeInput,
-): Promise<ResumeOutcome> {
-  const resolution = await resolveSessionTarget(fs, paths, sessionReadRequest(input));
-
-  if (resolution.outcome !== "resolved") {
-    return {
-      status: "invalid_target",
-      target: input.code ?? "",
-      action: resolution.action,
-    };
-  }
-
-  const folder = resolution.session.folder;
-  const session = index.sessions.find((s) => s.folder === folder);
-  const path = session?.path ?? resolution.session.path;
-  return {
-    status: "proposal",
-    via: "explicit",
-    proposal: await sessionProposal(fs, paths, folder, path, session),
-  };
 }
 
 // ── no target: the documental pipeline ───────────────────────────────────────
@@ -369,89 +315,6 @@ function told(
     ...(detail.warning === undefined ? {} : { warning: detail.warning }),
     ...(detail.postponed === undefined ? {} : { postponed: detail.postponed }),
   };
-}
-
-/**
- * A session's proposal, answered from the session's own narrative.
- *
- * It used to parse `Objective`, `Completed` and `Pending / Next` with a private
- * reader living right here — a third resolver for headings two other modules also
- * resolved, and the reason `checkpoint-read` could report nothing while `resume`
- * reported the truth. The narrative is the one projection now, so what `resume`
- * says is by construction what `SESSION.md` shows and what `session-artifacts`
- * returns.
- */
-async function sessionProposal(
-  fs: FileSystemPort,
-  paths: PathsService,
-  folder: string,
-  path: string,
-  session: IndexedSession | undefined,
-): Promise<ResumeProposal> {
-  const narrative = await buildSessionNarrative(fs, paths, {
-    folder,
-    path,
-    ...(session?.code !== undefined ? { code: session.code } : {}),
-  });
-  const run = await projectRun(fs, paths, folder);
-  const command = sessionLoadCommand(narrative.phase, run, folder);
-  const [result] = narrative.results;
-  return {
-    kind: "session",
-    file: folder,
-    number: session?.code ?? null,
-    objective: narrative.objective?.text ?? session?.summary ?? folder,
-    progress:
-      result === undefined
-        ? `sesión ${narrative.phase}, sin avance registrado`
-        : `sesión ${narrative.phase}: ${result.text}`,
-    next: narrative.next?.text ?? "el checkpoint no declara trabajo pendiente",
-    action: {
-      kind: "continue",
-      command,
-      mode: "normal",
-    },
-    command,
-    ...(session !== undefined && session.units.length > 0 ? { units: session.units } : {}),
-    ...(run !== null && run.scope !== null ? { scope: run.scope } : {}),
-  };
-}
-
-async function sessionsReadyToClose(
-  fs: FileSystemPort,
-  index: WorklineIndex,
-): Promise<Array<{ session: string; command: string }>> {
-  const readyToClose: Array<{ session: string; command: string }> = [];
-  for (const session of index.sessions.filter((item) => item.state === "active")) {
-    const document = await fs.readText(`${session.path}/SESSION.md`).catch(() => "");
-    const criteria = parseMdSectionBilingual(document, "Success criteria") ?? "";
-    const checked = (criteria.match(/^\s*[-*]\s*\[[xX]\]/gm) ?? []).length;
-    const open = (criteria.match(/^\s*[-*]\s*\[\s\]/gm) ?? []).length;
-    if (checked > 0 && open === 0) {
-      readyToClose.push({
-        session: session.folder,
-        command: `aw session-close --code ${session.folder}`,
-      });
-    }
-  }
-  return readyToClose;
-}
-
-function sessionLoadCommand(
-  phase: string,
-  run: Awaited<ReturnType<typeof projectRun>>,
-  folder: string,
-): string {
-  const directed = run !== null && run.boundary !== "final";
-  const command =
-    phase === "pausada"
-      ? `aw session-load --code ${folder}`
-      : phase === "abandonada" || phase === "cerrada"
-        ? `aw session-load --code ${folder} --reopen`
-        : directed
-          ? run.command
-          : `aw session-load --code ${folder} --reopen`;
-  return command;
 }
 
 /**

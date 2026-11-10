@@ -4,10 +4,6 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runCheckBranch } from "../../src/application/check-branch-service.js";
-import {
-  observeScopedFingerprints,
-  resolveCheckoutCandidates,
-} from "../../src/application/flow/checkout-observation.js";
 import { runGitFlow } from "../../src/application/git-flow-service.js";
 import { buildHubTabData } from "../../src/application/hub-tab-data.js";
 import { runMergeState } from "../../src/application/merge-state-service.js";
@@ -24,7 +20,6 @@ import { setWorkingBranchCommand } from "../../src/cli/commands/set-branch.js";
 import { statusCommand } from "../../src/cli/commands/status.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { hubKey, unitPath } from "../../src/domain/isolation-unit.js";
 import type { GitPort } from "../../src/ports/git.js";
 import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -131,22 +126,6 @@ it("set-working-branch no inicia git ni guarda una rama si falta la ruta", async
   };
   const result = await setWorkingBranchCommand.execute(args, { fs, env, git, paths } as CliContext);
   expect(result.error?.code).toBe("SOURCE_PATH_MISSING");
-});
-
-it("la observación del checkout no acredita una unidad si su fuente ya no resuelve", async () => {
-  const { fs, git, paths } = await missingHub();
-  const session = "103-una-plan-exec";
-  await mkdir(paths.userUnitsDir(), { recursive: true });
-  const unit = unitPath(await fs.realPath(paths.userUnitsDir()), {
-    hubKey: hubKey(paths.hubDir()),
-    alias: "remoto",
-    session,
-  });
-  await mkdir(unit, { recursive: true });
-  const candidates = await resolveCheckoutCandidates(fs, paths, session);
-  expect(candidates.map((candidate) => candidate.source)).not.toContain("remoto");
-  const result = await observeScopedFingerprints(fs, git, paths, session, ["remoto"]);
-  expect(result).toMatchObject({ ok: false, failure: { code: "SOURCE_PATH_MISSING" } });
 });
 
 it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin invocar git", async () => {

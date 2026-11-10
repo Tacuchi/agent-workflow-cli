@@ -1,5 +1,5 @@
 ---
-description: Use when a plan is ready to implement. Starts/resumes plan-exec-loop over docs/plans/PPP-plan-<slug>.md, re-inferring continuous batches and deferring their validation, review and single-per-source commits to batch close.
+description: Use when a plan is ready to implement. Runs plan-exec-loop over docs/plans/PPP-plan-<slug>.md, re-inferring continuous batches and deferring their validation, review and single-per-source commits to batch close.
 argument-hint: <docs/plans/PPP-plan-<slug>.md>
 allowed-tools:
   [
@@ -19,22 +19,19 @@ checkboxes and `> Estado:` line in the living plan.
 
 > **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
-> 1. **Session first** — open or resume the run before touching code: `aw flow start --flow plan-exec --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
-> 2. **Git/DB** — verify declared branches at each batch's local precondition; the CLI commits exact changed paths once per source
->    after batch checks and that batch's approval.
->    DML/DDL stays in `SCRIPTS.sql`.
+> 1. **Read first** — `aw flow read --flow plan-exec --doc <plan>` returns its state, its next step and the `read_digest` every plan write quotes back. Nothing else is kept between turns: the plan, its boxes and git are the record.
+> 2. **Git/DB** — per batch take its unit (`aw flow unit --plan <PPP> --batch <Bn> --source <alias>`), propose the commit of its exact paths (`aw flow propose-commit`), and commit only with the person's approval of that digest (`aw flow commit`). SQL goes as a file in `docs/scripts/`, never executed.
 > 3. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
 
 ## Run the loop
 
-1. Read, in order, the `read_set` entries it returned that are not `loaded`.
+1. Read [`plan-exec-loop`](../loops/plan-exec-loop/LOOP.md).
 2. Follow it end to end: check executability, infer live batches, execute each without internal
-   validation pauses (compiling after each change), then validate/commit at its close.
+   validation pauses (compiling after each change), then validate, commit and close it in the plan
+   with `aw flow close-batch`; after the final validation, `aw flow finish`.
 
-Answer each boundary per `aw flow --help`; the CLI fills what it knows. A stuck frontier: `aw flow recover` or `aw flow restart`; `aw flow annul` reopens a miscredited batch.
-
-> `plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body. It is **resumable**: an existing CHECKPOINT continues from there.
+> `plan-exec-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body. It is **resumable**: the plan's `> Próximo paso:` and its boxes say where to continue.
 
 ## Two gates that send work back
 

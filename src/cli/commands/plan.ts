@@ -20,7 +20,7 @@ export const planCommand: CliCommand<PlanLintReport> = {
   name: "plan",
   flags: { known: [], actions: { lint: { known: [] } } },
   help: {
-    purpose: "Run actions over a plan document that need no flow or session.",
+    purpose: "Run actions over a plan document that need no flow.",
     actions: {
       lint: {
         purpose:
@@ -30,7 +30,7 @@ export const planCommand: CliCommand<PlanLintReport> = {
           "{plan, hub_block, violations[] ({code, line, message, rule, moment: publication|execution-entry|both})}.",
         exit_codes: { "2": "The plan has violations; the report is still printed." },
         notes: [
-          "Read-only: opens no flow, creates no session and writes nothing. Without a readable hub block (hub_block false) publication judges the clauses only.",
+          "Read-only: opens no flow and writes nothing. Without a readable hub block (hub_block false) publication judges the clauses only.",
         ],
       },
     },

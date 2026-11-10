@@ -1,13 +1,18 @@
 {
-  "$comment": "Corpus of the six representative journeys (spec 009 § Scope). For each one it freezes WHAT it must load (read_set) and WHICH hard-floor cases its loaded content must keep covering. Coverage is frozen at what the bundle genuinely guaranteed when the corpus was written, not at an aspiration: a journey that never carried a case (persist creates no session, by design) does not gain one here — but no journey may LOSE one when the doctrine is split into core + modules. Limitation, declared: this proves the floor is PRESENT in the compact profile, not that a weak model obeys it. That failure mode only surfaces in a real smoke (informe 003 § wave 5).",
+  "$comment": "Corpus of the six representative journeys (spec 009 § Scope). For each one it freezes WHAT it must load (read_set) and WHICH hard-floor cases its loaded content must keep covering. Coverage is frozen at what the bundle genuinely guaranteed when the corpus was written, not at an aspiration: a journey that never carried a case (persist reads no flow document, by design) does not gain one here — but no journey may LOSE one when the doctrine is split into core + modules. Limitation, declared: this proves the floor is PRESENT in the compact profile, not that a weak model obeys it. That failure mode only surfaces in a real smoke (informe 003 § wave 5).",
   "hard_floor_cases": {
-    "session": {
-      "why": "the run owns a session before touching anything",
-      "any_of": ["aw session-create --type", "create_or_resume"]
+    "read-first": {
+      "why": "the run reads its document and the digest it read before touching anything",
+      "any_of": ["aw flow read", "read_digest", "Read first"]
     },
-    "checkpoint": {
-      "why": "progress survives compaction and resume",
-      "any_of": ["CHECKPOINT"]
+    "document-record": {
+      "why": "progress survives compaction and resume in the document and git",
+      "any_of": [
+        "Próximo paso",
+        "git status",
+        "the document is the record",
+        "document as the only record"
+      ]
     },
     "language": {
       "why": "user-facing output stays in the user's language",
@@ -29,7 +34,7 @@
     },
     "recovery": {
       "why": "an interrupted run can be picked up where it stopped",
-      "any_of": ["Compact / resume", "Resumable", "resumable", "session-load"]
+      "any_of": ["Compact / resume", "Resumable", "resumable"]
     }
   },
   "journeys": [
@@ -37,8 +42,8 @@
       "id": "spec",
       "read_set": ["commands/spec-refine.md", "loops/spec-refine-loop/LOOP.md", "loops/CHASSIS.md"],
       "hard_floor": [
-        "session",
-        "checkpoint",
+        "read-first",
+        "document-record",
         "language",
         "structured-choice",
         "write-boundary",
@@ -54,8 +59,8 @@
         "loops/CHASSIS.md"
       ],
       "hard_floor": [
-        "session",
-        "checkpoint",
+        "read-first",
+        "document-record",
         "language",
         "structured-choice",
         "write-boundary",
@@ -72,8 +77,8 @@
         "loops/CODE-POLICIES.md"
       ],
       "hard_floor": [
-        "session",
-        "checkpoint",
+        "read-first",
+        "document-record",
         "language",
         "structured-choice",
         "write-boundary",
@@ -89,8 +94,8 @@
         "loops/CODE-POLICIES.md"
       ],
       "hard_floor": [
-        "session",
-        "checkpoint",
+        "read-first",
+        "document-record",
         "language",
         "structured-choice",
         "write-boundary",

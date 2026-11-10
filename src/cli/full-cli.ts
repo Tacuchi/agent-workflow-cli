@@ -503,16 +503,11 @@ const HUB_SEALED_COMMANDS = new Set([
   "persist",
   "hub-compact",
   "export-scripts",
-  "export-diagrams",
-  "export-reports",
-  "export-manuals",
   "capability",
   "reseal",
   "settle",
-  "claims",
   "flow",
   "discard",
-  "reset",
   "doctor",
 ]);
 

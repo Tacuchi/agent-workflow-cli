@@ -9,18 +9,6 @@
     },
     {
       "file": "src/cli/commands/doc-branch.ts",
-      "text": "aw doc-branch show (--code <NNN>",
-      "class": "usage",
-      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
-    },
-    {
-      "file": "src/cli/commands/doc-branch.ts",
-      "text": "aw doc-branch set (--code <NNN>",
-      "class": "usage",
-      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
-    },
-    {
-      "file": "src/cli/commands/doc-branch.ts",
       "text": "aw doc-branch set --doc ${formatNodeId(identity.doc)} --source <alias>",
       "class": "not-determinable",
       "reason": "la persona confirma o cambia el nombre propuesto; el documento va interpolado"
@@ -30,24 +18,6 @@
       "text": "aw doctor prepare --select <id>",
       "class": "not-determinable",
       "reason": "qué hallazgo reparar lo elige la persona y el digest sale de prepare"
-    },
-    {
-      "file": "src/cli/commands/flow.ts",
-      "text": "aw flow prove --source <alias>",
-      "class": "not-determinable",
-      "reason": "vale para cada fuente del scope; no hay una sola"
-    },
-    {
-      "file": "src/cli/commands/flow.ts",
-      "text": "aw flow retract --session <código>",
-      "class": "usage",
-      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
-    },
-    {
-      "file": "src/cli/commands/flow.ts",
-      "text": "aw flow annul --session <código>",
-      "class": "usage",
-      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
     },
     {
       "file": "src/cli/commands/git-flow.ts",
@@ -64,12 +34,6 @@
     {
       "file": "src/cli/commands/remove-source.ts",
       "text": "aw remove-source <alias>",
-      "class": "usage",
-      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
-    },
-    {
-      "file": "src/cli/commands/retirement.ts",
-      "text": "aw claims recover <ruta>",
       "class": "usage",
       "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
     },
@@ -248,18 +212,6 @@
       "reason": "el host destino lo elige la persona"
     },
     {
-      "file": "src/application/flow/checkout-observation.ts",
-      "text": "aw add-source ${source}:<ruta>",
-      "class": "not-determinable",
-      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
-    },
-    {
-      "file": "src/application/flow/prove.ts",
-      "text": "aw worktree ensure --source <alias>",
-      "class": "not-determinable",
-      "reason": "vale para cada fuente del scope; no hay una sola"
-    },
-    {
       "file": "src/domain/doctor/operations.ts",
       "text": "aw detach-multiroot --path <rutas selladas>",
       "class": "not-determinable",
@@ -384,6 +336,24 @@
       "text": "aw discard apply <objetivo>",
       "class": "usage",
       "reason": "forma de uso: el objetivo es la entrada de quien invoca"
+    },
+    {
+      "file": "src/cli/commands/doc-branch.ts",
+      "text": "aw doc-branch show --doc <spec|plan:NNN>",
+      "class": "usage",
+      "reason": "forma de uso: el documento, el plan y el lote son la entrada de quien invoca"
+    },
+    {
+      "file": "src/cli/commands/doc-branch.ts",
+      "text": "aw doc-branch set --doc <spec|plan:NNN>",
+      "class": "usage",
+      "reason": "forma de uso: el documento, el plan y el lote son la entrada de quien invoca"
+    },
+    {
+      "file": "src/cli/commands/flow-plan-run.ts",
+      "text": "aw flow unit --plan <PPP>",
+      "class": "usage",
+      "reason": "forma de uso: el documento, el plan y el lote son la entrada de quien invoca"
     }
   ]
 }

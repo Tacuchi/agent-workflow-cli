@@ -4,7 +4,7 @@ description: >-
   The Workline lightweight shortcut: solves a scoped task (fix, small
   tweak) straight from the prompt, with minimal ceremony and a single commit.
   Heir of the chassis (loops/CHASSIS.md + CODE-POLICIES.md). Deltas: no
-  plan-doc (the prompt IS the task), single light session <slug>-quick, an
+  plan-doc (the prompt IS the task), git as its only record, an
   entry size gate and LIVE escalation to SPEC (to PLAN it stays deferred)
   when the objective exceeds a quick or the task grows. Never touches docs/.
   Started by /w:quick; resumable. Invoke for small, direct changes that do
@@ -28,13 +28,12 @@ QUICK
 — (the user's prompt **plus any analysis already established in this conversation** — *adopted context*, chassis § *Adopted context*: adopted, never re-derived. There is no input document).
 
 ## Writes
-- **Deliverable per task:** edits code in the sources (minimal change) **or** produces a scoped **analysis/design** (non-code deliverable, lives in the session artifacts — never in `docs/`).
-- Session artifacts under `.workflow/sessions/`.
-- **NEVER touches `docs/`** (no doc, no auto-export). An analysis/design worth preserving is promoted separately (`export-*`) or escalated to SPEC/PLAN (SPEC: live — see *QUICK delta*).
+- **Deliverable per task:** edits code in the sources (minimal change) **or** produces a scoped **analysis/design** (non-code deliverable, reported in the conversation — never in `docs/`).
+- **NEVER touches `docs/`** (no doc, no auto-export). An analysis/design worth preserving is persisted separately (`/w:persist`) or escalated to SPEC/PLAN (SPEC: live — see *QUICK delta*).
 
-## Internal session
+## Run state — git only
 
-- Creates a light session by default, with descriptor `<slug>-quick` → `NNN-<slug>-quick` (Type = `quick`, ≈ `exec`): `SESSION` · `DECISION` · `SCRIPTS.sql` · `CHECKPOINT` (+ `BACKLOG` only if something is deferred). Research stays **inline** (`ANALYSIS-FILE`/`CONCLUSIONS` + read-only `SCRIPTS.sql`). Escalation closes this session before SPEC continues.
+QUICK creates no document and stores nothing: the working tree and the commit are its record (spec 066, D01). An interrupted quick is visible only in `git status` of its source; resuming it is reading that state. Research stays **inline** in the conversation.
 
 ## Inherits
 
@@ -46,66 +45,61 @@ Git safety, DB scripts-only and inline research are loop rules. Host-native help
 
 ## QUICK delta — minimal ceremony
 
-> **Directed tranche:** `aw flow` decides — it names the boundary in force, its alternatives and the exact invocation when something runs outside. What stays here is the *why*, and every step that is judgment.
-
 - **No phases, no plan-doc**: the prompt **is** the task (a single unit). No roadmap.
-- **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: it compiles first, then one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is the run's `SESSION.Success criteria` (see [chassis § *Verification-first*](../CHASSIS.md)).
-- **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, the CLI verifies each source's branch; propose exact-path commits for approval. The AI **never executes DML/DDL**: migrations are drafted into the session's `SCRIPTS.sql`; fixture/ephemeral checks are local proof and any remote read is research context, never closure.
-- **Fix preview, before executing**: declare the fix you are about to make — files to touch, intent, expected shape of the diff. It is **proportional**: one line for something trivial; approach, files and risks for something complex. Above the same signal threshold that fires the entry size gate (below), a person approves it (`Ejecutar tal cual` · `Ajustar el enfoque` · `Escalar a spec` → *Mid-loop escalation*). **Below the threshold there is no human stop**: the preview stays declared in the session and the task executes.
-- **One session. One commit** proposed at the end (only if there were code changes), **after the validation order** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Validation order*): it compiles, it runs, the author's own pass over the diff; reviewer agents only when the person accepts them (at most 2, one case each).
+- **Proportional verification-first** (minimal ceremony): even here the check is **seeded before**, sized to the task. Code: it compiles first, then one test (bug repro → fix) or "existing build/lint/tests stay green" (chore). **Analysis/design**: a **short falsifiable rubric**, *ratified by the user* before pursuing it. It is stated in the conversation before the work (see [chassis § *Verification-first*](../CHASSIS.md)).
+- **Git and DB inline** (full policies in [`../CODE-POLICIES.md`](../CODE-POLICIES.md)): before editing, verify each source's branch (`aw check-branch`); the commit is `aw flow propose-commit` then `aw flow commit` with the approved digest. The AI **never executes DML/DDL**: migrations are drafted as files in `docs/scripts/` (escalating when the task needs a document); fixture/ephemeral checks are local proof and any remote read is research context, never closure.
+- **Fix preview, before executing**: declare the fix you are about to make — files to touch, intent, expected shape of the diff. It is **proportional**: one line for something trivial; approach, files and risks for something complex. Above the same signal threshold that fires the entry size gate (below), a person approves it (`Ejecutar tal cual` · `Ajustar el enfoque` · `Escalar a spec` → *Mid-loop escalation*). **Below the threshold there is no human stop**: the preview stays declared in the conversation and the task executes.
+- **One task. One commit** proposed at the end (only if there were code changes), **after the validation order** ([`../CODE-POLICIES.md`](../CODE-POLICIES.md) § *Validation order*): it compiles, it runs, the author's own pass over the diff; reviewer agents only when the person accepts them (at most 2, one case each).
 - **Entry SIZE GATE** (before implementation): a quick that should have been a spec costs more than the ceremony it saved. Recognize the signals; the threshold, anti-duplicate search and alternatives are the CLI's. A signal resolved by *adopted context* is **not** a signal (chassis § *Adopted context*). A **resume** never re-fires the gate.
-  - **`Recortar alcance`**, if chosen: propose the **sub-task that DOES fit** a quick (`SESSION.Objective` = the sub-task; the original prompt goes into `## Origin`) and defer the rest to `BACKLOG` ("trimmed at the gate — may warrant its own spec, `/w:spec-new`").
-  - **`Cambiar a SPEC`** closes the existing quick, preserving its request for *Live transition to SPEC*.
+  - **`Recortar alcance`**, if chosen: propose the **sub-task that DOES fit** a quick (the sub-task becomes the task; the rest is reported as "trimmed at the gate — may warrant its own spec, `/w:spec-new`").
+  - **`Cambiar a SPEC`** ends the quick, preserving its request for *Live transition to SPEC*.
 - **Live transition to SPEC** (shared by the gate and mid-loop escalation). On acceptance, the work line **moves to the SPEC flow**: the explicit consent in the structured-choice **equals invoking the destination command** (*consented exception* — rule 3 of the *Continuity rule*, [`../../SKILL.md`](../../SKILL.md) § *Operating context*). On the SPEC side:
-  1. **Materialize the draft** via the [`../../commands/spec-new.md`](../../commands/spec-new.md) procedure: `aw next-number docs/specs --publish spec-<slug>.md` with the finished draft on stdin (one atomic act: number assigned, document written, no reservation left), schema, single-pass **NO RESEARCH** — its bounded reconnaissance does **not** re-fire (this run's context arrives adopted). `## Origin` = "escalated from `/w:quick`" + the original prompt (+ the origin quick session if it exists). The draft is born `status: draft`: only the SPEC gate promotes it to `ready-for-plan`.
+  1. **Materialize the draft** via the [`../../commands/spec-new.md`](../../commands/spec-new.md) procedure: `aw next-number docs/specs --publish spec-<slug>.md` with the finished draft on stdin (one atomic act: number assigned, document written, no reservation left), schema, single-pass **NO RESEARCH** — its bounded reconnaissance does **not** re-fire (this run's context arrives adopted). `## Origin` = "escalated from `/w:quick`" + the original prompt. The draft is born `status: draft`: only the SPEC gate promotes it to `ready-for-plan`.
   2. **Load and execute** [`../spec-refine-loop/LOOP.md`](../spec-refine-loop/LOOP.md) — over that spec (trampoline pattern).
-  3. The run's session is that loop's **normal** `NNN-<slug>-spec-refine` (the CLI numbers it; its `## Origin` records the escalation). **Invariant 2 intact**: quick, while it is quick, never writes `docs/` — the draft is written by the SPEC flow, post-consent.
+  3. The spec's `## Origin` records the escalation. **Invariant 2 intact**: quick, while it is quick, never writes `docs/` — the draft is written by the SPEC flow, post-consent.
 - **Mid-loop escalation + handoff**: if the task grows, declare the signals again — the CLI applies the same threshold and, if it fires, asks. If the user accepts moving up:
-  1. **Any already-edited code stays** in the working tree (never reverted) and is **recorded** in `CHECKPOINT` + `BACKLOG`: "uncommitted changes in `<source>` — decide commit/discard on resume" (the "rejected commit" pattern of *Safe git*).
-  2. The CLI writes the escalation pointer in `BACKLOG` before closing the quick. **SPEC** continues through `/w:spec-new` with the preserved request; **PLAN** stays deferred (seed + pointer, no live entry).
-  3. The artifacts (`DECISION`, `SCRIPTS.sql`) **stay in the quick session** as referenceable context, never migrated.
-  4. **SPEC enters live**: after `finalize`, run the *Live transition to SPEC* (draft **only if no spec exists** for this objective; then the loop). **Asymmetry** intact: PLAN can **absorb** the progress (plan-exec picks up the existing working tree); SPEC **restarts** the design cycle and treats the half-done code as context/reference, never as ingested work.
+  1. **Any already-edited code stays** in the working tree (never reverted) and is **reported**: "uncommitted changes in `<source>` — decide commit/discard on resume" (the "rejected commit" pattern of *Safe git*); `git status` keeps it visible.
+  2. The report names where the work continues. **SPEC** continues through `/w:spec-new` with the preserved request; **PLAN** stays deferred (seed + pointer, no live entry).
+  3. **SPEC enters live**: run the *Live transition to SPEC* (draft **only if no spec exists** for this objective; then the loop). **Asymmetry** intact: PLAN can **absorb** the progress (plan-exec picks up the existing working tree); SPEC **restarts** the design cycle and treats the half-done code as context/reference, never as ingested work.
 
 ## Sequence
 
 ```
 quick-loop(prompt):
   # `Cambiar a SPEC` → live transition (see delta): draft (spec-new procedure) +
-  #                    load ../spec-refine-loop/LOOP.md → END (quick closed by CLI)
+  #                    load ../spec-refine-loop/LOOP.md → END
   if the conversation already established analysis/conclusions →                 # adopted context (chassis)
-    adopt them (SESSION.Origin = "adopted from host conversation"; reference in CONCLUSIONS) — never re-derive/re-ask
-  author SESSION.Success criteria = the deliverable's check  # test(s) if code · short RATIFIED rubric if analysis/design
+    adopt them — never re-derive/re-ask
+  state the deliverable's check  # test(s) if code · short RATIFIED rubric if analysis/design
   work the task (minimal loop):
-    if it edits code → CLI verifies branches; mismatch → fix what it names, aw flow advance
+    if it edits code → aw check-branch per source; mismatch → fix what it names
     declare the fix preview (files · intent · expected diff), proportional to the task
-      above the gate's threshold → the CLI asks for approval; below it, nothing stops
+      above the gate's threshold → ask for approval; below it, nothing stops
     produce the deliverable: edit code (minimal change) OR author the analysis/design
-    if fixture/ephemeral DB check → run it from the checkout + capture its proof
-    if DB change (DDL/DML) → SCRIPTS.sql (session artifact, DO NOT execute)
-    if route exception → DECISION + CHECKPOINT
+    if fixture/ephemeral DB check → run it from the checkout + keep its output
+    if DB change (DDL/DML) → a file in docs/scripts/ (DO NOT execute)
     if doubt/gap → inline research, a probe OR structured-choice   # chassis § Proof of concept
-    if the task GROWS → declare the signals again; if the CLI asks and the user accepts:
-        PLAN → handoff (progress stays; BACKLOG→seeded plan — resume there, deferred) → goto finalize
-        SPEC → handoff (progress stays; BACKLOG→"continued live") → finalize →
-               live transition (see delta): draft if missing + spec-refine-loop
-  convergence gate: run the Success criteria and hand back their real output
+    if the task GROWS → declare the signals again; if the user accepts:
+        PLAN → handoff (progress stays in the working tree; a seeded plan is proposed)
+        SPEC → handoff (progress stays) → live transition (see delta): draft if missing + spec-refine-loop
+  convergence gate: run the check and hand back its real output
   if there were code changes:
     validation order (proportional):                         # compiles · runs · own pass over the diff
         targeted review only if the person accepts it           # ≤2 agents, one named case each
-        findings → fix (recompile + re-validate) OR defer justified (BACKLOG)
-    propose exact-path commit (approve first)                # only after the gate
+        findings → fix (recompile + re-validate) OR report them justified
+    aw flow propose-commit → person approves the digest → aw flow commit
   structured_choice(content: [Cerrar tarea, Preguntar algo más], flow: [Compactar, Cerrar])
-finalize: CHECKPOINT (AFTER: Pending→Completed) + BACKLOG (only if something is deferred) + close session + report
+report: what changed, the check's output and the commit hash (or the uncommitted state)
 ```
 
 ## Convergence / exit
 
 - Before closing, run `aw amend apply … --check` for each spec/plan line known to be outdated. Propose its returned path; never edit without approval.
-- Validation order passed and commit proposed if there was code (or skipping it approved) → `Cerrar`.
-- `Cerrar`/`Compactar` (`flow` control) → persists `CHECKPOINT` + `BACKLOG` (resumable).
-- **No export**: nothing goes to `docs/` (§ *Writes*); escalating is the only way up.
+- Validation order passed and commit made if there was code (or skipping it approved) → `Cerrar`.
+- `Cerrar`/`Compactar` (`flow` control) → the working tree stays as it is; `git status` is the resume point.
+- **No document**: nothing goes to `docs/` (§ *Writes*); escalating is the only way up.
 
-> QUICK's *convergence gate* is that same **proportional verification-first**: a **short** `Success criteria` declared at start — its minimal version, never the *absence* of a checklist. The CLI evaluates the **real output** of running those criteria; a claim that they passed is not a result.
+> QUICK's *convergence gate* is that same **proportional verification-first**: a **short** check declared at start — its minimal version, never the *absence* of a check. Only the **real output** of running it counts; a claim that it passed is not a result.
 
 ## Conditional modules
 

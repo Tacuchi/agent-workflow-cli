@@ -383,18 +383,12 @@ describe("selfInstallHooks", () => {
   // mergeados en settings.json tal cual, sin transformación y sin pérdidas. Los
   // demás tests de claude usan una plantilla de 3 eventos; este cierra la
   // distancia entre "el merge funciona" y "el merge funciona con lo que enviamos".
-  it("claude: la plantilla REAL del bundle mergea sus 5 eventos sin guardas Git", async () => {
+  it("claude: la plantilla REAL del bundle mergea sus 2 eventos sin guardas Git", async () => {
     const bundled = await resolveBundledHookTemplate();
     expect(bundled, "la plantilla del bundle tiene que resolverse").not.toBeNull();
     const template = JSON.parse(await readFile(bundled as string, "utf8"));
     const events = Object.keys(template.hooks);
-    expect(events).toEqual([
-      "SessionStart",
-      "PreToolUse",
-      "SessionEnd",
-      "PreCompact",
-      "PostCompact",
-    ]);
+    expect(events).toEqual(["SessionStart", "PreToolUse"]);
 
     const result = await selfInstallHooks(
       buildArgs({ target: "claude", template: bundled as string }),
@@ -413,8 +407,7 @@ describe("selfInstallHooks", () => {
     expect(written.hooks).toEqual(template.hooks);
     expect((written.hooks.PreToolUse as unknown[]).length).toBe(1);
     expect(JSON.stringify(written.hooks)).not.toMatch(/branch-check|git-commit-advisor|turn-start/);
-    const postCompact = written.hooks.PostCompact as { hooks: { type: string }[] }[];
-    expect(postCompact[0]?.hooks.map((h) => h.type)).toEqual(["command"]);
+    expect(written.hooks.PostCompact).toBeUndefined();
   });
 
   it.each(["claude", "codex", "kimi", "crush", "gemini", "opencode"])(

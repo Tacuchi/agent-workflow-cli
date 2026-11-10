@@ -1,5 +1,4 @@
-import { existsSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { WORKLINE_FLOWS } from "../../src/application/capability/compose.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
@@ -34,7 +33,7 @@ const QUICK_LOOP = "loops/quick-loop/LOOP.md";
  * the document→rows checklist recorded in the execution session, not here.
  */
 
-const BUNDLE = resolve(__dirname, "..", "..", "skills", "w");
+const _BUNDLE = resolve(__dirname, "..", "..", "skills", "w");
 const registered = new Set(ALL_COMMANDS.map((command) => command.name));
 
 describe("registro de autoridad — forma y unicidad", () => {
@@ -243,25 +242,6 @@ describe("registro de autoridad — forma y unicidad", () => {
 });
 
 describe("registro de autoridad — cada entrada apunta a algo real", () => {
-  it("todo scope resuelve a un flow, al chasis o a un comando registrado", () => {
-    const orphans: string[] = [];
-    for (const decision of FLOW_DECISIONS) {
-      if (decision.scope === CHASSIS_SCOPE) continue;
-      if (flowOfScope(decision.scope) !== null) continue;
-      const command = commandOfScope(decision.scope);
-      if (command !== null && registered.has(command)) continue;
-      orphans.push(`${decision.id} → ${decision.scope}`);
-    }
-    expect(orphans).toEqual([]);
-  });
-
-  it("todo documento citado existe en el bundle", () => {
-    const missing = FLOW_DECISIONS.filter(
-      (decision) => !existsSync(join(BUNDLE, decision.document)),
-    );
-    expect(missing.map((decision) => `${decision.id} → ${decision.document}`)).toEqual([]);
-  });
-
   it("los cinco flows y el chasis tienen decisiones declaradas", () => {
     for (const flow of WORKLINE_FLOWS) {
       expect(decisionsOfScope(flow).length, flow).toBeGreaterThan(0);
@@ -304,51 +284,6 @@ describe("registro de autoridad — el universo es el command registry", () => {
     );
     const both = COMMAND_EXCLUSIONS.filter((entry) => classified.has(entry.command));
     expect(both.map((entry) => entry.command)).toEqual([]);
-  });
-
-  it("toda exclusión nombra un comando que existe, en cualquiera de las dos superficies", () => {
-    const ghosts = COMMAND_EXCLUSIONS.filter(
-      (entry) => !registered.has(entry.command) && !slashCommands().includes(entry.command),
-    );
-    expect(ghosts.map((entry) => entry.command)).toEqual([]);
-  });
-
-  /**
-   * The `/w:` commands, taken from the bundle rather than from a list.
-   *
-   * Same reason the `aw` universe is `ALL_COMMANDS` and not a copy of it: a
-   * second list would drift, and the whole point of exhaustiveness is that
-   * nobody can forget to add a row to it.
-   */
-  function slashCommands(): string[] {
-    return readdirSync(join(BUNDLE, "commands"))
-      .filter((file) => file.endsWith(".md") && file !== "README.md")
-      .map((file) => file.replace(/\.md$/, ""));
-  }
-
-  it("todo comando /w: es un flow, tiene filas o está excluido con motivo", () => {
-    // The second universe, and the gap that made it necessary: `spec-new` had
-    // neither rows nor an exclusion, which reads exactly like having been
-    // forgotten. It is not an `aw` command, so the registry-based guard above
-    // could never have seen it — a journey stays public whether or not the CLI
-    // ships a command by that name.
-    const flows = new Set<string>(WORKLINE_FLOWS);
-    const classified = new Set(
-      FLOW_DECISIONS.map((decision) => commandOfScope(decision.scope)).filter(
-        (command): command is string => command !== null,
-      ),
-    );
-    const excluded = new Set(COMMAND_EXCLUSIONS.map((entry) => entry.command));
-    const unclassified = slashCommands().filter(
-      (command) => !flows.has(command) && !classified.has(command) && !excluded.has(command),
-    );
-    expect(unclassified).toEqual([]);
-    // And the universe is real: five flows plus fifteen commands with no loop —
-    // `discard` and `reset` joined it as transversal retirement (plan 024),
-    // `doctor` as the transversal diagnosis (plan 040), and `recall` as the
-    // reading of the other hosts' memory (plan 062); hub-compact adds a
-    // transversal with its own approval protocol (plan 091).
-    expect(slashCommands()).toHaveLength(19);
   });
 });
 

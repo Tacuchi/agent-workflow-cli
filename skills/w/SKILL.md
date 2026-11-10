@@ -2,7 +2,7 @@
 name: w
 description: >-
   Workline orientation (`w`, overview role). Use to locate commands, loops,
-  sessions/artifacts and docs/: SPEC/PLAN/QUICK, `/w:`, five loops and chassis,
+  docs/ and git: SPEC/PLAN/QUICK, `/w:`, five loops and chassis,
   exports, capabilities, skills.toml and six hard invariants.
 ---
 
@@ -26,7 +26,7 @@ Anyone needing orientation — a loop at start, a new agent in the hub, or the u
 
 ### Hub (implicit first)
 
-One concept: the **hub** — the folder with `.<namespace>/` and the hub block in AGENTS.md, declaring zero or more sources; it may live outside its sources or be the repo itself. No initialization is mandatory. The nearest ancestor containing `.<namespace>/sessions/` is the root; with no marker, the folder where the agent starts is the **implicit hub** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `hub` is the reserved source that points to the root, and any extra alias is explicit.
+One concept: the **hub** — the folder with `.<namespace>/` and the hub block in AGENTS.md, declaring zero or more sources; it may live outside its sources or be the repo itself. No initialization is mandatory. The nearest ancestor containing `.<namespace>/workline.json` is the root; with no marker, the folder where the agent starts is the **implicit hub** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `hub` is the reserved source that points to the root, and any extra alias is explicit.
 
 ### The 3-layer architecture + `docs/` zone
 
@@ -39,25 +39,22 @@ USER invokes
         ▼
   LAYER 2 · LOOPS (the AI runs them, gap-driven; engine: loops/CHASSIS.md)
     spec-refine-loop · plan-new-loop · plan-refine-loop · plan-exec-loop · quick-loop
-        │ creates / reads / writes
+        │ reads / writes the document; commits through git
         ▼
-  LAYER 3 · SESSIONS + ARTIFACTS (.workflow/sessions/ — ephemeral, internal)
-        │ the export-* read the artifacts
-        ▼
-  docs/ ZONE — permanent, user-facing documents
-    specs · plans (flows) · research (persist / no-flow) · scripts · manuals · diagrams · reports (export-*) · tools (ambient)
+  docs/ ZONE — permanent, user-facing documents (the only record, with git)
+    specs · plans (flows) · research (persist / no-flow) · scripts · manuals · diagrams · reports (flows) · tools (ambient)
 ```
 
 - **Layer 1** — high level. Single-pass or starts a loop. No iteration logic.
 - **Layer 2** — the AI iterates end to end until convergence. No direct human invocation.
-- **Layer 3** — ephemeral, internal, process-only. Nobody invokes it by hand.
+- **No third layer** — there is no run state: the spec, the plan and git are the whole record.
 
 ### Guide, not chain
 
-Workline proposes a route; the host decides how to walk it. When the host judges a better way, or the person asks for one, it may skip, reorder or merge steps, or leave the flow and keep working natively (the session stays resumable; `aw session-close --code <NNN>` closes it). It owes three things:
+Workline proposes a route; the host decides how to walk it. When the host judges a better way, or the person asks for one, it may skip, reorder or merge steps, or leave the flow and keep working natively (the document stays resumable from its own state). It owes three things:
 
 - **Safety never bends** — invariants 1-5 below and no secrets in code or logs.
-- **A departure is said** — one line to the person, and in `CHECKPOINT` when a session is open.
+- **A departure is said** — one line to the person, and in the plan's evidence when a batch is open.
 - **The record stays true** — nothing is marked done, validated or reviewed that was not.
 
 *Hard rule*, *never* and *always* in this doctrine describe the default route, except where they guard one of those three.
@@ -72,7 +69,7 @@ Workline proposes a route; the host decides how to walk it. When the host judges
 | **PLAN** (the *how* + execute) | `plan-new` · `plan-refine` *(aux, optional)* · `plan-exec` | `docs/plans` | `plan-new-loop` · `plan-refine-loop` · `plan-exec-loop` |
 | **QUICK** (lightweight shortcut) | `quick` | — | `quick-loop` |
 
-Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` → `spec-refine` runs the loop and refines **that same spec in place** until PLAN can design without inventing behavior, stamping `status: ready-for-plan` → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(optional)* `plan-refine` adjusts **that same plan in place** if changes arise before executing → `plan-exec` executes and updates the plan (living doc) + artifacts in sessions. Promoting anything else to `docs/` is **always** a separate step via `export-*`.
+Typical chain: prompt → `spec-new` generates `docs/specs/NNN-spec-<slug>.md` → `spec-refine` runs the loop and refines **that same spec in place** until PLAN can design without inventing behavior, stamping `status: ready-for-plan` → `plan-new` → `docs/plans/PPP-plan-<slug>.md` → *(optional)* `plan-refine` adjusts **that same plan in place** if changes arise before executing → `plan-exec` executes and updates the plan (living doc: boxes, phase states, next step and bounded batch evidence) and writes its deliverables straight into `docs/`; consolidating SQL is a separate `/w:export-scripts`.
 
 > **A plan is a sequence of functional states.** Every `### Fn` phase names a verifiable state of the system, carries its own primary proof, and — **only when the change carries one** — declares where a temporary simulation lives and when it retires. Its `> Estado:` line (`pendiente` | `en ejecución` | `bloqueada` | `validada`) is machine state that `aw status` counts **alongside** the checkbox progress: ticking every checkbox is **not** validation, and neither is a proof nobody ran — a phase whose check could not be executed stays `bloqueada` until it runs and passes, stating on its `> Bloqueo:` line what it waits on. Execution runs those states without redesigning them — a structural deviation returns to `plan-refine`, a functional one to `spec-refine`.
 
@@ -86,24 +83,24 @@ Both authoring entry points can **split** with consent: `spec-new` may split a m
 
 `aw hub-init --source alias:path[:rama]` adds local sources; `--hub <dir>` selects the exact hub from a source checkout (no silent parent fallback). `aw hub-move <destino>` moves a hub; `--repair` reconciles an external move. Source paths are local and portable. A document's registered branch takes precedence over the source's work branch; never fall back to `development`.
 
-Before any loop, the AI resolves the **hub root** on every prompt (closest `.<ns>/sessions/` ancestor, otherwise the invoked directory) and then the session to continue. The marker is evidence of materialization, not permission to use Workline; pure reads stay byte-identical. That decides where artifacts land:
+Before any loop, the AI resolves the **hub root** on every prompt (closest `.<ns>/workline.json` ancestor, otherwise the invoked directory). The marker is evidence of materialization, not permission to use Workline; pure reads stay byte-identical. That decides where work lands:
 
 | Trigger | → Behavior + routing |
 |---|---|
-| **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → materializes if needed, creates a **new** session (except re-running the same flow over the same input: `create_or_resume` reopens the existing one), starts the loop → artifacts go to **that** session (`SCRIPTS.sql`, …) |
-| **prompt with no command** (related) | **continues/reopens the most recent session** → scripts edit its `SCRIPTS.sql` (no new session) |
-| **prompt with no command** (unrelated / no session) | recommend **QUICK**, **SPEC→PLAN** or **PLAN directo** from size and uncertainty (§ *Choosing the route*, which also weighs host plan mode); direct no-flow work stays available whenever the host or the person prefers it. An explicit flow command keeps authority. `spec-new` is brief capture; deep research belongs to `spec-refine`. |
+| **flow command** (`quick`·`spec-*`·`plan-*`) | **new work line** → materializes if needed, reads its document (`aw flow read`) and starts the loop; re-running the same flow over the same input continues from that document |
+| **prompt with no command** (related) | **continues the document in play** → its spec or plan, read again; QUICK continues from `git status` |
+| **prompt with no command** (unrelated / nothing in play) | recommend **QUICK**, **SPEC→PLAN** or **PLAN directo** from size and uncertainty (§ *Choosing the route*, which also weighs host plan mode); direct no-flow work stays available whenever the host or the person prefers it. An explicit flow command keeps authority. `spec-new` is brief capture; deep research belongs to `spec-refine`. |
 
 **Continuity rule** (single source — the chassis and the loops reference here):
 
-1. **Flow command** = **new work line** → new session.
-2. **Prompt with no command** = "same line" → continue/reopen the **most recent** session (the *last started*).
+1. **Flow command** = **new work line** over its document.
+2. **Prompt with no command** = "same line" → continue the document in play (`aw resume` names it).
 3. Only if the prompt is clearly **unrelated**: offer choosing (`continuar NNN` | `trabajo nuevo`) or fall to "no flow".
-4. **Convergence closes** the session; a later related prompt **reopens** it (resume removes `.closed`).
+4. **Convergence closes** the document's state (`ready-for-plan`, `done`); a later related prompt reads it again.
 
-> **The two exceptions to #1 are not this document's call:** re-running the same command over the **same input** does not open another line — `aw session-load --code <NNN> --reopen` locates that flow's session by descriptor and `## Origin` and resumes it instead of duplicating it — and an **accepted escalation** inside a loop (quick → SPEC) opens a new line **without** a command, which `aw resume` treats as equivalent to having invoked the destination flow's, because the consent was explicit. Both stay stated here for their reason, not their rule: a line must never fork because somebody re-ran a command, and never continue silently because somebody changed subject.
+> **The two exceptions to #1:** re-running the same command over the **same input** does not open another line — it continues from the document's own state — and an **accepted escalation** inside a loop (quick → SPEC) opens a new line **without** a command, which `aw resume` treats as equivalent to having invoked the destination flow's, because the consent was explicit. Both stay stated here for their reason, not their rule: a line must never fork because somebody re-ran a command, and never continue silently because somebody changed subject.
 
-It is the **inter-turn** face of the *persistent objective* (same `CHECKPOINT`+resume, applied to the next prompt) — agnostic doctrine, not a host hook. It applies to **every artifact** (`SCRIPTS.sql` is the worked example; QUICK case: `loops/quick-loop/LOOP.md`).
+It is the **inter-turn** face of the *persistent objective* (the document + `aw resume`, applied to the next prompt) — agnostic doctrine, not a host hook (QUICK case: `loops/quick-loop/LOOP.md`).
 
 ### Host as producer — adopted context
 
@@ -116,9 +113,9 @@ With no flow command, recommend the **cheapest route that still covers the risk*
 | Route | Pick it when | Cost profile |
 |---|---|---|
 | **Direct** (no flow) | One clear, mechanical change; nothing to resume; no record wanted. | Cheapest; nothing outlives the conversation. |
-| **QUICK** | A scoped fix or tweak below the entry size gate, where safe git, the validation order and a session record are worth it. | One session, no `docs/`; escalates live to SPEC if it grows. |
+| **QUICK** | A scoped fix or tweak below the entry size gate, where safe git and the validation order are worth it. | Git is its record, no `docs/`; escalates live to SPEC if it grows. |
 | **Host plan mode** | The *what* is settled, the *how* needs read-only exploration, and execution fits in this conversation. | Cheap exploration and approval; the plan dies with the conversation unless adopted. |
-| **Plan mode → adopt → `plan-exec`** | As above, but execution spans several batches, compactions or sessions, needs per-batch validation and commits, or will be resumed or delegated. | Research happens once, in the host; adoption (`plan-new` mode 4 or `/w:persist`) adds none. A plan that fails `aw plan lint` needs `/w:plan-refine` before it runs. |
+| **Plan mode → adopt → `plan-exec`** | As above, but execution spans several batches, compactions or conversations, needs per-batch validation and commits, or will be resumed or delegated. | Research happens once, in the host; adoption (`plan-new` mode 4 or `/w:persist`) adds none. A plan that fails `aw plan lint` needs `/w:plan-refine` before it runs. |
 | **PLAN directo** (`plan-new` mode 3, standalone plan) | The *what* is settled, the design is worth a durable plan, and no host plan exists to adopt. | The plan loop researches the *how*; skip it when a host plan already settled it. |
 | **SPEC→PLAN** | The *what* has open functional decisions, several sources or deliverables, or others need a durable spec. | The most ceremony; it pays back when a wrong *what* would cost more than refining it. |
 
@@ -145,28 +142,21 @@ With no flow command, recommend the **cheapest route that still covers the risk*
 
 - `/w:doctor` — read-only diagnosis of the Workline install, MCPs, skills, auth, hooks and hub visibility across every detected host, with coverage per category and the verdict in the exit code; repairs only what is attributable to Workline, over a sealed batch the person approves by digest. Backed by `aw doctor`.
 - `/w:status` — read-only hub dashboard (Done/Missing/Discarded, dates humanized in the user's language), opportunistically enriched with host context when the host exposes cheap memory. Writes nothing; backed by `aw status`.
-- `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Never creates sessions; the host→`docs/` counterpart of `export-*` (which stays the only session→`docs/` path).
-- `/w:recall` — reports what the other hosts' curated memory learned about Workline (backed by `aw host-memory`, which only reads), contrasts each learning against the installed CLI and doctrine, applies what still holds in the session and offers to save it in the current host's own memory, with its origin mark, only after confirmation. Never writes another host's memory.
-- `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen); an optional artifact argument (spec/plan/session) skips the survey and gets its exact re-entry route. Writes nothing; the actionable sibling of `/w:status`.
+- `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Writes only `docs/`; the host→`docs/` counterpart of the flows.
+- `/w:recall` — reports what the other hosts' curated memory learned about Workline (backed by `aw host-memory`, which only reads), contrasts each learning against the installed CLI and doctrine, applies what still holds in the conversation and offers to save it in the current host's own memory, with its origin mark, only after confirmation. Never writes another host's memory.
+- `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen); an optional document argument (spec/plan) skips the survey and gets its exact re-entry route. Writes nothing; the actionable sibling of `/w:status`.
 
 ### The loops (Layer 2)
 
-A loop is a skill that teaches the AI **how to iterate** to a deliverable: detect gaps, resolve them (human via structured-choice, inline research, a small probe/PoC or a composed capability), integrate and repeat until convergence. The 5 loops run the same **common engine** — persistent objective + verification-first, gap-driven convergent, single session per run, structured-choice + `flow` control (`Compactar`/`Cerrar`), compact/resume, artifacts as a live log, convergence gate — whose canon lives in [`loops/CHASSIS.md`](loops/CHASSIS.md); each loop is an **heir** adding only its deltas.
+A loop is a skill that teaches the AI **how to iterate** to a deliverable: detect gaps, resolve them (human via structured-choice, inline research, a small probe/PoC or a composed capability), integrate and repeat until convergence. The 5 loops run the same **common engine** — persistent objective + verification-first, gap-driven convergent, the document as the only record, structured-choice + `flow` control (`Compactar`/`Cerrar`), compact/resume, artifacts as a live log, convergence gate — whose canon lives in [`loops/CHASSIS.md`](loops/CHASSIS.md); each loop is an **heir** adding only its deltas.
 
 The **code-editing** loops (`plan-exec-loop`, `quick-loop`) additionally apply the *code-editing loop policies*: safe git, DB scripts-only (`modules/DB-SCRIPTS-ONLY.md`, under the `db` signal) and the pre-commit **validation order** (compile first, run at the end, a targeted review only when the person accepts it) — see [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md) (the chassis' sibling doc; document loops do not load it).
 
 `spec-new` has no loop (single-pass): **6 commands / 5 loops**.
 
-### The `export-*` family (the only artifact → `docs/` path)
+### Deliverables and `export-scripts`
 
-| Export | Reads | Produces |
-|---|---|---|
-| `export-scripts` | `SCRIPTS.sql` (migrations) from N sessions | `docs/scripts/` (numbered forwards + `00-ROLLBACK.sql`) |
-| `export-manuals` | sessions + decisions + plan + code | `docs/manuals/` |
-| `export-diagrams` | source code + plan (Solution's AS-IS → TO-BE delta) | `docs/diagrams/` |
-| `export-reports` | session corpus + plan + `docs/` | `docs/reports/` (executive/functional report) |
-
-Common: Layer 1, explicit (user-invoked, never by a loop) · single-pass, read-only over sessions · cross-session (consolidate N sessions + `docs/`) · no loop, no internal sessions (options via args).
+Diagrams, manuals, reports and SQL are written by the flows straight into `docs/diagrams`, `docs/manuals`, `docs/reports` and `docs/scripts`, each with its category's shape, and travel in the hub commit. `/w:export-scripts` is the one export left: user-invoked, single-pass, it consolidates the loose `docs/scripts/*.sql` and the published bundles into the next numbered bundle (forwards + `00-ROLLBACK.sql`).
 
 ### Host help + `.workflow/skills.toml`
 
@@ -196,7 +186,7 @@ The doctrine names abstract **capabilities**, never a concrete harness tool. A s
 Key capabilities:
 
 - **structured-choice** — ask the human ≤3 content questions + 1 `flow` control; each option has a short label and a one-sentence functional explanation/example. Use the native binding in `HARNESS.md` when the current client exposes it; otherwise use labeled markdown with `Aceptar recomendaciones`, never positional codes.
-- **compaction** — shrink the context without losing the thread; its context-pressure signal feeds the loops' self-regulation (chassis § *Compact / resume*). Claude Code: `/compact`. Fallback: `CHECKPOINT` + resume.
+- **compaction** — shrink the context without losing the thread; its context-pressure signal feeds the loops' self-regulation (chassis § *Compact / resume*). Claude Code: `/compact`. Fallback: the document + `aw resume`.
 - **command-invocation** · **procedure-loading** · **subagent-dispatch** (opt.) · **persistent-context** · **external-data** (MCP) · **dry-run/preview**.
 
 The only `must` capabilities for a loop's cycle are **structured-choice** and **compaction**, and both degrade to text → any harness with chat + files runs the full model. Detail, binding matrix and distribution (one canonical `AGENTS.md`): see `harness/HARNESS.md`.
@@ -215,14 +205,14 @@ One language per plane — never mix them:
 
 ### The 6 hard invariants
 
-1. **No auto-export** — loops never graduate/export to `docs/`. Only `export-*` does, explicitly.
-2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` · QUICK→none · rest→`export-*`. (`docs/tools` holds reusable tooling under its own contract; `docs/research` belongs to `/w:persist` or direct no-flow authoring.)
-3. **The spec and the plan are documents** (`docs/`), not session artifacts.
-4. **DB scripts-only** — the AI never executes DML/DDL; migrations stay in `SCRIPTS.sql` and the user applies them. Only read-only reads via MCP.
+1. **The document is the record** — no run file or counter: the spec, the plan and git hold all state and evidence.
+2. **Each flow touches only its `docs/` folders** — SPEC→`specs` · PLAN→`plans` + deliverables (`diagrams`, `manuals`, `reports`, `scripts`) · QUICK→none. (`docs/tools` holds reusable tooling under its own contract; `docs/research` belongs to `/w:persist` or direct no-flow authoring.)
+3. **The spec and the plan are documents** (`docs/`) with a single state field each.
+4. **DB scripts-only** — the AI never executes DML/DDL; migrations are files in `docs/scripts/` and the user applies them. Only read-only reads via MCP.
 5. **Git within the flow** — verify each source's declared branch and unit; commit only the approved paths per source and integrate without discarding conflicted units.
 6. **Loop chassis** — the 5 loops run the same **common engine**; each loop is an heir adding only its deltas, nothing of the engine is re-declared. Detail: `loops/CHASSIS.md`.
 
-> **Scope of #1/#2:** they govern the **session → `docs/`** plane (only `export-*` crosses it). *Direct no-flow authoring* (see § *Operating context*) is **another plane**: with no active session, `docs/` is the only managed surface → the AI writes there by convention + numbering. It is not auto-export (there is no session to graduate from).
+> **Scope of #2:** it governs the flows. *Direct no-flow authoring* (see § *Operating context*) is **another plane**: `docs/` is the only managed surface → the AI writes there by convention + numbering.
 
 ## Output
 
@@ -230,4 +220,4 @@ None. Pure orientation: it writes no documents or artifacts.
 
 ## Source
 
-Authored from the design model (`docs/referencias/`): architecture README (3 layers + 6 invariants), `workflow-commands/`, `workflow-loops/`, `workflow-artifacts/`, `workflow-exports/`, `workflow-roles/`, `workflow-skills/`, `workflow-harness/`. Current, deployed model. (Compat: replaces the legacy `session` bundle orientation + dev/design/analyze flows.)
+Authored from the design model (`docs/referencias/`): architecture README (layers + 6 invariants), `workflow-commands/`, `workflow-loops/`, `workflow-artifacts/`, `workflow-exports/`, `workflow-roles/`, `workflow-skills/`, `workflow-harness/`. Current, deployed model. (Compat: replaces the legacy bundle orientation + dev/design/analyze flows.)

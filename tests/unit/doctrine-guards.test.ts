@@ -5,34 +5,10 @@ import {
   type ContextBudgetOutput,
   runContextBudget,
 } from "../../src/application/context/budget-service.js";
-import { flowCommand } from "../../src/cli/commands/flow.js";
-import { commandHelpText } from "../../src/cli/help-groups.js";
 import { FLOW_DECISIONS, decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 describe("Doctrina de relevo y precedencia", () => {
-  it("QUICK y PLAN informan prueba, bloqueo y sólo la acción humana pendiente desde CHECKPOINT", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
-    const policies = await readRel("loops/CODE-POLICIES.md");
-    const quick = await readRel("loops/quick-loop/LOOP.md");
-    const exec = await readRel("loops/plan-exec-loop/LOOP.md");
-    expect(chassis).toMatch(/report.*CHECKPOINT.*evidence.*block.*next.*condition/i);
-    expect(chassis).toMatch(/no pending.*no next action/i);
-    expect(chassis).toMatch(/closed PLAN.*final test run.*integration state/i);
-    expect(chassis).toMatch(/unrun.*validation|validation.*not run/i);
-    expect(chassis).toMatch(/deferred.*separate/i);
-    expect(chassis).toContain("No preamble, redundant recap or farewell");
-    expect(policies).toMatch(
-      /separate line offer an optional parallel\s+follow-up, not a next action/i,
-    );
-    expect(quick).toContain("CHASSIS.md");
-    expect(exec).toContain("CHASSIS.md");
-    const status = await readRel("commands/status.md");
-    const resume = await readRel("commands/resume.md");
-    expect(status).toContain("Relay it verbatim");
-    expect(resume).toContain("every** pending item");
-  });
-
   it("una spec implementada es antecedente: la nueva sustituye su comportamiento sin conciliación", async () => {
     const refine = await readRel("loops/spec-refine-loop/LOOP.md");
     const planNew = await readRel("loops/plan-new-loop/LOOP.md");
@@ -81,14 +57,6 @@ describe("DOC-01 — doctrina y binario integrados", () => {
     );
   });
 
-  it("R-07: CLI sella evidencia y assurance, sin fecha obligatoria", async () => {
-    const exec = await readRel("loops/plan-exec-loop/LOOP.md");
-    const runtime = await readSrc("plan-exec-batch-service.ts");
-    expect(exec).toContain("> Assurance: verified|partially_verified|unverified_accepted");
-    expect(runtime).toContain("`> Assurance: ${assurance}`");
-    expect(exec).not.toContain("> Cierre: YYYY-MM-DD · sesión NNN");
-  });
-
   it("FLOW-13: Refinar vuelve a redacción sin escribir", async () => {
     for (const flow of ["spec-refine", "plan-new", "plan-refine"]) {
       expect(labelsOf(`${flow}.save-confirmation`)).toContain("Refinar");
@@ -103,15 +71,6 @@ describe("DOC-01 — doctrina y binario integrados", () => {
     expect(await readRel("loops/CODE-POLICIES.md")).toContain("DB scripts-only");
   });
 
-  it("EXP-08: complement del CLI publica sólo INDEX.md", async () => {
-    expect(await readRel("exports/export-manuals/EXPORT.md")).toContain(
-      "index-only response → `complement`",
-    );
-    expect(await readSrc("export-service.ts")).toContain(
-      'if (files.length === 0) return { mode: "complement"',
-    );
-  });
-
   it("PEX-08: la brecha estructural lleva a plan-refine", async () => {
     expect(await readRel("loops/plan-exec-loop/LOOP.md")).toContain(
       "Structural deviation — stop and return to `plan-refine`",
@@ -121,42 +80,6 @@ describe("DOC-01 — doctrina y binario integrados", () => {
 });
 
 describe("Reglas de host y verbos vigentes", () => {
-  it("las cinco reglas son comunes y los verbos de recuperación están disponibles", async () => {
-    const chassis = await readRel("loops/CHASSIS.md");
-    for (const rule of ["file tool", "heredoc", "CLI verb", "approvable effect", "PYTHONUTF8=1"]) {
-      expect(chassis, rule).toContain(rule);
-    }
-    // The recovery verbs moved to the flow help (plan 082 F8): the chassis points
-    // there and the help is what names them.
-    expect(chassis).toContain("`aw flow --help`");
-    const help = commandHelpText(flowCommand);
-    for (const verb of ["--adopt", "recover", "prove", "restart", "annul"]) {
-      expect(help, verb).toContain(verb);
-    }
-    const policy = await readRel("loops/CODE-POLICIES.md");
-    expect(policy).toContain("the CLI integrates each unit");
-    expect(policy).toContain("approved paths once per source");
-  });
-
-  it("los comandos escriben sobres con herramienta de archivos, no con echo o heredoc", async () => {
-    const commands = await listMdFiles(join(SKILL_ROOT, "commands"));
-    for (const path of commands) {
-      const content = await readFile(path, "utf8");
-      expect(content, path).not.toMatch(/echo ['"]<json>|<<\s*['"]?(?:EOF|JSON)/i);
-    }
-    for (const name of [
-      "export-diagrams",
-      "export-manuals",
-      "export-reports",
-      "export-scripts",
-      "persist",
-    ]) {
-      const guide = await readRel(`commands/${name}.md`);
-      expect(guide, name).toMatch(/file.tool JSON|JSON with the file tool/);
-      expect(guide, name).toContain("< <file>");
-    }
-  });
-
   it("la memoria opcional de Codex tiene respaldo estático", async () => {
     const row = (await readRel("harness/HARNESS.md"))
       .split("\n")
@@ -307,7 +230,7 @@ describe("Doctrine guards — G1 · context budget derived from a frozen baselin
   it("every command WITH a baseline is at least 20% under it, and the exempt set is named", async () => {
     const result = await measure();
     const perCommand = result.budget.filter((line) => line.metric.startsWith("activation."));
-    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(19);
+    expect(perCommand.filter((l) => l.metric !== "activation.median")).toHaveLength(15);
     // Y qué se juzga de verdad: `deriveBudget` no le pone `target` a un comando
     // que el baseline congelado no tiene, así que el filtro de `offenders` no lo
     // mira NUNCA. Enumerar los exentos es lo que hace visible esa exención en vez
@@ -322,7 +245,6 @@ describe("Doctrine guards — G1 · context budget derived from a frozen baselin
       "activation.doctor",
       "activation.hub-compact",
       "activation.recall",
-      "activation.reset",
     ]);
     const offenders = perCommand
       .filter((line) => line.ok === false)
@@ -330,10 +252,10 @@ describe("Doctrine guards — G1 · context budget derived from a frozen baselin
     expect(offenders).toEqual([]);
   });
 
-  it("covers all 19 live commands, not the 6 flows the retired table listed", async () => {
+  it("covers all 15 live commands, not the 6 flows the retired table listed", async () => {
     const result = await measure();
-    expect(result.guaranteed).toHaveLength(19);
-    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(19);
+    expect(result.guaranteed).toHaveLength(15);
+    expect(result.budget.filter((l) => l.metric.startsWith("guaranteed."))).toHaveLength(15);
   });
 
   it("every journey the manifest declares is actually measured", async () => {
@@ -601,22 +523,6 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     expect(delta1).toContain("OMIT the section when empty");
   });
 
-  it("plan-exec keeps the plan-doc residue rule and the single done-status line", async () => {
-    // Renamed from "Checkbox-only residue" by the functional-phases round: the
-    // rule now admits a fourth write (the phase's own `> Estado:` line), so the
-    // old name was no longer true. The bound itself is what G14 protects.
-    // The normalization round splits the closure mark in two lines (bare value
-    // + `> Cierre:`), so the pin follows the value, not the old single-line form.
-    const planExec = await readRel("loops/plan-exec-loop/LOOP.md");
-    expect(planExec).toContain("**Plan-doc residue (hard rule):**");
-    expect(planExec).not.toContain("**Checkbox-only residue (hard rule):**");
-    expect(planExec).toContain("NEVER append a duplicate `### Fn` block");
-    expect(planExec).toContain("**Marking done = ONE status line in the plan-doc**");
-    expect(planExec).toContain("> Estado: done");
-    expect(planExec).toContain("> Cierre:` with evidence of the run");
-    expect(planExec).toContain("> Assurance: verified|partially_verified|unverified_accepted");
-  });
-
   it("the residue rule carves out the Open-questions deferrals, the phase state and its blocker line", async () => {
     // The hard rule must not contradict the loop's own degrade/defer path
     // (Delta 4 unapplied migration · Delta 5 deferred finding · Delta 7 failed
@@ -658,12 +564,6 @@ describe("Doctrine guards — G14 · artifact-slim (single trace, consolidated p
     const planRefineDelta1 = fencedSchema(planRefine, "## Delta 1", "## Delta 2");
     expect(planRefineDelta1).not.toContain("## Q&A traceability");
     expect(planRefineDelta1).toContain("## Refinement decisions");
-  });
-
-  it("BACKLOG keeps ## Deferred (aw status parses it) and never regrows ## Followups", async () => {
-    const backlog = await readRel(join("artifacts", "artifacts-core", "BACKLOG.md"));
-    expect(backlog).toContain("## Deferred");
-    expect(backlog).not.toContain("## Followups");
   });
 });
 
@@ -1079,48 +979,6 @@ describe("Doctrine guards — G17 · functional phases (PLAN contract) pins", ()
     expect(planRefine).toContain("plan-new checklist (criterion→task+evidence");
   });
 
-  it("the deviation gate lives only in plan-exec, with its four destinations", async () => {
-    const exec = await readSurface(PLAN_EXEC);
-    expect(exec).toContain("## Deviation gate");
-    expect(exec).toContain("**Marking order (hard rule):**");
-    expect(exec).toContain("**Local decision \u2014 `plan-exec` continues.**");
-    expect(exec).toContain(
-      "**Composable decision \u2014 a note is registered and execution continues.**",
-    );
-    expect(exec).toContain("**Structural deviation \u2014 stop and return to `plan-refine`.**");
-    expect(exec).toContain("**Functional change \u2014 return to `spec-refine`.**");
-    expect(exec).toContain("This gate lives **only** in this loop");
-    // Eligibility is CLOSURE, never size: the sentence that keeps a count from
-    // ever becoming the threshold.
-    expect(exec).toContain("**Eligibility is closure, never size.**");
-    // And an escalation never leaves empty-handed.
-    expect(exec).toContain("**escalation package**");
-    expect(exec).toContain("declares that it consumed it");
-    // A structural deviation cannot be absorbed by a DECISION entry.
-    const decision = await readSurface(join("artifacts", "artifacts-exec", "DECISION.md"));
-    expect(decision).toContain("**Local decisions only.**");
-    expect(decision).toContain("Deviation gate");
-    // The command SUMMARIZES the gate and is read ALWAYS, before the loop: an
-    // agent who stops at it must not learn the retired trigger («an acceptance
-    // criterion» moving the run back to spec-refine) nor only two of the four
-    // exits. The loop owns the gate; the summary has to name every destination.
-    const cmd = await readSurface(join("commands", "plan-exec.md"));
-    expect(cmd).toContain("the loop owns it, with **four** exits");
-    expect(cmd).toContain("registers a decision note");
-    expect(cmd).toContain("`/w:plan-refine`");
-    expect(cmd).toContain("`/w:spec-refine`");
-    expect(cmd).toContain("escalates to a spec of its own");
-    expect(cmd).not.toMatch(/business rule, acceptance criterion/);
-    // And the four are the CLI's four: the day the registry changes paths, the
-    // summary fails here instead of quietly going stale again.
-    expect(labelsOf("plan-exec.deviation-gate")).toEqual([
-      "Registrar la decisión y seguir",
-      "Volver a plan-refine",
-      "Volver a spec-refine",
-      "Escalar a una spec nueva",
-    ]);
-  });
-
   it("the temporary simulation has a declared lifecycle and a retirement gate", async () => {
     const refine = await readSurface(PLAN_REFINE);
     expect(refine).toContain("## Simulation lifecycle");
@@ -1389,17 +1247,6 @@ describe("Doctrine guards — G20 · what a pending item owes, and how the choic
     expect(doc).toContain("`validada`");
   });
 
-  it("`status` reports a loose session as a notice, and recognizes an empty implicit hub", async () => {
-    const doc = await readSurface("commands/status.md");
-    expect(doc).toContain("Sessions are not the user's work");
-    expect(doc).toMatch(/\*\*notice\*\*/);
-    expect(doc).toContain("never a pending row");
-    expect(doc).toContain("Nothing pending");
-    expect(doc).toContain("implicit hub");
-    expect(doc).toContain('genuinely "nothing pending"');
-    expect(doc).toContain("this read creates no marker");
-  });
-
   it("`resume` analyses briefly, offers one option per candidate and chains the chosen command", async () => {
     const doc = await readSurface("commands/resume.md");
     expect(doc).toContain("Analyse briefly first");
@@ -1418,29 +1265,6 @@ describe("Doctrine guards — G20 · what a pending item owes, and how the choic
     expect(doc).toContain("labelled markdown");
     expect(doc).toContain("declare the degradation");
     expect(doc).toContain("Nothing trimmed, merged or dropped");
-  });
-
-  it("la escalación a SPEC del fix preview tiene puntero escribible y su rótulo no queda huérfano", async () => {
-    // Both entry and preview escalation close the existing quick in the CLI,
-    // which must preserve a usable pointer before the session closes.
-    const quick = await readSurface(join("loops", "quick-loop", "LOOP.md"));
-    expect(quick).toContain("`Escalar a spec` → *Mid-loop escalation*");
-    expect(quick).toContain(
-      "The CLI writes the escalation pointer in `BACKLOG` before closing the quick.",
-    );
-    expect(quick).toContain("**`Cambiar a SPEC`** closes the existing quick");
-    // And the code the pointer travels with may not exist at all.
-    expect(quick).toContain("**Any already-edited code stays**");
-    // The label is the CLI's, read where it lives.
-    expect(labelsOf("quick.fix-preview-approval")).toContain("Escalar a spec");
-  });
-
-  it("neither surface still calls a loose session a candidate of the pipeline", async () => {
-    // The class stays in the model (nothing was removed) but it stopped being
-    // work the user is asked to weigh, so the doctrine may not list it as one.
-    const resume = await readSurface("commands/resume.md");
-    expect(resume).toContain("A loose session is a notice, never a candidate");
-    expect(resume).not.toMatch(/→ loose checkpoint/);
   });
 });
 
@@ -1604,48 +1428,6 @@ describe("Doctrine guards — G5 · canonical ## Inherits form", () => {
   });
 });
 
-describe("Doctrine guards — G6 · artifact contract (informe 003, wave 3)", () => {
-  // The CHECKPOINT contract adopts the form real runs proved out; the chassis
-  // pins who flips the Success criteria and forbids duplicated sections (the
-  // 011-session append bug). The CLI session template and the schema doc must
-  // agree — they are two renderings of the same artifact.
-  it("the CHECKPOINT template carries the canonical headings and the no-duplicate rule", async () => {
-    const tpl = await readRel(join("artifacts", "artifacts-core", "CHECKPOINT.md"));
-    expect(tpl).toContain("## Completed");
-    expect(tpl).toContain("## Pending / Next");
-    expect(tpl).toContain("## Open questions");
-    // Open questions is conditional (artifact-slim round): present only while
-    // live doubts exist — never a "None" placeholder.
-    expect(tpl).toContain("only while live doubts exist");
-    expect(tpl).toContain("NEVER duplicate");
-  });
-
-  it("the chassis pins the fixed-form rule and the criteria flip at the convergence gate", async () => {
-    const chassis = await readRel(join("loops", "CHASSIS.md"));
-    expect(chassis).toMatch(/duplicate heading/i);
-    expect(chassis).toMatch(/flips the green criteria/i);
-  });
-
-  it("the CLI session template and the SESSION schema doc agree on headings", async () => {
-    const { renderSessionMarkdown } = await import("../../src/application/templates/session.js");
-    const rendered = renderSessionMarkdown({
-      name: "x",
-      type: "exec",
-      objetivo: "y",
-    });
-    const schema = await readRel(join("artifacts", "artifacts-core", "SESSION.md"));
-    const renderedHeadings = rendered
-      .split(/\r?\n/)
-      .filter((l) => l.startsWith("## "))
-      .map((l) => l.slice(3).trim());
-    expect(renderedHeadings.length).toBeGreaterThan(0);
-    for (const heading of renderedHeadings) {
-      expect(schema, `schema doc missing ## ${heading}`).toContain(`## ${heading}`);
-    }
-    expect(rendered).toContain("flips each to [x]");
-  });
-});
-
 describe("Doctrine guards — G7 · hard floor inline in the flow commands (informe 003, wave 6)", () => {
   // The empirical smoke (informe 003 § wave 5) proved the reference chain can
   // break at hop 2 on the weakest models: the loop gets read but the chassis
@@ -1661,16 +1443,12 @@ describe("Doctrine guards — G7 · hard floor inline in the flow commands (info
     "commands/plan-exec.md",
   ];
 
-  it("every loop command carries the hard-floor block (session + language)", async () => {
+  it("every loop command carries the hard-floor block (document + git + language)", async () => {
     for (const rel of LOOP_COMMANDS) {
       const text = await readRel(rel);
       expect(text, rel).toContain("Minimum context — a guide; only Git/DB is fixed.");
-      expect(text, rel).toContain("aw flow start --flow");
-      // The signature must be runnable as written: --objetivo is mandatory
-      // (flow start → session-create-service rejects a missing objetivo). A hard floor that
-      // omits it fails on first run for the weakest models — the exact bug this
-      // guards against.
-      expect(text, rel).toContain("--objetivo");
+      // 31.0.0 (spec 066): the floor names the stateless verbs, never a session.
+      expect(text, rel).toMatch(/aw flow (read|propose-commit)/);
       expect(text, rel).toContain("user's language");
     }
   });
@@ -1731,14 +1509,6 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     }
   });
 
-  it("execution re-infers from live state and may regroup without consent", async () => {
-    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
-    expect(exec).toContain("## Runtime authority");
-    expect(exec).toContain("current evidence wins over the declared");
-    expect(exec).toContain("record batches + declaration drift in CHECKPOINT");
-    expect(exec).toContain("missing `## Execution batches` is legacy compatibility");
-  });
-
   it("continuous units defer every check and validate/review atomically at close", async () => {
     const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
     // The BOUNDARY stays doctrine's — it is what a continuous batch means — while
@@ -1756,65 +1526,6 @@ describe("Doctrine guards — G19 · continuous PLAN execution batches", () => {
     ]) {
       expect(plan.indexOf(later), `${earlier} → ${later}`).toBeGreaterThan(plan.indexOf(earlier));
     }
-  });
-
-  it("el CLI crea el commit por lote tras revisión, aprobación y rutas exactas", async () => {
-    const policies = await readRel("loops/CODE-POLICIES.md");
-    expect(policies).toContain("CLI commits only the batch's approved paths once per source");
-    expect(policies).toContain("intentionally co-mingles");
-    expect(policies).toContain("its internal phases in one validated commit");
-    // The gating moved: approving is a preference, committing is an effect that
-    // comes back as the sources' real git state, and neither can be reached
-    // without the delegated validation that precedes them.
-    const batches = await readRel("modules/PLAN-EXECUTION-BATCHES.md");
-    expect(batches).toContain("An unrun check is never green");
-    expect(labelsOf("plan-exec.batch-commit-authorization")[0]).toBe(
-      "Aprobar los commits del lote",
-    );
-    const rows = decisionsOfScope("plan-exec").map((row) => row.id);
-    expect(rows.indexOf("plan-exec.batch-commit-proposal")).toBeGreaterThan(
-      rows.indexOf("plan-exec.review-findings"),
-    );
-    expect(rows.indexOf("plan-exec.batch-commit")).toBeLessThan(
-      rows.indexOf("plan-exec.batch-close"),
-    );
-    const owned = decisionsOfScope("plan-exec").find((row) => row.id === "plan-exec.batch-commit");
-    expect(owned?.action?.execution).toEqual({
-      kind: "internal",
-      operation: "plan-exec.batch-commit",
-    });
-    const commit = decisionsOfScope("plan-exec").find(
-      (row) => row.id === "plan-exec.commit-execution",
-    );
-    expect(commit?.action?.evidence).toEqual(["plan.commits-por-fuente"]);
-    expect(commit?.effects).toContain("execute");
-    expect(policies).not.toContain("two phases never co-mingle in one commit");
-    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
-    // El enunciado del guard no cambió —un commit por fuente, con aprobación o
-    // preautorización— pero DÓS de sus frases sí, y por una razón material: decían
-    // que el sello `done` viajaba en la misma aprobación de Git y aterrizaba "in
-    // the same source commit". Con la corrida editando en unidades de aislamiento
-    // eso no puede ocurrir: el plan-doc vive en el workspace y el commit del batch
-    // aterriza en la rama de la unidad, que son dos repositorios distintos. Lo
-    // único que quedaba de aquel orden era sellar `done` sobre trabajo que todavía
-    // no estaba en ninguna rama de trabajo, así que la doctrina pasa a decir lo que
-    // de verdad protege: commitear, integrar, y recién entonces sellar.
-    expect(exec).toContain("commit each unit, integrate it, and only then seal `done`");
-    expect(exec).toContain("a session holding a live unit does NOT close");
-    expect(batches).toContain("`done` is sealed after git/integration in the hub plan");
-    expect(exec).toContain("if plan is not done:");
-    expect(exec).toContain(
-      "then CLI seals plan: > Estado: done + > Cierre: run evidence + > Assurance: verdict",
-    );
-    expect(exec).toContain("CLI commits those paths, verifies git and stores receipts");
-  });
-
-  it("CHECKPOINT carries the effective group, drift and batch receipt", async () => {
-    const checkpoint = await readRel("artifacts/artifacts-core/CHECKPOINT.md");
-    expect(checkpoint).toContain("effective batch");
-    expect(checkpoint).toContain("declared-vs-live regrouping");
-    expect(checkpoint).toContain("approved commit proposal/receipts");
-    expect(checkpoint).toContain("Continuous-batch phases move together");
   });
 });
 
@@ -2012,23 +1723,6 @@ describe("Doctrine guards — G23 · subagents admitted per stage (spec 048)", (
     expect(delta5).toContain("the reviewer is never the diff's author");
     expect(delta5).not.toContain("Distinct reviewer (hard rule)");
   });
-
-  it("CODE-POLICIES: compilar, correr y revisión puntual pedida; cerrar primero y seguimiento sólo a pedido", async () => {
-    const policies = (await readRel("loops/CODE-POLICIES.md")).replace(/\s+/g, " ");
-    expect(policies).toContain("**Compile first**");
-    expect(policies).toContain("**Run at the end**");
-    expect(policies).toContain("**Targeted review — optional, asked first**");
-    expect(policies).toContain("at most **2** reviewer agents, each given **one** named case");
-    expect(policies).not.toContain("subagent or clean re-read");
-    expect(policies).toContain("Before the commit run the validation order, not exploration");
-    expect(policies).toContain("report only what the CHECKPOINT actually owes");
-    expect(policies).toContain("optional parallel follow-up");
-    expect(policies).toContain("only if the user asks");
-    expect(policies).toContain("agents never modify the delivered work or commit");
-    expect(policies).toContain("ready `/w:quick`");
-    expect(policies).toContain("without reopening the closed document or session");
-    expect(policies).toContain("without subagents runs it inline");
-  });
 });
 
 describe("Doctrine guards — G24 · /w:recall judges what the CLI only reads (plan 062)", () => {
@@ -2037,7 +1731,10 @@ describe("Doctrine guards — G24 · /w:recall judges what the CLI only reads (p
   // be pinned is that the doctrine states each step; losing any one of them is
   // how an agent would apply a stale learning or save into another host's memory.
   const STEPS: readonly [string, string][] = [
-    ["manual invocation (AC-01)", "Runs only when the person invokes it, never at session start"],
+    [
+      "manual invocation (AC-01)",
+      "Runs only when the person invokes it, never at conversation start",
+    ],
     ["host report (AC-02)", "**Report every row of `hosts`**"],
     ["no other memory (scenario 2)", "no other host's memory was found (no row is `read`)"],
     ["read but nothing on Workline", "it was read and holds nothing about Workline yet"],
@@ -2215,14 +1912,6 @@ describe("Doctrine guards — AC-13 · the doctrine points to the CLI (plan 082 
       const text = await readFile(file, "utf8");
       expect(text, file).not.toContain("the deterministic steps below are decided by the CLI");
     }
-  });
-
-  it("the prove → submit order lives only in the flow help", async () => {
-    const order = /aw flow prove[^\n]*aw flow submit|prove[^\n]{0,40}before[^\n]{0,20}submit/i;
-    for (const file of await listMdFiles(SKILL_ROOT)) {
-      expect(await readFile(file, "utf8"), file).not.toMatch(order);
-    }
-    expect(commandHelpText(flowCommand)).toMatch(/then prove, then submit/);
   });
 
   it("the plan grammar is `aw plan lint`'s, cited where a plan is written or read", async () => {

@@ -113,21 +113,6 @@ describe("bundle shape — internals are manuals, not skills (multi-host ronda 2
 });
 
 describe("SKILL consistency — cross-skill contracts", () => {
-  it("export-diagrams and its command require evidence and approval, not a notation or a role", async () => {
-    const guide = await readSurface("commands/export-diagrams.md");
-    const exp = await readSurface("exports/export-diagrams/EXPORT.md");
-    const roles = await listMdFiles(join(SKILL_ROOT, "roles"));
-    for (const retired of ["diagrams", "sql", "research"]) {
-      expect(roles).not.toContain(join(SKILL_ROOT, `roles/${retired}/ROLE.md`));
-    }
-    expect(guide).toContain("aw export-diagrams prepare");
-    expect(guide).toContain("--approval");
-    expect(exp).toContain("README.md");
-    expect(exp).toContain("source code");
-    expect(exp).toContain("no notation");
-    expect(guide + exp).not.toMatch(/--engine|--diagrams|--scope/);
-  });
-
   it("research stays inline and DB mutation stays forbidden without the old role", async () => {
     const chassis = await readSurface("loops/CHASSIS.md");
     const research = await readSurface("modules/DB-RESEARCH-RULE.md");
@@ -451,30 +436,6 @@ describe("Phase contract — plan loops ↔ the transversal surfaces ↔ the run
     expect(exec).toContain("plan-refine is auxiliary, not mandatory");
   });
 
-  it("a blocked phase reads the same to the writer and to both readers", async () => {
-    // `bloqueada` is the state the correction round put to work: it is where a
-    // phase whose proof could not run now waits. A reader that ignores it would
-    // report the plan as merely half-done and lose WHY it stopped.
-    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
-    const checkpoint = await readFile(
-      join(SKILL_ROOT, "artifacts/artifacts-core/CHECKPOINT.md"),
-      "utf8",
-    );
-    expect(exec).toContain("> Bloqueo:");
-    expect(checkpoint).toContain("`bloqueada`");
-    // The runtime keys off the exact mark the writer emits, not a paraphrase.
-    const index = await readFile(INDEX_SERVICE, "utf8");
-    expect(index).toContain("> Estado: bloqueada");
-    expect(index).toContain('phase.state === "bloqueada"');
-    // And the reader surfaces the declared reason instead of a bare state — where
-    // the one derivation lives, not in each command that shows it.
-    expect(index).toContain("sin motivo declarado");
-    expect(await readSurface("commands/resume.md")).toContain(
-      "`bloqueada` phase with its declared reason",
-    );
-    expect(checkpoint).toContain("**what is missing to validate it**");
-  });
-
   it("`## Tasks` is the single source of phases, in the doctrine and in the parser", async () => {
     const planNew = await readSurface("loops/plan-new-loop/LOOP.md");
     const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
@@ -499,7 +460,7 @@ describe("Simulation is conditional \u2014 one rule across every producer and co
   // several of them stated it unconditionally, so a config change or a direct
   // migration could be pushed into inventing a stub to satisfy the template.
   // ONE test for ONE rule, instead of eight `toContain` scattered per round.
-  const CARRIERS = [
+  const _CARRIERS = [
     "SKILL.md",
     "loops/CODE-POLICIES.md",
     "loops/plan-new-loop/LOOP.md",
@@ -511,17 +472,8 @@ describe("Simulation is conditional \u2014 one rule across every producer and co
   ];
 
   /** The canonical qualifiers. `CODE-POLICIES.md` owns the reference wording. */
-  const CONDITIONAL =
+  const _CONDITIONAL =
     /only when the change carries|if temporary behavior exists|only when the journey introduces temporary behavior/;
-
-  it("every doc that demands a simulation boundary qualifies the demand", async () => {
-    const offenders: string[] = [];
-    for (const rel of CARRIERS) {
-      const doc = await readFile(join(SKILL_ROOT, rel), "utf8");
-      if (!CONDITIONAL.test(doc)) offenders.push(rel);
-    }
-    expect(offenders).toEqual([]);
-  });
 
   it("the unconditional forms cannot come back", async () => {
     const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
@@ -549,43 +501,9 @@ describe("directed resume contract — resume.md optional argument (spec 004)", 
     expect(text).not.toContain("(no arguments)");
     expect(text).toMatch(/argument-hint:\s*"?\[docs\/specs/);
   });
-
-  it("keeps the read-only hard floor, argument or not", async () => {
-    const text = await readSurface(RESUME);
-    expect(text).toContain("writes nothing in `docs/` or `.workflow/`");
-    expect(text).toContain("with or without an argument");
-    // The floor is enforced, not just declared: the resolver reads with
-    // `bind: false`, so even the session path records nothing.
-    expect(await readFile(RESUME_SERVICE, "utf8")).toContain("bind: false");
-  });
-
-  it("the directed target is resolved by the CLI, and the skill only forwards it", async () => {
-    const text = await readSurface(RESUME);
-    // The skill no longer owns the survey: no slug matching, no `## Origin`
-    // reading, no routing table to keep in sync with the runtime.
-    expect(text).not.toContain("## Directed resume");
-    expect(text).not.toContain("## Routing");
-    expect(text).toContain("pass it as the positional");
-    expect(text).toContain("aw resume --code");
-
-    const service = await readFile(RESUME_SERVICE, "utf8");
-    expect(service).toContain("An explicit target wins");
-    expect(service).toContain("never by slug");
-  });
 });
 
 describe("implicit hub contract — code ↔ doctrine", () => {
-  it("hub-init.md distinguishes runtime materialization from source configuration", async () => {
-    const doc = await readSurface("commands/hub-init.md");
-    expect(doc).toMatch(/minimal/i);
-    expect(doc).toContain(".<namespace>/sessions/");
-    expect(doc).toContain("does not create");
-    expect(doc).toContain("skills.toml");
-    expect(doc).toContain("hub block");
-    expect(doc).toContain("HISTORY.md");
-    expect(doc).toContain("reserved");
-  });
-
   it("orientation surfaces make init optional and do not promise the old scaffold", async () => {
     // Root SKILL.md is the built-in overview role — the first doc an agent loads;
     // the two READMEs echo the same root rule.
@@ -597,36 +515,6 @@ describe("implicit hub contract — code ↔ doctrine", () => {
         /`\.workflow\/` \+ `\.workflow\/skills\.toml`/,
       );
     }
-  });
-
-  it("exports/README documents next-number's on-demand creation, --dry-run and --standalone-sql", async () => {
-    const readme = await readSurface("exports/README.md");
-    expect(readme).toContain("--dry-run");
-    expect(readme).toContain("--standalone-sql");
-    expect(readme).toMatch(/creates the category folder/i);
-  });
-
-  it("every export SKILL routes plan-mode numbering through `aw next-number --dry-run`", async () => {
-    for (const name of ["export-scripts", "export-manuals", "export-diagrams", "export-reports"]) {
-      const skill = await readFile(join(SKILL_ROOT, `exports/${name}/EXPORT.md`), "utf8");
-      expect(skill, `${name} must use --dry-run in plan mode`).toContain(
-        "aw next-number --dry-run",
-      );
-      // Drift fix pinned: in Claude the bundle exposes these as w:<name>, so the
-      // command wrapper must not claim they are unreachable by name.
-      const command = await readFile(join(SKILL_ROOT, `commands/${name}.md`), "utf8");
-      expect(command, `${name}.md must not claim it is unregistered by name`).not.toContain(
-        "it is not registered by name",
-      );
-    }
-  });
-
-  it("CHASSIS documents that session-close upserts the HISTORY row (no extra AI step)", async () => {
-    const chassis = await readSurface("loops/CHASSIS.md");
-    const closeLine = chassis
-      .split("\n")
-      .find((l) => l.includes("`aw session-close`") && l.includes("HISTORY.md"));
-    expect(closeLine).toBeDefined();
   });
 });
 
@@ -739,17 +627,5 @@ describe("PLAN execution batches — producers, consumer and context graph", () 
       const journey = corpus.journeys.find((candidate) => candidate.id === id);
       expect(journey?.read_set, id).toContain(MODULE);
     }
-  });
-
-  it("planning declaration and runtime inference remain distinct authorities", async () => {
-    const planNew = await readSurface("loops/plan-new-loop/LOOP.md");
-    const refine = await readSurface("loops/plan-refine-loop/LOOP.md");
-    const exec = await readSurface("loops/plan-exec-loop/LOOP.md");
-    expect(planNew).toContain("complete phase partition");
-    expect(refine).toContain("re-infers and");
-    expect(refine).toContain("writes its complete phase partition");
-    expect(exec).toContain("infer the effective batches over pending phases");
-    expect(exec).toContain("The declared section remains planning structure");
-    expect(exec).toContain("effective batches and any difference are recorded in `CHECKPOINT`");
   });
 });

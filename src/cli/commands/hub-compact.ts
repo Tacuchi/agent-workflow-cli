@@ -85,7 +85,7 @@ export const hubCompactCommand: CliCommand = {
       },
     },
     notes: [
-      "No AI provider, flow, session, Git or SQL effect. prepare and apply accept JSON only with --input-json -. Originals with no gzip saving remain in place; net storage includes the catalog and the view.",
+      "No AI provider, flow, Git or SQL effect; only specs and plans of docs/ are inventoried. prepare and apply accept JSON only with --input-json -. Originals with no gzip saving remain in place; net storage includes the catalog and the view.",
     ],
   },
   async execute(args, ctx) {

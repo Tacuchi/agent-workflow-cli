@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PathsService } from "../../src/application/paths-service.js";
 import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
-import { reservationMarker } from "../../src/domain/reservation.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -18,7 +17,6 @@ import { MemFs } from "../helpers/mem-fs.js";
  */
 
 const NOW = new Date(2026, 7, 24, 12, 0, 0);
-const OWNER = "145-claims-con-propietario-plan-new";
 
 const paths = (): PathsService => new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
 const index = (fs: MemFs) =>
@@ -32,51 +30,6 @@ const hub = (): MemFs =>
     .dir("/cwd/docs/plans");
 
 describe("el tablero distingue reserva, documento y placeholder legacy", () => {
-  it("una reserva con dueño válido NO es un plan y NO se ofrece como ejecutable", async () => {
-    const fs = hub()
-      .file("/cwd/docs/plans/036-plan-claims-con-propietario.md", reservationMarker(OWNER))
-      .file(
-        "/cwd/docs/plans/034-plan-real.md",
-        "# Plan 034 — real\n\n> Estado: open\n\n## Tasks\n\n### F1 — algo\n> Estado: pendiente\n",
-      );
-
-    const result = await index(fs);
-
-    // Fuera del corpus: sólo el plan de verdad se cuenta.
-    expect(result.plans.map((p) => p.number)).toEqual(["034"]);
-    // Y fuera del pipeline: nadie debería ver `/w:plan-exec` sobre una reserva.
-    const commands = result.pipeline.map((item) => item.command).join(" | ");
-    expect(commands).not.toContain("036-plan-claims-con-propietario");
-    // Presente como lo que es, con su dueño y su acción sancionada.
-    expect(result.reservations).toHaveLength(1);
-    expect(result.reservations[0]).toMatchObject({
-      file: "docs/plans/036-plan-claims-con-propietario.md",
-      kind: "reservation",
-      correlative: "036",
-      owner: OWNER,
-      intact: true,
-      revoked: false,
-      next: "aw claims recover docs/plans/036-plan-claims-con-propietario.md",
-    });
-  });
-
-  it("un numerado vacío sin dueño es un placeholder legacy ambiguo, no un documento", async () => {
-    const fs = hub().file("/cwd/docs/specs/003-spec-vieja.md", "");
-
-    const result = await index(fs);
-
-    expect(result.specs).toEqual([]);
-    expect(result.reservations).toHaveLength(1);
-    expect(result.reservations[0]).toMatchObject({
-      kind: "legacy-placeholder",
-      owner: null,
-      intact: false,
-      // La acción sancionada lleva la confirmación en el propio comando: sus
-      // bytes no prueban que nadie vaya a escribirlo.
-      next: "aw claims recover docs/specs/003-spec-vieja.md --confirm-no-producer",
-    });
-  });
-
   it("un documento publicado sigue siendo un documento", async () => {
     const fs = hub().file(
       "/cwd/docs/specs/004-spec-real.md",

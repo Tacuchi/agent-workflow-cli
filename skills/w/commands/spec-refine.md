@@ -16,17 +16,17 @@ Delegates to `spec-refine-loop` (Layer 2), which iterates, closes the blocking g
 
 > **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
-> 1. **Session first** — open or resume the run before working: `aw flow start --flow spec-refine --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
+> 1. **Read first** — `aw flow read --flow spec-refine --doc <document>` returns where the document stands and the `read_digest` its save quotes back (`aw flow save --flow spec-refine ...`: a preview first, then the write with the approved digest). Nothing is kept between turns: the document is the record.
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow edits only `docs/specs/…` (in place, with confirmation), stamping `status: ready-for-plan` on save; nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the doc's content) goes in the **user's language**.
 > 5. **Converge, do not close everything** — the target is `ready-for-plan`, not a spec without unknowns: close what can change **what** gets built; hand architecture and implementation questions to `PLAN`, recorded in `## Open questions` with their destination.
-> 6. **Shape before gaps** — if the spec must be **split** or **replaced**, ask and resolve that **before** the gap questions, in its own question, and record the answer in `CHECKPOINT`. Never mix it into the gap batch.
+> 6. **Shape before gaps** — if the spec must be **split** or **replaced**, ask and resolve that **before** the gap questions, in its own question, and record the answer in the spec. Never mix it into the gap batch.
 
 ## Run the loop
 
-1. Read, in order, the `read_set` entries it returned that are not `loaded`.
-2. Follow the loop manual end to end, taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, manages sessions, converges and reports.
+1. Read [`spec-refine-loop`](../loops/spec-refine-loop/LOOP.md).
+2. Follow the loop manual end to end, taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, converges and reports.
 
 > `spec-refine-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
 

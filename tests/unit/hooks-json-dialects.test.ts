@@ -188,6 +188,33 @@ describe("instalación y retirada sobre HOME temporal", () => {
     expect(countOurCrushHooks(written)).toBe(2);
   });
 
+  it("crush: una reinstalación quita los hooks de sesión ya instalados y deja los del usuario (spec 066, ID07)", async () => {
+    const configPath = crushGlobalMcpFile(home);
+    const mine = { command: "./hooks/compact.sh" };
+    await mkdir(dirname(configPath), { recursive: true });
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        hooks: {
+          PreCompact: [{ command: "agent-workflow hook pre-compact" }, mine],
+          SessionEnd: [{ command: "agent-workflow hook session-end" }],
+        },
+      }),
+      "utf8",
+    );
+
+    const result = await selfInstallHooks(
+      buildArgs({ target: "crush", template: templatePath }),
+      buildCtx(home),
+    );
+    expect(result.ok).toBe(true);
+    const hooks = (await readJson(configPath)).hooks as Record<string, unknown[]>;
+    expect(hooks.PreCompact).toEqual([mine]);
+    expect(hooks.SessionEnd).toBeUndefined();
+    expect(JSON.stringify(hooks)).not.toMatch(/pre-compact|session-end|post-compact/);
+    expect(countOurCrushHooks({ hooks })).toBe(2);
+  });
+
   it("crush: reinstalar no duplica — la segunda pasada es noop", async () => {
     const ctx = buildCtx(home);
     await selfInstallHooks(buildArgs({ target: "crush", template: templatePath }), ctx);

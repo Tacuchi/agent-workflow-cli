@@ -23,44 +23,6 @@
           }
         ]
       }
-    ],
-    "SessionEnd": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "agent-workflow hook session-end",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "agent-workflow hook pre-compact",
-            "statusMessage": "Escribiendo CHECKPOINT.md antes de compactar...",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "PostCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "agent-workflow hook post-compact",
-            "statusMessage": "Recuperando estado tras compact...",
-            "timeout": 10
-          }
-        ]
-      }
     ]
   }
 }

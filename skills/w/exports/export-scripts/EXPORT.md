@@ -7,9 +7,9 @@ description: "Consolidates pending SQL into a numbered `docs/scripts/` bundle: f
 
 Consolidates pending SQL into `docs/scripts/NNN-export-scripts-YYYY-MM-DD/`, with category folders and rollback files under `rollback/`. The AI **never executes DML/DDL**; application is a handoff. Optional catalog checks are read-only.
 
-**The material is declared, not assumed:** a base brings it, `--exclude` subtracts pieces and `--environment` what the book records as applied. With no flag: the session corpus, bundles out.
+**The material is declared, not assumed:** a base brings it, `--exclude` subtracts pieces and `--environment` what the book records as applied. With no flag: the loose `docs/scripts/*.sql` plus the published bundles (`hub`).
 
-> `export-*` family (the only artifact→`docs/` path). Design: `docs/referencias/workflow-exports/export-scripts.md`.
+> The one surviving export: the flows write SQL as loose files in `docs/scripts/`; this consolidates it. Design: `docs/referencias/workflow-exports/export-scripts.md`.
 
 ## Category
 
@@ -22,7 +22,7 @@ The export's own DB scripts-only rule governs ordering and rollback. SQL help ex
 ## What it does NOT do
 
 - **Execute DML/DDL** by any channel (DB scripts-only). The bundle is a deliverable; a human/DBA applies it.
-- Commit as part of publication, merge or push; touch `.workflow/sessions/` or the loose `*.sql` (read-only). An optional exact-path commit is offered separately, only with approval.
+- Commit as part of publication, merge or push; rewrite the loose `*.sql` (read-only). An optional exact-path commit is offered separately, only with approval.
 - Write any `docs/` folder other than `docs/scripts/` (invariant: one category).
 - Rewrite, renumber or delete a previous bundle: one in the origin is **read**, its directory left as it was.
 - Include read-only type-A (diagnostic queries) or invent SQL.
@@ -36,39 +36,31 @@ In plan mode do **not** call `prepare` (it reserves a folder): describe the orig
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw release-data [--since sessionNNN] [--source <alias>]` — the session corpus (ALL sessions, closed + active, with `release_eligible`). `aw sessions` lists only ACTIVE ones: never use it as the corpus.
-- `aw session-artifacts --code <NNN> --dump scripts` — session SQL including root `SCRIPTS.sql` and `SCRIPTS.rollback.sql`, with relative names, path and size. No SQL → not material.
-- `aw release-data --standalone-sql [--include-graduated]` — the loose `docs/scripts/*.sql` and the previous bundles. `prepare` already reads both through its base; these are for looking by hand.
 - `aw release-pass list` — `--environment` reads linked/applied bundles. `--catalog <connection>` optionally inspects the target catalog through Workline's read-only PostgreSQL connection; unreachable or missing objects block publication. Without it, no database connection opens.
 - `aw next-number docs/scripts` — deterministic numbering; it also creates `docs/scripts` when missing, which is what makes destination resolution a CLI guarantee. In plan mode, `--dry-run`.
 
 **Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
-/w:export-scripts [--from sessions|bundles|hub] [--exclude <nombre>]… [--environment <ambiente>]
-                  [--sessions NNN[,NNN]] [--since sessionNNN] [--source <alias>] [--code <sesión>] [--catalog <conexión>]
+/w:export-scripts [--from hub|bundles] [--exclude <nombre>]… [--environment <ambiente>]
+                  [--source <alias>] [--catalog <conexión>]
 ```
 
 | Flag | Behavior |
 |---|---|
-| `--from <base>` | The base: `sessions` (default) · `bundles` · `hub` (all three) |
+| `--from <base>` | The base: `hub` (default: loose SQL + bundles) · `bundles` |
 | `--exclude <nombre>` | Subtracts one piece by the name the inventory prints. **Repeatable** |
 | `--environment <ambiente>` | Subtracts bundles the book records as applied there; no record is reported as such |
-| `--sessions NNN[,NNN]` | Discrete filter by code (takes precedence over `--since`) |
-| `--since sessionNNN` | Only sessions after NNN (exclusive: NNN itself is out; use `--sessions` to include it) |
 | `--source <alias>` | Limits to one source (multi-source hub) |
 | `--catalog <connection>` | Optional read-only target catalog check, repeated on validate and apply |
-| `--code <sesión>` | Owns the folder reservation; without it, the sealed operation owns it |
 
-No args: every corpus session, bundles and loose SQL out — the behavior that always was. The three composition flags are this export's alone.
+No args: the loose SQL and the published bundles. The three composition flags are this export's alone.
 
 ## Flow
 
 ### Step 1 — Collect SQL sources
 
 `prepare` already resolved WHICH pieces are in: its inventory lists them per origin with every exclusion and its reason. Read only that.
-
-**Sessions**: read every `.sql` named by `aw session-artifacts --code <NNN> --dump scripts`, including root `SCRIPTS.sql` and `SCRIPTS.rollback.sql`. Take only type-B migrations; skip type-A research. Markers: `-- @category: <01-05>` and `-- @stmt: NNN-verb-target` from session artifacts.
 
 **Loose SQL**: per file, honor `@category` markers when present; otherwise infer it from content (`CREATE/ALTER TABLE`, `CREATE INDEX` → `01`; `CREATE OR REPLACE FUNCTION`/`PROCEDURE` → `02`; `UPDATE`/`DELETE` → `03`; `INSERT INTO … VALUES` → `04`). If the filename contains `rollback` → skip (it never enters a forward).
 
@@ -91,10 +83,10 @@ omit explicitly retired objects even when their deletion is absent from the inpu
 | Created, then dropped | Nothing: neither forward nor rollback |
 | Created, then changed (type/rename) | One statement in final form |
 | Created, untouched | The original statement |
-| Retired by session context without an explicit `DROP` | Omit it |
+| Retired by the plan's context without an explicit `DROP` | Omit it |
 
 **Synthesize, never invent:** folding changes into their final form is required;
-adding a migration no session performed is forbidden. Session context outranks script chronology:
+adding a migration no plan performed is forbidden. The plan's context outranks script chronology:
 a retired object stays out even when no file dropped it. Check actual state **read-only** before
 deciding what remains; reconcile code (including entity mappings and native queries) with it.
 Do not promote one-off QA data repairs into release migrations.
@@ -124,7 +116,7 @@ Place each selected forward in its category folder with its origin and the resul
 
 ### Step 6 — Derive `00-ROLLBACK.sql` (at the end)
 
-For every forward `<categoría>/NN-<nombre>.sql`, write `rollback/<categoría>/NN-<nombre>.rollback.sql`. Derive `rollback/00-global/00-ROLLBACK.sql` from the consolidated final state, **in dependency-safe order**: drop referencing rows/tables before their FK targets; never reverse the session chronology or file order literally. Verify the real state only through read-only inspection; application is the user's handoff.
+For every forward `<categoría>/NN-<nombre>.sql`, write `rollback/<categoría>/NN-<nombre>.rollback.sql`. Derive `rollback/00-global/00-ROLLBACK.sql` from the consolidated final state, **in dependency-safe order**: drop referencing rows/tables before their FK targets; never reverse the plans' chronology or file order literally. Verify the real state only through read-only inspection; application is the user's handoff.
 
 ### Step 7 — Write the `README.md` (3 sections)
 
@@ -155,4 +147,3 @@ Each invocation publishes a new `NNN`: never delete or overwrite a published bun
 - Design: `docs/referencias/workflow-exports/export-scripts.md` · family: [`../README.md`](../README.md).
 - Optional SQL help from the host remains subject to this export's corpus, destination, rollback and approval checks.
 - Source artifact: `SCRIPTS.sql` (see `docs/referencias/workflow-artifacts/artifacts-core/`).
-- Siblings: [`../export-manuals/EXPORT.md`](../export-manuals/EXPORT.md) · [`../export-diagrams/EXPORT.md`](../export-diagrams/EXPORT.md) · [`../export-reports/EXPORT.md`](../export-reports/EXPORT.md).

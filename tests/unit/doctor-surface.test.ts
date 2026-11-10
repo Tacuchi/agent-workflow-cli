@@ -4,7 +4,6 @@ import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { doctorCommand } from "../../src/cli/commands/doctor.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
-import { sessionCloseCommand } from "../../src/cli/commands/session-close.js";
 import { reviewFlags } from "../../src/cli/commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "../../src/cli/dispatch-plan.js";
 import { groupCommands } from "../../src/cli/help-groups.js";
@@ -14,7 +13,6 @@ import { CommandRegistry } from "../../src/cli/registry.js";
 import { renderHumanError } from "../../src/cli/render.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { type DoctorReport, doctorFindingId } from "../../src/domain/doctor/model.js";
-import { dispatch } from "../helpers/dispatch.js";
 import {
   COVERAGE,
   blockingReport,
@@ -123,14 +121,6 @@ describe("aw doctor · --doctor no es un flag de runtime", () => {
     const review = reviewFlags(parsed, { known: ["code", "refs"] });
     expect(review.unknown).toEqual(["--doctor"]);
     expect(review.retired).toEqual([]);
-  });
-
-  it("la superficie real lo rechaza: session-close responde UNKNOWN_FLAG", async () => {
-    const parsed = parseArgv(["session-close", "--code", "001", "--doctor"]);
-    const result = await dispatch(sessionCloseCommand, parsed, emptyCtx);
-    expect(result.ok).toBe(false);
-    expect(result.error?.code).toBe("UNKNOWN_FLAG");
-    expect(result.error?.message).toContain("--doctor");
   });
 });
 

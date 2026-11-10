@@ -8,7 +8,7 @@ description: >-
   conditional ideation gate, functional UI decisions, and
   the ready-for-plan gate that stamps the status frontmatter plan-new reads.
   Started by /w:spec-refine (or the live escalation from quick-loop);
-  resumable via CHECKPOINT and re-runnable on demand.
+  resumable from the spec itself and re-runnable on demand.
 ---
 
 # spec-refine-loop
@@ -26,7 +26,7 @@ SPEC
 2 — the AI runs it end to end (gap-driven). The user does not drive the cycle; they only answer content questions and steer the lifecycle via the `flow` control.
 
 ## Started by
-`/w:spec-refine` — **resumable**. Detects prior state (via CHECKPOINT) and starts accordingly (see *Compact / resume — SPEC keys*).
+`/w:spec-refine` — **resumable**. Detects prior state (the spec's `status`) and starts accordingly (see *Compact / resume — SPEC keys*).
 
 It is also started by the **live escalation from `quick-loop`** (entry gate or mid-loop — see [`../quick-loop/LOOP.md`](../quick-loop/LOOP.md) § *QUICK delta*): quick materializes the draft (`spec-new` procedure) and **loads this loop** over that spec — same semantics as if the user had run `/w:spec-refine`.
 
@@ -52,17 +52,13 @@ Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Aprob
 
 > **Boundary invariant:** this loop writes **only** into `docs/specs`. It never graduates/exports anything else to `docs/` — that is separate `export-*` work.
 
-## Internal sessions — SPEC instance
+## Run state — none
 
-Full doctrine in the chassis (§ *Internal sessions* + *Numbering*). This loop's instance:
+`aw flow read --flow spec-refine --doc <spec>` returns the spec's `status` and the `read_digest`; the refined bytes are saved with `aw flow save --flow spec-refine --doc <spec>` (preview, then the approved write, which stamps `status: ready-for-plan`), refused with `DOC_CHANGED_SINCE_READ` if another instance wrote the spec first. Nothing else is stored.
 
-| Session | When | Artifacts | Role |
-|---|---|---|---|
-| **refine session** `NNN-<slug>-spec-refine/` | when the loop starts (or resumes) | `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md` only if something is deferred) | Owns the run. Type = `refine`; descriptor `<slug>-spec-refine` (the `<slug>` comes from the input spec). |
+> **Origin on escalation:** when the run is born from quick-loop's live escalation, the spec's `## Origin` records "escalated from `/w:quick`" + the original prompt.
 
-> **Origin on escalation:** when the run is born from quick-loop's live escalation, the session's `## Origin` records "escalated from `/w:quick`" + the origin quick session if it exists (its `DECISION`/`SCRIPTS.sql` are referenceable context — never migrated).
-
-> **Compat (legacy):** old hubs may hold `NNN-spec.md` / `NNN-spec-refined.md` and separate `*-research-*` sessions — historical, left as-is. The `NNN-spec*.md` glob still finds the base spec, and re-running spec-refine edits it in place from then on.
+> **Compat (legacy):** old hubs may hold `NNN-spec.md` / `NNN-spec-refined.md` — historical, left as-is. The `NNN-spec*.md` glob still finds the base spec, and re-running spec-refine edits it in place from then on.
 
 ## Functional UI decisions
 
@@ -115,7 +111,7 @@ technical implementation choices still open go to `## Open questions`, never Sco
 
 > **Ready mark (contract with PLAN):** the frontmatter **`status`** is the mark — `ready-for-plan` means this gate passed and plan-new can proceed; `draft` and `refining` make it soft-suggest a refine first. It is machine state, never prose. *(Legacy specs carry no frontmatter: `## Refinement decisions` — and the older `## Q&A traceability` — still count as ready. A legacy mark does NOT skip the gate on a re-refine.)*
 
-> **`## Decisions` is contract, not expedient.** Only the material decisions, each with its why — not the transcript of every question asked, file read, discarded alternative or progress step: that detail lives in the session (`CONCLUSIONS`, `CHECKPOINT`), which is where a reader of the contract should not have to go. *(It replaces `## Refinement decisions`, which stays the name of plan-refine's audit trace — that one has no `status` to take over as its prior-work mark.)*
+> **`## Decisions` is contract, not expedient.** Only the material decisions, each with its why — not the transcript of every question asked, file read, discarded alternative or progress step: that detail stays in the conversation, which is where a reader of the contract should not have to go. *(It replaces `## Refinement decisions`, which stays the name of plan-refine's audit trace — that one has no `status` to take over as its prior-work mark.)*
 
 > **`## Open questions` carries destinations.** Each entry states why it is still open, whether it blocks `ready-for-plan`, and where it goes: `PLAN`, the user, later research, another spec. A question may survive convergence **only** if it does not force `PLAN` to invent behavior.
 
@@ -123,7 +119,7 @@ technical implementation choices still open go to `## Open questions`, never Sco
 
 ## Who decides what
 
-> **Directed tranche:** `aw flow` decides — it opens the session, resolves the shape gate, decides when the ideation offer and the ambiguity question appear, evaluates the ready-for-plan gate and holds the save until its result comes back. What stays here is the *why*: the taxonomy, the checklist and what each branch means. The split gate keeps its rule in [`../../modules/SPLIT-GATE.md`](../../modules/SPLIT-GATE.md), which the PLAN flows still read.
+> What stays here is the *why*: the taxonomy, the checklist and what each branch means; the save is `aw flow save`, held until the ready-for-plan gate passes. The split gate keeps its rule in [`../../modules/SPLIT-GATE.md`](../../modules/SPLIT-GATE.md), which the PLAN flows still read.
 
 ## Gap taxonomy — signal, resolver, destination
 
@@ -158,16 +154,15 @@ technical implementation choices still open go to `## Open questions`, never Sco
 ```
 spec-refine-loop(spec):
   input = glob(NNN-spec*.md) | argument (path)          # always the spec itself (in place)
-  refine_session = the run's session          # the CLI opens or resumes it and verifies its seed
-  SESSION.Success criteria born seeded by aw flow start          # flip each at the gate
-  work = read(input)  (+ apply checkpoint progress if resuming)
+  read = aw flow read --flow spec-refine --doc <spec>      # status + read_digest; nothing stored
+  work = read(input)
   adopt(spec-new facts + assumptions + open questions + conversation)  # never re-derive (§ Reads)
   baseline = resolve_current_behavior(work)      # inline research, ONLY what the change rests on
   on the shape branch (see ../../modules/SPEC-CHANGE-SHAPE.md for what each one means):
     `Una sola spec`           → keep refining this spec
     `Dividir en varias specs` → the accepted cut is fixed now; its writes wait for `Guardar specs`
     `Crear una nueva spec`    → mint draft with confirmation (## Origin) ; THIS spec untouched ;
-                                CHECKPOINT.Next = refine it ; goto finalize
+                                report: refine it next ; goto finalize
     `Reformular esta spec`    → same number/path ; re-run baseline before any stamp
   attempts = {}                                          # anti re-fire per gap
   repeat:
@@ -176,38 +171,33 @@ spec-refine-loop(spec):
     blocking = gaps.spec_blocking
     if blocking == ∅: break
     batch = top ≤3 blocking ; pending_human = []   # gap questions ONLY — the shape was resolved above
-    seed CHECKPOINT.Pending/Next = batch (refine_session) # BEFORE: seed the intent (artifact-first)
     for each gap in batch:
       if gap = Unexplored solution space:
         declare the trigger signal               # the CLI decides whether the offer appears
       else if factual(gap) and attempts[gap] < MAX:
         if it needs DB and >1 MCP without default → queue "MCP choice" in pending_human
-        res = research_inline(gap)           # current session: ANALYSIS-FILE → CONCLUSIONS (+read-only SCRIPTS.sql)
+        res = research_inline(gap)           # in the conversation (read-only DB queries only)
         if res.conclusive: work = integrate(work, res)   # → Context / Behavioral changes / Decisions
         else: attempts[gap]++ ; if attempts[gap] >= MAX → pending_human.push(gap)
       else:
         pending_human.push(gap)
-    update CHECKPOINT (refine_session)        # AFTER: Pending→Completed, at every gap boundary (chassis)
     if pending_human not empty:
       ans = structured_choice(content: pending_human (≤3), flow: [Compactar, Cerrar])
       switch(flow):
-        Compactar → write CHECKPOINT (refine_session) ; compact(harness) ; continue
+        Compactar → compact(harness) ; re-read the spec ; continue
         Cerrar    → goto finalize
       work = integrate(work, ans)            # → Decisions / Open questions
       ideation offer accepted → run the round NOW, then its verdicts as a NEW ≤3+flow batch (§ Ideation gate)
       ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
-  # no BLOCKING gaps → the CLI evaluates the ready-for-plan gate over the run's
-  # Success criteria and asks for their real state; whatever fails comes back as a gap.
-  hand the CLI the exact bytes of the refined spec, with status: ready-for-plan already stamped in them
+  # no BLOCKING gaps → the ready-for-plan gate (below); whatever fails comes back as a gap.
+  aw flow save (no --approval) with the exact bytes of the refined spec
                        # split branch → the same bytes carry the extracted siblings as status: draft
-  the CLI seals them into ONE proposal and shows its preview: destination, weight, what it replaces
-  Aprobar y guardar  → the CLI writes every file of the preview, together or not at all ; goto finalize
+  the CLI stamps status: ready-for-plan and shows the preview
+  Aprobar y guardar  → aw flow save --approval <digest> (only if the spec is still the one read) ; goto finalize
   Refinar            → nothing is written and the refinement stays open
   flow Compactar/Cerrar → handle the same way
 finalize:
-  write CHECKPOINT (refine_session)                     # always persisted
-  if deferred/follow-ups exist → write/update BACKLOG (reason + deferred Open questions)
-  close refine_session ; report
+  report: the spec's status, what was decided and what stays in ## Open questions
 ```
 
 ## Convergence / exit
@@ -224,16 +214,16 @@ finalize:
   - its gate evidence is checkout-bounded: local inspection/commands may establish it; a deployed product, host runtime or remote query is context or handoff, never a closing condition.
 - Whatever fails **comes back as a gap**. A question owned by `PLAN` **never** fails the gate: it is recorded with its destination, not closed.
 - Passes → `edit_in_place_with_confirm(spec)` + `status: ready-for-plan` → `finalize`. The stamp only counts once the document really carries it.
-- `Cerrar` → the chassis `finalize` (always persists `CHECKPOINT`; `BACKLOG` **only if** something is deferred — here: close reason + deferred `Open questions`).
+- `Cerrar` → nothing is written; the report says where the refinement stands and what stays open.
 
 ## Integration (where each resolution lands)
 
-- **Inline research** → the fact lands in `## Context` / `## Behavioral changes`; if it settles a choice, the choice goes to `## Decisions` (+ ref to the session's `CONCLUSIONS`).
-- **Ideation** → per verdict (§ *Ideation gate*): `Adoptar` → the spec's sections + `## Decisions` · `Descartar` → `CONCLUSIONS` · `Aparcar` → `## Open questions`.
-- **Human** → `## Decisions`, as the decision plus its why. **Not** a `Q:` transcript: the question-by-question trace stays in the session.
+- **Inline research** → the fact lands in `## Context` / `## Behavioral changes`; if it settles a choice, the choice goes to `## Decisions` (+ the source it was read from).
+- **Ideation** → per verdict (§ *Ideation gate*): `Adoptar` → the spec's sections + `## Decisions` · `Descartar` → named in the report · `Aparcar` → `## Open questions`.
+- **Human** → `## Decisions`, as the decision plus its why. **Not** a `Q:` transcript: the question-by-question trace stays in the conversation.
 - **UI decision** → the choice and its reason in `## Decisions`, with observable effects in criteria/scenarios where applicable.
 - **Owned by `PLAN` or deferred** → `## Open questions` with its destination, and nothing else in the spec.
-- **Inconclusive or unresolved research** → `## Open questions` (deferred) + the refine session's `BACKLOG.md` (only if something is deferred).
+- **Inconclusive or unresolved research** → `## Open questions` (deferred).
 
 ## Conditional modules
 

@@ -76,17 +76,13 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
     "/w:persist",
     "/w:resume",
     "/w:export-scripts",
-    "/w:export-manuals",
-    "/w:export-diagrams",
-    "/w:export-reports",
   ],
 
   // The events of hooks.template.json — real matcher + what they fire.
   //
   // What this list is NOT: a promise about any host. It is what the TEMPLATE
   // declares; how much of it a given host really carries is per-host state, and the
-  // hosts view is where that lives (Kimi cannot express the PostCompact `prompt`
-  // hook and drops the SessionStart matcher; Codex has every event and still cannot
+  // hosts view is where that lives (Kimi drops the SessionStart matcher; Codex has every event and still cannot
   // be armed by an installer). `workflow-content.test.ts` pins this list to the
   // template's own events so a hardcoded copy cannot drift from it.
   hooks: [
@@ -100,26 +96,11 @@ export const WORKFLOW_CONTENT: WorkflowContent = {
       matcher: "mcp__*__execute_sql",
       fires: "sql-mutation-guard",
     },
-    {
-      name: "SessionEnd",
-      matcher: "(any)",
-      fires: "agent-workflow hook session-end",
-    },
-    {
-      name: "PreCompact",
-      matcher: "(any)",
-      fires: "hook pre-compact — writes CHECKPOINT.md before compacting",
-    },
-    {
-      name: "PostCompact",
-      matcher: "(any)",
-      fires: "hook post-compact + prompt to reload CHECKPOINT.md",
-    },
   ],
 
-  // The engine that advances a journey to its first non-deterministic boundary.
+  // The stateless flow verbs: each call derives its position from the document.
   engine: {
     command: "aw flow",
-    summary: "stops at the first boundary it does not own",
+    summary: "reads the document, saves it by digest, closes batches and commits",
   },
 };

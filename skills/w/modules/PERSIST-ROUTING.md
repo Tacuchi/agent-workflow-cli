@@ -12,6 +12,6 @@ Loaded when classifying what to persist (signal `classification`).
 
 ## `docs/research/` — the analysis home (owned by this command)
 
-`docs/research` hosts standalone analyses: neither spec nor plan, but worth keeping. Belongs to **no flow**; `export-*` never writes it; loops never read it implicitly (a flow uses it by **reference** — cited in a spec's `## Origin` or a quick prompt). It is git-shareable, unlike sessions (gitignored, machine-local, loop-owned), which makes it the exchange surface for **N agents analyzing the same situation**.
+`docs/research` hosts standalone analyses: neither spec nor plan, but worth keeping. Belongs to **no flow**; `export-*` never writes it; loops never read it implicitly (a flow uses it by **reference** — cited in a spec's `## Origin` or a quick prompt). It is git-shareable, which makes it the exchange surface for **N agents analyzing the same situation**.
 
 > **Anti-duplicate is a decision, not an accident.** The inventory carries each existing document's summary and digest. Same work already there → `mode: "update"` (proving you saw the current bytes via `target_digest`) or `state: "ambiguous"` so the user chooses between updating and writing a sibling perspective. A second near-identical document is never created silently.

@@ -7,39 +7,33 @@ import {
 import {
   type DocIdentity,
   appendDocBranch,
-  documentOfSession,
   findDocument,
   ownDocBranch,
   readDocBranches,
   resolveDocBranch,
 } from "../../application/doc-branch-ledger.js";
 import { readHubBlock, requireSourcePath } from "../../application/parsers/hub-block.js";
-import { resolveSessionTarget, sessionSlug } from "../../application/session-resolver.js";
 import { ensureWorkingBranch } from "../../application/working-branch-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type WorklineNodeId, formatNodeId } from "../../domain/workline-node.js";
-import { readContextId } from "../context-id.js";
-import { type ParsedArgs, flagValue, sessionCodeFlag } from "../parser.js";
+import { type ParsedArgs, flagValue } from "../parser.js";
 import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
 const USAGE =
-  "Usage: aw doc-branch show (--code <NNN>|--doc <spec|plan:NNN|quick:NNN>) | aw doc-branch set (--code <NNN>|--doc <tipo:NNN>) --source <alias> (--rama <nombre>|--from <tipo:NNN>).";
+  "Usage: aw doc-branch show --doc <spec|plan:NNN> | aw doc-branch set --doc <spec|plan:NNN> --source <alias> (--rama <nombre>|--from <spec|plan:NNN>).";
 
 export const docBranchCommand: CliCommand = {
   name: "doc-branch",
   flags: {
     known: [],
     actions: {
-      show: { known: ["code", "session", "doc"], exclusive: [["code", "doc"]] },
+      show: { known: ["doc"], required: ["doc"] },
       set: {
-        known: ["code", "session", "doc", "source", "rama", "from"],
-        required: ["source"],
-        exclusive: [
-          ["code", "doc"],
-          ["rama", "from"],
-        ],
+        known: ["doc", "source", "rama", "from"],
+        required: ["doc", "source"],
+        exclusive: [["rama", "from"]],
       },
     },
   },
@@ -50,9 +44,7 @@ export const docBranchCommand: CliCommand = {
       show: {
         purpose: "Show the document's branch per source; never fetches or writes.",
         flags: {
-          code: { value: "<code>", effect: "Select the document of this session." },
-          session: { value: "<code>", effect: "Alias of --code." },
-          doc: { value: "<spec|plan|quick:NNN>", effect: "Select the document directly." },
+          doc: { value: "<spec|plan:NNN>", effect: "The document whose branch it is." },
         },
         output:
           "{doc, sources[] ({source, branch, origin, proposed, local, remote, error_code?, error?}), unreadable[], next}.",
@@ -60,13 +52,11 @@ export const docBranchCommand: CliCommand = {
       set: {
         purpose: "Create or reuse a working branch in one source and record it as the document's.",
         flags: {
-          code: { value: "<code>", effect: "Select the document of this session." },
-          session: { value: "<code>", effect: "Alias of --code." },
-          doc: { value: "<spec|plan|quick:NNN>", effect: "Select the document directly." },
+          doc: { value: "<spec|plan:NNN>", effect: "The document whose branch it is." },
           source: { value: "<alias>", effect: "Source whose branch is recorded." },
           rama: { value: "<branch>", effect: "Branch name to create or reuse." },
           from: {
-            value: "<spec|plan|quick:NNN>",
+            value: "<spec|plan:NNN>",
             effect: "Reuse the branch another document already owns in that source.",
           },
         },
@@ -77,19 +67,15 @@ export const docBranchCommand: CliCommand = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const action = args.rest[0];
     if (action !== "show" && action !== "set") return fail("INVALID_INPUT", USAGE);
-    const session = sessionCodeFlag(args);
-    if (!session.ok) return fail("INVALID_INPUT", session.message);
     const reference = args.values.get("doc");
-    if ((reference === undefined) === (session.code === undefined))
-      return fail("INVALID_INPUT", USAGE);
-    const identity =
-      reference !== undefined
-        ? await parseDoc(reference, ctx)
-        : await fromSession(session.code as string, ctx);
+    if (reference === undefined) return fail("INVALID_INPUT", USAGE);
+    const identity = await parseDoc(reference, ctx);
     if (identity.status !== "resolved") {
       return fail(
         "DOC_BRANCH_IDENTITY",
-        identity.status === "unreadable" ? identity.reason : "la sesión no nombra un documento",
+        identity.status === "unreadable"
+          ? identity.reason
+          : `'${reference}' no nombra un documento`,
       );
     }
     const block = await readHubBlock(ctx.fs, ctx.paths.hubDir(), ctx.paths.blockMarkers());
@@ -100,41 +86,15 @@ export const docBranchCommand: CliCommand = {
       return showDocumentBranches(ctx, block, identity, read);
     }
 
-    return setDocumentBranch(args, ctx, block, identity, read, session.code);
+    return setDocumentBranch(args, ctx, block, identity, read);
   },
 };
 
-async function fromSession(code: string, ctx: CliContext): Promise<DocIdentity> {
-  const contextId = readContextId(ctx.env);
-  const resolution = await resolveSessionTarget(ctx.fs, ctx.paths, {
-    intent: "read",
-    code,
-    ...(contextId !== undefined ? { contextId } : {}),
-    bind: false,
-  });
-  if (resolution.outcome !== "resolved")
-    return { status: "unreadable", reason: resolution.message };
-  return documentOfSession(ctx.fs, ctx.paths, resolution.session.folder);
-}
-
 async function parseDoc(reference: string, ctx: CliContext): Promise<DocIdentity> {
-  const match = /^(spec|plan|quick):(\d{3,})$/.exec(reference);
+  // QUICK has no document in 31.0.0: its branch is the one git shows.
+  const match = /^(spec|plan):(\d{3,})$/.exec(reference);
   if (!match?.[1] || !match[2]) return { status: "none" };
   const doc = { kind: match[1] as WorklineNodeId["kind"], key: match[2] };
-  if (doc.kind === "quick") {
-    const resolution = await resolveSessionTarget(ctx.fs, ctx.paths, {
-      intent: "read",
-      code: doc.key,
-      bind: false,
-    });
-    if (resolution.outcome !== "resolved" || !resolution.session.folder.endsWith("-quick"))
-      return { status: "none" };
-    return {
-      status: "resolved",
-      doc: { kind: "quick", key: resolution.session.folder },
-      path: null,
-    };
-  }
   const path = await findDocument(ctx.fs, ctx.paths, doc);
   return path === null ? { status: "none" } : { status: "resolved", doc, path };
 }
@@ -144,11 +104,6 @@ async function proposedName(
   ctx: CliContext,
 ): Promise<string | null> {
   const { doc } = identity;
-  if (doc.kind === "quick") {
-    const number = /^(?:session)?(\d{3,})-/.exec(doc.key)?.[1];
-    const slug = sessionSlug(doc.key, "quick");
-    return number && slug ? `feature/quick-${number}-${slug}` : null;
-  }
   const path = identity.path ?? (await findDocument(ctx.fs, ctx.paths, doc));
   if (path === null) return null;
   const slug = basename(path, ".md").replace(new RegExp(`^${doc.key}-${doc.kind}-`), "");
@@ -207,7 +162,6 @@ async function setDocumentBranch(
   block: NonNullable<Awaited<ReturnType<typeof readHubBlock>>>,
   identity: Extract<DocIdentity, { status: "resolved" }>,
   read: Awaited<ReturnType<typeof readDocBranches>>,
-  code: string | undefined,
 ): Promise<CommandResult> {
   const alias = flagValue(args, "source");
   const source = block.fuentes.find((item) => item.alias === alias);
@@ -249,7 +203,7 @@ async function setDocumentBranch(
     doc: identity.doc,
     source: source.alias,
     branch,
-    by: code ?? `aw doc-branch set --doc ${formatNodeId(identity.doc)}`,
+    by: `aw doc-branch set --doc ${formatNodeId(identity.doc)}`,
     outcome: result.outcome,
   });
   return {

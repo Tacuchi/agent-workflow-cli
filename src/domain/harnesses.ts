@@ -75,13 +75,7 @@ export interface HarnessRuntime {
  * template's own keys, so a sixth event added to the bundle cannot leave every
  * host silently under-declared.
  */
-export const TEMPLATE_HOOK_EVENTS = [
-  "SessionStart",
-  "PreToolUse",
-  "SessionEnd",
-  "PreCompact",
-  "PostCompact",
-] as const;
+export const TEMPLATE_HOOK_EVENTS = ["SessionStart", "PreToolUse"] as const;
 
 export type TemplateHookEvent = (typeof TEMPLATE_HOOK_EVENTS)[number];
 
@@ -385,9 +379,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       events: {
         SessionStart: { state: "carried", native: "SessionStart" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
-        SessionEnd: { state: "carried", native: "SessionEnd" },
-        PreCompact: { state: "carried", native: "PreCompact" },
-        PostCompact: { state: "carried", native: "PostCompact" },
       },
       verified: "Jul-2026, against the installed claude runtime (matrix base)",
     },
@@ -450,9 +441,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       events: {
         SessionStart: { state: "carried", native: "SessionStart" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
-        SessionEnd: { state: "carried", native: "SessionEnd" },
-        PreCompact: { state: "carried", native: "PreCompact" },
-        PostCompact: { state: "carried", native: "PostCompact" },
       },
       verified: "2026-08-05, against codex-cli 0.146.0 (HookEventsToml enum + real runs)",
     },
@@ -623,13 +611,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       events: {
         SessionStart: { state: "omitted", reason: "agy declares no session-start event" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
-        SessionEnd: {
-          state: "omitted",
-          reason:
-            "its closest event is `Stop`, which fires at the end of every turn and not at session close: carrying the close hook there would run it on every turn",
-        },
-        PreCompact: { state: "omitted", reason: "agy exposes no compaction event" },
-        PostCompact: { state: "omitted", reason: "agy exposes no compaction event" },
       },
       verified:
         "2026-08-18, against agy 1.0.16 (its bundled `hooks.json` doc + the CORTEX_STEP_TYPE tool names in the binary): `BeforeTool` does not appear in the binary",
@@ -700,13 +681,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
           state: "omitted",
           reason: "the SQL MCP matcher has no OpenCode tool counterpart; no Git guard is installed",
         },
-        SessionEnd: { state: "omitted", reason: "the plugin API fires no session-end event" },
-        PreCompact: {
-          state: "omitted",
-          reason:
-            "its only candidate is `experimental.session.compacting`, an experimental event Workline does not rest resumability on",
-        },
-        PostCompact: { state: "omitted", reason: "the plugin API fires no post-compaction event" },
       },
       verified:
         "2026-08-18, against opencode 1.18.15 (its embedded plugin doc: the `Plugin` signature, its hook surface and its plugin dirs)",
@@ -766,9 +740,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       events: {
         SessionStart: { state: "omitted", reason: "crush supports only PreToolUse" },
         PreToolUse: { state: "carried", native: "PreToolUse" },
-        SessionEnd: { state: "omitted", reason: "crush supports only PreToolUse" },
-        PreCompact: { state: "omitted", reason: "crush supports only PreToolUse" },
-        PostCompact: { state: "omitted", reason: "crush supports only PreToolUse" },
       },
       verified:
         '2026-08-18, against crush v0.89.0 (its embedded skill doc + the `config.HookConfig` JSON schema in the binary): "Only PreToolUse is currently supported"',
@@ -860,9 +831,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
           loss: "its matcher is not carried, so the hook fires on every session start",
         },
         PreToolUse: { state: "carried", native: "PreToolUse" },
-        SessionEnd: { state: "carried", native: "SessionEnd" },
-        PreCompact: { state: "carried", native: "PreCompact" },
-        PostCompact: { state: "carried", native: "PostCompact" },
       },
       verified: "2026-07-29, against kimi 0.29.2 (shipped binary + live probes)",
     },

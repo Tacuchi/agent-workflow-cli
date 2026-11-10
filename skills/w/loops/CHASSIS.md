@@ -2,12 +2,12 @@
 
 The **common engine** of Workline loops: heirs read it before their deltas and only reference it.
 
-> **When:** `aw flow` decides; the host walks it as a guide, not a chain. `aw flow submit` answers the frontier. Its envelope, the minimal answer, drafts by path and recovery live in `aw flow --help`, never guessed.
+> **How:** `aw flow read` says where the document stands, `aw flow save` writes it against that read, and the execution verbs close batches and commit by digest. Their contracts live in `aw flow --help`, never guessed.
 
 ## Host execution rules
 
-- Write JSON envelopes with the file tool, never heredoc or shell-built JSON; redirect the file to stdin.
-- Use a CLI verb before editing the runtime; make one call per approvable effect.
+- Write JSON payloads with the file tool, never heredoc or shell-built JSON; redirect the file to stdin.
+- `aw flow` keeps nothing between calls: every call derives its position from the document and git, and quotes back the digest it read.
 - On Windows set `PYTHONUTF8=1` for Python consumers.
 
 ## Heirs (canonical list)
@@ -24,22 +24,20 @@ The two that edit code also apply [`CODE-POLICIES.md`](CODE-POLICIES.md).
 
 ## Persistent objective
 
-A loop fulfills `SESSION.Objective` until its convergence gate confirms it. Gaps are the method; artifacts the record.
+A loop fulfills its document's objective — the spec's requirement, the plan's phases, the quick's prompt — until its convergence gate confirms it. Gaps are the method; the document is the record.
 
-The loop's `repeat:` and gate sustain convergence, not a host hook.
-
-> **Inter-turn continuity.** The same `CHECKPOINT`+resume governs the **next prompt**: the objective persists **across turns**, not only within a run. Its canonical rules have their **single source** in [`../SKILL.md`](../SKILL.md) § *Operating context*; this engine executes them via *Compact / resume* (case 3).
+> **Continuity from the document.** The next prompt, a compaction or a crash resumes from what the document and git already say: the spec's `status`, the plan's state field, its boxes and its next step, and the uncommitted changes of its sources (`aw resume`). Nothing else is kept between turns.
 
 ## Verification-first
 
 The persistent objective needs a **checkable done-condition** — otherwise the loop cannot know when it is done (or chases a target it invented). That condition is **seeded BEFORE executing**, never improvised at the end: it is **generalized TDD**.
 
-**Where it lives:** in `SESSION.Success criteria` — a `[ ]` checklist of **falsifiable** criteria (that *can* fail). `CHECKPOINT.Pending/Completed` tracks the **red→green** progress. Two forms, by deliverable:
+**Where it lives:** in the document itself — the spec's acceptance criteria, the plan's `Validación de fase` and `## Validations`, the quick's stated check — **falsifiable** criteria (that *can* fail); the boxes and the evidence lines track the **red→green** progress. Two forms, by deliverable:
 
 | Deliverable | Criterion = | Cycle |
 |---|---|---|
 | code / script / fix / feature | **runnable tests** (unit, build, lint, bug repro) | literal TDD: red → green → refactor |
-| DB migration (not executable; invariant 4) | **rubric**: `SCRIPTS.sql` valid + reviewed (never executed) | rubric |
+| DB migration (not executable; invariant 4) | **rubric**: the script in `docs/scripts/` valid + reviewed (never executed) | rubric |
 | spec / plan | **rubric** = the document's acceptance criteria (referenced, not duplicated) | rubric |
 | analysis / design | **rubric falsifiable by inspection** (e.g. "every affected site with `file:line`"; "each decision: rationale + ≥1 alternative") | rubric |
 
@@ -50,7 +48,7 @@ The persistent objective needs a **checkable done-condition** — otherwise the 
 
 **Gate integrity (anti-gaming + independent verification).** The gate only counts if it is not gamed to pass. The loop does **not**: modify the check or loosen a `Success criterion` to force green; weaken, delete or skip tests/validations; use trivial or tautological asserts that always pass (the expected value comes from an independent source, never from the output itself); patch the test instead of fixing the cause (prefer fixing production code).
 
-Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration** — *only command output counts*.
+Facing a real blocker it **stops and reports it** (→ the document's `Open questions`) instead of gaming the metric. The verdict counts **only the check's output, never the implementer's self-declaration** — *only command output counts*.
 
 **Checks before reviewers.** First what runs: code compiles and then runs (`CODE-POLICIES.md` § *Validation order*); a document passes the CLI's checks (`aw plan lint`, its gate). Reviewers come last, on request: the host names the cases, asks the person, and runs at most **2** agents, each on **one** named case. Declined or not offered, the run closes on its checks.
 
@@ -62,44 +60,38 @@ Facing a real blocker it **stops and reports it** (→ `Open questions`/`BACKLOG
 
 A **built-in floor** owed by every gate with **no external skill**; the code-editing loops *raise* it with the installed ambient conventions (`CODE-POLICIES.md` § *Validation order*), never lower it. Bounded by *Gate integrity*: minimality cuts over-building, never correctness — never trim validation at trust boundaries, error handling, security, accessibility or anything the spec requires. Each heir's lens: **spec** = over-specified scope · **plan** = over-engineered solution / needless phase-task · **code** = the `delete`/`stdlib`/`native`/`yagni`/`shrink` diff lens.
 
-## Artifacts as a live log — the artifact-first cycle
+## The document as the live record
 
-The loop works **artifact-first**: the artifact is **seeded before** executing and **updated after**, not only on close. Every gap/phase/task runs the **3-beat** cycle:
+The spec or plan is the run's only durable record, written **as the work happens**, not only at the end:
 
-1. **BEFORE — seed the intent.** Before executing, record in the artifact what is **about to** be done: `CHECKPOINT.Pending`/`Next` = the imminent work (`SESSION.Objective` already fixed the run's what).
-2. **EXECUTE.** Resolve the gap / run the phase / edit the code.
-3. **AFTER — bring to actual state.** `CHECKPOINT.Pending → Completed`; `DECISION` records the non-obvious **as it is decided**; `BACKLOG` **only if** something is deferred/follow-up.
+1. **BEFORE** — the plan says what comes next: its state is `in-progress` and its next step is named.
+2. **EXECUTE** — resolve the gap, run the phase, edit the code.
+3. **AFTER** — the boxes, the phase states, at most five evidence lines per batch and the next step are rewritten at the batch close (`aw flow close-batch`).
 
-> Session artifacts are the run's live log at **every** boundary, not only on `Compactar`/`Cerrar`; the spec/plan is the **guiding base**.
+Long evidence, logs and reasoning stay in the conversation; only their bounded summary reaches the plan.
 
-> **Fixed form (hard rule):** an artifact keeps its template's `##` headings **exactly** and is updated **in place** — appending a **duplicate heading** is a contract violation. A filled section **replaces** its `<!-- … -->` guidance comment. Canonical headings per artifact: its template under [`../artifacts/`](../artifacts/) (CHECKPOINT: `Completed` · `Pending / Next`; `Open questions` only while live doubts exist).
+> **Fixed form (hard rule):** a document keeps its `##` headings and is updated **in place** — appending a duplicate heading is a contract violation.
 
 ## Gap-driven convergent engine
 
-The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy: detect the gaps, seed `CHECKPOINT.Pending/Next` (*artifact-first*), resolve each with its resolver, integrate, repeat until none is left and the convergence gate can run. Pacing is the CLI's — one open boundary at a time, meeting the ≤3 ceiling by construction. Why gap-driven at all: a plan fixed up front cannot notice what it did not know.
+The common cycle — each heir instantiates it in its `## Sequence` with its own gap taxonomy: detect the gaps, record the next one in the document, resolve each with its resolver, integrate, repeat until none is left and the convergence gate can run. One open question at a time, never more than three. Why gap-driven at all: a plan fixed up front cannot notice what it did not know.
 
-## Internal sessions (managed) — one session per run
+## No run state — the document and git
 
-The loop creates and manages its session under `.workflow/sessions/`; **the user never creates it**. **A single session per run**: it keeps progress live (`CHECKPOINT`) and enables resume. Artifacts: `SESSION.md` · `CHECKPOINT.md` (· `BACKLOG.md`; code-editing loops add `DECISION` and `SCRIPTS.sql`). Each heir declares its descriptor and `Type` in its own `## Internal sessions`.
-
-> The flow's input document (spec/plan) **never** goes inside a session; it lives in `docs/`.
-
-**CLI**: `aw flow start --flow <flow> --name <slug> --objetivo "…"` opens it (`aw session-create` alone still works) · `aw checkpoint-write --code <NNN>` / `aw checkpoint-read` keep it resumable. The CLI closes at `finalize`; loops never call it. `aw session-close` mid-run applies `finalize` at its boundary; `aw session-load --code <NNN> --reopen` resumes both there.
-
-> The caller passes **only the descriptor** via `--name` — **never** a number; the CLI owns the global `NNN`. Its assignment, locating or reopening a session and repairing a failed history upsert live in the `sessions` module.
+There is no run file, saved boundary or attempt counter. `aw flow read` returns where the document stands and the `read_digest` this instance read; every write of a spec or plan quotes it back and is refused with `DOC_CHANGED_SINCE_READ` if another instance wrote first. Human approvals (saving a document, a commit) travel in the conversation as digests the CLI returned. QUICK leaves its trace in git alone.
 
 ## Ask-vs-research rule (the discriminator)
 
-Which resolver a gap gets is the kind of thing it is, and the CLI classifies it: a boundary's kind IS its resolver. Already **established in this conversation** → adopt it (`adopted` module), never re-ask a settled conclusion · answerable by **reading** the repo/data → research, autonomously · answerable only by **RUNNING a small experiment** → a probe (`probe` module) · dependent on **what the user wants** → ask the human. Why: asking a person what a file already says wastes the one resource the loop cannot regenerate, and guessing what only they decide is worse.
+Which resolver a gap gets is the kind of thing it is. Already **established in this conversation** → adopt it (`adopted` module), never re-ask a settled conclusion · answerable by **reading** the repo/data → research, autonomously · answerable only by **RUNNING a small experiment** → a probe (`probe` module) · dependent on **what the user wants** → ask the human. Why: asking a person what a file already says wastes the one resource the loop cannot regenerate, and guessing what only they decide is worse.
 
 ## Research: autonomy, scope & failure
 
-Investigation runs **inside the run's current session**, never a separate session. It writes its artifacts (`ANALYSIS-FILE` → `CONCLUSIONS`, + read-only `SCRIPTS.sql` if it queries DB) **into the session's own folder**.
+Investigation runs **inside the current run** and its conclusions stay in the conversation; a finding worth keeping reaches `docs/` only through the flow's document or `/w:persist`.
 
 - **Autonomous**: the AI investigates and reports **without asking permission**. The human keeps control via the `flow` control.
 - **Scope**: the current conversation (settled conclusions are reused, never re-derived) + hub + associated repos + DB MCPs.
 - **DB rule** — the single exception to autonomy: it lives in the `db` module and is loaded **before** any query runs.
-- **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes **`inconclusive`** in `CONCLUSIONS` with its reason. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the session's `BACKLOG` when the flow has no doc) — instead of re-firing it. Capping the attempts is the CLI's; declaring where a degraded gap GOES is doctrine's, because a gap dropped without a destination is this engine's promised convergence, faked.
+- **Inconclusive research** (DB unavailable, insufficient evidence, unresolvable factual gap): the investigation closes **`inconclusive`** with its reason. The loop **degrades** the gap — to a human question, or failing that to the flow doc's `## Open questions` (the final report when the flow has no doc) — instead of re-firing it, because a gap dropped without a destination is this engine's promised convergence, faked.
 
 **Subagents — admitted per stage.** Only three cases inside a run: parallel research in `spec-refine`, `plan-new` and `plan-refine`; implementing independent units in `plan-exec` and `quick`; the targeted review the person accepted (*Checks before reviewers*).
 Research and implementation fan out only with **three or more independent** parts, at most **3** at a time. Independent means none uses another's result or writes what another writes; dependent units run in sequence.
@@ -120,32 +112,25 @@ A default, not a cage: the host may depart from it saying so, but never launches
 
 ## Compact / resume
 
-Resume **keys off the `CHECKPOINT`** of the run's session, not the existence of a separate file. Three cases when the flow's command runs over an input:
+Resume **keys off the document**: the flow's command re-run over the same input reads it again and continues from its state — spec `status`, the plan's state field, its `- [x]` boxes and next step — plus `git status` of its sources. Re-running is always supported and never needs anything but the document.
 
-1. **In progress** (a `CHECKPOINT.md` exists in the session) → resume from the recorded progress (resolved gaps, Q&A, `attempts`, in-flight inline research).
-2. **No progress** (no CHECKPOINT and the input doc does **not** have the flow's prior-work mark) → start from zero reading the input doc (plus any settled in-conversation conclusions, which are input, not something to re-derive).
-3. **Already converged / re-run on demand** (no open CHECKPOINT but the doc **already has** the mark) → **first-class operation**: while the flow stays in its stage, re-running the command over the same input **as many times as needed** is supported. `create_or_resume` finds the existing session — typically **closed** after convergence — by descriptor + `## Origin` and **reopens** it; incremental work reading the **doc itself**.
-
-> Each heir defines its **prior-work mark**: spec-refine the spec's frontmatter `status`; plan-refine `## Refinement decisions`; plan-exec the plan-doc's `- [x]` checkboxes; quick has no doc (CHECKPOINT only).
-
-> **`Compactar`** (the `flow` control, across all 3 cases) → write `CHECKPOINT.md` in the session → trigger the harness compaction → resume by reading the checkpoint. **CHECKPOINT before compacting** is invariant. The proactive raise and its host binding live in the `compaction` module.
+> **`Compactar`** (the `flow` control) → make sure the plan's next step is current (it is rewritten at every batch close) → let the host compact → resume with `aw resume`.
 
 ## Convergence / exit
 
-- **No material gaps** → read-only **convergence gate**: failed criteria return as gaps; the loop flips the green criteria in `SESSION.md`. At `finalize` explain unchecked ones. Each heir owns its gate.
-- Finish sources → approve exact paths/message or skip → `finalize` persists CHECKPOINT, deferred BACKLOG if needed, archive and HISTORY; approved commit last. `Cerrar` preserves progress.
-- **Report from `CHECKPOINT`** (QUICK/PLAN close, block, compact, resume): proven state with evidence; block and cause if any; one next human action (command/path + condition) only if pending. No pending → no next action; closed PLAN names final test run and integration state. Unrun validation is no proof or 100% closure; deferred items separate, not another task. No preamble, redundant recap or farewell; keep requested explanation, evidence and format. No invented times or numbered micro-steps. `/w:status` stays literal; `/w:resume` keeps all candidates.
+- **No material gaps** → read-only **convergence gate**: failed criteria return as gaps. Each heir owns its gate.
+- Finish sources → approve the commit by its digest (`aw flow propose-commit`, then `aw flow commit`) or skip it; the plan closes with `aw flow finish`. `Cerrar` leaves the document and the working trees as they are.
+- **Report** (QUICK/PLAN close, block, compact, resume): proven state with evidence; block and cause if any; one next human action only if pending. Unrun validation is no proof or 100% closure. No preamble, redundant recap or farewell.
 
-## docs/ boundary — no auto-export (hard rule)
+## docs/ boundary (hard rule)
 
-A loop writes into `docs/` **only** its own flow's doc. Which folder belongs to each flow, and refusing any delegated step whose target leaves it, is the CLI's. No loop **graduates/promotes artifacts** into `docs/` — migrations → `docs/scripts`, manuals → `docs/manuals`, diagrams → `docs/diagrams` are the separate **`export-*`** skills', an explicit later step; artifacts stay in their sessions until then. Reusable tooling follows the `docs/tools` contract and the validation order; host help is optional.
+A loop writes into `docs/` its own flow's document and, when the work produces them, the deliverables of `docs/diagrams`, `docs/manuals`, `docs/reports` and `docs/scripts`, each with its category's shape; the hub commit refuses anything else (`aw flow propose-commit --source hub`). SQL is consolidated later with `/w:export-scripts`. Reusable tooling follows the `docs/tools` contract.
 
 ## Conditional modules
 
 The engine above is what every run needs. The branches below apply only under their signal, and `aw context-plan` returns them exactly then — never just in case:
 
 - `adopted` → [`../modules/ADOPTED-CONTEXT.md`](../modules/ADOPTED-CONTEXT.md) · `probe` → [`../modules/PROBE.md`](../modules/PROBE.md) · `db` → [`../modules/DB-RESEARCH-RULE.md`](../modules/DB-RESEARCH-RULE.md)
-- `compaction` → [`../modules/COMPACTION.md`](../modules/COMPACTION.md) · `sessions` → [`../modules/SESSION-NUMBERING.md`](../modules/SESSION-NUMBERING.md)
 
 ## Reference resolution (global layout rule) — and what the chassis is NOT
 

@@ -611,17 +611,6 @@ Spec 040.
    */
   const UNCLOSABLE = new Set(["divergent", "malformed", "unresolved"]);
 
-  it("el gate de cierre sigue decidiendo por el estado del baseline del tablero", async () => {
-    const gate = await readFile(
-      resolve(__dirname, "..", "..", "src", "application", "flow", "internal-actions.ts"),
-      "utf8",
-    );
-    expect(gate).toContain("PLAN_EXEC_DONE_BASELINE_INVALID");
-    for (const status of UNCLOSABLE) {
-      expect(gate, status).toContain(`plan.baseline.status === "${status}"`);
-    }
-  });
-
   it("prepare + apply lo dejan alineado y cerrable, tocando una sola línea", async () => {
     // El plan quedó sellado con el digest byte-exacto de la spec ORIGINAL —lo que
     // significaba un baseline antes del payload funcional— y después alguien le

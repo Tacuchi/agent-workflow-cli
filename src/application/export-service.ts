@@ -690,6 +690,19 @@ interface ComposedMaterial {
   environment: EnvironmentFilter | null;
 }
 
+/** The material of a category that no longer composes any (spec 066). */
+function emptyMaterial(): ComposedMaterial {
+  return {
+    origins: [],
+    sessions: [],
+    bundles: [],
+    standalone: [],
+    excluded: [],
+    unmatched: [],
+    environment: null,
+  };
+}
+
 /**
  * The composable origin belongs to the SQL bundle and to nothing else.
  *
@@ -800,16 +813,16 @@ async function composeMaterial(
   selection: ExportSelection,
   category: ExportCategory,
 ): Promise<ComposedMaterial | { error: string }> {
-  // export-scripts: `hub` is the default — loose SQL of `docs/scripts/` plus the
-  // bundles already published — and no session is read (spec 066, ID06). The
-  // other categories only ever copied a session corpus and leave in 31.0.0.
-  const scripts = category === "scripts";
+  // `hub` is the default — loose SQL of `docs/scripts/` plus the bundles already
+  // published — and no session is read (spec 066, ID06). The other categories
+  // only ever copied a session corpus: they left with 31.0.0 and compose nothing.
+  if (category !== "scripts") return emptyMaterial();
   const base = selection.from ?? "hub";
   const input: ReleaseDataInput = {
-    includeClosed: !scripts,
-    skipSessions: scripts,
-    includeGraduated: scripts,
-    includeStandaloneSql: scripts && base === "hub",
+    includeClosed: false,
+    skipSessions: true,
+    includeGraduated: true,
+    includeStandaloneSql: base === "hub",
     ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
     ...(selection.since !== undefined ? { since: selection.since } : {}),
     ...(selection.source !== undefined ? { sourceAlias: selection.source } : {}),
@@ -817,12 +830,13 @@ async function composeMaterial(
   const data = await runReleaseData(fs, env, paths, input);
   if ("error" in data) return { error: data.error };
 
-  const sessions: MaterialSession[] = scripts ? [] : (data.sessions as MaterialSession[]);
-  const standalone = scripts && base === "hub" ? (data.standalone_sql ?? []) : [];
-  const bundles = scripts ? (data.graduated_bundles ?? []) : [];
-  const origins: MaterialOrigin[] = scripts
-    ? [...(base === "hub" ? (["standalone-sql"] as const) : []), "bundles"]
-    : ["sessions"];
+  const sessions: MaterialSession[] = [];
+  const standalone = base === "hub" ? (data.standalone_sql ?? []) : [];
+  const bundles = data.graduated_bundles ?? [];
+  const origins: MaterialOrigin[] = [
+    ...(base === "hub" ? (["standalone-sql"] as const) : []),
+    "bundles",
+  ];
 
   const named = new Set(selection.exclude ?? []);
   const manual: ExcludedPiece[] = [

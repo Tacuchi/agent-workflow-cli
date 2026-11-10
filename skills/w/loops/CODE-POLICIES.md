@@ -8,8 +8,8 @@ validation-order invariants.
 
 Sources are edited on a **verified** branch (`aw check-branch`), and commits are
 **proposed**: in plan-exec the CLI commits only the batch's approved paths once per source; in quick
-the task closes with one proposed commit. Branch switches need consent. A **rejected** commit leaves the changes in the tree and the unit
-recorded as uncommitted in `CHECKPOINT` and `BACKLOG`. Between units each working tree is clean or
+the task closes with one proposed commit. Branch switches need consent. A **rejected** commit leaves the changes in the tree, visible in
+`git status` and named in the report. Between units each working tree is clean or
 explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles
 its internal phases in one validated commit, and no batch may co-mingle with another.
 
@@ -41,14 +41,14 @@ The author's own pass over its diff, while working — no agent needed:
 - **Minimality lens** (floor — holds with **no external skill**; the chassis' *Minimality*): flag `delete` (dead/speculative code), `stdlib` (reinvented standard library), `native` (a dep or code doing what the platform already does), `yagni` (one-implementation abstraction, config nobody sets, one-caller layer), `shrink` (same behavior, fewer lines). An installed ambient review skill *raises* this; it never lowers it.
 - **Test-value lens** (floor, next to minimality): every test the diff adds must demonstrate an observable behavior, protect a business rule, verify a contract, exercise a real integration or prevent a known regression. Flag `overtest` for the ones that only mirror structure — a test per class or method, mocked call chains, the same happy path re-asserted at every layer, trivial getters/setters/mappers, cases written for coverage, broad snapshots where a functional assertion is clearer. Bounded by *Gate integrity*: `overtest` prunes redundancy, **never** a check that guards behavior, a trust boundary, security or accessibility.
 - **Temporary simulation check** (only when the change carries one): stubs, fakes and in-memory adapters are **explicit and named as such** (`Stub…` / `Fake…`), they sit at the boundary the plan declares, and no configuration can select them in a production runtime. A simulation still active on the main path with no declared removal is a finding, not a detail.
-- **Tooling check** (`docs/tools`): reusable support scripts/CLIs/generators/configs (not product code or session probes) belong under `docs/tools/<slug>/`, with README, run/output structure and an index row in `docs/tools/README.md`. Review their usability and evidence before closing. Any host help is optional, from any origin; its absence never defers the tool.
+- **Tooling check** (`docs/tools`): reusable support scripts/CLIs/generators/configs (not product code or throwaway probes) belong under `docs/tools/<slug>/`, with README, run/output structure and an index row in `docs/tools/README.md`. Review their usability and evidence before closing. Any host help is optional, from any origin; its absence never defers the tool.
 - **Findings** (own or a reviewer's): **fix** them, recompile and **re-run** the affected validation, or **defer them justified** (→ the plan's `Open questions` + `BACKLOG`; in quick, `BACKLOG`); the non-obvious → `DECISION`. Gate integrity (see [`CHASSIS.md`](CHASSIS.md) § *Verification-first*): never weaken a check or lower a convention to pass.
 
 **Close first.** Before the commit run the validation order, not exploration. After integration,
-report only what the CHECKPOINT actually owes. On a separate line offer an optional parallel
+report only what the plan actually owes. On a separate line offer an optional parallel
 follow-up, not a next action or pending item: probe only if the user asks. Its agents never modify
 the delivered work or commit; each finding returns as a ready `/w:quick` without reopening the
-closed document or session. A host without subagents runs it inline.
+closed document. A host without subagents runs it inline.
 
 ## Conditional modules
 

@@ -13,8 +13,6 @@
     "resume": "a prior run over this same input may exist",
     "replan": "work already executed has to be re-planned around",
     "simulation": "the change carries temporary behavior with a boundary to declare",
-    "compaction": "the run is long enough that context pressure governs its pacing",
-    "sessions": "a session other than this run's own has to be located, named or reopened",
     "web": "the run needs evidence from outside the hub",
     "reconnaissance": "a draft is being cut from a raw prompt over unfamiliar terrain",
     "detection": "the CLI's automatic detection was wrong or ambiguous",
@@ -61,8 +59,8 @@
     "plan.closure-recoverable": "the result can be sealed and recovered: an identical retry gives the same outcome and a failure leaves nothing half-written",
     "plan.escalation-adopted": "this refine consumed the escalation package an execution handed over, instead of re-deriving its diagnosis",
     "plan.escalation-absent": "no escalation package reached this refine, so it starts from the document alone",
-    "chassis.context-pressure": "a fresh reader would need the CHECKPOINT to continue this run",
-    "quick.db-touched": "the task mutates a database; derive its DDL or DML into the session script"
+    "chassis.context-pressure": "a fresh reader would need the plan's next step to continue this run",
+    "quick.db-touched": "the task mutates a database; derive its DDL or DML into a file of docs/scripts/"
   },
   "commands": {
     "hub-compact": {
@@ -71,50 +69,16 @@
     },
     "doctor": {
       "core": ["commands/doctor.md"],
-      "modules": [{ "path": "modules/PLAN-MODE.md", "signal": "plan-mode" }]
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        }
+      ]
     },
     "discard": {
       "core": ["commands/discard.md"],
       "modules": []
-    },
-    "export-diagrams": {
-      "core": ["commands/export-diagrams.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "exports/export-diagrams/EXPORT.md",
-          "signal": "authoring"
-        }
-      ]
-    },
-    "export-manuals": {
-      "core": ["commands/export-manuals.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "exports/export-manuals/EXPORT.md",
-          "signal": "authoring"
-        }
-      ]
-    },
-    "export-reports": {
-      "core": ["commands/export-reports.md"],
-      "modules": [
-        {
-          "path": "modules/PLAN-MODE.md",
-          "signal": "plan-mode"
-        },
-        {
-          "path": "exports/export-reports/EXPORT.md",
-          "signal": "authoring"
-        }
-      ]
     },
     "export-scripts": {
       "core": ["commands/export-scripts.md"],
@@ -184,15 +148,6 @@
           "signal": "adopted"
         },
         {
-          "path": "modules/COMPACTION.md",
-          "signal": "compaction",
-          "requires": "compaction"
-        },
-        {
-          "path": "modules/SESSION-NUMBERING.md",
-          "signal": "sessions"
-        },
-        {
           "path": "modules/ADAPTIVE-ROUTE.md",
           "signal": "route"
         }
@@ -238,15 +193,6 @@
           "path": "modules/DB-RESEARCH-RULE.md",
           "signal": "db",
           "requires": "external-data"
-        },
-        {
-          "path": "modules/COMPACTION.md",
-          "signal": "compaction",
-          "requires": "compaction"
-        },
-        {
-          "path": "modules/SESSION-NUMBERING.md",
-          "signal": "sessions"
         },
         {
           "path": "modules/ADAPTIVE-ROUTE.md",
@@ -313,15 +259,6 @@
           "requires": "external-data"
         },
         {
-          "path": "modules/COMPACTION.md",
-          "signal": "compaction",
-          "requires": "compaction"
-        },
-        {
-          "path": "modules/SESSION-NUMBERING.md",
-          "signal": "sessions"
-        },
-        {
           "path": "modules/ADAPTIVE-ROUTE.md",
           "signal": "route"
         }
@@ -358,19 +295,6 @@
           "requires": "external-data"
         },
         {
-          "path": "modules/COMPACTION.md",
-          "signal": "compaction",
-          "requires": "compaction"
-        },
-        {
-          "path": "modules/SESSION-NUMBERING.md",
-          "signal": "sessions"
-        },
-        {
-          "path": "modules/PROMPT-CONTINUITY.md",
-          "signal": "resume"
-        },
-        {
           "path": "modules/ADAPTIVE-ROUTE.md",
           "signal": "route"
         }
@@ -378,11 +302,12 @@
     },
     "recall": {
       "core": ["commands/recall.md"],
-      "modules": [{ "path": "modules/PLAN-MODE.md", "signal": "plan-mode" }]
-    },
-    "reset": {
-      "core": ["commands/reset.md"],
-      "modules": []
+      "modules": [
+        {
+          "path": "modules/PLAN-MODE.md",
+          "signal": "plan-mode"
+        }
+      ]
     },
     "resume": {
       "core": ["commands/resume.md"],
@@ -442,15 +367,6 @@
           "path": "modules/DB-RESEARCH-RULE.md",
           "signal": "db",
           "requires": "external-data"
-        },
-        {
-          "path": "modules/COMPACTION.md",
-          "signal": "compaction",
-          "requires": "compaction"
-        },
-        {
-          "path": "modules/SESSION-NUMBERING.md",
-          "signal": "sessions"
         },
         {
           "path": "modules/ADAPTIVE-ROUTE.md",

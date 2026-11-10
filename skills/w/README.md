@@ -5,7 +5,7 @@
 It implements the **stages + loops + artifacts** model. The design source lives under `docs/referencias/` in the agent-workflow hub. This README is the bundle index; the normative text lives in its canonical docs:
 
 - **Full model** — 3 layers + `docs/` zone, the 3 flows (SPEC/PLAN/QUICK), commands, composable capabilities and the 6 hard invariants: [`SKILL.md`](SKILL.md) (the `w` orientation skill).
-- **Loop engine** — persistent objective + verification-first, gap-driven, sessions, structured-choice, compact/resume, git/DB/review-gate policies: [`loops/CHASSIS.md`](loops/CHASSIS.md) (the 5 loops are heirs) + [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md).
+- **Loop engine** — persistent objective + verification-first, gap-driven, the document as the record, structured-choice, compact/resume, git/DB/review-gate policies: [`loops/CHASSIS.md`](loops/CHASSIS.md) (the 5 loops are heirs) + [`loops/CODE-POLICIES.md`](loops/CODE-POLICIES.md).
 - **Capability→harness binding** (Claude Code / Codex / Gemini-Antigravity / OpenCode / Crush / Warp): [`harness/HARNESS.md`](harness/HARNESS.md).
 
 ## Folders
@@ -17,10 +17,9 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 | [`exports/`](exports/) | 1 | The `export-*` family — the only artifact→`docs/` path |
 | [`roles/`](roles/) | cross-cutting | Overview binding; external techniques are host-native |
 | [`harness/`](harness/HARNESS.md) | cross-cutting | Capability→mechanism binding per harness |
-| [`artifacts/`](artifacts/) | 3 | Session artifact templates the loops manage |
 | [`hooks/`](hooks/) | — | Host hook template (sql-mutation-guard, checkpoint, …) |
 | [`SKILL.md`](SKILL.md) | overview | The `w` orientation skill (guide to the full model) |
 
 ## Hub
 
-Every invoked directory is a usable implicit hub. The closest `.<namespace>/sessions/` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:hub-init`](commands/hub-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.
+Every invoked directory is a usable implicit hub. The closest `.<namespace>/workline.json` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:hub-init`](commands/hub-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.

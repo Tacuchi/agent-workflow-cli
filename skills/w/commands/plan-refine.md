@@ -16,15 +16,15 @@ allowed-tools:
 
 > **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
-> 1. **Session first** — open or resume the run before working: `aw flow start --flow plan-refine --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
+> 1. **Read first** — `aw flow read --flow plan-refine --doc <document>` returns where the document stands and the `read_digest` its save quotes back (`aw flow save --flow plan-refine ...`: a preview first, then the write with the approved digest). Nothing is kept between turns: the document is the record.
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow edits only `docs/plans/…` (in place, with confirmation); nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the plan's content) goes in the **user's language**.
 
 ## Run the loop
 
-1. Read, in order, the `read_set` entries it returned that are not `loaded`.
-2. Follow the loop manual end to end, taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, manages sessions, converges and reports.
+1. Read [`plan-refine-loop`](../loops/plan-refine-loop/LOOP.md).
+2. Follow the loop manual end to end, taking `$ARGUMENTS` as input: it detects state/resume, runs the gap-driven engine, converges and reports.
 
 > `plan-refine-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
 

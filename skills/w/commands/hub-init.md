@@ -10,7 +10,7 @@ allowed-tools:
 
 # hub-init — materialize or configure
 
-Workline already has an implicit hub at the resolved root: the nearest ancestor with `.<namespace>/sessions/`, or exactly the invoked directory when none exists. It never guesses a Git root.
+Workline already has an implicit hub at the resolved root: the nearest ancestor with `.<namespace>/workline.json`, or exactly the invoked directory when none exists. It never guesses a Git root.
 
 `aw hub-init [--source alias:path[:branch]] [flags above] --format human`
 
@@ -18,7 +18,7 @@ Workline already has an implicit hub at the resolved root: the nearest ancestor 
 
 ## Modes
 
-Without sources, it only materializes the minimal runtime under the lock: the CLI-owned `.gitignore` block when the root belongs to Git, then `.<namespace>/sessions/` as the final marker. It does not create `docs/`, `skills.toml`, a hub block, launch files, `HISTORY.md` or a Git repository.
+Without sources, it only materializes the minimal runtime under the lock: the CLI-owned `.gitignore` block when the root belongs to Git, then `.<namespace>/workline.json` as the final marker. It does not create `docs/`, `skills.toml`, a hub block, launch files or a Git repository.
 
 With `--source`, it configures/reconciles the metadata, branches and multiroot visibility. `hub` is the reserved implicit source pointing at the root and cannot be configured as an alias. A hub `skills.toml` is created only when there is a real capability override.
 

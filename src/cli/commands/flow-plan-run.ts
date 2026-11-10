@@ -14,13 +14,21 @@ import {
   closeBatchInPlan,
   finishPlan,
 } from "../../application/plan-run/plan-batch.js";
+import { type PlanUnit, ensurePlanUnit, planUnit } from "../../application/plan-run/units.js";
+import { hubKey, unitsRoot } from "../../domain/isolation-unit.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
-export const PLAN_RUN_VERBS = ["propose-commit", "commit", "close-batch", "finish"] as const;
+export const PLAN_RUN_VERBS = [
+  "propose-commit",
+  "commit",
+  "close-batch",
+  "finish",
+  "unit",
+] as const;
 
 export type PlanRunVerb = (typeof PLAN_RUN_VERBS)[number];
 
@@ -28,7 +36,8 @@ export type PlanRunVerbResult =
   | CommitProposal
   | { hash: string; paths: string[] }
   | BatchClosed
-  | { plan: string; state: "done"; digest: string };
+  | { plan: string; state: "done"; digest: string }
+  | { created: boolean; unit: PlanUnit };
 
 export function isPlanRunVerb(value: string | undefined): value is PlanRunVerb {
   return (PLAN_RUN_VERBS as readonly string[]).includes(value ?? "");
@@ -46,6 +55,7 @@ export async function planRunVerb(
   stdin: () => Promise<string> = () => readRequiredStdin(),
 ): Promise<CommandResult<PlanRunVerbResult>> {
   if (verb === "propose-commit" || verb === "commit") return commitVerb(verb, args, ctx);
+  if (verb === "unit") return unitVerb(args, ctx);
   const plan = args.values.get("plan");
   const readDigest = args.values.get("read-digest");
   if (plan === undefined || readDigest === undefined) {
@@ -156,6 +166,44 @@ async function commitVerb(
   return committed.ok
     ? { ok: true, data: committed.value, exitCode: 0 }
     : fail(committed.failure.code, committed.failure.message, committed.failure.action);
+}
+
+/** `aw flow unit`: the isolation unit of one batch of one plan in one source (T4.4). */
+async function unitVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+): Promise<CommandResult<PlanRunVerbResult>> {
+  const alias = flagValue(args, "source");
+  const plan = args.values.get("plan");
+  const batch = args.values.get("batch");
+  if (alias === undefined || plan === undefined || batch === undefined || ctx.git === undefined) {
+    return fail(
+      "ARGS_INVALID",
+      "aw flow unit necesita --plan, --batch y --source",
+      "uso: aw flow unit --plan <PPP> --batch <Bn> --source <alias>",
+    );
+  }
+  const root = await resolveHubRootFrom(ctx.fs, ctx.paths);
+  const block = await readHubBlock(ctx.fs, root, ctx.paths.blockMarkers());
+  const source = block?.fuentes.find((entry) => entry.alias === alias);
+  if (source?.path === undefined || source.path === null) {
+    return fail(
+      "SOURCE_PATH_MISSING",
+      `la fuente '${alias}' no resuelve a una ruta`,
+      "declarala con 'aw add-source'",
+    );
+  }
+  const unit = planUnit({
+    worktreesRoot: await ctx.fs
+      .realPath(unitsRoot(ctx.paths.userRoot()))
+      .catch(() => unitsRoot(ctx.paths.userRoot())),
+    hubKey: hubKey(root),
+    alias,
+    plan,
+    batch,
+  });
+  const ensured = await ensurePlanUnit(ctx.fs, ctx.git, source.path, unit, source.main_branch);
+  return { ok: true, data: ensured, exitCode: 0 };
 }
 
 function fail<T>(code: string, message: string, action: string): CommandResult<T> {

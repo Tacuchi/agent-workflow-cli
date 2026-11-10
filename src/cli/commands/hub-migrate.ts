@@ -13,10 +13,9 @@
 import {
   type HubMigrationApplied,
   applyHubMigration,
-  applyRenumber,
 } from "../../application/hub-migrate/apply.js";
 import { KEEP_CHOICE_TEXT, type KeepChoice } from "../../application/hub-migrate/block-file.js";
-import { planHubMigration, planRenumber } from "../../application/hub-migrate/plan.js";
+import { planHubMigration } from "../../application/hub-migrate/plan.js";
 import {
   type HubMigrationPreview,
   migrationPreview,
@@ -30,7 +29,7 @@ import type { CliCommand, CommandFlags } from "../registry.js";
 import { failSemantic } from "../render.js";
 import type { CliContext } from "../types.js";
 
-const FLAGS: CommandFlags = { known: ["apply", "renumber", "keep"] };
+const FLAGS: CommandFlags = { known: ["apply", "keep"] };
 const KEEP_CHOICES: readonly KeepChoice[] = [BLOCK_FILE, LEGACY_BLOCK_FILE];
 
 export interface MigratePreviewOutput extends HubMigrationPreview {
@@ -41,20 +40,7 @@ export interface MigrateApplyOutput extends HubMigrationApplied {
   action: "apply";
 }
 
-export type HubMigrateOutput =
-  | MigratePreviewOutput
-  | MigrateApplyOutput
-  | {
-      action: "renumber-preview";
-      moves: Awaited<ReturnType<typeof planRenumber>>["moves"];
-      blocked: string[];
-      next: string;
-    }
-  | {
-      action: "renumber-apply";
-      moved: Awaited<ReturnType<typeof planRenumber>>["moves"];
-      blocked: string[];
-    };
+export type HubMigrateOutput = MigratePreviewOutput | MigrateApplyOutput;
 
 export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
   name: "hub-migrate",
@@ -66,16 +52,15 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
       apply: {
         effect: "Write the migration under the hub lock; without it nothing is written.",
       },
-      renumber: { effect: "Instead, renumber colliding session folders (preview unless --apply)." },
       keep: {
         value: "<AGENTS.md|CLAUDE.md>",
         effect: "Block that survives when CLAUDE.md and AGENTS.md declare different hub blocks.",
       },
     },
     output:
-      "{action: preview, hub, markers[], aliases[], runs[], sentinels[], rows[], block_file, block_divergence, conflicts[], legacy[], next_correlative, pending, next, choices[]} — next is null while a divergent pair waits for --keep, and choices[] then lists the two commands | {action: apply, hub, markers_renamed[], duplicates_dropped[], aliases_rewritten[], runs_rewritten[], sentinels_seeded[], rows_seeded[], rows_without_date[], block_file, conflicts[], next_correlative} | {action: renumber-preview, moves[], blocked[], next} | {action: renumber-apply, moved[], blocked[]}.",
+      "{action: preview, hub, markers[], aliases[], runs[], sentinels[], rows[], block_file, block_divergence, conflicts[], legacy[], next_correlative, pending, next, choices[]} — next is null while a divergent pair waits for --keep, and choices[] then lists the two commands | {action: apply, hub, markers_renamed[], duplicates_dropped[], aliases_rewritten[], runs_rewritten[], sentinels_seeded[], rows_seeded[], rows_without_date[], block_file, conflicts[], next_correlative}.",
     notes: [
-      "Renames the block markers to <NS>-HUB-START/END (also from a PROJECT block or an older namespace) and its ## Proyecto heading to ## Hub, renames the reserved alias workspace to hub in open plans and open runs (closed ones stay byte for byte), seeds the closing sentinels the history already declares and reserves the legacy numbers in the durable ledger. A session whose history and disk disagree is left intact and reported. A busy lock fails with LOCK_BUSY.",
+      "Renames the block markers to <NS>-HUB-START/END (also from a PROJECT block or an older namespace) and its ## Proyecto heading to ## Hub, renames the reserved alias workspace to hub in open plans (closed ones stay byte for byte). A busy lock fails with LOCK_BUSY.",
       "Retires the legacy CLAUDE.md copy of the hub block: a CLAUDE.md holding only the block is deleted; one with other content keeps it, loses the block and gains an @AGENTS.md import at its top; one that only imports @AGENTS.md is left alone. The surviving block is rewritten in AGENTS.md with the current format. When the two copies differ, the preview lists the lines only one declares and nothing is written for them until --keep names the copy that wins. Lines the CLI cannot honour are reported in dropped_lines; a CLAUDE.md symlinked to AGENTS.md is left alone and a file with two blocks is reported, not written.",
     ],
   },
@@ -83,37 +68,14 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<HubMigrateOutput>> {
     const keep = args.values.get("keep");
     const keepGiven = keep !== undefined || args.flags.has("--keep");
-    if (keepGiven && (args.flags.has("--renumber") || !KEEP_CHOICES.includes(keep as KeepChoice))) {
+    if (keepGiven && !KEEP_CHOICES.includes(keep as KeepChoice)) {
       return failSemantic<HubMigrateOutput>({
         code: "INVALID_INPUT",
-        message: args.flags.has("--renumber")
-          ? "--keep no se combina con --renumber"
-          : `--keep acepta ${KEEP_CHOICES.join(" o ")}, no '${keep ?? ""}'`,
+        message: `--keep acepta ${KEEP_CHOICES.join(" o ")}, no '${keep ?? ""}'`,
         action: `usá ${KEEP_CHOICE_TEXT}`,
       });
     }
     const choice = keep as KeepChoice | undefined;
-    if (args.flags.has("--renumber")) {
-      if (!args.flags.has("--apply")) {
-        return {
-          ok: true,
-          data: {
-            action: "renumber-preview",
-            ...(await planRenumber(ctx.fs, ctx.paths, ctx.git)),
-            next: "aw hub-migrate --renumber --apply",
-          },
-          exitCode: 0,
-        };
-      }
-      const result = await applyRenumber(ctx.fs, ctx.paths, ctx.git);
-      if ("error" in result)
-        return failSemantic<HubMigrateOutput>({
-          code: "LOCK_BUSY",
-          message: result.error,
-          action: "reintentá cuando termine la operación en curso",
-        });
-      return { ok: true, data: { action: "renumber-apply", ...result }, exitCode: 0 };
-    }
     if (!args.flags.has("--apply")) {
       const plan = await planHubMigration(ctx.fs, ctx.paths, undefined, choice);
       return {
@@ -140,10 +102,6 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
   renderHuman(result, context): string {
     if (!result.ok || result.data === undefined) return "";
     const data = result.data;
-    if (data.action === "renumber-preview" || data.action === "renumber-apply") {
-      const moves = data.action === "renumber-preview" ? data.moves : data.moved;
-      return `${moves.map((move) => `${move.from} → ${move.to} (${move.reason})`).join("\n") || "Sin colisiones para renumerar"}${data.blocked.length ? `\nBloqueadas: ${data.blocked.join("; ")}` : ""}${data.action === "renumber-preview" ? `\n${data.next}` : ""}\n`;
-    }
     const lines =
       data.action === "apply" ? [renderMigrationApplied(data)] : [renderMigrationPreview(data)];
     if (context.detail && data.action === "preview") {

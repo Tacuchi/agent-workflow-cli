@@ -116,16 +116,4 @@ describe("errors and directives stay in Spanish", () => {
     }).catch((error: { stdout: string }) => error);
     expect(stdout).toContain("no es un flag de este comando");
   });
-
-  it("a flow directive is still written in Spanish", async () => {
-    const session = join(hub, ".workflow", "sessions", "001-ayuda-quick");
-    await mkdir(session, { recursive: true });
-    await writeFile(join(session, "SESSION.md"), "# SESSION\n\n## Objective\nayuda\n", "utf8");
-    const { stdout } = await run(
-      process.execPath,
-      [CLI, "flow", "advance", "--session", "001", "--flow", "quick", "--adopt", "--json"],
-      { cwd: hub, encoding: "utf8", env },
-    );
-    expect(JSON.parse(stdout).next_action).toMatch(/respondé|ejecutá|corré/);
-  });
 });

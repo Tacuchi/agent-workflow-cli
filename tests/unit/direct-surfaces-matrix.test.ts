@@ -23,9 +23,6 @@ const SURFACES = [
   { name: "resume", kind: "cli-complete", writes: null },
   { name: "hub-init", kind: "cli-complete", writes: ".workflow" },
   { name: "persist", kind: "hybrid", writes: "docs/research|specs|plans" },
-  { name: "export-diagrams", kind: "hybrid", writes: "docs/diagrams" },
-  { name: "export-manuals", kind: "hybrid", writes: "docs/manuals" },
-  { name: "export-reports", kind: "hybrid", writes: "docs/reports" },
   { name: "export-scripts", kind: "hybrid", writes: "docs/scripts" },
 ] as const;
 
@@ -70,12 +67,6 @@ describe("C1 · every declared surface is a real, registered command", () => {
   });
 
   // Three commands share the `resume` stem and three different audiences.
-  it("the three resume-shaped commands stay distinguishable", () => {
-    const describes = purposes();
-    expect(describes.get("resume")).toMatch(/what to resume/i);
-    expect(describes.get("hook")).toContain("post-compact");
-    expect(describes.get("session-load")).toContain("session");
-  });
 });
 
 // ── C12/C13 · output projections ─────────────────────────────────────────────
@@ -207,19 +198,6 @@ describe("C1/C9 · every wrapper invokes the CLI and re-decides nothing", () => 
   // the trailing `## Resources` pointer lists, so the normal path is now the
   // whole body: assert over all of it instead of a slice that ended at a
   // heading which no longer exists.
-  it("no export wrapper loads its EXPORT.md on the normal path", async () => {
-    for (const category of ["diagrams", "manuals", "reports", "scripts"]) {
-      const doc = await readFile(join(SKILL_ROOT, "commands", `export-${category}.md`), "utf8");
-      // What matters is the NORMAL PATH: the `## Run` steps must not send the
-      // agent into the manual. A markdown link names the file twice by
-      // construction, so counting occurrences measured formatting, not loading.
-      const run = doc.slice(doc.indexOf("## Run"));
-      const runSteps = run.slice(0, run.indexOf("\n## ") === -1 ? undefined : run.indexOf("\n## "));
-      expect(runSteps, category).not.toContain("EXPORT.md");
-      expect(doc, category).toContain("no longer loaded on the normal path");
-    }
-  });
-
   it("no direct wrapper keeps a write tool in allowed-tools", async () => {
     for (const surface of SURFACES) {
       const doc = await readFile(join(SKILL_ROOT, "commands", `${surface.name}.md`), "utf8");
@@ -236,12 +214,6 @@ describe("C15/C16/C18 · each surface declares one destination and no session", 
   it("the read-only surfaces declare no destination at all", () => {
     const readOnly = SURFACES.filter((s) => s.writes === null).map((s) => s.name);
     expect(readOnly).toEqual(["status", "resume"]);
-  });
-
-  it("the four exports own four disjoint folders", () => {
-    const folders = SURFACES.filter((s) => s.name.startsWith("export-")).map((s) => s.writes);
-    expect(folders).toEqual(["docs/diagrams", "docs/manuals", "docs/reports", "docs/scripts"]);
-    expect(new Set(folders).size).toBe(folders.length);
   });
 
   it("no direct surface documents creating a session", async () => {
@@ -267,6 +239,6 @@ describe("activation cost — recorded, not budgeted", () => {
     // status+resume alone, plus 34 900 B of export manuals).
     const total = Object.values(sizes).reduce((a, b) => a + b, 0);
     expect(total).toBeLessThan(15_434 + 34_900);
-    expect(Object.keys(sizes)).toHaveLength(8);
+    expect(Object.keys(sizes)).toHaveLength(5);
   });
 });

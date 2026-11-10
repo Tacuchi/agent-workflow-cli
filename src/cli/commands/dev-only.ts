@@ -1,11 +1,11 @@
+import { isAbsolute, join, relative } from "node:path";
 import {
   isHarnessId,
   runHarness,
   runLogs,
-  runNextNumber,
   runProfiles,
 } from "../../application/dev-only-services.js";
-import { resolveSessionTarget } from "../../application/session-resolver.js";
+import { correlativesOf, publishInFolder } from "../../application/doc-flow/numbering.js";
 import { HARNESSES } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
@@ -85,145 +85,64 @@ export const logsCommand: CliCommand = {
   },
 };
 
-/**
- * The refusal this combination of arguments earns, or `null` when it is coherent.
- *
- * Pure and ahead of every effect on purpose: the anonymous durable reservation
- * has to die before the directory is created, before a byte is written and
- * before a correlative leaves the eligible set, so the whole decision is taken
- * from the arguments alone.
- */
-function nextNumberRefusal(input: {
-  claim: string | undefined;
-  publish: string | undefined;
-  code: string | undefined;
-  dryRun: boolean;
-  valuelessFlags: readonly string[];
-}): string | null {
-  const { claim, publish, code, dryRun, valuelessFlags } = input;
-  // A flag that took no value never reaches `values`, so without this it would
-  // fall through to the plain query: exit 0, `published_path: null`, and the
-  // document the caller piped in DISCARDED with a truthy answer. A silent
-  // success that wrote nothing is the worst answer this command can give.
-  if (valuelessFlags.length > 0) {
-    return `${valuelessFlags.join(" y ")} exige${valuelessFlags.length > 1 ? "n" : ""} su valor: el resto del nombre del archivo. Sin él la invocación se leería como una consulta y lo que venga por stdin se perdería sin aviso`;
-  }
-  if (claim === "" || publish === "") {
-    return "el resto del nombre no puede estar vacío: sin él el documento nacería llamándose sólo por su correlativo, y ningún lector de docs/ lo reconoce";
-  }
-  if (claim !== undefined && publish !== undefined) {
-    return "--claim y --publish se excluyen: un reclamo reserva el número para escribirlo después, una publicación lo asigna y escribe el documento en el mismo acto";
-  }
-  if (claim !== undefined && dryRun) {
-    return "--dry-run no se combina con --claim: una consulta no puede poseer una reserva";
-  }
-  if (code !== undefined && claim === undefined) {
-    return "--code sólo tiene sentido con --claim: una consulta no reserva nada y una publicación no deja reserva que atribuir";
-  }
-  // It used to be reachable by simply omitting a flag, and the zero-byte file it
-  // left had no re-entry, no close and no recovery — so the refusal names the
-  // route that replaced it.
-  if (claim !== undefined && code === undefined) {
-    return "--claim exige --code <NNN>: una reserva durable pertenece a una sesión activa y resoluble. Para crear un documento sin sesión usá 'next-number <directorio> --publish <resto-del-nombre>' con su contenido final por stdin: asigna el correlativo y escribe el documento en un solo acto, sin dejar reserva de nadie";
-  }
-  return null;
-}
-
 export const nextNumberCommand: CliCommand = {
   name: "next-number",
-  flags: { known: ["claim", "publish", "code", "dry-run", "folder"] },
+  flags: { known: ["publish", "dry-run"] },
   help: {
     purpose:
-      "Number a new document: compute the next NNN of a directory, reserve it for a session, or write a reserved document under it; to publish conversation work use aw persist.",
+      "Number a new document from the folder itself: compute the next NNN, or publish the document read from stdin by exclusive creation; to publish conversation work use aw persist.",
     args: "<dir>",
     flags: {
-      claim: {
-        value: "<name>",
-        effect: "Reserve <NNN>-<name> for the session given by --code; requires --code.",
-      },
       publish: {
         value: "<name>",
         effect:
-          "Write the document read from stdin as <NNN>-<name>, with NNN in its title; idempotent.",
+          "Write the document read from stdin as <NNN>-<name>, with NNN in its title; a taken number moves to the next.",
       },
-      code: { value: "<code>", effect: "Session that owns the --claim reservation." },
-      "dry-run": { effect: "Preview without creating the directory or writing; not with --claim." },
-      folder: {
-        effect: "With --claim, reserve a directory with its marker inside instead of a file.",
-      },
+      "dry-run": { effect: "Preview the number without creating the directory or writing." },
     },
-    output:
-      "{directory, exists, created, current_max, next, files[], claimed_path, claimed_owner, published_path, claim_reused}.",
+    output: "{directory, exists, current_max, next, files[], published_path}.",
     notes: [
-      "Without --claim or --publish it is a pure query. --claim and --publish exclude each other. --publish needs a materialized Workline hub (.workflow/sessions/) and the final content on stdin; zero bytes are refused.",
+      "Without --publish it is a pure query. The folder is the only record of what is taken: no ledger and no reservation. --publish needs a Workline hub (.workflow/workline.json) and the final content on stdin; zero bytes are refused.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
     const dir = args.rest[0];
-    const usage =
-      "uso: next-number <directorio> [--claim <nombre> --code <sesión> [--folder]] [--publish <nombre> [--dry-run]] [--dry-run]";
+    const usage = "uso: next-number <directorio> [--publish <nombre> [--dry-run]]";
     if (!dir) return fail("INVALID_INPUT", usage, { error: usage });
-
-    const claim = args.values.get("claim");
     const publish = args.values.get("publish");
-    const code = args.values.get("code");
-    const dryRun = args.flags.has("--dry-run");
-    const folder = args.flags.has("--folder");
-    if (folder && claim === undefined)
-      return fail("INVALID_INPUT", "--folder exige --claim <nombre> y --code <sesión>");
-
-    const valuelessFlags = ["--claim", "--publish", "--code"].filter((f) => args.flags.has(f));
-    const refusal = nextNumberRefusal({ claim, publish, code, dryRun, valuelessFlags });
-    if (refusal !== null) return fail("INVALID_INPUT", refusal, { error: refusal });
-
-    if (claim !== undefined) {
-      // Asking for an owner and getting an anonymous slot instead is the one
-      // outcome that must not happen quietly: the caller would believe its run
-      // holds a reservation nobody can attribute to it.
-      const resolution = await resolveSessionTarget(ctx.fs, ctx.paths, {
-        code: code as string,
-        intent: "write",
-      });
-      if (resolution.outcome !== "resolved") {
-        const message = `no se pudo resolver la sesión '${code}' que reclamaría el correlativo`;
-        return fail("INVALID_INPUT", message, { error: message, sessionError: resolution });
-      }
-      const data = await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
-        directory: dir,
-        claim: {
-          name: claim,
-          owner: resolution.session.folder,
-          ...(folder ? { folder: true } : {}),
-        },
-      });
-      return { ok: true, data, exitCode: 0 };
+    if (args.flags.has("--publish") || publish === "") {
+      const message = "--publish exige su valor: el resto del nombre del archivo";
+      return fail("INVALID_INPUT", message, { error: message });
     }
-
-    if (publish !== undefined) {
-      if (!(await ctx.fs.exists(ctx.paths.cwdSessionsDir()))) {
-        return fail(
-          "HUB_ABSENT",
-          "--publish necesita un hub Workline materializado; no se creó ninguno",
-          {
-            action: "invocá el comando desde un hub con .workflow/sessions/ existente",
-          },
-        );
-      }
-      const content = await readRequiredStdin();
-      if (content.length === 0) {
-        const message =
-          "--publish exige el contenido final del documento por stdin: publicar cero bytes dejaría exactamente el placeholder anónimo que este camino existe para evitar";
-        return fail("INVALID_INPUT", message, { error: message });
-      }
-      const data = await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
-        directory: dir,
-        publish: { name: publish, content },
-        dryRun,
-      });
-      return { ok: true, data, exitCode: 0 };
+    const root = ctx.paths.hubDir();
+    const absolute = isAbsolute(dir) ? dir : join(root, dir);
+    const read = await correlativesOf(ctx.fs, absolute);
+    const next = String(read.highest + 1).padStart(3, "0");
+    const base = {
+      directory: dir,
+      exists: read.exists,
+      current_max: read.highest === 0 ? null : String(read.highest).padStart(3, "0"),
+      next,
+      files: read.files,
+    };
+    if (publish === undefined || args.flags.has("--dry-run")) {
+      return { ok: true, data: { ...base, published_path: null }, exitCode: 0 };
     }
-
-    const data = await runNextNumber(ctx.fs, ctx.env, ctx.paths, { directory: dir, dryRun });
-    return { ok: true, data, exitCode: 0 };
+    if (!(await ctx.fs.exists(ctx.paths.cwdMarkerFile()))) {
+      return fail("HUB_ABSENT", "--publish necesita un hub Workline; no se creó ninguno", {
+        action: "invocá el comando desde un hub con .workflow/workline.json",
+      });
+    }
+    const content = await readRequiredStdin();
+    if (content.length === 0) {
+      const message = "--publish exige el contenido final del documento por stdin";
+      return fail("INVALID_INPUT", message, { error: message });
+    }
+    const published = await publishInFolder(ctx.fs, absolute, publish, content);
+    return {
+      ok: true,
+      data: { ...base, next: published.number, published_path: relative(root, published.path) },
+      exitCode: 0,
+    };
   },
 };

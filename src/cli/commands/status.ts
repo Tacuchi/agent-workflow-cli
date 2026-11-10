@@ -25,7 +25,8 @@ export const statusCommand: CliCommand<StatusCommandOutput> = {
   name: "status",
   flags: { known: ["plan", "spec"] },
   help: {
-    purpose: "Show what is pending in the hub: specs, plans, sessions and discarded work.",
+    purpose:
+      "Show what is pending in the hub, derived from docs/, git and the pass ledger: specs and plans with their state and next step.",
     flags: {
       plan: {
         value: "<PPP>",
@@ -39,12 +40,12 @@ export const statusCommand: CliCommand<StatusCommandOutput> = {
       },
     },
     output:
-      "Default: {hub, last_activity, pipeline[]?, notices[]? {kind, message, next}, counts}, empty collections left out. --detail: {hub, last_activity, specs[], plans[] (phases, tasks, plan_state, assurance, baseline, reconciliation), sessions {active[], closed[], paused[], abandoned[]}, history_remote_rows[], history_collisions[], discarded[], terminal_events[], pending_retirements[], pipeline[], counts, ...}. --plan or --spec: {hub, last_activity, plan|spec}. Read-only.",
+      "Default: {hub, last_activity, pipeline[]?, notices[]? {kind, message, next}, counts}, empty collections left out. --detail: {hub, last_activity, specs[], plans[] (declared_state, next_step, phases, tasks, plan_state, assurance, baseline, reconciliation, production, passes), pipeline[], counts, ...}. --plan or --spec: {hub, last_activity, plan|spec}. Read-only.",
     exit_codes: {
       "1": "STATUS_DOCUMENT_NOT_FOUND: no document has that number; STATUS_FILTER_CONFLICT: --plan and --spec together.",
     },
     notes: [
-      "By default the human view and the JSON carry the same scope: pending work, notices and counts, so their size follows what is pending and not the hub's history. --detail, in either format, is the full inventory with finished history, sessions and discarded items.",
+      "By default the human view and the JSON carry the same scope: pending work, notices and counts, so their size follows what is pending and not the hub's history. --detail, in either format, is the full inventory with finished and abandoned documents.",
       "--plan and --spec compare the number by value (87 and 087 are the same plan); their size does not depend on the hub's history.",
     ],
   },

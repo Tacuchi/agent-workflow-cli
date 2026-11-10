@@ -54,7 +54,7 @@ export const hubInitCommand: CliCommand<HubInitResult> = {
       "{ok, dry_run, hub, sources, source_actions[]? {alias, action, error?}, scaffold, materialization, untrack?, skills_toml (created|exists|skipped), hub_block_files, attach_multiroot, detached_removed?, registry_warning?}.",
     notes: [
       "Except with --dry-run, it registers the hub in ~/.<ns>/hubs.json; registry_warning says why when that write fails.",
-      "Without sources it creates only the sessions marker and, in a Git repository, the runtime ignore block. With sources it reconciles the hub block, the branches and the multi-root visibility; re-running is idempotent.",
+      "Without sources it creates only the hub marker (.workflow/workline.json) and, in a Git repository, the runtime ignore block. With sources it reconciles the hub block, the branches and the multi-root visibility; re-running is idempotent.",
       "A partial failure returns ok:false with error code HUB_INIT_FAILED and the full data.",
     ],
   },

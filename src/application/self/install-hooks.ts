@@ -516,14 +516,17 @@ async function installCrushHooks(
   const existingHooks = isRecord(read.data.hooks) ? read.data.hooks : {};
   const merged: Record<string, unknown> = { ...existingHooks };
   const events: string[] = [];
-  for (const [event, ours] of Object.entries(emitted)) {
+  // Every event is swept, not only the ones the template emits (spec 066, ID07):
+  // a hook of an event the template dropped would otherwise call a retired command.
+  for (const event of new Set([...Object.keys(existingHooks), ...Object.keys(emitted)])) {
     const theirs = Array.isArray(existingHooks[event]) ? (existingHooks[event] as unknown[]) : [];
     // Ours replace ours, never theirs: a reinstall must not append a second copy,
     // and a hook the person wrote is not ours to drop.
     const kept = theirs.filter((entry) => !isOurHookEntry(entry));
-    const next = [...kept, ...ours];
+    const next = [...kept, ...(emitted[event] ?? [])];
     if (isDeepStrictEqual(theirs, next)) continue;
-    merged[event] = next;
+    if (next.length > 0) merged[event] = next;
+    else delete merged[event];
     events.push(event);
   }
 

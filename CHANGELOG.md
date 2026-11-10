@@ -12,6 +12,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [31.0.0] — 2026-11-10
+
+**Workline deja las sesiones: SPEC, PLAN y QUICK guardan su estado y su evidencia sólo en la spec, el plan y git (spec 066).**
+
+### Contrato
+
+- **Deja de valer:** los comandos `sessions`, `session-create`, `session-load`, `session-pause`, `session-close`, `session-artifacts`, `history`, `history-update`, `checkpoint-read`, `checkpoint-write`, `claims`, `reset`, `release-data`, `hub-commit`, `worktree`, `export-diagrams`, `export-manuals` y `export-reports`, el flag `--code`/`--session` de todo comando y los verbos `start`, `advance`, `submit`, `prove`, `recover`, `restart`, `annul` y `retract` de `aw flow`. **Lo reemplaza:** `aw flow read`/`save` para los flujos de documento, `aw flow close-batch`/`finish` para la ejecución y `aw flow propose-commit`/`commit` para el commit aprobado por digest (también QUICK); la reversión de un documento es una operación de git. **Qué hacer:** migrá cada hub con `aw hub-migrate` y usá los verbos nuevos.
+- **Deja de valer:** el estado del plan `open` y los sufijos de fecha, sesión o commit en `> Estado:`. **Lo reemplaza:** un único valor `draft` | `ready` | `in-progress` | `done` | `abandoned`, la línea `> Próximo paso:` mientras el plan está `in-progress` y la sección `## Evidencia de lotes` (hasta cinco líneas por lote). **Qué hacer:** `aw hub-migrate` normaliza cada plan con tu confirmación de los dudosos.
+- **Deja de valer:** `.workflow/sessions/`, `HISTORY.md`, `claims.jsonl`, `.flow-run.json` y `.flow-attempts`; `aw status` y `aw resume` ya no los leen. **Lo reemplaza:** el tablero deriva de `docs/`, git y el registro de pases; el hub se reconoce por `.workflow/workline.json`. **Qué hacer:** el commit de migración del hub los borra; git conserva su historia.
+- **Deja de valer:** los hooks `SessionEnd`, `PreCompact` y `PostCompact`. **Lo reemplaza:** la plantilla instala sólo `SessionStart` y `PreToolUse`, y `aw self install-hooks` quita las entradas propias de todos los eventos. **Qué hacer:** corré `aw self install-hooks` en cada host instalado.
+- **Deja de valer:** `aw discard` como retiro con borrado y `export-scripts --from sessions`, `--sessions`, `--since` y `--code`. **Lo reemplaza:** `aw discard` marca la spec o el plan como `abandoned` sin borrarlo; `export-scripts` consolida desde `docs/scripts/` y los bundles (bases `hub`, por defecto, y `bundles`). **Qué hacer:** los flujos escriben diagramas, manuales, reportes y SQL directo en `docs/`.
+
+### Migration
+
+- Publicá 31.0.0 y migrá los hubs el mismo día; el retorno es `git revert` del commit de migración y volver a 30.1.0.
+
 ## [30.1.0] — 2026-10-18
 
 **`/w:hub-compact` guía la síntesis del conocimiento del hub y el archivo recuperable de originales, con aprobación previa.**

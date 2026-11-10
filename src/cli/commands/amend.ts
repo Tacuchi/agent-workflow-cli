@@ -111,7 +111,7 @@ export const amendCommand: CliCommand<AmendOutput> = {
           "{action: list, document, events[] ({version, at, event: amended|reverted, amendment, cause?})}. Read-only.",
       },
     },
-    notes: ["Cross-cutting: it opens no flow and creates no session."],
+    notes: ["Cross-cutting: it opens no flow and stores no run state."],
   },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<AmendOutput>> {

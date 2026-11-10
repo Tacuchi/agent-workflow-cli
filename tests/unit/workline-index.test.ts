@@ -357,29 +357,6 @@ describe("buildWorklineIndex — pipeline order", () => {
   // La cuarta clase salió del pipeline de trabajo del usuario: la mecánica de
   // sesión la maneja el workline central, así que un checkpoint suelto se reporta
   // como aviso y deja de competir con un plan abierto por la atención de alguien.
-  it("ranks unrefined spec → unplanned spec → open plan, y la sesión suelta va al aviso", async () => {
-    const fs = hub();
-    fs.file("/cwd/docs/specs/001-spec-draft.md", DRAFT);
-    fs.file("/cwd/docs/specs/002-spec-ready.md", READY);
-    fs.file("/cwd/docs/plans/005-plan-open.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
-    fs.file(
-      "/cwd/.workflow/sessions/010-suelta-quick/SESSION.md",
-      "# SESSION\n\n## Objective\nalgo suelto\n\n## Origin\n- prompt directo\n",
-    );
-    fs.file(
-      "/cwd/.workflow/sessions/010-suelta-quick/CHECKPOINT.md",
-      "# CHECKPOINT\n\n## Completed\n- x\n",
-    );
-
-    const out = await index(fs);
-    expect(out.pipeline.map((p) => p.kind)).toEqual([
-      "spec-unrefined",
-      "spec-unplanned",
-      "plan-open",
-    ]);
-    expect(out.loose_sessions).toEqual(["010-suelta-quick"]);
-  });
-
   it("puts a started plan ahead of an untouched one", async () => {
     const fs = hub();
     fs.file("/cwd/docs/plans/002-plan-untouched.md", "# Plan\n\n## Tasks\n- [ ] T1\n- [ ] T2\n");
@@ -412,22 +389,6 @@ describe("buildWorklineIndex — pipeline order", () => {
     const out = await index(fs);
     expect(out.plans.map((p) => p.plan_state)).toEqual(["done", "inconsistent"]);
     expect(out.pipeline.map((p) => p.number)).toEqual(["002"]);
-  });
-
-  it("does not treat a session whose Origin names a doc as an orphan checkpoint", async () => {
-    const fs = hub();
-    fs.file(
-      "/cwd/.workflow/sessions/011-x-plan-exec/SESSION.md",
-      "# SESSION\n\n## Objective\nejecutar\n\n## Origin\n- docs/plans/005-plan-open.md\n",
-    );
-    fs.file(
-      "/cwd/.workflow/sessions/011-x-plan-exec/CHECKPOINT.md",
-      "# CHECKPOINT\n\n## Completed\n- x\n",
-    );
-
-    const out = await index(fs);
-    expect(out.sessions[0]?.linked_doc).toBe("docs/plans/005-plan-open.md");
-    expect(out.pipeline).toEqual([]);
   });
 
   it("ignores a closed session even when it holds a checkpoint", async () => {
@@ -753,34 +714,6 @@ describe("derivePipeline — de una spec pendiente se dice su status y sus pregu
 // ── the loose session leaves the pipeline and becomes a notice ───────────────
 
 describe("buildWorklineIndex — una sesión suelta es un aviso, no trabajo del usuario", () => {
-  function looseHub(): MemFs {
-    const fs = hub();
-    fs.file(
-      "/cwd/.workflow/sessions/013-suelta-quick/SESSION.md",
-      "# SESSION\n\n## Objective\nalgo suelto\n\n## Origin\n- prompt directo\n",
-    );
-    fs.file(
-      "/cwd/.workflow/sessions/013-suelta-quick/CHECKPOINT.md",
-      "# CHECKPOINT\n\n## Completed\n- algo\n\n## Pending / Next\n- seguir\n",
-    );
-    return fs;
-  }
-
-  it("sale del pipeline y se reporta por su carpeta en loose_sessions", async () => {
-    const out = await index(looseHub());
-    expect(out.pipeline).toEqual([]);
-    expect(out.loose_sessions).toEqual(["013-suelta-quick"]);
-  });
-
-  it("no compite con un plan abierto: el plan es el único pendiente", async () => {
-    const fs = looseHub();
-    fs.file("/cwd/docs/plans/005-plan-abierto.md", "# Plan\n\n## Tasks\n- [ ] T1\n");
-
-    const out = await index(fs);
-    expect(out.pipeline.map((p) => p.kind)).toEqual(["plan-open"]);
-    expect(out.loose_sessions).toEqual(["013-suelta-quick"]);
-  });
-
   it("una sesión con documento asociado no es suelta", async () => {
     const fs = hub();
     fs.file(
@@ -897,15 +830,6 @@ describe("el ítem de un plan con compensación vigente siempre trae comando", (
     expect(item.detail.obligation).toBe(true);
     expect(item.command).toBe(`aw settle prepare ${OWING_PLAN}`);
     expect(item.action.kind).toBe("continue");
-  });
-
-  it("con una corrida abierta sobre el plan el comando es el de ESA corrida", async () => {
-    const item = await owingItem(withOpenRun(owing()));
-
-    // La corrida abierta manda: `aw settle` se niega debajo de ella, así que
-    // ofrecerlo sería ofrecer un comando que rechaza.
-    expect(item.command).toBe(`aw flow advance --code ${OWING_SESSION}`);
-    expect(item.action).toMatchObject({ kind: "continue", mode: "settlement" });
   });
 
   it("una sesión abierta de OTRO flujo no se vuelve la dueña del plan", async () => {

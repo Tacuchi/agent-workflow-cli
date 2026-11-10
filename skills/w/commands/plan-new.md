@@ -17,15 +17,15 @@ An unready or legacy spec is input, never a block.
 
 > **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
-> 1. **Session first** — open or resume the run before working: `aw flow start --flow plan-new --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
+> 1. **Read first** — `aw flow read --flow plan-new --doc <spec>` returns the spec's state and the `read_digest` the plan's save quotes back (`aw flow save --flow plan-new --doc <spec> --slug <slug>`: a preview first, then the write with the approved digest). The new plan takes the next correlative of docs/plans/. Nothing is kept between turns.
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow writes only `docs/plans/…` (with confirmation if it exists); nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the plan's content) goes in the **user's language**.
 
 ## Run the loop
 
-1. Read, in order, the `read_set` entries it returned that are not `loaded`.
-2. Follow the loop manual end to end, taking `$ARGUMENTS` as input (resolved per the module below): it detects state/resume, runs the gap-driven engine, manages sessions, converges and reports.
+1. Read [`plan-new-loop`](../loops/plan-new-loop/LOOP.md).
+2. Follow the loop manual end to end, taking `$ARGUMENTS` as input (resolved per the module below): it detects state/resume, runs the gap-driven engine, converges and reports.
 
 > `plan-new-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
 

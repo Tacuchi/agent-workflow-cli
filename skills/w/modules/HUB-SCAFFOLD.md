@@ -6,9 +6,9 @@ Loaded when the folder already has a materialized hub, or the user asks what
 ## Versioning policy (CLI-owned `.gitignore`)
 
 The first mutation (or `hub-init` without sources) writes only the runtime set, under the
-hub lock. The sessions marker is created last.
+hub lock. The hub marker (`workline.json`) is created last.
 
-- **Ignored** — `.<namespace>/sessions/` (machine-local live log), `.<namespace>/.lock`,
+- **Ignored** — `.<namespace>/.lock`,
   `.<namespace>/processes.json`, `.<namespace>/launch/` and `docs/logs/` (legacy inert artifacts). The runtime block is
   added only when the root belongs to Git.
 - **Not created by materialization** — `docs/**`, `skills.toml`, a hub block, launch

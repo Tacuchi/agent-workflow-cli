@@ -19,7 +19,6 @@ import { dirname, join } from "node:path";
 import type { CliContext } from "../../cli/types.js";
 import {
   HARNESSES,
-  type HarnessHooks,
   type HarnessId,
   type HarnessSpec,
   type InstallTarget,
@@ -291,7 +290,7 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
         }
       : { id: "mcp", status: "native", detail: `written to its ${spec.mcpHostId} MCP config` },
     { id: "host-memory", status: spec.hostMemory.state, detail: spec.hostMemory.detail },
-    compactionCapability(spec.hooks),
+    compactionCapability(spec),
   ];
 }
 
@@ -320,38 +319,6 @@ function hooksCapability(spec: HarnessSpec): HostCapability {
 }
 
 /**
- * Compaction rides on the PreCompact/PostCompact pair: the checkpoint is written
- * before and the resume summary injected after. With neither, the universal
- * fallback is CHECKPOINT + resume, run by hand.
- */
-function compactionCapability(hooks: HarnessHooks | null): HostCapability {
-  const fallback = "CHECKPOINT + resume is the fallback";
-  if (hooks === null) {
-    return { id: "compaction", status: "unsupported", detail: `no compaction hooks; ${fallback}` };
-  }
-  const pair = [hooks.events.PreCompact, hooks.events.PostCompact];
-  const carried = pair.filter((support) => support.state === "carried").length;
-  const omitted = pair.filter((support) => support.state === "omitted").length;
-  if (omitted === pair.length) {
-    return { id: "compaction", status: "unsupported", detail: `no compaction event; ${fallback}` };
-  }
-  if (hooks.managed && carried === pair.length) {
-    return {
-      id: "compaction",
-      status: "native",
-      detail: "PreCompact writes the checkpoint and PostCompact injects the resume summary",
-    };
-  }
-  return {
-    id: "compaction",
-    status: "degraded",
-    detail: hooks.managed
-      ? `only part of the PreCompact/PostCompact pair travels; ${fallback}`
-      : `the host has compaction events but Workline does not arm them here; ${fallback}`,
-  };
-}
-
-/**
  * Why Workline does not arm this host's hooks, and what it does instead.
  *
  * Codex is the one host with a second route: a plugin bundle whose hooks skip its
@@ -359,6 +326,34 @@ function compactionCapability(hooks: HarnessHooks | null): HostCapability {
  * plugins through a marketplace — so the state says "generated, not armed" and
  * stops there. Every other unmanaged host gets the plain answer.
  */
+/**
+ * Compaction needs no hook in 31.0.0 (spec 066): the plan's state, its boxes and
+ * its next step plus `git status` are the record `aw resume` reads. What varies
+ * per host is only whether it compacts natively.
+ */
+function compactionCapability(spec: HarnessSpec): HostCapability {
+  const fallback = "the document + aw resume is the fallback";
+  if (spec.id === "claude-code" || spec.id === "kimi") {
+    return {
+      id: "compaction",
+      status: "native",
+      detail: "native /compact; the plan is the record",
+    };
+  }
+  if (spec.id === "codex") {
+    return {
+      id: "compaction",
+      status: "degraded",
+      detail: `Workline does not arm its compaction; ${fallback}`,
+    };
+  }
+  return {
+    id: "compaction",
+    status: "unsupported",
+    detail: `no compaction mechanism; ${fallback}`,
+  };
+}
+
 function notManagedHere(spec: HarnessSpec): string {
   if (spec.id === "codex") {
     return "Workline generates its plugin bundle instead ('aw self install-hooks --target codex'), which is NOT armed: installing a codex plugin goes through a marketplace and is yours to run";

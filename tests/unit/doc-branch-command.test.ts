@@ -167,28 +167,4 @@ describe("aw doc-branch show|set", () => {
       readFileSync(join(root, "workspace", ".workflow", "doc-branches.jsonl"), "utf8"),
     ).toContain("feature/local");
   });
-
-  it("copia sólo la rama propia de un quick a la spec mediante --from", async () => {
-    const quick = "105-escalada-quick";
-    const dir = join(root, "workspace", ".workflow", "sessions", quick);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, "SESSION.md"), `# SESSION — ${quick}\n`);
-    git(repo, "branch", "feature/quick");
-    const own = await docBranchCommand.execute(
-      args("set", { doc: "quick:105", source: "core", rama: "feature/quick" }),
-      ctx,
-    );
-    expect(own.ok).toBe(true);
-    const copied = await docBranchCommand.execute(
-      args("set", { doc: "spec:049", source: "core", from: "quick:105" }),
-      ctx,
-    );
-    expect(copied.data).toMatchObject({
-      doc: "spec:049",
-      branch: "feature/quick",
-      outcome: "existing",
-    });
-    const shown = await docBranchCommand.execute(args("show", { doc: "quick:105" }), ctx);
-    expect(shown.data).toMatchObject({ sources: [{ proposed: "feature/quick-105-escalada" }] });
-  });
 });

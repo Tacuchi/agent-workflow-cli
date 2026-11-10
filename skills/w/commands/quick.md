@@ -12,25 +12,25 @@ allowed-tools:
 
 # quick — trampoline to the lightweight loop
 
-Delegates to `quick-loop` (Layer 2). Creates a light session (traceability + resume) — unless the **entry size gate** escalates first.
+Delegates to `quick-loop` (Layer 2); git is its only record — unless the **entry size gate** escalates first.
 
 > **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
-> 1. **Size gate BEFORE any session** — if the objective exceeds a quick (≥2 clear signals: needs architecture · ≥2 sources · several deliverables · large feature/refactor · ambiguous requirements), ask first with these verbatim options: `Cambiar a SPEC` *(recommended)* · `Seguir en quick` · `Recortar alcance`. If it escalates, create **no** quick session.
-> 2. **Session first** — otherwise, before touching code, open or resume the run: `aw flow start --flow quick --name <slug> --objetivo "<one-line objective>" --root "${CLAUDE_PLUGIN_ROOT}/skills/w"`; keep its `CHECKPOINT.md` updated (`## Completed` · `## Pending / Next`; `## Open questions` only while live doubts exist).
-> 3. **Git/DB** — commits are **proposed** for exact paths and never executed without approval; never execute DML/DDL (SQL goes to the session's `SCRIPTS.sql`).
-> 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
+> 1. **Size gate BEFORE any work** — if the objective exceeds a quick (≥2 signals: architecture · ≥2 sources · several deliverables · large refactor · ambiguous requirements), ask first, verbatim: `Cambiar a SPEC` *(recommended)* · `Seguir en quick` · `Recortar alcance`. If it escalates, nothing is written.
+> 2. **Git is the record** — an interrupted quick shows only in `git status` of its source.
+> 3. **Git/DB** — `aw flow propose-commit` for exact paths, then `aw flow commit` only with the approved digest; never execute DML/DDL (SQL goes as a file in `docs/scripts/`).
+> 4. **Language** — everything user-facing goes in the **user's language**.
 
 ## Run the loop
 
-1. Read, in order, the `read_set` entries it returned that are not `loaded`.
-2. Follow the loop manual end to end, taking `$ARGUMENTS` as the task: it evaluates the size gate, creates the light session, works with minimal ceremony (git-safe), escalates if the task grows, and reports.
+1. Read [`quick-loop`](../loops/quick-loop/LOOP.md).
+2. Follow it end to end with `$ARGUMENTS` as the task: size gate, minimal ceremony, escalation if it grows, report.
 
 > `quick-loop` is **not** a skill invocable by name — it is this command's operating manual. The command **is** the entry; the loop is its body.
 
 ## Two things this command never does
 
-- **It never writes `docs/`** and it exports nothing. UI work uses the task's ordinary validation; a changed product promise escalates.
+- **It never writes `docs/`**; a changed product promise escalates.
 - **It never re-derives what the conversation already settled** — that analysis is *input* (`## Origin` = adopted).
 
 ## More context

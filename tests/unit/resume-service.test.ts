@@ -203,25 +203,6 @@ describe("runResume — an explicit target wins over the pipeline", () => {
     if (out.status !== "invalid_target") return;
     expect(out.action).toContain("--code");
   });
-
-  it("reads a session target through --code", async () => {
-    const fs = hub();
-    session(fs, "049-x-plan-exec", "ejecutar el plan 008", "docs/plans/008-plan-x.md", "cerrar F3");
-
-    const out = await resume(fs, { code: "049" });
-    if (out.status !== "proposal") throw new Error(`expected a proposal, got ${out.status}`);
-    expect(out.proposal).toMatchObject({
-      kind: "session",
-      objective: "ejecutar el plan 008",
-      // Sin la viñeta: el próximo paso ahora viene de la narrativa, que lee cada
-      // ítem como un hecho y no como una línea de Markdown.
-      next: "cerrar F3",
-      command: "aw session-load --code 049-x-plan-exec --reopen",
-    });
-    // Y esa narrativa dice de qué estado viene: una sesión con avance registrado
-    // es una que alguien dejó y retomó, no una recién abierta.
-    expect(out.proposal.progress).toContain("sesión");
-  });
 });
 
 // ── the read-only guarantee ──────────────────────────────────────────────────
@@ -230,16 +211,6 @@ describe("runResume — reads state, never records it", () => {
   // Plan 008 made every session-scoped READ record the conversation→session
   // association (`sessionReadRequest` sets `bind: true`). `resume` must not:
   // asking what to pick up is not the same as claiming a work line.
-  it("leaves .bindings.json untouched when resolving a session by code", async () => {
-    const fs = hub();
-    session(fs, "049-x-plan-exec", "ejecutar", "docs/plans/008-plan-x.md", "seguir");
-
-    const out = await resume(fs, { code: "049", contextId: "conversation-abc" });
-    expect(out.status).toBe("proposal");
-    expect(fs.writes.size).toBe(0);
-    expect(await fs.exists("/cwd/.workflow/sessions/.bindings.json")).toBe(false);
-  });
-
   it("does not create a binding when the conversation resolves the sole active session", async () => {
     const fs = hub();
     session(fs, "049-x-plan-exec", "ejecutar", "docs/plans/008-plan-x.md", "seguir");
@@ -361,17 +332,6 @@ describe("runResume — lo que la oferta ampliada NO cambió", () => {
     expect(out.via).toBe("explicit");
     expect(out.proposal.number).toBe("012");
     expect(out.candidates).toBeUndefined();
-  });
-
-  it("--code sigue resolviendo la sesión y sin escribir nada", async () => {
-    const fs = nine();
-    session(fs, "049-x-plan-exec", "ejecutar el plan 008", "docs/plans/008-plan-x.md", "cerrar F3");
-
-    const out = await resume(fs, { code: "049" });
-    if (out.status !== "proposal") throw new Error(`esperaba una propuesta, vino ${out.status}`);
-    expect(out.proposal.kind).toBe("session");
-    expect(out.candidates).toBeUndefined();
-    expect(fs.writes.size).toBe(0);
   });
 
   it("ofrecer los 9 tampoco escribe ni ejecuta nada", async () => {

@@ -143,8 +143,10 @@ describe("the typed next step", () => {
 
   it("only publishes a command the CLI's own contract accepts as written", () => {
     expect(fitsContract("aw status")).toBe(true);
-    expect(fitsContract("aw flow advance --session 001-x-quick --flow quick --adopt")).toBe(true);
-    expect(fitsContract("aw hub-migrate --renumber")).toBe(true);
+    expect(fitsContract("aw flow read --flow spec-refine --doc docs/specs/001-spec-x.md")).toBe(
+      true,
+    );
+    expect(fitsContract("aw hub-migrate --apply")).toBe(true);
     expect(fitsContract("aw session-create")).toBe(false);
     expect(fitsContract("aw discard")).toBe(false);
     expect(fitsContract("aw flow")).toBe(false);
@@ -163,7 +165,7 @@ describe("determinable errors name the exact command — through the binary", ()
     ws = join(root, "ws");
     home = join(root, "home");
     await mkdir(home, { recursive: true });
-    await mkdir(join(ws, ".workflow", "sessions"), { recursive: true });
+    await mkdir(join(ws, ".workflow"), { recursive: true });
     await mkdir(join(ws, "sub"), { recursive: true });
     await writeFile(join(ws, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
   });
@@ -172,60 +174,10 @@ describe("determinable errors name the exact command — through the binary", ()
     await rm(root, { recursive: true, force: true });
   });
 
-  async function session(folder: string) {
-    await mkdir(join(ws, ".workflow", "sessions", folder), { recursive: true });
-    await writeFile(
-      join(ws, ".workflow", "sessions", folder, "SESSION.md"),
-      "# SESSION\n\n## Objective\nprueba\n",
-    );
-  }
-
-  it("SESSION_UNBOUND with one active session: the same invocation with its --code", async () => {
-    await session("001-uno-quick");
-    const out = await aw(ws, "flow", "advance");
-    expect(out.error?.code).toBe("SESSION_UNBOUND");
-    expect(out.data?.next_step).toEqual({
-      command: "aw flow advance --json --code 001-uno-quick",
-    });
-    expect(out.data?.action).toContain("aw flow advance --json --code 001-uno-quick");
-  });
-
-  it("two active sessions: both listed as alternatives, none chosen", async () => {
-    await session("001-uno-quick");
-    await session("002-dos-quick");
-    const out = await aw(ws, "flow", "advance");
-    expect(out.error?.code).toBe("SESSION_UNBOUND");
-    expect(out.data?.next_step).toEqual({
-      alternatives: [
-        "aw flow advance --json --code 001-uno-quick",
-        "aw flow advance --json --code 002-dos-quick",
-      ],
-    });
-    expect(out.data?.next_step?.command).toBeUndefined();
-  });
-
-  it("two folders sharing a correlative: no retry is offered, the repair command is", async () => {
-    await session("001-uno-quick");
-    await session("session001-viejo");
-    const out = await aw(ws, "flow", "advance", "--code", "001");
-    expect(out.error?.code).toBe("SESSION_AMBIGUOUS");
-    expect(out.data?.next_step).toEqual({ command: "aw hub-migrate --renumber" });
-  });
-
-  it("FLOW_RUN_ABSENT: --session and --flow come from the adoptable session", async () => {
-    await session("001-uno-quick");
-    const out = await aw(ws, "flow", "advance", "--session", "001");
-    expect(out.error?.code).toBe("FLOW_RUN_ABSENT");
-    expect(out.data?.next_step).toEqual({
-      command: "aw flow advance --session 001-uno-quick --flow quick --adopt",
-    });
-  });
-
   it("ARGS_INVALID of flow and export: the usage generated from the contract", async () => {
-    const flow = await aw(ws, "flow", "retract", "--session", "001");
+    const flow = await aw(ws, "flow", "retract");
     expect(flow.error?.code).toBe("ARGS_INVALID");
-    expect(flow.data?.action).toContain("aw flow retract [--code <code>]");
-    expect(flow.data?.action).toContain("--signal <signal>");
+    expect(flow.data?.action).toContain("aw flow read | save | propose-commit");
     const exported = await aw(ws, "export-scripts", "bogus");
     expect(exported.error?.code).toBe("ARGS_INVALID");
     expect(exported.data?.action).toContain("aw export-scripts <action>");

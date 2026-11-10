@@ -1,8 +1,7 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyDoctorBatch } from "../../src/application/doctor/apply.js";
 import { prepareDoctorBatch } from "../../src/application/doctor/prepare.js";
 import { pluginsHooksProvider } from "../../src/application/doctor/provider-plugins-hooks.js";
 import { runDoctor } from "../../src/application/doctor/report.js";
@@ -129,22 +128,6 @@ describe("aw doctor bloquea un hook que apunta a un comando retirado", () => {
     const read = sealed.proposal.read_set.map((entry) => entry.id);
     expect(read).toContain(join(home, ".kimi-code", "config.toml"));
     expect(read).not.toContain(join(home, ".claude", "settings.json"));
-  });
-
-  it("apply reescribe los hooks y el doctor queda sin el bloqueo", async () => {
-    const select = [RETIRED("claude-code"), RETIRED("kimi")];
-    const sealed = await prepareDoctorBatch(ctx, { select }, DEPS);
-    if (!sealed.ok || sealed.kind !== "sealed") throw new Error("esperaba una propuesta sellada");
-    const applied = await applyDoctorBatch(ctx, { select, approval: sealed.proposal.digest }, DEPS);
-    if (!applied.ok) throw new Error(JSON.stringify(applied.rejection));
-    expect(applied.result.status).toBe("completed");
-    const after = await runDoctor(ctx, {}, DEPS);
-    expect(after.findings.filter((item) => item.id.endsWith("hooks:comandos-retirados"))).toEqual(
-      [],
-    );
-    expect(await readFile(join(home, ".claude", "settings.json"), "utf8")).toContain(
-      "agent-workflow hook pre-compact",
-    );
   });
 
   it("una instalación vigente no da ningún hallazgo nuevo", async () => {

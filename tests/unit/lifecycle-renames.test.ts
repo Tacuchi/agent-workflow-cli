@@ -138,15 +138,6 @@ describe("aw checkpoint-write sigue saliendo con 0 como el PreCompact de un host
   });
 });
 
-describe("aw checkpoint-write --code queda para los agentes", () => {
-  it("escribe el CHECKPOINT de la sesión nombrada", async () => {
-    const { code } = await aw(hub, ["checkpoint-write", "--code", "001", "--json"]);
-    expect(code).toBe(0);
-    const checkpoint = join(hub, ".workflow", "sessions", "001-prueba-quick", "CHECKPOINT.md");
-    expect((await stat(checkpoint)).isFile()).toBe(true);
-  });
-});
-
 describe("reinstalar deja los hooks de cada host sólo con los nombres nuevos", () => {
   function ctx(host: string): CliContext {
     const ns = normalizeNamespace("agent-workflow");
@@ -201,10 +192,10 @@ describe("reinstalar deja los hooks de cada host sólo con los nombres nuevos", 
     expect((await selfInstallHooks(args(target, bundled), ctx(host))).ok).toBe(true);
     const after = await readFile(join(host, file), "utf8");
     for (const command of OLD_COMMANDS) expect(after, target).not.toContain(`${command}"`);
-    expect(after).toContain("agent-workflow hook session-end");
-    if (target === "claude") {
-      expect(after).toContain("agent-workflow hook pre-compact");
-      expect(after).toContain("agent-workflow hook post-compact");
+    // 31.0.0 (spec 066, ID07): the session hooks leave the host entirely.
+    for (const retired of ["session-end", "pre-compact", "post-compact"]) {
+      expect(after, target).not.toContain(`agent-workflow hook ${retired}`);
     }
+    expect(after).toContain("agent-workflow hook sql-mutation-guard");
   });
 });

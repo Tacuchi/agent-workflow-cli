@@ -42,3 +42,41 @@ export async function publishNumbered(
   }
   throw new Error(`no se pudo publicar un ${kind} nuevo en ${dir}: correlativos ocupados`);
 }
+
+/** Every `NNN-*` entry of a folder and the highest correlative among them. */
+export async function correlativesOf(
+  fs: FileSystemPort,
+  dir: string,
+): Promise<{ exists: boolean; files: string[]; highest: number }> {
+  if (!(await fs.exists(dir))) return { exists: false, files: [], highest: 0 };
+  const files: string[] = [];
+  let highest = 0;
+  for (const entry of await fs.list(dir)) {
+    const match = /^(\d{3,})-/.exec(entry.name);
+    if (!match?.[1]) continue;
+    files.push(entry.name);
+    highest = Math.max(highest, Number(match[1]));
+  }
+  return { exists: true, files: files.sort(), highest };
+}
+
+/**
+ * Publishes `<NNN>-<name>` in any numbered folder by exclusive creation, with
+ * the correlative replacing `NNN` in its title; a taken number moves to the next.
+ */
+export async function publishInFolder(
+  fs: FileSystemPort,
+  dir: string,
+  name: string,
+  content: string,
+): Promise<{ number: string; path: string }> {
+  await fs.mkdirp(dir);
+  let next = (await correlativesOf(fs, dir)).highest + 1;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1, next += 1) {
+    const number = String(next).padStart(3, "0");
+    const path = join(dir, `${number}-${name}`);
+    const titled = content.replace(/^(#\s[^\n]*?)\b(NNN|PPP)\b/m, `$1${number}`);
+    if ((await fs.publishTextExclusive(path, titled)).created) return { number, path };
+  }
+  throw new Error(`no se pudo publicar en ${dir}: correlativos ocupados`);
+}

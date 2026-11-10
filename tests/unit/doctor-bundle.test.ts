@@ -126,7 +126,7 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
     expect(raw).toContain("The report is read-only and leaves no trace");
     expect(raw).toContain("`prepare` seals and is logged");
     expect(raw).toContain("`apply` is the only step that writes");
-    expect(raw).toContain("No loop, no session.");
+    expect(raw).toContain("No loop.");
   });
 
   it("pide la proyección humana en TODAS sus invocaciones", () => {
@@ -178,9 +178,9 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
     const median = result.budget.find((line) => line.metric === "activation.median");
 
     const entries = new Map(result.activation.entries.map((e) => [e.command, e.bytes]));
-    expect(entries.size).toBe(19);
+    expect(entries.size).toBe(15);
     const sorted = [...entries.values()].sort((a, b) => a - b);
-    expect(median?.actual).toBe(sorted[9]);
+    expect(median?.actual).toBe(sorted[7]);
     expect(median?.actual ?? 0).toBeLessThanOrEqual(DOC_CEILING);
     expect(entries.has("fix-git")).toBe(false);
     expect(entries.get("doctor")).toBe(bytes);
