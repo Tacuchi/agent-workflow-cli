@@ -37,7 +37,7 @@ export type DocFlowResult<T> = { ok: true; value: T } | { ok: false; failure: Do
 
 /** Where a document flow stands, derived on every call from the document alone. */
 export interface DocFlowReading {
-  flow: DocumentFlow;
+  flow: DocumentFlow | "plan-exec";
   /** Hub-relative document the flow reads (the spec for plan-new), `null` for spec-new. */
   doc: string | null;
   /** What this instance read; every save quotes it back. Lives in the conversation only. */
@@ -91,7 +91,7 @@ async function locate(fs: FileSystemPort, paths: PathsService): Promise<DocFlowR
 export async function readDocFlow(
   fs: FileSystemPort,
   paths: PathsService,
-  input: { flow: DocumentFlow; doc?: string },
+  input: { flow: DocumentFlow | "plan-exec"; doc?: string },
 ): Promise<DocFlowResult<DocFlowReading>> {
   const located = await locate(fs, paths);
   if (!located.ok) return located;
@@ -132,9 +132,10 @@ export async function readDocFlow(
 }
 
 function positionOf(
-  flow: Exclude<DocumentFlow, "spec-new">,
+  flow: Exclude<DocumentFlow, "spec-new"> | "plan-exec",
   text: string,
 ): DocFlowResult<{ state: string; next: string }> {
+  if (flow === "plan-exec") return execPositionOf(text);
   if (flow === "spec-refine" || flow === "plan-new") {
     const status = specStatusOf(text);
     if (status === "abandoned" || status === "superseded") {
@@ -177,6 +178,32 @@ function positionOf(
   return ok({
     state: status.declared === "absent" ? "draft" : status.declared,
     next: "reformá el plan y guardalo con 'aw flow save --flow plan-refine --doc <plan>'",
+  });
+}
+
+/** Where an execution stands: the plan's state and its own re-entry point. */
+function execPositionOf(text: string): DocFlowResult<{ state: string; next: string }> {
+  const status = parsePlanStatus(text);
+  if (status.unmigrated !== null) {
+    return refuse(
+      "HUB_MIGRATION_REQUIRED",
+      `el plan declara un estado del modelo de sesiones ('${status.declared}')`,
+      `migrá el hub con '${HUB_MIGRATE_COMMAND}'`,
+    );
+  }
+  if (status.declared !== "ready" && status.declared !== "in-progress") {
+    return refuse(
+      "DOC_FLOW_PLAN_NOT_EXECUTABLE",
+      `el plan está ${status.declared}: sólo se ejecuta un plan ready o in-progress`,
+      "refinalo hasta ready con /w:plan-refine",
+    );
+  }
+  return ok({
+    state: status.declared,
+    next:
+      status.next_step !== null
+        ? `próximo paso ${status.next_step.text}`
+        : "abrí el primer lote pendiente de '## Execution batches'",
   });
 }
 

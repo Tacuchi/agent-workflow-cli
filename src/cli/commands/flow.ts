@@ -47,6 +47,7 @@ import type { CliCommand, HumanRenderContext } from "../registry.js";
 import { failSemantic, failSessionResolution } from "../render.js";
 import type { CliContext } from "../types.js";
 import { type DocumentVerbResult, documentVerb, renderDocumentHuman } from "./flow-documents.js";
+import { type PlanRunVerbResult, isPlanRunVerb, planRunVerb } from "./flow-plan-run.js";
 
 /**
  * The deterministic direction engine, as a public command.
@@ -75,6 +76,7 @@ import { type DocumentVerbResult, documentVerb, renderDocumentHuman } from "./fl
  */
 type FlowResult =
   | DocumentVerbResult
+  | PlanRunVerbResult
   | FlowDirective
   | CheckoutProofReceipt
   | AnnulPreview
@@ -223,6 +225,10 @@ export const flowCommand: CliCommand<FlowResult> = {
     actions: {
       read: { known: ["doc"] },
       save: { known: ["doc", "slug", "read-digest", "approval"] },
+      "propose-commit": { known: ["source", "message", "path"], repeatable: ["path"] },
+      commit: { known: ["source", "message", "path", "approval"], repeatable: ["path"] },
+      "close-batch": { known: ["plan", "batch", "read-digest"] },
+      finish: { known: ["plan", "read-digest"] },
       advance: { known: ["adopt"] },
       submit: { known: ["approval", "check"] },
       prove: { known: ["source", "artifact"] },
@@ -287,6 +293,55 @@ export const flowCommand: CliCommand<FlowResult> = {
         notes: [
           "The CLI seals the state: spec-new draft, spec-refine ready-for-plan, plan-new and plan-refine ready (draft while Open questions remain). New documents take the next correlative of docs/ by exclusive creation. A document changed since its read is refused with DOC_CHANGED_SINCE_READ and nothing is written. A refused answer costs nothing.",
         ],
+      },
+      "propose-commit": {
+        purpose:
+          "Propose a commit of exact paths of one source, sealed by a digest of HEAD, the message and each path's bytes. Writes nothing.",
+        flags: {
+          source: { value: "<alias>", effect: "Source alias, or hub." },
+          message: { value: "<text>", effect: "One-line commit message." },
+          path: { value: "<path>", effect: "Repo-relative path to commit; repeatable." },
+        },
+        output: "{repo, head, message, paths[] {path, digest}, approval}.",
+        notes: ["QUICK and plan-exec use the same pair: git is QUICK's only record."],
+      },
+      commit: {
+        purpose:
+          "Commit exactly the proposed paths while the approval still matches the tree; a path changed after the proposal makes it stale.",
+        flags: {
+          source: { value: "<alias>", effect: "Source alias, or hub." },
+          message: { value: "<text>", effect: "The proposed message." },
+          path: { value: "<path>", effect: "The proposed paths; repeatable." },
+          approval: { value: "<digest>", effect: "The approval the proposal returned." },
+        },
+        output: "{hash, paths[]}.",
+        notes: ["COMMIT_PROPOSAL_STALE: propose again and ask for a new approval."],
+      },
+      "close-batch": {
+        purpose:
+          "Close one batch in the plan from its validations' output: boxes, phase states, next step and at most five evidence lines with the commit hashes.",
+        flags: {
+          plan: { value: "<path>", effect: "Hub-relative plan." },
+          batch: { value: "<Bn>", effect: "The batch of ## Execution batches." },
+          "read-digest": {
+            value: "<digest>",
+            effect: "The read_digest of 'aw flow read --flow plan-exec'.",
+          },
+        },
+        output: "{plan, batch, phases[], state, next_step, digest}.",
+        notes: [
+          "stdin: {validations [{command, passed, output}], evidence {validated, failed?, pending?, external?}, commits {alias: hash}}.",
+        ],
+      },
+      finish: {
+        purpose:
+          "Close the plan after its final validation: every phase validada, > Estado: done, the next step removed and > Cierre: dated.",
+        flags: {
+          plan: { value: "<path>", effect: "Hub-relative plan." },
+          "read-digest": { value: "<digest>", effect: "The plan's current read_digest." },
+        },
+        output: "{plan, state, digest}.",
+        notes: ["stdin: {validations [{command, passed, output}]}."],
       },
       start: {
         purpose:
@@ -414,9 +469,8 @@ export const flowCommand: CliCommand<FlowResult> = {
   },
 
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<FlowResult>> {
-    // The stateless document flows: no session, no run file, no attempts.
-    const head = args.rest[0];
-    if (head === "read" || head === "save") return documentVerb(head, args, ctx);
+    const stateless = await statelessVerb(args, ctx);
+    if (stateless !== null) return stateless;
     const parsed = readFlowArgs(args, ctx);
     if (!parsed.ok) return parsed.failure;
     const { verb, flow, session } = parsed;
@@ -512,6 +566,17 @@ export const flowCommand: CliCommand<FlowResult> = {
     return `${renderDirectiveHuman(data as FlowDirective, context.detail)}\n`;
   },
 };
+
+/** The stateless verbs of spec 066: no session, no run file, no attempts. */
+async function statelessVerb(
+  args: ParsedArgs,
+  ctx: CliContext,
+): Promise<CommandResult<FlowResult> | null> {
+  const head = args.rest[0];
+  if (head === "read" || head === "save") return documentVerb(head, args, ctx);
+  if (isPlanRunVerb(head)) return planRunVerb(head, args, ctx);
+  return null;
+}
 
 async function startVerb(
   args: ParsedArgs,

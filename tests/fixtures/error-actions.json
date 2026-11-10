@@ -354,6 +354,24 @@
       "text": "aw flow ${verb} --flow <flow>",
       "class": "usage",
       "reason": "forma de uso: el flujo es la entrada de quien invoca"
+    },
+    {
+      "file": "src/cli/commands/flow-plan-run.ts",
+      "text": "aw flow ${verb} --plan <ruta>",
+      "class": "usage",
+      "reason": "forma de uso: el plan es la entrada de quien invoca"
+    },
+    {
+      "file": "src/cli/commands/flow-plan-run.ts",
+      "text": "aw flow close-batch --plan <ruta>",
+      "class": "usage",
+      "reason": "forma de uso: el plan y el lote son la entrada de quien invoca"
+    },
+    {
+      "file": "src/cli/commands/flow-plan-run.ts",
+      "text": "aw flow ${verb} --source <alias>",
+      "class": "usage",
+      "reason": "forma de uso: la fuente, el mensaje y las rutas son de quien propone el commit"
     }
   ]
 }
