@@ -5,8 +5,12 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
-import { ARTIFACT_FILENAMES } from "../session-artifacts.js";
-import { type BuiltWorklineGraph, buildWorklineGraph } from "../workline-graph.js";
+import {
+  type IndexedPlan,
+  type WorklineIndex,
+  buildWorklineIndex,
+  planIsPending,
+} from "../workline-index-service.js";
 import { catalogRelative, inside } from "./paths.js";
 
 export interface CompactionDeps {
@@ -19,7 +23,7 @@ export interface CompactionDeps {
 
 export interface InventoryEntry {
   path: string;
-  kind: "documentation" | "session" | "runtime" | "other";
+  kind: "documentation" | "other";
   disposition: "protected" | "eligible" | "excluded";
   reason: string;
   bytes: number | null;
@@ -39,26 +43,19 @@ export interface HubInventory {
 
 const SKIP = new Set([".git", "node_modules", ".ssh", ".aws", ".codex", ".agents", ".claude"]);
 const SENSITIVE = /(?:^\.env(?:\.|$)|^\.npmrc$|credential|secret|\.pem$|\.key$)/iu;
-const CONTROL = new Set(
-  Object.values(ARTIFACT_FILENAMES)
-    .flat()
-    .map((name) => name.toLowerCase()),
-);
 const TEXT_LIMIT = 1024 * 1024;
 
-function entryKind(path: string, paths: PathsService): InventoryEntry["kind"] {
-  if (path.startsWith("docs/")) return "documentation";
-  if (path.startsWith(`.${paths.namespace}/sessions/`)) return "session";
-  if (path.startsWith(`.${paths.namespace}/`)) return "runtime";
-  return "other";
+function entryKind(path: string): InventoryEntry["kind"] {
+  return path.startsWith("docs/") ? "documentation" : "other";
 }
 
+/** Only `docs/` is walked: the documents are the hub's whole record (spec 066, AC-14). */
 async function walk(deps: CompactionDeps, path: string, entries: InventoryEntry[]): Promise<void> {
-  const absolute = path ? join(deps.paths.hubDir(), path) : deps.paths.hubDir();
+  const absolute = join(deps.paths.hubDir(), path);
+  if (!(await deps.fs.exists(absolute))) return;
   for (const item of (await deps.fs.list(absolute)).sort((a, b) => a.name.localeCompare(b.name))) {
-    const rel = path ? `${path}/${item.name}` : item.name;
-    if (rel === `${catalogRelative(deps.paths)}` || rel === `.${deps.paths.namespace}/.lock`)
-      continue;
+    const rel = `${path}/${item.name}`;
+    if (rel === catalogRelative(deps.paths)) continue;
     const stat = await deps.fs.lstat(item.path);
     const excluded =
       stat?.isSymlink ||
@@ -68,7 +65,7 @@ async function walk(deps: CompactionDeps, path: string, entries: InventoryEntry[
     if (excluded || item.type === "other") {
       entries.push({
         path: rel,
-        kind: entryKind(rel, deps.paths),
+        kind: entryKind(rel),
         disposition: "excluded",
         reason: "Enlace, configuración sensible, repositorio externo o catálogo; no recorrido",
         bytes: null,
@@ -83,7 +80,7 @@ async function walk(deps: CompactionDeps, path: string, entries: InventoryEntry[
     const identity = await deps.archive.identify(await inside(deps.fs, deps.paths.hubDir(), rel));
     entries.push({
       path: rel,
-      kind: entryKind(rel, deps.paths),
+      kind: entryKind(rel),
       disposition: "protected",
       reason: "Sin elegibilidad demostrada; se conserva en sitio",
       ...identity,
@@ -91,101 +88,65 @@ async function walk(deps: CompactionDeps, path: string, entries: InventoryEntry[
   }
 }
 
-function sessionEligible(built: BuiltWorklineGraph, path: string): string | null {
-  const node = built.graph.all().find((n) => n.session && path.startsWith(`${n.path}/`));
-  const facts = node?.session;
-  if (
-    !node ||
-    !facts ||
-    facts.state !== "closed" ||
-    facts.completion !== "converged" ||
-    facts.custody_gap !== null ||
-    facts.units.length > 0
-  )
-    return null;
-  const parents = built.graph.parentsOf(node.id);
-  if (parents.some((p) => p.evidence !== "custody")) return null;
-  const live = built.graph
-    .all()
-    .filter(
-      (n) => n.session && (n.session.state !== "closed" || n.session.completion !== "converged"),
+/**
+ * The specs and plans of `docs/` that are history: a plan `done` that owes
+ * nothing (no live handoff, no pending pass) or `abandoned`; a spec abandoned or
+ * superseded, or one whose every plan is history. Derived from the documents
+ * model of the board, which never opens a session.
+ */
+function historicalDocuments(index: WorklineIndex): Map<string, string> {
+  const out = new Map<string, string>();
+  const historical = (plan: IndexedPlan) =>
+    plan.plan_state === "abandoned" || (plan.plan_state === "done" && !planIsPending(plan));
+  for (const plan of index.plans) {
+    if (historical(plan)) out.set(plan.file, `Plan ${plan.plan_state} sin deuda viva`);
+  }
+  for (const spec of index.specs) {
+    const plans = index.plans.filter(
+      (plan) => plan.spec.status === "resolved" && plan.spec.number === spec.number,
     );
-  const links = new Set(parents.map((p) => `${p.to.kind}:${p.to.key}`));
-  if (
-    live.some((n) => built.graph.parentsOf(n.id).some((p) => links.has(`${p.to.kind}:${p.to.key}`)))
-  ) {
-    return null;
+    if (spec.status === "abandoned" || spec.status === "superseded") {
+      out.set(spec.file, `Spec ${spec.status}`);
+    } else if (plans.length > 0 && plans.every(historical)) {
+      out.set(spec.file, "Spec con todos sus planes históricos");
+    }
   }
-  if (
-    built.index.plans.some(
-      (p) =>
-        p.plan_state !== "done" &&
-        (links.has(`plan:${p.number}`) ||
-          (p.spec.status === "resolved" && links.has(`spec:${p.spec.number}`))),
-    )
-  ) {
-    return null;
-  }
-  if (
-    live.some((n) =>
-      n.session?.custody?.artifacts.some(
-        (a) => a.path === path || a.path === node.path || a.path.startsWith(`${node.path}/`),
-      ),
-    )
-  )
-    return null;
-  return node.path;
-}
-
-function controlFile(path: string): boolean {
-  const name = basename(path).toLowerCase();
-  return CONTROL.has(name) || name.startsWith(".") || /\.(?:sql|json|toml)$/iu.test(name);
+  return out;
 }
 
 async function classify(deps: CompactionDeps, entries: InventoryEntry[], limits: string[]) {
   const hazardous = entries.some(
-    (e) =>
-      (e.disposition === "excluded" && (e.path.startsWith("docs/") || e.kind === "session")) ||
-      (controlFile(e.path) && (e.bytes ?? 0) > TEXT_LIMIT),
+    (e) => e.disposition === "excluded" || (controlFile(e.path) && (e.bytes ?? 0) > TEXT_LIMIT),
   );
   if (hazardous) {
     limits.push("Procedencia no evaluada: enlaces o controles fuera del límite de lectura");
     return [];
   }
-  const built = await buildWorklineGraph(deps);
-  const candidates = entries.filter(
-    (e) =>
-      e.kind === "session" &&
-      e.disposition !== "excluded" &&
-      !controlFile(e.path) &&
-      sessionEligible(built, e.path),
-  );
+  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths);
+  const historical = historicalDocuments(index);
+  const candidates = entries.filter((e) => historical.has(e.path));
   const referenced = await manualReferences(deps, entries, candidates, limits);
-  if (referenced === null) return built.graph.edges;
+  if (referenced === null) return [];
   for (const e of candidates) {
     if (referenced.has(e.path)) {
-      e.reason = "Referencia manual existente; se conserva para mantener su resolución";
+      e.reason =
+        "Referencia manual desde un documento vivo; se conserva para mantener su resolución";
       continue;
     }
     e.disposition = "eligible";
-    e.reason =
-      "Sesión cerrada y convergente con custodia completa, sin dependencias vivas ni referencias manuales detectadas";
+    e.reason = `${historical.get(e.path)}; sin referencias desde documentos vivos`;
   }
-  return [
-    ...built.graph.edges,
-    ...built.graph
-      .all()
-      .filter((n) => n.session)
-      .map((n) => ({
-        path: n.path,
-        state: n.session?.state,
-        completion: n.session?.completion,
-        custody: n.session?.custody?.digest,
-        units: n.session?.units,
-      })),
-  ];
+  // The dispositions already carry the provenance; a separate list would change
+  // the moment an archived original leaves docs/ and stall its own recovery.
+  return [];
 }
 
+function controlFile(path: string): boolean {
+  const name = basename(path).toLowerCase();
+  return name.startsWith(".") || /\.(?:sql|json|toml)$/iu.test(name);
+}
+
+/** Live documents that name a candidate keep it in place; history may name history. */
 async function manualReferences(
   deps: CompactionDeps,
   entries: InventoryEntry[],
@@ -193,8 +154,9 @@ async function manualReferences(
   limits: string[],
 ) {
   const referenced = new Set<string>();
+  const archived = new Set(candidates.map((candidate) => candidate.path));
   for (const e of entries) {
-    if (e.path === "docs/context/hub.md") continue;
+    if (archived.has(e.path) || e.path === "docs/context/hub.md") continue;
     if (e.disposition === "excluded" || !/\.(?:md|txt|json|toml)$/iu.test(e.path)) continue;
     if ((e.bytes ?? 0) > TEXT_LIMIT) {
       limits.push(`Referencias manuales sin interpretar: ${e.path} excede ${TEXT_LIMIT} bytes`);
@@ -202,9 +164,7 @@ async function manualReferences(
     }
     const text = await deps.fs.readText(join(deps.paths.hubDir(), e.path));
     for (const candidate of candidates) {
-      if (mentionsOriginal(text, e.path, candidate.path)) {
-        referenced.add(candidate.path);
-      }
+      if (mentionsOriginal(text, e.path, candidate.path)) referenced.add(candidate.path);
     }
   }
   return referenced;
@@ -216,9 +176,9 @@ function mentionsOriginal(text: string, source: string, target: string): boolean
 
 export async function inventoryHub(deps: CompactionDeps): Promise<HubInventory> {
   const entries: InventoryEntry[] = [];
-  await walk(deps, "", entries);
+  await walk(deps, "docs", entries);
   const limitations = [
-    "No se interpreta configuración sensible ni contenido binario; elegibilidad conservadora de archivos de sesiones",
+    "Sólo se recorre docs/; no se interpreta configuración sensible ni contenido binario",
     "Documentos normativos y artefactos canónicos de control y exports permanecen en sitio",
   ];
   const relationships = await classify(deps, entries, limitations);
@@ -235,7 +195,6 @@ export async function inventoryHub(deps: CompactionDeps): Promise<HubInventory> 
       limitations,
       exclusions: [
         catalogRelative(deps.paths),
-        `.${deps.paths.namespace}/.lock`,
         ...entries.filter((e) => e.disposition === "excluded").map((e) => e.path),
       ],
     },

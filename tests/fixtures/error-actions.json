@@ -372,6 +372,18 @@
       "text": "aw flow ${verb} --source <alias>",
       "class": "usage",
       "reason": "forma de uso: la fuente, el mensaje y las rutas son de quien propone el commit"
+    },
+    {
+      "file": "src/cli/commands/discard.ts",
+      "text": "aw discard prepare <spec:NNN|plan:PPP|ruta>",
+      "class": "usage",
+      "reason": "forma de uso: el objetivo es la entrada de quien invoca"
+    },
+    {
+      "file": "src/cli/commands/discard.ts",
+      "text": "aw discard apply <objetivo>",
+      "class": "usage",
+      "reason": "forma de uso: el objetivo es la entrada de quien invoca"
     }
   ]
 }

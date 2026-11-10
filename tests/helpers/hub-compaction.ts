@@ -7,13 +7,15 @@ import type { CompactionDeps } from "../../src/application/hub-compaction/invent
 import { inventoryHub } from "../../src/application/hub-compaction/inventory.js";
 import { prepareCompaction } from "../../src/application/hub-compaction/proposal.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { preservedBaseline, sealCustody } from "../../src/domain/session/custody.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "./fake-env.js";
 
-export const SESSION = ".workflow/sessions/001-history-plan-exec";
-export const ORIGINAL = `${SESSION}/evidence/trace.log`;
-export const PLAN = "docs/plans/001-plan-history.md";
+/** A closed plan of `docs/`: the history `hub-compact` may archive (spec 066, AC-14). */
+export const ORIGINAL = "docs/plans/001-plan-history.md";
+/** A protected document: the live plan. */
+export const PLAN = "docs/plans/002-plan-vivo.md";
+/** A live document that is never eligible. */
+export const LIVE = PLAN;
 
 export async function compactionFixture() {
   const root = await mkdtemp(join(tmpdir(), "aw-compaction-"));
@@ -29,23 +31,15 @@ export async function compactionFixture() {
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), content);
   };
-  const plan = "# Plan 001 — history\n> Standalone: fixture\n> Estado: done\n\n## Tasks\n";
-  await write(PLAN, plan);
-  await write(`${SESSION}/SESSION.md`, "# Session\n\n## Objective\nPreserve evidence\n");
-  await write(`${SESSION}/.closed`, "");
+  await write(".workflow/workline.json", '{"workline":1}\n');
   await write(
-    `${SESSION}/.custody.json`,
-    JSON.stringify(
-      sealCustody({
-        subject: { kind: "session", key: "001-history-plan-exec" },
-        subjectPath: join(root, SESSION),
-        parents: [{ kind: "plan", key: "001" }],
-        created: "2026-10-18",
-        artifacts: [{ path: PLAN, role: "input", before: preservedBaseline(plan) }],
-      }),
-    ),
+    ORIGINAL,
+    `# Plan 001 — history\n> Standalone: fixture\n> Estado: done\n\n## Tasks\n- [x] T1 — hecho\n\n${"historical evidence\n".repeat(2000)}`,
   );
-  await write(ORIGINAL, "historical evidence\n".repeat(2000));
+  await write(
+    LIVE,
+    "# Plan 002 — vivo\n> Standalone: fixture\n> Estado: ready\n\n## Tasks\n- [ ] T1\n",
+  );
   return { root, deps, write, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 

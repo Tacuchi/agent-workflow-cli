@@ -16,6 +16,7 @@ import { contextBudgetCommand } from "./context-budget.js";
 import { contextPlanCommand } from "./context-plan.js";
 import { cutIntentCommand } from "./cut-intent.js";
 import { harnessCommand, logsCommand, nextNumberCommand, profilesCommand } from "./dev-only.js";
+import { discardCommand } from "./discard.js";
 import { docBranchCommand } from "./doc-branch.js";
 import { doctorCommand } from "./doctor.js";
 import {
@@ -49,7 +50,7 @@ import { releasePassCommand } from "./release-pass.js";
 import { removeSourceCommand } from "./remove-source.js";
 import { resealCommand } from "./reseal.js";
 import { resumeCommand } from "./resume.js";
-import { discardCommand, resetCommand } from "./retirement.js";
+import { resetCommand } from "./retirement.js";
 import { selfCommand } from "./self.js";
 import { sessionArtifactsCommand } from "./session-artifacts.js";
 import { sessionCloseCommand } from "./session-close.js";

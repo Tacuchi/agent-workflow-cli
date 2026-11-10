@@ -18,6 +18,7 @@ function fixture(): MemFs {
   const fs = new MemFs();
   fs.file("/cwd/.workflow/sessions/040-work/SESSION.md", "# SESSION\n\n## Objective\nMigrar\n");
   fs.file("/cwd/.workflow/sessions/040-work/SCRIPTS.sql", "CREATE TABLE esq.nueva (id int);");
+  fs.file("/cwd/docs/scripts/040-work.sql", "CREATE TABLE esq.nueva (id int);");
   return fs;
 }
 

@@ -6,6 +6,7 @@ import {
   commitApproved,
   proposeCommit,
 } from "../../application/plan-run/commit-proposal.js";
+import { deliverableViolations } from "../../application/plan-run/deliverables.js";
 import {
   type BatchClosed,
   type BatchEvidenceInput,
@@ -126,6 +127,16 @@ async function commitVerb(
       `la fuente '${alias}' no resuelve a una ruta`,
       "declarala con 'aw add-source'",
     );
+  }
+  if (alias === "hub") {
+    const outside = deliverableViolations(paths);
+    if (outside.length > 0) {
+      return fail(
+        "DELIVERABLE_OUTSIDE_DOCS",
+        outside.map((item) => `${item.path}: ${item.reason}`).join(" · "),
+        "un flujo escribe en el hub sólo su spec o plan y los entregables de docs/diagrams, docs/manuals, docs/reports y docs/scripts",
+      );
+    }
   }
   if (verb === "propose-commit") {
     const proposal = await proposeCommit(ctx.git, { repo, message, paths });

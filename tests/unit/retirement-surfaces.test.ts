@@ -6,10 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
-import { runNextNumber } from "../../src/application/dev-only-services.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runSessionCreate } from "../../src/application/session-create-service.js";
-import { recordCommit, recordUnitTaken } from "../../src/application/session-custody-recorder.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import { parseArgv } from "../../src/cli/parser.js";
@@ -104,77 +102,6 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
   });
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  it("1 · descarta una spec con descendientes y sin commits, con una sola aprobación", async () => {
-    const refine = await session("algo-spec-refine", ["docs/specs/025-spec-algo.md"]);
-    const exec = await session("algo-plan-exec", [planPath]);
-
-    const prepared = await run("discard", "prepare", "spec:025");
-    expect(prepared.result.ok).toBe(true);
-    const data = prepared.result.data as {
-      digest: string;
-      next: string;
-      preview: { disappears: Array<{ node: string }> };
-    };
-    // La vista humana y el JSON dicen lo MISMO sobre alcance y digest.
-    expect(prepared.human).toContain("Retirar spec:025");
-    expect(prepared.human).toContain(data.digest);
-    for (const entry of data.preview.disappears) expect(prepared.human).toContain(entry.node);
-    expect(data.next).toBe(`aw discard apply spec:025 --approval ${data.digest}`);
-
-    const applied = await run("discard", "apply", "spec:025", "--approval", data.digest);
-    expect(applied.result.ok).toBe(true);
-    expect(existsSync(join(hub, "docs", "specs", "025-spec-algo.md"))).toBe(false);
-    expect(existsSync(join(hub, planPath))).toBe(false);
-    for (const folder of [refine, exec]) {
-      expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(false);
-    }
-    // Ningún nodo de la clausura queda activo, pendiente ni reanudable, y la única
-    // huella propia de Workline es la fila del ledger.
-    const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
-    expect(board.specs).toEqual([]);
-    expect(board.plans).toEqual([]);
-    expect(board.sessions.active).toEqual([]);
-    expect(board.pipeline).toEqual([]);
-    // El tablero ya no lee HISTORY.md (spec 066, AC-09): el evento terminal vive
-    // en el ledger, no en el tablero.
-    expect(board.terminal_events).toEqual([]);
-    expect(board.discarded).toEqual([]);
-  });
-
-  it("2 · rechazar la reversión deja plan, sesiones, árbol e HISTORY sin cambios", async () => {
-    const folder = await session("algo-plan-exec", [planPath]);
-    const historyBefore = readFileSync(paths.cwdHistoryFile(), "utf8");
-    const unit = join(root, "unit");
-    git(source, "worktree", "add", "--quiet", "-b", `aw/${folder}`, unit);
-    await recordUnitTaken({ fs, git: ctx.git, paths }, folder, {
-      alias: "acme",
-      sourcePath: source,
-      unitPath: unit,
-      unitBranch: `aw/${folder}`,
-      base: "main",
-    });
-    writeFileSync(join(unit, "trabajo.txt"), "de la sesión\n");
-    git(unit, "add", "-A");
-    const receipt = await ctx.git.commit(unit, "trabajo de la sesión");
-    await recordCommit({ fs, git: ctx.git, paths }, folder, "acme", receipt);
-
-    const prepared = await run("discard", "prepare", "plan:024");
-    expect(prepared.result.ok).toBe(true);
-    // La propuesta DICE que autorizarla autoriza commits — eso es la pregunta.
-    expect(prepared.human).toContain("Commits que se revierten");
-    expect(prepared.human).toContain("AUTORIZA commits");
-
-    // El usuario no la autoriza: no se aplica nada. `apply` sin --approval es un
-    // rechazo, no un default.
-    const refused = await run("discard", "apply", "plan:024");
-    expect(refused.result.ok).toBe(false);
-    expect(refused.result.error?.code).toBe("APPROVAL_REQUIRED");
-    expect(existsSync(join(hub, planPath))).toBe(true);
-    expect(existsSync(join(hub, ".workflow", "sessions", folder))).toBe(true);
-    expect(git(source, "rev-parse", `refs/heads/aw/${folder}`)).toBe(receipt.after);
-    expect(readFileSync(paths.cwdHistoryFile(), "utf8")).toBe(historyBefore);
-  });
-
   it("3 · resetea una ejecución parcial de plan y lo deja disponible para refinarse", async () => {
     const folder = await session("algo-plan-exec", [planPath]);
     writeFileSync(join(hub, planPath), PLAN.replace("- [ ] T1.1", "- [x] T1.1"));
@@ -196,22 +123,6 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     expect(board.terminal_events).toEqual([]);
   });
 
-  it("4 · un efecto compartido bloquea e informa, sin tocar nada", async () => {
-    writeFileSync(join(hub, "docs", "specs", "026-spec-otro.md"), SPEC);
-    // Una sesión que declara dos padres: uno dentro del alcance y otro fuera.
-    await session("compartida-plan-exec", [planPath, "docs/specs/026-spec-otro.md"]);
-    const before = readFileSync(join(hub, planPath), "utf-8");
-    const historyBefore = readFileSync(paths.cwdHistoryFile(), "utf8");
-
-    const prepared = await run("discard", "prepare", "spec:025");
-    expect(prepared.result.ok).toBe(false);
-    expect(prepared.result.error?.code).toBe("SHARED_CONSUMER");
-    expect(prepared.result.error?.message).toContain("fuera del alcance");
-    // Cero efectos: ni el documento, ni las sesiones, ni HISTORY.
-    expect(readFileSync(join(hub, planPath), "utf-8")).toBe(before);
-    expect(readFileSync(paths.cwdHistoryFile(), "utf8")).toBe(historyBefore);
-  });
-
   it("5 · resetea un quick sin artefacto base retirándolo entero", async () => {
     const quick = await session("suelto-quick");
     const prepared = await run("reset", "prepare", `session:${quick}`);
@@ -230,99 +141,5 @@ describe("superficies de retiro — los cinco escenarios de la spec por el coman
     const board = await runStatusCommand(fs, ctx.env, paths, { git: ctx.git });
     expect(board.sessions.active).toEqual([]);
     expect(board.terminal_events).toEqual([]);
-  });
-
-  it("las guardas del comando: verbo, objetivo y aprobación son obligatorios", async () => {
-    for (const argv of [[], ["prepare"], ["borrar", "plan:024"], ["apply", "plan:024"]]) {
-      const outcome = await run("discard", ...argv);
-      expect(outcome.result.ok, argv.join(" ")).toBe(false);
-      expect(outcome.result.exitCode, argv.join(" ")).toBe(1);
-    }
-    // Un objetivo inexistente es un rechazo accionable, no un error opaco.
-    const missing = await run("discard", "prepare", "plan:999");
-    expect(missing.result.ok).toBe(false);
-    expect(missing.result.error?.code).toBe("TARGET_NOT_FOUND");
-  });
-
-  it("host de agente y terminal ven el MISMO alcance y el mismo digest", async () => {
-    await session("algo-plan-exec", [planPath]);
-    const cmd = command("discard");
-    const result = await cmd.execute(parseArgv(["discard", "prepare", "plan:024"]), ctx);
-    const data = result.data as {
-      digest: string;
-      preview: { disappears: Array<{ node: string }> };
-    };
-
-    // El host de agente consume el CommandResult tal cual; el terminal, su
-    // proyección. Las dos salen del mismo objeto sellado.
-    const plain = cmd.renderHuman?.(result, { detail: false }) ?? "";
-    const detailed = cmd.renderHuman?.(result, { detail: true }) ?? "";
-    for (const view of [plain, detailed]) {
-      expect(view).toContain(data.digest);
-      for (const entry of data.preview.disappears) expect(view).toContain(entry.node);
-    }
-    // Y una salida vacía nunca se confunde con un éxito: un rechazo no proyecta.
-    const rejected = await cmd.execute(parseArgv(["discard", "prepare", "plan:999"]), ctx);
-    expect(cmd.renderHuman?.(rejected, { detail: false })).toBe("");
-  });
-
-  /**
-   * A reserved correlative is not a node, and for a long time that made the
-   * retirement answer "no such node" about a file the person was looking at.
-   * Two surfaces then disagreed about whether the path existed: `aw status`
-   * listed it as a reservation with its sanctioned action, and `aw discard`
-   * denied it and sent the person back to `aw status`.
-   */
-  async function claim(owner: string, name: string): Promise<string> {
-    const result = await runNextNumber(fs, ctx.env, paths, {
-      directory: "docs/specs",
-      claim: { name, owner },
-    });
-    return `docs/specs/${result.next}-${name}`;
-  }
-
-  it("6 · el retiro sobre la ruta de una reserva nombra la recuperación, no niega el nodo", async () => {
-    const owner = await session("algo-quick");
-    const held = await claim(owner, "spec-nueva.md");
-
-    const rejected = await run("discard", "prepare", held);
-
-    expect(rejected.result.ok).toBe(false);
-    // Deja de declararla inexistente: dice lo que ES y de quién.
-    expect(rejected.result.error?.message).not.toContain("no existe ningún nodo");
-    expect(rejected.result.error?.message).toContain(held);
-    expect(rejected.result.error?.message).toContain(owner);
-    // Y entrega la acción sancionada para ESE slot. El tablero ya no lee claims
-    // (spec 066): la acción la da el propio rechazo.
-    expect(rejected.result.error?.details?.action).toContain(`aw session-close --code ${owner}`);
-    // Nada se tocó: sigue siendo una reserva de su dueño.
-    expect(existsSync(join(hub, held))).toBe(true);
-  });
-
-  it("6c · un correlativo reservado en OTRA categoría no contesta por el número pedido", async () => {
-    const owner = await session("algo-quick");
-    const held = await claim(owner, "spec-nueva.md");
-    const correlative = held.slice("docs/specs/".length, "docs/specs/".length + 3);
-
-    // specs y plans son espacios de numeración INDEPENDIENTES: contestar
-    // `plan:NNN` con la reserva de una spec devolvería un comando destructivo
-    // apuntado a algo que la persona nunca nombró.
-    const rejected = await run("discard", "prepare", `plan:${correlative}`);
-
-    expect(rejected.result.ok).toBe(false);
-    expect(rejected.result.error?.message).not.toContain(held);
-    expect(rejected.result.error?.message).toContain("no existe ningún nodo");
-  });
-
-  it("6b · también reconoce el correlativo reservado cuando se lo nombra por número", async () => {
-    const owner = await session("algo-quick");
-    const held = await claim(owner, "spec-nueva.md");
-    const correlative = held.slice("docs/specs/".length, "docs/specs/".length + 3);
-
-    const rejected = await run("discard", "prepare", `spec:${correlative}`);
-
-    expect(rejected.result.ok).toBe(false);
-    expect(rejected.result.error?.message).toContain(held);
-    expect(rejected.result.error?.details?.candidates).toEqual([held]);
   });
 });

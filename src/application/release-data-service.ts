@@ -33,6 +33,8 @@ export interface ReleaseDataInput {
   includeClosed?: boolean;
   verbose?: boolean;
   sessions?: string[];
+  /** Read no session folder at all: the documents model (spec 066). */
+  skipSessions?: boolean;
 }
 
 export interface ReleaseDataOutput {
@@ -71,7 +73,8 @@ export async function runReleaseData(
   }
 
   const sinceOpts = releaseSessionOptions(input);
-  const sessions = await listSessionsForRelease(fs, cwd, paths, sinceOpts);
+  const sessions =
+    input.skipSessions === true ? [] : await listSessionsForRelease(fs, cwd, paths, sinceOpts);
   const { enriched, legacy } = enrichSessionsWithLegacyMeta(sessions, cwd, runtime);
 
   const payload: ReleaseDataOutput = {

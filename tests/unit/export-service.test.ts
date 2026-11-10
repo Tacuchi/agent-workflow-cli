@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { readClaimEvents } from "../../src/application/claims-ledger.js";
 import {
   type ExportCategory,
   type ExportPrepared,
@@ -33,6 +32,8 @@ function hub(): MemFs {
     "/cwd/.workflow/sessions/040-algo-plan-exec/SCRIPTS.sql",
     "CREATE TABLE algo (id integer);\n",
   );
+  // export-scripts consolidates loose SQL of docs/scripts/ (spec 066, ID06).
+  fs.file("/cwd/docs/scripts/040-algo.sql", "CREATE TABLE algo (id integer);\n");
   return fs;
 }
 
@@ -739,16 +740,13 @@ describe("el alcance viaja con lo preparado — los tres disparadores del vencim
     }
   });
 
-  it("el contenido SQL vence el sello, una sesión sin SQL no", async () => {
+  it("el contenido SQL de docs/scripts/ vence el sello; una sesión nueva no", async () => {
     const fs = hub();
     const prepared = await prepare(fs, "scripts");
     closedSession(fs, "041-otra-plan-exec");
     const second = await prepare(fs, "scripts");
     expect(second.request.input_digest).toBe(prepared.request.input_digest);
-    fs.file(
-      "/cwd/.workflow/sessions/040-algo-plan-exec/SCRIPTS.sql",
-      "CREATE TABLE algo (id bigint);\n",
-    );
+    fs.file("/cwd/docs/scripts/040-algo.sql", "CREATE TABLE algo (id bigint);\n");
     const changed = await prepare(fs, "scripts");
     expect(changed.request.input_digest).not.toBe(prepared.request.input_digest);
   });
@@ -990,18 +988,25 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
     ];
   }
 
-  it("sin los argumentos nuevos el material es el de siempre: sesiones, y los bundles afuera", async () => {
+  it("sin --from consolida docs/scripts/: SQL suelto y bundles, ninguna sesión (spec 066, ID06)", async () => {
     const inventory = inventoryOf(await prepare(withMaterial(), "scripts", { date: DATE }));
 
-    expect(inventory.origins).toEqual(["sessions"]);
-    expect(inventory.sessions.map((s) => s.folder)).toEqual([
-      "040-algo-plan-exec",
-      "041-otra-plan-exec",
+    expect(inventory.origins).toEqual(["standalone-sql", "bundles"]);
+    expect(inventory.sessions).toEqual([]);
+    expect(inventory.standalone_sql.map((f) => f.name)).toEqual([
+      "040-algo.sql",
+      "suelto-limpieza.sql",
     ]);
-    // The characterization that matters: a workspace full of published bundles
-    // and loose SQL produces exactly the corpus it produced before any of this.
-    expect(inventory.bundles).toEqual([]);
-    expect(inventory.standalone_sql).toEqual([]);
+    expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002", "003"]);
+  });
+
+  it("la base 'sessions' ya no existe", async () => {
+    const result = await prepareExport(withMaterial(), env, paths(), "scripts", {
+      from: "sessions" as never,
+      date: DATE,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.message).toContain("no es una base: hub, bundles");
   });
 
   it("la base de bundles publicados parte de ellos y deja las sesiones afuera", async () => {
@@ -1019,9 +1024,12 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
       await prepare(withMaterial(), "scripts", { from: "hub", date: DATE }),
     );
 
-    expect(inventory.origins).toEqual(["sessions", "standalone-sql", "bundles"]);
-    expect(inventory.sessions).toHaveLength(2);
-    expect(inventory.standalone_sql.map((f) => f.name)).toEqual(["suelto-limpieza.sql"]);
+    expect(inventory.origins).toEqual(["standalone-sql", "bundles"]);
+    expect(inventory.sessions).toEqual([]);
+    expect(inventory.standalone_sql.map((f) => f.name)).toEqual([
+      "040-algo.sql",
+      "suelto-limpieza.sql",
+    ]);
     expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002", "003"]);
   });
 
@@ -1029,14 +1037,13 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
     const inventory = inventoryOf(
       await prepare(withMaterial(), "scripts", {
         from: "hub",
-        exclude: [BUNDLE_B, "041-otra-plan-exec"],
+        exclude: [BUNDLE_B, "suelto-limpieza.sql"],
         date: DATE,
       }),
     );
 
     expect(inventory.bundles.map((b) => b.nnn)).toEqual(["002"]);
-    expect(inventory.sessions.map((s) => s.folder)).toEqual(["040-algo-plan-exec"]);
-    expect(inventory.standalone_sql).toHaveLength(1);
+    expect(inventory.standalone_sql.map((f) => f.name)).toEqual(["040-algo.sql"]);
   });
 
   it("una exclusión que no restó nada se declara, en vez de pasar por cumplida", async () => {
@@ -1076,7 +1083,7 @@ describe("el origen del bundle se compone: base, exclusiones y sello", () => {
       }),
     );
 
-    expect(inventory.origins).toEqual(["sessions", "standalone-sql", "bundles"]);
+    expect(inventory.origins).toEqual(["standalone-sql", "bundles"]);
     // Named with its origin and its reason: an exclusion somebody asked for and
     // one the release book imposed look identical in the resulting bundle, and
     // only the first is something the person can take back.
@@ -1302,16 +1309,6 @@ describe("el ambiente deja fuera lo que ya consta aplicado", () => {
     expect(result.failure.message).toContain(CERT);
     expect(result.failure.action).toContain("--environment");
   });
-
-  it("sobre una base de sesiones el filtro no tiene qué mirar, y lo dice", async () => {
-    const fs = book(withBundles(), CERT, [BUNDLE_A]);
-    const inventory = inventoryOf(await prepare(fs, "scripts", { environment: CERT, date: DATE }));
-
-    // The SQL still living in a session was never delivered, so it cannot have
-    // run: a `scanned` of zero says the filter had nothing to look at.
-    expect(inventory.environment).toEqual({ name: CERT, axis: "applied", scanned: 0, excluded: 0 });
-    expect(inventory.excluded).toEqual([]);
-  });
 });
 
 describe("bundle.json · manifiesto derivado y aprobado por el CLI", () => {
@@ -1363,8 +1360,11 @@ describe("bundle.json · manifiesto derivado y aprobado por el CLI", () => {
     const manifest = JSON.parse(await fs.readText(`/cwd/${prepared.unit}/bundle.json`));
     expect(manifest.supersedes).toEqual([named]);
     expect(manifest.requires).toEqual([]);
-    expect(manifest.origin.sessions[0]?.files[0]?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(manifest.origin.standalone_sql).toMatchObject([{ path: "docs/scripts/suelto.sql" }]);
+    expect(manifest.origin.sessions).toEqual([]);
+    expect(manifest.origin.standalone_sql).toMatchObject([
+      { path: "docs/scripts/040-algo.sql" },
+      { path: "docs/scripts/suelto.sql" },
+    ]);
     expect(manifest.origin.bundles[0]?.files[0]?.digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
@@ -1525,24 +1525,5 @@ describe("export-scripts · reserva de carpeta desde prepare", () => {
     if (!retry.ok) throw new Error(retry.failure.message);
     expect(await fs.exists(`/cwd/${prepared.unit}/.aw-reservation`)).toBe(false);
     expect(retry.value.written).toContain(`${prepared.unit}/bundle.json`);
-  });
-
-  it("un prepare nuevo de la misma sesión libera su reserva anterior sin publicar", async () => {
-    const fs = hub();
-    const root = "/cwd/.workflow/sessions/050-nuevo-plan-exec";
-    fs.file(`${root}/SESSION.md`, "# SESSION\n\n## Objective\nMigrar\n");
-    fs.file(`${root}/SCRIPTS.sql`, sql);
-    const first = await prepare(fs, "scripts", { sessions: ["050"], code: "050", date: DATE });
-    fs.file(`${root}/SCRIPTS.sql`, "CREATE TABLE t (id bigint);\n");
-    const second = await prepare(fs, "scripts", { sessions: ["050"], code: "050", date: DATE });
-    expect(await fs.exists(`/cwd/${second.unit}/.aw-reservation`)).toBe(true);
-    expect(
-      (await fs.list(`/cwd/${first.unit}`)).every((entry) => entry.name === ".aw-reservation"),
-    ).toBe(true);
-    expect((await readClaimEvents(fs, paths())).events.map((event) => event.event)).toEqual([
-      "claimed",
-      "released",
-      "claimed",
-    ]);
   });
 });

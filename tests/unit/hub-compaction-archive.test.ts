@@ -6,7 +6,6 @@ import { inspectCompaction } from "../../src/application/hub-compaction/inspect.
 import { applyRestore, prepareRestore } from "../../src/application/hub-compaction/restore.js";
 import {
   ORIGINAL,
-  SESSION,
   compactionFixture,
   prepareFixture,
   snapshot,
@@ -22,27 +21,24 @@ describe("recoverable hub archives", () => {
     await f.cleanup();
   });
 
-  it("round-trips binary and text bytes, retaining empty or unprofitable files", async () => {
-    const binary = `${SESSION}/evidence/binary.dat`;
-    const empty = `${SESSION}/evidence/empty.dat`;
+  it("round-trips the bytes of every archived document of docs/", async () => {
+    const binary = "docs/plans/003-plan-otro.md";
     await f.write(
       binary,
-      Buffer.concat(Array.from({ length: 2000 }, () => Buffer.from([0, 255, 1, 128]))),
+      `# Plan 003 — otro\n> Standalone: fixture\n> Estado: abandoned\n\n## Tasks\n- [ ] T1\n${"ñ·€ ".repeat(3000)}\n`,
     );
-    await f.write(empty, new Uint8Array());
     const originals = await snapshot(f.root);
-    const p = await prepareFixture(f, [ORIGINAL, binary, empty]);
+    const p = await prepareFixture(f, [ORIGINAL, binary]);
     const applied = await applyCompaction(f.deps, p.request, p.local.digest);
     expect(applied.status).toBe("complete");
     expect(await f.deps.fs.exists(join(f.root, ORIGINAL))).toBe(false);
-    expect(await f.deps.fs.exists(join(f.root, empty))).toBe(true);
     const inspected = await inspectCompaction(f.deps, p.id, binary);
     expect(inspected.originals[0]?.integrity).toBe("verified");
     expect(inspected.originals[0]).toHaveProperty("content_base64", originals[binary]);
     const restore = await prepareRestore(f.deps, p.id);
     await applyRestore(f.deps, p.id, restore.digest);
     const after = await snapshot(f.root);
-    for (const path of [ORIGINAL, binary, empty]) expect(after[path]).toBe(originals[path]);
+    for (const path of [ORIGINAL, binary]) expect(after[path]).toBe(originals[path]);
     expect((await applyRestore(f.deps, p.id, restore.digest)).already_applied).toBe(true);
     expect((await applyCompaction(f.deps, p.request, p.local.digest)).already_applied).toBe(true);
     expect(applied.storage.catalog_bytes).toBeGreaterThan(0);
@@ -99,7 +95,7 @@ describe("recoverable hub archives", () => {
         await write(path, content);
       });
       vi.spyOn(f.deps.fs, "rename").mockImplementation(async (from, to) => {
-        if (stage === "before-retirement" && !injected && from.endsWith("trace.log")) {
+        if (stage === "before-retirement" && !injected && from.endsWith("001-plan-history.md")) {
           injected = true;
           throw new Error("interrupted before retirement");
         }

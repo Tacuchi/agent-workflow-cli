@@ -235,5 +235,4 @@ function render(
   return lines.join("\n");
 }
 
-export const discardCommand = retirementCommand("discard");
 export const resetCommand = retirementCommand("reset");

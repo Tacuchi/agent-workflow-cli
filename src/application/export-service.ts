@@ -178,9 +178,10 @@ export interface ExportScope {
  * before this existed. `bundles` re-consolidates what `docs/scripts` already
  * published, and `hub` sweeps everything the hub holds.
  */
-export type ExportBase = "sessions" | "bundles" | "hub";
+export type ExportBase = "bundles" | "hub";
 
-const EXPORT_BASES: readonly ExportBase[] = ["sessions", "bundles", "hub"];
+/** Spec 066, ID06: SQL consolidates from `docs/scripts/` and published bundles only. */
+const EXPORT_BASES: readonly ExportBase[] = ["hub", "bundles"];
 
 /** Where one piece of the material actually came from — the base resolves into these. */
 export type MaterialOrigin = "sessions" | "standalone-sql" | "bundles";
@@ -722,7 +723,7 @@ function checkComposableSelection(
       code: "EXPORT_SCOPE_INVALID",
       message: `--from '${selection.from}' no es una base: ${EXPORT_BASES.join(", ")}`,
       action:
-        "repetí la invocación con una de las tres bases, o sin --from para partir de las sesiones",
+        "repetí la invocación con una de las dos bases, o sin --from para partir de docs/scripts/",
     };
   }
   return null;
@@ -744,7 +745,7 @@ async function resolveMaterial(
 ): Promise<SemanticParse<ComposedMaterial>> {
   const invalid = checkComposableSelection(category, selection);
   if (invalid !== null) return { ok: false, failure: invalid };
-  const material = await composeMaterial(fs, env, paths, selection);
+  const material = await composeMaterial(fs, env, paths, selection, category);
   if ("error" in material) {
     return {
       ok: false,
@@ -797,15 +798,18 @@ async function composeMaterial(
   env: EnvPort,
   paths: PathsService,
   selection: ExportSelection,
+  category: ExportCategory,
 ): Promise<ComposedMaterial | { error: string }> {
-  const base = selection.from ?? "sessions";
+  // export-scripts: `hub` is the default — loose SQL of `docs/scripts/` plus the
+  // bundles already published — and no session is read (spec 066, ID06). The
+  // other categories only ever copied a session corpus and leave in 31.0.0.
+  const scripts = category === "scripts";
+  const base = selection.from ?? "hub";
   const input: ReleaseDataInput = {
-    includeClosed: true,
-    // A base of `sessions` is the behavior that always was: graduated bundles are
-    // previous exports and re-exporting them would duplicate what already lives
-    // in docs/. The other bases are asking for exactly that material.
-    includeGraduated: base !== "sessions",
-    includeStandaloneSql: base === "hub",
+    includeClosed: !scripts,
+    skipSessions: scripts,
+    includeGraduated: scripts,
+    includeStandaloneSql: scripts && base === "hub",
     ...(selection.sessions !== undefined ? { sessions: selection.sessions } : {}),
     ...(selection.since !== undefined ? { since: selection.since } : {}),
     ...(selection.source !== undefined ? { sourceAlias: selection.source } : {}),
@@ -813,14 +817,12 @@ async function composeMaterial(
   const data = await runReleaseData(fs, env, paths, input);
   if ("error" in data) return { error: data.error };
 
-  const sessions = base === "bundles" ? [] : (data.sessions as MaterialSession[]);
-  const standalone = base === "hub" ? (data.standalone_sql ?? []) : [];
-  const bundles = base === "sessions" ? [] : (data.graduated_bundles ?? []);
-  const origins: MaterialOrigin[] = [
-    ...(base === "bundles" ? [] : (["sessions"] as const)),
-    ...(base === "hub" ? (["standalone-sql"] as const) : []),
-    ...(base === "sessions" ? [] : (["bundles"] as const)),
-  ];
+  const sessions: MaterialSession[] = scripts ? [] : (data.sessions as MaterialSession[]);
+  const standalone = scripts && base === "hub" ? (data.standalone_sql ?? []) : [];
+  const bundles = scripts ? (data.graduated_bundles ?? []) : [];
+  const origins: MaterialOrigin[] = scripts
+    ? [...(base === "hub" ? (["standalone-sql"] as const) : []), "bundles"]
+    : ["sessions"];
 
   const named = new Set(selection.exclude ?? []);
   const manual: ExcludedPiece[] = [
