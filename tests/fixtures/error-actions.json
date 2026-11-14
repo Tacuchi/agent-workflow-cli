@@ -135,13 +135,13 @@
     },
     {
       "file": "src/application/workline-index-service.ts",
-      "text": "aw release-pass applied --version ${pass.version} --environment cert --detail <hecho>",
+      "text": "aw release-pass applied --version ${version} --environment cert --detail <hecho>",
       "class": "not-determinable",
       "reason": "el hecho observado y la fuente los declara la persona; la versión va interpolada"
     },
     {
       "file": "src/application/workline-index-service.ts",
-      "text": "aw release-pass arrived --version ${pass.version} --source <alias>",
+      "text": "aw release-pass arrived --version ${version} --source <alias>",
       "class": "not-determinable",
       "reason": "el hecho observado y la fuente los declara la persona; la versión va interpolada"
     },

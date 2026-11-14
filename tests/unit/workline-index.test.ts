@@ -302,6 +302,65 @@ describe("buildWorklineIndex — pipeline order", () => {
     expect(await row()).toBeUndefined();
   });
 
+  it("sugiere la versión que trae la prosa del pase, o la prosa entera citada como una palabra de shell", async () => {
+    const fs = hub();
+    fs.file(
+      "/cwd/docs/plans/076-plan-pase.md",
+      "# Plan\n> Estado: done\n## Tasks\n- [x] T1\n## Handoff operativo\n- Pase a prod: npm 1.2.0 de cli, tras `aw doctor`.\n",
+    );
+    fs.file(
+      "/cwd/docs/plans/077-plan-pase.md",
+      "# Plan\n> Estado: done\n## Tasks\n- [x] T1\n## Handoff operativo\n- Pase a prod: push de `main` y el plan 'b'.\n",
+    );
+    const rows = (await index(fs)).pipeline;
+    expect(rows.find((item) => item.number === "076")?.command).toBe(
+      "aw release-pass declare --version 1.2.0 --sources <alias> --plans 076",
+    );
+    expect(rows.find((item) => item.number === "077")?.command).toBe(
+      "aw release-pass declare --version 'push de `main` y el plan '\\''b'\\''.' --sources <alias> --plans 077",
+    );
+  });
+
+  it("salda un pase escrito en prosa con el pase del libro que nombra su versión y vincula el plan", async () => {
+    const fs = hub();
+    fs.file(
+      "/cwd/docs/plans/078-plan-pase.md",
+      "# Plan\n> Estado: done\n## Tasks\n- [x] T1\n## Handoff operativo\n- Pase a prod: npm 30.0.0 de cli con este plan cerrado; después de la 29.0.0.\n",
+    );
+    const declared = (version: string, key: string) => ({
+      version: 1,
+      at: "2026-10-02",
+      event: "declared",
+      pass: { version, sources: ["cli"], plans: [{ kind: "plan", key }] },
+    });
+    const arrived = (version: string) => ({
+      version: 1,
+      at: "2026-10-02",
+      event: "arrived",
+      pass_version: version,
+      arrival: { source: "cli", kind: "published-version", detail: version, at: "2026-10-02" },
+    });
+    const book = "/cwd/.workflow/release-passes.jsonl";
+    const row = async () => (await index(fs)).pipeline.find((item) => item.number === "078");
+    // Passes that do not link this plan never settle it, whatever their name.
+    fs.file(
+      book,
+      [declared("29.0.0", "079"), declared("30.0.0", "079")]
+        .map((r) => JSON.stringify(r))
+        .join("\n"),
+    );
+    expect((await row())?.command).toContain("declare --version 30.0.0");
+    fs.file(book, [declared("30.0.0", "078")].map((r) => JSON.stringify(r)).join("\n"));
+    expect((await row())?.command).toContain("arrived --version 30.0.0 --source <alias>");
+    fs.file(
+      book,
+      [declared("29.0.0", "078"), declared("30.0.0", "078"), arrived("30.0.0")]
+        .map((r) => JSON.stringify(r))
+        .join("\n"),
+    );
+    expect(await row()).toBeUndefined();
+  });
+
   it("un pase a PROD sólo se salda al llegar el pase vinculado a producción", async () => {
     const fs = hub();
     fs.file(

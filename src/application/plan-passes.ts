@@ -7,6 +7,8 @@ export interface DeclaredPlanPass {
   environment: "cert" | "prod";
   version: string;
   state: "done" | "pending" | "unregistered";
+  /** The book's name of the linked pass, only when it differs from the plan's prose. */
+  pass?: string;
 }
 
 /** Only real list items in a handoff section declare passes; examples in fences do not. */
@@ -33,6 +35,24 @@ export function planPassDeclarations(
   return declarations;
 }
 
+/** A semver-shaped word, the name passes are usually declared under (`30.0.0`, `v1.2.0-rc.1`). */
+const VERSION_WORD = /(?<![\w./-])v?\d+\.\d+\.\d+(?:-\w+(?:\.\w+)*)?(?![\w/-]|\.\w)/;
+
+/** The name to suggest for an unregistered pass: its version when the text has one, else the whole text. */
+export function suggestedPassName(declaration: string): string {
+  return VERSION_WORD.exec(declaration)?.[0] ?? declaration;
+}
+
+/**
+ * A plan's «Pase a» line is free prose; the pass is named in the book, usually by
+ * its version. The line names a pass when it is that name or carries it as a whole word.
+ */
+function declarationNamesPass(declaration: string, name: string): boolean {
+  if (declaration === name) return true;
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\w./-])${escaped}(?![\\w/-]|\\.\\w)`).test(declaration);
+}
+
 /** A declaration belongs to this plan only when the named pass carries it. */
 export function standingOfPlanPasses(
   declarations: readonly Pick<DeclaredPlanPass, "environment" | "version">[],
@@ -40,11 +60,16 @@ export function standingOfPlanPasses(
   plan: WorklineNodeId,
 ): DeclaredPlanPass[] {
   return declarations.map((declaration) => {
-    const linked = passes.find(
+    const named = passes.filter(
       (pass) =>
-        pass.pass.version === declaration.version &&
+        declarationNamesPass(declaration.version, pass.pass.version) &&
         pass.pass.plans.some((node) => node.kind === "plan" && node.key === plan.key),
     );
+    // The whole prose, then the version it suggests, then any other name it carries.
+    const linked =
+      named.find((pass) => pass.pass.version === declaration.version) ??
+      named.find((pass) => pass.pass.version === suggestedPassName(declaration.version)) ??
+      named[0];
     if (linked === undefined) return { ...declaration, state: "unregistered" };
     const done =
       declaration.environment === "prod"
@@ -52,6 +77,9 @@ export function standingOfPlanPasses(
         : linked.applications.some(
             (application) => application.environment.toLowerCase() === "cert",
           );
-    return { ...declaration, state: done ? "done" : "pending" };
+    const state = done ? "done" : "pending";
+    return linked.pass.version === declaration.version
+      ? { ...declaration, state }
+      : { ...declaration, state, pass: linked.pass.version };
   });
 }

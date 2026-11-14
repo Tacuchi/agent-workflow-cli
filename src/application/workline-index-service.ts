@@ -61,6 +61,7 @@ import {
   type DeclaredPlanPass,
   planPassDeclarations,
   standingOfPlanPasses,
+  suggestedPassName,
 } from "./plan-passes.js";
 import {
   type DerivedPass,
@@ -958,13 +959,23 @@ function pendingPasses(plan: IndexedPlan): DeclaredPlanPass[] {
 }
 
 function passCommand(plan: IndexedPlan, pass: DeclaredPlanPass): string {
+  // A linked pass goes by its book name; an unregistered one by the version its
+  // «Pase a» prose carries, or by that whole prose quoted as one shell word.
+  const version = shellWord(
+    pass.state === "unregistered" ? suggestedPassName(pass.version) : (pass.pass ?? pass.version),
+  );
   if (pass.state === "unregistered") {
     const aliases = plan.pass_sources?.length ? plan.pass_sources.join(",") : "<alias>";
-    return `aw release-pass declare --version ${pass.version} --sources ${aliases} --plans ${plan.number}`;
+    return `aw release-pass declare --version ${version} --sources ${aliases} --plans ${plan.number}`;
   }
   return pass.environment === "cert"
-    ? `aw release-pass applied --version ${pass.version} --environment cert --detail <hecho>`
-    : `aw release-pass arrived --version ${pass.version} --source <alias> --kind <published-version|deployment|production-branch> --detail <hecho>`;
+    ? `aw release-pass applied --version ${version} --environment cert --detail <hecho>`
+    : `aw release-pass arrived --version ${version} --source <alias> --kind <published-version|deployment|production-branch> --detail <hecho>`;
+}
+
+/** One POSIX shell word: bare when it is plain, single-quoted otherwise. */
+function shellWord(value: string): string {
+  return /^[A-Za-z0-9._/:@+-]+$/.test(value) ? value : `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
 // ── per-item detail: the single derivation both surfaces read ─────────────────
