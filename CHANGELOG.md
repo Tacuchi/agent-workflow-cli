@@ -12,6 +12,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [31.1.1] — 2026-11-14
+
+**El tablero salda el pase de un plan escrito en prosa con el pase del libro que lo vincula.**
+
+### Contrato
+
+Ninguno.
+
+### Fixed
+
+- `aw status` y `aw resume` saldan la línea `- Pase a prod:` (o `cert`) de un plan cuando es prosa sin versión, como «publicar la versión menor en npm…», con el pase más reciente del libro que vincula ese plan (`aw release-pass declare --plans`). Antes la mostraban «sin registrar» aunque el pase vinculado hubiera llegado. Una línea que nombra una versión, o un pase con una sola palabra como `corte-1`, sigue exigiendo ese nombre.
+
 ## [31.1.0] — 2026-11-14
 
 **Una fuente se commitea desde un checkout alternativo, un hub anidado commitea sus entregables con rutas relativas al hub, y las unidades de PLAN y QUICK parten de la base elegida sin seguimiento (spec 067).**
