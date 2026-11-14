@@ -361,6 +361,49 @@ describe("buildWorklineIndex — pipeline order", () => {
     expect(await row()).toBeUndefined();
   });
 
+  it("salda un pase en prosa sin versión con el pase del libro que vincula el plan", async () => {
+    const fs = hub();
+    fs.file(
+      "/cwd/docs/plans/080-plan-pase.md",
+      "# Plan\n> Estado: done\n## Tasks\n- [x] T1\n## Handoff operativo\n- Pase a prod: publicar la versión menor en npm con la receta habitual.\n",
+    );
+    fs.file(
+      "/cwd/docs/plans/081-plan-pase.md",
+      "# Plan\n> Estado: done\n## Tasks\n- [x] T1\n## Handoff operativo\n- Pase a prod: corte-1\n",
+    );
+    const declared = (version: string, key: string) => ({
+      version: 1,
+      at: "2026-11-14",
+      event: "declared",
+      pass: { version, sources: ["cli"], plans: [{ kind: "plan", key }] },
+    });
+    const arrived = (version: string) => ({
+      version: 1,
+      at: "2026-11-14",
+      event: "arrived",
+      pass_version: version,
+      arrival: { source: "cli", kind: "published-version", detail: version, at: "2026-11-14" },
+    });
+    const book = "/cwd/.workflow/release-passes.jsonl";
+    const row = async (number: string) =>
+      (await index(fs)).pipeline.find((item) => item.number === number);
+    const write = (...records: unknown[]) =>
+      fs.file(book, records.map((r) => JSON.stringify(r)).join("\n"));
+
+    // Un pase que no vincula el plan no lo salda.
+    write(declared("31.1.0", "079"), arrived("31.1.0"));
+    expect((await row("080"))?.detail.next).toContain("sin registrar");
+    // Vinculado con --plans pero sin llegar: pendiente, por su nombre del libro.
+    write(declared("31.1.0", "080"));
+    expect((await row("080"))?.command).toContain("arrived --version 31.1.0 --source <alias>");
+    // Llegado: el plan sale del tablero.
+    write(declared("31.1.0", "080"), arrived("31.1.0"));
+    expect(await row("080")).toBeUndefined();
+    // Una línea que nombra su pase con una sola palabra sigue exigiendo ese nombre.
+    write(declared("corte-9", "081"), arrived("corte-9"));
+    expect((await row("081"))?.detail.next).toContain("sin registrar");
+  });
+
   it("un pase a PROD sólo se salda al llegar el pase vinculado a producción", async () => {
     const fs = hub();
     fs.file(

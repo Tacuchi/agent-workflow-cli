@@ -53,6 +53,19 @@ function declarationNamesPass(declaration: string, name: string): boolean {
   return new RegExp(`(?<![\\w./-])${escaped}(?![\\w/-]|\\.\\w)`).test(declaration);
 }
 
+/**
+ * Prose written before the version existed («publicar la versión menor…») names
+ * no pass: it has no version word and is more than one word. A single word
+ * (`corte-1`) is a pass name and keeps requiring that name.
+ */
+function namesNoPass(declaration: string): boolean {
+  return !VERSION_WORD.test(declaration) && /\s/.test(declaration);
+}
+
+function linksPlan(pass: DerivedPass, plan: WorklineNodeId): boolean {
+  return pass.pass.plans.some((node) => node.kind === "plan" && node.key === plan.key);
+}
+
 /** A declaration belongs to this plan only when the named pass carries it. */
 export function standingOfPlanPasses(
   declarations: readonly Pick<DeclaredPlanPass, "environment" | "version">[],
@@ -62,14 +75,17 @@ export function standingOfPlanPasses(
   return declarations.map((declaration) => {
     const named = passes.filter(
       (pass) =>
-        declarationNamesPass(declaration.version, pass.pass.version) &&
-        pass.pass.plans.some((node) => node.kind === "plan" && node.key === plan.key),
+        declarationNamesPass(declaration.version, pass.pass.version) && linksPlan(pass, plan),
     );
-    // The whole prose, then the version it suggests, then any other name it carries.
+    // The whole prose, then the version it suggests, then any other name it carries;
+    // prose that names no pass at all goes by the book's latest pass linking the plan.
     const linked =
       named.find((pass) => pass.pass.version === declaration.version) ??
       named.find((pass) => pass.pass.version === suggestedPassName(declaration.version)) ??
-      named[0];
+      named[0] ??
+      (namesNoPass(declaration.version)
+        ? passes.filter((pass) => linksPlan(pass, plan)).at(-1)
+        : undefined);
     if (linked === undefined) return { ...declaration, state: "unregistered" };
     const done =
       declaration.environment === "prod"
