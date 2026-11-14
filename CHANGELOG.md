@@ -12,6 +12,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [31.0.2] — 2026-11-13
+
+**Publicar un documento dos veces ya no lo duplica, su título lleva el número asignado y el tablero reconoce los pases nombrados por versión.**
+
+### Contrato
+
+Ninguno.
+
+### Fixed
+
+- `aw next-number <dir> --publish <nombre>` es idempotente: repetir el mismo nombre con el mismo contenido devuelve el archivo ya publicado en vez de crear otro con el número siguiente. Con contenido distinto publica con un número nuevo, como antes. `published_path` es ahora la primera clave de la respuesta, también en la consulta y en `--dry-run`, así que un `| head` ya no la esconde.
+- El primer H1 con forma `# <Palabra> <NNN|PPP|número>` toma el número asignado al publicar, en `next-number --publish` y en `aw persist apply`: un `# Plan 008 — x` publicado como `006-plan-x.md` queda `# Plan 006 — x`. Las referencias del cuerpo y la línea `> Derived from docs/specs/NNN-…` conservan sus números. `persist validate` informa los bytes con el título ya normalizado, y la aprobación sigue sellando la propuesta original.
+- `aw status` y `aw resume` saldan el pase de un plan cuando el libro registra un pase vinculado a ese plan cuyo nombre aparece como palabra en la línea `- Pase a prod:` (por ejemplo `30.0.0` dentro de «npm 30.0.0 de …»). Antes exigían que el nombre fuera la frase entera y mostraban «sin registrar» pases ya llegados.
+- El comando sugerido para un pase propone la versión que trae su frase, o la frase entera entre comillas simples como una sola palabra de shell. Antes la pegaba sin comillas y el shell la partía en argumentos sueltos.
+
 ## [31.0.1] — 2026-11-13
 
 **Los comandos instalados de Workline vuelven a llamar bien a `aw flow`, y un plan con fines de línea CRLF pasa el gate.**
