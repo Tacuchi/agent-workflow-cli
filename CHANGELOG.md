@@ -12,6 +12,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [31.1.0] — 2026-11-14
+
+**Una fuente se commitea desde un checkout alternativo, un hub anidado commitea sus entregables con rutas relativas al hub, y las unidades de PLAN y QUICK parten de la base elegida sin seguimiento (spec 067).**
+
+### Contrato
+
+Ninguno.
+
+### Added
+
+- `aw flow propose-commit` y `aw flow commit` aceptan `--checkout <ruta>`: un worktree de la fuente donde se buscan y commitean las rutas, sólo para esa llamada y sin cambiar la ruta declarada. Vale si aparece en `git worktree list` de la fuente, comparado por ruta real; si no existe responde `CHECKOUT_MISSING` y si no es un worktree de la fuente `CHECKOUT_NOT_OF_SOURCE`, sin caer a la ruta declarada. Con `--source hub` se rechaza.
+- La propuesta suma `source`, `checkout`, `branch` y, por ruta, `git_path`. La aprobación sella también la fuente, el checkout y la rama: cambiar cualquiera de ellos la vuelve `COMMIT_PROPOSAL_STALE`.
+- `aw flow unit --quick <slug> --source <alias>` crea o reencuentra la unidad de un QUICK sin plan, en la rama `aw/<hub>/quick-<slug>`; el slug va en kebab-case y excluye `--plan`/`--batch`.
+- `aw flow unit --from <ref>` hace partir una unidad nueva de una rama local o de una referencia remota ya traída, en vez de la rama principal; una base que git no conoce responde `UNIT_BASE_MISSING` sin crear nada. La respuesta suma `base` (`null` cuando la unidad ya existía) y, al reencontrarla, informa la carpeta que git tiene para ella.
+
+### Changed
+
+- Toda rama de unidad se crea con `git worktree add --no-track`: tampoco desde una referencia remota, ni con `branch.autoSetupMerge`, adquiere upstream. Quien lo quiera lo configura con git.
+- La doctrina de plan-exec y QUICK (`CODE-POLICIES`, sus loops y comandos) commitea en la unidad o en el worktree con `--checkout`, y QUICK puede aislarse con `aw flow unit --quick`.
+
+### Fixed
+
+- En un hub anidado dentro de un repositorio mayor, `propose-commit --source hub` acepta las rutas `docs/...` relativas al hub. Antes la forma corta fallaba con `COMMIT_PATH_UNCHANGED` y la larga con `DELIVERABLE_OUTSIDE_DOCS`. La forma con el prefijo del repositorio mayor responde `HUB_PATH_PREFIXED` nombrando la forma esperada, y el digest lee los bytes del archivo real dentro del hub.
+
+### Migration
+
+- Para que los comandos instalados usen `--checkout` y `--quick`: después de `aw self update`, corré `aw self install-skill --target all --confirm-all --force` y `aw self doctor`. Lo nuevo llega a las sesiones nuevas del host.
+
 ## [31.0.2] — 2026-11-13
 
 **Publicar un documento dos veces ya no lo duplica, su título lleva el número asignado y el tablero reconoce los pases nombrados por versión.**
