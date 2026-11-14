@@ -3,6 +3,21 @@ import type { FileSystemPort } from "../../ports/file-system.js";
 
 const MAX_ATTEMPTS = 50;
 
+/** Stamp only the first H1; references and lineage retain their own numbers. */
+export function stampDocumentTitle(
+  content: string,
+  number: string,
+  prefixUnnumbered = false,
+): string {
+  return content.replace(/^#[ \t]+[^\r\n]*/m, (title) => {
+    const numbered = /^(#[ \t]+[\p{L}\p{M}]+[ \t]+)(?:NNN|PPP|\d+)(?=[ \t]*(?:[—–-][ \t]+.*)?$)/u;
+    if (numbered.test(title)) return title.replace(numbered, `$1${number}`);
+    return prefixUnnumbered
+      ? title.replace(/^#[ \t]+(?:\d{3,}[ \t]+[—–-][ \t]*)?/, `# ${number} — `)
+      : title;
+  });
+}
+
 /** The highest correlative of `NNN-<kind>-*.md` in a folder, `0` when there is none. */
 export async function highestCorrelative(
   fs: FileSystemPort,
@@ -75,7 +90,7 @@ export async function publishInFolder(
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1, next += 1) {
     const number = String(next).padStart(3, "0");
     const path = join(dir, `${number}-${name}`);
-    const titled = content.replace(/^(#\s[^\n]*?)\b(NNN|PPP)\b/m, `$1${number}`);
+    const titled = stampDocumentTitle(content, number);
     if ((await fs.publishTextExclusive(path, titled)).created) return { number, path };
   }
   throw new Error(`no se pudo publicar en ${dir}: correlativos ocupados`);

@@ -1,15 +1,19 @@
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
+import { publishInFolder } from "../../src/application/doc-flow/numbering.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { nextNumberCommand } from "../../src/cli/commands/dev-only.js";
+import { readRequiredStdin } from "../../src/cli/context-id.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+
+vi.mock("../../src/cli/context-id.js", () => ({ readRequiredStdin: vi.fn() }));
 
 /**
  * The single-pass creation that has no session to own a reservation.
@@ -44,6 +48,62 @@ describe("runNextNumber --publish", () => {
     fs = new NodeFileSystem();
   });
   afterEach(() => rmSync(hub, { recursive: true, force: true }));
+
+  async function publish(content: string, name = "plan-algo.md"): Promise<Record<string, unknown>> {
+    mkdirSync(join(hub, ".workflow"), { recursive: true });
+    writeFileSync(paths.cwdMarkerFile(), '{"workline":1}\n');
+    vi.mocked(readRequiredStdin).mockResolvedValue(content);
+    const result = await nextNumberCommand.execute(
+      parseArgv(["next-number", "docs/plans", "--publish", name]),
+      { fs, env, paths } as CliContext,
+    );
+    expect(result.ok).toBe(true);
+    return result.data as Record<string, unknown>;
+  }
+
+  it("el comando reutiliza la publicación idéntica y solo numera de nuevo si cambia", async () => {
+    const first = await publish("# Plan PPP — algo\n");
+    const second = await publish("# Plan PPP — algo\n");
+    expect(second.published_path).toBe(first.published_path);
+    expect(readdirSync(join(hub, "docs/plans"))).toEqual(["001-plan-algo.md"]);
+    const changed = await publish("# Plan PPP — algo\n\nOtro contenido.\n");
+    expect(changed.published_path).toBe("docs/plans/002-plan-algo.md");
+    expect(readdirSync(join(hub, "docs/plans"))).toHaveLength(2);
+  });
+
+  it("el comando devuelve published_path como primera clave y conserva una ruta relativa", async () => {
+    const result = await publish("# Plan PPP — algo\n");
+    expect(Object.keys(result)[0]).toBe("published_path");
+    expect(result.published_path).toBe("docs/plans/001-plan-algo.md");
+  });
+
+  it.each(["008", "10000", "NNN", "PPP"])(
+    "el comando ajusta el H1 %s sin alterar el linaje ni otras referencias",
+    async (number) => {
+      const tail = "\n\n> Derived from docs/specs/008-spec-algo.md\n\nSpec 008; 42 casos.\n";
+      const result = await publish(`# Plan ${number} — algo${tail}`);
+      expect(readFileSync(join(hub, String(result.published_path)), "utf8")).toBe(
+        `# Plan 001 — algo${tail}`,
+      );
+      const repeated = await publish(`# Plan ${number} — algo${tail}`);
+      expect(repeated.published_path).toBe(result.published_path);
+      expect(readdirSync(join(hub, "docs/plans"))).toHaveLength(1);
+    },
+  );
+
+  it("la publicación en carpeta ajusta solo el primer H1 numerado, incluso sin subtítulo", async () => {
+    const content = "# Informe 008\r\n\r\nReferencia 008.\r\n\r\n# Plan 009 — otro\r\n";
+    const result = await publishInFolder(fs, join(hub, "docs/research"), "research-x.md", content);
+    expect(readFileSync(result.path, "utf8")).toBe(
+      "# Informe 001\r\n\r\nReferencia 008.\r\n\r\n# Plan 009 — otro\r\n",
+    );
+  });
+
+  it("la publicación en carpeta conserva un H1 que solo menciona otro documento", async () => {
+    const content = "# Referencias a Spec 008\n\n# Plan 009\n";
+    const result = await publishInFolder(fs, join(hub, "docs/research"), "research-x.md", content);
+    expect(readFileSync(result.path, "utf8")).toBe(content);
+  });
 
   it("asigna el correlativo y escribe los bytes finales en un solo acto", async () => {
     const out = await runNextNumber(fs, env, paths, {

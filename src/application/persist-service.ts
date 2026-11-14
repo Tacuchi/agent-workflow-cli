@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { CORRELATIVE_SOURCE, compareCorrelatives } from "../domain/correlative.js";
 import { withSpecBaseline } from "../domain/lineage.js";
 import { baseDigest } from "../domain/proposal.js";
@@ -7,6 +7,7 @@ import { checkSafeRelativePath } from "../domain/safe-path.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { runNextNumber } from "./dev-only-services.js";
+import { stampDocumentTitle } from "./doc-flow/numbering.js";
 import { type CoreDocsCanon, resolveCoreDocsCanon } from "./docs-canon-service.js";
 import { appendPublications, publicationRows } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
@@ -219,6 +220,11 @@ export function validatePersist(
   if (shape !== null) return { ok: false, failure: shape };
   const lineage = lineageOf(decisions.value.category, artifact.content, request);
   if (lineage !== undefined && "failure" in lineage) return { ok: false, failure: lineage.failure };
+  const number =
+    decisions.value.mode === "update" && decisions.value.target !== undefined
+      ? basename(decisions.value.target).replace(/-.+$/, "")
+      : (request.inventory as PersistInventory).categories[decisions.value.category].next;
+  const content = stampDocumentTitle(artifact.content, number);
 
   return {
     ok: true,
@@ -227,7 +233,7 @@ export function validatePersist(
         category: decisions.value.category,
         mode: decisions.value.mode,
         destination: category.dir,
-        bytes: Buffer.byteLength(artifact.content, "utf8"),
+        bytes: Buffer.byteLength(content, "utf8"),
         target: decisions.value.mode === "update" ? (decisions.value.target ?? null) : null,
         ...(lineage !== undefined ? { lineage: lineage.kind } : {}),
       },
@@ -462,7 +468,7 @@ export async function applyPersist(
       fs,
       paths,
       preview.category,
-      artifact.content,
+      stampDocumentTitle(artifact.content, basename(path).replace(/-.+$/, "")),
       input.request,
     );
     if ("failure" in content) return { ok: false as const, failure: content.failure };

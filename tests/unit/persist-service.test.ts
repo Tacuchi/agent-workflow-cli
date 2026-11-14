@@ -368,6 +368,82 @@ function approvalFor(request: SemanticRequest, raw: string): string {
 }
 
 describe("applyPersist — writes exactly the approved proposal, or nothing", () => {
+  it.each(["008", "10000", "NNN", "PPP"])(
+    "ajusta el H1 %s al número asignado con la aprobación original y conserva el linaje",
+    async (number) => {
+      const fs = hub();
+      fs.file("/cwd/docs/plans/005-plan-previo.md", "# Plan 005 — previo\n");
+      fs.file("/cwd/docs/specs/008-spec-origen.md", "# Spec 008\n\n## Requirement\n\nAlgo.\n");
+      const request = await prepared(fs);
+      const tail = "\n\n> Derived from docs/specs/008-spec-origen.md\n\nSpec 008; 42 casos.\n";
+      const raw = answer(request, {
+        decisions: { category: "plan", slug: "nuevo", mode: "new" },
+        artifacts: [
+          { path: "docs/plans/008-plan-nuevo.md", content: `# Plan ${number} — nuevo${tail}` },
+        ],
+      });
+      const validated = validatePersist(raw, request);
+      if (!validated.ok) throw new Error(validated.failure.message);
+      expect(validated.value.preview.bytes).toBe(Buffer.byteLength(`# Plan 006 — nuevo${tail}`));
+      const result = await applyPersist(fs, env, paths(), {
+        raw,
+        request,
+        approval: validated.value.approval_digest,
+      });
+      if (!result.ok) throw new Error(result.failure.message);
+      expect(result.value.written).toEqual(["docs/plans/006-plan-nuevo.md"]);
+      const text = await fs.readText("/cwd/docs/plans/006-plan-nuevo.md");
+      expect(text).toContain("# Plan 006 — nuevo\n");
+      expect(text).toContain("> Derived from docs/specs/008-spec-origen.md\n");
+      expect(text).toContain("Spec 008; 42 casos.\n");
+
+      const changed = raw.replace(`# Plan ${number}`, "# Plan 999");
+      const rejected = await applyPersist(fs, env, paths(), {
+        raw: changed,
+        request,
+        approval: validated.value.approval_digest,
+      });
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.failure.code).toBe("APPROVAL_MISMATCH");
+    },
+  );
+
+  it("al actualizar conserva el número del destino y muestra sus bytes normalizados", async () => {
+    const fs = hub();
+    const target = "docs/research/005-research-comparar-motores.md";
+    fs.file(`/cwd/${target}`, "# Research 005 — original\n");
+    fs.file("/cwd/docs/research/009-research-otro.md", "# Otro\n");
+    const request = await prepared(fs);
+    const inventory = request.inventory as {
+      categories: { research: { docs: Array<{ file: string; digest: string }> } };
+    };
+    const targetDigest = inventory.categories.research.docs.find(
+      (doc) => doc.file === target,
+    )?.digest;
+    const raw = answer(request, {
+      decisions: {
+        category: "research",
+        slug: "comparar-motores",
+        mode: "update",
+        target,
+        target_digest: targetDigest,
+      },
+      artifacts: [{ path: target, content: "# Research 10000 — editado\n\nSpec 008.\n" }],
+    });
+    const validated = validatePersist(raw, request);
+    if (!validated.ok) throw new Error(validated.failure.message);
+    const expected = "# Research 005 — editado\n\nSpec 008.\n";
+    expect(validated.value.preview.bytes).toBe(Buffer.byteLength(expected));
+    const result = await applyPersist(fs, env, paths(), {
+      raw,
+      request,
+      approval: validated.value.approval_digest,
+    });
+    if (!result.ok) throw new Error(result.failure.message);
+    expect(result.value.written).toEqual([target]);
+    expect(await fs.readText(`/cwd/${target}`)).toBe(expected);
+  });
+
   it("crea un único documento en la categoría aprobada", async () => {
     const fs = hub();
     const request = await prepared(fs);

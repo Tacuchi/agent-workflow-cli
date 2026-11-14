@@ -3,9 +3,10 @@ import {
   isHarnessId,
   runHarness,
   runLogs,
+  runNextNumber,
   runProfiles,
 } from "../../application/dev-only-services.js";
-import { correlativesOf, publishInFolder } from "../../application/doc-flow/numbering.js";
+import { correlativesOf } from "../../application/doc-flow/numbering.js";
 import { HARNESSES } from "../../domain/harnesses.js";
 import type { CommandResult } from "../../domain/types.js";
 import { readRequiredStdin } from "../context-id.js";
@@ -96,11 +97,11 @@ export const nextNumberCommand: CliCommand = {
       publish: {
         value: "<name>",
         effect:
-          "Write the document read from stdin as <NNN>-<name>, with NNN in its title; a taken number moves to the next.",
+          "Write stdin as <NNN>-<name>, synchronizing its numbered H1. The same name and content reuse the existing file; changed content gets a new number.",
       },
       "dry-run": { effect: "Preview the number without creating the directory or writing." },
     },
-    output: "{directory, exists, current_max, next, files[], published_path}.",
+    output: "{published_path, directory, exists, current_max, next, files[]}.",
     notes: [
       "Without --publish it is a pure query. The folder is the only record of what is taken: no ledger and no reservation. --publish needs a Workline hub (.workflow/workline.json) and the final content on stdin; zero bytes are refused.",
     ],
@@ -126,7 +127,7 @@ export const nextNumberCommand: CliCommand = {
       files: read.files,
     };
     if (publish === undefined || args.flags.has("--dry-run")) {
-      return { ok: true, data: { ...base, published_path: null }, exitCode: 0 };
+      return { ok: true, data: { published_path: null, ...base }, exitCode: 0 };
     }
     if (!(await ctx.fs.exists(ctx.paths.cwdMarkerFile()))) {
       return fail("HUB_ABSENT", "--publish necesita un hub Workline; no se creó ninguno", {
@@ -138,10 +139,18 @@ export const nextNumberCommand: CliCommand = {
       const message = "--publish exige el contenido final del documento por stdin";
       return fail("INVALID_INPUT", message, { error: message });
     }
-    const published = await publishInFolder(ctx.fs, absolute, publish, content);
+    const published = await runNextNumber(ctx.fs, ctx.env, ctx.paths, {
+      directory: dir,
+      publish: { name: publish, content },
+    });
+    if (published.published_path === null) throw new Error("la publicación no devolvió su ruta");
     return {
       ok: true,
-      data: { ...base, next: published.number, published_path: relative(root, published.path) },
+      data: {
+        published_path: relative(root, published.published_path),
+        ...base,
+        next: published.next,
+      },
       exitCode: 0,
     };
   },

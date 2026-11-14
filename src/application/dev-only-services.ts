@@ -33,6 +33,7 @@ import {
   releaseAlreadyRecorded,
   wasPublished,
 } from "./claims-ledger.js";
+import { stampDocumentTitle } from "./doc-flow/numbering.js";
 import { publishedCorrelatives } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
 import { parseMdSection, parseMdValue } from "./markdown.js";
@@ -651,7 +652,7 @@ export async function runNextNumber(
 }
 
 function stampPublishedTitle(content: string, number: string): string {
-  return content.replace(/^#\s+(?:\d{3,}\s+[—–-]\s*)?/m, `# ${number} — `);
+  return stampDocumentTitle(content, number, true);
 }
 
 async function matchingPublication(
