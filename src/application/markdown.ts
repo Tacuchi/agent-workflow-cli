@@ -8,7 +8,7 @@ export interface MarkdownHeading {
 }
 
 export interface MarkdownScan {
-  /** every line of the document, unmodified — index = line number */
+  /** every line of the document, without its line ending — index = line number */
   lines: string[];
   /** `fenced[i]` = `lines[i]` sits inside a fenced code block (its markers included) */
   fenced: boolean[];
@@ -46,7 +46,7 @@ const FENCE_OPEN_RE = /^(`{3,}|~{3,})/;
  * vocabulary and stay unhandled.
  */
 export function scanMarkdown(text: string): MarkdownScan {
-  const lines = text.split("\n");
+  const lines = text.split(/\r?\n/);
   const fenced: boolean[] = new Array(lines.length).fill(false);
   const headings: MarkdownHeading[] = [];
 
@@ -125,7 +125,7 @@ export function parseMdSection(
 }
 
 export function firstNonEmptyLine(text: string): string | undefined {
-  for (const raw of text.split("\n")) {
+  for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (line.length > 0) {
       return line;

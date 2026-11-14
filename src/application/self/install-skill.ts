@@ -795,22 +795,22 @@ function renderCommandWrapper(
  * the agent runtime selected by the installed surface. Shared `agents` skills
  * deliberately stay unbound because several hosts read them.
  *
- * `doctor` joins `flow` for the same reason and one more of its
- * own: it walks EVERY host and highlights the one the run came from. Left
+ * `doctor` walks EVERY host and highlights the one the run came from. Left
  * unbound, the wrapper installed for one host would hand that role to whatever
  * the terminal's markers happened to say — so the report would point at a
  * different host than the surface the person actually invoked.
  *
- * `host-memory` joins for the same reason: the report leaves out the current
+ * `host-memory` binds for the same reason: the report leaves out the current
  * host and names where IT saves, so an unbound wrapper could save a learning
  * into the memory of whichever host the terminal's markers named.
+ * `flow` stays unbound because its stateless verbs do not accept `--host`.
  */
 export function bindHostInvocations(body: string, target: InstallTarget): string {
   const host = harnessByInstallTarget(target)?.id;
   if (host === undefined) return body;
   // `aw doctor prepare` y `aw doctor apply` reciben el flag igual: el subverbo
   // viene después, así que insertarlo tras `doctor` no lo desplaza.
-  return body.replace(/\baw (flow|doctor|host-memory)\b/g, `aw $1 --host ${host}`);
+  return body.replace(/\baw (doctor|host-memory)\b/g, `aw $1 --host ${host}`);
 }
 
 /**

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { parseTasks } from "../../src/application/parsers/tasks.js";
 import {
   checkoutDigest,
+  finalValidationOverrides,
   parsePlanSourceBoundary,
   validateCheckoutProof,
   validatePlanSourceBoundary,
@@ -25,6 +26,27 @@ const validPlan = [
 ].join("\n");
 
 describe("SourceBoundaryPolicy — estructura de plan", () => {
+  it.each(["\n", "\r\n"])(
+    "lee la validación final con terminadores %j sin rechazar la fuente",
+    (newline) => {
+      const plan = [
+        validPlan,
+        "",
+        "## Validations",
+        "",
+        "- Validación final · `cli` · build `npm run build`",
+        "",
+      ]
+        .join("\n")
+        .replace(/\n/g, newline);
+
+      expect(finalValidationOverrides(plan)).toEqual([
+        { alias: "cli", build: "npm run build", line: 15 },
+      ]);
+      expect(validatePlanSourceBoundary(plan, ["cli"])).toEqual([]);
+    },
+  );
+
   it("lee la relación fase → tarea sin inferir fuentes de la prosa", () => {
     expect(parsePlanSourceBoundary(validPlan)).toEqual({
       execution_surface: "checkout",

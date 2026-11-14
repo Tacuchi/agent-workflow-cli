@@ -54,7 +54,7 @@ Updates `docs/specs/NNN-spec-<slug>.md` **in place** (when the user picks `Aprob
 
 ## Run state — none
 
-`aw flow read --flow spec-refine --doc <spec>` returns the spec's `status` and the `read_digest`; the refined bytes are saved with `aw flow save --flow spec-refine --doc <spec>` (preview, then the approved write, which stamps `status: ready-for-plan`), refused with `DOC_CHANGED_SINCE_READ` if another instance wrote the spec first. Nothing else is stored.
+`aw flow read --flow spec-refine --doc <spec>` returns the spec's `status` and the `read_digest`. Pass that digest as `--read-digest <read_digest>` on **both** save calls: the preview and the approved write. Use `aw flow save --flow spec-refine --doc <spec> --read-digest <read_digest>` with the refined bytes on stdin. The approved write also takes `--approval <approval_digest>` and stamps `status: ready-for-plan`. A changed spec is refused with `DOC_CHANGED_SINCE_READ`. Nothing else is stored.
 
 > **Origin on escalation:** when the run is born from quick-loop's live escalation, the spec's `## Origin` records "escalated from `/w:quick`" + the original prompt.
 
@@ -190,10 +190,10 @@ spec-refine-loop(spec):
       ideation offer accepted → run the round NOW, then its verdicts as a NEW ≤3+flow batch (§ Ideation gate)
       ideation offer declined → mark that gap exhausted    # anti re-fire; on-demand entry stays open
   # no BLOCKING gaps → the ready-for-plan gate (below); whatever fails comes back as a gap.
-  aw flow save (no --approval) with the exact bytes of the refined spec
+  aw flow save --flow spec-refine --doc <spec> --read-digest <read_digest> (no --approval) with the exact bytes of the refined spec
                        # split branch → the same bytes carry the extracted siblings as status: draft
   the CLI stamps status: ready-for-plan and shows the preview
-  Aprobar y guardar  → aw flow save --approval <digest> (only if the spec is still the one read) ; goto finalize
+  Aprobar y guardar  → aw flow save --flow spec-refine --doc <spec> --read-digest <read_digest> --approval <approval_digest> (same bytes; only if the spec is still the one read) ; goto finalize
   Refinar            → nothing is written and the refinement stays open
   flow Compactar/Cerrar → handle the same way
 finalize:

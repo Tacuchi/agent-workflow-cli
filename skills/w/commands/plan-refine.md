@@ -16,7 +16,7 @@ allowed-tools:
 
 > **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
-> 1. **Read first** — `aw flow read --flow plan-refine --doc <document>` returns where the document stands and the `read_digest` its save quotes back (`aw flow save --flow plan-refine ...`: a preview first, then the write with the approved digest). Nothing is kept between turns: the document is the record.
+> 1. **Read first** — `aw flow read --flow plan-refine --doc <document>` returns the state and `read_digest`. Save with `aw flow save --flow plan-refine ... --read-digest <read_digest>` on both calls: preview, then write with `--approval <approval_digest>`. The document is the record; nothing is kept between turns.
 > 2. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 3. **Write boundary** — this flow edits only `docs/plans/…` (in place, with confirmation); nothing else lands in `docs/`.
 > 4. **Language** — everything user-facing (questions, option labels, the plan's content) goes in the **user's language**.

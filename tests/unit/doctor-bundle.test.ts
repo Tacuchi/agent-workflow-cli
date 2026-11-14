@@ -210,6 +210,16 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
  * por eso es el único que NO se ata.
  */
 describe("el binding no rompe las invocaciones que el documento enseña", () => {
+  it.each(["claude", "codex", "agents"] as const)(
+    "%s conserva los verbos flow sin --host",
+    (target) => {
+      const verbs = ["read", "save", "propose-commit", "commit", "unit", "close-batch", "finish"];
+      const body = verbs.map((verb) => `aw flow ${verb}`).join("\n");
+
+      expect(bindHostInvocations(body, target)).toBe(body);
+    },
+  );
+
   it("el flag insertado NO desplaza el subverbo: cada línea del documento sigue parseando", () => {
     // El binding mete `--host <id>` justo después de `doctor`, así que el subverbo
     // queda detrás de un flag CON valor. Si `--host` se comiera el token
@@ -271,11 +281,10 @@ describe("instalación · `aw doctor` recibe --host en cada wrapper", () => {
       "utf8",
     );
     await writeFile(join(source, "harness/HARNESS.md"), "# harness binding\n", "utf8");
-    // El documento del fixture llama al CLI de las tres formas que se atan y una
-    // que no: `aw status` tiene que quedar intacta.
+    // Sólo doctor recibe host: flow y status deben conservarse intactos.
     await writeFile(
       join(source, "commands/doctor.md"),
-      '---\ndescription: Diagnosis across hosts.\nallowed-tools:\n  [\n    "Bash",\n  ]\n---\n\n# doctor\n\nRun `aw doctor`, then `aw doctor prepare --select x`, then `aw flow advance`. Never `aw status`.\n',
+      '---\ndescription: Diagnosis across hosts.\nallowed-tools:\n  [\n    "Bash",\n  ]\n---\n\n# doctor\n\nRun `aw doctor`, then `aw doctor prepare --select x`, then `aw flow read --flow spec-refine --doc spec.md`. Never `aw status`.\n',
       "utf8",
     );
   });
@@ -293,8 +302,8 @@ describe("instalación · `aw doctor` recibe --host en cada wrapper", () => {
 
     expect(wrapper).toContain("aw doctor --host claude-code");
     expect(wrapper).toContain("aw doctor --host claude-code prepare --select x");
-    // El binding alcanza también a `flow`, que ya estaba.
-    expect(wrapper).toContain("aw flow --host claude-code advance");
+    expect(wrapper).toContain("aw flow read --flow spec-refine --doc spec.md");
+    expect(wrapper).not.toContain("aw flow --host");
     // Y no toca lo que no declara: `aw status` sigue sin host.
     expect(wrapper).toContain("aw status");
     expect(wrapper).not.toContain("aw status --host");
@@ -308,6 +317,8 @@ describe("instalación · `aw doctor` recibe --host en cada wrapper", () => {
 
     expect(synth).toContain("aw doctor --host codex");
     expect(synth).toContain("aw doctor --host codex prepare --select x");
+    expect(synth).toContain("aw flow read --flow spec-refine --doc spec.md");
+    expect(synth).not.toContain("aw flow --host");
   });
 
   it("el destino compartido `agents` no instala wrapper de comando: no hay nada que atar", async () => {
@@ -329,7 +340,7 @@ describe("instalación · `aw doctor` recibe --host en cada wrapper", () => {
 
     expect(result.ok).toBe(true);
     expect(synth).toContain("aw doctor prepare --select x");
-    expect(synth).toContain("aw flow advance");
+    expect(synth).toContain("aw flow read --flow spec-refine --doc spec.md");
     expect(synth).not.toContain("--host");
     expect(synth).toContain("shared skills dir");
     expect(synth).toContain("Harness binding matrix");

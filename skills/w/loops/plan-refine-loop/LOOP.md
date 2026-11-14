@@ -58,7 +58,7 @@ Read **[`../CHASSIS.md`](../CHASSIS.md)** — the loop's **full engine** — **a
 
 ## Run state — none
 
-`aw flow read --flow plan-refine --doc <plan>` returns the plan's state and the `read_digest`; the refined bytes are saved with `aw flow save --flow plan-refine --doc <plan>` (preview, then the approved write), refused with `DOC_CHANGED_SINCE_READ` if another instance wrote the plan first. Nothing else is stored.
+`aw flow read --flow plan-refine --doc <plan>` returns the plan's state and the `read_digest`. Pass that digest as `--read-digest <read_digest>` on **both** save calls: the preview and the approved write. Use `aw flow save --flow plan-refine --doc <plan> --read-digest <read_digest>` with the refined bytes on stdin. The approved write also takes `--approval <approval_digest>`. A changed plan is refused with `DOC_CHANGED_SINCE_READ`. Nothing else is stored.
 
 ## Delta 1 — Deliverable: the PLAN, edited in place
 
@@ -161,10 +161,10 @@ plan-refine-loop(plan):
     - re-refine's own check: the plan is REALIGNED with what changed
     whatever fails → comes back as a gap
   if split accepted (plan-new-loop § Split gate (multi-plan)): the bytes carry the original reduced + the extracted siblings
-  aw flow save (no --approval) with the exact bytes of the refined plan, normalized and with its Refinement decisions
+  aw flow save --flow plan-refine --doc <plan> --read-digest <read_digest> (no --approval) with the exact bytes of the refined plan, normalized and with its Refinement decisions
   the CLI seals the state (ready, or draft with Open questions) and shows the preview
     structured_choice(content: [Aprobar y guardar, Refinar], flow: [Compactar, Cerrar])
-    Aprobar y guardar → aw flow save --approval <digest>: written only if the plan is still the one read
+    Aprobar y guardar → aw flow save --flow plan-refine --doc <plan> --read-digest <read_digest> --approval <approval_digest>: same bytes, written only if the plan is still the one read
     Refinar          → nothing is written and the refinement stays open
 report: the plan saved, its state and the next step
 ```
