@@ -37,7 +37,7 @@ This file provides guidance to AI coding agents working with code in this reposi
 ## Conventions / decisions
 
 - Manual schema validation — NO Zod (DEC-001). Throw `Error` with a `code` string + `message`; the CLI layer catches and emits `{ ok: false, error: { code, message } }`.
-- Commits: Conventional Commits `type(scope): subject`. Subject prose in **Spanish**; `type`/`scope` tokens in English. Append a trailing ` sessionNNN` tag (e.g. `fix(cli): corrige parser session104`). Releases: `chore: release vX.Y.Z sessionNNN`.
+- Commits: Conventional Commits `type(scope): subject`. Subject prose in **Spanish**; `type`/`scope` tokens in English. No session suffix: Workline 31 retired sessions (e.g. `fix(cli): corrige parser`). Releases: `chore: release vX.Y.Z`.
 - Host run: when a release touches a host (catalog, installers, hooks, MCP writers or a host's doctrine), suggest the person repeat the host run (`node scripts/host-run/run.mjs`, see README § «Support levels and how long a verification is worth») and compare it with `node scripts/host-run/compare.mjs`. It is a suggestion, never a gate: no suite test depends on the latest run, so it does not block `prepublishOnly`. An agent never launches it — it refuses to start inside an agent host.
 - Branches: `feature/<name>`, integrated into `main`. Code/comments in English; commit messages and `CHANGELOG.md` in Spanish (Keep a Changelog + SemVer).
 
@@ -47,7 +47,7 @@ The hub block (`<!-- WORKFLOW-HUB-START/END -->`, sections Hub/Workline/Fuentes/
 
 ## dev-conventions (universal — aplica también en subagentes/teams)
 
-Las convenciones del plugin `dev-conventions` aplican en toda sesión Y en subagentes/teams (heredan este archivo). Donde esta guía sea más específica (formato de commit `type(scope): subject sessionNNN`, estilo Biome, gotchas ESM), **esa manda**. Lo de abajo es la base de seguridad/comportamiento que el repo no detallaba:
+Las convenciones del plugin `dev-conventions` aplican en toda sesión Y en subagentes/teams (heredan este archivo). Donde esta guía sea más específica (formato de commit `type(scope): subject`, estilo Biome, gotchas ESM), **esa manda**. Lo de abajo es la base de seguridad/comportamiento que el repo no detallaba:
 
 - **Git seguro:** proponer antes de commitear; nunca `push`/`--force`/`--amend`/`--no-verify` ni trailers `Co-Authored-By`/firmas de modelo sin pedido explícito.
 - **Tests:** preguntar antes de correr el runner.
