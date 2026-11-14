@@ -22,9 +22,14 @@ export interface DocFlowHub {
   dispose(): void;
 }
 
-export function docFlowHub(): DocFlowHub {
+/**
+ * `nested` puts the hub at that folder of a bigger repository (spec 067, F2)
+ * instead of at its own repository root.
+ */
+export function docFlowHub(options: { nested?: string } = {}): DocFlowHub {
   const base = mkdtempSync(join(tmpdir(), "aw-doc-flow-"));
-  const root = join(base, "hub");
+  const repoRoot = options.nested === undefined ? join(base, "hub") : join(base, "repo");
+  const root = options.nested === undefined ? repoRoot : join(repoRoot, options.nested);
   const home = join(base, "home");
   mkdirSync(join(root, "docs/specs"), { recursive: true });
   mkdirSync(join(root, "docs/plans"), { recursive: true });
@@ -55,7 +60,7 @@ export function docFlowHub(): DocFlowHub {
   );
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: root, stdio: "pipe" }).toString();
-  git("init", "-q", "-b", "main");
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: repoRoot, stdio: "pipe" });
   git("config", "user.email", "t@example.invalid");
   git("config", "user.name", "t");
   git("add", ".");

@@ -47,7 +47,7 @@ inference, the deferred-validation cycle and conditional Git authorization.
 
 ## Run state — none
 
-`aw flow read --flow plan-exec --doc <plan>` derives the position from the plan: its `> Estado:`, phase states, boxes and `> Próximo paso:`. Each batch edits in its own unit (`aw flow unit --plan <PPP> --batch <Bn> --source <alias>`); nothing else is stored.
+`aw flow read --flow plan-exec --doc <plan>` derives the position from the plan: its `> Estado:`, phase states, boxes and `> Próximo paso:`. Each batch edits in its own unit (`aw flow unit --plan <PPP> --batch <Bn> --source <alias>`, `--from <ref>` to start from a feature) and commits there with `--checkout <unit path>`; nothing else is stored.
 
 ## Entry gate — executability
 
@@ -260,7 +260,7 @@ plan-exec-loop(PPP-plan-<slug>.md):
       last Batch, final validation green → offer the targeted review (asked; ≤2 agents, one case each)
     if any proof/check/review/exit condition is not green:
       preserve actual states + combined uncommitted diff; say the unblocking action; stop
-    aw flow propose-commit (exact paths per changed source) → show it → person approves the digest
+    aw flow propose-commit --checkout <unit path> (exact paths per changed source) → show it → person approves the digest
       approved → aw flow commit --approval <digest>; a path changed since → COMMIT_PROPOSAL_STALE → propose again
       Cerrar → the batch and its uncommitted changes stay as they are
     aw flow close-batch --plan <plan> --batch <Bn> --read-digest <d> < {validations, evidence, commits}

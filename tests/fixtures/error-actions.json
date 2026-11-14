@@ -351,9 +351,9 @@
     },
     {
       "file": "src/cli/commands/flow-plan-run.ts",
-      "text": "aw flow unit --plan <PPP>",
+      "text": "aw flow unit --source <alias>",
       "class": "usage",
-      "reason": "forma de uso: el documento, el plan y el lote son la entrada de quien invoca"
+      "reason": "forma de uso: la fuente, el plan y el lote o el slug de QUICK, y la base, son la entrada de quien invoca"
     }
   ]
 }

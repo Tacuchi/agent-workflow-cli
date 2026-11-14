@@ -236,7 +236,8 @@ export interface GitPort {
   worktreeList(repoPath: string): Promise<WorktreeEntry[]>;
   /**
    * `git worktree add` at `worktreePath` on `branch`. With `base` it creates the
-   * branch there (`-b`); with `base: null` it checks out a branch that already
+   * branch there (`-b`) with no upstream (`--no-track`), even from a remote ref;
+   * with `base: null` it checks out a branch that already
    * exists. Throws on failure — including git's own refusal to put the same
    * branch in two worktrees, which is what makes occupancy inherited rather
    * than implemented.

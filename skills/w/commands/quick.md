@@ -18,7 +18,7 @@ Delegates to `quick-loop` (Layer 2); git is its only record — unless the **ent
 >
 > 1. **Size gate BEFORE any work** — if the objective exceeds a quick (≥2 signals: architecture · ≥2 sources · several deliverables · large refactor · ambiguous requirements), ask first, verbatim: `Cambiar a SPEC` *(recommended)* · `Seguir en quick` · `Recortar alcance`. If it escalates, nothing is written.
 > 2. **Git is the record** — an interrupted quick shows only in `git status` of its source.
-> 3. **Git/DB** — `aw flow propose-commit` for exact paths, then `aw flow commit` only with the approved digest; never execute DML/DDL (SQL goes as a file in `docs/scripts/`).
+> 3. **Git/DB** — `aw flow propose-commit` for exact paths (`--checkout <path>` when the work lives in a unit or worktree), then `aw flow commit` only with the approved digest; never execute DML/DDL (SQL goes as a file in `docs/scripts/`).
 > 4. **Language** — everything user-facing goes in the **user's language**.
 
 ## Run the loop

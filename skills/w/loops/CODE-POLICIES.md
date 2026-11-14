@@ -13,7 +13,8 @@ the task closes with one proposed commit. Branch switches need consent. A **reje
 explicitly acknowledged; a `continuous` batch is the narrow exception that intentionally co-mingles
 its internal phases in one validated commit, and no batch may co-mingle with another.
 
-Concurrent flows declare sources. Each plan-exec batch acquires an **isolation unit** per source with `aw flow unit --plan <PPP> --batch <Bn> --source <alias>`: a worktree on its own branch. Repeating the call finds the same unit. At close the CLI integrates each unit; a conflict stays pending for external resolution, never aborted.
+Concurrent flows declare sources. Each plan-exec batch acquires an **isolation unit** per source with `aw flow unit --plan <PPP> --batch <Bn> --source <alias>`: a worktree on its own branch, with no upstream. Repeating the call finds the same unit. `--from <ref>` starts it from another base, such as an existing feature; a QUICK takes its own with `--quick <slug>`, never a fictitious plan.
+Work done in a unit or in an existing worktree of the source is proposed and committed there with `--checkout <path>` on `propose-commit` and `commit`; without it both use the declared path, which never changes. At close the CLI integrates each unit; a conflict stays pending for external resolution, never aborted.
 An in-place hub declares `Modo de edición: in-place`; a plan may override it with `> Aislamiento: unidad`. In-place declares and approves only its own paths against the acquisition snapshot, without integration.
 
 For frontend sources, install dependencies (`npm ci` if the lockfile changes) inside each acquired unit: `node_modules` belongs to that worktree, never to a sibling checkout.

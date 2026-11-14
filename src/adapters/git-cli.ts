@@ -890,7 +890,9 @@ export class GitCliAdapter implements GitPort {
     const args =
       base === null
         ? ["worktree", "add", worktreePath, branch]
-        : ["worktree", "add", "-b", branch, worktreePath, base];
+        : // --no-track: a unit started from a remote ref must not inherit it as
+          // upstream (spec 067, ID06); whoever wants one sets it with git.
+          ["worktree", "add", "--no-track", "-b", branch, worktreePath, base];
     await this.mustRun(`worktree add ${branch}`, args, repoPath);
   }
 

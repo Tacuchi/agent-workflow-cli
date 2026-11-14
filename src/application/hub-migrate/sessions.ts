@@ -239,7 +239,7 @@ export async function applySessionMigration(
     git === undefined || paths_.length === 0
       ? null
       : await proposeCommit(git, {
-          repo: root,
+          ...hubTarget(root),
           message: "chore: migra el hub al modelo sin sesiones (Workline 31.0.0)",
           paths: paths_,
         });
@@ -268,7 +268,7 @@ export async function commitSessionMigration(
   const root = paths.hubDir();
   const changed = (await git.dirtyPaths(root)).map((entry) => entry.path);
   const proposal = await proposeCommit(git, {
-    repo: root,
+    ...hubTarget(root),
     message: "chore: migra el hub al modelo sin sesiones (Workline 31.0.0)",
     paths: changed.filter((path) => isMigrationPath(path, paths)),
   });
@@ -280,7 +280,7 @@ export async function commitSessionMigration(
     );
   }
   const done = await commitApproved(git, {
-    repo: root,
+    ...hubTarget(root),
     message: proposal.value.message,
     paths: proposal.value.paths.map((entry) => entry.path),
     approval: input.approval,
@@ -288,6 +288,11 @@ export async function commitSessionMigration(
   return done.ok
     ? { ok: true, value: { action: "sessions-commit", hash: done.value.hash } }
     : { ok: false, failure: done.failure };
+}
+
+/** The migration reads and commits git-root-relative paths at the hub root, as before spec 067. */
+function hubTarget(root: string) {
+  return { source: "hub", repo: root, checkout: root, prefix: "" };
 }
 
 function isMigrationPath(path: string, paths: PathsService): boolean {

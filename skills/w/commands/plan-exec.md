@@ -20,7 +20,7 @@ checkboxes and `> Estado:` line in the living plan.
 > **Minimum context — a guide; only Git/DB is fixed. Read even if nothing else is:**
 >
 > 1. **Read first** — `aw flow read --flow plan-exec --doc <plan>` returns its state, its next step and the `read_digest` every plan write quotes back. Nothing else is kept between turns: the plan, its boxes and git are the record.
-> 2. **Git/DB** — per batch take its unit (`aw flow unit --plan <PPP> --batch <Bn> --source <alias>`), propose the commit of its exact paths (`aw flow propose-commit`), and commit only with the person's approval of that digest (`aw flow commit`). SQL goes as a file in `docs/scripts/`, never executed.
+> 2. **Git/DB** — per batch take its unit (`aw flow unit --plan <PPP> --batch <Bn> --source <alias>`), propose the commit of its exact paths in it (`aw flow propose-commit --checkout <unit path>`), and commit only with the person's approval of that digest (`aw flow commit`). SQL goes as a file in `docs/scripts/`, never executed.
 > 3. **Ask, don't invent** — user-dependent decisions go through questions with a recommended option first (≤3 content questions + the `flow` control `Compactar`/`Cerrar`).
 > 4. **Language** — everything user-facing (questions, option labels, reports) goes in the **user's language**.
 

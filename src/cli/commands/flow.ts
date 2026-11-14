@@ -27,11 +27,17 @@ export const flowCommand: CliCommand<FlowResult> = {
     actions: {
       read: { known: ["doc"] },
       save: { known: ["doc", "slug", "read-digest", "approval"] },
-      "propose-commit": { known: ["source", "message", "path"], repeatable: ["path"] },
-      commit: { known: ["source", "message", "path", "approval"], repeatable: ["path"] },
+      "propose-commit": {
+        known: ["source", "checkout", "message", "path"],
+        repeatable: ["path"],
+      },
+      commit: {
+        known: ["source", "checkout", "message", "path", "approval"],
+        repeatable: ["path"],
+      },
       "close-batch": { known: ["plan", "batch", "read-digest"] },
       finish: { known: ["plan", "read-digest"] },
-      unit: { known: ["plan", "batch", "source"] },
+      unit: { known: ["plan", "batch", "quick", "source", "from"] },
     },
   },
   help: {
@@ -80,15 +86,26 @@ export const flowCommand: CliCommand<FlowResult> = {
       },
       "propose-commit": {
         purpose:
-          "Propose a commit of exact paths of one source, sealed by a digest of HEAD, the message and each path's bytes. Writes nothing.",
+          "Propose a commit of exact paths of one source, sealed by a digest of the source, the checkout, its branch and HEAD, the message and each path's bytes. Writes nothing.",
         flags: {
           source: { value: "<alias>", effect: "Source alias, or hub." },
+          checkout: {
+            value: "<path>",
+            effect:
+              "A worktree of the source to read and commit in instead of its declared path, for this call only; refused for hub.",
+          },
           message: { value: "<text>", effect: "One-line commit message." },
-          path: { value: "<path>", effect: "Repo-relative path to commit; repeatable." },
+          path: {
+            value: "<path>",
+            effect: "Path relative to the checkout (to the hub for hub) to commit; repeatable.",
+          },
         },
-        output: "{repo, head, message, paths[] {path, digest}, approval}.",
+        output:
+          "{source, repo, checkout, branch, head, message, paths[] {path, git_path, digest}, approval}.",
         notes: [
           "QUICK and plan-exec use the same pair: git is QUICK's only record. In the hub only specs, plans and the deliverables of docs/diagrams, docs/manuals, docs/reports and docs/scripts are accepted.",
+          "A hub nested in a bigger repository takes hub-relative paths; git_path shows them from the repository root, and a path carrying that prefix is refused with HUB_PATH_PREFIXED.",
+          "CHECKOUT_MISSING: the chosen checkout does not exist. CHECKOUT_NOT_OF_SOURCE: it is not in 'git worktree list' of the source. Neither falls back to the declared path.",
         ],
       },
       commit: {
@@ -96,12 +113,18 @@ export const flowCommand: CliCommand<FlowResult> = {
           "Commit exactly the proposed paths while the approval still matches the tree; a path changed after the proposal makes it stale.",
         flags: {
           source: { value: "<alias>", effect: "Source alias, or hub." },
+          checkout: {
+            value: "<path>",
+            effect: "The proposed checkout, when the proposal named one.",
+          },
           message: { value: "<text>", effect: "The proposed message." },
           path: { value: "<path>", effect: "The proposed paths; repeatable." },
           approval: { value: "<digest>", effect: "The approval the proposal returned." },
         },
         output: "{hash, paths[]}.",
-        notes: ["COMMIT_PROPOSAL_STALE: propose again and ask for a new approval."],
+        notes: [
+          "COMMIT_PROPOSAL_STALE: the paths, checkout, branch, HEAD or message changed; propose again and ask for a new approval.",
+        ],
       },
       "close-batch": {
         purpose:
@@ -131,14 +154,26 @@ export const flowCommand: CliCommand<FlowResult> = {
       },
       unit: {
         purpose:
-          "Create, or find again, the isolation unit of one batch of one plan in one source: a worktree on branch aw/<hub>/plan-<PPP>-<bn>.",
+          "Create, or find again, the isolation unit of one batch of one plan, or of one QUICK, in one source: a worktree on branch aw/<hub>/plan-<PPP>-<bn> or aw/<hub>/quick-<slug>, with no upstream.",
         flags: {
-          plan: { value: "<PPP>", effect: "Plan number." },
+          plan: { value: "<PPP>", effect: "Plan number; goes with --batch." },
           batch: { value: "<Bn>", effect: "Batch of the plan." },
+          quick: {
+            value: "<slug>",
+            effect: "A QUICK's kebab-case slug, instead of --plan/--batch.",
+          },
           source: { value: "<alias>", effect: "Source the unit edits." },
+          from: {
+            value: "<ref>",
+            effect:
+              "Base of a new unit: a local branch or a fetched remote ref; default the source's main branch. UNIT_BASE_MISSING when git does not know it.",
+          },
         },
-        output: "{created, unit {alias, plan, batch, branch, path}}.",
-        notes: ["Named by plan and batch, so after a crash git alone finds the unit again."],
+        output: "{created, base, unit {alias, plan, batch | quick, branch, path}}.",
+        notes: [
+          "Named by plan and batch, or by the QUICK's slug, so after a crash git alone finds the unit again; a unit found again keeps its base (base: null).",
+          "Commit in it with propose-commit/commit --checkout <path>.",
+        ],
       },
     },
   },
