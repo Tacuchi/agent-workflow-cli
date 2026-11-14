@@ -12,6 +12,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [31.0.1] — 2026-11-13
+
+**Los comandos instalados de Workline vuelven a llamar bien a `aw flow`, y un plan con fines de línea CRLF pasa el gate.**
+
+### Contrato
+
+Ninguno.
+
+### Fixed
+
+- `aw self install-skill` ya no inserta `--host <host>` en las llamadas a `aw flow` de los envoltorios instalados. Desde la 31.0.0 los verbos de `aw flow` (`read`, `save`, `propose-commit`, `commit`, `unit`, `close-batch`, `finish`) no aceptan ese flag y respondían `UNKNOWN_FLAG`. `aw doctor` y `aw host-memory` lo siguen recibiendo.
+- El lector de markdown separa las líneas con `\r?\n`. Un plan guardado con CRLF ya no deja un `\r` al final de cada línea, que hacía ignorar la línea `- Validación final · …` de `## Validations` y terminaba en `PLAN_SOURCE_UNKNOWN`.
+- La doctrina del bundle `w` ya no nombra `aw worktree` (retirado en la 31.0.0): la unidad de aislamiento es `aw flow unit --plan <PPP> --batch <Bn> --source <alias>`. spec-refine y plan-refine dicen que `aw flow save` exige `--read-digest` también en la vista previa.
+
+### Migration
+
+- Los envoltorios ya instalados conservan el `--host` viejo: después de `aw self update`, corré `aw self install-skill --target all --confirm-all --force` y `aw self doctor`. Lo nuevo llega a las sesiones nuevas del host.
+
 ## [31.0.0] — 2026-11-10
 
 **Workline deja las sesiones: SPEC, PLAN y QUICK guardan su estado y su evidencia sólo en la spec, el plan y git (spec 066).**
