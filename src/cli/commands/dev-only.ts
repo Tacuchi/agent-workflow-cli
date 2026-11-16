@@ -103,7 +103,7 @@ export const nextNumberCommand: CliCommand = {
     },
     output: "{published_path, directory, exists, current_max, next, files[]}.",
     notes: [
-      "Without --publish it is a pure query. The folder is the only record of what is taken: no ledger and no reservation. --publish needs a agent-workflow hub (.workflow/agent-workflow.json) and the final content on stdin; zero bytes are refused.",
+      "Without --publish it is a pure query. The folder is the only record of what is taken: no ledger and no reservation. --publish needs an agent-workflow hub (.workflow/agent-workflow.json) and the final content on stdin; zero bytes are refused.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

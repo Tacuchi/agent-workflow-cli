@@ -1,4 +1,4 @@
-/** The only execution surface a agent-workflow plan may use to close a phase. */
+/** The only execution surface an agent-workflow plan may use to close a phase. */
 export type ExecutionSurface = "checkout";
 
 /** Evidence id shared by every gate that decides whether local proof is enough. */

@@ -122,7 +122,7 @@ async function configuredEntries(
       // `runMcpDoctor` reports by MCP host id (`claude`) and the report is
       // keyed by catalog id (`claude-code`). Emitting the engine's id here
       // split one host into two rows AND — worse — made `nativeFindings`
-      // never recognize its own connection as ours, so a agent-workflow MCP the
+      // never recognize its own connection as ours, so an agent-workflow MCP the
       // host cannot connect came back as somebody else's warning instead of
       // the blocking finding the spec promises.
       remember(ownConnectionFinding(report, catalogHostOf(hosts, report.host)), report.instance);

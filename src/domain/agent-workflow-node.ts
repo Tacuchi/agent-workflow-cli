@@ -6,7 +6,7 @@ import {
 } from "./docs-canon.js";
 
 /**
- * The identity of a agent-workflow node, said the same way by everybody who points at
+ * The identity of an agent-workflow node, said the same way by everybody who points at
  * one.
  *
  * Provenance is a graph over four kinds of thing — a spec, a plan, a quick and a

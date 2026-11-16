@@ -81,8 +81,8 @@ export default {
   paneArgs: [],
   limitations: [
     "only the scenario's agent-workflow calls are pre-approved; every other command asks you in the pane",
-    "a agent-workflow call with --hub or --approval, `doctor apply`, or a --root naming your real HOME, ~, $HOME, a parent dir or another host's root, asks you; --root at the disposable bundle does not",
-    "a agent-workflow call piped into another program (`aw flow … | python3 …`) asks you: claude matches every command of a pipeline, and the second one is arbitrary code the run cannot pre-approve",
+    "an agent-workflow call with --hub or --approval, `doctor apply`, or a --root naming your real HOME, ~, $HOME, a parent dir or another host's root, asks you; --root at the disposable bundle does not",
+    "an agent-workflow call piped into another program (`aw flow … | python3 …`) asks you: claude matches every command of a pipeline, and the second one is arbitrary code the run cannot pre-approve",
     "editing the workspace's CLAUDE.md/AGENTS.md, agent-workflow marker, .git or host configs asks you",
     "nothing under your real HOME can be read",
     "the other hosts' disposable roots (copied credentials, token files) are denied to it",

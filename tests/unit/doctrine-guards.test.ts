@@ -439,7 +439,7 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
 });
 
 describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
-  // Reusable tooling has a agent-workflow home and closing review without depending
+  // Reusable tooling has an agent-workflow home and closing review without depending
   // on an externally named skill; host help is optional.
   it("CODE-POLICIES' closing review gate keeps the own tooling contract", async () => {
     const policies = await readRel("loops/CODE-POLICIES.md");

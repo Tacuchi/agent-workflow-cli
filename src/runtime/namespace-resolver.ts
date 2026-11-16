@@ -14,7 +14,7 @@ export interface ResolvedNamespace {
 /**
  * The one hub-scoped coordinate resolved before any service is built.
  *
- * A agent-workflow hub does not need a configuration block to exist.  Its
+ * An agent-workflow hub does not need a configuration block to exist.  Its
  * durable marker is `.<namespace>/agent-workflow.json` — a mark of agent-workflow's own, not
  * a folder name a host tool also uses (see `agent-workflow-marker`); until that marker
  * exists the directory from which the command was invoked is still the hub

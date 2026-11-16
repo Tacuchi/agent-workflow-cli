@@ -132,7 +132,7 @@ export class PathsService {
     return join(this.cwdRoot(), "local.json");
   }
   /**
-   * The hub's own mark — what the resolver reads to tell a agent-workflow
+   * The hub's own mark — what the resolver reads to tell an agent-workflow
    * hub from a host tool's directory that happens to hold a `sessions/`.
    */
   cwdMarkerFile(): string {

@@ -654,7 +654,7 @@ async function removeConnection(
 }
 
 /**
- * The file that still holds a agent-workflow-shaped descriptor for this host, or null.
+ * The file that still holds an agent-workflow-shaped descriptor for this host, or null.
  * Each Claude location is judged on its own: the combined classification reports
  * the foreign legacy homonym and would hide the owned primary entry behind it.
  */

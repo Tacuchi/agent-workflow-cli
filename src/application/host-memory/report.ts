@@ -40,7 +40,7 @@ export function hostMemoryReaderHosts(): HarnessId[] {
 export interface HostMemoryOptions {
   /** The host the invocation is bound to (`--host`); detected from the environment when absent. */
   host?: HarnessId;
-  /** The installed CLI's command names: what makes an `aw <x>` mention a agent-workflow one. */
+  /** The installed CLI's command names: what makes an `aw <x>` mention an agent-workflow one. */
   commands: readonly string[];
 }
 

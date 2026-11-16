@@ -158,7 +158,7 @@ export function stepForHost(step, hostId) {
   const host = HOSTS[hostId];
   if (host === undefined) throw new Error(`host '${hostId}' is not covered by the run`);
   const text = step.prompt(host);
-  // A native /compact is typed; a agent-workflow command (the resume fallback included)
+  // A native /compact is typed; an agent-workflow command (the resume fallback included)
   // goes through crush's palette.
   const isAgentWorkflowCommand =
     step.command !== null && !(step.surface === "compaction" && host.compact !== null);

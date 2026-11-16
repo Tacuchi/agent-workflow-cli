@@ -5,7 +5,7 @@ import { RETIRED_MARKER_FILE } from "../domain/retired-name.js";
 import { NAMESPACE_REGEX } from "./namespace.js";
 
 /**
- * What tells a agent-workflow hub apart from a directory that merely shares the
+ * What tells an agent-workflow hub apart from a directory that merely shares the
  * name of a subfolder.
  *
  * The canonical marker used to be `.<ns>/sessions/` alone, and that is a shape
@@ -21,7 +21,7 @@ import { NAMESPACE_REGEX } from "./namespace.js";
 export const AGENT_WORKFLOW_MARKER_FILE = "agent-workflow.json";
 
 /**
- * Evidence that a directory was a agent-workflow hub BEFORE the mark existed.
+ * Evidence that a directory was an agent-workflow hub BEFORE the mark existed.
  *
  * A hub already materialized has to keep resolving without anybody running
  * a migration, and these are the runtime files only agent-workflow puts at `.<ns>/`.
