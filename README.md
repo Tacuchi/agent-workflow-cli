@@ -152,15 +152,27 @@ Skipping step 2 strands files in a directory no code path can name any more.
 
 ## TUI
 
-Running `agent-workflow` (or `aw`) with no arguments opens the tab-based TUI:
+Running `agent-workflow` (or `aw`) with no arguments inside a hub opens one screen that answers «where is my work and what can I do now?»:
 
-| Tab | What it does |
+- the hub's pending items, each with its next step and the command that resumes it (read from `aw status --format json`);
+- each source with its current branch and whether it has uncommitted changes;
+- the git flow over one source or «todas las fuentes»: align with PROD, send to development, QA or PROD. «Enviar a PROD» shows the preview and publishes only on `y`;
+- one update line, only when a newer CLI exists; `u` runs `aw self update`.
+
+Keys: `↑↓` move · `⏎` open or run · `esc` back · `y`/`n` confirm or cancel · `r` refresh · `q` quit · `u` update (only with the update line). Each view shows only the keys it accepts. Outside a hub, `aw` prints a line naming `aw hub-init` and exits 0. The TUI reads and writes no preferences.
+
+Everything else is a command:
+
+| Capability | Command |
 |---|---|
-| **Status** | Doctor dashboard: CLI / hosts / hooks / MCP tiles + daily operational logs. The hosts tile jumps to [agent-workflow]. |
-| **agent-workflow** | Per-host administration of the bundled `w` SKILL (install / reinstall / uninstall, `hooks armed` state) plus a compact flows overview. |
-| **Hub** | Hub sources, branches and git-flow actions. |
-| **MCP** | Tools PostgreSQL de solo lectura. `mcp-connections.json` v2 es la única autoridad de alias, provider y variable DSN: registrá con `aw self mcp use-env --name alpha --dsn-var ALPHA_DATABASE_URL`. La TUI instala descriptores absolutos en user scope; `aw mcp setup` conserva además el modo hub portable dependiente de `PATH`. Cada host muestra configuración, launchability, recarga pendiente y carga observada; Codex queda opcional porque existe el fallback local `aw tool call`. |
-| **Config** | Namespace, host-targeting preferences, and the hub branch defaults (written to the hub block). |
+| Host coverage, hooks, database connection test | `aw doctor` |
+| Install, reinstall or uninstall the bundle in hosts; clean leftovers | `aw self install-skill --target <host\|all>`, `aw self uninstall`, `aw self clean-legacy` |
+| MCP connections | `aw self mcp --action list\|use-env\|create-env\|install-<host>\|remove` |
+| Create the hub and declare sources | `aw hub-init --source …`, `aw add-source` |
+| Remove a source | `aw remove-source` |
+| Hub default branches | `aw hub-block --init --default-main-branch <b> --default-dev-branch <b> --default-qa-branch <b>` |
+| Namespace | `aw self namespace --pin` |
+| PostgreSQL MCP tools | `aw tool list`, `aw tool call` (below) |
 
 ### PostgreSQL MCP y fallback local
 
@@ -221,7 +233,7 @@ Hub artifacts live under `.<namespace>/`. Resolution order (first match wins):
 - `sources` / `check-branch` / `set-working-branch` / `set-qa-branch` / `set-exception-branch` — multi-source git-safety (per-source base / working / QA / exception branches).
 - `set-edit-mode in-place|unit` — declares checkout editing or isolated units in the hub block; plans can require `> Aislamiento: unidad`.
 - `doc-branch show|set` — propone y asocia una rama de trabajo por documento y fuente, heredada por sus planes; `show` no modifica nada.
-- `git-flow <sync|to-dev|to-qa|to-prod> [--source|--all] [--target] [--dry-run]` — run the per-source branch flows (sync working ← base, promote to dev/QA/prod) with conflict-pause; `--all` processes every source and reports each one. Also surfaced as Hub-tab actions.
+- `git-flow <sync|to-dev|to-qa|to-prod> [--source|--all] [--target] [--dry-run]` — run the per-source branch flows (sync working ← base, promote to dev/QA/prod) with conflict-pause; `--all` processes every source and reports each one. Also available from the TUI screen.
 - `release-data` — corpus reader backing the `export-*` skills.
 - `self install-skill` / `self doctor` / `self update` / `mcp` — CLI maintenance.
 - `amend <apply|revert|list>` — correct the WORDING of an already closed spec or plan in one act, under the hub lock and with the document's own digest as the compare-and-swap base; it demands an explicit declaration that no scope, criteria or rules move, records the exact pre-image in an append-only ledger, and refuses structurally whatever touches the contract (naming the refinement instead). CLI-only: there is no `/w:amend`.

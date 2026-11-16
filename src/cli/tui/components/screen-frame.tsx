@@ -9,9 +9,7 @@ export interface ScreenFrameProps {
 
 export function ScreenFrame({ children }: ScreenFrameProps) {
   // Bounds the frame to the viewport height. Together with the alt-screen
-  // (run.tsx) and the content clip (app.tsx), it prevents a tall tab
-  // (Workflow) from pushing lines into the scrollback and leaving orphans
-  // when returning to a short tab.
+  // (run.tsx), it keeps a tall list from pushing lines into the scrollback.
   //
   // Only bounds with a real TTY height (rows > 0). On non-TTY (pipes, tests)
   // the height is unknown: no viewport to bound, so it renders naturally.

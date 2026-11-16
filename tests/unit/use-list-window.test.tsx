@@ -1,14 +1,8 @@
 import type { EventEmitter } from "node:events";
 import { Box, Text, useInput } from "ink";
 import { render } from "ink-testing-library";
-import { useEffect } from "react";
+import { useState } from "react";
 import { describe, expect, it } from "vitest";
-import { notificationStackRows } from "../../src/cli/tui/components/notification-stack.js";
-import {
-  NotificationCenterProvider,
-  useNotifications,
-} from "../../src/cli/tui/notification-center.js";
-import { useListCursor } from "../../src/cli/tui/use-list-cursor.js";
 import { useListWindow } from "../../src/cli/tui/use-list-window.js";
 
 const UP = "\x1b[A";
@@ -23,20 +17,13 @@ function setRows(stdout: unknown, rows: number) {
   fake.emit("resize");
 }
 
-function Harness({
-  count,
-  reserved,
-  maxVisible,
-}: {
-  count: number;
-  reserved: number;
-  maxVisible?: number;
-}) {
-  const { cursor, moveUp, moveDown } = useListCursor(count);
-  const win = useListWindow(count, cursor, reserved, maxVisible);
+function Harness({ count, reserved }: { count: number; reserved: number }) {
+  const [rawCursor, setCursor] = useState(0);
+  const cursor = Math.max(0, Math.min(rawCursor, count - 1));
+  const win = useListWindow(count, cursor, reserved);
   useInput((_input, key) => {
-    if (key.downArrow) moveDown();
-    if (key.upArrow) moveUp();
+    if (key.downArrow) setCursor(Math.min(count - 1, cursor + 1));
+    if (key.upArrow) setCursor(Math.max(0, cursor - 1));
   });
   const rows: number[] = [];
   for (let i = win.start; i < Math.min(count, win.start + win.visible); i++) rows.push(i);
@@ -125,17 +112,6 @@ describe("useListWindow", () => {
     expect(lastFrame()).toContain("row<11>");
   });
 
-  it("honors maxVisible even when the viewport is taller", async () => {
-    const { lastFrame, stdout } = render(<Harness count={15} reserved={0} maxVisible={8} />);
-    await tick();
-    setRows(stdout, 50);
-    await tick();
-    const frame = lastFrame() ?? "";
-    expect(frame).toContain("visible=8");
-    expect(frame).toContain("row<7>");
-    expect(frame).not.toContain("row<8>");
-  });
-
   it("handles an empty list", async () => {
     const { lastFrame, stdout } = render(<Harness count={0} reserved={6} />);
     await tick();
@@ -162,47 +138,4 @@ describe("useListWindow", () => {
     expect(lastFrame()).toContain("start=0");
     expect(lastFrame()).toContain("row<4>");
   });
-
-  it("shrinks the window while a notification occupies rows", async () => {
-    const { stdin, lastFrame, stdout } = render(
-      <NotificationCenterProvider>
-        <NotifHarness count={15} reserved={6} />
-      </NotificationCenterProvider>,
-    );
-    await tick();
-    setRows(stdout, 12);
-    await tick();
-    // Banner with body = 2 rows + stack marginBottom 1 → reserved 6+3=9 → 3 fit.
-    expect(lastFrame()).toContain("visible=3");
-    for (let i = 0; i < 14; i++) {
-      stdin.write(DOWN);
-      await tick();
-    }
-    expect(lastFrame()).toContain("cursor=14");
-    expect(lastFrame()).toContain("row<14>");
-  });
 });
-
-/** Pushes one persistent notification (title + body) and reserves its height. */
-function NotifHarness({ count, reserved }: { count: number; reserved: number }) {
-  const { items, push } = useNotifications();
-  const { cursor, moveUp, moveDown } = useListCursor(count);
-  const win = useListWindow(count, cursor, reserved + notificationStackRows(items));
-  useInput((_input, key) => {
-    if (key.downArrow) moveDown();
-    if (key.upArrow) moveUp();
-  });
-  useEffect(() => {
-    push({ id: "banner", title: "update available", body: "v22" });
-  }, [push]);
-  const rows: number[] = [];
-  for (let i = win.start; i < Math.min(count, win.start + win.visible); i++) rows.push(i);
-  return (
-    <Box flexDirection="column">
-      <Text>{`cursor=${cursor} start=${win.start} visible=${win.visible}`}</Text>
-      {rows.map((i) => (
-        <Text key={i}>{`row<${i}>`}</Text>
-      ))}
-    </Box>
-  );
-}

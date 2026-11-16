@@ -5,7 +5,6 @@ import { afterEach, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runCheckBranch } from "../../src/application/check-branch-service.js";
 import { runGitFlow } from "../../src/application/git-flow-service.js";
-import { buildHubTabData } from "../../src/application/hub-tab-data.js";
 import { runMergeState } from "../../src/application/merge-state-service.js";
 import { runMultiroot } from "../../src/application/multiroot-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
@@ -21,7 +20,6 @@ import { statusCommand } from "../../src/cli/commands/status.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import type { GitPort } from "../../src/ports/git.js";
-import type { ProcessPort } from "../../src/ports/process.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
@@ -160,15 +158,6 @@ it("los lectores y comandos de fuente rehúsan la ruta ausente por alias sin inv
   const visibility = await runVisibilityDoctor(fs, env, paths, { hub: root });
   expect(visibility.reports[0]?.status).toBe("source-path-missing");
   expect(visibility.unreadable_sources?.[0]).toContain("aw add-source remoto:<ruta>");
-
-  const proc = {
-    run: async () => {
-      throw new Error("proc NO debe correr");
-    },
-  } as unknown as ProcessPort;
-  const project = await buildHubTabData({ fs, env, git, process: proc, paths });
-  expect(project.git).toBeNull();
-  expect(project.sources[0]?.error).toContain("la ruta de la fuente remoto no existe en este host");
 });
 
 it("status y resume no descartan la fuente ausente ni en JSON ni en la salida humana", async () => {

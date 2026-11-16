@@ -27,7 +27,6 @@ import {
   TARGET_ROOTS,
 } from "../../src/application/self/install-targets.js";
 import { hookRemoverCoverage } from "../../src/application/self/uninstall.js";
-import { HOSTS, SHARED_DESTINATIONS, supportPill } from "../../src/cli/tui/hosts.js";
 import {
   HARNESSES,
   HOST_INSTALL_TARGETS,
@@ -49,13 +48,6 @@ describe("catálogo único de hosts", () => {
       expect(host.hooks.events, host.id).not.toHaveProperty("UserPromptSubmit");
     }
   });
-  it("la TUI proyecta exactamente los hosts del dominio, en su orden", () => {
-    expect(HOSTS.map((h) => h.id)).toEqual([...HOST_INSTALL_TARGETS]);
-    // Y `agents` NO está entre ellos: es destino compartido.
-    expect(HOSTS.map((h) => h.id)).not.toContain("agents");
-    expect(SHARED_DESTINATIONS.map((d) => d.id)).toEqual([...SHARED_INSTALL_TARGETS]);
-  });
-
   it("los destinos de instalación son exactamente hosts + destinos compartidos", () => {
     expect([...INSTALL_TARGETS].sort()).toEqual(
       [...HOST_INSTALL_TARGETS, ...SHARED_INSTALL_TARGETS].sort(),
@@ -63,32 +55,6 @@ describe("catálogo único de hosts", () => {
     // TypeScript ya obliga a que TARGET_ROOTS tenga toda clave; esto pin-ea que
     // no tenga NINGUNA de más.
     expect(Object.keys(TARGET_ROOTS).sort()).toEqual([...INSTALL_TARGETS].sort());
-  });
-
-  it("la TUI toma etiqueta, glifo y nivel del dominio (nada escrito a mano)", () => {
-    for (const spec of HARNESSES) {
-      const projected = HOSTS.find((h) => h.id === spec.installTarget);
-      expect(projected?.name, spec.id).toBe(spec.label);
-      expect(projected?.glyph, spec.id).toBe(spec.glyph);
-      expect(projected?.tier, spec.id).toBe(spec.support.tier);
-    }
-  });
-
-  it("un host sin verificación de una corrida se muestra como 'unverified', nunca como verificado", () => {
-    for (const host of HOSTS) {
-      const pill = supportPill(host);
-      if (host.verified === null) {
-        expect(pill, host.id).toContain("unverified");
-      } else {
-        expect(pill, host.id).toContain(host.verified.at);
-      }
-    }
-  });
-
-  it("todo destino compartido declara qué hosts lo leen", () => {
-    for (const dest of SHARED_DESTINATIONS) {
-      expect(dest.readBy.length, dest.id).toBeGreaterThan(0);
-    }
   });
 });
 

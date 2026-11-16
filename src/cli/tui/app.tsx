@@ -1,482 +1,455 @@
 import { basename } from "node:path";
 import { Box, type Key, Text, useApp, useInput } from "ink";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { runHubBlockUpsertWrite } from "../../application/hub-block-upsert-service.js";
-import { formatTuiEvent } from "../../application/logging/log-events.js";
-import type { DefaultBranches } from "../../application/parsers/hub-block.js";
-import { writeNamespacePin } from "../../application/self/namespace-info.js";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type GitFlowAction,
+  type GitFlowInput,
+  type GitFlowResult,
+  runGitFlow,
+} from "../../application/git-flow-service.js";
+import { formatGitFlowSourceLine, formatTuiEvent } from "../../application/logging/log-events.js";
+import { attributeTuiKeypress, grantProdConsent } from "../../application/prod-consent.js";
+import { runSources } from "../../application/sources-service.js";
 import type { ExitCode } from "../../domain/types.js";
-import type { MenuAction } from "../interactive-menu.js";
 import type { CliContext } from "../types.js";
-import { HomeFooter } from "./components/home-footer.js";
-import { HomeHeader } from "./components/home-header.js";
-import { NotificationStack } from "./components/notification-stack.js";
+import { ACTION_LABEL, FlowResultView } from "./components/git-flow-actions.js";
 import { ScreenFrame } from "./components/screen-frame.js";
-import { TabBar } from "./components/tab-bar.js";
-import { type HubContext, TABS_LIST, type TabId } from "./components/tabs-config.js";
-import type { LogEntry } from "./data/logs.js";
-import { loadLogs } from "./data/logs.js";
+import { SectionHead } from "./components/section-head.js";
 import { hubRoot } from "./hub-root.js";
-import { InputLockProvider, useInputLock } from "./input-lock.js";
-import { NotificationCenterProvider, useNotifications } from "./notification-center.js";
-import { type PublicStatusSummary, readPublicStatus } from "./public-status.js";
-import { ConfigTab } from "./tabs/config-tab.js";
-import { HubTab } from "./tabs/hub-tab.js";
-import { McpTab } from "./tabs/mcp-tab.js";
-import { StatusTab } from "./tabs/status-tab.js";
-import { WorkflowTab } from "./tabs/workflow-tab.js";
-import { applyAccent, colors } from "./theme.js";
-import { DEFAULT_TUI_PREFS, type TuiPrefs, TuiPrefsService } from "./tui-prefs.js";
-import { useOnMount } from "./use-on-mount.js";
+import { type PendingRead, readPending } from "./public-status.js";
+import { rowWidth, truncateCells } from "./row-width.js";
+import { colors, icons } from "./theme.js";
+import { moveWithArrows, useListWindow, windowRangeHint } from "./use-list-window.js";
+import { useTerminalSize } from "./use-terminal-size.js";
 
-export type TuiResult =
-  | { kind: "menu-action"; action: MenuAction }
-  | { kind: "exit"; exitCode: ExitCode };
+/** `update` leaves the TUI so the CLI runs `aw self update` on the main screen. */
+export type TuiResult = { kind: "update" } | { kind: "exit"; exitCode: ExitCode };
 
-// Order and keymap derive from TABS_LIST (single source). Adding a tab there
-// propagates here without touching this file.
-const TAB_ORDER: readonly TabId[] = TABS_LIST.map((t) => t.id);
+export const ALL_SOURCES = "todas las fuentes";
 
-const TAB_BY_KEY: Record<string, TabId> = Object.fromEntries(TABS_LIST.map((t) => [t.key, t.id]));
+const FLOW_ACTIONS: readonly GitFlowAction[] = ["sync", "to-dev", "to-qa", "to-prod"];
 
-// Action ids that exit the TUI and hand off to the CLI (main's
-// `dispatchMenuAction`) as the mapped MenuAction.
-const EXIT_ACTIONS: Record<string, MenuAction | undefined> = {
-  "hub-init": "hub-init",
-  "install-skill": "install-skill",
-  "self:doctor": "doctor",
-  "self:update": "update",
-  "self:help": "help",
-  "self:mcp-cli": "mcp",
-};
+/** Pending items shown before the rest collapse into one «+N más» line. */
+const MAX_PENDING = 5;
+
+/**
+ * Rows the frame spends whatever the view: border + paddingY (4), title (1),
+ * body marginTop (1), footer (1 + 1 marginTop) and 1 of slack.
+ */
+const CHROME_ROWS = 9;
+
+/** A git-flow view's own rows above its list: SectionHead (1) + its summary line with marginY (3). */
+const FLOW_VIEW_ROWS = 4;
+
+interface SourceLine {
+  alias: string;
+  branch: string | null;
+  dirty: boolean | null;
+  error: string | null;
+}
+
+type Sources =
+  | { state: "loading" }
+  | { state: "none" }
+  | { state: "failed"; message: string }
+  | { state: "ready"; lines: SourceLine[] };
+
+type Mode =
+  | { kind: "home" }
+  | { kind: "actions" }
+  | { kind: "running"; label: string }
+  | { kind: "result"; action: GitFlowAction; result: GitFlowResult }
+  | { kind: "confirm-prod"; input: GitFlowInput; preview: GitFlowResult }
+  | { kind: "notice"; lines: string[] };
 
 export interface AppProps {
   version: string;
   ctx: CliContext;
   onResult: (result: TuiResult) => void;
-  /** Prefs loaded at boot (run.tsx). Optional for tests → defaults. */
-  initialPrefs?: TuiPrefs;
 }
 
-export function App(props: AppProps) {
-  return (
-    <InputLockProvider>
-      <NotificationCenterProvider {...(props.ctx.logger ? { logger: props.ctx.logger } : {})}>
-        <AppShell {...props} />
-      </NotificationCenterProvider>
-    </InputLockProvider>
-  );
-}
+/**
+ * The whole TUI: one screen that answers «where is my work and what can I do
+ * now?» — the hub's pending items, its sources with their branch and state,
+ * the git flow over one source or all of them, and the update line.
+ */
+export function App({ version, ctx, onResult }: AppProps) {
+  const { exit } = useApp();
+  const [pending, setPending] = useState<PendingRead | null>(null);
+  const [sources, setSources] = useState<Sources>({ state: "loading" });
+  const [latest, setLatest] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>({ kind: "home" });
+  const [cursor, setCursor] = useState(0);
+  const [actionCursor, setActionCursor] = useState(0);
+  const [reloadNonce, setReloadNonce] = useState(0);
 
-function AppShell({ version, ctx, onResult, initialPrefs }: AppProps) {
-  const prefs0 = initialPrefs ?? DEFAULT_TUI_PREFS;
-  const [activeTab, setActiveTab] = useState<TabId>(
-    TABS_LIST.some((tab) => tab.id === prefs0.initialScreen) ? prefs0.initialScreen : "status",
-  );
-  const [prefs, setPrefs] = useState<TuiPrefs>(prefs0);
-  const prefsSvc = useMemo(() => new TuiPrefsService(ctx.fs, ctx.paths), [ctx]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `reloadNonce` is the refresh trigger.
+  useEffect(() => {
+    let live = true;
+    void readPending(ctx).then((read) => live && setPending(read));
+    void loadSources(ctx).then((read) => live && setSources(read));
+    void latestVersion(ctx, version).then((v) => live && setLatest(v));
+    return () => {
+      live = false;
+    };
+  }, [ctx, version, reloadNonce]);
 
-  // Pref change from the Config tab. Persists + applies live. The setPrefs
-  // re-render makes children re-read the `colors` already mutated by
-  // applyAccent (no memoization in between → propagates to the whole tree).
-  const onChangePrefs = useCallback(
-    (patch: Partial<TuiPrefs>) => {
-      if (patch.accentColor) applyAccent(patch.accentColor);
-      setPrefs((prev) => ({ ...prev, ...patch }));
-      void prefsSvc.save(patch);
+  const lines = sources.state === "ready" ? sources.lines : [];
+  const targets = lines.length > 0 ? [...lines.map((s) => s.alias), ALL_SOURCES] : [];
+  const target = targets[Math.min(cursor, targets.length - 1)] ?? ALL_SOURCES;
+
+  const quit = useCallback(
+    (result: TuiResult) => {
+      onResult(result);
+      exit();
     },
-    [prefsSvc],
+    [onResult, exit],
   );
-  // Persists the namespace to the config file NamespaceResolver reads
-  // (~/.config/agent-workflow/namespace). Takes effect on the next start.
-  const onSaveNamespace = useCallback(
-    (ns: string) => {
-      void writeNamespacePin(ctx.fs, ctx.env.homeDir(), ns);
+
+  const backHome = useCallback(() => {
+    setMode({ kind: "home" });
+    setReloadNonce((n) => n + 1);
+  }, []);
+
+  const executeFlow = useCallback(
+    async (input: GitFlowInput, label: string) => {
+      const { action } = input;
+      setMode({ kind: "running", label: `${ACTION_LABEL[action]} · ${label}` });
+      const event = `git-flow ${action} · ${label === ALL_SOURCES ? "all-sources" : label}`;
+      const result = await runGitFlow(ctx.fs, ctx.git, ctx.paths, input).catch(
+        (err): GitFlowResult => failedRun(action, (err as Error).message),
+      );
+      logFlowResult(ctx, event, result);
+      // The plan moved between the preview and the yes: nothing ran, and the
+      // person is asked again over the preview of what would run now.
+      if (result.consent_required !== undefined) {
+        const { consent: _spent, ...fresh } = input;
+        return setMode({ kind: "confirm-prod", input: fresh, preview: result });
+      }
+      setMode({ kind: "result", action, result });
     },
     [ctx],
   );
-  // hubName hydrates async from the cwd (package.json#name or basename).
-  // Empty placeholder so the boot doesn't flash a wrong brand.
-  const [hubName, setHubName] = useState<string>("");
-  const [hubCtx, setHubCtx] = useState<HubContext>({
-    branchLabel: "— · loading",
-    sessionsLabel: "— sessions",
-  });
-  const [workflowSummary, setWorkflowSummary] = useState<PublicStatusSummary | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  // Bumped by `r`: remounts the active tab (its effects re-fetch) and reloads
-  // the shell data (header + the Status tab's log history).
-  const [refreshNonce, setRefreshNonce] = useState(0);
-  const { exit } = useApp();
-  const { locked: inputLocked } = useInputLock();
-  const {
-    items: notifications,
-    push: pushNotification,
-    pushToast,
-    dismiss,
-    dismissTop,
-    triggerAction,
-  } = useNotifications();
 
-  // Branch defaults live in the hub block of AGENTS.md (the same
-  // "database" git-flow reads), never in the user-global TUI prefs. The upsert
-  // merges per role, so one edited role never clears the others.
-  //
-  // The service REPORTS failure (busy cwd lock, unwritable file) by RESOLVING
-  // with an error payload instead of throwing, so the outcome must be inspected
-  // and handed back: the tab only adopts the new value when the write landed.
-  const onSaveBranchDefaults = useCallback(
-    async (defaultBranches: DefaultBranches): Promise<boolean> => {
-      const res = await runHubBlockUpsertWrite(ctx.fs, ctx.env, ctx.paths, {
-        op: "init",
-        defaultBranches,
-      });
-      const detail = "error" in res ? res.error : res.ok ? null : "AGENTS.md";
-      if (detail !== null) {
-        pushToast({ tone: "err", title: "No se guardaron las ramas", body: detail });
-        return false;
+  // «Enviar a PROD» never runs straight away: it opens confirm-prod over the
+  // service's own preview. "All sources" becomes the explicit list of declared
+  // sources (the service refuses `all` for PROD).
+  const runFlow = useCallback(
+    async (action: GitFlowAction) => {
+      const isAll = target === ALL_SOURCES;
+      if (action !== "to-prod") {
+        return executeFlow(isAll ? { action, all: true } : { action, source: target }, target);
       }
-      return true;
+      setMode({ kind: "running", label: `${ACTION_LABEL[action]} · vista previa · ${target}` });
+      const input: GitFlowInput = isAll
+        ? { action, sources: lines.map((s) => s.alias) }
+        : { action, source: target };
+      const preview = await runGitFlow(ctx.fs, ctx.git, ctx.paths, input).catch(
+        (err): GitFlowResult => failedRun(action, (err as Error).message),
+      );
+      if (preview.consent_required === undefined) {
+        logFlowResult(ctx, `git-flow ${action} · ${target}`, preview);
+        return setMode({ kind: "result", action, result: preview });
+      }
+      setMode({ kind: "confirm-prod", input, preview });
     },
-    [ctx, pushToast],
+    [ctx, target, lines, executeFlow],
   );
 
-  const loadShellData = useCallback(async () => {
-    const name = await resolveHubName(ctx);
-    setHubName(name);
-    const [wctx, summary] = await Promise.all([loadHubContext(ctx), readPublicStatus(ctx)]);
-    setHubCtx({ ...wctx, sessionsLabel: summary.sessionsLabel });
-    setWorkflowSummary(summary);
-    const dailyLogs = await loadLogs(ctx);
-    setLogs(dailyLogs);
-  }, [ctx]);
-
-  useEffect(() => {
-    void loadShellData();
-  }, [loadShellData]);
-
-  // Update-available banner. Owned by the shell so it shows regardless of the
-  // active tab.
-  //
-  // `manual` distinguishes the silent boot-check from the user-triggered
-  // recheck via the `r` action (explicit "Checking…" / "Up to date" feedback).
-  const runUpdateCheck = useCallback(
-    async (opts?: { manual?: boolean }) => {
-      const manual = opts?.manual === true;
-      // Manual recheck: explicit feedback. Boot-check: a registry error
-      // (offline, npm hiccup) is benign noise → daily log, not a red toast.
-      const reportFailure = (detail: string) => {
-        if (manual) {
-          pushToast({ tone: "err", title: "Update check failed", body: detail });
-        } else {
-          void ctx.logger?.warn(formatTuiEvent("update check", "failed", detail));
-        }
-      };
-      if (manual) {
-        pushToast({ tone: "info", title: "Checking npm registry…" });
-      }
-      try {
-        const result = await ctx.process.run(
-          "npm",
-          ["view", ctx.runtime.packageName, "version"],
-          {},
-        );
-        if (result.code !== 0) {
-          reportFailure(result.stderr.trim() || "npm view returned non-zero exit.");
-          return;
-        }
-        const latest = result.stdout.trim();
-        if (!latest) return;
-        if (latest === version) {
-          dismiss("update-available");
-          if (manual) {
-            pushToast({ tone: "ok", title: "Up to date", body: `v${version}` });
-          }
-          return;
-        }
-        pushNotification({
-          id: "update-available",
-          tone: "warn",
-          title: (
-            <Text>
-              <Text color={colors.bright} bold>
-                v{version}
-              </Text>
-              <Text color={colors.dim}> → </Text>
-              <Text color={colors.bright} bold>
-                v{latest}
-              </Text>
-              <Text color={colors.dim}> available</Text>
-            </Text>
-          ),
-          actions: [
-            {
-              // 'u', not 'i': ink dispatches every key to ALL active useInput
-              // hooks, and 'i' is the host-admin empty-state shortcut — with
-              // the banner up it would fire install + update at once.
-              key: "u",
-              label: "apply",
-              emphasis: true,
-              run: () => {
-                onResult({ kind: "menu-action", action: "update" });
-                exit();
-              },
-            },
-            { key: "r", label: "recheck", run: () => void runUpdateCheck({ manual: true }) },
-            {
-              key: "o",
-              label: "notes",
-              run: () =>
-                pushToast({
-                  tone: "info",
-                  title: "Release notes",
-                  body: `https://www.npmjs.com/package/${ctx.runtime.packageName}`,
-                }),
-            },
+  // `y` in confirm-prod: only a process with no agent marker publishes, only
+  // the plan the preview showed, and each preview is answered once.
+  const answeredPreview = useRef<GitFlowResult | null>(null);
+  const publishProd = useCallback(
+    (input: GitFlowInput, preview: GitFlowResult) => {
+      const need = preview.consent_required;
+      if (need === undefined || answeredPreview.current === preview) return;
+      answeredPreview.current = preview;
+      const label = input.sources ? ALL_SOURCES : (input.source ?? "");
+      const who = attributeTuiKeypress(ctx.env);
+      if (!who.person) {
+        void ctx.logger?.warn(formatTuiEvent(`git-flow to-prod · ${label}`, "refused", who.reason));
+        return setMode({
+          kind: "notice",
+          lines: [
+            "La publicación en PROD la hace la persona: desde la TUI o desde su propia terminal.",
+            `No se publicó: ${who.reason}.`,
           ],
         });
-      } catch (err) {
-        reportFailure((err as Error).message);
       }
+      const consent = grantProdConsent(who, need.sources, need.plan);
+      if (consent !== null) void executeFlow({ ...input, consent }, label);
     },
-    [ctx, version, pushNotification, pushToast, dismiss, onResult, exit],
+    [ctx, executeFlow],
   );
 
-  useOnMount(() => void runUpdateCheck());
+  const onActionsKey = (key: Key) => {
+    if (key.escape) return setMode({ kind: "home" });
+    if (moveWithArrows(key, FLOW_ACTIONS.length, setActionCursor)) return;
+    const action = FLOW_ACTIONS[actionCursor];
+    if (key.return && action) void runFlow(action);
+  };
 
-  /**
-   * Dispatches actions coming from the tabs and the palette.
-   * Actions that must run a CLI command with stdin (init, doctor, update) exit
-   * the TUI first and are handled by main's `dispatchMenuAction`.
-   */
-  const runAction = useCallback(
-    (id: string) => {
-      // Exits-to-CLI via MenuAction.
-      const menu = EXIT_ACTIONS[id];
-      if (menu) {
-        onResult({ kind: "menu-action", action: menu });
-        exit();
-        return;
-      }
-      if (id === "quit") {
-        onResult({ kind: "exit", exitCode: 0 });
-        exit();
-        return;
-      }
-      // In-app hints (navigation + toasts).
-      if (id === "mcp:add") {
-        setActiveTab("mcp");
-        pushToast({
-          tone: "info",
-          title: "MCP · new connection",
-          body: "Press `a` to open the wizard.",
-        });
-        return;
-      }
-      if (id === "git:status") {
-        pushToast({
-          tone: "info",
-          title: "git status",
-          body: "Open your terminal to see details.",
-        });
-        return;
-      }
-      // Unknown/unwired id — surface it explicitly (never echo the raw id as if
-      // it were a real action). Err tone routes it through the log safety net too.
-      pushToast({ tone: "err", title: "Acción no disponible", body: id });
-    },
-    [pushToast, onResult, exit],
-  );
-
-  const rotateTab = useCallback((direction: 1 | -1) => {
-    setActiveTab((current) => {
-      const idx = TAB_ORDER.indexOf(current);
-      const next = (idx + direction + TAB_ORDER.length) % TAB_ORDER.length;
-      return TAB_ORDER[next] ?? current;
-    });
-  }, []);
+  const onHomeKey = (input: string, key: Key) => {
+    if (input === "r") return setReloadNonce((n) => n + 1);
+    if (targets.length === 0 || moveWithArrows(key, targets.length, setCursor)) return;
+    if (key.return) {
+      setActionCursor(0);
+      setMode({ kind: "actions" });
+    }
+  };
 
   useInput(
     (input, key) => {
-      if (inputLocked) return;
-
-      // Notif keys take priority: with active notifs, `x` dismisses the top
-      // one and action keys (i/r/o/d/…) trigger the action of the newest item
-      // carrying them.
-      if (handleNotificationKey(input, key, notifications.length, dismissTop, triggerAction))
-        return;
-
-      if (key.tab) {
-        rotateTab(key.shift ? -1 : 1);
-        return;
-      }
-      if (["q", "Q"].includes(input)) {
-        onResult({ kind: "exit", exitCode: 0 });
-        exit();
-        return;
-      }
-      // Refresh: remounts the active tab (via refreshNonce) and reloads the
-      // shell. If a notif claims `r` (update-banner recheck), it wins above.
-      // In the Config tab, `r` is consumed by that tab (reset all) → no
-      // refresh here.
-      if (isShellRefresh(input, activeTab)) {
-        setRefreshNonce((n) => n + 1);
-        void loadShellData();
-        pushToast({ tone: "info", title: "Refreshing…", duration: 1200 });
-        return;
-      }
-      const target = TAB_BY_KEY[input];
-      if (target) setActiveTab(target);
+      if (input === "q") return quit({ kind: "exit", exitCode: 0 });
+      const global = mode.kind === "home" || mode.kind === "actions";
+      if (input === "u" && latest !== null && global) return quit({ kind: "update" });
+      if (mode.kind === "notice" && key.escape) return backHome();
+      if (mode.kind === "actions") return onActionsKey(key);
+      if (mode.kind === "home") onHomeKey(input, key);
     },
-    { isActive: true },
+    { isActive: mode.kind !== "running" && mode.kind !== "confirm-prod" },
   );
 
-  const hasNotifs = notifications.length > 0;
+  const updateKey = latest !== null ? " · u actualizar" : "";
+  const chrome = CHROME_ROWS + (latest !== null ? 1 : 0);
 
   return (
     <ScreenFrame>
-      <Box flexDirection="column" flexGrow={1} minHeight={0}>
-        <HomeHeader brand={hubName} version={version} hubContext={hubCtx} />
-        <NotificationStack items={notifications} />
-        <TabBar activeTabId={activeTab} />
-        {/* flexShrink + minHeight=0 + overflowY=hidden: the active tab's
-            content clips inside its region (never pushes the footer off
-            screen). Internal scrolling for tall tabs arrives in T2. */}
-        <Box
-          key={refreshNonce}
-          flexDirection="column"
-          flexGrow={1}
-          flexShrink={1}
-          minHeight={0}
-          overflowY="hidden"
-          borderStyle="single"
-          borderColor={colors.accent}
-          paddingX={2}
-          paddingY={1}
-        >
-          {activeTab === "status" ? (
-            <StatusTab
-              ctx={ctx}
-              version={version}
-              isActive={true}
-              onActivateTab={(t) => setActiveTab(t)}
-              onToast={pushToast}
-              logs={logs}
-              {...(prefs.lastOpenApp !== undefined ? { lastOpenApp: prefs.lastOpenApp } : {})}
-              onSetLastApp={(app) => onChangePrefs({ lastOpenApp: app })}
-              disabledHosts={prefs.disabledHosts}
-            />
-          ) : null}
-          {activeTab === "workflow" ? (
-            <WorkflowTab
-              ctx={ctx}
-              isActive={true}
-              summary={workflowSummary}
-              onToast={pushToast}
-              disabledHosts={prefs.disabledHosts}
-            />
-          ) : null}
-          {activeTab === "hub" ? (
-            <HubTab ctx={ctx} isActive={true} onRunAction={runAction} />
-          ) : null}
-          {activeTab === "mcp" ? (
-            <McpTab
-              ctx={ctx}
-              isActive={true}
-              onToast={pushToast}
-              disabledHosts={prefs.disabledHosts}
-            />
-          ) : null}
-          {activeTab === "config" ? (
-            <ConfigTab
-              ctx={ctx}
-              isActive={true}
-              prefs={prefs}
-              onChange={onChangePrefs}
-              onSaveNamespace={onSaveNamespace}
-              onSaveBranchDefaults={onSaveBranchDefaults}
-            />
-          ) : null}
-        </Box>
-        <HomeFooter showDismiss={hasNotifs} />
+      <Text>
+        <Text color={colors.accent} bold>
+          agent-workflow
+        </Text>
+        <Text color={colors.dim}> · {basename(hubRoot(ctx))}</Text>
+      </Text>
+      {latest !== null ? (
+        <Text color={colors.warn}>
+          Versión nueva: v{version} {icons.arrow} v{latest}
+        </Text>
+      ) : null}
+      <Box flexDirection="column" marginTop={1}>
+        {mode.kind === "running" ? (
+          <Text color={colors.dim}>
+            {icons.spinner} {mode.label}…
+          </Text>
+        ) : null}
+        {mode.kind === "result" ? (
+          <FlowResultView
+            action={mode.action}
+            result={mode.result}
+            reservedRows={chrome + FLOW_VIEW_ROWS}
+            isActive
+            onBack={backHome}
+          />
+        ) : null}
+        {mode.kind === "confirm-prod" ? (
+          <FlowResultView
+            action="to-prod"
+            result={mode.preview}
+            reservedRows={chrome + FLOW_VIEW_ROWS}
+            isActive
+            confirm={{
+              onPublish: () => publishProd(mode.input, mode.preview),
+              onCancel: () => setMode({ kind: "home" }),
+            }}
+          />
+        ) : null}
+        {mode.kind === "notice"
+          ? mode.lines.map((line) => (
+              <Text key={line} color={colors.err}>
+                {line}
+              </Text>
+            ))
+          : null}
+        {mode.kind === "actions" ? <ActionList target={target} cursor={actionCursor} /> : null}
+        {mode.kind === "home" ? (
+          <Home
+            pending={pending}
+            sources={sources}
+            targets={targets}
+            cursor={cursor}
+            chrome={chrome}
+          />
+        ) : null}
       </Box>
+      {footerFor(mode, targets.length > 0, updateKey)}
     </ScreenFrame>
   );
 }
 
+function footerFor(mode: Mode, hasTargets: boolean, updateKey: string) {
+  const keys =
+    mode.kind === "home"
+      ? `${hasTargets ? "↑↓ mover · ⏎ acciones · " : ""}r refrescar · q salir${updateKey}`
+      : mode.kind === "actions"
+        ? `↑↓ mover · ⏎ ejecutar · esc volver · q salir${updateKey}`
+        : mode.kind === "notice"
+          ? "esc volver · q salir"
+          : null;
+  if (keys === null) return null;
+  return (
+    <Box marginTop={1}>
+      <Text color={colors.mute}>{keys}</Text>
+    </Box>
+  );
+}
+
+function Home({
+  pending,
+  sources,
+  targets,
+  cursor,
+  chrome,
+}: {
+  pending: PendingRead | null;
+  sources: Sources;
+  targets: string[];
+  cursor: number;
+  chrome: number;
+}) {
+  const { cols } = useTerminalSize();
+  const width = rowWidth(cols, 2);
+  const items = pending?.state === "available" ? pending.items : [];
+  const shown = items.slice(0, MAX_PENDING);
+  const pendingRows = 2 + Math.max(1, shown.length * 2) + (items.length > MAX_PENDING ? 1 : 0);
+  // Pending block + sources SectionHead (1); the window keeps the cursor visible.
+  const win = useListWindow(targets.length, cursor, chrome + pendingRows + 1);
+  const range = windowRangeHint(win, targets.length);
+
+  return (
+    <Box flexDirection="column">
+      <SectionHead label="Pendientes" count={pending?.state === "available" ? items.length : ""} />
+      <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+        {pending === null ? <Text color={colors.dim}>{icons.spinner} leyendo…</Text> : null}
+        {pending?.state === "unavailable" ? (
+          <Text color={colors.dim}>No se pudo leer `aw status`.</Text>
+        ) : null}
+        {pending?.state === "available" && items.length === 0 ? (
+          <Text color={colors.dim}>Sin trabajo pendiente.</Text>
+        ) : null}
+        {shown.map((item) => (
+          <Box key={item.file} flexDirection="column">
+            <Text color={colors.text}>
+              {truncateCells(`${item.file} ${icons.bullet} ${item.next}`, width)}
+            </Text>
+            <Text color={colors.dim}>{truncateCells(`  ${item.command ?? "—"}`, width)}</Text>
+          </Box>
+        ))}
+        {items.length > MAX_PENDING ? (
+          <Text color={colors.mute}>+{items.length - MAX_PENDING} más · aw status</Text>
+        ) : null}
+      </Box>
+      <SectionHead label="Fuentes" {...(range ? { hint: range } : {})} />
+      <Box flexDirection="column" marginLeft={2}>
+        {sources.state === "loading" ? (
+          <Text color={colors.dim}>{icons.spinner} leyendo…</Text>
+        ) : null}
+        {sources.state === "none" ? (
+          <Text color={colors.dim}>
+            Sin fuentes declaradas: declaralas con `aw add-source` o `aw hub-init --source …`.
+          </Text>
+        ) : null}
+        {sources.state === "failed" ? (
+          <Text color={colors.err}>No se pudieron leer las fuentes: {sources.message}</Text>
+        ) : null}
+        {sources.state === "ready"
+          ? targets.slice(win.start, win.start + win.visible).map((alias, i) => {
+              const active = win.start + i === cursor;
+              const line = sources.lines.find((s) => s.alias === alias);
+              return (
+                <Text key={alias}>
+                  <Text color={active ? colors.accent : colors.faint}>
+                    {active ? icons.focusBar : " "}{" "}
+                  </Text>
+                  <Text color={active ? colors.bright : colors.text} bold={active}>
+                    {alias}
+                  </Text>
+                  {line ? <Text color={colors.dim}> {sourceState(line)}</Text> : null}
+                </Text>
+              );
+            })
+          : null}
+      </Box>
+    </Box>
+  );
+}
+
+function ActionList({ target, cursor }: { target: string; cursor: number }) {
+  return (
+    <Box flexDirection="column">
+      <SectionHead label={target} />
+      <Box flexDirection="column" marginLeft={2} marginTop={1}>
+        {FLOW_ACTIONS.map((action, i) => (
+          <Text key={action} color={i === cursor ? colors.bright : colors.text} bold={i === cursor}>
+            <Text color={i === cursor ? colors.accent : colors.faint}>
+              {i === cursor ? icons.focusBar : " "}{" "}
+            </Text>
+            {ACTION_LABEL[action]}
+          </Text>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+function sourceState(line: SourceLine): string {
+  if (line.error !== null) return line.error;
+  const branch = line.branch ?? "sin rama";
+  if (line.dirty === null) return branch;
+  return `${branch} ${icons.bullet} ${line.dirty ? "con cambios sin confirmar" : "limpia"}`;
+}
+
+async function loadSources(ctx: CliContext): Promise<Sources> {
+  try {
+    const out = await runSources(ctx.fs, ctx.env, ctx.git, ctx.paths, {});
+    if (out.error === "no_sources_declared") return { state: "none" };
+    return {
+      state: "ready",
+      lines: out.sources.map((s) => ({
+        alias: s.alias ?? "?",
+        branch: s.current_branch ?? null,
+        dirty: s.dirty ?? null,
+        error: s.error ?? null,
+      })),
+    };
+  } catch (err) {
+    const message = (err as Error).message;
+    void ctx.logger?.warn(formatTuiEvent("sources", "failed", message));
+    return { state: "failed", message };
+  }
+}
+
 /**
- * Resolves the hub name shown in the header.
- * Priority: `package.json#name` (without the `@org/` scope) → `basename(cwd)`.
- * Any read/parse error falls back to basename.
+ * The newer published version, or `null`. No network, a registry error or the
+ * same version all mean no line: a failed check is logged, never shown.
  */
-async function resolveHubName(ctx: CliContext): Promise<string> {
-  const cwd = hubRoot(ctx);
+async function latestVersion(ctx: CliContext, version: string): Promise<string | null> {
   try {
-    const pkgPath = `${cwd}/package.json`;
-    if (await ctx.fs.exists(pkgPath)) {
-      const raw = await ctx.fs.readText(pkgPath);
-      const pkg = JSON.parse(raw) as { name?: string };
-      const name = (pkg.name ?? "").trim();
-      if (name) {
-        const slash = name.lastIndexOf("/");
-        return slash >= 0 ? name.slice(slash + 1) : name;
-      }
+    const result = await ctx.process.run("npm", ["view", ctx.runtime.packageName, "version"], {});
+    const latest = result.code === 0 ? result.stdout.trim() : "";
+    if (result.code !== 0) {
+      void ctx.logger?.warn(formatTuiEvent("update check", "failed", result.stderr.trim()));
     }
-  } catch {
-    // fallback below
+    return latest !== "" && latest !== version ? latest : null;
+  } catch (err) {
+    void ctx.logger?.warn(formatTuiEvent("update check", "failed", (err as Error).message));
+    return null;
   }
-  return basename(cwd) || "hub";
 }
 
-async function loadHubContext(ctx: CliContext): Promise<HubContext> {
-  const cwd = hubRoot(ctx);
-
-  // Branch + sync
-  let branchLabel = "— · no git";
-  try {
-    const branchRes = await ctx.process.run("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-      cwd,
-    });
-    if (branchRes.code === 0) {
-      const branch = branchRes.stdout.trim();
-      const dirtyRes = await ctx.process
-        .run("git", ["status", "--porcelain"], { cwd })
-        .catch(() => null);
-      const isDirty = (dirtyRes?.stdout.trim() ?? "").length > 0;
-      const aheadRes = await ctx.process
-        .run("git", ["rev-list", "--count", "--left-right", "@{u}...HEAD"], { cwd })
-        .catch(() => null);
-      const aheadBehind = aheadRes?.stdout.trim().split(/\s+/);
-      const behind = aheadBehind?.[0] ?? "0";
-      const ahead = aheadBehind?.[1] ?? "0";
-      const sync =
-        ahead !== "0" || behind !== "0" ? `${ahead}↑ ${behind}↓` : isDirty ? "dirty" : "in sync";
-      branchLabel = `hub: ${branch} · ${sync}`;
-    }
-  } catch {
-    // keep default
-  }
-
-  return { branchLabel, sessionsLabel: "— sessions" };
+function failedRun(action: GitFlowAction, error: string): GitFlowResult {
+  return { action, dry_run: false, status: "error", results: [], error };
 }
 
-function handleNotificationKey(
-  input: string,
-  key: Key,
-  count: number,
-  dismissTop: () => boolean,
-  triggerAction: (key: string) => boolean,
-): boolean {
-  if (count > 0 && !key.ctrl && !key.meta) {
-    if (input === "x" || input === "X") {
-      if (dismissTop()) return true;
-    } else if (input) {
-      if (triggerAction(input)) return true;
-    }
-  }
-  return false;
-}
+const FLOW_LOG_LEVEL = { ok: "info", conflict: "warn", error: "error" } as const;
 
-function isShellRefresh(input: string, activeTab: TabId): boolean {
-  return (input === "r" || input === "R") && activeTab !== "config";
+/** The event line, then one line per source that did not finish (source, step, git's stderr). */
+function logFlowResult(ctx: CliContext, event: string, result: GitFlowResult): void {
+  void ctx.logger?.log(
+    FLOW_LOG_LEVEL[result.status],
+    formatTuiEvent(event, result.status, result.error),
+  );
+  for (const r of result.results) {
+    if (r.status === "ok") continue;
+    void ctx.logger?.log(FLOW_LOG_LEVEL[r.status], formatGitFlowSourceLine(result.action, r));
+  }
 }

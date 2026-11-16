@@ -3,6 +3,7 @@ import {
   type HubBlockUpsertInput,
   runHubBlockUpsertWrite,
 } from "../../application/hub-block-upsert-service.js";
+import type { DefaultBranches } from "../../application/parsers/hub-block.js";
 import type { CommandResult } from "../../domain/types.js";
 import type { ParsedArgs } from "../parser.js";
 import { parseFuentesSpecs } from "../parsers/fuentes.js";
@@ -11,10 +12,26 @@ import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
 import type { CliContext } from "../types.js";
 
+/** Each `--default-*-branch` flag and the hub default role it writes. */
+const DEFAULT_BRANCH_FLAGS = [
+  ["default-main-branch", "principal"],
+  ["default-dev-branch", "desarrollo"],
+  ["default-qa-branch", "qa"],
+] as const satisfies ReadonlyArray<readonly [string, keyof DefaultBranches]>;
+
 export const hubBlockUpsertCommand: CliCommand = {
   name: "hub-block",
   flags: {
-    known: ["init", "read", "nombre", "fuente", "main-branch", "working-branch", "verbose"],
+    known: [
+      "init",
+      "read",
+      "nombre",
+      "fuente",
+      "main-branch",
+      "working-branch",
+      ...DEFAULT_BRANCH_FLAGS.map(([flag]) => flag),
+      "verbose",
+    ],
     exclusive: [["read", "init"]],
     repeatable: ["fuente", "working-branch"],
   },
@@ -30,6 +47,18 @@ export const hubBlockUpsertCommand: CliCommand = {
       fuente: { value: "<alias:path[:branch]>", effect: "Declare a source with --init." },
       "main-branch": { value: "<branch>", effect: "Main branch for sources that declare none." },
       "working-branch": { value: "<alias:branch>", effect: "Working branch of one source." },
+      "default-main-branch": {
+        value: "<branch>",
+        effect: "Hub default main (PROD) branch; a role not given keeps its value.",
+      },
+      "default-dev-branch": {
+        value: "<branch>",
+        effect: "Hub default development branch; a role not given keeps its value.",
+      },
+      "default-qa-branch": {
+        value: "<branch>",
+        effect: "Hub default QA branch; a role not given keeps its value.",
+      },
       verbose: { effect: "Return the full detail." },
     },
     output:
@@ -76,6 +105,13 @@ function buildUpsertInput(
 
   const mainBranch = args.values.get("main-branch");
   if (mainBranch !== undefined && mainBranch.length > 0) input.mainBranch = mainBranch;
+
+  const defaultBranches: DefaultBranches = {};
+  for (const [flag, role] of DEFAULT_BRANCH_FLAGS) {
+    const branch = args.values.get(flag);
+    if (branch !== undefined && branch.length > 0) defaultBranches[role] = branch;
+  }
+  if (Object.keys(defaultBranches).length > 0) input.defaultBranches = defaultBranches;
 
   return { input };
 }

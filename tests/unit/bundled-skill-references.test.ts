@@ -18,8 +18,11 @@ function sourceFiles(dir: string): string[] {
 
 describe("referencias literales al bundle desde src/", () => {
   it("cada ruta skills/….md citada existe en el paquete", () => {
-    const cited = sourceFiles(source).flatMap((file) => references(readFileSync(file, "utf8")));
-    expect(cited.length).toBeGreaterThan(0);
+    // The sweep reads real sources; today none cites the bundle by path, and
+    // the synthetic case below keeps the check from passing vacuously.
+    const files = sourceFiles(source);
+    expect(files.length).toBeGreaterThan(100);
+    const cited = files.flatMap((file) => references(readFileSync(file, "utf8")));
     expect(cited).not.toContain("skills/w/roles/git/ROLE.md");
     expect(cited.filter((path) => !existsSync(join(root, path)))).toEqual([]);
     expect(existsSync(join(root, references('"skills/w/modules/no-existe.md"')[0] ?? ""))).toBe(

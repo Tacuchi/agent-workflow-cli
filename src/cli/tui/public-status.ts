@@ -1,29 +1,38 @@
 import type { CliContext } from "../types.js";
 import { hubRoot } from "./hub-root.js";
 
-/** Read only the public `aw status --format json` contract, never a flow session. */
-export interface PublicStatusSummary {
-  state: "available" | "unavailable";
-  sessionsLabel: string;
-  pending: number | null;
-  next: string | null;
+/** One pending item of the hub, as the public `aw status --format json` gives it. */
+export interface PendingItem {
+  file: string;
+  next: string;
+  command: string | null;
 }
 
-const UNAVAILABLE: PublicStatusSummary = {
-  state: "unavailable",
-  sessionsLabel: "— sessions",
-  pending: null,
-  next: null,
-};
+export type PendingRead = { state: "available"; items: PendingItem[] } | { state: "unavailable" };
+
+const UNAVAILABLE: PendingRead = { state: "unavailable" };
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-const count = (value: unknown): value is number =>
-  typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+function pendingItem(entry: unknown): PendingItem | null {
+  if (!record(entry) || typeof entry.file !== "string") return null;
+  if (!record(entry.detail) || typeof entry.detail.next !== "string") return null;
+  return {
+    file: entry.file,
+    next: entry.detail.next,
+    command: typeof entry.command === "string" ? entry.command : null,
+  };
+}
 
-export async function readPublicStatus(ctx: CliContext): Promise<PublicStatusSummary> {
+/**
+ * Reads the hub's pending work only through the public `aw status --format json`
+ * contract, in a subprocess, so the TUI never loads the flow engine. It reads
+ * the pipeline and nothing else: no counters, so a field the CLI retires can
+ * never leave the screen without its pending list.
+ */
+export async function readPending(ctx: CliContext): Promise<PendingRead> {
   try {
     const result = await ctx.process.run(ctx.runtime.binName, ["status", "--format", "json"], {
       cwd: hubRoot(ctx),
@@ -31,37 +40,13 @@ export async function readPublicStatus(ctx: CliContext): Promise<PublicStatusSum
     });
     if (result.code !== 0) return UNAVAILABLE;
     const body: unknown = JSON.parse(result.stdout);
-    if (!record(body) || !record(body.counts)) return UNAVAILABLE;
+    if (!record(body)) return UNAVAILABLE;
     // The default JSON leaves an empty pipeline out: absent means nothing pending.
-    const pipeline = body.pipeline === undefined ? [] : body.pipeline;
+    const pipeline = body.pipeline ?? [];
     if (!Array.isArray(pipeline)) return UNAVAILABLE;
-    const counts = body.counts;
-    if (
-      !count(counts.sessions_active) ||
-      !count(counts.sessions_closed) ||
-      !count(counts.sessions_paused) ||
-      !count(counts.sessions_abandoned) ||
-      !count(counts.pending)
-    )
-      return UNAVAILABLE;
-    let next: string | null = counts.pending === 0 ? "sin trabajo pendiente" : null;
-    if (pipeline.length > 0) {
-      const first: unknown = pipeline[0];
-      if (!record(first) || !record(first.detail) || typeof first.detail.next !== "string")
-        return UNAVAILABLE;
-      next = `${typeof first.file === "string" ? `${first.file}: ` : ""}${first.detail.next}`;
-    }
-    const total =
-      counts.sessions_active +
-      counts.sessions_closed +
-      counts.sessions_paused +
-      counts.sessions_abandoned;
-    return {
-      state: "available",
-      sessionsLabel: `${total} sessions · ${counts.sessions_active} active`,
-      pending: counts.pending,
-      next,
-    };
+    const items = pipeline.map(pendingItem);
+    if (items.some((item) => item === null)) return UNAVAILABLE;
+    return { state: "available", items: items as PendingItem[] };
   } catch {
     return UNAVAILABLE;
   }

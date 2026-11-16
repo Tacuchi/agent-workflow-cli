@@ -147,7 +147,7 @@ describe("the unit is called hub everywhere a person or an agent reads it", () =
     expect(helpTexts().length).toBeGreaterThan(ALL_COMMANDS.length);
     expect(errorTexts().some(([, text]) => text === "HUB_MIGRATION_REQUIRED")).toBe(true);
     expect(bundleTexts().some(([where]) => where.endsWith("skills/w/SKILL.md"))).toBe(true);
-    expect(tuiTexts().some(([, text]) => text.includes("Quitar del hub"))).toBe(true);
+    expect(tuiTexts().some(([, text]) => text.includes("todas las fuentes"))).toBe(true);
   });
 
   it("goes red when «workspace» comes back into a help", () => {

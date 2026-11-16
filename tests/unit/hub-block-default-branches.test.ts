@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { parseHubBlock } from "../../src/application/parsers/hub-block.js";
+import { PathsService } from "../../src/application/paths-service.js";
 import { blockFromParsed, renderHubBlock } from "../../src/application/render/hub-block.js";
+import { hubBlockUpsertCommand } from "../../src/cli/commands/hub-block.js";
+import type { ParsedArgs } from "../../src/cli/parser.js";
+import type { CliContext } from "../../src/cli/types.js";
+import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
 
 const BASE = {
   proyecto: "X",
@@ -119,5 +129,82 @@ describe("project-block main_branch (nullable)", () => {
     const parsed = parseHubBlock(first);
     if (!parsed) throw new Error("expected parsed block");
     expect(blockFromParsed(parsed)).toBe(first);
+  });
+});
+
+describe("aw hub-block --init --default-*-branch", () => {
+  let cwd: string;
+  let ctx: CliContext;
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(join(tmpdir(), "aw-hub-block-defaults-"));
+    const paths = new PathsService(normalizeNamespace("agent-workflow"), cwd, cwd);
+    const block = renderHubBlock({
+      ...BASE,
+      fuentes: [{ alias: "core", path: "core", main_branch: null }],
+      defaultBranches: { principal: "main", desarrollo: "development", qa: "qa" },
+      markers: paths.blockMarkers(),
+    });
+    await writeFile(join(cwd, "AGENTS.md"), block, "utf8");
+    ctx = { fs: new NodeFileSystem(), env: new FakeEnv(cwd, cwd), paths } as unknown as CliContext;
+  });
+  afterEach(async () => {
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  function init(values: Record<string, string>): ParsedArgs {
+    return {
+      rest: [],
+      plugin: {},
+      flags: new Set(["--init"]),
+      values: new Map(Object.entries(values)),
+      valuesMulti: new Map(),
+    };
+  }
+
+  async function written() {
+    const text = await readFile(join(cwd, "AGENTS.md"), "utf8");
+    const parsed = parseHubBlock(text, ctx.paths.blockMarkers());
+    if (!parsed) throw new Error("expected a hub block");
+    return parsed;
+  }
+
+  it.each([
+    ["default-main-branch", { principal: "prod", desarrollo: "development", qa: "qa" }],
+    ["default-dev-branch", { principal: "main", desarrollo: "prod", qa: "qa" }],
+    ["default-qa-branch", { principal: "main", desarrollo: "development", qa: "prod" }],
+  ])("--%s escribe solo su rol y conserva los demás", async (flag, expected) => {
+    const result = await hubBlockUpsertCommand.execute(init({ [flag]: "prod" }), ctx);
+    expect(result.ok).toBe(true);
+    expect((await written()).default_branches).toEqual(expected);
+  });
+
+  it("las tres juntas escriben los tres roles", async () => {
+    const result = await hubBlockUpsertCommand.execute(
+      init({
+        "default-main-branch": "certificacion",
+        "default-dev-branch": "desarrollo",
+        "default-qa-branch": "calidad",
+      }),
+      ctx,
+    );
+    expect(result.ok).toBe(true);
+    expect((await written()).default_branches).toEqual({
+      principal: "certificacion",
+      desarrollo: "desarrollo",
+      qa: "calidad",
+    });
+  });
+
+  it("--main-branch sin --fuente no escribe ningún rol ni la celda de la fuente", async () => {
+    const result = await hubBlockUpsertCommand.execute(init({ "main-branch": "otra" }), ctx);
+    expect(result.ok).toBe(true);
+    const parsed = await written();
+    expect(parsed.default_branches).toEqual({
+      principal: "main",
+      desarrollo: "development",
+      qa: "qa",
+    });
+    expect(parsed.fuentes[0]?.main_branch).toBeNull();
   });
 });

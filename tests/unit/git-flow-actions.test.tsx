@@ -55,7 +55,9 @@ describe("FlowResultView — resultado compacto", () => {
       ok("beta", "merge prod→work"),
       ok("gamma", "pull prod", "push work"),
     );
-    const { lastFrame } = render(<FlowResultView action="sync" result={result} isActive />);
+    const { lastFrame } = render(
+      <FlowResultView reservedRows={20} action="sync" result={result} isActive />,
+    );
     const f = lastFrame() ?? "";
 
     for (const alias of ["alpha", "beta", "gamma"]) {
@@ -86,7 +88,9 @@ describe("FlowResultView — resultado compacto", () => {
         conflicted_files: ["src/A.java"],
       },
     );
-    const { lastFrame } = render(<FlowResultView action="sync" result={result} isActive />);
+    const { lastFrame } = render(
+      <FlowResultView reservedRows={20} action="sync" result={result} isActive />,
+    );
     const f = lastFrame() ?? "";
     expect(row(f, "core")).toMatch(/core\s+ok/);
     // Sin pasos, la cadena de una fuente ES su motivo: la fila no queda muda.
@@ -98,14 +102,16 @@ describe("FlowResultView — resultado compacto", () => {
 
   it("rotula cada acción, to-dev incluida", () => {
     const result = resultOf(ok("alpha", "push develop"));
-    const { lastFrame } = render(<FlowResultView action="to-dev" result={result} isActive />);
-    expect(lastFrame() ?? "").toContain("GIT FLOW · → DEV"); // SectionHead uppercases
+    const { lastFrame } = render(
+      <FlowResultView reservedRows={20} action="to-dev" result={result} isActive />,
+    );
+    expect(lastFrame() ?? "").toContain("ENVIAR A DESARROLLO"); // SectionHead uppercases
   });
 
   it("↑/↓ alcanza la última fuente en un TTY corto e informa el rango (criterio 3)", async () => {
     const sources = Array.from({ length: 12 }, (_, i) => ok(`s${i}`, "merge prod→work"));
     const { stdin, lastFrame, stdout } = render(
-      <FlowResultView action="sync" result={resultOf(...sources)} isActive />,
+      <FlowResultView reservedRows={20} action="sync" result={resultOf(...sources)} isActive />,
     );
     setSize(stdout, { rows: 24, cols: 100 });
     await tick();
@@ -127,7 +133,7 @@ describe("FlowResultView — resultado compacto", () => {
     expect(rowsOf(lastFrame() ?? "", "s10")).toHaveLength(1);
   });
 
-  it("←/→ recorre la cadena de inicio a fin sin mover alias ni estado (criterio 4)", async () => {
+  it("una cadena que no cabe se corta con … y ←/→ no la mueven: no son teclas de la TUI", async () => {
     const long = ok(
       "alpha",
       "pull prod",
@@ -135,51 +141,21 @@ describe("FlowResultView — resultado compacto", () => {
       "push work",
       "merge work→qa",
       "push qa",
-      "checkout work",
     );
     const { stdin, lastFrame, stdout } = render(
-      <FlowResultView action="sync" result={resultOf(long)} isActive />,
+      <FlowResultView action="sync" result={resultOf(long)} reservedRows={20} isActive />,
     );
-    setSize(stdout, { rows: 40, cols: 60 }); // estrecha: la cadena no cabe
+    setSize(stdout, { rows: 40, cols: 60 });
     await tick();
-
     const start = row(lastFrame() ?? "", "alpha");
-    expect(start).toContain("pull prod"); // el inicio
-    expect(start).not.toContain("checkout work"); // el final, todavía no
-    expect(start).toContain("›"); // y lo dice
-    expect(start).not.toContain("‹");
-
-    // El clamp garantiza que ir hasta el tope deje el último segmento completo.
-    for (let i = 0; i < 20; i++) {
-      stdin.write(RIGHT);
-      await tick(15);
-    }
-    const end = row(lastFrame() ?? "", "alpha");
-    expect(end).toContain("checkout work");
-    expect(end).toContain("‹");
-    expect(end).not.toContain("›");
-    // La zona fija no se movió: es el punto del criterio.
-    expect(end).toMatch(/alpha\s+ok/);
-    expect(start.indexOf("alpha")).toBe(end.indexOf("alpha"));
-
-    for (let i = 0; i < 20; i++) {
-      stdin.write(LEFT);
-      await tick(15);
-    }
-    expect(row(lastFrame() ?? "", "alpha")).toBe(start); // vuelve exacto al inicio
-
-    // Ensanchar re-ancla la ventana en vez de dejarla más allá del final.
-    for (let i = 0; i < 20; i++) {
-      stdin.write(RIGHT);
-      await tick(15);
-    }
-    setSize(stdout, { rows: 40, cols: 200 });
+    expect(start).toContain("pull prod");
+    expect(start).toContain("…");
+    expect(start).toMatch(/alpha\s+ok/);
+    stdin.write(RIGHT);
     await tick();
-    const wide = row(lastFrame() ?? "", "alpha");
-    expect(wide).toContain("pull prod");
-    expect(wide).toContain("checkout work");
-    expect(wide).not.toContain("‹");
-    expect(wide).not.toContain("›");
+    stdin.write(LEFT);
+    await tick();
+    expect(row(lastFrame() ?? "", "alpha")).toBe(start);
   });
 
   it("en un terminal angosto con alias largo la fila sigue siendo UNA y conserva el estado", async () => {
@@ -196,38 +172,18 @@ describe("FlowResultView — resultado compacto", () => {
       },
       ok("api", "pull prod", "merge prod→work"),
     );
-    const { lastFrame, stdout } = render(<FlowResultView action="sync" result={result} isActive />);
+    const { lastFrame, stdout } = render(
+      <FlowResultView reservedRows={20} action="sync" result={result} isActive />,
+    );
     setSize(stdout, { rows: 40, cols: 40 });
     await tick();
     const lines = (lastFrame() ?? "").split("\n");
-    const summary = lines.findIndex((l) => l.includes("paused on conflict"));
+    const summary = lines.findIndex((l) => l.includes("en pausa por un conflicto"));
     const rows = lines.slice(summary + 1).filter((l) => l.trim().length > 0);
     expect(rows).toHaveLength(2); // una fila por fuente: nada envolvió
     expect(rows[0]).toContain("conflict"); // el estado sobrevive al recorte…
     expect(rows[1]).toContain("ok");
     expect(rows[0]).toMatch(/\S/); // …y el alias no queda vacío
-  });
-
-  it("cambiar de fuente devuelve la cadena nueva a su inicio", async () => {
-    const result = resultOf(
-      ok("alpha", "pull prod", "merge prod→work", "push work", "merge work→qa", "push qa"),
-      ok("beta", "pull prod", "merge prod→work", "push work", "merge work→qa", "push qa"),
-    );
-    const { stdin, lastFrame, stdout } = render(
-      <FlowResultView action="sync" result={result} isActive />,
-    );
-    setSize(stdout, { rows: 40, cols: 60 });
-    await tick();
-    for (let i = 0; i < 3; i++) {
-      stdin.write(RIGHT);
-      await tick(15);
-    }
-    expect(row(lastFrame() ?? "", "alpha")).toContain("‹");
-    stdin.write(DOWN);
-    await tick();
-    const beta = row(lastFrame() ?? "", "beta");
-    expect(beta).toContain("pull prod");
-    expect(beta).not.toContain("‹");
   });
 
   it("⏎ sobre un conflicto abre el detalle íntegro y esc vuelve al mismo punto (criterio 5)", async () => {
@@ -242,11 +198,9 @@ describe("FlowResultView — resultado compacto", () => {
       conflicted_files: ["src/Foo.java", "src/Bar.java", "src/Baz.java"],
     };
     const { stdin, lastFrame, stdout } = render(
-      <FlowResultView action="sync" result={resultOf(conflict)} isActive />,
+      <FlowResultView reservedRows={20} action="sync" result={resultOf(conflict)} isActive />,
     );
     setSize(stdout, { rows: 40, cols: 60 });
-    await tick();
-    stdin.write(RIGHT); // deja un offset horizontal que el regreso debe preservar
     await tick();
     const before = row(lastFrame() ?? "", "alpha");
 
@@ -274,7 +228,7 @@ describe("FlowResultView — resultado compacto", () => {
       error: message,
     };
     const { stdin, lastFrame, stdout } = render(
-      <FlowResultView action="sync" result={resultOf(failed)} isActive />,
+      <FlowResultView reservedRows={20} action="sync" result={resultOf(failed)} isActive />,
     );
     setSize(stdout, { rows: 40, cols: 60 });
     await tick();
@@ -296,7 +250,7 @@ describe("FlowResultView — resultado compacto", () => {
       conflicted_files: files,
     };
     const { stdin, lastFrame, stdout } = render(
-      <FlowResultView action="sync" result={resultOf(conflict)} isActive />,
+      <FlowResultView reservedRows={20} action="sync" result={resultOf(conflict)} isActive />,
     );
     setSize(stdout, { rows: 26, cols: 100 });
     await tick();
@@ -315,7 +269,12 @@ describe("FlowResultView — resultado compacto", () => {
 
   it("⏎ sobre una fuente exitosa no abre detalle", async () => {
     const { stdin, lastFrame } = render(
-      <FlowResultView action="sync" result={resultOf(ok("alpha", "merge prod→work"))} isActive />,
+      <FlowResultView
+        reservedRows={20}
+        action="sync"
+        result={resultOf(ok("alpha", "merge prod→work"))}
+        isActive
+      />,
     );
     await tick();
     const before = lastFrame() ?? "";
@@ -324,25 +283,25 @@ describe("FlowResultView — resultado compacto", () => {
     expect(lastFrame() ?? "").toBe(before);
   });
 
-  it("delega r y esc, y ⏎ no reejecuta (criterio 6)", async () => {
-    const onRerun = vi.fn();
+  it("delega esc; ⏎ y r no reejecutan nada", async () => {
     const onBack = vi.fn();
-    const { stdin } = render(
+    const { stdin, lastFrame } = render(
       <FlowResultView
         action="sync"
         result={resultOf(ok("alpha", "merge prod→work"))}
+        reservedRows={20}
         isActive
-        onRerun={onRerun}
         onBack={onBack}
       />,
     );
     await tick();
+    const before = lastFrame() ?? "";
     stdin.write(ENTER);
     await tick();
-    expect(onRerun).not.toHaveBeenCalled();
     stdin.write("r");
     await tick();
-    expect(onRerun).toHaveBeenCalledTimes(1);
+    expect(lastFrame() ?? "").toBe(before);
+    expect(before).toContain("↑↓ mover · esc volver · q salir");
     expect(onBack).not.toHaveBeenCalled();
     stdin.write(ESC);
     await tick();
@@ -357,7 +316,9 @@ describe("FlowResultView — resultado compacto", () => {
       results: [],
       error: "WORKSPACE block not found",
     };
-    const { lastFrame } = render(<FlowResultView action="sync" result={result} isActive />);
+    const { lastFrame } = render(
+      <FlowResultView reservedRows={20} action="sync" result={result} isActive />,
+    );
     expect(lastFrame() ?? "").toContain("WORKSPACE block not found");
   });
 });
@@ -385,6 +346,7 @@ describe("FlowResultView — confirm-prod y el detalle del merge a medias (SCR-0
   it("pinta la vista previa con las ramas reales, sin glifos de estado, y la fila fallida con su error", () => {
     const { lastFrame } = render(
       <FlowResultView
+        reservedRows={20}
         action="to-prod"
         result={preview}
         isActive
@@ -398,16 +360,15 @@ describe("FlowResultView — confirm-prod y el detalle del merge a medias (SCR-0
     expect(f).toContain("y publicar · n/esc cancelar");
   });
 
-  it("y publica; n y esc cancelan; r no reejecuta nada", async () => {
+  it("y publica; n y esc cancelan; r no hace nada", async () => {
     const onPublish = vi.fn();
     const onCancel = vi.fn();
-    const onRerun = vi.fn();
     const { stdin } = render(
       <FlowResultView
+        reservedRows={20}
         action="to-prod"
         result={preview}
         isActive
-        onRerun={onRerun}
         confirm={{ onPublish, onCancel }}
       />,
     );
@@ -425,7 +386,6 @@ describe("FlowResultView — confirm-prod y el detalle del merge a medias (SCR-0
     stdin.write("y");
     await tick();
     expect(onPublish).toHaveBeenCalledTimes(1);
-    expect(onRerun).not.toHaveBeenCalled();
   });
 
   function paused(merge_origin: string | null): GitFlowResult {
@@ -441,7 +401,12 @@ describe("FlowResultView — confirm-prod y el detalle del merge a medias (SCR-0
 
   it("el detalle nombra la rama donde quedó el merge y la que lo trajo", async () => {
     const { stdin, lastFrame } = render(
-      <FlowResultView action="sync" result={paused("origin/feature/x")} isActive />,
+      <FlowResultView
+        reservedRows={20}
+        action="sync"
+        result={paused("origin/feature/x")}
+        isActive
+      />,
     );
     await tick();
     stdin.write(ENTER);
@@ -453,7 +418,7 @@ describe("FlowResultView — confirm-prod y el detalle del merge a medias (SCR-0
 
   it("cuando git no sabe nombrar la rama que lo trajo, el detalle lo dice", async () => {
     const { stdin, lastFrame } = render(
-      <FlowResultView action="sync" result={paused(null)} isActive />,
+      <FlowResultView reservedRows={20} action="sync" result={paused(null)} isActive />,
     );
     await tick();
     stdin.write(ENTER);

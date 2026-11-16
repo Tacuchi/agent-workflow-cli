@@ -1,8 +1,6 @@
 import { render } from "ink";
 import type { CliContext } from "../types.js";
 import { App, type TuiResult } from "./app.js";
-import { applyAccent } from "./theme.js";
-import { TuiPrefsService } from "./tui-prefs.js";
 
 // Alternate screen buffer (alt-screen) ANSI sequences.
 // `?1049h` enters (saves the current screen), `?1049l` leaves (restores it).
@@ -52,16 +50,11 @@ export async function runTui(version: string, ctx: CliContext): Promise<TuiResul
     resolveResult(result);
   };
 
-  // Load prefs and apply the accent BEFORE the first render (no color flash).
-  const prefs = await new TuiPrefsService(ctx.fs, ctx.paths).load();
-  applyAccent(prefs.accentColor);
-
   const restoreScreen = enterAltScreen(process.stdout);
 
-  const instance = render(
-    <App version={version} ctx={ctx} onResult={settle} initialPrefs={prefs} />,
-    { exitOnCtrlC: true },
-  );
+  const instance = render(<App version={version} ctx={ctx} onResult={settle} />, {
+    exitOnCtrlC: true,
+  });
 
   instance
     .waitUntilExit()

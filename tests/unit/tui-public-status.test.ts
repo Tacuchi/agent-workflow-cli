@@ -1,88 +1,61 @@
 import { describe, expect, it, vi } from "vitest";
-import { readPublicStatus } from "../../src/cli/tui/public-status.js";
+import { readPending } from "../../src/cli/tui/public-status.js";
 import type { CliContext } from "../../src/cli/types.js";
 
 function context(run: CliContext["process"]["run"]): CliContext {
   return {
     process: { run },
-    runtime: { binName: "agent-workflow" },
+    runtime: { binName: "aw" },
     paths: { hubDir: () => "/fixture" },
   } as unknown as CliContext;
 }
 
-const counts = {
-  sessions_active: 2,
-  sessions_closed: 3,
-  sessions_paused: 1,
-  sessions_abandoned: 0,
-  pending: 1,
-};
+const statusOf = (stdout: string, code = 0) =>
+  vi.fn(async () => ({ code, stdout, stderr: "" })) as unknown as CliContext["process"]["run"];
 
-describe("TUI lee sólo la superficie pública de estado", () => {
-  it("proyecta pendientes, siguiente paso y sesiones sin abrir un flow", async () => {
-    const run = vi.fn(async () => ({
-      code: 0,
-      stdout: JSON.stringify({
-        counts,
-        pipeline: [{ file: "docs/plans/001-plan.md", detail: { next: "validar F2" } }],
+describe("la TUI lee los pendientes solo por la superficie pública", () => {
+  it("proyecta archivo, siguiente paso y comando por subproceso, sin contadores", async () => {
+    const run = statusOf(
+      JSON.stringify({
+        pipeline: [
+          {
+            file: "docs/plans/001-plan.md",
+            command: "/w:plan-exec docs/plans/001-plan.md",
+            detail: { next: "validar F2" },
+          },
+          { file: "docs/specs/002-spec.md", detail: { next: "refinar" } },
+        ],
       }),
-      stderr: "",
-    }));
-    expect(await readPublicStatus(context(run as CliContext["process"]["run"]))).toEqual({
+    );
+    expect(await readPending(context(run))).toEqual({
       state: "available",
-      sessionsLabel: "6 sessions · 2 active",
-      pending: 1,
-      next: "docs/plans/001-plan.md: validar F2",
+      items: [
+        {
+          file: "docs/plans/001-plan.md",
+          next: "validar F2",
+          command: "/w:plan-exec docs/plans/001-plan.md",
+        },
+        { file: "docs/specs/002-spec.md", next: "refinar", command: null },
+      ],
     });
-    expect(run).toHaveBeenCalledWith("agent-workflow", ["status", "--format", "json"], {
+    expect(run).toHaveBeenCalledWith("aw", ["status", "--format", "json"], {
       cwd: "/fixture",
       timeoutMs: 5000,
     });
   });
 
-  it.each([
-    "",
-    "{}",
-    '{"counts":{},"pipeline":[]}',
-    "{malformed",
-    '{"counts":{"pending":1},"pipeline":[{}]}',
-  ])("un estado ausente o malformado muestra vacío/no disponible: %s", async (stdout) => {
-    const run = vi.fn(async () => ({ code: 0, stdout, stderr: "" }));
-    const summary = await readPublicStatus(context(run as CliContext["process"]["run"]));
-    expect(summary).toEqual({
-      state: "unavailable",
-      sessionsLabel: "— sessions",
-      pending: null,
-      next: null,
-    });
+  it("el JSON compacto sin pipeline es un hub sin pendientes", async () => {
+    expect(await readPending(context(statusOf("{}")))).toEqual({ state: "available", items: [] });
   });
 
-  it("un status fallido tampoco bloquea las demás herramientas", async () => {
-    const run = vi.fn(async () => ({ code: 1, stdout: "", stderr: "no workspace" }));
-    expect((await readPublicStatus(context(run as CliContext["process"]["run"]))).state).toBe(
-      "unavailable",
-    );
-  });
+  it.each(["", "{malformed", "[]", '{"pipeline":{}}', '{"pipeline":[{}]}'])(
+    "un estado malformado queda no disponible: %s",
+    async (stdout) => {
+      expect(await readPending(context(statusOf(stdout)))).toEqual({ state: "unavailable" });
+    },
+  );
 
-  it("un pipeline vacío con contador cero dice que no hay trabajo pendiente", async () => {
-    const run = vi.fn(async () => ({
-      code: 0,
-      stdout: JSON.stringify({ counts: { ...counts, pending: 0 }, pipeline: [] }),
-      stderr: "",
-    }));
-    expect((await readPublicStatus(context(run as CliContext["process"]["run"]))).next).toBe(
-      "sin trabajo pendiente",
-    );
-  });
-
-  it("el JSON compacto sin pipeline también dice que no hay trabajo pendiente", async () => {
-    const run = vi.fn(async () => ({
-      code: 0,
-      stdout: JSON.stringify({ counts: { ...counts, pending: 0 } }),
-      stderr: "",
-    }));
-    const summary = await readPublicStatus(context(run as CliContext["process"]["run"]));
-    expect(summary.state).toBe("available");
-    expect(summary.next).toBe("sin trabajo pendiente");
+  it("un status fallido no rompe la pantalla", async () => {
+    expect((await readPending(context(statusOf("", 1)))).state).toBe("unavailable");
   });
 });

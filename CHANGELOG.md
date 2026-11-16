@@ -20,11 +20,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Deja de valer:** el nombre anterior en salidas, claves JSON y códigos de error. **Lo reemplaza:** agent-workflow y los nombres de la tabla, sin alias en las salidas. **Qué hacer:** actualizar consumidores y skills instaladas con el CLI 32.0.0.
 - **Deja de valer:** operar con 31.x sobre un hub ya migrado. **Lo reemplaza:** lectura de puente y migración automática en la primera escritura de 32.0.0. **Qué hacer:** actualizar el CLI en todas las máquinas antes de operar un hub migrado; `aw hub-migrate` muestra la migración y `aw hub-migrate --apply` la aplica.
+- **Deja de valer:** las pestañas Status, agent-workflow, Hub, MCP y Config de la TUI, con su centro de notificaciones, el visor de logs, la cabecera del hub y el rótulo de sesiones. **Lo reemplaza:** `aw` sin argumentos abre una sola pantalla con los pendientes, las fuentes, el git flow y el aviso de actualización; lo demás queda en sus comandos: `aw doctor` (hosts, hooks y prueba de conexiones), `aw self install-skill`, `aw self uninstall` y `aw self clean-legacy` (hosts), `aw self mcp` (conexiones MCP), `aw hub-init --source …` y `aw add-source` (fuentes y alta del hub), `aw remove-source`, `aw self namespace --pin` y `aw hub-block --init --default-main-branch|--default-dev-branch|--default-qa-branch` (ramas por defecto). **Qué hacer:** usar esos comandos; los logs diarios siguen en la carpeta de logs del namespace.
+- **Deja de valer:** `tui-prefs.json` (acento, pantalla al abrir, hosts apagados, última app). **Lo reemplaza:** nada: la TUI no lee ni escribe preferencias, y un archivo anterior se ignora y queda en su lugar. **Qué hacer:** nada; borrarlo es opcional.
+- **Deja de valer:** las teclas de pestaña, `g`, `x`, `←→`, «recheck» y «notes» del aviso, y re-ejecutar con `r` desde un resultado del git flow. **Lo reemplaza:** el mapa `↑↓ ⏎ esc y n r q`, más `u` mientras el aviso de versión nueva está visible; `r` refresca y vuelve a comprobar la versión. **Qué hacer:** tras resolver un conflicto, volver con `esc` y ejecutar de nuevo la acción.
+- **Deja de valer:** abrir el formulario de alta del hub desde `aw` sin argumentos fuera de un hub. **Lo reemplaza:** un texto que nombra `aw hub-init` y salida 0. **Qué hacer:** correr `aw hub-init`.
 
 ### Changed
 
 - El sistema se llama `agent-workflow`; el paquete sigue siendo `@tacuchi/agent-workflow-cli`. Se conservan los binarios `aw` y `agent-workflow`, `.workflow/`, la skill `w` y `/w:*`. La `w` se lee «workflow».
-- Convención: tipos `AgentWorkflow…`, funciones y variables `agentWorkflow…`, constantes `AGENT_WORKFLOW_…`, archivos e ids `agent-workflow`, claves JSON `agent_workflow_…` y errores sin prefijo del sistema. Se preservan los nombres `WorkflowTab`, `WORKFLOW_CONTENT`, `WorkflowPhase`, `WorkflowEngine`, el namespace `workflow`, `AgentWorkflowRuntimeConfig` y `AGENT_WORKFLOW_BIN`.
+- Convención: tipos `AgentWorkflow…`, funciones y variables `agentWorkflow…`, constantes `AGENT_WORKFLOW_…`, archivos e ids `agent-workflow`, claves JSON `agent_workflow_…` y errores sin prefijo del sistema. Se preservan los nombres `WorkflowPhase`, `WorkflowEngine`, el namespace `workflow`, `AgentWorkflowRuntimeConfig` y `AGENT_WORKFLOW_BIN`.
+- La TUI es una sola pantalla que responde «¿dónde está mi trabajo y qué puedo hacer ahora?»: los pendientes con su siguiente paso y su comando (de `aw status --format json`, sin contadores de sesiones), cada fuente con su rama y si tiene cambios sin confirmar, y el git flow sobre una fuente o todas, con la vista previa y el `y`/`n` de PROD. El aviso de actualización ocupa una línea y solo aparece con una versión nueva; sin red no muestra nada.
 
 **Salidas que cambian sin alias**
 
@@ -59,6 +64,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 | `workline.decision-index/v1` | `agent-workflow.decision-index/v1` |
 | `workline.decision-note/v1` | `agent-workflow.decision-note/v1` |
 | `workline_version` en recibos MCP | `agent_workflow_version` |
+
+### Added
+
+- `aw hub-block --init --default-main-branch <rama> --default-dev-branch <rama> --default-qa-branch <rama>` declara las ramas por defecto del hub (roles `principal`, `desarrollo` y `qa`). Un rol no indicado conserva su valor, `aw git-flow` usa los declarados y `--main-branch` no cambia.
 
 ### Migration
 

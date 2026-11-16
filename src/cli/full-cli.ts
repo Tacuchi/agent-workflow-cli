@@ -46,7 +46,7 @@ import { ALL_COMMANDS } from "./commands/index.js";
 import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
 import { commandHelpText, globalHelpText } from "./help-groups.js";
-import type { MenuAction } from "./interactive-menu.js";
+import { OUTSIDE_HUB_TEXT, insideHub } from "./interactive-menu.js";
 import { nextStepOfError, nextStepOfRoots } from "./next-step-emit.js";
 import { ASCII_ENV, type OutputMode, resolveOutputMode } from "./output-mode.js";
 import { type ParsedArgs, parseArgv } from "./parser.js";
@@ -419,7 +419,7 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
   // `planDispatch`, which is importable and therefore testable. What is left
   // here is carrying it out: no ordering and no command name of its own.
   const plan = planDispatch({ command: parsed.command, flags: parsed.flags, isTTY, hasHelp });
-  if (plan.kind === "menu") return await runInteractiveMenu(ctx, registry, output);
+  if (plan.kind === "menu") return await runInteractiveMenu(ctx, output);
   if (plan.kind === "global-help") {
     printHelp(registry.list(), output, parsed.flags.has("--all"));
     return 0;
@@ -440,17 +440,19 @@ async function dispatchParsedCommand(input: ParsedCommandDispatch): Promise<Exit
   return await executeCommand(parsed, ctx, command, output, hubFs);
 }
 
-async function runInteractiveMenu(
-  ctx: CliContext,
-  registry: CommandRegistry,
-  output: OutputMode,
-): Promise<ExitCode> {
+async function runInteractiveMenu(ctx: CliContext, output: OutputMode): Promise<ExitCode> {
+  if (!(await insideHub(ctx))) {
+    writeStdout(forPerson(OUTSIDE_HUB_TEXT, output));
+    return 0;
+  }
   await ctx.logger?.info(formatTuiEvent("open"));
   const { runTui } = await import("./tui/run.js");
   const tuiResult = await runTui(readPackageVersion(), ctx);
-  return tuiResult.kind === "menu-action"
-    ? await dispatchMenuAction(tuiResult.action, registry, output)
-    : tuiResult.exitCode;
+  if (tuiResult.kind === "exit") return tuiResult.exitCode;
+  // Re-entering `run` resolves the output mode again: the mark the TUI was
+  // opened with travels with it. Pressing `u` is already the confirmation;
+  // --yes keeps inquirer from racing Ink's stdin teardown.
+  return await run(["self", "update", "--yes", ...(output.ascii ? ["--ascii"] : [])]);
 }
 
 async function executeCommand(
@@ -695,39 +697,6 @@ function emitJson(result: CommandResult, command: CliCommand, mode: OutputMode):
   };
   if (result.data !== undefined) payload.data = redactSensitiveValue(result.data);
   writeStdout(renderRaw(payload));
-}
-
-async function dispatchMenuAction(
-  action: MenuAction,
-  registry: CommandRegistry,
-  output: OutputMode,
-): Promise<ExitCode> {
-  // Each action re-enters `run` with a fresh argv, which resolves the output
-  // mode again: the mark the menu was opened with has to travel with it.
-  const mark = output.ascii ? ["--ascii"] : [];
-  switch (action) {
-    case "doctor":
-      return await run(["self", "doctor", ...mark]);
-    case "install-skill":
-      return await run(["self", "install-skill", "--force", ...mark]);
-    case "mcp":
-      return await run(["self", "mcp", ...mark]);
-    case "update":
-      // The TUI menu selection is already the confirmation; --yes
-      // suppresses the redundant inquirer prompt (which also races with
-      // ink's stdin teardown and can phantom-cancel).
-      return await run(["self", "update", "--yes", ...mark]);
-    case "hub-init": {
-      // The fallback pre-materializes the current implicit root.  Source
-      // configuration remains the Hub tab's explicit secondary action.
-      return await run(["hub-init", ...mark]);
-    }
-    case "help":
-      printHelp(registry.list(), output);
-      return 0;
-    case "exit":
-      return 0;
-  }
 }
 
 function printHelp(commands: string[], mode: Pick<OutputMode, "ascii">, all = false): void {

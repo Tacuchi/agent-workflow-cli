@@ -11,6 +11,7 @@ import {
   createGitFlowCommand,
   gitFlowCommand,
 } from "../../src/cli/commands/git-flow.js";
+import { hubBlockUpsertCommand } from "../../src/cli/commands/hub-block.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -93,6 +94,25 @@ describe("git-flow command", () => {
     expect(data.status).toBe("ok");
     // The service actually drove git (proves dispatch wired ctx.git through).
     expect(git.calls.some((c) => c.op === "merge")).toBe(true);
+  });
+
+  it("to-dev trabaja sobre la rama de desarrollo declarada con hub-block aunque `development` no exista", async () => {
+    const git = new RecordingGit({ currentBranch: "feature/x" });
+    const declared = await hubBlockUpsertCommand.execute(
+      args({ flags: ["--init"], values: { "default-dev-branch": "develop" } }),
+      ctx(git),
+    );
+    expect(declared.ok).toBe(true);
+
+    const result = await gitFlowCommand.execute(
+      args({ rest: ["to-dev"], valuesMulti: { source: ["core"] }, flags: ["--dry-run"] }),
+      ctx(git),
+    );
+    expect(result.ok).toBe(true);
+    const previews = (result.data as GitFlowResult).results[0]?.steps.map((s) => s.preview) ?? [];
+    expect(previews.join(" ")).toContain("develop");
+    expect(previews.join(" ")).not.toContain("development");
+    expect(git.calls).toEqual([]);
   });
 
   it("passes --dry-run through (no git calls)", async () => {

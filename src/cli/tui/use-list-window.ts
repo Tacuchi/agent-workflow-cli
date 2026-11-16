@@ -1,7 +1,6 @@
 // Windowed view over a list cursor: which slice of rows fits the terminal and
-// how much overflow sits hidden above/below. The app shell clips tall tabs
-// (`overflowY="hidden"` in app.tsx + ScreenFrame), so a list that renders all
-// its rows lets the cursor walk off-screen — the active row becomes invisible.
+// how much overflow sits hidden above/below. ScreenFrame clips to the viewport,
+// so a list that renders all its rows lets the cursor walk off-screen.
 // This hook keeps the cursor inside the rendered window:
 // render `rows.slice(start, start + visible)` and, when `hiddenAbove` or
 // `hiddenBelow` are non-zero, surface the range somewhere in the chrome.
@@ -14,7 +13,8 @@
 // the window covers the whole list, matching the ScreenFrame contract
 // (use-terminal-size.ts).
 
-import { useState } from "react";
+import type { Key } from "ink";
+import { type Dispatch, type SetStateAction, useState } from "react";
 import { useTerminalSize } from "./use-terminal-size.js";
 
 export interface ListWindow {
@@ -31,14 +31,12 @@ export interface ListWindow {
 export function useListWindow(
   count: number,
   cursor: number,
-  /** Rows eaten around the list (app chrome + tab chrome + sections below). */
+  /** Rows the screen spends around the list. */
   reservedRows: number,
-  /** Hard cap on `visible` even when the viewport is taller (e.g. logs: 8). */
-  maxVisible?: number,
 ): ListWindow {
   const { rows } = useTerminalSize();
   const available = rows > 0 ? Math.max(1, rows - reservedRows) : count;
-  const visible = Math.max(0, Math.min(count, available, maxVisible ?? count));
+  const visible = Math.max(0, Math.min(count, available));
 
   const [rawStart, setRawStart] = useState(0);
   const maxStart = Math.max(0, count - visible);
@@ -64,4 +62,16 @@ export function useListWindow(
 export function windowRangeHint(win: ListWindow, count: number): string | undefined {
   if (win.hiddenAbove === 0 && win.hiddenBelow === 0) return undefined;
   return `${win.start + 1}–${Math.min(count, win.start + win.visible)} de ${count}`;
+}
+
+/** ↑↓ as a cursor move clamped to `count` rows; `true` when the key was one of them. */
+export function moveWithArrows(
+  key: Key,
+  count: number,
+  setCursor: Dispatch<SetStateAction<number>>,
+): boolean {
+  if (!key.upArrow && !key.downArrow) return false;
+  const delta = key.upArrow ? -1 : 1;
+  setCursor((c) => Math.max(0, Math.min(count - 1, c + delta)));
+  return true;
 }

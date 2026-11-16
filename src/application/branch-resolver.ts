@@ -32,9 +32,7 @@ export function resolveDefaultBranches(
 
 /**
  * Resolve the working role from its own declaration; environment roles still
- * have hub defaults and a hardcoded floor. Shared by git-flow and the
- * Hub tab, so
- * what the TUI shows is what the flows act on.
+ * have hub defaults and a hardcoded floor.
  */
 export function resolveSourceBranches(
   source: HubFuente,
