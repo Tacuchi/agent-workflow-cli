@@ -107,7 +107,7 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
   /** Publica una nota vigente sobre el linaje, con las obligaciones dadas. */
   const publishNote = (obligations: readonly (string | NoteObligation)[]): DecisionNote => {
     const index = {
-      schema: "workline.decision-index/v1" as const,
+      schema: "agent-workflow.decision-index/v1" as const,
       spec: { path: SPEC_FILE, number: "033" },
       notes: [] as DecisionNote[],
     };

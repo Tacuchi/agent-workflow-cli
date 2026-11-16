@@ -1,6 +1,7 @@
 import type { Dirent } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { RETIRED_MARKER_FILE } from "../domain/retired-name.js";
 import { NAMESPACE_REGEX } from "./namespace.js";
 
 /**
@@ -17,7 +18,7 @@ import { NAMESPACE_REGEX } from "./namespace.js";
  * So the hub gets a mark of its own, `.<ns>/workline.json`, written by the
  * minimal materialization. No host tool writes it, which is the whole point.
  */
-export const WORKLINE_MARKER_FILE = "workline.json";
+export const WORKLINE_MARKER_FILE = "agent-workflow.json";
 
 /**
  * Evidence that a directory was a Workline hub BEFORE the mark existed.
@@ -36,7 +37,7 @@ export const LEGACY_WORKLINE_FILES = [
 
 /** The bytes the mark carries: enough to read it, never a second source of truth. */
 export function worklineMarkerContent(namespace: string): string {
-  return `${JSON.stringify({ workline: 1, namespace }, null, 2)}\n`;
+  return `${JSON.stringify({ agent_workflow: 1, namespace }, null, 2)}\n`;
 }
 
 /**
@@ -55,6 +56,7 @@ export async function isWorklineRoot(
 ): Promise<boolean> {
   const root = join(dir, `.${namespace}`);
   if (await isFile(fs, join(root, WORKLINE_MARKER_FILE))) return true;
+  if (await isFile(fs, join(root, RETIRED_MARKER_FILE))) return true;
   if (!(await isDir(fs, join(root, "sessions")))) return false;
   for (const legacy of LEGACY_WORKLINE_FILES) {
     if (await isFile(fs, join(root, legacy))) return true;

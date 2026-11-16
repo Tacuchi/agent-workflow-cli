@@ -45,7 +45,7 @@ describe("registro de hubs por checkout", () => {
     ]) {
       const hub = join(root, name);
       await mkdir(join(hub, ".workflow"), { recursive: true });
-      await writeFile(join(hub, ".workflow", "workline.json"), '{"namespace":"workflow"}');
+      await writeFile(join(hub, ".workflow", "agent-workflow.json"), '{"namespace":"workflow"}');
       await writeFile(
         join(hub, "AGENTS.md"),
         `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal | Rama de trabajo |\n|---|---|---|---|\n| src | ${repo} | main | ${branch} |\n## Status\n- Ramas de trabajo actuales:\n  - src: ${branch}\n<!-- WORKFLOW-HUB-END -->`,
@@ -97,7 +97,7 @@ describe("plan 088 F2 · estado, nombre, poda y raíces efímeras", () => {
     await mkdir(home);
     const hub = async (path: string) => {
       await mkdir(join(path, ".workflow"), { recursive: true });
-      await writeFile(join(path, ".workflow", "workline.json"), '{"workline":1}');
+      await writeFile(join(path, ".workflow", "agent-workflow.json"), '{"agent_workflow":1}');
       return path;
     };
     return { root, home, hub };
@@ -112,7 +112,7 @@ describe("plan 088 F2 · estado, nombre, poda y raíces efímeras", () => {
     for (const path of [ok, ephemeral, lost, gone]) {
       await registerHub(fs, new PathsService(namespace, home, path), path);
     }
-    await rm(join(lost, ".workflow", "workline.json"));
+    await rm(join(lost, ".workflow", "agent-workflow.json"));
     await rm(gone, { recursive: true });
     const temp = [join(root, "scratch")];
     expect(await listRegisteredHubs(fs, home, "workflow", temp)).toEqual([
@@ -140,7 +140,7 @@ describe("plan 088 F2 · estado, nombre, poda y raíces efímeras", () => {
     for (const path of [ok, ephemeral, lost]) {
       await registerHub(fs, new PathsService(namespace, home, path), path);
     }
-    await rm(join(lost, ".workflow", "workline.json"));
+    await rm(join(lost, ".workflow", "agent-workflow.json"));
     const removed = await pruneHubs(fs, home, "workflow", [join(root, "scratch")]);
     expect(removed.map((hub) => [hub.root, hub.state])).toEqual([
       [ephemeral, "ephemeral"],

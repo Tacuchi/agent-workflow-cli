@@ -31,7 +31,10 @@ function fixture() {
   mkdirSync(join(home, ".workflow"), { recursive: true });
   const hub = (path: string, fuentes?: string[]) => {
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
-    writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    writeFileSync(
+      join(path, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
     if (fuentes !== undefined) {
       writeFileSync(
         join(path, "AGENTS.md"),

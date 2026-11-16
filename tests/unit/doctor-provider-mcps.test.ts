@@ -217,7 +217,10 @@ beforeEach(() => {
   mkdirSync(hub, { recursive: true });
   mkdirSync(home, { recursive: true });
   mkdirSync(join(hub, ".workflow"), { recursive: true });
-  writeFileSync(join(hub, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
+  writeFileSync(
+    join(hub, ".workflow", "agent-workflow.json"),
+    '{"agent_workflow":1,"namespace":"workflow"}',
+  );
   // Ruta absoluta que nunca se crea: el proveedor la resuelve como ruta, no por PATH.
   ghostBinary = join(root, "no-instalado", "ghost-mcp");
   fsAnswers = new Map<string, boolean>();
@@ -1115,7 +1118,7 @@ describe("proveedor de MCPs — el nombre de una entrada ajena no puede forjar e
 describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", () => {
   it("fuera de workspace no inventa conexiones workspace faltantes, pero lee archivos existentes", async () => {
     registerConnections([OWN_CONNECTIONS[0]]);
-    rmSync(join(hub, ".workflow", "workline.json"));
+    rmSync(join(hub, ".workflow", "agent-workflow.json"));
     writeClaudeHubConfig({ ajeno: { command: "npx", args: [], env: {} } });
     const native = nativeRunner({ claude: "" });
     const output = await createMcpsProvider({ native: { run: native.run } }).run(

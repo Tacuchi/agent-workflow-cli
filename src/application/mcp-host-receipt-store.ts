@@ -1,5 +1,6 @@
 import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { RETIRED_RECEIPT_KEY } from "../domain/retired-name.js";
 import {
   type McpHostReceipt,
   McpHostReceiptError,
@@ -34,7 +35,13 @@ export class NodeMcpHostReceiptStore implements McpHostReceiptStore {
   ): Promise<T> {
     const lock = await this.acquireLock();
     try {
-      const current = await this.readBook();
+      const previous = await readFile(this.file, "utf8").catch((error: NodeError) => {
+        if (error.code === "ENOENT") return "";
+        throw error;
+      });
+      const retired = previous.includes(`"${RETIRED_RECEIPT_KEY}"`);
+      const current =
+        previous === "" ? emptyMcpHostReceiptBook() : parseMcpHostReceiptBook(previous);
       const next = transaction(current.receipts);
       const payload = serializeMcpHostReceiptBook(next.receipts);
       await this.writeAtomically(payload);
@@ -45,6 +52,10 @@ export class NodeMcpHostReceiptStore implements McpHostReceiptStore {
           "La comprobación posterior de escritura del recibo MCP no coincide.",
         );
       }
+      if (retired)
+        process.stderr.write(
+          "Migrada la clave de versión retirada del recibo MCP a agent_workflow_version.\n",
+        );
       return next.result;
     } finally {
       try {

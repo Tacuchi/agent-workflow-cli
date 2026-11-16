@@ -28,9 +28,15 @@ it("persist apply desde el checkout resuelve el único hub incluso con marcador 
   const source = join(root, "source");
   for (const dir of [home, hub, source]) mkdirSync(dir);
   mkdirSync(join(home, ".workflow"));
-  writeFileSync(join(home, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
+  writeFileSync(
+    join(home, ".workflow", "agent-workflow.json"),
+    '{"agent_workflow":1,"namespace":"workflow"}',
+  );
   mkdirSync(join(hub, ".workflow"), { recursive: true });
-  writeFileSync(join(hub, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
+  writeFileSync(
+    join(hub, ".workflow", "agent-workflow.json"),
+    '{"agent_workflow":1,"namespace":"workflow"}',
+  );
   writeFileSync(
     join(hub, "AGENTS.md"),
     `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n<!-- WORKFLOW-HUB-END -->`,
@@ -84,7 +90,10 @@ it("un repo sin hub con marcador en HOME no funda runtime ni edita .gitignore", 
   const repo = join(root, "repo");
   mkdirSync(join(home, ".workflow"), { recursive: true });
   mkdirSync(repo);
-  writeFileSync(join(home, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
+  writeFileSync(
+    join(home, ".workflow", "agent-workflow.json"),
+    '{"agent_workflow":1,"namespace":"workflow"}',
+  );
   spawnSync("git", ["init", "-q", repo]);
   const result = spawnSync(
     process.execPath,
@@ -152,8 +161,8 @@ describe("plan 088 F5 · la guarda de materialización reclama por contención",
     const hubDeclaring = (path: string, alias: string, source: string) => {
       mkdirSync(join(path, ".workflow"), { recursive: true });
       writeFileSync(
-        join(path, ".workflow", "workline.json"),
-        '{"workline":1,"namespace":"workflow"}',
+        join(path, ".workflow", "agent-workflow.json"),
+        '{"agent_workflow":1,"namespace":"workflow"}',
       );
       writeFileSync(
         join(path, "AGENTS.md"),
@@ -202,7 +211,7 @@ describe("plan 088 F5 · la guarda de materialización reclama por contención",
     register(alfa);
     const migrated = migrate(beta);
     expect(migrated.status, JSON.stringify(migrated.body)).toBe(0);
-    expect(existsSync(join(beta, ".workflow", "workline.json"))).toBe(true);
+    expect(existsSync(join(beta, ".workflow", "agent-workflow.json"))).toBe(true);
   });
 
   it("dentro de una fuente declarada entera, y en un worktree suyo, rechaza con HUB_IN_SOURCE", () => {
@@ -228,7 +237,7 @@ describe("plan 088 F5 · la guarda de materialización reclama por contención",
       const refused = migrate(candidate);
       expect(refused.status).not.toBe(0);
       expect(refused.body.error?.code).toBe("HUB_IN_SOURCE");
-      expect(existsSync(join(candidate, ".workflow", "workline.json"))).toBe(false);
+      expect(existsSync(join(candidate, ".workflow", "agent-workflow.json"))).toBe(false);
     }
   });
 
@@ -319,7 +328,7 @@ describe("plan 088 F5 · la guarda de materialización reclama por contención",
       expect(existsSync(join(mono, ".workflow"))).toBe(false);
       const sibling = init(join(mono, "hermano"));
       expect(sibling.status, sibling.text).toBe(0);
-      expect(existsSync(join(mono, "hermano", ".workflow", "workline.json"))).toBe(true);
+      expect(existsSync(join(mono, "hermano", ".workflow", "agent-workflow.json"))).toBe(true);
     });
   });
 });

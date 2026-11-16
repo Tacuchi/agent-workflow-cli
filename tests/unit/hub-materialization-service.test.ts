@@ -26,7 +26,7 @@ describe("Workline implicit materialization", () => {
     expect(preview).toMatchObject({ root: "/cwd", namespace: "workflow", materialized: true });
     expect(preview.effects).toEqual([
       { kind: "gitignore", path: "/cwd/.gitignore", status: "skipped" },
-      { kind: "marker", path: "/cwd/.workflow/workline.json", status: "created" },
+      { kind: "marker", path: "/cwd/.workflow/agent-workflow.json", status: "created" },
     ]);
     expect(fs.writes).toEqual(new Map());
     expect(await fs.exists("/cwd/.workflow")).toBe(false);
@@ -41,13 +41,13 @@ describe("Workline implicit materialization", () => {
     expect(result.materialized).toBe(true);
     expect(result.effects).toEqual([
       { kind: "gitignore", path: "/repo/.gitignore", status: "created" },
-      { kind: "marker", path: "/repo/.workflow/workline.json", status: "created" },
+      { kind: "marker", path: "/repo/.workflow/agent-workflow.json", status: "created" },
     ]);
     await expect(fs.readText("/repo/.gitignore")).resolves.toContain(".workflow/sessions/");
-    expect(await fs.exists("/repo/.workflow/workline.json")).toBe(true);
+    expect(await fs.exists("/repo/.workflow/agent-workflow.json")).toBe(true);
     // La marca propia del workspace: lo que lo distingue de la carpeta de un
     // host que apenas comparte el nombre de una subcarpeta.
-    await expect(fs.readText("/repo/.workflow/workline.json")).resolves.toContain(
+    await expect(fs.readText("/repo/.workflow/agent-workflow.json")).resolves.toContain(
       '"namespace": "workflow"',
     );
     expect(await fs.exists("/repo/.workflow/.lock")).toBe(false);
@@ -80,7 +80,7 @@ describe("Workline implicit materialization", () => {
 
     expect(second.materialized).toBe(false);
     expect(second.effects).toEqual([
-      { kind: "marker", path: "/cwd/.workflow/workline.json", status: "existing" },
+      { kind: "marker", path: "/cwd/.workflow/agent-workflow.json", status: "existing" },
     ]);
     expect(fs.writes).toEqual(new Map());
   });
@@ -97,10 +97,10 @@ describe("Workline implicit materialization", () => {
     expect(result.materialized).toBe(false);
     expect(result.effects).toContainEqual({
       kind: "marker",
-      path: "/viejo/.workflow/workline.json",
+      path: "/viejo/.workflow/agent-workflow.json",
       status: "created",
     });
-    expect(await fs.exists("/viejo/.workflow/workline.json")).toBe(true);
+    expect(await fs.exists("/viejo/.workflow/agent-workflow.json")).toBe(true);
     // Y nada más se creó: la materialización mínima sigue siendo mínima.
     expect(await fs.exists("/viejo/.workflow/.lock")).toBe(false);
   });
@@ -115,7 +115,7 @@ describe("Workline implicit materialization", () => {
     ]);
 
     expect(results.map((result) => result.materialized).sort()).toEqual([false, true]);
-    expect(await fs.exists("/cwd/.workflow/workline.json")).toBe(true);
+    expect(await fs.exists("/cwd/.workflow/agent-workflow.json")).toBe(true);
     expect(await fs.exists("/cwd/.workflow/.lock")).toBe(false);
   });
 
@@ -126,7 +126,7 @@ describe("Workline implicit materialization", () => {
 
     await fs.writeText("/cwd/docs/specs/001-spec-x.md", "# x\n");
 
-    expect(await raw.exists("/cwd/.workflow/workline.json")).toBe(true);
+    expect(await raw.exists("/cwd/.workflow/agent-workflow.json")).toBe(true);
     expect(await raw.readText("/cwd/docs/specs/001-spec-x.md")).toBe("# x\n");
     expect(fs.materialization()).toMatchObject({ materialized: true });
     expect(await raw.exists("/cwd/CLAUDE.md")).toBe(false);
@@ -156,7 +156,7 @@ describe("Workline implicit materialization", () => {
     expect(result.sources).toBe(0);
     expect(result.hub_block_files).toEqual({ skipped: true, reason: "materialization_only" });
     expect(result.skills_toml).toBe("skipped");
-    expect(await fs.exists("/cwd/.workflow/workline.json")).toBe(true);
+    expect(await fs.exists("/cwd/.workflow/agent-workflow.json")).toBe(true);
     expect(await fs.exists("/cwd/CLAUDE.md")).toBe(false);
     expect(await fs.exists("/cwd/AGENTS.md")).toBe(false);
   });

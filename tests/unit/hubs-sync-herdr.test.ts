@@ -29,7 +29,10 @@ function fixture(names: string[]) {
   const hubs = names.map((name) => {
     const path = join(root, name);
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
-    writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    writeFileSync(
+      join(path, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
     return path;
   });
   writeFileSync(join(home, ".workflow", "hubs.json"), JSON.stringify({ version: 1, roots: hubs }));
@@ -285,7 +288,10 @@ describe("aw hubs sync --herdr", () => {
     const two = join(root, "b", "x", "nu");
     for (const path of [one, two]) {
       mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
-      writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+      writeFileSync(
+        join(path, ".workflow", "agent-workflow.json"),
+        worklineMarkerContent("workflow"),
+      );
     }
     writeFileSync(
       join(home, ".workflow", "hubs.json"),
@@ -306,7 +312,10 @@ describe("aw hubs sync --herdr", () => {
     const two = join(root, "b", "x", "xi");
     for (const path of [one, two]) {
       mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
-      writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+      writeFileSync(
+        join(path, ".workflow", "agent-workflow.json"),
+        worklineMarkerContent("workflow"),
+      );
     }
     writeFileSync(
       join(home, ".workflow", "hubs.json"),

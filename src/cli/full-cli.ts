@@ -15,6 +15,7 @@ import { Logger } from "../application/logging/logger.js";
 import { legacyBlockFiles } from "../application/parsers/hub-block.js";
 import { PathsService } from "../application/paths-service.js";
 import { preparationMismatch, recordPreparation } from "../application/preparation-receipts.js";
+import { retiredNameState } from "../application/retired-name-migration.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
 import { encodeToolResponse, toolFailure } from "../domain/database-tools.js";
 import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
@@ -79,12 +80,22 @@ async function run(argv: string[]): Promise<ExitCode> {
     return isHookCommand(prepared.parsed) ? 0 : transportExitCode(prepared.parsed);
   }
 
+  const retired = await retiredNameState(fs, initialized.ctx.paths);
   const exit = await dispatchParsedCommand({
     ...prepared,
     ctx: initialized.ctx,
     registry: commandRegistry(),
     hubFs: initialized.hubFs,
   });
+  const after = await retiredNameState(fs, initialized.ctx.paths);
+  if ((retired.marker && !after.marker) || (retired.heading && !after.heading))
+    writeStderr(
+      "Migrado el nombre retirado Workline a agent-workflow: marcador, encabezado y notas de decisión.",
+    );
+  else if (retired.marker || retired.heading)
+    writeStderr(
+      "El hub usa el nombre retirado Workline; aw hub-migrate muestra la migración y --apply la aplica.",
+    );
   const warning = initialized.ctx.directory
     ? await registerResolvedHub(fs, env.homeDir(), initialized.ctx.directory)
     : null;
@@ -620,6 +631,7 @@ function isStrictReadCommand(parsed: ParsedArgs): boolean {
     return true;
   // `host-memory` reads other hosts' private memory: its trace stays out of the log too.
   if (command === "status" || command === "resume" || command === "host-memory") return true;
+  if (command === "flow" && parsed.rest[0] === "read") return true;
   return command === "doctor" && parsed.rest.length === 0;
 }
 

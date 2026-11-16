@@ -794,7 +794,7 @@ Run aw flow start.
     for (const rel of [
       "CLAUDE.md",
       "AGENTS.md",
-      ".workflow/workline.json",
+      ".workflow/agent-workflow.json",
       ".git/**",
       ".claude/**",
     ]) {

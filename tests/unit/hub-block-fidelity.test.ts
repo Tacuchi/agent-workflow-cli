@@ -170,12 +170,12 @@ describe("project-block · idempotencia y compatibilidad (AC-09, AC-10)", () => 
   it("la sección Workline orienta con punteros, conserva la nota de una persona y no se duplica", () => {
     const clean = renderHubBlock(BASE);
     expect(clean).toContain(
-      "## Workline\n\n- Estado y pendientes: `aw status`; cómo retomar: `aw resume`.\n- `docs/` es la zona permanente: specs, planes y entregables.\n- `.workflow/sessions/` es interno del CLI: no se edita a mano.\n",
+      "## agent-workflow\n\n- Estado y pendientes: `aw status`; cómo retomar: `aw resume`.\n- `docs/` es la zona permanente: specs, planes y entregables.\n- `.workflow/sessions/` es interno del CLI: no se edita a mano.\n",
     );
     const noted = clean.replace("no se edita a mano.\n", `no se edita a mano.\n${NOTA}\n`);
     expect(parseHubBlock(noted)?.preserved_lines).toEqual([{ slot: "workline", text: NOTA }]);
     expect(rewrite(noted)).toBe(noted);
-    expect(rewrite(noted).match(/## Workline/g)).toHaveLength(1);
+    expect(rewrite(noted).match(/## agent-workflow/g)).toHaveLength(1);
   });
 
   it("un bloque limpio no gana campos nuevos ni cambia al reescribirse", () => {

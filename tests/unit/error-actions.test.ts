@@ -167,7 +167,10 @@ describe("determinable errors name the exact command — through the binary", ()
     await mkdir(home, { recursive: true });
     await mkdir(join(ws, ".workflow"), { recursive: true });
     await mkdir(join(ws, "sub"), { recursive: true });
-    await writeFile(join(ws, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    await writeFile(
+      join(ws, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
   });
 
   afterEach(async () => {

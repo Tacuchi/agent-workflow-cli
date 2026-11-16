@@ -22,7 +22,10 @@ function fixture() {
   const hub = (name: string) => {
     const path = join(root, "projects", name);
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
-    writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    writeFileSync(
+      join(path, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
     return path;
   };
   const register = (...paths: string[]) =>
@@ -58,7 +61,7 @@ describe("aw hubs", () => {
       ],
     });
     expect(registry()).toBe(before);
-    expect(() => readFileSync(join(home, ".workflow", "workline.json"))).toThrow();
+    expect(() => readFileSync(join(home, ".workflow", "agent-workflow.json"))).toThrow();
   });
 
   it("scan sólo propone, y con --apply registra por la escritura del registro", () => {

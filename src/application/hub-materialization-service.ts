@@ -6,6 +6,7 @@ import { isWorklineRoot, worklineMarkerContent } from "../runtime/workline-marke
 import { type DeclaringHub, declaringHubs, hubsFile, readHubs } from "./hub-registry.js";
 import { acquireLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
+import { migrateRetiredNames } from "./retired-name-migration.js";
 
 /** Machine-local runtime paths which must never become project history. */
 export function runtimeGitignoreEntries(namespace: string): string[] {
@@ -221,6 +222,7 @@ export async function ensureWorklineMaterialized(
     namespace: paths.namespace,
   };
   await validateMaterializationRoot(fs, paths, root);
+  await migrateRetiredNames(fs, paths);
 
   if (await hasCanonicalSessionsMarker(fs, paths)) {
     // An old sessions-only hub acquires its marker only after the source guard.

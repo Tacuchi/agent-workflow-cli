@@ -37,7 +37,7 @@ it("desde una fuente resuelve al único hub, se niega con dos y --workspace no s
   const hubs = [hubA, hubB];
   for (const hub of hubs) {
     await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
-    await writeFile(join(hub, ".workflow", "workline.json"), '{"namespace":"workflow"}');
+    await writeFile(join(hub, ".workflow", "agent-workflow.json"), '{"namespace":"workflow"}');
     await writeFile(
       join(hub, "AGENTS.md"),
       `<!-- WORKFLOW-HUB-START -->\n## Fuentes\n| Alias | Path | Rama principal |\n|---|---|---|\n| src | ${source} | main |\n<!-- WORKFLOW-HUB-END -->`,

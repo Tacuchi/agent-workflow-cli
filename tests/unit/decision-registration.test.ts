@@ -66,7 +66,7 @@ describe("registrar una decisión", () => {
   let paths: PathsService;
 
   const draft = (over: Partial<DecisionNote> = {}): PrepareDecisionInput["draft"] => ({
-    schema: "workline.decision-note/v1",
+    schema: "agent-workflow.decision-note/v1",
     lineage: {
       spec: { path: SPEC_PATH, number: "033", digest: `sha256:${baseDigest(SPEC_TEXT)}` },
       plan: { path: PLAN_PATH, number: "032", digest: `sha256:${baseDigest(PLAN_TEXT)}` },
@@ -228,7 +228,7 @@ describe("intercalaciones: lo que cambia entre la vista previa y el registro", (
       criteria: ["S033/AC-01", "S033/AC-02"],
     },
     draft: {
-      schema: "workline.decision-note/v1",
+      schema: "agent-workflow.decision-note/v1",
       lineage: {
         spec: { path: SPEC_PATH, number: "033", digest: `sha256:${baseDigest(SPEC_TEXT)}` },
         plan: { path: PLAN_PATH, number: "032", digest: `sha256:${baseDigest(PLAN_TEXT)}` },
@@ -390,7 +390,7 @@ describe("una decisión que no se puede componer no llega a pedir autorización"
       criteria: ["S033/AC-01", "S033/AC-02"],
     },
     draft: {
-      schema: "workline.decision-note/v1",
+      schema: "agent-workflow.decision-note/v1",
       lineage: {
         spec: { path: SPEC_PATH, number: "033", digest: `sha256:${baseDigest(SPEC_TEXT)}` },
         plan: { path: PLAN_PATH, number: "032", digest: `sha256:${baseDigest(PLAN_TEXT)}` },

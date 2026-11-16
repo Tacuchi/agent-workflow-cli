@@ -1,4 +1,5 @@
 import { CRITERION_GLOBAL, isDigest } from "./contract-identity.js";
+import { acceptsNoteSchema } from "./retired-name.js";
 import { sealedRecordDigest } from "./sealed-record.js";
 
 /**
@@ -109,7 +110,7 @@ export interface DecisionNote {
   digest: string;
 }
 
-export const NOTE_SCHEMA = "workline.decision-note/v1";
+export const NOTE_SCHEMA = "agent-workflow.decision-note/v1";
 
 /** Fields the author decides; schema, date, id, digest and lineage are derived. */
 export const NOTE_AUTHOR_FIELDS = {
@@ -206,7 +207,7 @@ export function validateDecisionNote(raw: unknown): NoteValidation {
     );
     return { ok: false, value: null, failures };
   }
-  if (raw.schema !== NOTE_SCHEMA) {
+  if (!acceptsNoteSchema(raw.schema)) {
     // El gate de versión corre solo y primero: leer campos de un formato que no
     // conocemos reporta sinsentidos derivados y manda a arreglar un campo cuando
     // lo que falta es actualizar.
@@ -279,7 +280,7 @@ export function validateDecisionNote(raw: unknown): NoteValidation {
   if (failures.length > 0) return { ok: false, value: null, failures };
 
   const value: DecisionNote = {
-    schema: NOTE_SCHEMA,
+    schema: raw.schema as string,
     id: raw.id as string,
     lineage: lineage as NoteLineage,
     decision: raw.decision as string,

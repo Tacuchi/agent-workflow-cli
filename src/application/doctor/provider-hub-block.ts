@@ -12,6 +12,7 @@ import {
   LEGACY_BLOCK_FILE,
   legacyBlockMarkers,
 } from "../parsers/hub-block.js";
+import { retiredNameState } from "../retired-name-migration.js";
 import type { HostStateReport } from "../self/host-states.js";
 import { resolveBundledSkillPath } from "../self/install-skill.js";
 import type { DoctorProvider, DoctorProviderInput } from "./types.js";
@@ -127,12 +128,14 @@ export const hubBlockProvider: DoctorProvider = {
         return { file, path, text: (await fs.exists(path)) ? await fs.readText(path) : null };
       }),
     );
+    const nameFindings = await retiredNameFindings(input);
     if (files.every((file) => file.text === null))
       return {
         coverage: [coverage(CATEGORY, "hub", "not-applicable", "sin archivos de proyecto")],
-        findings: [],
+        findings: nameFindings,
       };
     const findings = await blockFileFindings(input, files, markers);
+    findings.push(...nameFindings);
     const outdated = outdatedClaudeCode(input.hostStates);
     if (outdated !== null) findings.push(outdatedClaudeFinding(outdated));
     for (const file of files) {
@@ -316,4 +319,40 @@ function retiredSkillReference(body: string): string | null {
       return skill;
   }
   return null;
+}
+
+async function retiredNameFindings(input: DoctorProviderInput): Promise<DoctorFinding[]> {
+  const fs = input.ctx.fs;
+  const retired = await retiredNameState(fs, input.ctx.paths);
+  const nameFindings: DoctorFinding[] = [];
+  for (const [present, key, summary] of [
+    [retired.heading, "retired-heading", "El encabezado del hub usa el nombre retirado"],
+    [retired.conflict, "marker-conflict", "Los dos marcadores del hub tienen contenido distinto"],
+  ] as const) {
+    if (!present) continue;
+    nameFindings.push({
+      id: doctorFindingId("hub", CATEGORY, key),
+      host: "hub",
+      category: CATEGORY,
+      resource: { kind: "project-file", name: key, locator: input.hubDir },
+      state: "warning",
+      summary,
+      impact: "el hub conserva parte del contrato anterior",
+      evidence: [summary],
+      ownership: "ours",
+      remediation: {
+        kind: "manual",
+        action: null,
+        guidance: [
+          "aw hub-migrate muestra la migración; aw hub-migrate --apply la aplica",
+          ...(retired.conflict && key === "marker-conflict"
+            ? [
+                "Conservar el marcador nuevo; comparar y reconciliar el antiguo antes de retirarlo manualmente.",
+              ]
+            : []),
+        ],
+      },
+    });
+  }
+  return nameFindings;
 }

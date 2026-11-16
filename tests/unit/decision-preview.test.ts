@@ -84,7 +84,7 @@ function contractOf(chain: readonly DecisionNote[]): EffectiveContract {
 
 /** Los bytes reales que se publican: el índice CON la nota adentro. */
 function indexBytes(...notes: readonly DecisionNote[]): string {
-  return `${JSON.stringify({ schema: "workline.decision-index/v1", spec: SPEC, notes }, null, 2)}\n`;
+  return `${JSON.stringify({ schema: "agent-workflow.decision-index/v1", spec: SPEC, notes }, null, 2)}\n`;
 }
 
 const CONTENT = indexBytes(note());

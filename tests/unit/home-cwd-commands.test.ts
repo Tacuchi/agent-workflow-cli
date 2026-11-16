@@ -16,7 +16,10 @@ beforeEach(() => {
   home = realpathSync(join(root, "home"));
   // The user-level ~/.workflow carries a marker, as on a real machine.
   mkdirSync(join(home, ".workflow"));
-  writeFileSync(join(home, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
+  writeFileSync(
+    join(home, ".workflow", "agent-workflow.json"),
+    '{"agent_workflow":1,"namespace":"workflow"}',
+  );
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 

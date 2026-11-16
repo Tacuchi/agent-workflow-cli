@@ -62,7 +62,7 @@ describe("mcp commands use the resolved Workline root", () => {
       materialization: { root: workspace, materialized: true },
     });
     expect(existsSync(join(workspace, ".mcp.json"))).toBe(true);
-    expect(existsSync(join(workspace, ".workflow", "workline.json"))).toBe(true);
+    expect(existsSync(join(workspace, ".workflow", "agent-workflow.json"))).toBe(true);
     expect(existsSync(join(sourceChild, ".mcp.json"))).toBe(false);
 
     const doctor = await mcpCommand.execute(args(["doctor"], { host: "claude" }), ctx);

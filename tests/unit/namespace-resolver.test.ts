@@ -31,7 +31,7 @@ function makeFs(
  * read as a workspace, and every fixture that means to BE one says so here.
  */
 function mark(...markerPaths: string[]): Map<string, string> {
-  return new Map(markerPaths.map((path) => [path, '{"workline":1}\n']));
+  return new Map(markerPaths.map((path) => [path, '{"agent_workflow":1}\n']));
 }
 
 describe("NamespaceResolver", () => {
@@ -99,7 +99,7 @@ describe("NamespaceResolver", () => {
       ],
       ["/cwd/.workflow/sessions", []],
     ]);
-    const fs = makeFs(mark("/cwd/.workflow/workline.json"), dirs);
+    const fs = makeFs(mark("/cwd/.workflow/agent-workflow.json"), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
     expect(result.namespace).toBe("workflow");
@@ -128,7 +128,10 @@ describe("NamespaceResolver", () => {
       ["/cwd/.workflow/sessions", []],
       ["/cwd/.other/sessions", []],
     ]);
-    const fs = makeFs(mark("/cwd/.workflow/workline.json", "/cwd/.other/workline.json"), dirs);
+    const fs = makeFs(
+      mark("/cwd/.workflow/agent-workflow.json", "/cwd/.other/agent-workflow.json"),
+      dirs,
+    );
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     await expect(r.resolveDirectory(undefined)).rejects.toMatchObject({
       code: "WORKLINE_NAMESPACE_AMBIGUOUS",
@@ -143,7 +146,7 @@ describe("NamespaceResolver", () => {
       ["/cwd/.workflow/sessions", []],
     ]);
     const fs = makeFs(
-      new Map([[CONFIG_PATH, "configns"], ...mark("/cwd/.workflow/workline.json")]),
+      new Map([[CONFIG_PATH, "configns"], ...mark("/cwd/.workflow/agent-workflow.json")]),
       dirs,
     );
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
@@ -175,7 +178,7 @@ describe("NamespaceResolver", () => {
       ["/cwd", [{ name: ".legacy", path: "/cwd/.legacy", type: "dir" }]],
       ["/cwd/.legacy/sessions", []],
     ]);
-    const fs = makeFs(mark("/cwd/.legacy/workline.json"), dirs);
+    const fs = makeFs(mark("/cwd/.legacy/agent-workflow.json"), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     const result = await r.resolve(undefined);
     expect(result.source).toBe("hub");
@@ -184,7 +187,7 @@ describe("NamespaceResolver", () => {
 
   it("uses the nearest ancestor marker as the shared Workline root", async () => {
     const fs = makeFs(
-      mark("/repo/.workflow/workline.json"),
+      mark("/repo/.workflow/agent-workflow.json"),
       new Map([
         ["/repo", [{ name: ".workflow", path: "/repo/.workflow", type: "dir" }]],
         ["/repo/.workflow/sessions", []],
@@ -212,7 +215,7 @@ describe("NamespaceResolver", () => {
 
   it("honours an explicit namespace without silently selecting a neighbouring marker", async () => {
     const fs = makeFs(
-      mark("/cwd/.workflow/workline.json"),
+      mark("/cwd/.workflow/agent-workflow.json"),
       new Map([
         ["/cwd", [{ name: ".workflow", path: "/cwd/.workflow", type: "dir" }]],
         ["/cwd/.workflow/sessions", []],
@@ -229,7 +232,7 @@ describe("NamespaceResolver", () => {
 
   it("honours AW_NAMESPACE at the closest matching marker", async () => {
     const fs = makeFs(
-      mark("/repo/.workflow/workline.json", "/repo/.team/workline.json"),
+      mark("/repo/.workflow/agent-workflow.json", "/repo/.team/agent-workflow.json"),
       new Map([
         [
           "/repo",
@@ -312,7 +315,7 @@ describe("NamespaceResolver", () => {
       ["/repo/.workflow/sessions", []],
       ["/repo/docs/specs", []],
     ]);
-    const fs = makeFs(mark("/repo/.workflow/workline.json"), dirs);
+    const fs = makeFs(mark("/repo/.workflow/agent-workflow.json"), dirs);
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/repo/docs/specs"));
 
     await expect(r.resolveDirectory(undefined)).resolves.toMatchObject({

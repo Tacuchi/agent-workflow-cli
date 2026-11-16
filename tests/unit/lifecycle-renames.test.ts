@@ -76,7 +76,7 @@ beforeAll(async () => {
   await mkdir(home, { recursive: true });
   await mkdir(bare, { recursive: true });
   await mkdir(join(hub, ".workflow", "sessions", "001-prueba-quick"), { recursive: true });
-  await writeFile(join(hub, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+  await writeFile(join(hub, ".workflow", "agent-workflow.json"), worklineMarkerContent("workflow"));
   await writeFile(
     join(hub, ".workflow", "sessions", "001-prueba-quick", "SESSION.md"),
     "# SESSION — prueba\n\n## Objective\nprobar\n\n## Type\nquick\n",
@@ -126,7 +126,10 @@ describe("aw checkpoint-write sigue saliendo con 0 como el PreCompact de un host
   it("en un hub con marcadores anteriores a 29.0.0 avisa por stderr y sale con 0", async () => {
     const old = join(root, "old-hub");
     await mkdir(join(old, ".workflow", "sessions"), { recursive: true });
-    await writeFile(join(old, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    await writeFile(
+      join(old, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
     await writeFile(
       join(old, "CLAUDE.md"),
       "<!-- WORKFLOW-PROJECT-START -->\n## Proyecto\nviejo\n<!-- WORKFLOW-PROJECT-END -->\n",

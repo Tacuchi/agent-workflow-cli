@@ -41,8 +41,8 @@ it("aw sources informa el otro hub y avisa cuando el checkout usa la rama ajena"
   ]) {
     await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
     await writeFile(
-      join(hub, ".workflow", "workline.json"),
-      '{"workline":1,"namespace":"workflow"}',
+      join(hub, ".workflow", "agent-workflow.json"),
+      '{"agent_workflow":1,"namespace":"workflow"}',
     );
     await writeFile(
       join(hub, "AGENTS.md"),

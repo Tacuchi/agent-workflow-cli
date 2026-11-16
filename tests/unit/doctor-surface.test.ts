@@ -591,7 +591,7 @@ describe("aw doctor · el diagnóstico no escribe ni siquiera la bitácora (AC-0
       .map((match) => match[1])
       .sort();
     // `host-memory` is exempt for its own reason: it reads other hosts' private memory.
-    expect(exempt).toEqual(["doctor", "host-memory", "hub-compact", "resume", "status"]);
+    expect(exempt).toEqual(["doctor", "flow", "host-memory", "hub-compact", "resume", "status"]);
     // Y el predicado sigue siendo el que apaga la bitácora: declararlo sin
     // cablearlo dejaría las dos escrituras intactas.
     expect(main).toMatch(/new Logger\(\{[^}]*enabled: !isStrictReadCommand\(/);

@@ -661,7 +661,7 @@ describe("runStatusCommand — edge cases", () => {
 
   it("missing docs/specs and a plan with 0 tasks", async () => {
     const fs = new FakeFs();
-    fs.file("/cwd/.workflow/workline.json", '{"workline":1}\n'); // hub marker
+    fs.file("/cwd/.workflow/agent-workflow.json", '{"agent_workflow":1}\n'); // hub marker
     fs.file("/cwd/docs/plans/001-plan-empty.md", "# Plan\n\n## Tasks\n(none yet)\n", NOW);
     const out = await runStatusCommand(fs, fakeEnv, paths(), { now: NOW });
     expect(out.hub.initialized).toBe(true);

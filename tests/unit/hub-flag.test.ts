@@ -21,7 +21,10 @@ it("--hub nombra la raíz exacta desde otro cwd y rechaza una subcarpeta", () =>
   mkdirSync(outside);
   mkdirSync(join(hub, ".workflow"), { recursive: true });
   mkdirSync(join(hub, "docs"));
-  writeFileSync(join(hub, ".workflow", "workline.json"), '{"workline":1,"namespace":"workflow"}');
+  writeFileSync(
+    join(hub, ".workflow", "agent-workflow.json"),
+    '{"agent_workflow":1,"namespace":"workflow"}',
+  );
   const run = (workspace: string) =>
     spawnSync(process.execPath, [cli, "status", "--hub", workspace, "--json"], {
       cwd: outside,

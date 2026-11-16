@@ -179,7 +179,7 @@ describe("McpHostReceiptService", () => {
           schema_version: 1,
           ...IDENTITY,
           scope: "workspace",
-          workline_version: "28.3.1",
+          agent_workflow_version: "28.3.1",
           descriptor_digest: digestMcpReceiptDescriptor(FIRST_DESCRIPTOR),
           registered_at: "2026-08-31T12:00:00.000Z",
           reload_required: true,
@@ -207,7 +207,7 @@ describe("McpHostReceiptService", () => {
         {
           schema_version: 1,
           ...IDENTITY,
-          workline_version: "23.0.0",
+          agent_workflow_version: "23.0.0",
           descriptor_digest: digest,
           registered_at: "2026-08-31T12:00:00.000Z",
           reload_required: false,
@@ -225,7 +225,7 @@ describe("McpHostReceiptService", () => {
         {
           schema_version: 1,
           ...IDENTITY,
-          workline_version: "23.0.0",
+          agent_workflow_version: "23.0.0",
           descriptor_digest: digest,
           registered_at: "2026-08-31T12:00:00.000Z",
           reload_required: true,

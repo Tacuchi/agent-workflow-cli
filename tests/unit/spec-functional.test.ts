@@ -395,7 +395,7 @@ Spec 040.
  */
 function noteChain(planText: string, specDigest: string, amends: string): string {
   const index = {
-    schema: "workline.decision-index/v1" as const,
+    schema: "agent-workflow.decision-index/v1" as const,
     spec: { path: SPEC_PATH, number: "040" },
     notes: [],
   };
@@ -600,7 +600,7 @@ describe("paridad — el digest que el tablero reporta ES el que una nota pinea"
           ],
         },
         draft: {
-          schema: "workline.decision-note/v1",
+          schema: "agent-workflow.decision-note/v1",
           decision: "AC-03 se satisface con el rótulo",
           reason: "la cosecha ya direcciona el rótulo",
           supersedes_assertions: ["S040/AC-03"],
@@ -704,7 +704,7 @@ describe("migración del lado NOTA — la dualidad también cubre lo ya publicad
           ],
         },
         draft: {
-          schema: "workline.decision-note/v1",
+          schema: "agent-workflow.decision-note/v1",
           decision: "AC-03 se satisface con el rótulo",
           reason: "la cosecha ya direcciona el rótulo",
           supersedes_assertions: ["S040/AC-03"],

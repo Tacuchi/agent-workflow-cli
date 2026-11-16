@@ -10,6 +10,7 @@ import {
   orderNotes,
   validateDecisionNote,
 } from "../domain/decision-note.js";
+import { acceptsIndexSchema } from "../domain/retired-name.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 
 /**
@@ -26,7 +27,7 @@ import type { FileSystemPort } from "../ports/file-system.js";
  * touches the bytes of a record that was already published.
  */
 
-export const NOTE_INDEX_SCHEMA = "workline.decision-index/v1";
+export const NOTE_INDEX_SCHEMA = "agent-workflow.decision-index/v1";
 
 export interface DecisionIndex {
   schema: string;
@@ -97,7 +98,7 @@ function readIndexValue(
     };
   }
   const raw = parsed as Record<string, unknown>;
-  if (raw.schema !== NOTE_INDEX_SCHEMA) {
+  if (!acceptsIndexSchema(raw.schema)) {
     return {
       ok: false,
       failures: [

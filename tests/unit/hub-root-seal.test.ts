@@ -47,7 +47,10 @@ it("persist validado en A no aplica en B aun si ambos tienen docs idénticos", a
   await mkdir(home);
   for (const hub of [hubA, hubB]) {
     await mkdir(join(hub, ".workflow"), { recursive: true });
-    await writeFile(join(hub, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    await writeFile(
+      join(hub, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
   }
   const cli = fileURLToPath(new URL("../../dist/cli/main.js", import.meta.url));
   const run = (hub: string, stage: string, input?: string, approval?: string) => {

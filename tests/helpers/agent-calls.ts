@@ -249,7 +249,7 @@ async function seed(root: string, paths: PathsService, flow: WorklineFlow, phase
   if (flow === "plan-refine") await writeFile(join(root, PLAN_DOC), PLAN, "utf8");
   if (flow === "plan-exec") await writeFile(join(root, PLAN_DOC), execPlan(phases), "utf8");
   await writeFile(
-    join(root, ".agent-workflow", "workline.json"),
+    join(root, ".agent-workflow", "agent-workflow.json"),
     worklineMarkerContent("agent-workflow"),
   );
   // The declared source exists, so the plan's aliases resolve.

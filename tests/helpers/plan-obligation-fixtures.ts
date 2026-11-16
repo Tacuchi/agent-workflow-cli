@@ -136,7 +136,7 @@ function seed(fs: MemFs, fixture: Fixture): void {
   fs.file(`/cwd/${fixture.plan.path}`, planText);
 
   const index = {
-    schema: "workline.decision-index/v1" as const,
+    schema: "agent-workflow.decision-index/v1" as const,
     spec: { path: fixture.spec.path, number: fixture.spec.number },
     notes: [] as DecisionNote[],
   };

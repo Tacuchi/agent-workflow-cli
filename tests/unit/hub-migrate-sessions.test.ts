@@ -135,7 +135,7 @@ describe("aw hub-migrate --documents", () => {
     for (const gone of [".workflow/sessions", ".workflow/HISTORY.md", ".workflow/claims.jsonl"]) {
       expect(existsSync(join(hub.root, gone)), gone).toBe(false);
     }
-    expect(JSON.parse(read(".workflow/workline.json"))).toMatchObject({ model: "documents" });
+    expect(JSON.parse(read(".workflow/agent-workflow.json"))).toMatchObject({ model: "documents" });
 
     // Un único commit, aprobado por su digest.
     const commit = dataOf(applied.json).commit as { approval: string; paths: { path: string }[] };

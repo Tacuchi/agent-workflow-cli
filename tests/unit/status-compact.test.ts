@@ -121,7 +121,7 @@ describe("aw hubs status — el tamaño sigue a los hubs, no a su historia (plan
 
   it("100 planes cerrados más dejan los bytes iguales y un hub más suma exactamente su objeto", async () => {
     const fs = largeHub();
-    fs.file("/cwd/.workflow/workline.json", '{"workline":1}');
+    fs.file("/cwd/.workflow/agent-workflow.json", '{"agent_workflow":1}');
     register("/cwd");
     const before = await hubsJson(fs);
     const [hub] = JSON.parse(before).hubs;
@@ -131,7 +131,7 @@ describe("aw hubs status — el tamaño sigue a los hubs, no a su historia (plan
     addClosedPlans(fs, 100 + LARGE_HUB_CLOSED_PLANS, 100);
     expect(await hubsJson(fs)).toBe(before);
 
-    fs.file("/otro/.workflow/workline.json", '{"workline":1}');
+    fs.file("/otro/.workflow/agent-workflow.json", '{"agent_workflow":1}');
     register("/cwd", "/otro");
     const after = await hubsJson(fs);
     const added = JSON.parse(after).hubs[1];

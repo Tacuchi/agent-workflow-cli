@@ -35,7 +35,7 @@ export function docFlowHub(options: { nested?: string } = {}): DocFlowHub {
   mkdirSync(join(root, "docs/plans"), { recursive: true });
   mkdirSync(join(root, ".workflow"), { recursive: true });
   mkdirSync(home);
-  writeFileSync(join(root, ".workflow/workline.json"), '{"workline":1}\n');
+  writeFileSync(join(root, ".workflow/agent-workflow.json"), '{"agent_workflow":1}\n');
   writeFileSync(
     join(root, "CLAUDE.md"),
     [

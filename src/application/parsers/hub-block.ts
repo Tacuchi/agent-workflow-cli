@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { RETIRED_HEADING } from "../../domain/retired-name.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { absoluteOnAnyHost, localSourcePath, readHubLocalConfig } from "../hub-local-config.js";
 import { parseMdSection } from "../markdown.js";
@@ -339,7 +340,8 @@ function parseWithMarkers(text: string, markers: HubBlockMarkers): ParsedHubBloc
   const stackText = parseMdSection(inner, "Stack") ?? "";
   const statusText = parseMdSection(inner, "Status") ?? "";
   const pipelineText = parseMdSection(inner, "Pipeline") ?? "";
-  const worklineText = parseMdSection(inner, "Workline") ?? "";
+  const worklineText =
+    parseMdSection(inner, "agent-workflow") ?? parseMdSection(inner, RETIRED_HEADING) ?? "";
 
   const fuentes = parseFuentesTable(fuentesText);
   const stack = parseStackList(stackText);
@@ -389,7 +391,8 @@ function parseWithMarkers(text: string, markers: HubBlockMarkers): ParsedHubBloc
 /** The `##` sections this block owns; anything else under a heading is somebody else's. */
 const OWNED_SECTIONS: ReadonlySet<string> = new Set([
   "hub",
-  "workline",
+  "agent-workflow",
+  RETIRED_HEADING.toLowerCase(),
   "fuentes",
   "stack",
   "status",

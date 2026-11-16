@@ -102,7 +102,7 @@ describe("aw settle", () => {
   /** Publica la nota portadora, en la forma que se le pida. */
   const publish = (obligations: readonly unknown[]): DecisionNote => {
     const index = {
-      schema: "workline.decision-index/v1" as const,
+      schema: "agent-workflow.decision-index/v1" as const,
       spec: { path: SPEC_FILE, number: "033" },
       notes: [] as DecisionNote[],
     };
@@ -504,7 +504,7 @@ describe("aw settle — las trampas que la relectura encontró", () => {
   /** Una nota por plan, cada una con su compensación, en la MISMA cadena. */
   const publishBoth = (): void => {
     const index = {
-      schema: "workline.decision-index/v1" as const,
+      schema: "agent-workflow.decision-index/v1" as const,
       spec: { path: SPEC2, number: "044" },
       notes: [] as DecisionNote[],
     };
@@ -628,7 +628,7 @@ describe("aw settle — las trampas que la relectura encontró", () => {
 
   it("una obligación LEGADA sin lectura declarada no se puede arrastrar", async () => {
     const index = {
-      schema: "workline.decision-index/v1" as const,
+      schema: "agent-workflow.decision-index/v1" as const,
       spec: { path: SPEC2, number: "044" },
       notes: [] as DecisionNote[],
     };
@@ -681,7 +681,7 @@ describe("aw settle — las trampas que la relectura encontró", () => {
 
   it("`--pending` sobre una legada tampoco alcanza: la lectura sigue siendo de la persona", async () => {
     const index = {
-      schema: "workline.decision-index/v1" as const,
+      schema: "agent-workflow.decision-index/v1" as const,
       spec: { path: SPEC2, number: "044" },
       notes: [] as DecisionNote[],
     };

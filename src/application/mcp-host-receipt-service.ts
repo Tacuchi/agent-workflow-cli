@@ -2,6 +2,7 @@ import { isAbsolute } from "node:path";
 import type { McpHost } from "../domain/mcp-entry.js";
 import { normalizeMcpInstance, validateMcpInstance } from "../domain/mcp-entry.js";
 import { carriesSecretMaterial, isSecretFlag } from "../domain/redaction.js";
+import { RETIRED_RECEIPT_KEY } from "../domain/retired-name.js";
 import { canonicalJson, semanticDigest } from "./semantic-operation/protocol.js";
 
 /**
@@ -62,7 +63,7 @@ export interface McpHostReceipt {
   host: McpHost;
   scope: McpReceiptScope;
   connection: string;
-  workline_version: string;
+  agent_workflow_version: string;
   descriptor_digest: string;
   registered_at: string;
   /** A host must reconnect/restart before the descriptor can be considered loaded. */
@@ -175,7 +176,7 @@ export class McpHostReceiptService {
     const receipt: McpHostReceipt = {
       schema_version: MCP_HOST_RECEIPT_SCHEMA_VERSION,
       ...identity,
-      workline_version: worklineVersion,
+      agent_workflow_version: worklineVersion,
       descriptor_digest: descriptorDigest,
       registered_at: registeredAt,
       reload_required: true,
@@ -402,7 +403,9 @@ function parseReceipt(value: unknown): McpHostReceipt {
     scope: storedScope(value.scope),
     connection: value.connection as string,
   });
-  const worklineVersion = requireVersion(value.workline_version);
+  const worklineVersion = requireVersion(
+    value.agent_workflow_version ?? value[RETIRED_RECEIPT_KEY],
+  );
   const descriptorDigest = requireDigest(value.descriptor_digest);
   const registeredAt = requireInstant(value.registered_at);
   if (typeof value.reload_required !== "boolean") {
@@ -414,7 +417,7 @@ function parseReceipt(value: unknown): McpHostReceipt {
   const base: McpHostReceipt = {
     schema_version: MCP_HOST_RECEIPT_SCHEMA_VERSION,
     ...identity,
-    workline_version: worklineVersion,
+    agent_workflow_version: worklineVersion,
     descriptor_digest: descriptorDigest,
     registered_at: registeredAt,
     reload_required: value.reload_required,

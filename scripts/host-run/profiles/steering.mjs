@@ -30,6 +30,7 @@ export const STEERING_FILES = [
   ".crush/**",
   ".gitignore",
   ".workflow/local.json",
+  ".workflow/agent-workflow.json",
   ".workflow/workline.json",
   ".workflow/skills.toml",
   ".workflow/processes.json",

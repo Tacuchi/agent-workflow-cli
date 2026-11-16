@@ -99,7 +99,7 @@ describe("runWorkspaceInit", () => {
     expect(result.sources).toBe(1);
 
     // MINIMAL scaffold: only the hub marker; no sessions folder (spec 066).
-    expect(existsSync(join(hub, ".workflow", "workline.json"))).toBe(true);
+    expect(existsSync(join(hub, ".workflow", "agent-workflow.json"))).toBe(true);
     expect(existsSync(join(hub, ".workflow", "sessions"))).toBe(false);
     // docs/* is NOT scaffolded: each category is born on demand via `aw next-number docs/<cat>`.
     for (const f of DOCS_FOLDERS) {
@@ -466,7 +466,7 @@ describe("runWorkspaceInit", () => {
   });
 
   it("--dry-run deriva el informe del FS: distingue un workspace virgen de uno inicializado", async () => {
-    const markerFile = join(hub, ".workflow", "workline.json");
+    const markerFile = join(hub, ".workflow", "agent-workflow.json");
 
     const virgin = await init({ dryRun: true });
     expect(virgin.scaffold.created).toEqual([markerFile]);
@@ -514,7 +514,7 @@ describe("runWorkspaceInit", () => {
       expect(existsSync(join(target, "AGENTS.md"))).toBe(true);
       expect(existsSync(join(target, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(target, ".workflow", "skills.toml"))).toBe(false);
-      expect(existsSync(join(target, ".workflow", "workline.json"))).toBe(true);
+      expect(existsSync(join(target, ".workflow", "agent-workflow.json"))).toBe(true);
       expect(existsSync(join(callerCwd, "AGENTS.md"))).toBe(false);
       expect(existsSync(join(callerCwd, ".workflow"))).toBe(false);
     } finally {
@@ -547,7 +547,7 @@ describe("runWorkspaceInit", () => {
     if ("error" in result) throw new Error(result.error);
     expect(result.sources).toBe(0);
     expect(result.hub_block_files).toEqual({ skipped: true, reason: "materialization_only" });
-    expect(existsSync(join(hub, ".workflow", "workline.json"))).toBe(true);
+    expect(existsSync(join(hub, ".workflow", "agent-workflow.json"))).toBe(true);
     expect(existsSync(join(hub, "AGENTS.md"))).toBe(false);
   });
 

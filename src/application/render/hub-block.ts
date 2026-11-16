@@ -88,7 +88,7 @@ export function renderHubBlock(input: RenderHubBlockInput): string {
     "",
     proyectoSection,
     "",
-    "## Workline",
+    "## agent-workflow",
     "",
     [...orientationLines(namespace), ...slotLines(kept, "workline")].join("\n"),
     "",

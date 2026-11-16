@@ -268,7 +268,7 @@ describe("sobre un plan fixture con una fase validada", () => {
     text: string = planText(`sha256:${baseDigest(SPEC_TEXT)}`),
   ): DecisionNote => {
     const index = {
-      schema: "workline.decision-index/v1" as const,
+      schema: "agent-workflow.decision-index/v1" as const,
       spec: { path: "docs/specs/033-spec-x.md", number: "033" },
       notes: [] as DecisionNote[],
     };

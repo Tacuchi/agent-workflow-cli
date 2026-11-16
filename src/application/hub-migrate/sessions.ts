@@ -299,7 +299,7 @@ function isMigrationPath(path: string, paths: PathsService): boolean {
   const ns = `.${paths.namespace}/`;
   return (
     /^docs\/plans\/\d{3,}-plan-.+\.md$/.test(path) ||
-    path === `${ns}workline.json` ||
+    path === `${ns}agent-workflow.json` ||
     sessionModelResidue(paths).some((rel) => path === rel || path.startsWith(`${rel}/`))
   );
 }
@@ -317,7 +317,7 @@ async function changedUnder(
     .filter(
       (path) =>
         wanted.has(path) ||
-        path === `.${paths.namespace}/workline.json` ||
+        path === `.${paths.namespace}/agent-workflow.json` ||
         residue.some((rel) => path === rel || path.startsWith(`${rel}/`)),
     );
 }
@@ -349,7 +349,7 @@ function firstOpenTask(text: string): string {
 
 async function markMigrated(fs: FileSystemPort, paths: PathsService): Promise<void> {
   const marker = paths.cwdMarkerFile();
-  let data: Record<string, unknown> = { workline: 1, namespace: paths.namespace };
+  let data: Record<string, unknown> = { agent_workflow: 1, namespace: paths.namespace };
   try {
     data = JSON.parse(await fs.readText(marker)) as Record<string, unknown>;
   } catch {

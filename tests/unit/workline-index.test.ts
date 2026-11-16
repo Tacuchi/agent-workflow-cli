@@ -599,7 +599,7 @@ function detailHub(planText: string, specText = D_SPEC_TEXT): MemFs {
 /** The pending note chain the reconciliation link needs, written where the index reads it. */
 function seedObligation(fs: MemFs, planText: string): void {
   const chain = {
-    schema: "workline.decision-index/v1" as const,
+    schema: "agent-workflow.decision-index/v1" as const,
     spec: { path: D_SPEC, number: "033" },
     notes: [] as DecisionNote[],
   };

@@ -51,7 +51,7 @@ describe("runNextNumber --publish", () => {
 
   async function publish(content: string, name = "plan-algo.md"): Promise<Record<string, unknown>> {
     mkdirSync(join(hub, ".workflow"), { recursive: true });
-    writeFileSync(paths.cwdMarkerFile(), '{"workline":1}\n');
+    writeFileSync(paths.cwdMarkerFile(), '{"agent_workflow":1}\n');
     vi.mocked(readRequiredStdin).mockResolvedValue(content);
     const result = await nextNumberCommand.execute(
       parseArgv(["next-number", "docs/plans", "--publish", name]),

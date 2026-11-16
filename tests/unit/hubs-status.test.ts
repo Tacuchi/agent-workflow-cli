@@ -25,7 +25,10 @@ function fixture() {
   const hub = (name: string) => {
     const path = join(root, name);
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
-    writeFileSync(join(path, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    writeFileSync(
+      join(path, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
     return path;
   };
   const healthy = hub("sano");

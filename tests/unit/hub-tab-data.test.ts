@@ -132,7 +132,7 @@ function buildDeps({
       hubDir: () => "/ws",
       blockMarkers: () => MARKERS,
       cwdSessionsDir: () => "/ws/.workflow/sessions",
-      cwdMarkerFile: () => "/ws/.workflow/workline.json",
+      cwdMarkerFile: () => "/ws/.workflow/agent-workflow.json",
       cwdHistoryFile: () => "/ws/.workflow/HISTORY.md",
       cwdProcessesFile: () => "/ws/.workflow/processes.json",
       cwdLockFile: () => "/ws/.workflow/.lock",

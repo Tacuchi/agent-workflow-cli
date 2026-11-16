@@ -77,7 +77,7 @@ beforeAll(async () => {
   await mkdir(home, { recursive: true });
   await mkdir(bare, { recursive: true });
   await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
-  await writeFile(join(hub, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+  await writeFile(join(hub, ".workflow", "agent-workflow.json"), worklineMarkerContent("workflow"));
 });
 
 afterAll(async () => {

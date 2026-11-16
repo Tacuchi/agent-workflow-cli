@@ -73,7 +73,7 @@ beforeAll(async () => {
   await mkdir(bare, { recursive: true });
   await mkdir(join(hub, ".workflow"), { recursive: true });
   await writeFile(
-    join(hub, ".workflow", "workline.json"),
+    join(hub, ".workflow", "agent-workflow.json"),
     worklineMarkerContent("workflow"),
     "utf8",
   );

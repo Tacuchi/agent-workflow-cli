@@ -43,7 +43,7 @@ function hubBlock(): string {
 async function declaringHub(name: string): Promise<void> {
   const hub = join(root, name);
   mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
-  writeFileSync(join(hub, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+  writeFileSync(join(hub, ".workflow", "agent-workflow.json"), worklineMarkerContent("workflow"));
   writeFileSync(join(hub, "CLAUDE.md"), hubBlock());
   writeFileSync(join(hub, "AGENTS.md"), hubBlock());
   const namespace = normalizeNamespace("workflow");
@@ -91,7 +91,10 @@ function configureSqlGuard(namespace: string): void {
 function markNamespaces(folder: string, namespaces: readonly string[]): void {
   for (const namespace of namespaces) {
     mkdirSync(join(folder, `.${namespace}`, "sessions"), { recursive: true });
-    writeFileSync(join(folder, `.${namespace}`, "workline.json"), worklineMarkerContent(namespace));
+    writeFileSync(
+      join(folder, `.${namespace}`, "agent-workflow.json"),
+      worklineMarkerContent(namespace),
+    );
   }
 }
 
@@ -113,12 +116,18 @@ describe("the SQL guard keeps blocking when the hub does not resolve", () => {
   beforeEach(() => configureSqlGuard("workflow"));
 
   it("in $HOME, which is never a hub though ~/.workflow carries a marker", () => {
-    writeFileSync(join(home, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    writeFileSync(
+      join(home, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
     expectGuarded(home);
   });
 
   it("in a checkout no hub declares, once the user level carries a marker", () => {
-    writeFileSync(join(home, ".workflow", "workline.json"), worklineMarkerContent("workflow"));
+    writeFileSync(
+      join(home, ".workflow", "agent-workflow.json"),
+      worklineMarkerContent("workflow"),
+    );
     expectGuarded(source);
   });
 

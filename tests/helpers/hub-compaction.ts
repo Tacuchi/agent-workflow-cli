@@ -31,7 +31,7 @@ export async function compactionFixture() {
     await mkdir(dirname(join(root, path)), { recursive: true });
     await writeFile(join(root, path), content);
   };
-  await write(".workflow/workline.json", '{"workline":1}\n');
+  await write(".workflow/agent-workflow.json", '{"agent_workflow":1}\n');
   await write(
     ORIGINAL,
     `# Plan 001 — history\n> Standalone: fixture\n> Estado: done\n\n## Tasks\n- [x] T1 — hecho\n\n${"historical evidence\n".repeat(2000)}`,

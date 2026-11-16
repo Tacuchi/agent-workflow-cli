@@ -88,7 +88,7 @@ describe("tablero y reanudación sin sesiones ni HISTORY.md", () => {
     mkdirSync(join(hub, ".workflow/sessions/001-viejo-plan-exec"), { recursive: true });
     writeFileSync(join(hub, ".workflow/sessions/001-viejo-plan-exec/SESSION.md"), "# SESSION\n");
     writeFileSync(join(hub, ".workflow/HISTORY.md"), "| 001 | sesión vieja |\n");
-    writeFileSync(join(hub, ".workflow/workline.json"), '{"workline":1}\n');
+    writeFileSync(join(hub, ".workflow/agent-workflow.json"), '{"agent_workflow":1}\n');
     writeFileSync(
       join(hub, "CLAUDE.md"),
       [
