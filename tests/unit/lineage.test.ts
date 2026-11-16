@@ -13,6 +13,11 @@
 //   4. las prioridades del pipeline para planes alineados quedan byte-idénticas.
 
 import { describe, expect, it } from "vitest";
+import {
+  type PipelineItem,
+  buildAgentWorkflowIndex,
+  specConsumers,
+} from "../../src/application/agent-workflow-index-service.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import {
   parseDerivedFromPath,
@@ -21,11 +26,6 @@ import {
   parseSpecRelation,
 } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import {
-  type PipelineItem,
-  buildWorklineIndex,
-  specConsumers,
-} from "../../src/application/workline-index-service.js";
 import {
   alignSpecBaseline,
   formatSpecBaseline,
@@ -89,7 +89,7 @@ function hub(planText: string, specText: string = SPEC): MemFs {
 }
 
 function index(fs: MemFs) {
-  return buildWorklineIndex(
+  return buildAgentWorkflowIndex(
     fs,
     fakeEnv,
     new PathsService(normalizeNamespace("workflow"), "/home", "/cwd"),
@@ -254,7 +254,7 @@ describe("F1.4 — el sello no mueve el ruteo del pipeline", () => {
     expect(after.pipeline[0]?.action).toMatchObject({
       kind: "handoff",
       destination: "plan-refine",
-      code: "WORKLINE_BASELINE_DIVERGENT",
+      code: "BASELINE_DIVERGENT",
     });
   });
 
@@ -266,7 +266,7 @@ describe("F1.4 — el sello no mueve el ruteo del pipeline", () => {
       next: "continuar por la primera fase no validada",
       obligation: false,
       warning: {
-        code: "WORKLINE_BASELINE_LEGACY_UNSEALED",
+        code: "BASELINE_LEGACY_UNSEALED",
         message: expect.stringContaining("SIN SELLO DE BASELINE"),
       },
     });

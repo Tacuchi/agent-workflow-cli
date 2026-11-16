@@ -107,7 +107,7 @@ export type HookEventSupport =
   | { state: "omitted"; reason: string };
 
 export interface HarnessHooks {
-  /** True when Workline installs and removes its hook set on this host. */
+  /** True when agent-workflow installs and removes its hook set on this host. */
   managed: boolean;
   /** Where the hooks live and in what shape — the contract an installer writes against. */
   artifact: HookArtifact;
@@ -215,7 +215,7 @@ export interface HarnessInvocation {
  * - `native` — the tool is reachable and it is what a boundary uses; labeled
  *   markdown is the fallback for the cases `fallbackReason` names.
  * - `degraded` — the mechanism exists in the runtime but is NOT reachable in the
- *   mode Workline runs in, so markdown is the operative mechanism. Kept apart from
+ *   mode agent-workflow runs in, so markdown is the operative mechanism. Kept apart from
  *   `unsupported` because the difference is actionable: there is an opt-in to name.
  * - `unsupported` — no mechanism at all; markdown, always.
  */
@@ -320,7 +320,7 @@ export interface HarnessSpec {
   // Where the host keeps its global config (the "config present" observable).
   configDir: HarnessConfigDir;
   // The host's hook system, or null when it has none at all (Warp/Oz, DEC-W4).
-  // `managed` = Workline installs and removes its hook set there; it is the
+  // `managed` = agent-workflow installs and removes its hook set there; it is the
   // SINGLE source for that fact (`HOOKS_MANAGED_TARGETS` derives from it), so
   // installer, hook writer and uninstaller cannot disagree about which hosts
   // get hooks.
@@ -661,7 +661,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
     // OpenCode (sst/opencode). Config `opencode.json` ($schema); MCP under `mcp`
     // (type "local", command as array, `environment`). Reads .claude/skills and
     // .agents/skills directly. Its plugin API has tool.execute.before, but no
-    // current Workline SQL guard maps safely to its MCP tool names.
+    // current agent-workflow SQL guard maps safely to its MCP tool names.
     id: "opencode",
     label: "OpenCode",
     glyph: "O",

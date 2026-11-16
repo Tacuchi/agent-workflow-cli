@@ -1,8 +1,11 @@
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { DirEntry, FileStat, FileSystemPort, LinkStat } from "../ports/file-system.js";
+import {
+  agentWorkflowMarkerContent,
+  isAgentWorkflowRoot,
+} from "../runtime/agent-workflow-marker.js";
 import { HubResolutionError, repositoryRoot } from "../runtime/hub-resolution.js";
-import { isWorklineRoot, worklineMarkerContent } from "../runtime/workline-marker.js";
 import { type DeclaringHub, declaringHubs, hubsFile, readHubs } from "./hub-registry.js";
 import { acquireLock } from "./lock-service.js";
 import type { PathsService } from "./paths-service.js";
@@ -33,7 +36,7 @@ export interface MaterializationEffect {
 }
 
 /** Every observable effect of one first-write materialization. */
-export interface WorklineMaterialization {
+export interface AgentWorkflowMaterialization {
   root: string;
   namespace: string;
   materialized: boolean;
@@ -46,7 +49,7 @@ export interface WorklineMaterialization {
  * Most mutations are deliberately implemented in small domain services rather
  * than funnelled through one giant command switch.  That is good for their
  * local contracts, but it used to leave a hole: a direct writer such as
- * `next-number --publish` could create `docs/` before the Workline runtime had
+ * `next-number --publish` could create `docs/` before the agent-workflow runtime had
  * a canonical marker.  This adapter closes that hole without making reads (or
  * invalid command paths that never write) materialize a hub.
  *
@@ -56,8 +59,8 @@ export interface WorklineMaterialization {
  * dispatcher to expose alongside the command result.
  */
 export class MaterializingHubFileSystem implements FileSystemPort {
-  private receipt: WorklineMaterialization | undefined;
-  private materializing: Promise<WorklineMaterialization> | undefined;
+  private receipt: AgentWorkflowMaterialization | undefined;
+  private materializing: Promise<AgentWorkflowMaterialization> | undefined;
   private readonly root: string;
 
   constructor(
@@ -68,7 +71,7 @@ export class MaterializingHubFileSystem implements FileSystemPort {
   }
 
   /** The materialization this dispatch caused, if its command wrote locally. */
-  materialization(): WorklineMaterialization | undefined {
+  materialization(): AgentWorkflowMaterialization | undefined {
     return this.receipt;
   }
 
@@ -78,13 +81,13 @@ export class MaterializingHubFileSystem implements FileSystemPort {
    * racing each other or turning a newly-created receipt into an "existing"
    * one.
    */
-  async ensureMaterialized(): Promise<WorklineMaterialization> {
+  async ensureMaterialized(): Promise<AgentWorkflowMaterialization> {
     if (this.receipt !== undefined) return this.receipt;
     if (this.materializing !== undefined) {
       this.receipt = await this.materializing;
       return this.receipt;
     }
-    const materializing = ensureWorklineMaterialized(this.delegate, this.paths);
+    const materializing = ensureAgentWorkflowMaterialized(this.delegate, this.paths);
     this.materializing = materializing;
     try {
       this.receipt = await materializing;
@@ -206,12 +209,12 @@ export async function hasCanonicalSessionsMarker(
  * The lock itself may temporarily create `.<ns>/`, but it deliberately does not
  * create the canonical `sessions/` marker.  The marker is created last, after
  * the optional Git ignore block, so every reader either sees an implicit root or
- * a fully usable materialized Workline directory.
+ * a fully usable materialized agent-workflow directory.
  */
-export async function ensureWorklineMaterialized(
+export async function ensureAgentWorkflowMaterialized(
   fs: FileSystemPort,
   paths: PathsService,
-): Promise<WorklineMaterialization> {
+): Promise<AgentWorkflowMaterialization> {
   // Services may receive the dispatcher guard directly. Delegate back to it so
   // their explicit materialization participates in the same receipt rather
   // than recursively intercepting the lock's own writes.
@@ -289,10 +292,10 @@ export async function ensureWorklineMaterialized(
 
     // `acquireLock` created the parent `.<ns>/` if necessary.  The mark goes
     // first and `sessions/` last, so a reader either sees an implicit root or a
-    // directory already recognizable as Workline's own.
+    // directory already recognizable as agent-workflow's own.
     // The marker is the whole materialization: the documents model writes no
     // `sessions/` folder (spec 066, AC-01).
-    await fs.writeText(paths.cwdMarkerFile(), worklineMarkerContent(paths.namespace));
+    await fs.writeText(paths.cwdMarkerFile(), agentWorkflowMarkerContent(paths.namespace));
     effects.push({ kind: "marker", path: paths.cwdMarkerFile(), status: "created" });
     return { ...base, materialized: true, effects };
   } finally {
@@ -301,10 +304,10 @@ export async function ensureWorklineMaterialized(
 }
 
 /** Preview the same receipt without creating a lock, marker or .gitignore. */
-export async function previewWorklineMaterialization(
+export async function previewAgentWorkflowMaterialization(
   fs: FileSystemPort,
   paths: PathsService,
-): Promise<WorklineMaterialization> {
+): Promise<AgentWorkflowMaterialization> {
   const root = paths.hubDir();
   const sessions = await hasCanonicalSessionsMarker(fs, paths);
   const marked = await fs.exists(paths.cwdMarkerFile());
@@ -371,7 +374,7 @@ async function adoptMarker(
 ): Promise<MaterializationEffect["status"]> {
   if (await fs.exists(paths.cwdMarkerFile())) return "existing";
   try {
-    await fs.writeText(paths.cwdMarkerFile(), worklineMarkerContent(paths.namespace));
+    await fs.writeText(paths.cwdMarkerFile(), agentWorkflowMarkerContent(paths.namespace));
     return "created";
   } catch {
     // A hub whose runtime directory is read-only still resolves through
@@ -408,7 +411,7 @@ async function gitignoreEffectStatus(
 
 /**
  * Check Git membership without using it as a hub-root heuristic.  A
- * nested implicit Workline remains rooted at its invoked cwd; Git only decides
+ * nested implicit agent-workflow remains rooted at its invoked cwd; Git only decides
  * whether that root's own `.gitignore` should receive the runtime block.
  */
 export async function belongsToGit(fs: FileSystemPort, start: string): Promise<boolean> {
@@ -482,7 +485,7 @@ async function claimsRoot(
   // The exception holds only where that hub's marker is actually there: in a
   // linked worktree its copy may have none, and then the root would win.
   const ownFolder = source === (await canonicalPath(fs, hub.root));
-  return !(ownFolder && (await isWorklineRoot(fs, join(rootTop, sourceInRepo), namespace)));
+  return !(ownFolder && (await isAgentWorkflowRoot(fs, join(rootTop, sourceInRepo), namespace)));
 }
 
 /** Whether repository-relative `inner` is `outer` or below it. */

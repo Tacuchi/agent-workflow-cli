@@ -182,12 +182,12 @@ function entryStateDetail(
         : malformedEntryDetail(entryName);
     case "foreign":
       return embeddedCredential
-        ? `La entrada '${entryName}' no coincide con una forma publicada por Workline y parece contener una credencial embebida; retirala y rotá esa credencial.`
-        : `La entrada '${entryName}' no coincide con una forma publicada por Workline`;
+        ? `La entrada '${entryName}' no coincide con una forma publicada por agent-workflow y parece contener una credencial embebida; retirala y rotá esa credencial.`
+        : `La entrada '${entryName}' no coincide con una forma publicada por agent-workflow`;
     case "known-legacy":
       return embeddedCredential
-        ? `La entrada '${entryName}' usa un descriptor histórico de Workline y parece contener una credencial embebida; retirala y rotá esa credencial.`
-        : `La entrada '${entryName}' usa un descriptor histórico de Workline`;
+        ? `La entrada '${entryName}' usa un descriptor histórico de agent-workflow y parece contener una credencial embebida; retirala y rotá esa credencial.`
+        : `La entrada '${entryName}' usa un descriptor histórico de agent-workflow`;
   }
 }
 

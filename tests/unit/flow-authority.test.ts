@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { WORKLINE_FLOWS } from "../../src/application/capability/compose.js";
+import { AGENT_WORKFLOW_FLOWS } from "../../src/application/capability/compose.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   CHASSIS_SCOPE,
@@ -243,14 +243,14 @@ describe("registro de autoridad — forma y unicidad", () => {
 
 describe("registro de autoridad — cada entrada apunta a algo real", () => {
   it("los cinco flows y el chasis tienen decisiones declaradas", () => {
-    for (const flow of WORKLINE_FLOWS) {
+    for (const flow of AGENT_WORKFLOW_FLOWS) {
       expect(decisionsOfScope(flow).length, flow).toBeGreaterThan(0);
     }
     expect(decisionsOfScope(CHASSIS_SCOPE).length).toBeGreaterThan(0);
   });
 
   it("cada flow pertenece a un tramo declarado", () => {
-    for (const flow of WORKLINE_FLOWS) {
+    for (const flow of AGENT_WORKFLOW_FLOWS) {
       expect(FLOW_TRANCHES, flow).toContain(trancheOfFlow(flow));
     }
   });
@@ -294,7 +294,7 @@ describe("registro de autoridad — la migración cerró observable", () => {
     // nine the previous tranche left. There are none. Stated as an empty set over
     // the WHOLE registry rather than per scope, because "nothing left anywhere" is
     // what makes retiring the fallback safe rather than a hope.
-    for (const scope of [...WORKLINE_FLOWS, CHASSIS_SCOPE]) {
+    for (const scope of [...AGENT_WORKFLOW_FLOWS, CHASSIS_SCOPE]) {
       const left = decisionsOfScope(scope).filter((row) => row.ownership !== "cli-owned");
       expect(
         left.map((row) => row.id),
@@ -439,7 +439,7 @@ describe("registro de autoridad — source-bounded se pide donde se juzga", () =
    * cada evidencia, así que la regla no puede disolverse en un «el checklist
    * pasó» genérico.
    */
-  const SOURCE_BOUNDED = "workline.source-bounded";
+  const SOURCE_BOUNDED = "agent-workflow.source-bounded";
 
   it.each([
     "quick.convergence-gate",

@@ -1,5 +1,5 @@
 /** Flow names shared by the run registry, CLI and session lifecycle. */
-export const WORKLINE_FLOWS = [
+export const AGENT_WORKFLOW_FLOWS = [
   "spec-refine",
   "plan-new",
   "plan-refine",
@@ -7,4 +7,4 @@ export const WORKLINE_FLOWS = [
   "quick",
 ] as const;
 
-export type WorklineFlow = (typeof WORKLINE_FLOWS)[number];
+export type AgentWorkflowFlow = (typeof AGENT_WORKFLOW_FLOWS)[number];

@@ -1,11 +1,11 @@
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
+import { buildAgentWorkflowIndex } from "./agent-workflow-index-service.js";
 import { hubNames, hubState, hubsFile, readHubs } from "./hub-registry.js";
 import { PathsService } from "./paths-service.js";
 import { resumePipeline } from "./resume-service.js";
 import { type StatusOutput, statusOfIndex } from "./status-service.js";
-import { buildWorklineIndex } from "./workline-index-service.js";
 
 export type HubStatus =
   | {
@@ -77,7 +77,7 @@ async function hubStatus(
 ): Promise<HubStatus> {
   const paths = new PathsService(namespace as PathsService["namespace"], home, root);
   try {
-    const index = await buildWorklineIndex(deps.fs, deps.env, paths, {
+    const index = await buildAgentWorkflowIndex(deps.fs, deps.env, paths, {
       ...(deps.git !== undefined ? { git: deps.git } : {}),
     });
     const status = await statusOfIndex(deps.fs, paths, index);

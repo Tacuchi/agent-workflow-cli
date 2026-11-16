@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { runHubInit } from "../../src/application/hub-init-service.js";
 import {
   MaterializingHubFileSystem,
-  ensureWorklineMaterialized,
-  previewWorklineMaterialization,
+  ensureAgentWorkflowMaterialized,
+  previewAgentWorkflowMaterialization,
 } from "../../src/application/hub-materialization-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -16,12 +16,12 @@ function paths(root = "/cwd"): PathsService {
   return new PathsService(namespace, "/home/u", root);
 }
 
-describe("Workline implicit materialization", () => {
+describe("agent-workflow implicit materialization", () => {
   it("keeps a virgin non-Git read preview byte-identical", async () => {
     const fs = new MemFs();
     fs.dir("/cwd");
 
-    const preview = await previewWorklineMaterialization(fs, paths());
+    const preview = await previewAgentWorkflowMaterialization(fs, paths());
 
     expect(preview).toMatchObject({ root: "/cwd", namespace: "workflow", materialized: true });
     expect(preview.effects).toEqual([
@@ -36,7 +36,7 @@ describe("Workline implicit materialization", () => {
     const fs = new MemFs();
     fs.dir("/repo").dir("/repo/.git");
 
-    const result = await ensureWorklineMaterialized(fs, paths("/repo"));
+    const result = await ensureAgentWorkflowMaterialized(fs, paths("/repo"));
 
     expect(result.materialized).toBe(true);
     expect(result.effects).toEqual([
@@ -60,7 +60,7 @@ describe("Workline implicit materialization", () => {
     fs.dir("/repo").dir("/repo/.git");
     fs.file("/repo/.gitignore", "node_modules/\n");
 
-    const preview = await previewWorklineMaterialization(fs, paths("/repo"));
+    const preview = await previewAgentWorkflowMaterialization(fs, paths("/repo"));
 
     expect(preview.effects[0]).toEqual({
       kind: "gitignore",
@@ -73,10 +73,10 @@ describe("Workline implicit materialization", () => {
   it("is idempotent after the marker is materialized", async () => {
     const fs = new MemFs();
     fs.dir("/cwd");
-    await ensureWorklineMaterialized(fs, paths());
+    await ensureAgentWorkflowMaterialized(fs, paths());
     fs.writes.clear();
 
-    const second = await ensureWorklineMaterialized(fs, paths());
+    const second = await ensureAgentWorkflowMaterialized(fs, paths());
 
     expect(second.materialized).toBe(false);
     expect(second.effects).toEqual([
@@ -92,7 +92,7 @@ describe("Workline implicit materialization", () => {
     const fs = new MemFs();
     fs.dir("/viejo").dir("/viejo/.workflow").dir("/viejo/.workflow/sessions");
 
-    const result = await ensureWorklineMaterialized(fs, paths("/viejo"));
+    const result = await ensureAgentWorkflowMaterialized(fs, paths("/viejo"));
 
     expect(result.materialized).toBe(false);
     expect(result.effects).toContainEqual({
@@ -110,8 +110,8 @@ describe("Workline implicit materialization", () => {
     fs.dir("/cwd");
 
     const results = await Promise.all([
-      ensureWorklineMaterialized(fs, paths()),
-      ensureWorklineMaterialized(fs, paths()),
+      ensureAgentWorkflowMaterialized(fs, paths()),
+      ensureAgentWorkflowMaterialized(fs, paths()),
     ]);
 
     expect(results.map((result) => result.materialized).sort()).toEqual([false, true]);

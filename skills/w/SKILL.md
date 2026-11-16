@@ -1,20 +1,20 @@
 ---
 name: w
 description: >-
-  Workline orientation (`w`, overview role). Use to locate commands, loops,
+  agent-workflow orientation (`w` reads "workflow", overview role). Use to locate commands, loops,
   docs/ and git: SPEC/PLAN/QUICK, `/w:`, five loops and chassis,
   exports, capabilities, skills.toml and six hard invariants.
 ---
 
-# w — Workline overview
+# w — agent-workflow overview
 
 ## Role
 
-`overview` — the Workline-owned orientation skill. Its canonical name is `w`; historical external bindings are inapplicable.
+`overview` — the aw-owned orientation skill. Its canonical name is `w`; historical external bindings are inapplicable.
 
 ## Purpose
 
-Explain the **complete model** of Workline so an agent knows: what the user invokes, what the AI runs, where every deliverable lands, and which rules never break. This is the map; the fine detail lives in each loop/command/export/role.
+Explain the **complete model** of aw so an agent knows: what the user invokes, what the AI runs, where every deliverable lands, and which rules never break. This is the map; the fine detail lives in each loop/command/export/role.
 
 [`/w:hub-compact`](commands/hub-compact.md) synthesizes hub knowledge and archives recoverable originals with approval; conversation `Compactar` keeps its existing meaning.
 
@@ -26,7 +26,7 @@ Anyone needing orientation — a loop at start, a new agent in the hub, or the u
 
 ### Hub (implicit first)
 
-One concept: the **hub** — the folder with `.<namespace>/` and the hub block in AGENTS.md, declaring zero or more sources; it may live outside its sources or be the repo itself. No initialization is mandatory. The nearest ancestor containing `.<namespace>/workline.json` is the root; with no marker, the folder where the agent starts is the **implicit hub** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `hub` is the reserved source that points to the root, and any extra alias is explicit.
+One concept: the **hub** — the folder with `.<namespace>/` and the hub block in AGENTS.md, declaring zero or more sources; it may live outside its sources or be the repo itself. No initialization is mandatory. The nearest ancestor containing `.<namespace>/agent-workflow.json` is the root; with no marker, the folder where the agent starts is the **implicit hub** root. A pure read never creates the marker. The first mutation materializes only the runtime and `/w:hub-init` is an optional early materialization; explicit sources add configured metadata. `hub` is the reserved source that points to the root, and any extra alias is explicit.
 
 ### The 3-layer architecture + `docs/` zone
 
@@ -51,7 +51,7 @@ USER invokes
 
 ### Guide, not chain
 
-Workline proposes a route; the host decides how to walk it. When the host judges a better way, or the person asks for one, it may skip, reorder or merge steps, or leave the flow and keep working natively (the document stays resumable from its own state). It owes three things:
+aw proposes a route; the host decides how to walk it. When the host judges a better way, or the person asks for one, it may skip, reorder or merge steps, or leave the flow and keep working natively (the document stays resumable from its own state). It owes three things:
 
 - **Safety never bends** — invariants 1-5 below and no secrets in code or logs.
 - **A departure is said** — one line to the person, and in the plan's evidence when a batch is open.
@@ -83,7 +83,7 @@ Both authoring entry points can **split** with consent: `spec-new` may split a m
 
 `aw hub-init --source alias:path[:rama]` adds local sources; `--hub <dir>` selects the exact hub from a source checkout (no silent parent fallback). `aw hub-move <destino>` moves a hub; `--repair` reconciles an external move. Source paths are local and portable. A document's registered branch takes precedence over the source's work branch; never fall back to `development`.
 
-Before any loop, the AI resolves the **hub root** on every prompt (closest `.<ns>/workline.json` ancestor, otherwise the invoked directory). The marker is evidence of materialization, not permission to use Workline; pure reads stay byte-identical. That decides where work lands:
+Before any loop, the AI resolves the **hub root** on every prompt (closest `.<ns>/agent-workflow.json` ancestor, otherwise the invoked directory). The marker is evidence of materialization, not permission to use aw; pure reads stay byte-identical. That decides where work lands:
 
 | Trigger | → Behavior + routing |
 |---|---|
@@ -123,7 +123,7 @@ With no flow command, recommend the **cheapest route that still covers the risk*
 - **Never pay research twice.** A plan settled in the host is adopted, not re-derived by `plan-new-loop`.
 - **Start low and escalate.** QUICK escalates live to SPEC, and a plan-mode output can still be adopted later; over-provisioning is not recoverable, the tokens are spent.
 - **Preview for free.** A `/w:` command invoked while the host is in plan mode describes and writes nothing (`modules/PLAN-MODE.md`): use it to see a route before paying for it.
-- **Parallel agents.** The independent phases of a plan are the unit to hand to separate agents; the coordination itself is host help, not a Workline route.
+- **Parallel agents.** The independent phases of a plan are the unit to hand to separate agents; the coordination itself is host help, not a aw route.
 
 ### The commands (`/w:` namespace)
 
@@ -140,11 +140,11 @@ With no flow command, recommend the **cheapest route that still covers the risk*
 
 **Flow-independent invocable** skills: triggered with `/w:` like any command, but they do **not** belong to SPEC/PLAN/QUICK, do **not** manage `docs/`, and do **not** count in **6 flow commands / 5 loops**. *(In the bundle they are packaged under `commands/` so `/w:` can invoke them; in the design they are the `workflow-skills/` category.)*
 
-- `/w:doctor` — read-only diagnosis of the Workline install, MCPs, skills, auth, hooks and hub visibility across every detected host, with coverage per category and the verdict in the exit code; repairs only what is attributable to Workline, over a sealed batch the person approves by digest. Backed by `aw doctor`.
+- `/w:doctor` — read-only diagnosis of the aw install, MCPs, skills, auth, hooks and hub visibility across every detected host, with coverage per category and the verdict in the exit code; repairs only what is attributable to aw, over a sealed batch the person approves by digest. Backed by `aw doctor`.
 - `/w:status` — read-only hub dashboard (Done/Missing/Discarded, dates humanized in the user's language), opportunistically enriched with host context when the host exposes cheap memory. Writes nothing; backed by `aw status`.
 - `/w:persist` — persists work **already done in this conversation** (an analysis, conclusions, a plan) into `docs/`: classifies its shape and routes it — analysis/conclusions → `docs/research/` · requirement-shaped → spec draft (`spec-new` procedure) · plan-shaped → plan adoption (`plan-new` mode 4) — with `## Origin` + attribution (host · model · date) and the anti-duplicate check. Writes only `docs/`; the host→`docs/` counterpart of the flows.
-- `/w:recall` — reports what the other hosts' curated memory learned about Workline (backed by `aw host-memory`, which only reads), contrasts each learning against the installed CLI and doctrine, applies what still holds in the conversation and offers to save it in the current host's own memory, with its origin mark, only after confirmation. Never writes another host's memory.
-- `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (workline signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen); an optional document argument (spec/plan) skips the survey and gets its exact re-entry route. Writes nothing; the actionable sibling of `/w:status`.
+- `/w:recall` — reports what the other hosts' curated memory learned about aw (backed by `aw host-memory`, which only reads), contrasts each learning against the installed CLI and doctrine, applies what still holds in the conversation and offers to save it in the current host's own memory, with its origin mark, only after confirmation. Never writes another host's memory.
+- `/w:resume` — read-only: composes `/w:status` for a prioritized summary of pending work (aw signals + host context) and proposes how to continue via structured-choice, routed to the target command (`spec-refine` / `plan-new` / `plan-exec` / reopen); an optional document argument (spec/plan) skips the survey and gets its exact re-entry route. Writes nothing; the actionable sibling of `/w:status`.
 
 ### The loops (Layer 2)
 
@@ -160,11 +160,11 @@ Diagrams, manuals, reports and SQL are written by the flows straight into `docs/
 
 ### Host help + `.workflow/skills.toml`
 
-A loop keeps its own contract and may use relevant help exposed by its host. `skills.toml` controls only Workline-owned roles; it never selects external contributors.
+A loop keeps its own contract and may use relevant help exposed by its host. `skills.toml` controls only aw-owned roles; it never selects external contributors.
 
 ```toml
 [skills]
-overview         = "w"                # Workline orientation
+overview         = "w"                # aw orientation
 ```
 
 **Resolution cascade**: built-in default → `~/.workflow/skills.toml` (global) → `.workflow/skills.toml` (hub). Only owned names and `off` apply. Legacy external bindings are reported as inapplicable and left untouched. `[docs]` keeps its own independent cascade. Host-native skills may help without being required or credited by their mere presence.
@@ -175,7 +175,7 @@ Role catalog and defaults:
 |---|---|---|---|
 | `overview` | `w` | should | anyone (orientation) |
 
-> **Ambient help (not roles):** code/testing/writing, research, SQL, Git, diagrams and tool authoring may be supplied by the host. Workline does not bind, require, install or inventory them. Full doctrine: [roles/README.md](roles/README.md).
+> **Ambient help (not roles):** code/testing/writing, research, SQL, Git, diagrams and tool authoring may be supplied by the host. aw does not bind, require, install or inventory them. Full doctrine: [roles/README.md](roles/README.md).
 
 The **loop chassis** is NOT bound: it is the common engine of the 5 loops ([`loops/CHASSIS.md`](loops/CHASSIS.md), a referenced doc), not a pluggable capability.
 

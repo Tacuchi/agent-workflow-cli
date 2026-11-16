@@ -18,7 +18,7 @@
  * exactly what an execution arnés must not impose on the person running it.
  */
 
-import { type WorklineNodeId, formatNodeId } from "./workline-node.js";
+import { type AgentWorkflowNodeId, formatNodeId } from "./agent-workflow-node.js";
 
 /** Thrown with a `code` the CLI layer turns into `{ ok: false, error }`. */
 export class CutIntentError extends Error {
@@ -33,12 +33,12 @@ export class CutIntentError extends Error {
 
 export interface CutIntent {
   /** The spec whose cut this is — what makes the plans siblings at all. */
-  spec: WorklineNodeId;
+  spec: AgentWorkflowNodeId;
   /**
    * The plans meant for the pass in progress, in the order they were meant to
    * run. Position is the declaration: index 0 goes first.
    */
-  order: WorklineNodeId[];
+  order: AgentWorkflowNodeId[];
   /**
    * Plans held back for a later pass, deliberately unordered among themselves.
    *
@@ -47,7 +47,7 @@ export interface CutIntent {
    * explains why a plan the board could otherwise recommend is not being
    * recommended.
    */
-  deferred: WorklineNodeId[];
+  deferred: AgentWorkflowNodeId[];
 }
 
 /**
@@ -67,17 +67,17 @@ export type CutPosition =
   /** In the pass in progress, at this 0-based index of `order`. */
   | { placement: "in-pass"; index: number }
   /** Held back for a later pass; `after` is what it is waiting on. */
-  | { placement: "deferred"; after: WorklineNodeId[] }
+  | { placement: "deferred"; after: AgentWorkflowNodeId[] }
   /** The cut was declared, and it does not mention this plan. */
   | { placement: "unmentioned" };
 
 /** Every plan the intent names — order first, then the deferred. */
-function plansOf(intent: CutIntent): WorklineNodeId[] {
+function plansOf(intent: CutIntent): AgentWorkflowNodeId[] {
   return [...intent.order, ...intent.deferred];
 }
 
 /** Where this plan sits, without deciding whether the cut was declared at all. */
-export function positionOf(intent: CutIntent, plan: WorklineNodeId): CutPosition {
+export function positionOf(intent: CutIntent, plan: AgentWorkflowNodeId): CutPosition {
   const key = formatNodeId(plan);
   const index = intent.order.findIndex((node) => formatNodeId(node) === key);
   if (index !== -1) return { placement: "in-pass", index };

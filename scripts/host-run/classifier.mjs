@@ -161,7 +161,7 @@ export function explainRuleText(explain) {
 /**
  * claude's AskUserQuestion with several questions draws a tab bar above them —
  * `←  ☐ Alcance  ☐ flow  ✔ Submit  →` (s280 run 3) — and a rule line between the
- * question's options and its «Chat about this» option. Workline's flow controls
+ * question's options and its «Chat about this» option. agent-workflow's flow controls
  * (Compactar, Cerrar) live in their own `flow` tab.
  */
 const TAB_BAR = /^\s*←\s+(?:[☐☒✔✓]\s+\S.*?\s+)+→\s*$/;

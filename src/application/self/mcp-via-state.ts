@@ -8,9 +8,12 @@
  */
 
 import { isDeepStrictEqual } from "node:util";
+import {
+  AGENT_WORKFLOW_MCP_ENTRY_NAME,
+  agentWorkflowMcpEntry,
+} from "../../domain/agent-workflow-mcp-entry.js";
 import type { HarnessSpec } from "../../domain/harnesses.js";
 import { mcpEntryShapeForHost } from "../../domain/mcp-entry.js";
-import { WORKLINE_MCP_ENTRY_NAME, worklineMcpEntry } from "../../domain/workline-mcp-entry.js";
 import { readMcpEntry } from "../mcp-host-reader.js";
 
 export interface ViaAnswer {
@@ -44,28 +47,28 @@ export function readMcpViaState(spec: HarnessSpec, scopeDir: string): McpViaStat
     return { available, offered: { yes: false, reason } };
   }
 
-  const snapshot = readMcpEntry(spec.mcpHostId, scopeDir, WORKLINE_MCP_ENTRY_NAME, "global");
+  const snapshot = readMcpEntry(spec.mcpHostId, scopeDir, AGENT_WORKFLOW_MCP_ENTRY_NAME, "global");
   if (!snapshot.exists) {
     if (snapshot.present) {
       return {
         available,
         offered: {
           yes: false,
-          reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' existe, pero su forma no es la generada por Workline: conflicto con una entrada ajena; no se ofrece`,
+          reason: `la entrada '${AGENT_WORKFLOW_MCP_ENTRY_NAME}' existe, pero su forma no es la generada por agent-workflow: conflicto con una entrada ajena; no se ofrece`,
         },
       };
     }
-    const reason = `la entrada '${WORKLINE_MCP_ENTRY_NAME}' no está en la configuración MCP de este host; self install no la instala automáticamente`;
+    const reason = `la entrada '${AGENT_WORKFLOW_MCP_ENTRY_NAME}' no está en la configuración MCP de este host; self install no la instala automáticamente`;
     return { available, offered: { yes: false, reason } };
   }
 
-  const expected = mcpEntryShapeForHost(spec.mcpHostId, worklineMcpEntry(spec.mcpHostId));
+  const expected = mcpEntryShapeForHost(spec.mcpHostId, agentWorkflowMcpEntry(spec.mcpHostId));
   if (!isDeepStrictEqual(snapshot.raw, expected)) {
     return {
       available,
       offered: {
         yes: false,
-        reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' existe, pero su forma no es la generada por Workline: conflicto con una entrada ajena; no se ofrece`,
+        reason: `la entrada '${AGENT_WORKFLOW_MCP_ENTRY_NAME}' existe, pero su forma no es la generada por agent-workflow: conflicto con una entrada ajena; no se ofrece`,
       },
     };
   }
@@ -74,7 +77,7 @@ export function readMcpViaState(spec: HarnessSpec, scopeDir: string): McpViaStat
     available,
     offered: {
       yes: false,
-      reason: `la entrada '${WORKLINE_MCP_ENTRY_NAME}' coincide con el descriptor histórico de Workline, pero es legado y no acredita una vía cargada`,
+      reason: `la entrada '${AGENT_WORKFLOW_MCP_ENTRY_NAME}' coincide con el descriptor histórico de agent-workflow, pero es legado y no acredita una vía cargada`,
     },
   };
 }

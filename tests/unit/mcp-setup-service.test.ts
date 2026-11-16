@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { runMcpSetup } from "../../src/application/mcp-setup-service.js";
+import { agentWorkflowMcpEntry } from "../../src/domain/agent-workflow-mcp-entry.js";
 import {
   buildMcpEntry,
   knownLegacyMcpEntries,
   mcpEntryShapeForHost,
 } from "../../src/domain/mcp-entry.js";
-import { worklineMcpEntry } from "../../src/domain/workline-mcp-entry.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 const ALPHA = { name: "alpha", dsnVar: "ALPHA_DATABASE_URL" };
@@ -100,7 +100,7 @@ describe("runMcpSetup", () => {
 
   it("no reemplaza el servidor legacy de elicitation sin la migración explícita", () => {
     const file = join(hub, ".mcp.json");
-    const legacy = worklineMcpEntry("claude");
+    const legacy = agentWorkflowMcpEntry("claude");
     const original = `${JSON.stringify(
       { mcpServers: { "agent-workflow": mcpEntryShapeForHost("claude", legacy) } },
       null,
@@ -110,7 +110,7 @@ describe("runMcpSetup", () => {
 
     const result = runMcpSetup(env, {
       hosts: ["claude"],
-      connections: [{ name: "agent-workflow", dsnVar: "WORKLINE_DATABASE_URL" }],
+      connections: [{ name: "agent-workflow", dsnVar: "AGENT_WORKFLOW_DATABASE_URL" }],
       scope: "workspace",
       hub,
     });
@@ -123,7 +123,7 @@ describe("runMcpSetup", () => {
 
   // A CLI upgrade rewrites nothing on disk, so the descriptor keeps the release
   // that wrote it. Install has to refresh it in place: refusing it as somebody
-  // else's server leaves the user with an entry no Workline command can touch.
+  // else's server leaves the user with an entry no agent-workflow command can touch.
   it("install reemplaza un descriptor propio escrito por otra release", () => {
     const current = buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {
       host: "claude",

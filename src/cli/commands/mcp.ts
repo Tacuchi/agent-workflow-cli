@@ -8,9 +8,9 @@ import { DatabaseToolCatalog } from "../../application/database-tool-catalog.js"
 import { runHarness } from "../../application/dev-only-services.js";
 import { runElicitationStdio } from "../../application/elicitation-stdio.js";
 import {
-  type WorklineMaterialization,
-  ensureWorklineMaterialized,
-  previewWorklineMaterialization,
+  type AgentWorkflowMaterialization,
+  ensureAgentWorkflowMaterialized,
+  previewAgentWorkflowMaterialization,
 } from "../../application/hub-materialization-service.js";
 import {
   type StoredMcpConnection,
@@ -152,13 +152,13 @@ export const mcpCommand: CliCommand = {
   },
   help: {
     purpose:
-      "Run the Workline MCP servers and install, remove, check or migrate their descriptors in each host.",
+      "Run the agent-workflow MCP servers and install, remove, check or migrate their descriptors in each host.",
     notes: [
       "Only serve, serve-db and dbhub are stdio servers: they reserve stdout for JSON-RPC and warn about unknown flags on stderr instead of refusing. The other actions take no positional connection; select it with --instance or --all-connections.",
     ],
     actions: {
       serve: {
-        purpose: "Run the Workline elicitation MCP server over stdio.",
+        purpose: "Run the agent-workflow elicitation MCP server over stdio.",
         flags: {
           host: {
             value: "<host>",
@@ -197,7 +197,7 @@ export const mcpCommand: CliCommand = {
       },
       remove: {
         purpose:
-          "Remove the Workline descriptors of the selected connections from each host's MCP config.",
+          "Remove the agent-workflow descriptors of the selected connections from each host's MCP config.",
         flags: {
           ...SCOPE_FLAGS,
           "dry-run": { effect: "Report what would be removed without writing." },
@@ -224,7 +224,7 @@ export const mcpCommand: CliCommand = {
       },
       migrate: {
         purpose:
-          "Preview, or apply, the rewrite of outdated Workline descriptors to the current form.",
+          "Preview, or apply, the rewrite of outdated agent-workflow descriptors to the current form.",
         flags: {
           ...SCOPE_FLAGS,
           "dry-run": {
@@ -423,7 +423,7 @@ async function runSetupSub(args: ParsedArgs, ctx: CliContext): Promise<CommandRe
   const connections = resolveConnections(args, ctx, true);
   if (!("value" in connections)) return connections;
 
-  // All hub-scoped MCP artifacts share Workline's resolved root. An
+  // All hub-scoped MCP artifacts share agent-workflow's resolved root. An
   // explicit --hub remains an intentional override; raw process cwd is
   // only the invocation coordinate and may be a source subdirectory.
   const hub = args.values.get("hub") ?? ctx.paths.hubDir();
@@ -585,7 +585,7 @@ async function materializeMcpHub(
   ctx: CliContext,
   hub: string,
   dryRun: boolean,
-): Promise<WorklineMaterialization> {
+): Promise<AgentWorkflowMaterialization> {
   const root = resolve(hub);
   const currentRoot = resolve(ctx.paths.hubDir());
   const paths =
@@ -594,8 +594,8 @@ async function materializeMcpHub(
       : new PathsService(ctx.paths.namespace, ctx.env.homeDir(), root);
   const fs = ctx.rawFs ?? ctx.fs;
   return dryRun
-    ? await previewWorklineMaterialization(fs, paths)
-    : await ensureWorklineMaterialized(fs, paths);
+    ? await previewAgentWorkflowMaterialization(fs, paths)
+    : await ensureAgentWorkflowMaterialized(fs, paths);
 }
 
 function buildWarpHintsFor(

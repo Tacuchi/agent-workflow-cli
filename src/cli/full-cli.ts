@@ -21,6 +21,7 @@ import { encodeToolResponse, toolFailure } from "../domain/database-tools.js";
 import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
 import type { ResolvedSkills } from "../domain/skills.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
+import { isAgentWorkflowRoot } from "../runtime/agent-workflow-marker.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
 import {
   HubResolutionError,
@@ -31,16 +32,15 @@ import {
   sessionModelLeftovers,
 } from "../runtime/hub-resolution.js";
 import {
+  type AgentWorkflowDirectory,
+  AgentWorkflowDirectoryError,
   DEFAULT_NAMESPACE,
   NamespaceResolver,
-  type WorklineDirectory,
-  WorklineDirectoryError,
   namespaceConfigFile,
 } from "../runtime/namespace-resolver.js";
 import { normalizeNamespace } from "../runtime/namespace.js";
 import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
-import { isWorklineRoot } from "../runtime/workline-marker.js";
 import { firstCommandToken, hookTarget } from "./argv-scan.js";
 import { ALL_COMMANDS } from "./commands/index.js";
 import { gateFlags } from "./commands/unknown-flags.js";
@@ -187,7 +187,12 @@ async function initializeCliContext(
   proc: NodeProcess,
   git: GitCliAdapter,
 ): Promise<{ ctx: CliContext; hubFs: MaterializingHubFileSystem } | null> {
-  const directory = await resolveWorklineDirectory(new NamespaceResolver(fs, env), parsed, fs, env);
+  const directory = await resolveAgentWorkflowDirectory(
+    new NamespaceResolver(fs, env),
+    parsed,
+    fs,
+    env,
+  );
   if (directory === null) return null;
   const warning = await registerResolvedHub(fs, env.homeDir(), directory);
   if (warning) writeStderr(warning);
@@ -253,12 +258,12 @@ function parseCli(argv: string[]): ParsedArgs | null {
   }
 }
 
-async function resolveWorklineDirectory(
+async function resolveAgentWorkflowDirectory(
   resolver: NamespaceResolver,
   parsed: ParsedArgs,
   fs: NodeFileSystem,
   env: NodeEnv,
-): Promise<WorklineDirectory | null> {
+): Promise<AgentWorkflowDirectory | null> {
   try {
     const directory = await resolveCliDirectory(resolver, parsed, fs, env);
     if (directory !== null && !exemptFromHubMigration(parsed)) {
@@ -295,11 +300,11 @@ async function resolveNamespaceDirectory(
   parsed: ParsedArgs,
   fs: NodeFileSystem,
   env: NodeEnv,
-): Promise<WorklineDirectory> {
+): Promise<AgentWorkflowDirectory> {
   try {
     return await resolver.resolveDirectory(parsed.values.get("namespace"));
   } catch (error) {
-    if (!(error instanceof WorklineDirectoryError) || !isSqlMutationGuard(parsed)) throw error;
+    if (!(error instanceof AgentWorkflowDirectoryError) || !isSqlMutationGuard(parsed)) throw error;
     // Two namespaces marked here name no single user config: read the one a
     // folder without a marker would, the pinned namespace or else the default.
     const pin = namespaceConfigFile(env.homeDir());
@@ -318,7 +323,7 @@ async function resolveCliDirectory(
   parsed: ParsedArgs,
   fs: NodeFileSystem,
   env: NodeEnv,
-): Promise<WorklineDirectory | null> {
+): Promise<AgentWorkflowDirectory | null> {
   const directory = await resolveNamespaceDirectory(resolver, parsed, fs, env);
   if (parsed.command === "hub-init") return directory;
   try {
@@ -538,7 +543,7 @@ async function machineScopedWithoutHub(command: string, ctx: CliContext): Promis
   const root = resolve(ctx.paths.hubDir());
   // ~/.<ns> carries the user-level marker, yet $HOME is never a hub.
   if (root === dirname(ctx.paths.userRoot())) return true;
-  return !(await isWorklineRoot(ctx.rawFs ?? ctx.fs, root, ctx.paths.namespace));
+  return !(await isAgentWorkflowRoot(ctx.rawFs ?? ctx.fs, root, ctx.paths.namespace));
 }
 
 function commandOwnsMaterializationReceipt(command: string): boolean {
@@ -546,7 +551,7 @@ function commandOwnsMaterializationReceipt(command: string): boolean {
 }
 
 /**
- * The line that says out loud which path Workline just adopted, or `undefined`.
+ * The line that says out loud which path agent-workflow just adopted, or `undefined`.
  *
  * The receipt already travelled in `result.data`, and in a terminal nobody reads
  * that: the human projection is each command's own `renderHuman`, and the only
@@ -560,7 +565,7 @@ function adoptionNotice(command: CliCommand, fs: MaterializingHubFileSystem): st
   if (commandOwnsMaterializationReceipt(command.name)) return undefined;
   const materialization = fs.materialization();
   if (materialization === undefined || !materialization.materialized) return undefined;
-  return `Workline adoptó ${materialization.root} como hub (namespace ${materialization.namespace}).`;
+  return `agent-workflow adoptó ${materialization.root} como hub (namespace ${materialization.namespace}).`;
 }
 
 /**
@@ -782,7 +787,7 @@ function directoryFailure(err: unknown, parsed: ParsedArgs): null {
     );
     return null;
   }
-  if (!(err instanceof WorklineDirectoryError)) {
+  if (!(err instanceof AgentWorkflowDirectoryError)) {
     if (parsed.command === "tool") {
       emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
       return null;
@@ -794,10 +799,7 @@ function directoryFailure(err: unknown, parsed: ParsedArgs): null {
     throw err;
   }
   if (parsed.command === "tool") {
-    emitToolEarlyFailure(
-      "WORKLINE_NAMESPACE_AMBIGUOUS",
-      "No se pudo resolver el namespace de la tool.",
-    );
+    emitToolEarlyFailure("NAMESPACE_AMBIGUOUS", "No se pudo resolver el namespace de la tool.");
     return null;
   }
   if (isMcpStdioInvocation(parsed)) {

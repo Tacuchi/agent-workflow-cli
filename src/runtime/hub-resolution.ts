@@ -12,8 +12,8 @@ import { legacyBlockFiles } from "../application/parsers/hub-block.js";
 import { PathsService } from "../application/paths-service.js";
 import { hubUnitPaths } from "../application/unit-membership.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import type { WorklineDirectory } from "./namespace-resolver.js";
-import { isWorklineRoot } from "./workline-marker.js";
+import { isAgentWorkflowRoot } from "./agent-workflow-marker.js";
+import type { AgentWorkflowDirectory } from "./namespace-resolver.js";
 
 export class HubResolutionError extends Error {
   constructor(
@@ -66,7 +66,7 @@ export function hubSessionsMigrationRequired(
 ): HubResolutionError {
   return new HubResolutionError(
     "HUB_MIGRATION_REQUIRED",
-    `El hub ${root} sigue en el modelo de sesiones (${leftovers.join(", ")}); Workline 31.0.0 no lo opera hasta migrarlo: ejecutá ${HUB_SESSIONS_MIGRATE_ACTION} en el hub`,
+    `El hub ${root} sigue en el modelo de sesiones (${leftovers.join(", ")}); agent-workflow 31.0.0 no lo opera hasta migrarlo: ejecutá ${HUB_SESSIONS_MIGRATE_ACTION} en el hub`,
     [],
     HUB_SESSIONS_MIGRATE_ACTION,
   );
@@ -95,11 +95,11 @@ export async function repositoryRoot(from: string): Promise<string | null> {
 
 export async function resolveHubDirectory(
   fs: FileSystemPort,
-  directory: WorklineDirectory,
+  directory: AgentWorkflowDirectory,
   cwd: string,
   home: string,
   explicit?: string,
-): Promise<WorklineDirectory> {
+): Promise<AgentWorkflowDirectory> {
   const repo = await repositoryRoot(cwd);
   if (explicit !== undefined) return resolveExplicitHub(fs, directory, cwd, home, explicit, repo);
 
@@ -131,9 +131,12 @@ export async function resolveHubDirectory(
 export async function registerResolvedHub(
   fs: FileSystemPort,
   home: string,
-  directory: WorklineDirectory,
+  directory: AgentWorkflowDirectory,
 ): Promise<string | null> {
-  if (directory.root === home || !(await isWorklineRoot(fs, directory.root, directory.namespace)))
+  if (
+    directory.root === home ||
+    !(await isAgentWorkflowRoot(fs, directory.root, directory.namespace))
+  )
     return null;
   try {
     await access(directory.root);
@@ -152,12 +155,12 @@ export async function registerResolvedHub(
 
 async function resolveExplicitHub(
   fs: FileSystemPort,
-  directory: WorklineDirectory,
+  directory: AgentWorkflowDirectory,
   cwd: string,
   home: string,
   explicit: string,
   repo: string | null,
-): Promise<WorklineDirectory> {
+): Promise<AgentWorkflowDirectory> {
   const namespace = directory.namespace;
   const root = resolve(cwd, explicit);
   try {
@@ -165,7 +168,7 @@ async function resolveExplicitHub(
   } catch {
     throw new HubResolutionError("HUB_INVALID", `El hub ${root} no existe.`);
   }
-  const marked = await isWorklineRoot(fs, root, namespace);
+  const marked = await isAgentWorkflowRoot(fs, root, namespace);
   if (
     root === home ||
     contains(join(home, `.${namespace}`, "worktrees"), root) ||
@@ -187,7 +190,7 @@ async function resolveExplicitHub(
   }
   let parent = dirname(root);
   while (parent !== dirname(parent)) {
-    if (parent !== home && (await isWorklineRoot(fs, parent, namespace))) {
+    if (parent !== home && (await isAgentWorkflowRoot(fs, parent, namespace))) {
       throw new HubResolutionError(
         "HUB_INVALID",
         `${root} está dentro del hub ${parent}; --hub nombra la raíz exacta.`,
@@ -201,10 +204,10 @@ async function resolveExplicitHub(
 
 async function resolveDeclaredHub(
   fs: FileSystemPort,
-  directory: WorklineDirectory,
+  directory: AgentWorkflowDirectory,
   home: string,
   repo: string,
-): Promise<WorklineDirectory | null> {
+): Promise<AgentWorkflowDirectory | null> {
   const namespace = directory.namespace;
   const hubs = await declaringHubs(fs, home, namespace, repo);
   const first = hubs[0];
@@ -223,7 +226,7 @@ async function resolveDeclaredHub(
   const legacy = await legacyDeclaringHubs(fs, home, namespace, repo);
   if (legacy[0] !== undefined)
     throw hubMigrationRequired(legacy[0], await legacyBlockFiles(fs, legacy[0]));
-  if (directory.root === home || (await isWorklineRoot(fs, home, namespace)))
+  if (directory.root === home || (await isAgentWorkflowRoot(fs, home, namespace)))
     throw new HubResolutionError(
       "HUB_UNRESOLVED",
       `No hay hub registrado para ${repo}; indica --hub o ejecuta aw en el hub.`,
@@ -233,11 +236,11 @@ async function resolveDeclaredHub(
 
 async function resolveUnitOwner(
   fs: FileSystemPort,
-  directory: WorklineDirectory,
+  directory: AgentWorkflowDirectory,
   home: string,
   repo: string,
   roots: string[],
-): Promise<WorklineDirectory | null> {
+): Promise<AgentWorkflowDirectory | null> {
   const namespace = directory.namespace;
   const units = join(home, `.${namespace}`, "worktrees");
   const unitsRoot = await realpath(units).catch(() => units);

@@ -7,7 +7,7 @@ import { resolveSkills } from "../skills-resolver-service.js";
 import type { DoctorProvider, DoctorProviderInput, DoctorProviderOutput } from "./types.js";
 import { coverage } from "./types.js";
 
-/** Workline-owned bindings, independent of optional host skills. */
+/** agent-workflow-owned bindings, independent of optional host skills. */
 const CATEGORY = "skills" as const;
 
 export const skillsProvider: DoctorProvider = {
@@ -24,7 +24,7 @@ export const skillsProvider: DoctorProvider = {
         category: CATEGORY,
         resource: { kind: "binding", name: `skills.toml:${index}`, locator: null },
         state: "warning",
-        summary: "binding histórico no aplicable a Workline",
+        summary: "binding histórico no aplicable a agent-workflow",
         impact: "no selecciona herramientas del host",
         evidence: [warning],
         ownership: "foreign",

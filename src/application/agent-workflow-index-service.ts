@@ -1,4 +1,5 @@
 import { basename, join, relative } from "node:path";
+import { type AgentWorkflowNodeId, formatNodeId } from "../domain/agent-workflow-node.js";
 import { CORRELATIVE_SOURCE, compareCorrelatives, isCorrelative } from "../domain/correlative.js";
 import type { NoteFailure } from "../domain/decision-note.js";
 import { type EffectiveContract, composeEffectiveContract } from "../domain/effective-contract.js";
@@ -18,7 +19,6 @@ import {
   reconciliationOf,
 } from "../domain/reconciliation.js";
 import type { SessionPhase } from "../domain/session/narrative.js";
-import { type WorklineNodeId, formatNodeId } from "../domain/workline-node.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -75,7 +75,7 @@ import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
 import type { OrphanUnit, WorktreeListOutput } from "./worktree-service.js";
 
 /**
- * The one reading of the hub's Workline documents.
+ * The one reading of the hub's agent-workflow documents.
  *
  * `status` and `resume` used to answer the same questions from two places —
  * one in the CLI, one re-derived by an agent reading JSON — and drifted. This
@@ -120,7 +120,7 @@ export type SpecRelation =
 
 export interface IndexedHub {
   name: string;
-  /** Resolved WorklineDirectory root; kept alongside `path` during the transition. */
+  /** Resolved AgentWorkflowDirectory root; kept alongside `path` during the transition. */
   root: string;
   path: string;
   /**
@@ -467,7 +467,7 @@ export interface PipelineItem {
   intent?: { placement: "in-pass"; index: number } | { placement: "deferred" };
 }
 
-export interface WorklineIndex {
+export interface AgentWorkflowIndex {
   hub: IndexedHub;
   /** `documents`: read from `docs/`, git and the pass ledger only; `sessions`: legacy engine. */
   model: "documents" | "sessions";
@@ -482,7 +482,7 @@ export interface WorklineIndex {
    * Active sessions holding work with no document of their own, by folder.
    *
    * Reported as a NOTICE and deliberately out of `pipeline`: the session
-   * mechanics are the central workline's, so a loose checkpoint competing for
+   * mechanics are the central agent-workflow's, so a loose checkpoint competing for
    * attention with an open plan asked a person to do the runtime's bookkeeping.
    * Making it vanish would be worse — the work inside it is recorded nowhere
    * else — so it is named, counted, and left where it is.
@@ -554,7 +554,7 @@ export interface PendingRetirement {
   next: string;
 }
 
-export interface WorklineIndexInput {
+export interface AgentWorkflowIndexInput {
   now?: Date;
   /**
    * Read isolation units too. Optional on purpose: without it the index answers
@@ -569,12 +569,12 @@ export interface WorklineIndexInput {
  * `initialized:false` with empty collections, and a single unreadable file is
  * skipped rather than tanking the whole read.
  */
-export async function buildWorklineIndex(
+export async function buildAgentWorkflowIndex(
   fs: FileSystemPort,
   _env: EnvPort,
   paths: PathsService,
-  input: WorklineIndexInput = {},
-): Promise<WorklineIndex> {
+  input: AgentWorkflowIndexInput = {},
+): Promise<AgentWorkflowIndex> {
   const now = input.now ?? new Date();
   const cwd = paths.hubDir();
 
@@ -791,7 +791,7 @@ function orderWarning(
   if (postponed === undefined || detail.warning !== undefined) return {};
   return {
     warning: {
-      code: "WORKLINE_PLAN_OUT_OF_DECLARED_ORDER",
+      code: "PLAN_OUT_OF_DECLARED_ORDER",
       message: `fuera del orden declarado · ${postponed.reason}. Ejecutarlo igual es válido: esto avisa, no bloquea`,
     },
   };
@@ -834,7 +834,7 @@ function placeOf(
  */
 function postponementOf(
   cut: CutContext,
-  after: readonly WorklineNodeId[],
+  after: readonly AgentWorkflowNodeId[],
 ): PipelineItemDetail["postponed"] | null {
   // A node the hub does not have is NOT something to wait for. It has no
   // pass and it never will — nobody declares a release for a document that was
@@ -874,7 +874,7 @@ function postponementOf(
  */
 function passesCarrying(
   passes: readonly DerivedPass[],
-  plans: readonly WorklineNodeId[],
+  plans: readonly AgentWorkflowNodeId[],
 ): string[] {
   const keys = new Set(plans.map(formatNodeId));
   return passes
@@ -1091,7 +1091,7 @@ export function planPresentation(plan: IndexedPlan): {
       action: {
         kind: "blocked",
         command: null,
-        code: "WORKLINE_PLAN_HISTORICAL",
+        code: "PLAN_HISTORICAL",
         action: "el plan ya está cerrado; consultá su evidencia o elegí trabajo pendiente",
       },
     };
@@ -1108,7 +1108,7 @@ export function planPresentation(plan: IndexedPlan): {
       action: {
         kind: "blocked",
         command: null,
-        code: "WORKLINE_PLAN_PHASE_BLOCKED",
+        code: "PLAN_PHASE_BLOCKED",
         action: "resolvé el bloqueo de la fase o registrá una desviación antes de continuar",
       },
     };
@@ -1134,7 +1134,7 @@ export function planPresentation(plan: IndexedPlan): {
         kind: "handoff",
         command: `/w:plan-refine ${plan.file}`,
         destination: "plan-refine",
-        code: "WORKLINE_BASELINE_DIVERGENT",
+        code: "BASELINE_DIVERGENT",
       },
     };
   }
@@ -1145,7 +1145,7 @@ export function planPresentation(plan: IndexedPlan): {
       action: {
         kind: "blocked",
         command: null,
-        code: "WORKLINE_BASELINE_MALFORMED",
+        code: "BASELINE_MALFORMED",
         action: plan.baseline.action,
       },
     };
@@ -1157,7 +1157,7 @@ export function planPresentation(plan: IndexedPlan): {
       action: {
         kind: "blocked",
         command: null,
-        code: "WORKLINE_BASELINE_SPEC_ABSENT",
+        code: "BASELINE_SPEC_ABSENT",
         action: `restaurá o declará la spec '${plan.baseline.path}' antes de ejecutar`,
       },
     };
@@ -1185,7 +1185,7 @@ export function planPresentation(plan: IndexedPlan): {
         ...base,
         ...normalPlanNext(plan),
         warning: {
-          code: "WORKLINE_BASELINE_LEGACY_UNSEALED",
+          code: "BASELINE_LEGACY_UNSEALED",
           message:
             "SIN SELLO DE BASELINE — ejecución compatible: el plan no afirma de qué versión de la spec derivó",
         },
@@ -1220,7 +1220,7 @@ function unverifiedClosure(plan: IndexedPlan): Pick<PipelineItemDetail, "warning
   if (assurance === null || assurance === "verified") return {};
   return {
     warning: {
-      code: "WORKLINE_PLAN_CLOSURE_UNVERIFIED",
+      code: "PLAN_CLOSURE_UNVERIFIED",
       message: `plan cerrado · no verificado (${assurance}): evidencia omitida o sustituta aceptada, no aprobada`,
     },
   };
@@ -1680,7 +1680,7 @@ async function readPlans(
         reconciliation: lineage.reconciliation,
         contract: lineage.contract,
         current_point: resumePointOf(p),
-        // Filled in `buildWorklineIndex`, once the live runs are read: a plan is
+        // Filled in `buildAgentWorkflowIndex`, once the live runs are read: a plan is
         // held by a SESSION, and the plans are read before the sessions are.
         holding_run: null,
         production: { axis: "no-record" },

@@ -10,11 +10,11 @@ import {
   runHubBlockUpsertWrite,
 } from "./hub-block-upsert-service.js";
 import {
+  type AgentWorkflowMaterialization,
   VISIBILITY_GITIGNORE,
-  type WorklineMaterialization,
   appendGitignoreEntries,
-  ensureWorklineMaterialized,
-  previewWorklineMaterialization,
+  ensureAgentWorkflowMaterialized,
+  previewAgentWorkflowMaterialization,
   reconcileRuntimeGitignore,
 } from "./hub-materialization-service.js";
 import { registerHub } from "./hub-registry.js";
@@ -28,7 +28,7 @@ import { PathsService } from "./paths-service.js";
 export { runtimeGitignoreEntries } from "./hub-materialization-service.js";
 
 /**
- * docs/ taxonomy owned by Workline (one folder per category). NOT scaffolded
+ * docs/ taxonomy owned by agent-workflow (one folder per category). NOT scaffolded
  * anymore: each folder is born on demand at the first numbered write
  * (`aw next-number docs/<cat>` mkdirps it). The list drives the reconcile prune.
  */
@@ -68,7 +68,7 @@ export interface HubInitInput {
   /** Override the target directory (defaults to cwd). */
   hub?: string;
   dryRun?: boolean;
-  /** Remove Workline-ignored paths from Git's index, retaining their on-disk bytes. */
+  /** Remove agent-workflow-ignored paths from Git's index, retaining their on-disk bytes. */
   untrack?: boolean;
   /** Fixed `Última actividad` value for deterministic tests. */
   lastActivity?: string;
@@ -96,7 +96,7 @@ export interface HubInitResult {
   source_actions?: { alias: string; action: "added" | "updated"; error?: string }[];
   scaffold: ScaffoldSummary;
   /** The exact first-write effects, also present in dry-run. */
-  materialization: WorklineMaterialization;
+  materialization: AgentWorkflowMaterialization;
   untrack?: HubUntrack;
   skills_toml: "created" | "exists" | "skipped";
   hub_block_files:
@@ -124,7 +124,7 @@ export async function runHubInit(
   input: HubInitInput,
   process?: ProcessPort,
 ): Promise<HubInitResult | HubInitInputError> {
-  // `paths` already carries the unique WorklineDirectory root.  An explicit
+  // `paths` already carries the unique AgentWorkflowDirectory root.  An explicit
   // target remains an intentional override; otherwise a subdirectory invocation
   // configures the same root that status/resume/session commands read.
   const hub = input.hub ? resolve(input.hub) : resolve(paths.hubDir());
@@ -222,9 +222,9 @@ async function initMaterialization(
   fs: FileSystemPort,
   paths: PathsService,
   dryRun: boolean,
-): Promise<WorklineMaterialization> {
-  if (dryRun) return previewWorklineMaterialization(fs, paths);
-  const receipt = await ensureWorklineMaterialized(fs, paths);
+): Promise<AgentWorkflowMaterialization> {
+  if (dryRun) return previewAgentWorkflowMaterialization(fs, paths);
+  const receipt = await ensureAgentWorkflowMaterialized(fs, paths);
   if (receipt.materialized) return receipt;
   const ignore = await reconcileRuntimeGitignore(fs, paths);
   return {
@@ -257,7 +257,7 @@ function buildUpsertInput(
 }
 
 function scaffoldFromMaterialization(
-  materialization: WorklineMaterialization,
+  materialization: AgentWorkflowMaterialization,
   paths: PathsService,
 ): ScaffoldSummary {
   // The hub marker is the activation mark of the documents model (spec 066).
@@ -285,7 +285,7 @@ async function buildDryRunResult(
   upsertInput: HubBlockUpsertInput,
 ): Promise<HubInitResult> {
   const anyExternal = sources.some((s) => isExternalToHub(s.path, hub));
-  const materialization = await previewWorklineMaterialization(fs, wsPaths);
+  const materialization = await previewAgentWorkflowMaterialization(fs, wsPaths);
   return {
     ok: true,
     dry_run: true,
@@ -441,7 +441,7 @@ function validateSources(sources: HubSource[]): HubInitInputError | null {
     if (s.alias === "hub") {
       return {
         error: "reserved_source_alias",
-        hint: "'hub' es la fuente implícita reservada para la raíz Workline; elegí otro alias para una fuente adicional",
+        hint: "'hub' es la fuente implícita reservada para la raíz agent-workflow; elegí otro alias para una fuente adicional",
       };
     }
     if (aliases.has(s.alias)) {

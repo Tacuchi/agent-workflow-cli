@@ -47,7 +47,7 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     // estaba.
     effects: ["local_additive", "mutate_overwrite"],
     expected: "healthy",
-    summary: "instala el bundle de Workline en ese host",
+    summary: "instala el bundle de agent-workflow en ese host",
     verb: (args) => `aw self install-skill${flag(args, "target")}`,
   },
   {
@@ -55,7 +55,7 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     delegates: "selfUninstall",
     effects: ["destructive"],
     expected: "healthy",
-    summary: "retira la configuración de Workline que quedó sin runtime que la use",
+    summary: "retira la configuración de agent-workflow que quedó sin runtime que la use",
     verb: (args) => `aw self uninstall${flag(args, "target")}`,
   },
   {
@@ -63,7 +63,7 @@ export const DOCTOR_OPERATIONS: readonly DoctorOperationSpec[] = [
     delegates: "selfInstallHooks",
     effects: ["mutate_overwrite"],
     expected: "healthy",
-    summary: "arma los hooks de Workline en la configuración de ese host",
+    summary: "arma los hooks de agent-workflow en la configuración de ese host",
     verb: (args) => `aw self install-hooks${flag(args, "target")}`,
   },
   {

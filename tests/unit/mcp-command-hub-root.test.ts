@@ -29,7 +29,7 @@ function args(
   };
 }
 
-describe("mcp commands use the resolved Workline root", () => {
+describe("mcp commands use the resolved agent-workflow root", () => {
   let sandbox: string;
   let home: string;
   let workspace: string;

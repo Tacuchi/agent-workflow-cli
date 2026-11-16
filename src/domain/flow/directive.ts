@@ -25,7 +25,7 @@
  * `renderHuman` and a recalculated boundary would be invisible to the person.
  */
 
-import type { WorklineFlow } from "../../application/capability/compose.js";
+import type { AgentWorkflowFlow } from "../../application/capability/compose.js";
 import type { SemanticRequest } from "../../application/semantic-operation/protocol.js";
 import type { EffectClass } from "../capability/effects.js";
 import type {
@@ -179,7 +179,7 @@ export interface CliAnswerTrace {
 
 export interface FlowDirective {
   version: number;
-  flow: WorklineFlow;
+  flow: AgentWorkflowFlow;
   tranche: FlowTranche;
   session: string;
   boundary: FlowBoundary;
@@ -378,7 +378,7 @@ export interface DirectiveProposal {
 }
 
 export interface BuildDirectiveInput {
-  flow: WorklineFlow;
+  flow: AgentWorkflowFlow;
   session: string;
   boundary: FlowBoundary;
   outcome: CapabilityOutcome;

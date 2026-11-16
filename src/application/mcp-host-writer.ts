@@ -36,7 +36,7 @@ export interface ScopeInput {
 // Atomic replace: stage to a tmp sibling and rename over the target. At global
 // scope the targets are live user files (~/.claude.json is rewritten by any
 // running Claude Code session); rename keeps a concurrent reader from seeing a
-// truncated/half-written file. `withHostConfigLock` serializes Workline
+// truncated/half-written file. `withHostConfigLock` serializes agent-workflow
 // writers; an external host can still race, so every caller must read back.
 const MAX_ATOMIC_TEMP_ATTEMPTS = 64;
 

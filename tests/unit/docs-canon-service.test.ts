@@ -5,7 +5,7 @@ import {
   resolveDocsCanon,
 } from "../../src/application/docs-canon-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { nodeFromDocPath } from "../../src/domain/workline-node.js";
+import { nodeFromDocPath } from "../../src/domain/agent-workflow-node.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { MemFs } from "../helpers/mem-fs.js";
 

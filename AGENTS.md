@@ -4,7 +4,7 @@ This file provides guidance to AI coding agents working with code in this reposi
 
 ## What this is
 
-`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus the bundled universal `w` SKILL (`skills/w/`) implementing **Workline** (`w` = *workline*), the stages + loops + artifacts system for agent work. Published to npm; the tarball ships `dist/` + `skills/`. `self install --target <claude|codex|warp|oz|gemini|opencode|crush|kimi|agents>` copies the SKILL, command wrappers, and hooks into the host agent dirs (`agents` is the shared skills dir, not a host).
+`@tacuchi/agent-workflow-cli` — an agnostic CLI (bins `agent-workflow` and `aw`) plus the bundled universal `w` SKILL (`skills/w/`) implementing **agent-workflow** (`w` = *workflow*), the stages + loops + artifacts system for agent work. Published to npm; the tarball ships `dist/` + `skills/`. `self install --target <claude|codex|warp|oz|gemini|opencode|crush|kimi|agents>` copies the SKILL, command wrappers, and hooks into the host agent dirs (`agents` is the shared skills dir, not a host).
 
 ## Commands
 
@@ -37,13 +37,13 @@ This file provides guidance to AI coding agents working with code in this reposi
 ## Conventions / decisions
 
 - Manual schema validation — NO Zod (DEC-001). Throw `Error` with a `code` string + `message`; the CLI layer catches and emits `{ ok: false, error: { code, message } }`.
-- Commits: Conventional Commits `type(scope): subject`. Subject prose in **Spanish**; `type`/`scope` tokens in English. No session suffix: Workline 31 retired sessions (e.g. `fix(cli): corrige parser`). Releases: `chore: release vX.Y.Z`.
+- Commits: Conventional Commits `type(scope): subject`. Subject prose in **Spanish**; `type`/`scope` tokens in English. No session suffix: agent-workflow 31 retired sessions (e.g. `fix(cli): corrige parser`). Releases: `chore: release vX.Y.Z`.
 - Host run: when a release touches a host (catalog, installers, hooks, MCP writers or a host's doctrine), suggest the person repeat the host run (`node scripts/host-run/run.mjs`, see README § «Support levels and how long a verification is worth») and compare it with `node scripts/host-run/compare.mjs`. It is a suggestion, never a gate: no suite test depends on the latest run, so it does not block `prepublishOnly`. An agent never launches it — it refuses to start inside an agent host.
 - Branches: `feature/<name>`, integrated into `main`. Code/comments in English; commit messages and `CHANGELOG.md` in Spanish (Keep a Changelog + SemVer).
 
 ## Tooling note
 
-The hub block (`<!-- WORKFLOW-HUB-START/END -->`, sections Hub/Workline/Fuentes/Stack/Status) is a managed block written into a hub's AGENTS.md only, by `aw hub-init` and the commands that update it. If it appears, treat it as tool-owned — keep hand-authored guidance outside it. A pre-30 hub may still mirror it in CLAUDE.md until `aw hub-migrate` retires that copy.
+The hub block (`<!-- WORKFLOW-HUB-START/END -->`, sections Hub/agent-workflow/Fuentes/Stack/Status) is a managed block written into a hub's AGENTS.md only, by `aw hub-init` and the commands that update it. If it appears, treat it as tool-owned — keep hand-authored guidance outside it. A pre-30 hub may still mirror it in CLAUDE.md until `aw hub-migrate` retires that copy.
 
 ## dev-conventions (universal — aplica también en subagentes/teams)
 
@@ -55,3 +55,14 @@ Las convenciones del plugin `dev-conventions` aplican en toda sesión Y en subag
 - **Código:** SOLID, fail-fast, DRY, sin secrets en código/logs, SQL parametrizado.
 
 Detalle: skills `dev-conventions:*`.
+
+## Naming convention
+
+- System prose and file/id segments: `agent-workflow`; package: `@tacuchi/agent-workflow-cli`.
+- Types/classes: `AgentWorkflow…`; variables/functions: `agentWorkflow…`; constants: `AGENT_WORKFLOW_…`.
+- JSON keys: `agent_workflow` and `agent_workflow_…`; emitted error codes have no system prefix.
+- Hub marker: `.<namespace>/agent-workflow.json`, key `agent_workflow`; heading: `## agent-workflow`.
+- Decision schemas: `agent-workflow.decision-index/v1` and `agent-workflow.decision-note/v1`.
+- Keep existing `WorkflowTab`, `WORKFLOW_CONTENT`, `WorkflowPhase`, `WorkflowEngine`, the `workflow` namespace, `AgentWorkflowRuntimeConfig` and `AGENT_WORKFLOW_BIN`.
+- Retired spellings survive only in migration readers, their fixtures/tests, historical changelog entries and the replacement table.
+- Package, bins `aw`/`agent-workflow`, `.workflow/`, skill `w` and `/w:*` stay fixed; `w` reads “workflow”.

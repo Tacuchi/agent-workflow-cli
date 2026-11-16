@@ -14,7 +14,7 @@ import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runHubsSync } from "../../src/application/hubs-sync-service.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 
 /** `aw hubs sync --ide` over a temporary HOME (plan 089 F1). */
 
@@ -33,7 +33,7 @@ function fixture() {
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
     writeFileSync(
       join(path, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
     if (fuentes !== undefined) {
       writeFileSync(

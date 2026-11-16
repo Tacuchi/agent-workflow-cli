@@ -16,11 +16,11 @@ import { NodeMcpHostReceiptStore } from "../../src/application/mcp-host-receipt-
 const IDENTITY = { host: "codex" as const, scope: "global" as const, connection: "qtc-cert" };
 const FIRST_DESCRIPTOR = {
   command: "/usr/local/bin/node",
-  args: ["/opt/workline/dist/cli/main.js", "mcp", "serve-db", "--instance", "qtc-cert"],
+  args: ["/opt/agent-workflow/dist/cli/main.js", "mcp", "serve-db", "--instance", "qtc-cert"],
 };
 const SECOND_DESCRIPTOR = {
   command: "/usr/local/bin/node",
-  args: ["/opt/workline-v2/dist/cli/main.js", "mcp", "serve-db", "--instance", "qtc-cert"],
+  args: ["/opt/agent-workflow-v2/dist/cli/main.js", "mcp", "serve-db", "--instance", "qtc-cert"],
 };
 
 class MemoryReceiptStore implements McpHostReceiptStore {
@@ -42,7 +42,7 @@ class MemoryReceiptStore implements McpHostReceiptStore {
 function register(service: McpHostReceiptService, descriptor = FIRST_DESCRIPTOR) {
   return service.register({
     ...IDENTITY,
-    worklineVersion: "23.0.0",
+    agentWorkflowVersion: "23.0.0",
     descriptor,
     registeredAt: "2026-08-31T12:00:00.000Z",
   });
@@ -68,7 +68,10 @@ describe("McpHostReceiptService", () => {
     expect(() =>
       digestMcpReceiptDescriptor({
         command: "/usr/local/bin/node",
-        args: ["/opt/workline/dist/cli/main.js", "postgres://readonly:secret@db.example.test/app"],
+        args: [
+          "/opt/agent-workflow/dist/cli/main.js",
+          "postgres://readonly:secret@db.example.test/app",
+        ],
       }),
     ).toThrow(McpHostReceiptError);
   });

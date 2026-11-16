@@ -23,13 +23,14 @@
 //     events — and an absent matcher means "always", which is exactly what that
 //     Claude matcher expresses.
 
+import { isRetiredManagedHookMarker } from "../../domain/retired-name.js";
 import type { HookDegradation, HookSkip } from "./hooks-dialect.js";
 import { isOurCommand } from "./hooks-dialect.js";
 import type { HookEntry, HooksTemplate } from "./install-hooks.js";
 
 export const MANAGED_BLOCK_BEGIN =
-  "# >>> agent-workflow (Workline) managed hooks — do not edit inside this block >>>";
-export const MANAGED_BLOCK_END = "# <<< agent-workflow (Workline) managed hooks <<<";
+  "# >>> agent-workflow managed hooks — do not edit inside this block >>>";
+export const MANAGED_BLOCK_END = "# <<< agent-workflow managed hooks <<<";
 
 /** Events whose matcher value is the tool name, so a tool-name regex transfers as-is. */
 const TOOL_NAME_MATCH_EVENTS: ReadonlySet<string> = new Set(["PreToolUse", "PostToolUse"]);
@@ -219,7 +220,11 @@ export function stripOurHookEntries(text: string): HookSweepResult {
     const line = lines[i] ?? "";
     const trimmed = line.trim();
 
-    if (trimmed === MANAGED_BLOCK_BEGIN || trimmed === MANAGED_BLOCK_END) {
+    if (
+      trimmed === MANAGED_BLOCK_BEGIN ||
+      trimmed === MANAGED_BLOCK_END ||
+      isRetiredManagedHookMarker(trimmed)
+    ) {
       i += 1;
       continue;
     }

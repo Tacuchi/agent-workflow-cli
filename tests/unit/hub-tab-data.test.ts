@@ -221,7 +221,7 @@ describe("buildProjectTabData — workspace view", () => {
     expect(data).not.toHaveProperty("workspaceMode");
   });
 
-  it("interpreta fuentes relativas desde la raíz Workline para Git sin leer launch", async () => {
+  it("interpreta fuentes relativas desde la raíz agent-workflow para Git sin leer launch", async () => {
     const gitPaths: string[] = [];
     const processCwds: string[] = [];
     const existsPaths: string[] = [];

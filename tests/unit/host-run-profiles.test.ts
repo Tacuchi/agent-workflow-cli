@@ -158,7 +158,7 @@ describe("host-run permission profiles", () => {
     expect(problems).toContain("kimi: does not allow executing");
   });
 
-  it("claude scopes edits to the workspace and allows the Workline MCP execute_sql", () => {
+  it("claude scopes edits to the workspace and allows the agent-workflow MCP execute_sql", () => {
     const allow = PROFILES["claude-code"].effective(ctx).allow;
     expect(allow).toContain("mcp__host-run-probe__execute_sql");
     expect(allow).toContain("Edit(//tmp/w/**)");
@@ -175,7 +175,7 @@ describe("host-run permission profiles", () => {
     expect(bash["git push*"]).toBe("deny");
   });
 
-  it("no profile pre-approves a shell command (claude: only its Workline list and `pwd`)", () => {
+  it("no profile pre-approves a shell command (claude: only its agent-workflow list and `pwd`)", () => {
     for (const [host, profile] of Object.entries(PROFILES)) {
       const shell = profile
         .allowedIn(profile.files(ctx))
@@ -629,7 +629,7 @@ describe("host-run profiles — third review", () => {
     ).toBeDefined();
   });
 
-  it("claude pre-approves exactly the scenario's Workline calls, and nothing broader passes", () => {
+  it("claude pre-approves exactly the scenario's agent-workflow calls, and nothing broader passes", () => {
     const allowed = PROFILES["claude-code"].allowedIn(PROFILES["claude-code"].files(ctx));
     const shell = allowed.filter((r: string) => r.startsWith("Bash("));
     expect(shell.sort()).toEqual([...CLAUDE_SHELL_ALLOW].sort());

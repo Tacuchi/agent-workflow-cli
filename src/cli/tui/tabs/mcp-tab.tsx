@@ -325,13 +325,15 @@ export function McpTab({ ctx, isActive, onToast, disabledHosts = [] }: McpTabPro
     ? [
         {
           name: "Install in host…",
-          description: "Choose a user-scope host for the reliable Workline PostgreSQL server.",
+          description:
+            "Choose a user-scope host for the reliable agent-workflow PostgreSQL server.",
         },
         { name: "Test connection", description: "Run a read-only PostgreSQL SELECT 1." },
         { name: "Edit connection", description: "Alias / DSN env var." },
         {
           name: "Remove connection",
-          description: "Delete Workline PostgreSQL entries from user configs + local registry.",
+          description:
+            "Delete agent-workflow PostgreSQL entries from user configs + local registry.",
           danger: true,
         },
       ]
@@ -533,7 +535,7 @@ function recoveryLine(
 function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): string {
   const hostStates = HOST_CHOICES.map((host) => {
     const state = connection.host_status[host];
-    // A same-named entry Workline did not write: say WHERE it is — "conflict"
+    // A same-named entry agent-workflow did not write: say WHERE it is — "conflict"
     // alone reads like a warning and leaves the person guessing.
     const receiptFailure =
       state.receipt_failure === undefined
@@ -549,7 +551,7 @@ function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): 
     (host) => connection.host_status[host].entry_state === "foreign",
   )
     ? [
-        `Acción: la entrada '${connection.server_name}' marcada ajena no la escribió Workline y no se toca; borrala o renombrala a mano en el archivo indicado de cada host y reinstalá.`,
+        `Acción: la entrada '${connection.server_name}' marcada ajena no la escribió agent-workflow y no se toca; borrala o renombrala a mano en el archivo indicado de cada host y reinstalá.`,
       ]
     : [];
   // Two legacies, two remedies. Saying "reinstall" for a historic shape would
@@ -558,12 +560,12 @@ function connectionDetailMeta(connection: SelfMcpConnectionView, home: string): 
   const outdatedRecovery = recoveryLine(
     connection,
     "generation",
-    "quedó con un descriptor de otra versión de Workline; reinstalá la conexión desde este panel para actualizarlo.",
+    "quedó con un descriptor de otra versión de agent-workflow; reinstalá la conexión desde este panel para actualizarlo.",
   );
   const historicRecovery = recoveryLine(
     connection,
     "historic",
-    "conserva un descriptor histórico de Workline; instalar no lo reemplaza, corré 'agent-workflow mcp migrate'.",
+    "conserva un descriptor histórico de agent-workflow; instalar no lo reemplaza, corré 'agent-workflow mcp migrate'.",
   );
   const probes = HOST_CHOICES.flatMap((host) => {
     const state = connection.host_status[host];
@@ -819,7 +821,7 @@ function renderConnectionDetail(
         mode.kind === "confirm-delete" ? (
           <ConfirmBanner
             title={`× Remove ${mode.name}?`}
-            body={`This removes '${mode.name}' (Workline PostgreSQL entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Same-named entries Workline did not write stay untouched. Not reversible.`}
+            body={`This removes '${mode.name}' (agent-workflow PostgreSQL entries only) from every host's user config and deletes it from the local registry (mcp-connections.json). Same-named entries agent-workflow did not write stay untouched. Not reversible.`}
           />
         ) : null
       }

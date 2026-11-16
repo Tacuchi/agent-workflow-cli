@@ -47,7 +47,7 @@ const COVERAGE_LABEL: Record<string, string> = {
  * AC-08— sólo se adivinaba de la prosa del resumen.
  */
 const OWNERSHIP_LABEL: Record<string, string> = {
-  ours: "de Workline",
+  ours: "de agent-workflow",
   foreign: "ajena",
   ambiguous: "ambigua",
   "n/a": "no aplica",
@@ -92,7 +92,7 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
   },
   help: {
     purpose:
-      "Diagnose the installation: Workline and its resources on every detected host, with coverage per category and the verdict in the exit code.",
+      "Diagnose the installation: agent-workflow and its resources on every detected host, with coverage per category and the verdict in the exit code.",
     flags: {
       doctor: { effect: "Set by the aw --doctor alias; has no further effect." },
       host: {
@@ -106,7 +106,7 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
       },
     },
     output:
-      "Default (schema_version 3): {schema_version, cli_version, verdict {exit_code, reason}, summary, scope, hosts[] {host, label, status, version, degradations_count?}, hosts_absent[]?, findings[]? (not healthy, with a supported or manual remediation; no evidence) {id, host, category, state, summary, remediation}, collapsed? {count, by_state} (not healthy, remediation none), coverage[]? (rows that are not checked)}; empty collections left out. --detail (schema_version 2): {schema_version, cli_version, scope {hub_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, workline_installed, degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
+      "Default (schema_version 3): {schema_version, cli_version, verdict {exit_code, reason}, summary, scope, hosts[] {host, label, status, version, degradations_count?}, hosts_absent[]?, findings[]? (not healthy, with a supported or manual remediation; no evidence) {id, host, category, state, summary, remediation}, collapsed? {count, by_state} (not healthy, remediation none), coverage[]? (rows that are not checked)}; empty collections left out. --detail (schema_version 2): {schema_version, cli_version, scope {hub_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, agent_workflow_installed, degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
     exit_codes: {
       "1": "The verdict is not healthy: a blocking finding or an unavailable coverage. ok is still true and data is the full report.",
     },
@@ -457,7 +457,7 @@ function hostLines(report: DoctorReport): string[] {
     const mark = host.current ? "→" : " ";
     const version = host.runtime.version === null ? "" : ` ${host.runtime.version}`;
     lines.push(
-      `${mark} ${host.label} · ${host.status} · runtime ${host.runtime.state}${version} · Workline ${host.workline_installed ? "instalado" : "ausente"}`,
+      `${mark} ${host.label} · ${host.status} · runtime ${host.runtime.state}${version} · agent-workflow ${host.agent_workflow_installed ? "instalado" : "ausente"}`,
     );
     for (const degradation of host.degradations) {
       lines.push(`    ${degradation.surface} ${degradation.status} — ${flat(degradation.detail)}`);

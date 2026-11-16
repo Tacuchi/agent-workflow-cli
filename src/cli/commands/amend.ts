@@ -2,7 +2,7 @@
  * `aw amend`: the direct correction of a closed document's wording.
  *
  * A CROSS-CUTTING command, like `reseal` and the retirement pair: it opens no
- * WorklineFlow and creates no session. There is nothing for a run to direct —
+ * AgentWorkflowFlow and creates no session. There is nothing for a run to direct —
  * one act reads, checks, writes and records — and giving it a journey would cost
  * the bundle a document per invocation for a change nobody disagrees about.
  *

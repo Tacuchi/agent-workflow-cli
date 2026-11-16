@@ -2,7 +2,8 @@ import { readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { compareVersions, parseVersion } from "../../domain/changelog-contract.js";
 import { type DoctorFinding, doctorFindingId } from "../../domain/doctor/model.js";
-import { RETIRED_WORKLINE_SKILLS } from "../../domain/skills.js";
+import { RETIRED_HEADING } from "../../domain/retired-name.js";
+import { RETIRED_AGENT_WORKFLOW_SKILLS } from "../../domain/skills.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { HUB_MIGRATE_ACTION } from "../../runtime/hub-resolution.js";
 import {
@@ -19,7 +20,15 @@ import type { DoctorProvider, DoctorProviderInput } from "./types.js";
 import { coverage } from "./types.js";
 
 const CATEGORY = "hub-visibility" as const;
-const OWNED_SECTIONS = new Set(["hub", "workline", "fuentes", "stack", "status", "pipeline"]);
+const OWNED_SECTIONS = new Set([
+  "hub",
+  "agent-workflow",
+  RETIRED_HEADING.toLowerCase(),
+  "fuentes",
+  "stack",
+  "status",
+  "pipeline",
+]);
 /** First Claude Code release that reads AGENTS.md by itself (code.claude.com/docs/en/memory). */
 const CLAUDE_READS_AGENTS_MD = [2, 1, 277] as const;
 /** Files that make Claude Code read CLAUDE.md files only, in the hub or any folder above it. */
@@ -240,7 +249,7 @@ function legacyMirrorFinding(hubDir: string): DoctorFinding {
     state: "warning",
     summary: "CLAUDE.md conserva el bloque del hub: falta migrarlo a AGENTS.md",
     impact:
-      "Claude Code lee CLAUDE.md en lugar de AGENTS.md y ve un bloque que Workline ya no actualiza",
+      "Claude Code lee CLAUDE.md en lugar de AGENTS.md y ve un bloque que agent-workflow ya no actualiza",
     evidence: [`${path} tiene el bloque del hub`],
     ownership: "ours",
     remediation: {
@@ -314,7 +323,7 @@ function retiredSkillReference(body: string): string | null {
   )) {
     if (
       skill !== undefined &&
-      (RETIRED_WORKLINE_SKILLS.has(skill) || skill === "ui-design" || skill === "ui-spec")
+      (RETIRED_AGENT_WORKFLOW_SKILLS.has(skill) || skill === "ui-design" || skill === "ui-spec")
     )
       return skill;
   }

@@ -27,7 +27,7 @@ export async function readHubBlock(
   return null;
 }
 
-/** The only file Workline writes the hub block to; every host reads it, Claude Code since 2.1.277. */
+/** The only file agent-workflow writes the hub block to; every host reads it, Claude Code since 2.1.277. */
 export const BLOCK_FILE = "AGENTS.md";
 /** Where pre-30 hubs mirrored the block; read as a fallback until `aw hub-migrate` retires it. */
 export const LEGACY_BLOCK_FILE = "CLAUDE.md";
@@ -48,7 +48,7 @@ export interface HubFuente {
  * Resolve one source coordinate read from a hub block.
  *
  * New configuration persists absolute paths, but legacy blocks may still hold
- * a relative one. A block is scoped to the resolved Workline root that holds
+ * a relative one. A block is scoped to the resolved agent-workflow root that holds
  * it, never to whichever process cwd happens to read it later. Keep absolute
  * values byte-for-byte so a configured source is not rewritten merely by being
  * consumed.
@@ -159,7 +159,7 @@ export function formatPipelineRecord(alias: string, value: SourcePipelineDeclara
  * written note back exactly where its author left it.
  */
 export type PreservedSlot =
-  | "workline"
+  | "agent-workflow"
   | "fuentes"
   | "stack"
   | "pipeline"
@@ -299,7 +299,7 @@ export function localPathsNote(namespace: string): string {
   return `${LOCAL_PATHS_NOTE_PREFIX} viven en \`.${namespace}/local.json\` de cada máquina; \`aw sources\` las muestra.`;
 }
 
-/** `## Workline`: pointers for an agent without the Workline skills, never doctrine. */
+/** `## agent-workflow`: pointers for an agent without the agent-workflow skills, never doctrine. */
 export function orientationLines(namespace: string): string[] {
   return [
     "- Estado y pendientes: `aw status`; cómo retomar: `aw resume`.",
@@ -340,7 +340,7 @@ function parseWithMarkers(text: string, markers: HubBlockMarkers): ParsedHubBloc
   const stackText = parseMdSection(inner, "Stack") ?? "";
   const statusText = parseMdSection(inner, "Status") ?? "";
   const pipelineText = parseMdSection(inner, "Pipeline") ?? "";
-  const worklineText =
+  const agentWorkflowText =
     parseMdSection(inner, "agent-workflow") ?? parseMdSection(inner, RETIRED_HEADING) ?? "";
 
   const fuentes = parseFuentesTable(fuentesText);
@@ -368,7 +368,7 @@ function parseWithMarkers(text: string, markers: HubBlockMarkers): ParsedHubBloc
     last_activity: status.lastActivity,
   };
   const preserved = [
-    ...orientationNotes(worklineText, namespaceOfMarkers(markers)),
+    ...orientationNotes(agentWorkflowText, namespaceOfMarkers(markers)),
     ...fuentes.preserved,
     ...stack.preserved,
     ...status.preserved,
@@ -424,13 +424,13 @@ function foreignSections(inner: string): PreservedLine[] {
   return kept;
 }
 
-/** What a person added under `## Workline`; the CLI's own pointers are re-rendered, not carried. */
+/** What a person added under `## agent-workflow`; the CLI's own pointers are re-rendered, not carried. */
 function orientationNotes(text: string, namespace: string): PreservedLine[] {
   const own = new Set(orientationLines(namespace));
   return text
     .split("\n")
     .filter((raw) => raw.trim().length > 0 && !own.has(raw.trim()))
-    .map((raw) => ({ slot: "workline", text: trimTrailing(raw) }));
+    .map((raw) => ({ slot: "agent-workflow", text: trimTrailing(raw) }));
 }
 
 /** Trailing blanks carry nothing and would churn the rewrite; indentation is content. */

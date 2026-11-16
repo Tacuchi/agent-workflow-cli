@@ -3,7 +3,7 @@
  *
  * Los proveedores sugieren (`finding.proposal`); acá se decide. Es una sola
  * función a propósito: AC-08 promete que sólo los recursos atribuibles a
- * Workline se modifican, y una promesa que se cumple en seis archivos distintos
+ * agent-workflow se modifican, y una promesa que se cumple en seis archivos distintos
  * es seis lugares donde puede dejar de cumplirse. Los ajenos, los ambiguos y los
  * que tienen una credencial embebida salen de acá con guía y sin acción, sin
  * importar lo que el proveedor haya sugerido.

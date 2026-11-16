@@ -135,12 +135,12 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
   it("acepta una prueba del checkout vigente y rechaza stale o rutas que escapan", () => {
     expect(validateCheckoutProof(proof, [{ source: "cli", digest }])).toBeNull();
     expect(validateCheckoutProof(proof, [{ source: "cli", digest: "moved" }])?.code).toBe(
-      "WORKLINE_CHECKOUT_PROOF_STALE",
+      "CHECKOUT_PROOF_STALE",
     );
     expect(
       validateCheckoutProof({ ...proof, relative_cwd: "../outside" }, [{ source: "cli", digest }])
         ?.code,
-    ).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    ).toBe("CHECKOUT_PROOF_INVALID");
   });
 
   it("no acepta una forma de invocación que contradice el tipo de prueba", () => {
@@ -149,7 +149,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
       invocation: { artifact: "docs/resultado.md" },
     } as unknown as typeof proof;
     expect(validateCheckoutProof(mismatched, [{ source: "cli", digest }])?.code).toBe(
-      "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
+      "CHECKOUT_PROOF_SHAPE_INVALID",
     );
   });
 
@@ -159,7 +159,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
         { ...proof, kind: "inspection", invocation: { artifact: "../outside/result.md" } },
         [{ source: "cli", digest }],
       )?.code,
-    ).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    ).toBe("CHECKOUT_PROOF_INVALID");
     expect(
       validateCheckoutProof(
         {
@@ -169,7 +169,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
         },
         [{ source: "cli", digest }],
       )?.code,
-    ).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    ).toBe("CHECKOUT_PROOF_INVALID");
     expect(
       validateCheckoutProof(
         {
@@ -178,19 +178,19 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
         },
         [{ source: "cli", digest }],
       )?.code,
-    ).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    ).toBe("CHECKOUT_PROOF_INVALID");
     expect(
       validateCheckoutProof(
         { ...proof, invocation: { program: "https://example.test", args: [] } },
         [{ source: "cli", digest }],
       )?.code,
-    ).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    ).toBe("CHECKOUT_PROOF_INVALID");
     expect(
       validateCheckoutProof(
         { ...proof, invocation: { program: "node", args: ["scripts/check.mjs", "alpha:5432"] } },
         [{ source: "cli", digest }],
       )?.code,
-    ).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    ).toBe("CHECKOUT_PROOF_INVALID");
     expect(
       validateCheckoutProof({ ...proof, invocation: { program: "npm", args: ["run", "test"] } }, [
         { source: "cli", digest },
@@ -218,7 +218,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
       validateCheckoutProof({ ...proof, checkout_digest: before }, [
         { source: "cli", digest: after },
       ])?.code,
-    ).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    ).toBe("CHECKOUT_PROOF_STALE");
   });
 
   it("nombra las fuentes elegibles cuando la prueba declara una que no lo es", () => {
@@ -226,7 +226,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
       { source: "hub", digest },
       { source: "ui", digest },
     ]);
-    expect(failure?.code).toBe("WORKLINE_CHECKOUT_PROOF_INVALID");
+    expect(failure?.code).toBe("CHECKOUT_PROOF_INVALID");
     expect(failure?.message).toContain("hub, ui");
   });
 
@@ -234,7 +234,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
     const checkout = [{ source: "cli", root: "/checkout/actual", digest }];
     expect(validateCheckoutProof(proof, checkout)).toBeNull();
     const other = validateCheckoutProof({ ...proof, root: "/checkout/otro" }, checkout);
-    expect(other?.code).toBe("WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH");
+    expect(other?.code).toBe("CHECKOUT_PROOF_ROOT_MISMATCH");
     expect(other?.message).toContain("/checkout/otro");
     expect(other?.message).toContain("/checkout/actual");
     expect(validateCheckoutProof({ ...proof, root: "/checkout/x/../actual" }, checkout)).toBeNull();
@@ -246,13 +246,13 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
 
   it("separa un checkout que cambió de una huella que no es reproducible", () => {
     const changed = validateCheckoutProof(proof, [{ source: "cli", digest: "moved" }]);
-    expect(changed?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    expect(changed?.code).toBe("CHECKOUT_PROOF_STALE");
     expect(changed?.message).toContain("cambió desde que se capturó la prueba");
 
     const unstable = validateCheckoutProof(proof, [
       { source: "cli", digest: "moved", reproducible: false },
     ]);
-    expect(unstable?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    expect(unstable?.code).toBe("CHECKOUT_PROOF_STALE");
     expect(unstable?.message).toContain("NO es estable");
   });
 
@@ -277,7 +277,7 @@ describe("SourceBoundaryPolicy — CheckoutProof", () => {
 
   it("sin raíz observada el mensaje sigue siendo válido, sólo con el alias", () => {
     const failure = validateCheckoutProof(proof, [{ source: "cli", digest: "moved" }]);
-    expect(failure?.code).toBe("WORKLINE_CHECKOUT_PROOF_STALE");
+    expect(failure?.code).toBe("CHECKOUT_PROOF_STALE");
     expect(failure?.message).toContain("'cli'");
     expect(failure?.message).not.toContain("undefined");
   });
@@ -547,7 +547,7 @@ describe("SourceBoundaryPolicy — la cláusula se juzga por lo que nombra", () 
         invocation: { program: "node", args: ["scripts/check.mjs", arg] },
       };
       expect(validateCheckoutProof(proof, [{ source: "cli", digest }])?.code, arg).toBe(
-        "WORKLINE_CHECKOUT_PROOF_INVALID",
+        "CHECKOUT_PROOF_INVALID",
       );
     }
   });
@@ -570,7 +570,7 @@ describe("SourceBoundaryPolicy — la cláusula se juzga por lo que nombra", () 
 });
 
 /**
- * Real closing clauses of the Workline hub's plans, plus the incident shapes of
+ * Real closing clauses of the agent-workflow hub's plans, plus the incident shapes of
  * spec 053, each with the verdict v25.6.1 gave it (`was`). A clause whose verdict
  * this policy changes declares `now` and the rule that moves it; any other
  * change is a regression of the corpus.

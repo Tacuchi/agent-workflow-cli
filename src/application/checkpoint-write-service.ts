@@ -61,7 +61,7 @@ export interface CheckpointWriteOutput {
 }
 
 /**
- * The session could not be resolved: the host's compaction goes ahead, Workline
+ * The session could not be resolved: the host's compaction goes ahead, agent-workflow
  * writes nothing on any session line and says the continuity is degraded.
  * `primary_session: null` is the point — no active session gets presented as
  * this conversation's line.

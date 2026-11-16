@@ -1,10 +1,24 @@
 import { expect, it } from "vitest";
-import { hubBlockProvider } from "../../src/application/doctor/provider-hub-block.js";
+import {
+  hubBlockProvider,
+  retiredSections,
+} from "../../src/application/doctor/provider-hub-block.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import type { CliContext } from "../../src/cli/types.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
+
+it("keeps the retired hub heading owned while diagnosing retired commands", () => {
+  const markers = { start: "<!-- WORKFLOW-HUB-START -->", end: "<!-- WORKFLOW-HUB-END -->" };
+  expect(
+    retiredSections(
+      `${markers.start}\n## Workline\n\naw retired-command\n${markers.end}`,
+      markers,
+      { aw: new Set(), w: new Set() },
+    ),
+  ).toEqual([]);
+});
 
 it("reports the retired heading and conflicting markers without deleting or writing", async () => {
   const fs = new MemFs()

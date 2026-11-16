@@ -54,7 +54,7 @@ export interface RecordNativeMcpHostChecksInput {
 /**
  * Verify that the two hosts with documented native inspection commands can
  * see the configured entry. Their output is deliberately never retained: it
- * could contain host-local diagnostics unrelated to Workline.
+ * could contain host-local diagnostics unrelated to agent-workflow.
  */
 export async function checkNativeMcpHosts(
   targets: readonly McpReceiptProbeTarget[],

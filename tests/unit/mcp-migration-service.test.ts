@@ -5,13 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classifyMcpEntry } from "../../src/application/mcp-entry-classification.js";
 import { readMcpEntry } from "../../src/application/mcp-host-reader.js";
 import { runMcpMigration } from "../../src/application/mcp-migration-service.js";
+import { agentWorkflowMcpEntry } from "../../src/domain/agent-workflow-mcp-entry.js";
 import {
   type McpConnectionRef,
   buildMcpEntry,
   knownLegacyMcpEntries,
   mcpEntryShapeForHost,
 } from "../../src/domain/mcp-entry.js";
-import { worklineMcpEntry } from "../../src/domain/workline-mcp-entry.js";
 import type { EnvPort } from "../../src/ports/env.js";
 
 const CONNECTION: McpConnectionRef = {
@@ -19,9 +19,9 @@ const CONNECTION: McpConnectionRef = {
   dsnVar: "ALPHA_DATABASE_URL",
 };
 
-const WORKLINE_CONNECTION: McpConnectionRef = {
+const AGENT_WORKFLOW_CONNECTION: McpConnectionRef = {
   name: "agent-workflow",
-  dsnVar: "WORKLINE_DATABASE_URL",
+  dsnVar: "AGENT_WORKFLOW_DATABASE_URL",
 };
 
 function currentEntry(name: string, dsnVar: string) {
@@ -86,7 +86,7 @@ describe("runMcpMigration", () => {
     expect(existsSync(join(hub, ".mcp.json"))).toBe(false);
   });
 
-  it("el preview reconoce únicamente la forma legacy Workline exacta", () => {
+  it("el preview reconoce únicamente la forma legacy agent-workflow exacta", () => {
     const legacy = publishedLegacy(CONNECTION.name, CONNECTION.dsnVar);
     const target = join(hub, ".mcp.json");
     const original = `${JSON.stringify(
@@ -107,7 +107,7 @@ describe("runMcpMigration", () => {
   });
 
   it("migra el servidor legacy de elicitation sólo para la conexión DB homónima", () => {
-    const legacy = worklineMcpEntry("claude");
+    const legacy = agentWorkflowMcpEntry("claude");
     const target = join(hub, ".mcp.json");
     const original = `${JSON.stringify(
       { mcpServers: { "agent-workflow": mcpEntryShapeForHost("claude", legacy) } },
@@ -116,7 +116,7 @@ describe("runMcpMigration", () => {
     )}\n`;
     writeFileSync(target, original);
 
-    const preview = migrate([WORKLINE_CONNECTION]);
+    const preview = migrate([AGENT_WORKFLOW_CONNECTION]);
     expect(preview.items[0]).toMatchObject({
       instance: "agent-workflow",
       state: "known-legacy",
@@ -125,7 +125,7 @@ describe("runMcpMigration", () => {
     });
     expect(readFileSync(target, "utf-8")).toBe(original);
 
-    const applied = migrate([WORKLINE_CONNECTION], true);
+    const applied = migrate([AGENT_WORKFLOW_CONNECTION], true);
     expect(applied.items[0]).toMatchObject({
       state: "known-legacy",
       action: "replace-known-legacy",
@@ -135,12 +135,12 @@ describe("runMcpMigration", () => {
     const content = JSON.parse(readFileSync(target, "utf-8")) as {
       mcpServers: Record<string, unknown>;
     };
-    const current = currentEntry(WORKLINE_CONNECTION.name, WORKLINE_CONNECTION.dsnVar);
+    const current = currentEntry(AGENT_WORKFLOW_CONNECTION.name, AGENT_WORKFLOW_CONNECTION.dsnVar);
     expect(content.mcpServers["agent-workflow"]).toEqual(mcpEntryShapeForHost("claude", current));
   });
 
   it("no migra una variante del servidor legacy de elicitation", () => {
-    const legacy = worklineMcpEntry("claude");
+    const legacy = agentWorkflowMcpEntry("claude");
     const target = join(hub, ".mcp.json");
     const foreign = {
       ...mcpEntryShapeForHost("claude", legacy),
@@ -149,7 +149,7 @@ describe("runMcpMigration", () => {
     const original = `${JSON.stringify({ mcpServers: { "agent-workflow": foreign } }, null, 2)}\n`;
     writeFileSync(target, original);
 
-    const result = migrate([WORKLINE_CONNECTION], true);
+    const result = migrate([AGENT_WORKFLOW_CONNECTION], true);
 
     expect(result.items[0]).toMatchObject({ state: "foreign", action: "blocked" });
     expect(readFileSync(target, "utf-8")).toBe(original);

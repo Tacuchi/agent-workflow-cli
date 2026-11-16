@@ -164,7 +164,7 @@ describe("runResume — an explicit target wins over the pipeline", () => {
     const out = await resume(fs, { target: "docs/plans/006-plan-legado.md" });
     if (out.status !== "proposal") throw new Error(`expected a proposal, got ${out.status}`);
     expect(out.proposal.command).toBe("/w:plan-exec docs/plans/006-plan-legado.md");
-    expect(out.proposal.warning?.code).toBe("WORKLINE_BASELINE_LEGACY_UNSEALED");
+    expect(out.proposal.warning?.code).toBe("BASELINE_LEGACY_UNSEALED");
   });
 
   it("does not offer plan-exec for a closed legacy plan targeted explicitly", async () => {

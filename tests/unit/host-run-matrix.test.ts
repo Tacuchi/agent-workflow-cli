@@ -163,10 +163,10 @@ describe("host-run matrix", () => {
 
   const doctorRelay = [
     "Hosts",
-    "→ Codex · ready · runtime available 0.157.1 · Workline instalado",
+    "→ Codex · ready · runtime available 0.157.1 · agent-workflow instalado",
     "    hooks degraded — not armed",
     "    host-memory degraded — behind [features] memories",
-    "  Kimi Code · ready · runtime available 0.39.1 · Workline instalado",
+    "  Kimi Code · ready · runtime available 0.39.1 · agent-workflow instalado",
     "    mcp degraded — imaginary",
     "",
     "Cobertura",
@@ -184,7 +184,7 @@ describe("host-run matrix", () => {
 
   it("tolerates list, quote and table prefixes a host adds when it relays the report", () => {
     const relayed = [
-      "> → Codex · ready · runtime available 0.157.1 · Workline instalado",
+      "> → Codex · ready · runtime available 0.157.1 · agent-workflow instalado",
       "> - hooks degraded — not armed",
       "| structured-choice degraded — per turn |",
       "* compaction unsupported - fallback",
@@ -295,7 +295,7 @@ describe("host-run extracts", () => {
           label: "Claude Code",
           state: "absent",
           reason: `no existe ${root}/home/.claude/projects`,
-          workline_entries: 3,
+          agent_workflow_entries: 3,
           skipped: ["x"],
         },
       ],

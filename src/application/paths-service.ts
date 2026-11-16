@@ -2,9 +2,9 @@ import { dirname, join } from "node:path";
 import { unitsRoot } from "../domain/isolation-unit.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { AGENT_WORKFLOW_MARKER_FILE } from "../runtime/agent-workflow-marker.js";
 import { resolveHubDirectory } from "../runtime/hub-resolution.js";
 import type { Namespace } from "../runtime/namespace.js";
-import { WORKLINE_MARKER_FILE } from "../runtime/workline-marker.js";
 import { localDateIso } from "./dates.js";
 import { hubBlockMarkers } from "./parsers/hub-block.js";
 
@@ -17,7 +17,7 @@ export class PathsService {
   constructor(
     private readonly ns: Namespace,
     private readonly home: string,
-    /** Resolved Workline root, not necessarily the process cwd. */
+    /** Resolved agent-workflow root, not necessarily the process cwd. */
     private readonly root: string,
   ) {}
 
@@ -25,7 +25,7 @@ export class PathsService {
     return this.ns;
   }
 
-  /** The resolved Workline hub root. */
+  /** The resolved agent-workflow hub root. */
   hubDir(): string {
     return this.root;
   }
@@ -80,7 +80,7 @@ export class PathsService {
     return unitsRoot(this.userRoot());
   }
 
-  // hub-level (.${ns}/... at the resolved Workline root)
+  // hub-level (.${ns}/... at the resolved agent-workflow root)
   cwdRoot(): string {
     return join(this.root, `.${this.ns}`);
   }
@@ -132,11 +132,11 @@ export class PathsService {
     return join(this.cwdRoot(), "local.json");
   }
   /**
-   * The hub's own mark — what the resolver reads to tell a Workline
+   * The hub's own mark — what the resolver reads to tell a agent-workflow
    * hub from a host tool's directory that happens to hold a `sessions/`.
    */
   cwdMarkerFile(): string {
-    return join(this.cwdRoot(), WORKLINE_MARKER_FILE);
+    return join(this.cwdRoot(), AGENT_WORKFLOW_MARKER_FILE);
   }
   cwdLockFile(): string {
     return join(this.cwdRoot(), ".lock");
@@ -161,14 +161,14 @@ export class PathsService {
  * Graduation always lands at the hub root (the parent of `.<ns>/`),
  * regardless of how many sources the hub declares.
  *
- * Walks up from the resolved Workline root looking for the nearest directory
+ * Walks up from the resolved agent-workflow root looking for the nearest directory
  * that contains the canonical `.<ns>/sessions/` marker. This guarantees that
  * even when the user invoked the CLI from a source subdirectory, graduation
  * keeps using the single bootstrap coordinate rather than re-reading raw cwd.
  *
  * Fallback: if no canonical marker is found anywhere up the tree, returns the
  * given start unchanged. The command bootstrap already made that start the
- * implicit Workline root, so this never guesses a Git root.
+ * implicit agent-workflow root, so this never guesses a Git root.
  */
 export async function resolveHubRoot(
   fs: FileSystemPort,

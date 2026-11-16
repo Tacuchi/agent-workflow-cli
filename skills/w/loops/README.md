@@ -50,7 +50,7 @@ The **engine lives in [`CHASSIS.md`](CHASSIS.md)** (a referenced doc, not a skil
 
 ## Orientation and ambient help
 
-Only Workline-owned roles resolve through `.workflow/skills.toml`. External help is ambient; it is not a prerequisite, binding or gate proof. See [../roles/README.md](../roles/README.md).
+Only aw-owned roles resolve through `.workflow/skills.toml`. External help is ambient; it is not a prerequisite, binding or gate proof. See [../roles/README.md](../roles/README.md).
 
 ## Index
 

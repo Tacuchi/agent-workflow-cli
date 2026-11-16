@@ -113,7 +113,7 @@ interface MigrationApplyResult {
 }
 
 /**
- * Classifies a named entry before mutation. Only byte-exact historic Workline
+ * Classifies a named entry before mutation. Only byte-exact historic agent-workflow
  * shapes are migratable; anything else remains foreign or malformed.
  */
 export function runMcpMigration(
@@ -246,7 +246,7 @@ function inspectLegacyRetirements(
         };
       }
       const classified = classifyMcpEntry(host, snapshot, entry, aliasConnection);
-      // A new Workline descriptor under cert/prod is still an owned historic
+      // A new agent-workflow descriptor under cert/prod is still an owned historic
       // name. It must be retired before qtc-cert/qtc-prod is presented as done.
       const classification =
         classified.state === "current"

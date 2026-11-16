@@ -240,7 +240,7 @@ export async function applySessionMigration(
       ? null
       : await proposeCommit(git, {
           ...hubTarget(root),
-          message: "chore: migra el hub al modelo sin sesiones (Workline 31.0.0)",
+          message: "chore: migra el hub al modelo sin sesiones (agent-workflow 31.0.0)",
           paths: paths_,
         });
   const proposal = commit?.ok ? commit.value : null;
@@ -269,7 +269,7 @@ export async function commitSessionMigration(
   const changed = (await git.dirtyPaths(root)).map((entry) => entry.path);
   const proposal = await proposeCommit(git, {
     ...hubTarget(root),
-    message: "chore: migra el hub al modelo sin sesiones (Workline 31.0.0)",
+    message: "chore: migra el hub al modelo sin sesiones (agent-workflow 31.0.0)",
     paths: changed.filter((path) => isMigrationPath(path, paths)),
   });
   if (!proposal.ok || proposal.value.approval !== input.approval) {

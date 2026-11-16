@@ -11,7 +11,7 @@ import { HOSTS } from "./hosts.mjs";
 /** The flow controls every structured choice carries (CHASSIS: `flow` slot). */
 export const FLOW_CONTROLS = ["Compactar", "Cerrar"];
 
-/** The Workline MCP the run registers in each disposable home, and the only one an extract may name. */
+/** The agent-workflow MCP the run registers in each disposable home, and the only one an extract may name. */
 export const PROBE_MCP = { name: "host-run-probe", dsnVar: "HOST_RUN_PROBE_DSN" };
 
 /** Port 9 (discard) on loopback: nothing answers, so no query ever reaches a database. */
@@ -101,7 +101,7 @@ export const STEPS = [
   {
     surface: "mcp",
     command: null,
-    goal: "the host lists the tools of the Workline MCP registered in its home; nothing is queried",
+    goal: "the host lists the tools of the agent-workflow MCP registered in its home; nothing is queried",
     prompt: () =>
       `List the tools the MCP server '${PROBE_MCP.name}' exposes, by name. Do not call any of them.`,
     boundaries: [],
@@ -158,11 +158,11 @@ export function stepForHost(step, hostId) {
   const host = HOSTS[hostId];
   if (host === undefined) throw new Error(`host '${hostId}' is not covered by the run`);
   const text = step.prompt(host);
-  // A native /compact is typed; a Workline command (the resume fallback included)
+  // A native /compact is typed; a agent-workflow command (the resume fallback included)
   // goes through crush's palette.
-  const isWorklineCommand =
+  const isAgentWorkflowCommand =
     step.command !== null && !(step.surface === "compaction" && host.compact !== null);
-  const viaPalette = host.palette === true && isWorklineCommand;
+  const viaPalette = host.palette === true && isAgentWorkflowCommand;
   return {
     surface: step.surface,
     host: hostId,

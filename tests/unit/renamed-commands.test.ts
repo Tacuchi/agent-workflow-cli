@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 
 /**
  * The names 29.0.0 retired answer RENAMED through the real binary, with their
@@ -77,7 +77,10 @@ beforeAll(async () => {
   await mkdir(home, { recursive: true });
   await mkdir(bare, { recursive: true });
   await mkdir(join(hub, ".workflow", "sessions"), { recursive: true });
-  await writeFile(join(hub, ".workflow", "agent-workflow.json"), worklineMarkerContent("workflow"));
+  await writeFile(
+    join(hub, ".workflow", "agent-workflow.json"),
+    agentWorkflowMarkerContent("workflow"),
+  );
 });
 
 afterAll(async () => {

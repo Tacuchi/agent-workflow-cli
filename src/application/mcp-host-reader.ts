@@ -134,7 +134,7 @@ function readContainer(
 // Claude historically accepted the same mcpServers object under
 // `.claude/settings.json`. Prefer the current `.mcp.json` / `.claude.json`
 // location, but surface an occupied historical location rather than hiding it
-// as absent: migration may only replace an exact known Workline shape.
+// as absent: migration may only replace an exact known agent-workflow shape.
 function readClaudeMcpEntry(
   containers: readonly McpEntryContainer[],
   name: string,

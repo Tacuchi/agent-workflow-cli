@@ -1,8 +1,8 @@
 import { dirname, join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { isAgentWorkflowRoot } from "./agent-workflow-marker.js";
 import { NAMESPACE_REGEX, type Namespace, normalizeNamespace } from "./namespace.js";
-import { isWorklineRoot } from "./workline-marker.js";
 
 export type NamespaceSource = "flag" | "env" | "config" | "hub" | "default";
 
@@ -14,31 +14,31 @@ export interface ResolvedNamespace {
 /**
  * The one hub-scoped coordinate resolved before any service is built.
  *
- * A Workline hub does not need a configuration block to exist.  Its
- * durable marker is `.<namespace>/workline.json` — a mark of Workline's own, not
- * a folder name a host tool also uses (see `workline-marker`); until that marker
+ * A agent-workflow hub does not need a configuration block to exist.  Its
+ * durable marker is `.<namespace>/agent-workflow.json` — a mark of agent-workflow's own, not
+ * a folder name a host tool also uses (see `agent-workflow-marker`); until that marker
  * exists the directory from which the command was invoked is still the hub
  * root for read-only commands.  Keeping that fact here prevents each command from
  * independently walking cwd (or, worse, guessing a Git root).
  */
-export interface WorklineDirectory {
+export interface AgentWorkflowDirectory {
   root: string;
   namespace: Namespace;
   namespaceSource: NamespaceSource;
   materialized: boolean;
 }
 
-export class WorklineDirectoryError extends Error {
-  readonly code = "WORKLINE_NAMESPACE_AMBIGUOUS";
+export class AgentWorkflowDirectoryError extends Error {
+  readonly code = "NAMESPACE_AMBIGUOUS";
 
   constructor(
     public readonly root: string,
     public readonly namespaces: readonly Namespace[],
   ) {
     super(
-      `More than one Workline namespace is materialized at ${root}: ${namespaces.join(", ")}. Pass --namespace <name> (or set AW_NAMESPACE) to select one.`,
+      `More than one agent-workflow namespace is materialized at ${root}: ${namespaces.join(", ")}. Pass --namespace <name> (or set AW_NAMESPACE) to select one.`,
     );
-    this.name = "WorklineDirectoryError";
+    this.name = "AgentWorkflowDirectoryError";
   }
 }
 
@@ -73,7 +73,7 @@ export class NamespaceResolver {
    * canonical marker wins, while two markers at that same level are a real
    * ambiguity rather than a reason to fall back to a global preference.
    */
-  async resolveDirectory(flag: string | undefined): Promise<WorklineDirectory> {
+  async resolveDirectory(flag: string | undefined): Promise<AgentWorkflowDirectory> {
     const cwd = this.env.cwd();
     if (flag !== undefined && flag.trim().length > 0) {
       const namespace = normalizeNamespace(flag);
@@ -135,7 +135,7 @@ export class NamespaceResolver {
     while (true) {
       if (dir === this.env.homeDir()) return null;
       const matches = await this.namespacesAt(dir);
-      if (matches.length > 1) throw new WorklineDirectoryError(dir, matches);
+      if (matches.length > 1) throw new AgentWorkflowDirectoryError(dir, matches);
       const [namespace] = matches;
       if (namespace !== undefined) return { root: dir, namespace };
       const parent = dirname(dir);
@@ -148,7 +148,7 @@ export class NamespaceResolver {
     let dir = cwd;
     while (true) {
       if (dir === this.env.homeDir()) return null;
-      if (await isWorklineRoot(this.fs, dir, namespace)) return dir;
+      if (await isAgentWorkflowRoot(this.fs, dir, namespace)) return dir;
       const parent = dirname(dir);
       if (parent === dir) return null;
       dir = parent;
@@ -167,7 +167,7 @@ export class NamespaceResolver {
       if (entry.type !== "dir" || !entry.name.startsWith(".")) continue;
       const candidate = entry.name.slice(1);
       if (!NAMESPACE_REGEX.test(candidate)) continue;
-      if (await isWorklineRoot(this.fs, dir, candidate)) {
+      if (await isAgentWorkflowRoot(this.fs, dir, candidate)) {
         matches.push(candidate as Namespace);
       }
     }

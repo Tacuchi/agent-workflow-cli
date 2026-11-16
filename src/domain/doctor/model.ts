@@ -42,7 +42,7 @@ export type DoctorCategory = (typeof DOCTOR_CATEGORIES)[number];
  */
 export type DoctorFindingState = "healthy" | "warning" | "blocking" | "unverified";
 
-/** Whether Workline may act on the resource at all. Decided by the existing predicates, never by name. */
+/** Whether agent-workflow may act on the resource at all. Decided by the existing predicates, never by name. */
 export type DoctorOwnership = "ours" | "foreign" | "ambiguous" | "n/a";
 
 /** What the run actually managed to look at, per category and host. */
@@ -187,7 +187,7 @@ export interface DoctorHostView {
   /** True for the host the run was invoked from. Highlights; never filters. */
   current: boolean;
   runtime: { state: string; version: string | null };
-  workline_installed: boolean;
+  agent_workflow_installed: boolean;
   /** The host's non-native surfaces, from the catalog. Empty when every surface is native. */
   degradations: DoctorHostDegradation[];
 }

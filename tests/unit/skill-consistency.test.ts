@@ -19,7 +19,7 @@ const SKILL_ROOT = resolve(__dirname, "..", "..", "skills", "w");
 // point at the SOURCE that now holds the reader's half of each contract: the
 // skill is checked for delegating, the CLI for speaking the writer's language.
 const SRC_ROOT = resolve(__dirname, "..", "..", "src");
-const INDEX_SERVICE = join(SRC_ROOT, "application", "workline-index-service.ts");
+const INDEX_SERVICE = join(SRC_ROOT, "application", "agent-workflow-index-service.ts");
 const RESUME_SERVICE = join(SRC_ROOT, "application", "resume-service.ts");
 const SCANNED_SUBFOLDERS = [
   "commands",
@@ -354,7 +354,9 @@ describe("SPEC readiness contract — spec-new ↔ spec-refine ↔ plan-new ↔ 
     // section of the CURRENT schema, so a spec nobody refined read as ready and
     // `/w:resume` routed it to PLAN. The list is a contract, not an implementation
     // detail — the docs that describe it and the code that applies it must match.
-    const { LEGACY_READY_MARKS } = await import("../../src/application/workline-index-service.js");
+    const { LEGACY_READY_MARKS } = await import(
+      "../../src/application/agent-workflow-index-service.js"
+    );
     expect(LEGACY_READY_MARKS).toEqual(["Refinement decisions", "Q&A traceability"]);
     for (const rel of [
       "loops/spec-refine-loop/LOOP.md",

@@ -16,6 +16,10 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import {
+  buildAgentWorkflowIndex,
+  specConsumers,
+} from "../../src/application/agent-workflow-index-service.js";
+import {
   noteIndexArtifact,
   noteIndexPath,
   sealNote,
@@ -23,7 +27,6 @@ import {
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runResume } from "../../src/application/resume-service.js";
-import { buildWorklineIndex, specConsumers } from "../../src/application/workline-index-service.js";
 import {
   type DecisionNote,
   NOTE_SCHEMA,
@@ -84,7 +87,8 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
   let env: FakeEnv;
   let paths: PathsService;
 
-  const board = () => buildWorklineIndex(fs, env, paths, { now: new Date("2026-08-16T12:00:00Z") });
+  const board = () =>
+    buildAgentWorkflowIndex(fs, env, paths, { now: new Date("2026-08-16T12:00:00Z") });
   /** La propuesta que `resume` hace para el plan fixture, sea cual sea la vía. */
   const resumeNext = async (): Promise<string> => {
     const outcome = await runResume(fs, env, paths, {

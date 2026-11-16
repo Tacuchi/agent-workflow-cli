@@ -1,5 +1,5 @@
 import { CORRELATIVE_SOURCE } from "../../domain/correlative.js";
-import { WORKLINE_FLOWS, type WorklineFlow } from "../capability/compose.js";
+import { AGENT_WORKFLOW_FLOWS, type AgentWorkflowFlow } from "../capability/compose.js";
 
 /**
  * A session name without its leading correlative: `028-x-plan-exec` → `x-plan-exec`.
@@ -20,9 +20,9 @@ export function sessionDescriptor(name: string): string {
  * session with exactly that descriptor, so the name IS the declaration. Longest
  * suffix first, so `-plan-exec` is never read as some shorter flow.
  */
-export function flowOfDescriptor(name: string): WorklineFlow | null {
+export function flowOfDescriptor(name: string): AgentWorkflowFlow | null {
   const descriptor = sessionDescriptor(name);
-  const flows = [...WORKLINE_FLOWS].sort((a, b) => b.length - a.length);
+  const flows = [...AGENT_WORKFLOW_FLOWS].sort((a, b) => b.length - a.length);
   const flow = flows.find((candidate) => descriptor.endsWith(`-${candidate}`));
   return flow !== undefined && descriptor.length > flow.length + 1 ? flow : null;
 }

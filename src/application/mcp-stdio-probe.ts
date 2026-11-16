@@ -4,7 +4,7 @@ import { StringDecoder } from "node:string_decoder";
 import { isDeepStrictEqual } from "node:util";
 import { MAX_TOOL_RESULT_BYTES } from "../domain/database-tools.js";
 
-/** The protocol revision used by the local Workline MCP server. */
+/** The protocol revision used by the local agent-workflow MCP server. */
 export const MCP_STDIO_PROBE_PROTOCOL_VERSION = "2025-06-18";
 
 /**

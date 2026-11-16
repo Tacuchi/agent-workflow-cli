@@ -266,8 +266,8 @@ describe("reglas de estado de hooks, compactación y memoria del host", () => {
 });
 
 describe("escritor MCP: un archivo distinto por host", () => {
-  const TEST_NODE = "/opt/workline/node";
-  const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
+  const TEST_NODE = "/opt/agent-workflow/node";
+  const TEST_ENTRYPOINT = "/opt/agent-workflow/dist/cli/main.js";
   let scopeDir: string;
   beforeAll(() => {
     scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-guard-"));

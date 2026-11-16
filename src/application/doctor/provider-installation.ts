@@ -49,23 +49,23 @@ function hostFinding(
   const evidence = [
     `estado del host: ${host.status}`,
     `runtime: ${host.runtime.state}${host.runtime.version === null ? "" : ` ${host.runtime.version}`}`,
-    `Workline instalado: ${host.workline_installed ? "sí" : "no"}`,
+    `agent-workflow instalado: ${host.agent_workflow_installed ? "sí" : "no"}`,
   ];
   const base = {
-    id: doctorFindingId(host.host, CATEGORY, "workline"),
+    id: doctorFindingId(host.host, CATEGORY, "agent-workflow"),
     host: host.host,
     category: CATEGORY,
     resource: { kind: "host", name: host.label, locator: host.target },
     evidence,
     ownership: "ours" as const,
   };
-  if (host.workline_installed && host.runtime.state === "missing") {
+  if (host.agent_workflow_installed && host.runtime.state === "missing") {
     return {
       ...base,
       state: "warning",
-      summary: `${host.label} tiene Workline instalado, pero su binario no responde: instalación contradictoria`,
+      summary: `${host.label} tiene agent-workflow instalado, pero su binario no responde: instalación contradictoria`,
       impact:
-        "el host no puede ejecutar los hooks ni los comandos de Workline hasta restaurar el runtime",
+        "el host no puede ejecutar los hooks ni los comandos de agent-workflow hasta restaurar el runtime",
       remediation: {
         kind: "manual",
         action: null,
@@ -77,8 +77,8 @@ function hostFinding(
     return {
       ...base,
       state: "healthy",
-      summary: `Workline está instalado en ${host.label} y su runtime responde`,
-      impact: "las capacidades de Workline se pueden invocar desde este host",
+      summary: `agent-workflow está instalado en ${host.label} y su runtime responde`,
+      impact: "las capacidades de agent-workflow se pueden invocar desde este host",
       remediation: { kind: "none", action: null, guidance: [] },
     };
   }
@@ -88,8 +88,8 @@ function hostFinding(
       ...base,
       proposal: { op: "self.install-skill", args: { target: host.target } },
       state: "warning",
-      summary: `${host.label} está en esta máquina y Workline no está instalado ahí`,
-      impact: "los comandos de Workline no existen en ese host hasta instalarlo",
+      summary: `${host.label} está en esta máquina y agent-workflow no está instalado ahí`,
+      impact: "los comandos de agent-workflow no existen en ese host hasta instalarlo",
       remediation: { kind: "manual", action: null, guidance },
     };
   }

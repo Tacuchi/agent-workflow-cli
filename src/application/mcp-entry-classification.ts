@@ -1,5 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import {
+  AGENT_WORKFLOW_MCP_ENTRY_NAME,
+  agentWorkflowMcpEntry,
+} from "../domain/agent-workflow-mcp-entry.js";
+import {
   type McpConnectionRef,
   type McpEntry,
   type McpEntryState,
@@ -9,7 +13,6 @@ import {
   ownReleaseVariantMcpEntry,
   previousReliableMcpEntry,
 } from "../domain/mcp-entry.js";
-import { WORKLINE_MCP_ENTRY_NAME, worklineMcpEntry } from "../domain/workline-mcp-entry.js";
 import type { McpEntrySnapshot } from "./mcp-host-reader.js";
 
 export interface McpEntryClassification {
@@ -115,5 +118,5 @@ function classifyShape(
 }
 
 function legacyElicitationEntry(host: McpHost, current: McpEntry): McpEntry | undefined {
-  return current.name === WORKLINE_MCP_ENTRY_NAME ? worklineMcpEntry(host) : undefined;
+  return current.name === AGENT_WORKFLOW_MCP_ENTRY_NAME ? agentWorkflowMcpEntry(host) : undefined;
 }

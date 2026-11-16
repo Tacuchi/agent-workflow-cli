@@ -8,7 +8,7 @@ import {
 export type { InstallTarget };
 export { HOST_INSTALL_TARGETS, SHARED_INSTALL_TARGETS };
 
-/** Per-host and shared roots into which the Workline bundle can be installed. */
+/** Per-host and shared roots into which the agent-workflow bundle can be installed. */
 export const TARGET_ROOTS: Record<InstallTarget, readonly string[]> = {
   claude: [".claude", "skills"],
   codex: [".codex", "skills"],

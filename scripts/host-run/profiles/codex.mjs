@@ -63,7 +63,7 @@ const profileTable = (realHome, siblingRoots = [], home = null) =>
     // The other hosts' disposable roots: their copied credentials and token files.
     ...siblingRoots.map((sib) => `${JSON.stringify(sib)} = "deny"`),
     '":slash_tmp" = "deny"',
-    // The disposable home's Workline state outside the workspace: `aw` asked to
+    // The disposable home's agent-workflow state outside the workspace: `aw` asked to
     // escalate for it in run 3. Only its registry paths are granted
     // (src/application/paths-service.ts: dev/, lib/, agent-workflow/,
     // skills.toml, user-config.md) — never logs/, which a sandboxed command
@@ -86,7 +86,7 @@ export default {
   paneArgs: ["--no-daemon"],
   limitations: [
     "runs with --no-daemon: no shared background server is installed or started in the disposable home",
-    "a sandboxed command may write the disposable home's Workline registry (.workflow/dev, lib, agent-workflow, skills.toml, user-config.md), never .workflow/logs, where the hook and MCP evidence is read",
+    "a sandboxed command may write the disposable home's agent-workflow registry (.workflow/dev, lib, agent-workflow, skills.toml, user-config.md), never .workflow/logs, where the hook and MCP evidence is read",
     "reads and writes of your real HOME are denied through a codex permission profile (default_permissions = hostrun); its config shape loads in codex 0.157.1 (`codex features list`, config-only) but the enforcement is unverified against a live codex run — until then, treat codex as able to read any file your user can",
     "prefix rules cannot match --force anywhere; only its fallback prefixes are denied",
     "the other hosts' disposable roots (copied credentials, token files) are denied to it",

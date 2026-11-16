@@ -3,14 +3,14 @@ import type { ArchivePort } from "../../ports/archive.js";
 import type { EnvPort } from "../../ports/env.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import type { GitPort } from "../../ports/git.js";
+import {
+  type AgentWorkflowIndex,
+  type IndexedPlan,
+  buildAgentWorkflowIndex,
+  planIsPending,
+} from "../agent-workflow-index-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
-import {
-  type IndexedPlan,
-  type WorklineIndex,
-  buildWorklineIndex,
-  planIsPending,
-} from "../workline-index-service.js";
 import { catalogRelative, inside } from "./paths.js";
 
 export interface CompactionDeps {
@@ -94,7 +94,7 @@ async function walk(deps: CompactionDeps, path: string, entries: InventoryEntry[
  * superseded, or one whose every plan is history. Derived from the documents
  * model of the board, which never opens a session.
  */
-function historicalDocuments(index: WorklineIndex): Map<string, string> {
+function historicalDocuments(index: AgentWorkflowIndex): Map<string, string> {
   const out = new Map<string, string>();
   const historical = (plan: IndexedPlan) =>
     plan.plan_state === "abandoned" || (plan.plan_state === "done" && !planIsPending(plan));
@@ -122,7 +122,7 @@ async function classify(deps: CompactionDeps, entries: InventoryEntry[], limits:
     limits.push("Procedencia no evaluada: enlaces o controles fuera del límite de lectura");
     return [];
   }
-  const index = await buildWorklineIndex(deps.fs, deps.env, deps.paths);
+  const index = await buildAgentWorkflowIndex(deps.fs, deps.env, deps.paths);
   const historical = historicalDocuments(index);
   const candidates = entries.filter((e) => historical.has(e.path));
   const referenced = await manualReferences(deps, entries, candidates, limits);

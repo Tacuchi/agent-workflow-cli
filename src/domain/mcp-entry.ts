@@ -51,7 +51,7 @@ export interface McpEntryLaunchOptions {
  * Ownership is deliberately structural: a server bearing the same name is not
  * ours unless this entire generated representation matches. Keeping the shape
  * next to the entry contract lets writers and read-only state probes enforce
- * the same rule without each inventing a partial "looks like Workline" test.
+ * the same rule without each inventing a partial "looks like agent-workflow" test.
  */
 export function mcpEntryShapeForHost(host: McpHost, entry: McpEntry): Record<string, unknown> {
   switch (host) {
@@ -90,7 +90,7 @@ export function mcpEntryShapeForHost(host: McpHost, entry: McpEntry): Record<str
 
 export interface McpWriteOpts {
   dryRun?: boolean;
-  /** A migration may replace this exact previously published Workline shape only. */
+  /** A migration may replace this exact previously published agent-workflow shape only. */
   replaceLegacy?: McpEntry;
 }
 
@@ -322,7 +322,7 @@ export function previousReliableMcpEntry(entry: McpEntry): McpEntry | undefined 
  * on-disk entry that differs from the current one in nothing else was written
  * by this very install: same absolute launcher, same entrypoint, same
  * namespace, instance, host and scope. Treating it as somebody else's server
- * would make every upgrade orphan the entries Workline itself wrote.
+ * would make every upgrade orphan the entries agent-workflow itself wrote.
  *
  * Returns the entry as it sits on disk — the exact shape a writer may replace
  * or retire — or `undefined` when anything beyond that value differs. It is
@@ -384,7 +384,7 @@ export function ownReleaseVariantMcpEntry(
 }
 
 /**
- * Exact historic Workline descriptors that the migration is allowed to own.
+ * Exact historic agent-workflow descriptors that the migration is allowed to own.
  * This deliberately does not include generic `npx @bytebase/dbhub` entries:
  * those are indistinguishable from a person's independently managed server.
  */
@@ -419,7 +419,7 @@ export function knownLegacyMcpEntries(instance: McpInstance, dsnVar: string): Mc
 /**
  * Published connection names that predate the qtc-* namespace. They are not a
  * general rename mechanism: migration may retire only these exact historic
- * aliases after proving the descriptor is Workline-owned.
+ * aliases after proving the descriptor is agent-workflow-owned.
  */
 export function knownLegacyMcpInstanceAliases(instance: McpInstance): readonly McpInstance[] {
   switch (normalizeMcpInstance(instance)) {

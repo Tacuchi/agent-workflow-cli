@@ -1,11 +1,11 @@
 import { join } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { buildAgentWorkflowIndex } from "./agent-workflow-index-service.js";
 import { approvalDigest, guardUnchanged, readDigestOf, textDigest } from "./doc-flow/doc-digest.js";
 import { specStatusOf, withPlanState } from "./doc-flow/doc-flow-service.js";
 import { parsePlanStatus } from "./parsers/plan-status.js";
 import type { PathsService } from "./paths-service.js";
-import { buildWorklineIndex } from "./workline-index-service.js";
 
 export interface DiscardPreview {
   action: "prepare";
@@ -112,7 +112,7 @@ async function locate(
 ): Promise<
   DiscardResult<{ kind: "spec" | "plan"; file: string; from: string; untouched: string[] }>
 > {
-  const index = await buildWorklineIndex(fs, env, paths);
+  const index = await buildAgentWorkflowIndex(fs, env, paths);
   const [prefix, key] = target.includes(":") ? target.split(":", 2) : [null, target];
   const plan = index.plans.find(
     (item) =>

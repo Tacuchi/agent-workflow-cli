@@ -27,11 +27,11 @@ export type SourceBoundaryCode =
   | "PLAN_SOURCE_LOCAL_PROOF_MISSING"
   | "PLAN_FINAL_VALIDATION_INCOMPLETE"
   | "PLAN_FINAL_VALIDATION_SPLIT"
-  | "WORKLINE_CHECKOUT_PROOF_MISSING"
-  | "WORKLINE_CHECKOUT_PROOF_INVALID"
-  | "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID"
-  | "WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH"
-  | "WORKLINE_CHECKOUT_PROOF_STALE";
+  | "CHECKOUT_PROOF_MISSING"
+  | "CHECKOUT_PROOF_INVALID"
+  | "CHECKOUT_PROOF_SHAPE_INVALID"
+  | "CHECKOUT_PROOF_ROOT_MISMATCH"
+  | "CHECKOUT_PROOF_STALE";
 
 export interface SourceBoundaryFailure {
   code: SourceBoundaryCode;
@@ -686,7 +686,7 @@ export function validateCheckoutProof(
 ): SourceBoundaryFailure | null {
   if (proof === undefined) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_MISSING",
+      code: "CHECKOUT_PROOF_MISSING",
       message: "la evidencia source-bounded debe incluir su CheckoutProof local",
     };
   }
@@ -699,7 +699,7 @@ export function validateCheckoutProof(
   const current = states.find((state) => state.source === proof.source);
   if (current === undefined) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "CHECKOUT_PROOF_INVALID",
       message:
         `la prueba declara la fuente '${proof.source}', que no pertenece al ` +
         `checkout adquirido (elegibles: ${eligibleSources(states)})`,
@@ -711,13 +711,13 @@ export function validateCheckoutProof(
     resolve(proof.root) !== resolve(current.root)
   ) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH",
+      code: "CHECKOUT_PROOF_ROOT_MISMATCH",
       message: `la prueba se midió sobre ${proof.root} y el checkout es ${current.root}`,
     };
   }
   if (current.digest !== proof.checkout_digest) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_STALE",
+      code: "CHECKOUT_PROOF_STALE",
       message: staleMessage(current),
     };
   }
@@ -882,14 +882,14 @@ function unknownSources(
 function proofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
   if (proof.source.trim().length === 0 || proof.checkout_digest.trim().length === 0) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
+      code: "CHECKOUT_PROOF_SHAPE_INVALID",
       message: "la prueba debe declarar source y checkout_digest no vacíos",
     };
   }
   const cwd = proof.relative_cwd === "." ? { ok: true } : checkSafeRelativePath(proof.relative_cwd);
   if (!cwd.ok) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "CHECKOUT_PROOF_INVALID",
       message: `relative_cwd '${proof.relative_cwd}' no es una ruta segura dentro del checkout`,
     };
   }
@@ -899,7 +899,7 @@ function proofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
 function commandProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
   if (!("program" in proof.invocation)) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
+      code: "CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba command debe declarar una invocación command",
     };
   }
@@ -909,14 +909,14 @@ function commandProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null
     !proof.invocation.args.every((arg) => typeof arg === "string")
   ) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
+      code: "CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba command debe declarar program y args de texto",
     };
   }
   const remote = remoteLocatorIn([proof.invocation.program, ...proof.invocation.args]);
   if (remote === null) return null;
   return {
-    code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+    code: "CHECKOUT_PROOF_INVALID",
     message: `una prueba command no puede invocar la superficie externa '${remote}'`,
   };
 }
@@ -924,7 +924,7 @@ function commandProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null
 function inspectionProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
   if (!("artifact" in proof.invocation)) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
+      code: "CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba inspection debe declarar una invocación inspection",
     };
   }
@@ -933,21 +933,21 @@ function inspectionProofFailure(proof: CheckoutProof): SourceBoundaryFailure | n
     proof.invocation.artifact.trim().length === 0
   ) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID",
+      code: "CHECKOUT_PROOF_SHAPE_INVALID",
       message: "una prueba inspection debe declarar su artifact",
     };
   }
   const artifact = checkSafeRelativePath(proof.invocation.artifact);
   if (!artifact.ok) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "CHECKOUT_PROOF_INVALID",
       message: `artifact '${proof.invocation.artifact}' no es una ruta segura dentro del checkout`,
     };
   }
   const remote = remoteLocatorIn([artifact.path]);
   if (remote !== null) {
     return {
-      code: "WORKLINE_CHECKOUT_PROOF_INVALID",
+      code: "CHECKOUT_PROOF_INVALID",
       message: `una prueba inspection no puede señalar la superficie externa '${remote}'`,
     };
   }

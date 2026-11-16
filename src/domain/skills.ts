@@ -1,11 +1,11 @@
 /**
- * Workline's overview binding in the skills cascade.
+ * agent-workflow's overview binding in the skills cascade.
  *
  * The overview role → skill binding is resolved from `skills.toml`
  * (cascade: built-in default → global → hub). See skills-resolver-service.
  *
  * Generic, stack-agnostic conventions are standalone skills discovered by the
- * host; Workline never binds a specific one or credits it by installation.
+ * host; agent-workflow never binds a specific one or credits it by installation.
  */
 export const SKILL_ROLES = ["overview"] as const;
 
@@ -34,5 +34,5 @@ export function isSkillRole(value: string): value is SkillRole {
   return ROLE_SET.has(value);
 }
 
-/** Names the Workline bundle itself retired; unknown plugin skills are never inferred retired. */
-export const RETIRED_WORKLINE_SKILLS: ReadonlySet<string> = new Set(["agent-workflow:rules"]);
+/** Names the agent-workflow bundle itself retired; unknown plugin skills are never inferred retired. */
+export const RETIRED_AGENT_WORKFLOW_SKILLS: ReadonlySet<string> = new Set(["agent-workflow:rules"]);

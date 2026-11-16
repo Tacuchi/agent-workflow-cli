@@ -88,7 +88,7 @@ export interface McpReceiptIdentity {
 }
 
 export interface RegisterMcpHostReceipt extends McpReceiptIdentity {
-  worklineVersion: string;
+  agentWorkflowVersion: string;
   descriptor: McpReceiptDescriptor;
   /** Injection point for deterministic callers; defaults to the current UTC instant. */
   registeredAt?: string;
@@ -171,12 +171,12 @@ export class McpHostReceiptService {
   async register(input: RegisterMcpHostReceipt): Promise<McpHostReceipt> {
     const identity = normalizeIdentity(input);
     const descriptorDigest = digestMcpReceiptDescriptor(input.descriptor);
-    const worklineVersion = requireVersion(input.worklineVersion);
+    const agentWorkflowVersion = requireVersion(input.agentWorkflowVersion);
     const registeredAt = requireInstant(input.registeredAt ?? new Date().toISOString());
     const receipt: McpHostReceipt = {
       schema_version: MCP_HOST_RECEIPT_SCHEMA_VERSION,
       ...identity,
-      agent_workflow_version: worklineVersion,
+      agent_workflow_version: agentWorkflowVersion,
       descriptor_digest: descriptorDigest,
       registered_at: registeredAt,
       reload_required: true,
@@ -403,7 +403,7 @@ function parseReceipt(value: unknown): McpHostReceipt {
     scope: storedScope(value.scope),
     connection: value.connection as string,
   });
-  const worklineVersion = requireVersion(
+  const agentWorkflowVersion = requireVersion(
     value.agent_workflow_version ?? value[RETIRED_RECEIPT_KEY],
   );
   const descriptorDigest = requireDigest(value.descriptor_digest);
@@ -417,7 +417,7 @@ function parseReceipt(value: unknown): McpHostReceipt {
   const base: McpHostReceipt = {
     schema_version: MCP_HOST_RECEIPT_SCHEMA_VERSION,
     ...identity,
-    agent_workflow_version: worklineVersion,
+    agent_workflow_version: agentWorkflowVersion,
     descriptor_digest: descriptorDigest,
     registered_at: registeredAt,
     reload_required: value.reload_required,
@@ -565,7 +565,7 @@ function requireVersion(value: unknown): string {
   if (typeof value !== "string" || value.trim().length === 0 || value.length > 128) {
     throw new McpHostReceiptError(
       "MCP_RECEIPT_INVALID",
-      "La versión Workline del recibo MCP es inválida.",
+      "La versión agent-workflow del recibo MCP es inválida.",
     );
   }
   assertSecretFree(value);

@@ -36,7 +36,7 @@ In plan mode do **not** call `prepare` (it reserves a folder): describe the orig
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw release-pass list` — `--environment` reads linked/applied bundles. `--catalog <connection>` optionally inspects the target catalog through Workline's read-only PostgreSQL connection; unreachable or missing objects block publication. Without it, no database connection opens.
+- `aw release-pass list` — `--environment` reads linked/applied bundles. `--catalog <connection>` optionally inspects the target catalog through aw's read-only PostgreSQL connection; unreachable or missing objects block publication. Without it, no database connection opens.
 - `aw next-number docs/scripts` — deterministic numbering; it also creates `docs/scripts` when missing, which is what makes destination resolution a CLI guarantee. In plan mode, `--dry-run`.
 
 **Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):

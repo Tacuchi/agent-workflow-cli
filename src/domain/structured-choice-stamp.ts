@@ -104,7 +104,7 @@ export function renderStructuredChoiceStamp(spec: HarnessSpec): string {
     // missing (codex: "never write a multiple choice question as a textual
     // assistant message") — and prose silently drops the alternatives.
     lines.push(
-      "Even where this host's own guidance prefers a plain-text question, a Workline boundary still presents every option.",
+      "Even where this host's own guidance prefers a plain-text question, a agent-workflow boundary still presents every option.",
     );
   } else {
     const via = mcpClause(binding.mcpElicitation);

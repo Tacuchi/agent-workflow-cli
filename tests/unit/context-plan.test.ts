@@ -196,12 +196,12 @@ describe("context-plan — a half-updated install degrades, and says so once", (
   it("widens to the full profile for a signal this bundle does not know", async () => {
     const plan = await runContextPlan(fs, {
       command: "quick",
-      signals: ["a-signal-from-a-newer-workline"],
+      signals: ["a-signal-from-a-newer-agent-workflow"],
       root: BUNDLE_ROOT,
     });
     expect(plan.degraded).toBe(true);
     expect(plan.profile).toBe("safe");
-    expect(plan.notice).toMatch(/a-signal-from-a-newer-workline/);
+    expect(plan.notice).toMatch(/a-signal-from-a-newer-agent-workflow/);
   });
 
   it("says the degradation once, with its cause and its impact", async () => {
@@ -285,7 +285,7 @@ describe("profile selection — capabilities and evidence, never a host name", (
     const manifest = await loadManifest(fs, BUNDLE_ROOT);
     const plan = await runContextPlan(fs, {
       command: "spec-refine",
-      signals: ["a-signal-from-a-newer-workline"],
+      signals: ["a-signal-from-a-newer-agent-workflow"],
       root: BUNDLE_ROOT,
     });
     expect(plan.profile).toBe("safe");

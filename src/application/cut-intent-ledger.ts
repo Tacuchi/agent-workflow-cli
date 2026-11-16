@@ -19,12 +19,16 @@
 
 import { join } from "node:path";
 import {
+  type AgentWorkflowNodeId,
+  formatNodeId,
+  isAgentWorkflowKind,
+} from "../domain/agent-workflow-node.js";
+import {
   type CutIntent,
   type CutIntentReading,
   assertDeclarable,
   positionOf,
 } from "../domain/cut-intent.js";
-import { type WorklineNodeId, formatNodeId, isWorklineKind } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
 
@@ -116,13 +120,13 @@ function parseEvent(line: string): CutIntentEvent | null {
   return value as CutIntentEvent;
 }
 
-function isNode(value: unknown): value is WorklineNodeId {
+function isNode(value: unknown): value is AgentWorkflowNodeId {
   if (typeof value !== "object" || value === null) return false;
-  const node = value as Partial<WorklineNodeId>;
-  return isWorklineKind(node.kind) && typeof node.key === "string" && node.key.length > 0;
+  const node = value as Partial<AgentWorkflowNodeId>;
+  return isAgentWorkflowKind(node.kind) && typeof node.key === "string" && node.key.length > 0;
 }
 
-function isNodeList(value: unknown): value is WorklineNodeId[] {
+function isNodeList(value: unknown): value is AgentWorkflowNodeId[] {
   return Array.isArray(value) && value.every(isNode);
 }
 
@@ -136,7 +140,7 @@ function isNodeList(value: unknown): value is WorklineNodeId[] {
  */
 export function currentIntentOf(
   events: readonly CutIntentEvent[],
-  spec: WorklineNodeId,
+  spec: AgentWorkflowNodeId,
 ): CutIntentEvent | null {
   const key = formatNodeId(spec);
   let current: CutIntentEvent | null = null;
@@ -157,13 +161,13 @@ export function currentIntentOf(
  */
 export function currentIntentForPlan(
   events: readonly CutIntentEvent[],
-  plan: WorklineNodeId,
+  plan: AgentWorkflowNodeId,
 ): CutIntentEvent | null {
   const specs = new Set(events.map((event) => formatNodeId(event.intent.spec)));
   const key = formatNodeId(plan);
   for (const spec of specs) {
     const [kind, ...rest] = spec.split(":");
-    if (!isWorklineKind(kind)) continue;
+    if (!isAgentWorkflowKind(kind)) continue;
     const current = currentIntentOf(events, { kind, key: rest.join(":") });
     if (current === null) continue;
     const mentioned = [...current.intent.order, ...current.intent.deferred].some(
@@ -183,7 +187,7 @@ export function currentIntentForPlan(
  * a cut exists and simply does not mention this plan. Collapsing them into an
  * empty list is what would let a caller fill the silence with the correlative.
  */
-export function readingForPlan(read: CutIntentRead, plan: WorklineNodeId): CutIntentReading {
+export function readingForPlan(read: CutIntentRead, plan: AgentWorkflowNodeId): CutIntentReading {
   const current = currentIntentForPlan(read.events, plan);
   if (current === null) {
     if (read.unreadable > 0) {

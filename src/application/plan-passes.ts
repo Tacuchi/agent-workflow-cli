@@ -1,5 +1,5 @@
+import type { AgentWorkflowNodeId } from "../domain/agent-workflow-node.js";
 import { isPlanHandoffHeading } from "../domain/plan-handoff.js";
-import type { WorklineNodeId } from "../domain/workline-node.js";
 import { scanMarkdown } from "./markdown.js";
 import { type DerivedPass, productionStandingOf } from "./release-pass-ledger.js";
 
@@ -62,7 +62,7 @@ function namesNoPass(declaration: string): boolean {
   return !VERSION_WORD.test(declaration) && /\s/.test(declaration);
 }
 
-function linksPlan(pass: DerivedPass, plan: WorklineNodeId): boolean {
+function linksPlan(pass: DerivedPass, plan: AgentWorkflowNodeId): boolean {
   return pass.pass.plans.some((node) => node.kind === "plan" && node.key === plan.key);
 }
 
@@ -70,7 +70,7 @@ function linksPlan(pass: DerivedPass, plan: WorklineNodeId): boolean {
 export function standingOfPlanPasses(
   declarations: readonly Pick<DeclaredPlanPass, "environment" | "version">[],
   passes: readonly DerivedPass[],
-  plan: WorklineNodeId,
+  plan: AgentWorkflowNodeId,
 ): DeclaredPlanPass[] {
   return declarations.map((declaration) => {
     const named = passes.filter(

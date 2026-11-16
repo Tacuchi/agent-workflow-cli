@@ -249,8 +249,8 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
     // renglones los deja mentir a los dos.
     expect(rendered).toEqual([
       "Hosts",
-      `→ ${hostLabel("claude-code")} · ready · runtime available 1.2.3 · Workline instalado`,
-      `  ${hostLabel("codex")} · degraded · runtime missing · Workline ausente`,
+      `→ ${hostLabel("claude-code")} · ready · runtime available 1.2.3 · agent-workflow instalado`,
+      `  ${hostLabel("codex")} · degraded · runtime missing · agent-workflow ausente`,
       // Los ausentes se enumeran, nunca se diagnostican.
       "  sin rastro en esta máquina: kimi",
     ]);
@@ -278,9 +278,9 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
     };
     expect(block(human(report), "Hosts")).toEqual([
       "Hosts",
-      `  ${hostLabel("warp")} · ready · runtime available 1.2.3 · Workline instalado`,
+      `  ${hostLabel("warp")} · ready · runtime available 1.2.3 · agent-workflow instalado`,
       "    hooks unsupported — this host has no hook system",
-      `→ ${hostLabel("oz")} · ready · runtime available 1.2.3 · Workline instalado`,
+      `→ ${hostLabel("oz")} · ready · runtime available 1.2.3 · agent-workflow instalado`,
       "    mcp degraded — no MCP config file: this host takes servers through a launch flag",
       "    compaction unsupported — CHECKPOINT + resume",
     ]);
@@ -340,7 +340,7 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
     expect(renderedIds).toEqual([
       "claude-code/installation-hosts/bundle",
       "claude-code/installation-hosts/runtime",
-      "claude-code/mcps/workline",
+      "claude-code/mcps/agent-workflow",
       "claude-code/skills/replica",
       "codex/installation-hosts/hooks",
       "codex/installation-hosts/runtime",
@@ -372,7 +372,7 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
       "Resumen: 3 sano · 2 advertencia · 1 bloqueo · 4 no verificado · 10 accionable",
     );
     expect(text).toContain(
-      "Veredicto: salida 1 — hay 1 hallazgo(s) bloqueante(s): claude-code/mcps/workline",
+      "Veredicto: salida 1 — hay 1 hallazgo(s) bloqueante(s): claude-code/mcps/agent-workflow",
     );
   });
 
@@ -418,7 +418,7 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
       "  ! claude-code/mcps/manual-sin-guia — manual-sin-guia quedó en estado warning",
       "      impacto: lo que cuesta: manual-sin-guia",
       "      evidencia: leído de ~/.config/claude-code/manual-sin-guia",
-      "      propiedad: de Workline · remediación: manual",
+      "      propiedad: de agent-workflow · remediación: manual",
     ]);
     expect(blockOf("claude-code/mcps/sin-accion-segura")).toEqual([
       "  ! claude-code/mcps/sin-accion-segura — sin-accion-segura quedó en estado warning",

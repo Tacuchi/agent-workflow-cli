@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
-import type { WorklineFlow } from "../../src/application/capability/compose.js";
+import type { AgentWorkflowFlow } from "../../src/application/capability/compose.js";
 import { effectsOfTransition, resolveBoundary } from "../../src/application/flow/advance.js";
 import { advanceFlow } from "../../src/application/flow/flow-service.js";
 import { startFlow } from "../../src/application/flow/flow-start.js";
@@ -22,8 +22,8 @@ import {
 import type { FlowDirective } from "../../src/domain/flow/directive.js";
 import type { FlowRunState } from "../../src/domain/flow/run-state.js";
 import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
 import { batchReview } from "./batch-review.js";
 import { RecordingGit } from "./fake-git.js";
 import { NodeFileSystem } from "./real-fs.js";
@@ -50,7 +50,7 @@ import { testExecutor } from "./test-executor.js";
  */
 
 export interface AgentCallCount {
-  flow: WorklineFlow;
+  flow: AgentWorkflowFlow;
   opening: number;
   submits: number;
   commands: number;
@@ -60,7 +60,7 @@ export interface AgentCallCount {
   stops: { transition: string; kind: string; calls: number }[];
 }
 
-export const COUNTED_FLOWS: readonly WorklineFlow[] = [
+export const COUNTED_FLOWS: readonly AgentWorkflowFlow[] = [
   "spec-refine",
   "plan-new",
   "plan-refine",
@@ -175,7 +175,7 @@ ${batches.join("\n")}
 }
 
 /** The session each flow runs in, and the documents it starts from. */
-const SESSIONS: Record<WorklineFlow, string> = {
+const SESSIONS: Record<AgentWorkflowFlow, string> = {
   "spec-new": "001-medida-spec-new",
   "spec-refine": "001-medida-spec-refine",
   "plan-new": "001-medida-plan-new",
@@ -199,7 +199,7 @@ type Resolved = ReturnType<typeof resolveBoundary>;
 
 /** One run of a flow over its own fresh workspace, answered as a scripted agent. */
 export interface MeasuredRun {
-  flow: WorklineFlow;
+  flow: AgentWorkflowFlow;
   root: string;
   paths: PathsService;
   session: string;
@@ -234,7 +234,7 @@ function completesAnswers(directive: FlowDirective): boolean {
 
 const fs = new NodeFileSystem();
 
-async function seed(root: string, paths: PathsService, flow: WorklineFlow, phases: number) {
+async function seed(root: string, paths: PathsService, flow: AgentWorkflowFlow, phases: number) {
   const session = join(paths.cwdSessionsDir(), SESSIONS[flow]);
   await mkdir(join(session, "scripts"), { recursive: true });
   await writeFile(
@@ -250,7 +250,7 @@ async function seed(root: string, paths: PathsService, flow: WorklineFlow, phase
   if (flow === "plan-exec") await writeFile(join(root, PLAN_DOC), execPlan(phases), "utf8");
   await writeFile(
     join(root, ".agent-workflow", "agent-workflow.json"),
-    worklineMarkerContent("agent-workflow"),
+    agentWorkflowMarkerContent("agent-workflow"),
   );
   // The declared source exists, so the plan's aliases resolve.
   await mkdir(join(root, ALIAS), { recursive: true });
@@ -318,7 +318,7 @@ function proofSources(state: FlowRunState, stopped: FlowDecision): string[] {
 }
 
 export async function openMeasuredRun(
-  flow: WorklineFlow,
+  flow: AgentWorkflowFlow,
   options: WalkOptions = {},
 ): Promise<MeasuredRun> {
   const root = await mkdtemp(join(tmpdir(), `aw-calls-${flow}-`));
@@ -448,7 +448,7 @@ const WRITES_THE_DELIVERABLE: ReadonlySet<string> = new Set([
 
 /** Walk one fresh run of `flow` to its end and price every stop. */
 export async function countAgentCalls(
-  flow: WorklineFlow,
+  flow: AgentWorkflowFlow,
   options: WalkOptions = {},
 ): Promise<AgentCallCount> {
   const run = await openMeasuredRun(flow, options);
@@ -498,7 +498,7 @@ export async function countAgentCalls(
 }
 
 function assertBoundaryAdvanced(
-  flow: WorklineFlow,
+  flow: AgentWorkflowFlow,
   transition: string,
   directive: FlowDirective,
 ): void {

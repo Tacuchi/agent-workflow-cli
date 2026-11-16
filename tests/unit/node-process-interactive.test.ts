@@ -40,7 +40,7 @@ describe("NodeProcess — la corrida que hereda la terminal", () => {
     // rechazara, un programa ausente y un flujo que la persona canceló darían
     // dos caminos distintos para la misma respuesta, y el `catch` que hiciera
     // falta terminaría siendo el único lugar que decide.
-    const result = await proc.runInteractive("no-existe-este-binario-de-workline", []);
+    const result = await proc.runInteractive("no-existe-este-binario-de-agent-workflow", []);
 
     expect(result.code).toBe(127);
   });

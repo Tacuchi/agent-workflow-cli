@@ -57,9 +57,9 @@ export async function registerMcpSetupReceipts(
   // user-global receipt identity being shared by separate hubs.
   if (result.dry_run || input.scope !== "global") return buckets;
   const receipts = openMcpHostReceiptService(paths);
-  const worklineVersion = readPackageVersion();
+  const agentWorkflowVersion = readPackageVersion();
   for (const write of [...result.applied, ...result.skipped]) {
-    await registerSetupWrite(receipts, input, result, write, worklineVersion, buckets);
+    await registerSetupWrite(receipts, input, result, write, agentWorkflowVersion, buckets);
   }
   return buckets;
 }
@@ -69,7 +69,7 @@ async function registerSetupWrite(
   input: McpSetupInput,
   result: McpSetupResult,
   write: McpSetupResult["applied"][number],
-  worklineVersion: string,
+  agentWorkflowVersion: string,
   buckets: ReceiptBuckets,
 ): Promise<void> {
   if (!isEligibleReceiptWrite(write)) return;
@@ -88,7 +88,7 @@ async function registerSetupWrite(
       host: write.host,
       scope: input.scope,
       connection: connection.name,
-      worklineVersion,
+      agentWorkflowVersion,
       descriptor: persisted.descriptor,
     });
     buckets.registered.push({

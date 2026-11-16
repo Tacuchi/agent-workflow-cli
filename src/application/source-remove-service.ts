@@ -3,8 +3,8 @@ import type { FileSystemPort } from "../ports/file-system.js";
 import { runHubBlockUpsertWrite } from "./hub-block-upsert-service.js";
 import { writeHubLocalConfig } from "./hub-local-config.js";
 import {
-  type WorklineMaterialization,
-  ensureWorklineMaterialized,
+  type AgentWorkflowMaterialization,
+  ensureAgentWorkflowMaterialized,
 } from "./hub-materialization-service.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { type HubFuente, readHubBlock } from "./parsers/hub-block.js";
@@ -19,8 +19,8 @@ export interface RemoveSourceDeps {
 export interface RemoveSourceResult {
   alias: string;
   path: string;
-  /** Runtime receipt when this removal materialized an implicit Workline root. */
-  materialization?: WorklineMaterialization;
+  /** Runtime receipt when this removal materialized an implicit agent-workflow root. */
+  materialization?: AgentWorkflowMaterialization;
 }
 
 export interface RemoveSourceError {
@@ -57,7 +57,7 @@ export async function removeSource(
   // FileSystemPort guard. Resolve the target first, then materialize before its
   // first possible mutation (and before the ensuing block rewrite), retaining
   // the receipt in this operation's result.
-  const materialization = await ensureWorklineMaterialized(fs, paths);
+  const materialization = await ensureAgentWorkflowMaterialized(fs, paths);
 
   // 2. Remove multi-root visibility (claude/codex/warp/oz). Idempotent per host.
   if (fuente.path !== null) await runMultiroot(fs, env, paths, "detach", { paths: [fuente.path] });

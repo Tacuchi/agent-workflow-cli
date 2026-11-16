@@ -396,7 +396,7 @@ export interface RunArchive {
   counters: string | null;
 }
 
-const ARCHIVE_SCHEMA = "workline.flow-run-archive/v1";
+const ARCHIVE_SCHEMA = "agent-workflow.flow-run-archive/v1";
 
 /**
  * Archive the run's registry and its counter, and seat a new run — one lock.

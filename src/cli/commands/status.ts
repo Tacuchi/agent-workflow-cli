@@ -1,14 +1,14 @@
 import {
-  type PipelineItem,
-  type StatusOutput,
-  runStatusCommand,
-} from "../../application/status-service.js";
-import {
   type IndexedPlan,
   type IndexedSpec,
   planPresentation,
   specDetail,
-} from "../../application/workline-index-service.js";
+} from "../../application/agent-workflow-index-service.js";
+import {
+  type PipelineItem,
+  type StatusOutput,
+  runStatusCommand,
+} from "../../application/status-service.js";
 import type { CommandResult } from "../../domain/types.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import type { CliCommand, HumanRenderContext } from "../registry.js";

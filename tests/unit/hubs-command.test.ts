@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 
 /** `aw hubs` through the binary (plan 088 F2). Run after `npm run build`. */
 
@@ -24,7 +24,7 @@ function fixture() {
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
     writeFileSync(
       join(path, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
     return path;
   };

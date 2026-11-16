@@ -99,11 +99,11 @@ function hooksArmedFinding(host: string, report: HooksArmedReport): DoctorFindin
     resource: { kind: "hooks", name: report.label, locator: report.path },
     state: report.armed ? "healthy" : "warning",
     summary: report.armed
-      ? `los hooks de Workline están armados en ${report.label}`
-      : `los hooks de Workline no están armados en ${report.label}`,
+      ? `los hooks de agent-workflow están armados en ${report.label}`
+      : `los hooks de agent-workflow no están armados en ${report.label}`,
     impact: report.armed
-      ? "el host ejecuta los hooks que Workline instala"
-      : "el host no dispara los hooks de Workline: la continuidad entre turnos se degrada",
+      ? "el host ejecuta los hooks que agent-workflow instala"
+      : "el host no dispara los hooks de agent-workflow: la continuidad entre turnos se degrada",
     evidence: [`archivo inspeccionado: ${report.path}`],
     ownership: "ours",
     remediation: report.armed
@@ -177,7 +177,7 @@ function retiredHookFinding(
     category: CATEGORY,
     resource: { kind: "hooks", name: report.label, locator: report.path },
     state: "blocking",
-    summary: `${retired.length} hook(s) de Workline en ${report.label} llaman a un comando que la plantilla vigente ya no usa`,
+    summary: `${retired.length} hook(s) de agent-workflow en ${report.label} llaman a un comando que la plantilla vigente ya no usa`,
     impact:
       "el host sigue llamando a un comando que la plantilla vigente ya no tiene: un nombre retirado sale con error en cada evento",
     evidence: retired.map((command) => `comando retirado: ${command} (en ${report.path})`),

@@ -1,7 +1,7 @@
 ---
 name: quick-loop
 description: >-
-  The Workline lightweight shortcut: solves a scoped task (fix, small
+  The aw lightweight shortcut: solves a scoped task (fix, small
   tweak) straight from the prompt, with minimal ceremony and a single commit.
   Heir of the chassis (loops/CHASSIS.md + CODE-POLICIES.md). Deltas: no
   plan-doc (the prompt IS the task), git as its only record, an

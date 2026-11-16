@@ -7,7 +7,7 @@ import { runHubsStatus } from "../../src/application/hubs-status-service.js";
 import { hubsCommand } from "../../src/cli/commands/hubs.js";
 import { statusNotices } from "../../src/cli/commands/status.js";
 import type { FileSystemPort } from "../../src/ports/file-system.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 /** `aw hubs status` over a registry with one hub of each state (plan 088 F3). */
@@ -27,7 +27,7 @@ function fixture() {
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
     writeFileSync(
       join(path, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
     return path;
   };

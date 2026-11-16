@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WORKLINE_FLOWS } from "../../src/application/capability/compose.js";
+import { AGENT_WORKFLOW_FLOWS } from "../../src/application/capability/compose.js";
 import {
   type SemanticRequest,
   buildSemanticRequest,
@@ -880,7 +880,7 @@ describe("sin tercer protocolo paralelo (AC-COMP-01)", () => {
   });
 
   it("los nombres e invocaciones públicas siguen intactos y 'flow' es uno más", () => {
-    expect([...WORKLINE_FLOWS]).toEqual([
+    expect([...AGENT_WORKFLOW_FLOWS]).toEqual([
       "spec-refine",
       "plan-new",
       "plan-refine",

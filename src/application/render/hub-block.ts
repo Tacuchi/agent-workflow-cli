@@ -35,7 +35,7 @@ export interface RenderHubBlockInput {
   preservedLines?: PreservedLine[];
   /** Path used in "Histórico:"; absent when the record has not been created. */
   historicoPath?: string;
-  /** Markers used to wrap the block. Defaults to the Workline hub block. */
+  /** Markers used to wrap the block. Defaults to the agent-workflow hub block. */
   markers?: HubBlockMarkers;
 }
 
@@ -90,7 +90,7 @@ export function renderHubBlock(input: RenderHubBlockInput): string {
     "",
     "## agent-workflow",
     "",
-    [...orientationLines(namespace), ...slotLines(kept, "workline")].join("\n"),
+    [...orientationLines(namespace), ...slotLines(kept, "agent-workflow")].join("\n"),
     "",
     "## Fuentes",
     "",

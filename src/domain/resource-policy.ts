@@ -2,7 +2,7 @@
  * Execution-resource policy owned by the CLI.
  *
  * A host may provide richer machinery (subagents, orchestration, token
- * accounting), but it never decides when Workline spends it. The caller brings
+ * accounting), but it never decides when agent-workflow spends it. The caller brings
  * facts about the work; this module returns the one bounded strategy that is
  * admissible. Keeping that rule here prevents every loop and host wrapper from
  * growing its own "small task" heuristic.

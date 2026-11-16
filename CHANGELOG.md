@@ -12,6 +12,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [32.0.0] — 2026-11-16
+
+**El sistema vuelve a llamarse agent-workflow. Cambio incompatible: actualizar todas las máquinas antes de operar un hub migrado.**
+
+### Contrato
+
+- **Deja de valer:** el nombre anterior en salidas, claves JSON y códigos de error. **Lo reemplaza:** agent-workflow y los nombres de la tabla, sin alias en las salidas. **Qué hacer:** actualizar consumidores y skills instaladas con el CLI 32.0.0.
+- **Deja de valer:** operar con 31.x sobre un hub ya migrado. **Lo reemplaza:** lectura de puente y migración automática en la primera escritura de 32.0.0. **Qué hacer:** actualizar el CLI en todas las máquinas antes de operar un hub migrado; `aw hub-migrate` muestra la migración y `aw hub-migrate --apply` la aplica.
+
+### Changed
+
+- El sistema se llama `agent-workflow`; el paquete sigue siendo `@tacuchi/agent-workflow-cli`. Se conservan los binarios `aw` y `agent-workflow`, `.workflow/`, la skill `w` y `/w:*`. La `w` se lee «workflow».
+- Convención: tipos `AgentWorkflow…`, funciones y variables `agentWorkflow…`, constantes `AGENT_WORKFLOW_…`, archivos e ids `agent-workflow`, claves JSON `agent_workflow_…` y errores sin prefijo del sistema. Se preservan los nombres `WorkflowTab`, `WORKFLOW_CONTENT`, `WorkflowPhase`, `WorkflowEngine`, el namespace `workflow`, `AgentWorkflowRuntimeConfig` y `AGENT_WORKFLOW_BIN`.
+
+**Salidas que cambian sin alias**
+
+| Nombre retirado | Reemplazo |
+|---|---|
+| Prosa Workline | agent-workflow |
+| `workline_installed` | `agent_workflow_installed` |
+| `workline_entries` | `agent_workflow_entries` |
+| `workline` en el estado de un host | `agent_workflow` |
+| `workline.installed` en memoria de host | `agent-workflow.installed` |
+| `WORKLINE_BASELINE_DIVERGENT` | `BASELINE_DIVERGENT` |
+| `WORKLINE_BASELINE_LEGACY_UNSEALED` | `BASELINE_LEGACY_UNSEALED` |
+| `WORKLINE_BASELINE_MALFORMED` | `BASELINE_MALFORMED` |
+| `WORKLINE_BASELINE_SPEC_ABSENT` | `BASELINE_SPEC_ABSENT` |
+| `WORKLINE_CHECKOUT_PROOF_INVALID` | `CHECKOUT_PROOF_INVALID` |
+| `WORKLINE_CHECKOUT_PROOF_MISSING` | `CHECKOUT_PROOF_MISSING` |
+| `WORKLINE_CHECKOUT_PROOF_ROOT_MISMATCH` | `CHECKOUT_PROOF_ROOT_MISMATCH` |
+| `WORKLINE_CHECKOUT_PROOF_SHAPE_INVALID` | `CHECKOUT_PROOF_SHAPE_INVALID` |
+| `WORKLINE_CHECKOUT_PROOF_STALE` | `CHECKOUT_PROOF_STALE` |
+| `WORKLINE_NAMESPACE_AMBIGUOUS` | `NAMESPACE_AMBIGUOUS` |
+| `WORKLINE_PLAN_CLOSURE_UNVERIFIED` | `PLAN_CLOSURE_UNVERIFIED` |
+| `WORKLINE_PLAN_HISTORICAL` | `PLAN_HISTORICAL` |
+| `WORKLINE_PLAN_OUT_OF_DECLARED_ORDER` | `PLAN_OUT_OF_DECLARED_ORDER` |
+| `WORKLINE_PLAN_PHASE_BLOCKED` | `PLAN_PHASE_BLOCKED` |
+
+**Nombres en disco que se migran**
+
+| Nombre retirado | Reemplazo |
+|---|---|
+| `.<namespace>/workline.json`, clave `workline` | `.<namespace>/agent-workflow.json`, clave `agent_workflow` |
+| `## Workline` dentro del bloque del hub | `## agent-workflow` |
+| `workline.decision-index/v1` | `agent-workflow.decision-index/v1` |
+| `workline.decision-note/v1` | `agent-workflow.decision-note/v1` |
+| `workline_version` en recibos MCP | `agent_workflow_version` |
+
+### Migration
+
+- Las lecturas reconocen el contrato anterior y avisan por stderr sin escribir. La primera escritura migra el marcador, el encabezado y las notas; conserva namespace y modelo, resella los digests y avisa una vez. Repetir la migración no cambia nada.
+- Con dos marcadores gana el nuevo. Solo se retira el antiguo si ambos son equivalentes; si difieren se conserva y `aw doctor` explica cómo reconciliarlos.
+- Los recibos MCP migran su clave de versión en la primera escritura del libro. El envoltorio retirado `workline-capability.json` sigue reconociéndose por sus bytes históricos.
+- Reinstalar las skills de cada host después de actualizar el CLI. La memoria personal, la documentación de otros hubs y los registros internos históricos se conservan.
+
 ## [31.1.1] — 2026-11-14
 
 **El tablero salda el pase de un plan escrito en prosa con el pase del libro que lo vincula.**

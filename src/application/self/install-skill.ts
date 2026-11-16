@@ -296,7 +296,7 @@ function explainSkipReason(target: InstallTarget, kind: "commands" | "hooks"): s
   const how =
     spec.id === "codex" || spec.id === "opencode"
       ? `run \`agent-workflow self install-hooks --target ${target}\` to generate its plugin artifact`
-      : "Workline does not write it";
+      : "agent-workflow does not write it";
   return `${target}: hooks live in ${hookMechanism(spec.hooks)} (${hookCoverage(spec.hooks)}); ${how}. The SKILL works without them and the CLI commands stay callable manually.`;
 }
 

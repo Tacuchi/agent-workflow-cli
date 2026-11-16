@@ -48,7 +48,7 @@ export function HomeHeader({
         </Text>
         <Text color={colors.bright} bold>
           {" "}
-          WORKLINE
+          agent-workflow
         </Text>
         <Text color={colors.faint}>
           {"  "}v{version}

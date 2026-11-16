@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { WORKLINE_FLOWS } from "../../src/application/capability/compose.js";
+import { AGENT_WORKFLOW_FLOWS } from "../../src/application/capability/compose.js";
 import { journeyForRun } from "../../src/application/flow/run-journey.js";
 import {
   applyUnderLock,
@@ -94,7 +94,7 @@ describe("recorridos congelados — el instalado es el de la última release", (
     expect(newest?.run_state_version).toBeLessThanOrEqual(FLOW_RUN_STATE_VERSION);
   });
 
-  for (const flow of WORKLINE_FLOWS) {
+  for (const flow of AGENT_WORKFLOW_FLOWS) {
     it(`${flow}: el recorrido conserva el orden salvo las fronteras retiradas`, () => {
       expect(journeyOfFlow(flow).map((decision) => decision.id)).toEqual(
         newest?.journeys[flow].filter((id) => !retired.has(id)),
@@ -133,7 +133,7 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
   });
 
   for (const fixture of fixtures) {
-    for (const flow of WORKLINE_FLOWS) {
+    for (const flow of AGENT_WORKFLOW_FLOWS) {
       it(`${fixture.cli_version} · ${flow}: toda posición se continúa sin repreguntar`, async () => {
         const ids = fixture.journeys[flow];
         const location = locateRun(paths, SESSION);
@@ -276,7 +276,7 @@ describe("una corrida que refinó una o dos veces sigue alineada", () => {
     }
   }
 
-  for (const flow of WORKLINE_FLOWS) {
+  for (const flow of AGENT_WORKFLOW_FLOWS) {
     it(`${flow}: un registro v12 sube a la versión vigente sin moverse`, async () => {
       const ids = journeyOfFlow(flow).map((decision) => decision.id);
       const stopped = Math.floor(ids.length / 2);

@@ -36,7 +36,7 @@ export type LifecycleBinding = "bind" | "read-only";
 export type LifecycleTarget =
   | { outcome: "resolved"; session: SessionEntry }
   /**
-   * The host's own lifecycle event completes, but Workline writes, restores and
+   * The host's own lifecycle event completes, but agent-workflow writes, restores and
    * closes nothing on the session line, and says so. There is no third outcome
    * on purpose: see {@link resolveLifecycleTarget}.
    */

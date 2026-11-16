@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from 
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { FileSystemPort } from "../ports/file-system.js";
-import { isWorklineRoot } from "../runtime/workline-marker.js";
+import { isAgentWorkflowRoot } from "../runtime/agent-workflow-marker.js";
 import { acquireLock } from "./lock-service.js";
 import { type ParsedHubBlock, readHubBlock, readLegacyBlock } from "./parsers/hub-block.js";
 import { PathsService } from "./paths-service.js";
@@ -125,7 +125,7 @@ export async function hubState(
   tempRoots: readonly string[],
 ): Promise<HubState> {
   if (!(await fs.exists(root))) return "missing";
-  if (!(await isWorklineRoot(fs, root, namespace))) return "not-a-hub";
+  if (!(await isAgentWorkflowRoot(fs, root, namespace))) return "not-a-hub";
   return isEphemeralRoot(root, tempRoots) ? "ephemeral" : "ok";
 }
 
@@ -198,7 +198,7 @@ const SCAN_DEPTH = 3;
 const SCAN_SKIPPED_DIRS = new Set(["node_modules", ".git"]);
 
 /**
- * The hubs under each folder, judged by `isWorklineRoot` and never by the mere
+ * The hubs under each folder, judged by `isAgentWorkflowRoot` and never by the mere
  * presence of `.<ns>/`: a leftover with only a HISTORY.md is reported, not adopted.
  */
 export async function scanHubs(
@@ -242,10 +242,10 @@ async function visitScanned(walk: ScanWalk, dir: string, depth: number): Promise
 
 async function classifyScanned(walk: ScanWalk, dir: string): Promise<void> {
   if (dir === walk.home || !(await walk.fs.exists(join(dir, `.${walk.namespace}`)))) return;
-  if (!(await isWorklineRoot(walk.fs, dir, walk.namespace))) {
+  if (!(await isAgentWorkflowRoot(walk.fs, dir, walk.namespace))) {
     walk.scan.skipped.push({
       path: dir,
-      reason: "sin marcador de hub (workline.json o sessions/)",
+      reason: "sin marcador de hub (agent-workflow.json o sessions/)",
     });
     return;
   }

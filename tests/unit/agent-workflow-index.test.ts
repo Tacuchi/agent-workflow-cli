@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { buildAgentWorkflowIndex } from "../../src/application/agent-workflow-index-service.js";
 import { noteIndexPath, sealNote } from "../../src/application/decision-note-service.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { parseSpecRelation } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { type DecisionNote, NOTE_SCHEMA } from "../../src/domain/decision-note.js";
 import {
   FLOW_RUN_STATE_FILE,
@@ -29,7 +29,7 @@ function paths(): PathsService {
 }
 
 function index(fs: MemFs) {
-  return buildWorklineIndex(fs, fakeEnv, paths(), { now: NOW, sessions: "legacy" });
+  return buildAgentWorkflowIndex(fs, fakeEnv, paths(), { now: NOW, sessions: "legacy" });
 }
 
 // ── spec→plan evidence ───────────────────────────────────────────────────────
@@ -144,7 +144,7 @@ function hub(): MemFs {
 const READY = "---\nstatus: ready-for-plan\n---\n\n# Spec\n";
 const DRAFT = "---\nstatus: draft\n---\n\n# Spec\n";
 
-describe("buildWorklineIndex — the spec→plan relation drives what is unplanned", () => {
+describe("buildAgentWorkflowIndex — the spec→plan relation drives what is unplanned", () => {
   it("superseded elimina drafts y ready del pipeline sin alterar el baseline funcional", async () => {
     const fs = hub();
     const original = "---\nstatus: ready-for-plan\n---\n# Spec\n\n## Requirement\nUn resultado.\n";
@@ -242,7 +242,7 @@ describe("buildWorklineIndex — the spec→plan relation drives what is unplann
   });
 });
 
-describe("buildWorklineIndex — pipeline order", () => {
+describe("buildAgentWorkflowIndex — pipeline order", () => {
   it("mantiene un plan done con pase cert pendiente hasta applied y exige el corte vinculado", async () => {
     const fs = hub();
     fs.file(
@@ -457,7 +457,7 @@ describe("buildWorklineIndex — pipeline order", () => {
     expect((await index(fs)).pipeline.find((item) => item.number === "075")).toBeUndefined();
   });
   // La cuarta clase salió del pipeline de trabajo del usuario: la mecánica de
-  // sesión la maneja el workline central, así que un checkpoint suelto se reporta
+  // sesión la maneja el agent-workflow central, así que un checkpoint suelto se reporta
   // como aviso y deja de competir con un plan abierto por la atención de alguien.
   it("puts a started plan ahead of an untouched one", async () => {
     const fs = hub();
@@ -657,7 +657,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     expect(item.action).toMatchObject({
       kind: "blocked",
       command: null,
-      code: "WORKLINE_PLAN_PHASE_BLOCKED",
+      code: "PLAN_PHASE_BLOCKED",
     });
   });
 
@@ -700,7 +700,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
       "el plan se declara done pero sus contadores no lo respaldan: reconciliar las tareas y fases acreditadas desde plan-exec",
     );
     expect(item.detail.obligation).toBe(false);
-    expect(item.detail.warning?.code).toBe("WORKLINE_BASELINE_LEGACY_UNSEALED");
+    expect(item.detail.warning?.code).toBe("BASELINE_LEGACY_UNSEALED");
     expect(item.action).toEqual({
       kind: "continue",
       command: `/w:plan-exec ${D_PLAN}`,
@@ -726,7 +726,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
       kind: "handoff",
       command: `/w:plan-refine ${D_PLAN}`,
       destination: "plan-refine",
-      code: "WORKLINE_BASELINE_DIVERGENT",
+      code: "BASELINE_DIVERGENT",
     });
   });
 
@@ -741,7 +741,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     expect(malformed.action).toMatchObject({
       kind: "blocked",
       command: null,
-      code: "WORKLINE_BASELINE_MALFORMED",
+      code: "BASELINE_MALFORMED",
     });
 
     const missingSpec = await planItem(
@@ -758,7 +758,7 @@ describe("derivePipeline — cada eslabón de la precedencia, en su orden", () =
     expect(missingSpec.action).toMatchObject({
       kind: "blocked",
       command: null,
-      code: "WORKLINE_BASELINE_SPEC_ABSENT",
+      code: "BASELINE_SPEC_ABSENT",
     });
   });
 
@@ -815,7 +815,7 @@ describe("derivePipeline — de una spec pendiente se dice su status y sus pregu
 
 // ── the loose session leaves the pipeline and becomes a notice ───────────────
 
-describe("buildWorklineIndex — una sesión suelta es un aviso, no trabajo del usuario", () => {
+describe("buildAgentWorkflowIndex — una sesión suelta es un aviso, no trabajo del usuario", () => {
   it("una sesión con documento asociado no es suelta", async () => {
     const fs = hub();
     fs.file(

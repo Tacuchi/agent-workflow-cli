@@ -58,7 +58,7 @@ const RUNTIME: ResolvedRuntime = {
 /** El sujeto del doble: nombrado como una variable, para que la redacción lo toque. */
 const SUBJECT = { id: "fixture:uno", label: "DB_FIXTURE_DSN" };
 /** El archivo donde el doble dice que vive su credencial. */
-const SUBJECT_LOCATOR = "/tmp/workline-fixture-credenciales.env";
+const SUBJECT_LOCATOR = "/tmp/agent-workflow-fixture-credenciales.env";
 const FINDING_ID = `hub/tools-auth/${SUBJECT.id}`;
 /** Valor inventado con forma de DSN: la premisa de las aserciones de redacción. */
 const FAKE_DSN = "postgres://usuario:CLAVE-INVENTADA-9f3a@localhost:5432/fixture";
@@ -156,7 +156,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "doctor-auth-flow-"));
   home = join(root, "home");
   mkdirSync(join(home, ".workflow", "dev"), { recursive: true });
-  // The auth tests isolate their own finding; Workline exists on one host.
+  // The auth tests isolate their own finding; agent-workflow exists on one host.
   mkdirSync(join(home, ".claude", "skills", "w"), { recursive: true });
   // Un registro de conexiones VACÍO: el `read_set` de cualquier lote lo lee, y así
   // el único sujeto de la corrida es el del doble.

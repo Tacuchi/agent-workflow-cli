@@ -14,7 +14,7 @@ import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import type { ResolvedRuntime } from "../../src/runtime/types.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { FakeProcess } from "../helpers/fake-process.js";
-// [Workline] mounts HostAdminSection (fs.exists over ~/.<host>/skills/w), so
+// [agent-workflow] mounts HostAdminSection (fs.exists over ~/.<host>/skills/w), so
 // the harness needs a real sandbox home; NoScanFs keeps everything real but
 // stubs list()→[] — same pattern as the skills-tab test.
 import { NoScanFs as RealFs } from "../helpers/real-fs.js";
@@ -37,7 +37,7 @@ function buildCtx(home: string): CliContext {
   };
 }
 
-describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
+describe("WorkflowTab ([agent-workflow] = admin + informativo mínimo)", () => {
   let workdir: string;
   let home: string;
 
@@ -69,9 +69,9 @@ describe("WorkflowTab ([Workline] = admin + informativo mínimo)", () => {
     return frame;
   }
 
-  it("header: título Workline + counts derivados de los data modules (.length)", async () => {
+  it("header: título agent-workflow + counts derivados de los data modules (.length)", async () => {
     const frame = await renderFlat();
-    expect(frame).toContain("Workline");
+    expect(frame).toContain("agent-workflow");
     // Los totales son del BUNDLE, no una promesa universal: la cabecera lo dice
     // y la superficie real de cada host va en su fila.
     expect(frame).toContain(`bundle: ${WORKFLOW_CONTENT.slashCommands.length} commands`);

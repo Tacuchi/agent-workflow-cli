@@ -1,7 +1,7 @@
 // Kimi Code's hook dialect: the transformation and the managed-block surgery.
 //
 // The two things that must hold no matter what: nothing the user wrote in their
-// config.toml is ever touched, and anything Workline cannot express in Kimi's
+// config.toml is ever touched, and anything agent-workflow cannot express in Kimi's
 // dialect is REPORTED rather than silently dropped.
 
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";

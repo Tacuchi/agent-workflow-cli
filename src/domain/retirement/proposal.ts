@@ -29,7 +29,7 @@
 
 import type { ClaimIdentity } from "../../application/claims-ledger.js";
 import { semanticDigest } from "../../application/semantic-operation/protocol.js";
-import type { WorklineNodeId } from "../workline-node.js";
+import type { AgentWorkflowNodeId } from "../agent-workflow-node.js";
 
 export const RETIREMENT_MODES = ["discard", "reset"] as const;
 
@@ -37,7 +37,7 @@ export type RetirementMode = (typeof RETIREMENT_MODES)[number];
 
 /** One node inside the closure, and why it is in there. */
 export interface ClosureEntry {
-  node: WorklineNodeId;
+  node: AgentWorkflowNodeId;
   /** Hub-relative path of the document, or of the session folder. */
   path: string;
   /**
@@ -212,7 +212,7 @@ export interface RetirementReservation {
   intact: boolean;
 }
 
-/** The one durable Workline trace a successful retirement leaves. */
+/** The one durable agent-workflow trace a successful retirement leaves. */
 export interface RetirementEvent {
   /** `discard` or `reset` — the command, as it will read in HISTORY. */
   command: RetirementMode;
@@ -233,7 +233,7 @@ export interface RetirementProposal {
   version: number;
   hub_root?: string;
   mode: RetirementMode;
-  target: WorklineNodeId;
+  target: AgentWorkflowNodeId;
   /** In removal order: descendants before what they hang from. */
   closure: ClosureEntry[];
   deletes: RetirementDelete[];

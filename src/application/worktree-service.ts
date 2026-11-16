@@ -12,7 +12,7 @@ import type { GitPort, WorktreeEntry } from "../ports/git.js";
 import { isWorkingBranch, resolveSourceBranches } from "./branch-resolver.js";
 import { documentOfSession, resolveDocBranch } from "./doc-branch-ledger.js";
 import { locateRun, readRun } from "./flow/run-state-service.js";
-import { ensureWorklineMaterialized } from "./hub-materialization-service.js";
+import { ensureAgentWorkflowMaterialized } from "./hub-materialization-service.js";
 import { withCwdLock } from "./lock-service.js";
 import { runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
@@ -540,7 +540,7 @@ async function integrateUnit(
     };
   }
 
-  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  await ensureAgentWorkflowMaterialized(deps.fs, deps.paths);
   const merged = await withCwdLock(
     deps.fs,
     deps.paths,
@@ -776,7 +776,7 @@ async function ensureUnit(
   // The worktree itself lives under the user runtime, not under the hub
   // root, so materialize explicitly before this first Git mutation rather than
   // relying on a hub-path filesystem write to notice it.
-  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  await ensureAgentWorkflowMaterialized(deps.fs, deps.paths);
   const unitsRoot = await canonicalUnitsRootForRead(deps);
   const owns = await hubUnitPaths(deps.fs, deps.paths, unitsRoot);
   const staleErrors = await detachStaleUnits(deps, source.path, owns);
@@ -1057,7 +1057,7 @@ async function prune(
   vanished: ReclaimedUnit[],
   block: Awaited<ReturnType<typeof readHubBlock>>,
 ): Promise<{ reclaimed: ReclaimedUnit[]; retained: RetainedUnit[] }> {
-  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  await ensureAgentWorkflowMaterialized(deps.fs, deps.paths);
   try {
     await deps.git.worktreePrune(source.path);
     const reclaimed: ReclaimedUnit[] = [];
@@ -1158,7 +1158,7 @@ async function sweepOne(
     candidate.session,
   );
   if (!verdict.free) return { retained: { ...where, ...verdict.retention } };
-  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  await ensureAgentWorkflowMaterialized(deps.fs, deps.paths);
   try {
     await removeUnitSafely(deps.fs, deps.git, source.path, tree.path);
   } catch (err) {
@@ -1827,7 +1827,7 @@ async function releaseUnregisteredUnit(
   target: ResolvedTarget,
 ): Promise<WorktreeReleaseOutput | WorktreeError> {
   const { source, path, branch, identity } = target;
-  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  await ensureAgentWorkflowMaterialized(deps.fs, deps.paths);
   await deps.git.worktreePrune(source.path);
   let completed = false;
   if ((await deps.fs.lstat(path)) !== null) {
@@ -1965,7 +1965,7 @@ async function releaseRegisteredUnit(
       error: "unit_foreign",
       message: `la unidad ${path} usa ${registered.branch}, no ${branch}`,
     };
-  await ensureWorklineMaterialized(deps.fs, deps.paths);
+  await ensureAgentWorkflowMaterialized(deps.fs, deps.paths);
   try {
     await removeUnitSafely(deps.fs, deps.git, source.path, path);
   } catch (err) {

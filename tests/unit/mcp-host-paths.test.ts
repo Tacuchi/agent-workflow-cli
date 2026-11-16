@@ -16,8 +16,8 @@ import { HARNESSES, MCP_FILE_HOSTS } from "../../src/domain/harnesses.js";
 import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 
 const HOME = "/home/u";
-const TEST_NODE = "/opt/workline/node";
-const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
+const TEST_NODE = "/opt/agent-workflow/node";
+const TEST_ENTRYPOINT = "/opt/agent-workflow/dist/cli/main.js";
 
 function testEntry(host: "opencode" | "crush" | "warp") {
   return buildMcpEntry("alpha", "ALPHA_DATABASE_URL", {

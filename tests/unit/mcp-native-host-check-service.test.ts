@@ -181,7 +181,7 @@ describe("checkNativeMcpHosts", () => {
       host: "claude",
       scope: "global",
       connection: "qtc-cert",
-      worklineVersion: "23.0.0",
+      agentWorkflowVersion: "23.0.0",
       descriptor: { command: "/safe/node", args: ["/safe/main.js", "mcp", "serve-db"] },
       registeredAt: "2026-08-31T12:00:00.000Z",
     });
@@ -221,7 +221,7 @@ describe("checkNativeMcpHosts", () => {
         host: "claude",
         scope: "global",
         connection: "qtc-cert",
-        worklineVersion: "23.0.0",
+        agentWorkflowVersion: "23.0.0",
         descriptor: { command: entry.command, args: entry.args },
         registeredAt: "2026-08-31T12:00:00.000Z",
       });

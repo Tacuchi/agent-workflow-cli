@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { buildAgentWorkflowIndex } from "../../src/application/agent-workflow-index-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runResume } from "../../src/application/resume-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
-import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -16,7 +16,7 @@ function paths(): PathsService {
 }
 
 function index(fs: MemFs) {
-  return buildWorklineIndex(fs, env, paths(), { now: NOW });
+  return buildAgentWorkflowIndex(fs, env, paths(), { now: NOW });
 }
 
 function plan(fs: MemFs, number: string, slug: string): void {
@@ -381,7 +381,7 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
     const out = await index(fs);
     const held = out.pipeline.find((item) => item.number === "093");
 
-    expect(held?.detail.warning?.code).toBe("WORKLINE_PLAN_OUT_OF_DECLARED_ORDER");
+    expect(held?.detail.warning?.code).toBe("PLAN_OUT_OF_DECLARED_ORDER");
     expect(held?.detail.warning?.message).toContain("v1.0.0");
     expect(held?.detail.warning?.message).toContain("avisa, no bloquea");
     // Success, not refusal: the row keeps a runnable route and its command.
@@ -444,7 +444,7 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
     const out = await index(fs);
     const held = out.pipeline.find((item) => item.number === "093");
 
-    expect(held?.detail.warning?.code).not.toBe("WORKLINE_PLAN_OUT_OF_DECLARED_ORDER");
+    expect(held?.detail.warning?.code).not.toBe("PLAN_OUT_OF_DECLARED_ORDER");
     // Ceding the channel never costs the reason: `postponed` carries it anyway,
     // and `status` prints that line on every row that has one.
     expect(held?.detail.postponed?.reason).toContain("v1.0.0");
@@ -483,7 +483,7 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
     expect(out.status).toBe("proposal");
     if (out.status !== "proposal") return;
     const held = (out.candidates ?? []).find((candidate) => candidate.number === "093");
-    expect(held?.warning?.code).not.toBe("WORKLINE_PLAN_OUT_OF_DECLARED_ORDER");
+    expect(held?.warning?.code).not.toBe("PLAN_OUT_OF_DECLARED_ORDER");
     expect(held?.postponed?.reason).toContain("v1.0.0");
     expect(held?.postponed?.waiting_on).toEqual(["plan:092", "plan:091"]);
   });
@@ -491,9 +491,7 @@ describe("ejecutar fuera del orden declarado advierte y no rechaza", () => {
   it("sin intención declarada no aparece ningún aviso de orden", async () => {
     const out = await index(hub());
     expect(
-      out.pipeline.every(
-        (item) => item.detail.warning?.code !== "WORKLINE_PLAN_OUT_OF_DECLARED_ORDER",
-      ),
+      out.pipeline.every((item) => item.detail.warning?.code !== "PLAN_OUT_OF_DECLARED_ORDER"),
     ).toBe(true);
   });
 });

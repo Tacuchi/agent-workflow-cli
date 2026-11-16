@@ -9,6 +9,7 @@
  */
 
 import { join } from "node:path";
+import type { AgentWorkflowNodeId } from "../domain/agent-workflow-node.js";
 import {
   ABSENT_BASELINE,
   CUSTODY_FILE,
@@ -19,7 +20,6 @@ import {
   preservedBaseline,
   sealCustody,
 } from "../domain/session/custody.js";
-import type { WorklineNodeId } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { localDateIso } from "./dates.js";
 
@@ -72,9 +72,9 @@ export async function writeCustody(
  * first mutation describes a state that is already gone.
  */
 export interface BirthInput {
-  subject: WorklineNodeId;
+  subject: AgentWorkflowNodeId;
   subjectPath: string;
-  parents: readonly WorklineNodeId[];
+  parents: readonly AgentWorkflowNodeId[];
   artifacts: readonly CustodyArtifact[];
   created: string;
 }

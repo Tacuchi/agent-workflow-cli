@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildAgentWorkflowIndex } from "../../src/application/agent-workflow-index-service.js";
 import { noteIndexPath, sealNote } from "../../src/application/decision-note-service.js";
 import {
   ACCEPTANCE_CRITERIA_KEY,
@@ -12,7 +13,6 @@ import {
 } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { preparePlanExecDecision } from "../../src/application/plan-exec-decision-service.js";
-import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { NOTE_SCHEMA } from "../../src/domain/decision-note.js";
 import { newRunState, withDecisionDate } from "../../src/domain/flow/run-state.js";
 import { alignSpecBaseline, specBaselineDigest } from "../../src/domain/lineage.js";
@@ -430,7 +430,7 @@ function memHub(planText: string, specText: string = SPEC): MemFs {
 }
 
 function memIndex(fs: MemFs) {
-  return buildWorklineIndex(
+  return buildAgentWorkflowIndex(
     fs,
     fakeEnv,
     new PathsService(normalizeNamespace("workflow"), "/home", "/cwd"),

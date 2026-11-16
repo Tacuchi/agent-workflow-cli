@@ -1,7 +1,11 @@
 import { join } from "node:path";
+import {
+  type AgentWorkflowNodeId,
+  formatNodeId,
+  nodeFromDocPath,
+} from "../domain/agent-workflow-node.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
 import type { SessionCustody } from "../domain/session/custody.js";
-import { type WorklineNodeId, formatNodeId, nodeFromDocPath } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { expectedWorkBranch } from "./branch-resolver.js";
 import type { HubFuente, ParsedHubBlock } from "./parsers/hub-block.js";
@@ -12,7 +16,7 @@ import { readCustody } from "./session-custody-service.js";
 export interface DocBranchEvent {
   version: 1;
   at: string;
-  doc: WorklineNodeId;
+  doc: AgentWorkflowNodeId;
   source: string;
   branch: string;
   by: string;
@@ -81,7 +85,7 @@ export async function appendDocBranch(
 
 export function ownDocBranch(
   read: DocBranchRead,
-  doc: WorklineNodeId,
+  doc: AgentWorkflowNodeId,
   source: string,
 ): string | null {
   for (let index = read.events.length - 1; index >= 0; index -= 1) {
@@ -93,7 +97,7 @@ export function ownDocBranch(
 }
 
 export type DocIdentity =
-  | { status: "resolved"; doc: WorklineNodeId; path: string | null }
+  | { status: "resolved"; doc: AgentWorkflowNodeId; path: string | null }
   | { status: "none" }
   | { status: "unreadable"; reason: string };
 
@@ -131,7 +135,7 @@ export interface EffectiveDocBranch {
   branch: string | null;
   origin: "own" | "inherited" | "registered" | "none" | "unreadable";
   own: string | null;
-  doc: WorklineNodeId | null;
+  doc: AgentWorkflowNodeId | null;
   reason?: string;
   inherited_from?: string;
   unreadable_lines: number;
@@ -168,7 +172,7 @@ export async function resolveDocBranch(
 export async function findDocument(
   fs: FileSystemPort,
   paths: PathsService,
-  doc: WorklineNodeId,
+  doc: AgentWorkflowNodeId,
 ): Promise<string | null> {
   if (doc.kind !== "plan" && doc.kind !== "spec") return null;
   const directory = DEFAULT_CORE_DOCS_CANON[doc.kind];

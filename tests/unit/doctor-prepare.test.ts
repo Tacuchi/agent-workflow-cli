@@ -245,7 +245,7 @@ function hint(
     resource: { kind: "mcp-entry", name, locator: `~/.config/${host}/${name}` },
     state: "warning",
     summary: `${name} no está donde debería`,
-    impact: `sin ${name} ese host no puede usar Workline`,
+    impact: `sin ${name} ese host no puede usar agent-workflow`,
     evidence: [`leído de ~/.config/${host}/${name}`],
     ownership: "ours",
     remediation: { kind: "manual", action: null, guidance: [] },

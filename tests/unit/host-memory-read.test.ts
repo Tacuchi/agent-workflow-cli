@@ -25,7 +25,7 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
  * `aw host-memory` over a fake HOME (plan 062, F1).
  *
  * What it pins: every host of the catalog but the current one gets a row whose
- * state says why it gave what it gave; only Workline learnings leave a host, the
+ * state says why it gave what it gave; only agent-workflow learnings leave a host, the
  * rest is counted and its text never appears; the date is the memory's own or
  * null; and the command writes nothing at all.
  */
@@ -33,7 +33,7 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
 const CLAUDE_MEMORY = ".claude/projects/-tmp-ws/memory";
 const CODEX_MEMORIES = ".codex/memories";
 
-const WORKLINE_NOTE = `---
+const AGENT_WORKFLOW_NOTE = `---
 name: aw-next-number-publish-no-sella-el-titulo
 description: "aw next-number --publish asigna el correlativo al nombre del archivo y deja el # Spec NNN del cuerpo sin reemplazar"
 metadata:
@@ -44,7 +44,7 @@ metadata:
 El encabezado del cuerpo se estampa a mano después de publicar.
 `;
 
-const UNDATED_WORKLINE_NOTE = `---
+const UNDATED_AGENT_WORKFLOW_NOTE = `---
 name: plan-exec-un-lote-por-fase
 description: /w:plan-exec infiere un lote por fase aunque el plan declare un rango continuo
 metadata:
@@ -63,7 +63,7 @@ metadata:
 
 const CODEX_INDEX = `# Task Group: agent-workflow-cli npm releases
 
-scope: Publish Workline releases from a clean checkout.
+scope: Publish agent-workflow releases from a clean checkout.
 applies_to: cwd=/Users/u/Git/agent-workflow-cli; reuse_rule=re-check the registry.
 
 ## Task 1: Publish 25.3.1, success
@@ -111,8 +111,8 @@ function put(path: string, content: string): void {
 
 function seedMachine(): void {
   put(`${CLAUDE_MEMORY}/MEMORY.md`, "# Memory index\n\n- [nota](aw-next-number.md)\n");
-  put(`${CLAUDE_MEMORY}/aw-next-number.md`, WORKLINE_NOTE);
-  put(`${CLAUDE_MEMORY}/plan-exec-lotes.md`, UNDATED_WORKLINE_NOTE);
+  put(`${CLAUDE_MEMORY}/aw-next-number.md`, AGENT_WORKFLOW_NOTE);
+  put(`${CLAUDE_MEMORY}/plan-exec-lotes.md`, UNDATED_AGENT_WORKFLOW_NOTE);
   put(`${CLAUDE_MEMORY}/finanzas.md`, FINANCE_NOTE);
   put(`${CLAUDE_MEMORY}/rota.md`, "una nota sin frontmatter\n");
   put(".codex/config.toml", "[features]\nmemories = true\n");
@@ -181,7 +181,7 @@ describe("aw host-memory · one row per other host, with its state and reason", 
     );
     expect(row(data, "claude-code")).toMatchObject({
       state: "read",
-      workline_entries: 2,
+      agent_workflow_entries: 2,
       other_entries: 1,
     });
     expect(row(data, "claude-code").skipped).toEqual([
@@ -189,7 +189,7 @@ describe("aw host-memory · one row per other host, with its state and reason", 
     ]);
     expect(row(data, "codex")).toMatchObject({
       state: "read",
-      workline_entries: 4,
+      agent_workflow_entries: 4,
       other_entries: 2,
     });
     expect(row(data, "kimi")).toMatchObject({ state: "no-curated-memory" });
@@ -221,7 +221,7 @@ describe("aw host-memory · one row per other host, with its state and reason", 
       AD_HOC_NOTE,
     );
     const data = await report(["--host", "gemini"]);
-    expect(row(data, "codex")).toMatchObject({ state: "read", workline_entries: 1 });
+    expect(row(data, "codex")).toMatchObject({ state: "read", agent_workflow_entries: 1 });
     expect(row(data, "codex").skipped).toEqual([
       {
         path: join(home, CODEX_MEMORIES, "MEMORY.md"),
@@ -246,11 +246,11 @@ describe("aw host-memory · one row per other host, with its state and reason", 
       state: "unreadable",
       reason: expect.stringContaining("EACCES"),
     });
-    expect(row(data, "codex")).toMatchObject({ state: "read", workline_entries: 4 });
+    expect(row(data, "codex")).toMatchObject({ state: "read", agent_workflow_entries: 4 });
   });
 });
 
-describe("aw host-memory · only Workline learnings leave a host", () => {
+describe("aw host-memory · only agent-workflow learnings leave a host", () => {
   it("lists each learning with its host, its memory date or null, and its source", async () => {
     seedMachine();
     const data = await report(["--host", "gemini"]);
@@ -298,7 +298,7 @@ describe("aw host-memory · only Workline learnings leave a host", () => {
         },
       },
     ]);
-    // What is not about Workline is counted and nothing of it is printed.
+    // What is not about agent-workflow is counted and nothing of it is printed.
     const printed = JSON.stringify(data);
     for (const leak of ["S/ 312", "tarjeta", "Blender", "OptiX", "[ad-hoc note]"]) {
       expect(printed).not.toContain(leak);
@@ -306,7 +306,7 @@ describe("aw host-memory · only Workline learnings leave a host", () => {
   });
 
   it("with only the current host's memory on the machine the list is empty and the exit is 0", async () => {
-    put(`${CLAUDE_MEMORY}/aw-next-number.md`, WORKLINE_NOTE);
+    put(`${CLAUDE_MEMORY}/aw-next-number.md`, AGENT_WORKFLOW_NOTE);
     const data = await report([], ctx({ CLAUDECODE: "1" }));
     expect(data.current_host).toMatchObject({ id: "claude-code", detected_via: "env:CLAUDECODE" });
     expect(data.entries).toEqual([]);

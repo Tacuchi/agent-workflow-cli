@@ -11,7 +11,7 @@ const INDEX_FILE = "MEMORY.md";
  * Claude Code keeps one note per fact in `~/.claude/projects/<key>/memory/`, with
  * a frontmatter `description` (the brief form) and, on newer notes, a
  * `metadata.modified` date. Every project folder is read: a learning about
- * Workline can live in any of them.
+ * agent-workflow can live in any of them.
  */
 export async function readClaudeCodeMemory(
   fs: FileSystemPort,

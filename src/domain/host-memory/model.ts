@@ -61,8 +61,8 @@ export interface HostMemoryRow {
   label: string;
   state: HostMemoryState;
   reason: string | null;
-  /** Learnings about Workline, all listed in the report's `entries`. */
-  workline_entries: number;
+  /** Learnings about agent-workflow, all listed in the report's `entries`. */
+  agent_workflow_entries: number;
   /** Everything else is only counted: its text never leaves the host. */
   other_entries: number;
   skipped: HostMemorySkip[];

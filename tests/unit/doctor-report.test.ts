@@ -307,7 +307,7 @@ describe("runDoctor", () => {
    * en esta máquina» en una advertencia llena el informe de ruido permanente y
    * entrena a la persona a saltear la sección donde viven los bloqueos reales.
    */
-  it("por defecto participa Workline instalado y los hosts sin uso quedan ausentes", async () => {
+  it("por defecto participa agent-workflow instalado y los hosts sin uso quedan ausentes", async () => {
     const seen: string[][] = [];
     const report = await runDoctor(
       makeCtx(new RecordingFs(hostStateFs(home)), home, home),
@@ -573,7 +573,7 @@ describe("runDoctor", () => {
    * SIN ningún host de agente instalado. Antes salía 0, el relleno de silencio la
    * puso en 1, y ninguna prueba lo cubría.
    */
-  it("una máquina sin Workline dice que falta en todos los hosts y sale 1", async () => {
+  it("una máquina sin agent-workflow dice que falta en todos los hosts y sale 1", async () => {
     const report = await runDoctor(
       // Ni configuración de ningún host ni binario que `which` resuelva: la
       // máquina limpia de verdad.
@@ -590,7 +590,7 @@ describe("runDoctor", () => {
     expect(report.hosts).toEqual([]);
     expect(report.hosts_absent.length).toBeGreaterThan(0);
     expect(report.findings.map((finding) => finding.summary)).toEqual([
-      "Workline no está instalado en ningún host",
+      "agent-workflow no está instalado en ningún host",
     ]);
     for (const entry of report.coverage) {
       expect(entry.state).toBe("not-applicable");
@@ -599,7 +599,7 @@ describe("runDoctor", () => {
     expect(report.verdict.exit_code).toBe(1);
   });
 
-  it("Workline instalado en un host sin binario se denuncia como contradicción, sin exit 1", async () => {
+  it("agent-workflow instalado en un host sin binario se denuncia como contradicción, sin exit 1", async () => {
     const fs = new RecordingFs(hostStateFs(home));
     const report = await runDoctor(
       makeCtx(fs, home, home, new FakeProcess({ which: () => undefined })),
@@ -617,7 +617,7 @@ describe("runDoctor", () => {
     );
     expect(report.hosts.map((host) => host.host)).toEqual(["claude-code", "codex"]);
     const contradiction = report.findings.find(
-      (finding) => finding.id === "claude-code/installation-hosts/workline",
+      (finding) => finding.id === "claude-code/installation-hosts/agent-workflow",
     );
     expect(contradiction?.state).toBe("warning");
     expect(contradiction?.summary).toContain("contradictoria");

@@ -2,7 +2,7 @@
  * `aw reseal`: closing a legitimate baseline divergence without walking a whole
  * `plan-refine`.
  *
- * A CROSS-CUTTING command, like the retirement pair: it opens no WorklineFlow and
+ * A CROSS-CUTTING command, like the retirement pair: it opens no AgentWorkflowFlow and
  * creates no session. There is nothing for a run to direct — `prepare` reads and
  * `apply` writes one line — and giving it a journey would cost the bundle a
  * document per invocation for a decision that is already one question.

@@ -10,7 +10,7 @@
  * is re-derived under the hub lock at that moment.
  */
 
-import { ensureWorklineMaterialized } from "../../application/hub-materialization-service.js";
+import { ensureAgentWorkflowMaterialized } from "../../application/hub-materialization-service.js";
 import {
   type HubMigrationApplied,
   applyHubMigration,
@@ -103,7 +103,7 @@ export const hubMigrateCommand: CliCommand<HubMigrateOutput> = {
       };
     }
 
-    await ensureWorklineMaterialized(ctx.fs, ctx.paths);
+    await ensureAgentWorkflowMaterialized(ctx.fs, ctx.paths);
     const applied = await applyHubMigration(ctx.fs, ctx.paths, choice);
     if ("error" in applied) {
       return failSemantic<HubMigrateOutput>({

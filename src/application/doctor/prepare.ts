@@ -229,7 +229,7 @@ function rejectSelection(
   if (inert.length > 0) {
     return {
       code: "SELECTION_NOT_ACTIONABLE",
-      message: `${inert.join(", ")} no tiene una reparación automatizable: su remedio es manual o el recurso no es de Workline`,
+      message: `${inert.join(", ")} no tiene una reparación automatizable: su remedio es manual o el recurso no es de agent-workflow`,
       candidates: inert,
       action: "leé la guía de ese hallazgo en `aw doctor`; seleccionalo sólo si propone una acción",
     };

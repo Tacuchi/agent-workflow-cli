@@ -816,7 +816,7 @@ describe("status human — las sesiones dejan de ser trabajo del usuario", () =>
   });
 });
 
-describe("status human — un root implícito sigue siendo Workline", () => {
+describe("status human — un root implícito sigue siendo agent-workflow", () => {
   it("sin nada pendiente responde en una línea, sin secciones ni avisos", async () => {
     const fs = pending();
     fs.file(
@@ -893,7 +893,7 @@ describe("status — el traspaso de un plan cerrado sigue a la vista", () => {
     // cerrado sobre evidencia omitida o sustituta no deja de decirlo por haber
     // delegado algo — serían dos hechos y sólo se contaría uno.
     expect(item?.detail.next).toContain("TRASPASO VIGENTE");
-    expect(item?.detail.warning?.code).toBe("WORKLINE_PLAN_CLOSURE_UNVERIFIED");
+    expect(item?.detail.warning?.code).toBe("PLAN_CLOSURE_UNVERIFIED");
     expect(item?.detail.warning?.message).toContain("unverified_accepted");
   });
 

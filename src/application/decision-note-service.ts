@@ -105,7 +105,7 @@ function readIndexValue(
         {
           code: "NOTE_INDEX_SCHEMA_UNKNOWN",
           message: `versión de formato no soportada: ${JSON.stringify(raw.schema)}`,
-          action: `este Workline entiende ${NOTE_INDEX_SCHEMA}`,
+          action: `este agent-workflow entiende ${NOTE_INDEX_SCHEMA}`,
         },
       ],
     };

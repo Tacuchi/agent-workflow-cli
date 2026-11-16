@@ -3,12 +3,8 @@ import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
-import { readHistoryRows } from "./history-table.js";
-import type { PathsService } from "./paths-service.js";
-import { type TerminalEvent, readEvents } from "./retirement/history-events.js";
-import { sessionNumericCode } from "./session-resolver.js";
 import {
+  type AgentWorkflowIndex,
   type IndexedDiscarded,
   type IndexedHub,
   type IndexedPlan,
@@ -17,21 +13,25 @@ import {
   type PendingRetirement,
   type PipelineItem,
   type SessionUnit,
-  type WorklineIndex,
-  buildWorklineIndex,
-} from "./workline-index-service.js";
+  buildAgentWorkflowIndex,
+} from "./agent-workflow-index-service.js";
+import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
+import { readHistoryRows } from "./history-table.js";
+import type { PathsService } from "./paths-service.js";
+import { type TerminalEvent, readEvents } from "./retirement/history-events.js";
+import { sessionNumericCode } from "./session-resolver.js";
 import type { OrphanUnit, WorktreeListOutput } from "./worktree-service.js";
 
 /**
- * `status` projected out of the Workline index.
+ * `status` projected out of the agent-workflow index.
  *
- * The reading itself lives in `workline-index-service` — this module only
+ * The reading itself lives in `agent-workflow-index-service` — this module only
  * shapes it for one command, so `status` and `resume` can never answer the
  * same question differently. Everything here is derivation; nothing re-reads
  * the filesystem and nothing writes to it.
  */
 
-export type { PipelineItem } from "./workline-index-service.js";
+export type { PipelineItem } from "./agent-workflow-index-service.js";
 
 export interface StatusSession {
   code: string | null;
@@ -106,7 +106,7 @@ export interface StatusOutput {
    * Active sessions holding work with no document of their own, by folder.
    *
    * A notice, never a row of pending work: the session mechanics belong to the
-   * central workline, and asking a person to weigh a loose checkpoint against an
+   * central agent-workflow, and asking a person to weigh a loose checkpoint against an
    * open plan asked them to do the runtime's bookkeeping.
    */
   loose_sessions: string[];
@@ -148,14 +148,14 @@ export async function runStatusCommand(
   paths: PathsService,
   input: StatusInput = {},
 ): Promise<StatusOutput> {
-  return statusOfIndex(fs, paths, await buildWorklineIndex(fs, env, paths, input));
+  return statusOfIndex(fs, paths, await buildAgentWorkflowIndex(fs, env, paths, input));
 }
 
 /** The board over an index already built, so a caller that also routes `resume` builds it once. */
 export async function statusOfIndex(
   fs: FileSystemPort,
   paths: PathsService,
-  index: WorklineIndex,
+  index: AgentWorkflowIndex,
 ): Promise<StatusOutput> {
   // The documents model reads `docs/`, git and the pass ledger only: neither
   // HISTORY.md nor the session folders are opened (spec 066, AC-09).
@@ -215,7 +215,7 @@ export async function statusOfIndex(
 }
 
 function findHistoryCollisions(
-  index: Awaited<ReturnType<typeof buildWorklineIndex>>,
+  index: Awaited<ReturnType<typeof buildAgentWorkflowIndex>>,
   rows: ReturnType<typeof readHistoryRows>,
 ): StatusOutput["history_collisions"] {
   const historyCollisions: StatusOutput["history_collisions"] = [];
@@ -246,7 +246,7 @@ function findHistoryCollisions(
 async function statusSessions(
   fs: FileSystemPort,
   paths: PathsService,
-  index: Awaited<ReturnType<typeof buildWorklineIndex>>,
+  index: Awaited<ReturnType<typeof buildAgentWorkflowIndex>>,
 ): Promise<StatusOutput["sessions"]> {
   const active: StatusSession[] = [];
   const closed: StatusSession[] = [];

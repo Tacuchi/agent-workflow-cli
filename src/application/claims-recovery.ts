@@ -74,7 +74,7 @@ export interface SlotState {
   revoked: boolean;
   /**
    * The owner is active or paused — `null` when there is no owner.
-   * Historical field name retained for the workline index; it means live ownership.
+   * Historical field name retained for the agent-workflow index; it means live ownership.
    *
    * The difference decides which action is sanctioned, and getting it wrong is
    * destructive: a reservation whose owner is still running is finished or closed

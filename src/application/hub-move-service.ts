@@ -5,8 +5,8 @@ import { promisify } from "node:util";
 import { hubKey } from "../domain/isolation-unit.js";
 import { custodyCompleteness, sealCustody } from "../domain/session/custody.js";
 import type { FileSystemPort } from "../ports/file-system.js";
+import { isAgentWorkflowRoot } from "../runtime/agent-workflow-marker.js";
 import { repositoryRoot } from "../runtime/hub-resolution.js";
-import { isWorklineRoot } from "../runtime/workline-marker.js";
 import { type HubLocalConfig, readHubLocalConfig } from "./hub-local-config.js";
 import { declaringHubs, registerHub } from "./hub-registry.js";
 import { readHubBlock } from "./parsers/hub-block.js";
@@ -384,7 +384,7 @@ async function rejectNestedHub(
 ): Promise<void> {
   let ancestor = dirname(next);
   while (ancestor !== dirname(ancestor)) {
-    if (await isWorklineRoot(fs, ancestor, paths.namespace))
+    if (await isAgentWorkflowRoot(fs, ancestor, paths.namespace))
       throw new Error(`El destino ${next} cae dentro del hub ${ancestor}.`);
     ancestor = dirname(ancestor);
   }

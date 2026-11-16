@@ -64,8 +64,8 @@ el plan está abierto o cerrado:
 | legacy `unsealed`, cerrado (`done`) | `historical`: conserva su evidencia y no crea deuda nueva | ninguno |
 | `aligned` | ejecución normal | `/w:plan-exec <plan>` |
 | `divergent` | la spec cambió **funcionalmente** desde el digest sellado; se entrega a refinamiento estructural, o se re-sella si el plan sigue vigente tal cual | `/w:plan-refine <plan>` · `aw reseal prepare <plan>` |
-| `malformed` | bloqueo tipado `WORKLINE_BASELINE_MALFORMED` | `null` |
-| spec ausente (`unresolved`) | bloqueo tipado `WORKLINE_BASELINE_SPEC_ABSENT` | `null` |
+| `malformed` | bloqueo tipado `BASELINE_MALFORMED` | `null` |
+| spec ausente (`unresolved`) | bloqueo tipado `BASELINE_SPEC_ABSENT` | `null` |
 | `> Standalone:` (plan sin spec, nacido de la conversación) | modo propio `standalone`, **sin** aviso de sello ausente: es el modo, no un defecto | `/w:plan-exec <plan>` |
 
 Un legacy abierto no se presenta como alineado ni como derivado del contrato

@@ -5,10 +5,10 @@ import {
   readCutIntents,
   readingForPlan,
 } from "../../application/cut-intent-ledger.js";
+import { type AgentWorkflowNodeId, formatNodeId } from "../../domain/agent-workflow-node.js";
+import { nodeFromDocPath } from "../../domain/agent-workflow-node.js";
 import { CutIntentError } from "../../domain/cut-intent.js";
 import type { CommandResult } from "../../domain/types.js";
-import { type WorklineNodeId, formatNodeId } from "../../domain/workline-node.js";
-import { nodeFromDocPath } from "../../domain/workline-node.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
@@ -121,7 +121,7 @@ async function show(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
   // The whole book, current-first: one row per spec that has an intent in force,
   // and the superseded records counted rather than listed — they are history, and
   // a listing that mixed them with the current one would read as a contradiction.
-  const specs = new Map<string, WorklineNodeId>();
+  const specs = new Map<string, AgentWorkflowNodeId>();
   for (const event of read.events) specs.set(formatNodeId(event.intent.spec), event.intent.spec);
   const cuts = [...specs.values()]
     .map((spec) => currentIntentOf(read.events, spec))
@@ -199,7 +199,7 @@ async function declare(args: ParsedArgs, ctx: CliContext): Promise<CommandResult
  * `nodeFromDocPath`, the one place that decides what a path IS, so this never
  * becomes a second spelling of that rule.
  */
-function nodeOf(reference: string, kind: "spec" | "plan"): WorklineNodeId | null {
+function nodeOf(reference: string, kind: "spec" | "plan"): AgentWorkflowNodeId | null {
   const trimmed = reference.trim();
   if (trimmed.length === 0) return null;
   if (/^\d{3,}$/.test(trimmed)) return { kind, key: trimmed };
@@ -207,12 +207,12 @@ function nodeOf(reference: string, kind: "spec" | "plan"): WorklineNodeId | null
   return fromPath !== null && fromPath.kind === kind ? fromPath : null;
 }
 
-function nodeList(raw: string): WorklineNodeId[] | null {
+function nodeList(raw: string): AgentWorkflowNodeId[] | null {
   const parts = raw
     .split(",")
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
-  const nodes: WorklineNodeId[] = [];
+  const nodes: AgentWorkflowNodeId[] = [];
   for (const part of parts) {
     const node = nodeOf(part, "plan");
     if (node === null) return null;

@@ -31,8 +31,8 @@
  */
 
 import { semanticDigest } from "../../application/semantic-operation/protocol.js";
+import type { AgentWorkflowNodeId } from "../agent-workflow-node.js";
 import { baseDigest, legacyBaseDigest } from "../proposal.js";
-import type { WorklineNodeId } from "../workline-node.js";
 
 /** Bumped only when a reader can no longer trust the older shape. */
 export const CUSTODY_VERSION = 1;
@@ -43,7 +43,7 @@ export const CUSTODY_FILE = ".custody.json";
 /**
  * The exact previous state of one path: its bytes, or the fact it was absent.
  *
- * `content` is kept for Workline's own text artifacts — a spec, a plan, a
+ * `content` is kept for agent-workflow's own text artifacts — a spec, a plan, a
  * checkpoint — because nothing else can reconstruct them. Source code carries no
  * content here on purpose: git already stores every version of it, and copying
  * the same bytes into a session folder would make the baseline grow with the
@@ -66,7 +66,7 @@ export type ArtifactRole =
   | "output";
 
 export interface CustodyArtifact {
-  /** Hub-relative path — the same spelling every Workline surface uses. */
+  /** Hub-relative path — the same spelling every agent-workflow surface uses. */
   path: string;
   role: ArtifactRole;
   before: CustodyBaseline;
@@ -146,11 +146,11 @@ export interface CustodyEffect {
 export interface SessionCustody {
   version: number;
   /** The session this custody belongs to. */
-  subject: WorklineNodeId;
+  subject: AgentWorkflowNodeId;
   /** Absolute path of the session folder — where the custody itself lives. */
   subject_path: string;
   /** Typed provenance: what this session was derived FROM. */
-  parents: WorklineNodeId[];
+  parents: AgentWorkflowNodeId[];
   /** Local date the session (and this record) were created. */
   created: string;
   artifacts: CustodyArtifact[];
@@ -182,9 +182,9 @@ export function preservedBaseline(content: string): CustodyBaseline {
 }
 
 export interface SealCustodyInput {
-  subject: WorklineNodeId;
+  subject: AgentWorkflowNodeId;
   subjectPath: string;
-  parents?: readonly WorklineNodeId[];
+  parents?: readonly AgentWorkflowNodeId[];
   created: string;
   artifacts?: readonly CustodyArtifact[];
   sources?: readonly CustodySource[];
@@ -242,7 +242,7 @@ export function custodyDigest(body: Omit<SessionCustody, "digest">, legacy = fal
   });
 }
 
-function nodeOrder(a: WorklineNodeId, b: WorklineNodeId): number {
+function nodeOrder(a: AgentWorkflowNodeId, b: AgentWorkflowNodeId): number {
   return order(`${a.kind}:${a.key}`, `${b.kind}:${b.key}`);
 }
 

@@ -14,8 +14,8 @@ import {
 } from "../../application/doc-branch-ledger.js";
 import { readHubBlock, requireSourcePath } from "../../application/parsers/hub-block.js";
 import { ensureWorkingBranch } from "../../application/working-branch-service.js";
+import { type AgentWorkflowNodeId, formatNodeId } from "../../domain/agent-workflow-node.js";
 import type { CommandResult } from "../../domain/types.js";
-import { type WorklineNodeId, formatNodeId } from "../../domain/workline-node.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
@@ -94,7 +94,7 @@ async function parseDoc(reference: string, ctx: CliContext): Promise<DocIdentity
   // QUICK has no document in 31.0.0: its branch is the one git shows.
   const match = /^(spec|plan):(\d{3,})$/.exec(reference);
   if (!match?.[1] || !match[2]) return { status: "none" };
-  const doc = { kind: match[1] as WorklineNodeId["kind"], key: match[2] };
+  const doc = { kind: match[1] as AgentWorkflowNodeId["kind"], key: match[2] };
   const path = await findDocument(ctx.fs, ctx.paths, doc);
   return path === null ? { status: "none" } : { status: "resolved", doc, path };
 }

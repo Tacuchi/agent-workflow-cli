@@ -15,7 +15,7 @@ export const hostMemoryCommand: CliCommand = {
   flags: FLAGS,
   help: {
     purpose:
-      "Report what the other hosts on this machine learned about Workline in their curated memory.",
+      "Report what the other hosts on this machine learned about agent-workflow in their curated memory.",
     flags: {
       host: {
         value: `<${HOST_IDS.replaceAll(" ", "")}>`,
@@ -25,7 +25,7 @@ export const hostMemoryCommand: CliCommand = {
     output:
       "{current_host {id, detected_via, destination, destination_reason}, hosts[] (state, reason), entries[] (id, host, date, source, provenance, origin mark, stale-command signals, already at destination)}.",
     notes: [
-      "Read-only: writes nothing and logs nothing. Memory unrelated to Workline is only counted.",
+      "Read-only: writes nothing and logs nothing. Memory unrelated to agent-workflow is only counted.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {

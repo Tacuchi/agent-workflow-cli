@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Maintainer tool: runs the plan-085 scenario inside the five covered hosts, each
-// in a disposable home with the checkout's Workline, in its own Herdr pane.
+// in a disposable home with the checkout's agent-workflow, in its own Herdr pane.
 //
 // Usage:
 //   node scripts/host-run/run.mjs --dry-run      what it would do; prepares and opens nothing
@@ -622,7 +622,7 @@ async function askLine(q) {
   }
 }
 
-/** Names of the person's own Workline MCP connections, so no extract can carry one. */
+/** Names of the person's own agent-workflow MCP connections, so no extract can carry one. */
 function foreignMcpNames() {
   const r = sh(node, [CLI_MAIN, "self", "mcp", "--action", "list"]);
   try {
@@ -907,7 +907,7 @@ async function startLive() {
     return 1;
   }
 
-  // The evidence names the Workline it exercised: every root's copy hashed equal
+  // The evidence names the agent-workflow it exercised: every root's copy hashed equal
   // to the checkout (the copy-cli step refuses otherwise).
   const copies = plans.map((p) => p.steps.find((st) => st.kind === "copy-cli"));
   const trees = [...new Set(copies.map((c) => `${c?.treeHash}:${c?.depsHash}`))];

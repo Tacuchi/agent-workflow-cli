@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WorklineFlow } from "../../src/application/capability/compose.js";
+import type { AgentWorkflowFlow } from "../../src/application/capability/compose.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
 import { type FlowRunState, newRunState } from "../../src/domain/flow/run-state.js";
@@ -17,7 +17,7 @@ import { type FlowRunState, newRunState } from "../../src/domain/flow/run-state.
 export interface JourneyFixture {
   cli_version: string;
   run_state_version: number;
-  journeys: Record<WorklineFlow, string[]>;
+  journeys: Record<AgentWorkflowFlow, string[]>;
   repeatable: { "plan-exec": { first: string; last: string } };
 }
 
@@ -64,7 +64,7 @@ export function decisionsOf(ids: readonly string[]): FlowDecision[] {
  */
 export function stateWrittenAt(
   version: number,
-  flow: WorklineFlow,
+  flow: AgentWorkflowFlow,
   session: string,
   applied: readonly string[],
   boundary: string | null,
@@ -84,7 +84,7 @@ export function stateWrittenAt(
 
 /** {@link stateWrittenAt} as the 25.6.1 CLI wrote it: version 11. */
 export function v11StateAt(
-  flow: WorklineFlow,
+  flow: AgentWorkflowFlow,
   session: string,
   applied: readonly string[],
   boundary: string | null,

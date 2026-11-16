@@ -1,6 +1,6 @@
 # w — Command map (Layer 1)
 
-> README of the `/w:` namespace (`w` = *workline*): everything listed here is the **only thing the user invokes** directly. Commands are **Layer 1** — single-pass or they start a loop; no iteration logic.
+> README of the `/w:` namespace (`w` = *aw*): everything listed here is the **only thing the user invokes** directly. Commands are **Layer 1** — single-pass or they start a loop; no iteration logic.
 >
 > **Canon**: the full model (3 layers + `docs/` zone, the 3 flows, hard invariants) lives in [`../SKILL.md`](../SKILL.md); the **loop engine** in [`../loops/CHASSIS.md`](../loops/CHASSIS.md). This README is only the folder index.
 
@@ -8,7 +8,7 @@
 
 ## Hub
 
-Every invoked directory is a usable implicit hub. The closest ancestor with `.<namespace>/workline.json` is reused; otherwise the invoked directory is the root. [`/w:hub-init`](hub-init.md) is optional: without sources it materializes only the runtime, and with sources it configures metadata.
+Every invoked directory is a usable implicit hub. The closest ancestor with `.<namespace>/agent-workflow.json` is reused; otherwise the invoked directory is the root. [`/w:hub-init`](hub-init.md) is optional: without sources it materializes only the runtime, and with sources it configures metadata.
 
 ## Index
 
@@ -22,11 +22,11 @@ Every invoked directory is a usable implicit hub. The closest ancestor with `.<n
 | [`plan-refine`](plan-refine.md) | Refines the plan **in place** before executing (aux, optional) | starts `plan-refine-loop` |
 | [`plan-exec`](plan-exec.md) | Executes the plan (code/DB/git) and maintains it as a living doc | starts `plan-exec-loop` |
 | [`quick`](quick.md) | Lightweight shortcut for scoped work; never touches `docs/` | starts `quick-loop` |
-| [`doctor`](doctor.md) | Read-only diagnosis across every host + repair of what Workline owns | single-pass (transversal) |
+| [`doctor`](doctor.md) | Read-only diagnosis across every host + repair of what aw owns | single-pass (transversal) |
 | [`status`](status.md) | Read-only hub dashboard | single-pass (transversal) |
 | [`persist`](persist.md) | Persists in-conversation work into `docs/` (classify → `research` · spec draft · plan adoption) | single-pass (transversal) |
 | [`resume`](resume.md) | Summary (composes `/status`) + proposes how to resume pending work | single-pass (transversal) |
-| [`recall`](recall.md) | What the other hosts learned about Workline: contrasted, applied, offered for saving | single-pass (transversal) |
+| [`recall`](recall.md) | What the other hosts learned about aw: contrasted, applied, offered for saving | single-pass (transversal) |
 | [`export-scripts`](export-scripts.md) | Consolidates the loose SQL of `docs/scripts/` into a bundle | single-pass |
 
 > **Intentional asymmetry:** in SPEC, `spec-new` generates the draft single-pass (no loop) and the loop lives in `spec-refine`; in PLAN, all 3 commands start loops. Total: **6 flow commands / 5 loops**.

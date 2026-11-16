@@ -89,7 +89,7 @@ function applyLevel(
     if (!isSkillRole(key)) {
       if (key !== "design")
         warnings.push(
-          `${path}: role '${key}' no aplicable a Workline; el archivo se conserva sin cambios`,
+          `${path}: role '${key}' no aplicable a agent-workflow; el archivo se conserva sin cambios`,
         );
       continue;
     }
@@ -101,7 +101,7 @@ function applyLevel(
     if (val.length === 0) continue;
     if (val !== BUILTIN_DEFAULT_SKILLS[key]) {
       warnings.push(
-        `${path}: role '${key}' apunta a '${val}'; binding externo no aplicable a Workline. Gestioná esa skill desde el host o marketplace elegido; el archivo se conserva sin cambios`,
+        `${path}: role '${key}' apunta a '${val}'; binding externo no aplicable a agent-workflow. Gestioná esa skill desde el host o marketplace elegido; el archivo se conserva sin cambios`,
       );
       continue;
     }

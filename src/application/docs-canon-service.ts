@@ -40,7 +40,7 @@ export const DOCS_CATEGORIES = [
 
 export type DocsCategory = (typeof DOCS_CATEGORIES)[number];
 
-/** The three categories that form Workline's document graph. */
+/** The three categories that form agent-workflow's document graph. */
 export const CORE_DOC_CATEGORIES = ["research", "spec", "plan"] as const;
 
 /**

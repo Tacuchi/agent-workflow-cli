@@ -30,14 +30,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  type AgentWorkflowIndex,
+  buildAgentWorkflowIndex,
+} from "../../src/application/agent-workflow-index-service.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { parsePlanBaselineSeal } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { applyReseal, prepareReseal } from "../../src/application/reseal-service.js";
-import {
-  type WorklineIndex,
-  buildWorklineIndex,
-} from "../../src/application/workline-index-service.js";
 import { specBaselineDigest } from "../../src/domain/lineage.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -174,7 +174,8 @@ describe("aw reseal — cerrar una divergencia de baseline sin plan-refine", () 
     applyReseal(fs, env, paths, { target, approval });
 
   const planOnDisk = (): Promise<string> => readFile(join(root, PLAN_PATH), "utf8");
-  const board = (): Promise<WorklineIndex> => buildWorklineIndex(fs, env, paths, { now: NOW });
+  const board = (): Promise<AgentWorkflowIndex> =>
+    buildAgentWorkflowIndex(fs, env, paths, { now: NOW });
 
   /** El sello legado: el digest de los BYTES de la spec, como se sellaba antes. */
   const legacySeal = (specText: string): string =>
@@ -621,7 +622,7 @@ Spec 040.
     await writeFile(join(root, SPEC_PATH), SPEC_EDITED, "utf8");
     await writeFile(join(root, PLAN_PATH), original, "utf8");
 
-    const before = await buildWorklineIndex(fs, env, paths, { now: NOW });
+    const before = await buildAgentWorkflowIndex(fs, env, paths, { now: NOW });
     const planBefore = before.plans.find((candidate) => candidate.file === PLAN_PATH);
     expect(planBefore?.baseline).toEqual({
       status: "divergent",
@@ -649,7 +650,7 @@ Spec 040.
       ),
     );
 
-    const board = await buildWorklineIndex(fs, env, paths, { now: NOW });
+    const board = await buildAgentWorkflowIndex(fs, env, paths, { now: NOW });
     const planAfter = board.plans.find((candidate) => candidate.file === PLAN_PATH);
     expect(planAfter?.baseline).toEqual({
       status: "aligned",
@@ -698,7 +699,7 @@ ${origin}
     await writeFile(join(root, SPEC_PATH), SPEC_EDITED, "utf8");
     await writeFile(join(root, PLAN_PATH), legacy, "utf8");
 
-    const before = await buildWorklineIndex(fs, env, paths, { now: NOW });
+    const before = await buildAgentWorkflowIndex(fs, env, paths, { now: NOW });
     expect(before.plans.find((c) => c.file === PLAN_PATH)?.spec).toMatchObject({
       status: "resolved",
       number: "040",
@@ -733,7 +734,7 @@ ${origin}
     expect(
       await applyReseal(fs, env, paths, { target: PLAN_PATH, approval: prepared.proposal.digest }),
     ).toMatchObject({ status: "applied" });
-    const after = await buildWorklineIndex(fs, env, paths, { now: NOW });
+    const after = await buildAgentWorkflowIndex(fs, env, paths, { now: NOW });
     expect(after.plans.find((c) => c.file === PLAN_PATH)?.baseline).toEqual({
       status: "aligned",
       digest: functionalSpecDigest(SPEC_EDITED),
@@ -753,7 +754,7 @@ ${origin}
     await writeFile(join(root, SPEC_PATH), unclosed, "utf8");
     await writeFile(join(root, PLAN_PATH), open, "utf8");
 
-    const board = await buildWorklineIndex(fs, env, paths, { now: NOW });
+    const board = await buildAgentWorkflowIndex(fs, env, paths, { now: NOW });
     const item = board.pipeline.find((entry) => entry.file === PLAN_PATH);
     expect(item?.detail.next).toContain("fence sin cerrar en la línea");
     expect(item?.detail.next).not.toContain("aw reseal prepare");
@@ -769,7 +770,7 @@ ${origin}
     await writeFile(join(root, SPEC_PATH), SPEC_EDITED, "utf8");
     await writeFile(join(root, PLAN_PATH), open, "utf8");
 
-    const board = await buildWorklineIndex(fs, env, paths, { now: NOW });
+    const board = await buildAgentWorkflowIndex(fs, env, paths, { now: NOW });
     const item = board.pipeline.find((entry) => entry.file === PLAN_PATH);
     expect(item?.detail.next).toContain("BASELINE DIVERGENTE");
     expect(item?.detail.next).toContain(`aw reseal prepare ${PLAN_PATH}`);
@@ -778,7 +779,7 @@ ${origin}
     expect(item?.action).toMatchObject({
       kind: "handoff",
       command: `/w:plan-refine ${PLAN_PATH}`,
-      code: "WORKLINE_BASELINE_DIVERGENT",
+      code: "BASELINE_DIVERGENT",
     });
   });
 });

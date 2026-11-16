@@ -439,7 +439,7 @@ describe("Doctrine guards — G12 · split gates (multi-spec / multi-plan) pins"
 });
 
 describe("Doctrine guards — G13 · tooling gate (docs/tools) pins", () => {
-  // Reusable tooling has a Workline home and closing review without depending
+  // Reusable tooling has a agent-workflow home and closing review without depending
   // on an externally named skill; host help is optional.
   it("CODE-POLICIES' closing review gate keeps the own tooling contract", async () => {
     const policies = await readRel("loops/CODE-POLICIES.md");
@@ -1063,7 +1063,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(skill).toContain("plan_state");
     // The reporting surface is the CLI now: `status` renders it and the index
     // derives it, so the three axes have to stay separable THERE.
-    const index = await readSrc("workline-index-service.ts");
+    const index = await readSrc("agent-workflow-index-service.ts");
     expect(index).toContain("the plan's third axis");
     expect(index).toContain("final_validation_pending");
     expect(index).toContain("`inconsistent` = the document contradicts itself");
@@ -1085,7 +1085,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     // The reader has to render the reason, not just count the phase — and there is
     // exactly ONE reader deriving it now, which is why the string is pinned in the
     // shared projection rather than in the command that consumes it.
-    const index = await readSrc("workline-index-service.ts");
+    const index = await readSrc("agent-workflow-index-service.ts");
     expect(index).toContain("blocked_phases");
     expect(index).toContain("`null` on a legacy block that declares none");
     expect(index).toContain('blocked.blocker ?? "sin motivo declarado"');
@@ -1203,7 +1203,7 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     // class a closure cannot discharge — and dropping the row was exactly what
     // made a live handoff unfindable without opening the plan. Every other
     // closed plan is still skipped, and the skip is still one line.
-    const index = await readSrc("workline-index-service.ts");
+    const index = await readSrc("agent-workflow-index-service.ts");
     expect(index).toContain("export function planIsPending");
     expect(index).toContain(
       'return plan.plan_state !== "done" || liveHandoffs(plan) > 0 || pendingPasses(plan).length > 0;',
@@ -1737,7 +1737,10 @@ describe("Doctrine guards — G24 · /w:recall judges what the CLI only reads (p
     ],
     ["host report (AC-02)", "**Report every row of `hosts`**"],
     ["no other memory (scenario 2)", "no other host's memory was found (no row is `read`)"],
-    ["read but nothing on Workline", "it was read and holds nothing about Workline yet"],
+    [
+      "read but nothing on agent-workflow",
+      "it was read and holds nothing about agent-workflow yet",
+    ],
     ["working state out (AC-07)", "**Leave out working state**"],
     ["possibly stale (AC-05)", "**possibly stale** — it carries a `stale` signal"],
     ["current (AC-05)", "**current** — it holds against them. Apply it"],
@@ -1746,7 +1749,7 @@ describe("Doctrine guards — G24 · /w:recall judges what the CLI only reads (p
     ["host and date (AC-03)", "**Present each learning with its host and its date**"],
     [
       "repeated, no flow (AC-11)",
-      "found separately** as a possible Workline defect: say so, open no flow",
+      "found separately** as a possible agent-workflow defect: say so, open no flow",
     ],
     ["copies never count (AC-11)", "Copies never count"],
     ["offer only current and absent (AC-08)", "**Offer to save only what is current and absent**"],

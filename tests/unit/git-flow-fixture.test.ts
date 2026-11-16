@@ -139,7 +139,7 @@ describe("git-flow sobre git real: cada rama sólo desde su homónima, PROD sól
     return flow({ ...input, consent: consent ?? undefined });
   }
 
-  it("git-flow directo funciona sin marcador, sesión ni plan y no materializa Workline", async () => {
+  it("git-flow directo funciona sin marcador, sesión ni plan y no materializa agent-workflow", async () => {
     const result = await flow({ action: "sync", source: "core" });
     expect(result.status).toBe("ok");
     expect(result.results[0]?.steps.length).toBeGreaterThan(0);

@@ -35,7 +35,7 @@ metadata:
 
 const DESIGN_NOTE = `---
 name: aw-design-publica-el-paquete
-description: "Workline: \`aw design publish\` sella el paquete de diseño"
+description: "agent-workflow: \`aw design publish\` sella el paquete de diseño"
 metadata:
   modified: 2026-08-01T10:00:00.000Z
 ---

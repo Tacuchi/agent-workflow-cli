@@ -1,4 +1,4 @@
-# PLAN-MODE — what every Workline command does when the host is planning
+# PLAN-MODE — what every aw command does when the host is planning
 
 Loaded only when the host reports it is in plan mode (signal `plan-mode`). Sixteen commands
 used to carry a paragraph of this each; the rule was the same in all of them, so it is stated

@@ -587,7 +587,7 @@ describe("selfMcpConfig", () => {
   it("remove conserva la entrada global homónima ajena, la nombra y borra igual la conexión del registro", async () => {
     // The user has THEIR OWN 'reporting' server in agy's global MCP config —
     // this tool never wrote it. Remove must not touch it — and must not let it
-    // keep the Workline connection alive either: it was never ours to resolve.
+    // keep the agent-workflow connection alive either: it was never ours to resolve.
     const foreign = {
       mcpServers: { reporting: { command: "node", args: ["my-server.js"], env: {} } },
     };
@@ -620,7 +620,7 @@ describe("selfMcpConfig", () => {
     );
     expect(gemini.mcpServers.reporting.args).toEqual(["my-server.js"]);
     expect(readFileSync(join(home, ".claude.json"), "utf-8")).not.toContain('"reporting"');
-    // A foreign homonym is not Workline's to resolve: the connection leaves the
+    // A foreign homonym is not agent-workflow's to resolve: the connection leaves the
     // registry anyway, and the summary names the file that kept the foreign entry
     // so the person knows where to look — the TUI shows exactly this text.
     expect(readFileSync(ctx.paths.userMcpConnectionsFile(), "utf-8")).not.toContain("reporting");
@@ -657,10 +657,10 @@ describe("selfMcpConfig", () => {
   });
 
   it("remove conserva el registro cuando un homónimo ajeno en el legacy de Claude tapa un descriptor propio", async () => {
-    // Workline's own 'reporting' sits in ~/.claude.json; the user also has a
+    // agent-workflow's own 'reporting' sits in ~/.claude.json; the user also has a
     // foreign 'reporting' in the historical ~/.claude/settings.json. The writer
     // stops on the legacy file BEFORE touching the owned entry, so dropping the
-    // registry entry would orphan a descriptor Workline can no longer target.
+    // registry entry would orphan a descriptor agent-workflow can no longer target.
     const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
     await registerReporting(ctx);
     await selfMcpConfig(
@@ -698,8 +698,8 @@ describe("selfMcpConfig", () => {
     expect(result.data.summary).toContain("resolvé la entrada ajena en ~/.claude/settings.json");
   });
 
-  it("remove retira el recibo del host cuya entrada dejó de ser de Workline", async () => {
-    // Workline installed into Codex (receipt recorded); the user then rewrote the
+  it("remove retira el recibo del host cuya entrada dejó de ser de agent-workflow", async () => {
+    // agent-workflow installed into Codex (receipt recorded); the user then rewrote the
     // entry by hand. Remove keeps the foreign entry, drops the connection, and
     // must not leave a receipt describing a connection that no longer exists.
     const ctx = buildCtx(home, project, { REPORTING_DATABASE_URL: "postgres://secret" });
@@ -727,7 +727,7 @@ describe("selfMcpConfig", () => {
   });
 
   // The whole point of the release binding is that an upgrade rewrites nothing
-  // on disk. What must not happen is that the upgrade turns Workline's own
+  // on disk. What must not happen is that the upgrade turns agent-workflow's own
   // descriptors into somebody else's: the TUI would say conflict, install would
   // refuse, and remove would drop the registry entry with the descriptor still
   // in the host config.

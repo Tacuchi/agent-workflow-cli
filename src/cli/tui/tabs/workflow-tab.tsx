@@ -1,4 +1,4 @@
-// [Workline] — per-host administration of the `w` bundle as the main section
+// [agent-workflow] — per-host administration of the `w` bundle as the main section
 // (HostAdminSection) + minimal info: a 1-line overview and a compact flows
 // strip. Doctrinal detail lives in the bundle itself, not in the TUI.
 
@@ -32,7 +32,7 @@ export function WorkflowTab({ ctx, isActive, summary, onToast, disabledHosts }: 
   return (
     <Box flexDirection="column">
       <PageHead
-        title="Workline"
+        title="agent-workflow"
         // These are the BUNDLE's contents, not a promise about every host: the
         // command surface and the hooks differ per host, and each host's row
         // below states what it actually exposes.

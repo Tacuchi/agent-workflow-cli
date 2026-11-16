@@ -46,7 +46,7 @@ const RULE = "─".repeat(60);
 const claudeQuestion = { rule: "claude.question" };
 const quick = STEPS.find((s: { surface: string }) => s.surface === "structured-choice");
 
-/** claude 2.1.285's AskUserQuestion with a content tab and Workline's flow tab. */
+/** claude 2.1.285's AskUserQuestion with a content tab and agent-workflow's flow tab. */
 const CLAUDE_TABBED = [
   "❯ /w:quick Rediseñar la arquitectura completa del CLI en varias fuentes…",
   RULE,
@@ -407,8 +407,8 @@ describe("host-run replay: evidence from what the host did while its pane ran", 
     const catalog = catalogStates(HARNESSES, capabilitiesFor);
     const relay = [
       "• Hosts",
-      "  → Codex · ready · runtime available 0.157.1 · Workline instalado",
-      "      hooks degraded — host supports hooks; Workline generates its plugin bundle instead",
+      "  → Codex · ready · runtime available 0.157.1 · agent-workflow instalado",
+      "      hooks degraded — host supports hooks; agent-workflow generates its plugin bundle instead",
       "  Cobertura",
     ].join("\n");
     const base = {

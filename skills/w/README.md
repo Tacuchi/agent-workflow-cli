@@ -1,6 +1,6 @@
-# w — Workline skill bundle
+# w — aw skill bundle
 
-> The `w` bundle (`w` = *workline*) packages **Workline** — the stages + loops + artifacts system for agent work — as Claude Code skills + `/w:` slash commands. Runtime: [`@tacuchi/agent-workflow-cli`](../../README.md) (`agent-workflow` / `aw`).
+> The `w` bundle (`w` = *aw*) packages **aw** — the stages + loops + artifacts system for agent work — as Claude Code skills + `/w:` slash commands. Runtime: [`@tacuchi/agent-workflow-cli`](../../README.md) (`agent-workflow` / `aw`).
 
 It implements the **stages + loops + artifacts** model. The design source lives under `docs/referencias/` in the agent-workflow hub. This README is the bundle index; the normative text lives in its canonical docs:
 
@@ -22,4 +22,4 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 
 ## Hub
 
-Every invoked directory is a usable implicit hub. The closest `.<namespace>/workline.json` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:hub-init`](commands/hub-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.
+Every invoked directory is a usable implicit hub. The closest `.<namespace>/agent-workflow.json` ancestor supplies its root; with none, the invoked directory itself is the root. [`/w:hub-init`](commands/hub-init.md) is optional: it materializes the small runtime early, or configures explicit sources and overrides.

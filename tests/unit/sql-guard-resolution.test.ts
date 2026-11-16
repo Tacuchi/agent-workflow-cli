@@ -5,8 +5,8 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerHub } from "../../src/application/hub-registry.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -43,7 +43,10 @@ function hubBlock(): string {
 async function declaringHub(name: string): Promise<void> {
   const hub = join(root, name);
   mkdirSync(join(hub, ".workflow", "sessions"), { recursive: true });
-  writeFileSync(join(hub, ".workflow", "agent-workflow.json"), worklineMarkerContent("workflow"));
+  writeFileSync(
+    join(hub, ".workflow", "agent-workflow.json"),
+    agentWorkflowMarkerContent("workflow"),
+  );
   writeFileSync(join(hub, "CLAUDE.md"), hubBlock());
   writeFileSync(join(hub, "AGENTS.md"), hubBlock());
   const namespace = normalizeNamespace("workflow");
@@ -93,7 +96,7 @@ function markNamespaces(folder: string, namespaces: readonly string[]): void {
     mkdirSync(join(folder, `.${namespace}`, "sessions"), { recursive: true });
     writeFileSync(
       join(folder, `.${namespace}`, "agent-workflow.json"),
-      worklineMarkerContent(namespace),
+      agentWorkflowMarkerContent(namespace),
     );
   }
 }
@@ -118,7 +121,7 @@ describe("the SQL guard keeps blocking when the hub does not resolve", () => {
   it("in $HOME, which is never a hub though ~/.workflow carries a marker", () => {
     writeFileSync(
       join(home, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
     expectGuarded(home);
   });
@@ -126,7 +129,7 @@ describe("the SQL guard keeps blocking when the hub does not resolve", () => {
   it("in a checkout no hub declares, once the user level carries a marker", () => {
     writeFileSync(
       join(home, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
     expectGuarded(source);
   });

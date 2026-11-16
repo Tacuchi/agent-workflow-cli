@@ -26,7 +26,7 @@ export const toolCommand: CliCommand<ToolCliPayload> = {
   },
   help: {
     purpose:
-      "Invoke a Workline read-only PostgreSQL tool directly, without starting an MCP server.",
+      "Invoke a agent-workflow read-only PostgreSQL tool directly, without starting an MCP server.",
     args: "<list | call <tool>>",
     flags: {
       connection: { value: "<name>", effect: "Database connection registered with aw self mcp." },

@@ -84,14 +84,14 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
     expect(result.data.residual_count).toBe(1);
   });
 
-  it("runtime disponible + Workline instalado = ready, con la versión sondeada", async () => {
+  it("runtime disponible + agent-workflow instalado = ready, con la versión sondeada", async () => {
     await mkdir(join(home, ".claude", "skills", SKILL_DIR_NAME), { recursive: true });
     const result = await selfDetectHosts(buildCtx(home, ["claude"]));
     if (!result.ok || !result.data) throw new Error("expected data");
     const claude = result.data.hosts.find((h) => h.target === "claude");
     expect(claude?.runtime.state).toBe("available");
     expect(claude?.runtime.version).toBe("1.2.3");
-    expect(claude?.workline.installed).toBe(true);
+    expect(claude?.agent_workflow.installed).toBe(true);
     expect(claude?.status).toBe("ready");
     expect(claude?.advice).toBeNull();
     expect(result.data.detected_count).toBe(1);

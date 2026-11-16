@@ -17,7 +17,7 @@ import {
   missingCommands,
   readOriginMark,
 } from "../../domain/host-memory/provenance.js";
-import { isWorklineTopic } from "../../domain/host-memory/topic.js";
+import { isAgentWorkflowTopic } from "../../domain/host-memory/topic.js";
 import { readPackageVersion } from "../../runtime/version.js";
 import { runHarness } from "../dev-only-services.js";
 import { reportHostState } from "../self/host-states.js";
@@ -40,12 +40,12 @@ export function hostMemoryReaderHosts(): HarnessId[] {
 export interface HostMemoryOptions {
   /** The host the invocation is bound to (`--host`); detected from the environment when absent. */
   host?: HarnessId;
-  /** The installed CLI's command names: what makes an `aw <x>` mention a Workline one. */
+  /** The installed CLI's command names: what makes an `aw <x>` mention a agent-workflow one. */
   commands: readonly string[];
 }
 
 /**
- * What the OTHER hosts of this machine learned about Workline. It only reads:
+ * What the OTHER hosts of this machine learned about agent-workflow. It only reads:
  * the report is the input a person or an agent judges, and saving anything is the
  * current host's own act, through its own channel.
  */
@@ -139,7 +139,7 @@ async function heldIn(
 
 interface HostReading {
   row: HostMemoryRow;
-  /** Its Workline learnings, as the host's memory holds them. */
+  /** Its agent-workflow learnings, as the host's memory holds them. */
   items: RawMemoryItem[];
 }
 
@@ -156,10 +156,10 @@ async function readHost(
     if (outcome.state !== "read") {
       return { row: emptyRow(spec, outcome.state, outcome.reason), items: [] };
     }
-    const items = outcome.items.filter((item) => isWorklineTopic(item.topic, commands));
+    const items = outcome.items.filter((item) => isAgentWorkflowTopic(item.topic, commands));
     const row = {
       ...emptyRow(spec, "read", null),
-      workline_entries: items.length,
+      agent_workflow_entries: items.length,
       other_entries: outcome.items.length - items.length,
       skipped: outcome.skipped,
     };
@@ -189,7 +189,7 @@ function emptyRow(
     label: spec.label,
     state,
     reason,
-    workline_entries: 0,
+    agent_workflow_entries: 0,
     other_entries: 0,
     skipped: [],
   };

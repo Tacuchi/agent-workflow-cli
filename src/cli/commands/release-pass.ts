@@ -8,9 +8,9 @@ import {
   recordReversion,
   releasePassLedgerPath,
 } from "../../application/release-pass-ledger.js";
+import { type AgentWorkflowNodeId, nodeFromDocPath } from "../../domain/agent-workflow-node.js";
 import { ReleasePassError, isArrivalKind } from "../../domain/release-pass.js";
 import type { CommandResult } from "../../domain/types.js";
-import { type WorklineNodeId, nodeFromDocPath } from "../../domain/workline-node.js";
 import { type ParsedArgs, flagValue } from "../parser.js";
 import type { CliCommand } from "../registry.js";
 import { fail } from "../render.js";
@@ -324,8 +324,8 @@ function splitList(raw: string): string[] {
     .filter((part) => part.length > 0);
 }
 
-function planList(raw: string): WorklineNodeId[] | null {
-  const nodes: WorklineNodeId[] = [];
+function planList(raw: string): AgentWorkflowNodeId[] | null {
+  const nodes: AgentWorkflowNodeId[] = [];
   for (const part of splitList(raw)) {
     if (/^\d{3,}$/.test(part)) {
       nodes.push({ kind: "plan", key: part });

@@ -28,7 +28,7 @@ function mixedReport(): DoctorReport {
   const report = reportOf(
     [
       finding("claude-code", "installation-hosts", "runtime", "healthy"),
-      finding("claude-code", "mcps", "workline", "blocking", {
+      finding("claude-code", "mcps", "agent-workflow", "blocking", {
         remediation: {
           kind: "supported",
           action: {
@@ -90,7 +90,7 @@ describe("aw doctor por defecto — primero el veredicto, sólo lo que pide acci
 
   it("cada hallazgo accionable ocupa dos líneas: id — summary, y su acción o su guía", () => {
     const lines = human(mixedReport()).split("\n");
-    const blocking = lines.findIndex((line) => line.includes("claude-code/mcps/workline —"));
+    const blocking = lines.findIndex((line) => line.includes("claude-code/mcps/agent-workflow —"));
     expect(lines[blocking + 1]).toBe("      automatizable · acción: self.install-mcp");
     const manual = lines.findIndex((line) => line.includes("codex/skills/w:quick —"));
     expect(lines[manual + 1]).toBe("      manual · guía: revisá w:quick a mano");
@@ -127,7 +127,7 @@ describe("aw doctor por defecto — primero el veredicto, sólo lo que pide acci
       { host: "codex", label: hostLabel("codex"), status: "degraded", version: null },
     ]);
     expect(body.findings.map((item: { id: string }) => item.id)).toEqual([
-      "claude-code/mcps/workline",
+      "claude-code/mcps/agent-workflow",
       "codex/skills/w:quick",
     ]);
     expect(body.findings.every((item: object) => !("evidence" in item))).toBe(true);

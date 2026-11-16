@@ -4,7 +4,7 @@ import type { EnvPort } from "../ports/env.js";
 /**
  * Who is asking to publish in PROD, and the consent only the person can give.
  *
- * Spec 051: only the person publishes in PROD, and where Workline cannot tell
+ * Spec 051: only the person publishes in PROD, and where agent-workflow cannot tell
  * the person from an agent it does not publish. The agent's ordinary path — its
  * Bash tool — has no terminal; agents that open a terminal of their own export a
  * marker. Either one is enough to deny.

@@ -9,7 +9,7 @@ import {
   prefixedCorrelativeInput,
 } from "../../src/domain/correlative.js";
 
-describe("Workline correlatives", () => {
+describe("agent-workflow correlatives", () => {
   it("uses three digits as a floor, not a ceiling", () => {
     expect(isCorrelative("099")).toBe(true);
     expect(isCorrelative("999")).toBe(true);

@@ -288,7 +288,7 @@ describe("bootstrap de mcp serve-db", () => {
     );
   });
 
-  it("conserva mcp dbhub sólo como alias deprecado del servidor Workline", async () => {
+  it("conserva mcp dbhub sólo como alias deprecado del servidor agent-workflow", async () => {
     const result = await mcpCommand.execute(parsed(["mcp", "dbhub", "legacy"]), {} as CliContext);
 
     expect(result).toMatchObject({

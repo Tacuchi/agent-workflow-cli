@@ -214,7 +214,7 @@ export function validateDecisionNote(raw: unknown): NoteValidation {
     fail(
       "NOTE_SCHEMA_UNKNOWN",
       `versión de formato no soportada: ${JSON.stringify(raw.schema)}`,
-      `este Workline entiende ${NOTE_SCHEMA}`,
+      `este agent-workflow entiende ${NOTE_SCHEMA}`,
     );
     return { ok: false, value: null, failures };
   }

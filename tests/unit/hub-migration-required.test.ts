@@ -7,8 +7,8 @@ import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { registerHub } from "../../src/application/hub-registry.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
 
 /**
@@ -101,7 +101,10 @@ beforeEach(async () => {
   await mkdir(source);
   await run("git", ["init", "-q", "-b", "main", source]);
   await mkdir(join(hub, ".workflow"), { recursive: true });
-  await writeFile(join(hub, ".workflow", "agent-workflow.json"), worklineMarkerContent("workflow"));
+  await writeFile(
+    join(hub, ".workflow", "agent-workflow.json"),
+    agentWorkflowMarkerContent("workflow"),
+  );
   await writeFile(join(hub, "CLAUDE.md"), legacyBlock("workflow"));
   await writeFile(join(hub, "AGENTS.md"), legacyBlock("workflow"));
   const namespace = normalizeNamespace("workflow");

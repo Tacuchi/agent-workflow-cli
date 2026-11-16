@@ -58,7 +58,7 @@ const MARK_REASONS: Record<SqlLexicalMark, string> = {
   "dollar-quote": "tiene un literal entre $…$, que sólo PostgreSQL lee como literal",
 };
 
-/** `postgres` only when Workline knows it; any other server may also be MySQL. */
+/** `postgres` only when agent-workflow knows it; any other server may also be MySQL. */
 type SqlDialect = "postgres" | "unknown";
 
 const DIALECT_DISPLAY: Record<SqlDialect, string> = {

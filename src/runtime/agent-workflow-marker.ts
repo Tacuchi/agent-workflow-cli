@@ -5,7 +5,7 @@ import { RETIRED_MARKER_FILE } from "../domain/retired-name.js";
 import { NAMESPACE_REGEX } from "./namespace.js";
 
 /**
- * What tells a Workline hub apart from a directory that merely shares the
+ * What tells a agent-workflow hub apart from a directory that merely shares the
  * name of a subfolder.
  *
  * The canonical marker used to be `.<ns>/sessions/` alone, and that is a shape
@@ -13,22 +13,22 @@ import { NAMESPACE_REGEX } from "./namespace.js";
  * `~/.kimi-code/sessions` all exist on a normal machine. With three of them in
  * one home directory, every command launched from a path that was never
  * initialized read `$HOME` as three hubs at once and died with
- * `WORKLINE_NAMESPACE_AMBIGUOUS` before any service was built.
+ * `NAMESPACE_AMBIGUOUS` before any service was built.
  *
- * So the hub gets a mark of its own, `.<ns>/workline.json`, written by the
+ * So the hub gets a mark of its own, `.<ns>/agent-workflow.json`, written by the
  * minimal materialization. No host tool writes it, which is the whole point.
  */
-export const WORKLINE_MARKER_FILE = "agent-workflow.json";
+export const AGENT_WORKFLOW_MARKER_FILE = "agent-workflow.json";
 
 /**
- * Evidence that a directory was a Workline hub BEFORE the mark existed.
+ * Evidence that a directory was a agent-workflow hub BEFORE the mark existed.
  *
  * A hub already materialized has to keep resolving without anybody running
- * a migration, and these are the runtime files only Workline puts at `.<ns>/`.
+ * a migration, and these are the runtime files only agent-workflow puts at `.<ns>/`.
  * The first write into such a hub adds the mark, so this reading is the
  * bridge and not a second contract: after it, the mark answers on its own.
  */
-export const LEGACY_WORKLINE_FILES = [
+export const LEGACY_AGENT_WORKFLOW_FILES = [
   "HISTORY.md",
   "claims.jsonl",
   "skills.toml",
@@ -36,29 +36,29 @@ export const LEGACY_WORKLINE_FILES = [
 ] as const;
 
 /** The bytes the mark carries: enough to read it, never a second source of truth. */
-export function worklineMarkerContent(namespace: string): string {
+export function agentWorkflowMarkerContent(namespace: string): string {
   return `${JSON.stringify({ agent_workflow: 1, namespace }, null, 2)}\n`;
 }
 
 /**
- * Whether `dir` holds the Workline hub of `namespace`.
+ * Whether `dir` holds the agent-workflow hub of `namespace`.
  *
  * Fails CLOSED in the direction that matters: a directory that only looks like
- * one — `sessions/` and nothing of Workline's beside it — is not adopted as a
+ * one — `sessions/` and nothing of agent-workflow's beside it — is not adopted as a
  * hub, so the command's own path is, which is what the person asked for.
  */
 type MarkerReader = { stat(path: string): Promise<{ type: string }> };
 
-export async function isWorklineRoot(
+export async function isAgentWorkflowRoot(
   fs: MarkerReader,
   dir: string,
   namespace: string,
 ): Promise<boolean> {
   const root = join(dir, `.${namespace}`);
-  if (await isFile(fs, join(root, WORKLINE_MARKER_FILE))) return true;
+  if (await isFile(fs, join(root, AGENT_WORKFLOW_MARKER_FILE))) return true;
   if (await isFile(fs, join(root, RETIRED_MARKER_FILE))) return true;
   if (!(await isDir(fs, join(root, "sessions")))) return false;
-  for (const legacy of LEGACY_WORKLINE_FILES) {
+  for (const legacy of LEGACY_AGENT_WORKFLOW_FILES) {
     if (await isFile(fs, join(root, legacy))) return true;
   }
   return false;
@@ -81,7 +81,7 @@ async function isDir(fs: MarkerReader, path: string): Promise<boolean> {
 }
 
 /** The hook entry needs only marker reads, before any CLI services are loaded. */
-export async function hasWorklineMarker(start: string): Promise<boolean> {
+export async function hasAgentWorkflowMarker(start: string): Promise<boolean> {
   const fs = {
     stat: async (path: string) => {
       const info = await stat(path);
@@ -101,7 +101,7 @@ export async function hasWorklineMarker(start: string): Promise<boolean> {
     for (const entry of entries) {
       if (!entry.isDirectory() || !entry.name.startsWith(".")) continue;
       const namespace = entry.name.slice(1);
-      if (NAMESPACE_REGEX.test(namespace) && (await isWorklineRoot(fs, dir, namespace)))
+      if (NAMESPACE_REGEX.test(namespace) && (await isAgentWorkflowRoot(fs, dir, namespace)))
         return true;
     }
     const parent = dirname(dir);

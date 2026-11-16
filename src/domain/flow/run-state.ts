@@ -22,8 +22,8 @@
  * readable log.
  */
 
-import type { WorklineFlow } from "../../application/capability/compose.js";
-import { WORKLINE_FLOWS } from "../../application/capability/compose.js";
+import type { AgentWorkflowFlow } from "../../application/capability/compose.js";
+import { AGENT_WORKFLOW_FLOWS } from "../../application/capability/compose.js";
 import { canonicalJson, semanticDigest } from "../../application/semantic-operation/protocol.js";
 import type { CommitReceipt, DirtyPath } from "../../ports/git.js";
 import { type EffectClass, isEffectClass, touchesTheWorld } from "../capability/effects.js";
@@ -1268,7 +1268,7 @@ export interface PlanExecEntry {
 
 export interface FlowRunState {
   version: number;
-  flow: WorklineFlow;
+  flow: AgentWorkflowFlow;
   /** Session folder that owns the run (`NNN-<slug>-<flow>`). */
   session: string;
   /** The plan and the sources this run isolates, or `null` before it fixed them. */
@@ -1486,7 +1486,7 @@ export function sealRunState(state: Omit<FlowRunState, "digest">): FlowRunState 
   return { ...state, digest: semanticDigest(state) };
 }
 
-export function newRunState(flow: WorklineFlow, session: string): FlowRunState {
+export function newRunState(flow: AgentWorkflowFlow, session: string): FlowRunState {
   return sealRunState({
     version: FLOW_RUN_STATE_VERSION,
     flow,
@@ -2702,7 +2702,7 @@ function sameIds(left: readonly string[], right: readonly string[]): boolean {
  * the trace names it the way every other per-batch event does.
  */
 function segmentIterationAt(
-  flow: WorklineFlow,
+  flow: AgentWorkflowFlow,
   applied: readonly string[],
   position: number,
 ): number | null {
@@ -2720,7 +2720,7 @@ function checkShape(parsed: Record<string, unknown>, remedy: string): Capability
     action: remedy,
   });
 
-  if (!(WORKLINE_FLOWS as readonly unknown[]).includes(parsed.flow)) {
+  if (!(AGENT_WORKFLOW_FLOWS as readonly unknown[]).includes(parsed.flow)) {
     return invalid(`declara un flow desconocido: ${String(parsed.flow)}`);
   }
   if (typeof parsed.session !== "string" || parsed.session.trim().length === 0) {

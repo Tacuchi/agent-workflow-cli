@@ -119,7 +119,7 @@
     "from": "docs/plans/012-plan-paquete-diseno-ui-y-flows.md",
     "kind": "phase-exit",
     "lines": [
-      "**Condición de salida:** un package renombrado o movido resuelve por ID; un manifest con versión desconocida, ID duplicado o path inseguro falla nombrando el artefacto y la acción correctiva; ninguna otra superficie de Workline cambia de comportamiento."
+      "**Condición de salida:** un package renombrado o movido resuelve por ID; un manifest con versión desconocida, ID duplicado o path inseguro falla nombrando el artefacto y la acción correctiva; ninguna otra superficie de agent-workflow cambia de comportamiento."
     ],
     "was": "ok"
   },
@@ -198,7 +198,7 @@
     "was": "ok"
   },
   {
-    "from": "docs/plans/022-plan-trazabilidad-legible-workline.md",
+    "from": "docs/plans/022-plan-trazabilidad-legible-agent-workflow.md",
     "kind": "plan-validation",
     "lines": [
       "Un fixture de reconstrucción ajena verifica respuestas y orden desde la salida normal; otro verifica detalle técnico bajo demanda. Los goldens prohíben por defecto IDs internos, digests, envelopes y nombres de transición, sin eliminar su consulta explícita."
@@ -230,7 +230,7 @@
     "was": "ok"
   },
   {
-    "from": "docs/plans/031-plan-workline-agnostico-ejecucion-checkout.md",
+    "from": "docs/plans/031-plan-agent-workflow-agnostico-ejecucion-checkout.md",
     "kind": "phase-validation",
     "lines": [
       "**Validación de fase:** las pruebas de diseño cubren consumidor, rollback byte-exacto, reintento",
@@ -317,7 +317,7 @@
     "from": "docs/plans/042-plan-andamiaje-autorreparable.md",
     "kind": "plan-validation",
     "lines": [
-      "Que todo rechazo nombre una salida ejecutable (AC-05, escenario 2) se fija comprobando en `tests/unit/flow-internal-actions.test.ts` y `tests/unit/workline-index.test.ts` que cada texto de rechazo por reconciliación contiene `aw flow advance` o `aw settle`, y ninguno el punto de una fase ya validada."
+      "Que todo rechazo nombre una salida ejecutable (AC-05, escenario 2) se fija comprobando en `tests/unit/flow-internal-actions.test.ts` y `tests/unit/agent-workflow-index.test.ts` que cada texto de rechazo por reconciliación contiene `aw flow advance` o `aw settle`, y ninguno el punto de una fase ya validada."
     ],
     "was": "ok"
   },
@@ -651,7 +651,7 @@
     "was": "PLAN_SOURCE_LOCAL_PROOF_MISSING"
   },
   {
-    "from": "docs/plans/022-plan-trazabilidad-legible-workline.md",
+    "from": "docs/plans/022-plan-trazabilidad-legible-agent-workflow.md",
     "kind": "plan-validation",
     "lines": [
       "La matriz `S023/AC01`–`AC11` queda cubierta así: inventario `F1/F2`; camino, fuente y detalle `F2`; diseño simple y recorrido mínimo `F3/F4`; aprobación y fronteras `F3`; expansión `F4`; recuperación `F1/F3`; compatibilidad y multihost `F2/F3/F4`."

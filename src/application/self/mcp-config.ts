@@ -599,7 +599,7 @@ async function removeConnection(
         ];
   });
   const settled = [...remove.errors, ...receiptErrors, ...leftovers];
-  // A foreign homonym was never Workline's: it is neither removed nor allowed to
+  // A foreign homonym was never agent-workflow's: it is neither removed nor allowed to
   // keep the connection registered, and once the connection goes its receipt
   // describes nothing of ours. Only a real error holds the registry entry.
   const staleReceiptErrors =
@@ -654,7 +654,7 @@ async function removeConnection(
 }
 
 /**
- * The file that still holds a Workline-shaped descriptor for this host, or null.
+ * The file that still holds a agent-workflow-shaped descriptor for this host, or null.
  * Each Claude location is judged on its own: the combined classification reports
  * the foreign legacy homonym and would hide the owned primary entry behind it.
  */
@@ -695,7 +695,7 @@ async function purgeForeignReceipts(
         instance: connectionName,
         target: conflict.target,
         message:
-          "La entrada ajena se conserva, pero no se pudo retirar el recibo operativo de Workline.",
+          "La entrada ajena se conserva, pero no se pudo retirar el recibo operativo de agent-workflow.",
       });
     }
   }
@@ -714,7 +714,7 @@ function setupProblemNote(setup: McpSetupResult, home: string): string {
   const conflictNote =
     conflicts.length === 0
       ? ""
-      : ` Ya hay una entrada con ese nombre que Workline no puede reemplazar en: ${conflicts.join(", ")}.`;
+      : ` Ya hay una entrada con ese nombre que agent-workflow no puede reemplazar en: ${conflicts.join(", ")}.`;
   const errorNote =
     setup.errors.length === 0 ? "" : ` ${setup.errors.length} error(es) de escritura.`;
   return `${conflictNote}${errorNote}`;
@@ -1231,7 +1231,7 @@ async function resolveAction(args: ParsedArgs, prompts: SelfMcpPrompts): Promise
   if (isAction(raw)) return { action: raw, fromArgs: true };
   return {
     action: await prompts.select<SelfMcpAction>({
-      message: "Configurar MCP database (PostgreSQL Workline)",
+      message: "Configurar MCP database (PostgreSQL agent-workflow)",
       default: "list",
       choices: [
         { type: "separator", separator: "── Conexiones existentes ──" },

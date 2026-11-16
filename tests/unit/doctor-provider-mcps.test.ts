@@ -12,6 +12,7 @@ import type {
 } from "../../src/application/doctor/types.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { AGENT_WORKFLOW_MCP_ENTRY_NAME } from "../../src/domain/agent-workflow-mcp-entry.js";
 import {
   type DoctorCoverage,
   type DoctorFinding,
@@ -20,7 +21,6 @@ import {
 } from "../../src/domain/doctor/model.js";
 import { HARNESSES, type HarnessId, harnessById } from "../../src/domain/harnesses.js";
 import { redactSensitiveValue } from "../../src/domain/redaction.js";
-import { WORKLINE_MCP_ENTRY_NAME } from "../../src/domain/workline-mcp-entry.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { FakeProcess } from "../helpers/fake-process.js";
@@ -31,7 +31,7 @@ import { NodeFileSystem } from "../helpers/real-fs.js";
  * sólo lo propio.
  *
  * El `mcp doctor` que ya existía era ciego a la otra mitad del archivo: sólo
- * miraba las conexiones registradas por Workline, así que un servidor ajeno con
+ * miraba las conexiones registradas por agent-workflow, así que un servidor ajeno con
  * el binario borrado o con una credencial pegada en `env` le costaba el host a
  * la persona sin aparecer en ningún informe. La corrección tiene un filo
  * peligroso —diagnosticar lo ajeno invita a repararlo— y por eso lo que se fija
@@ -56,7 +56,7 @@ const fixture = (name: string): string =>
 const CLAUDE_MCP_LIST = fixture("claude-mcp-list.txt");
 const CODEX_MCP_LIST = fixture("codex-mcp-list.json");
 
-/** Un servidor de la captura que el host declara NO conectado, y no es de Workline. */
+/** Un servidor de la captura que el host declara NO conectado, y no es de agent-workflow. */
 const FOREIGN_UNCONNECTED = "plugin:figma:figma";
 
 const FOREIGN_HEALTHY = "context7";
@@ -69,7 +69,7 @@ const CLAUDE_HOST: HarnessId = "claude-code";
 const CODEX_HOST: HarnessId = "codex";
 /**
  * Las dos conexiones que la captura de `claude mcp list` muestra lanzadas por el
- * propio CLI de Workline (`... agent-workflow-cli ... mcp serve-db`).
+ * propio CLI de agent-workflow (`... agent-workflow-cli ... mcp serve-db`).
  *
  * Registrarlas es lo que hace honesta a la corrida: sin registro, la captura
  * real deja a dos servidores PROPIOS contados como ajenos, y la partición
@@ -83,24 +83,24 @@ const OWN_CONNECTIONS = [
 /**
  * El descriptor de elicitation CONGELADO, no derivado del generador.
  *
- * Si el esperado se calculara con `worklineMcpEntry()` —la misma expresión que
+ * Si el esperado se calculara con `agentWorkflowMcpEntry()` —la misma expresión que
  * usa producción para clasificar— la prueba seguiría verde ante cualquier
  * cambio de forma, porque generación y clasificación se moverían juntas. Las dos
  * variantes se congelan por separado y el test elige por plataforma: la elección
  * es del fixture, no del código bajo prueba.
  */
-const WORKLINE_DESCRIPTOR_POSIX = {
+const AGENT_WORKFLOW_DESCRIPTOR_POSIX = {
   command: "agent-workflow",
   args: ["mcp", "serve", "--host", "claude"],
   env: {},
 };
-const WORKLINE_DESCRIPTOR_WIN32 = {
+const AGENT_WORKFLOW_DESCRIPTOR_WIN32 = {
   command: "cmd",
   args: ["/c", "agent-workflow", "mcp", "serve", "--host", "claude"],
   env: {},
 };
-const WORKLINE_DESCRIPTOR: Record<string, unknown> =
-  process.platform === "win32" ? WORKLINE_DESCRIPTOR_WIN32 : WORKLINE_DESCRIPTOR_POSIX;
+const AGENT_WORKFLOW_DESCRIPTOR: Record<string, unknown> =
+  process.platform === "win32" ? AGENT_WORKFLOW_DESCRIPTOR_WIN32 : AGENT_WORKFLOW_DESCRIPTOR_POSIX;
 
 /** El descriptor de una conexión de base en scope workspace, también congelado. */
 function dbDescriptor(instance: string): Record<string, unknown> {
@@ -138,9 +138,9 @@ function capturedStatusOf(server: string): string {
 }
 
 /** La captura real, más el descriptor propio reportado con la MISMA salud ajena. */
-function claudeListWithUnconnectedWorkline(): string {
+function claudeListWithUnconnectedAgentWorkflow(): string {
   const status = capturedStatusOf(FOREIGN_UNCONNECTED);
-  return `${CLAUDE_MCP_LIST}\n${WORKLINE_MCP_ENTRY_NAME}: agent-workflow mcp serve --host claude - ${status}\n`;
+  return `${CLAUDE_MCP_LIST}\n${AGENT_WORKFLOW_MCP_ENTRY_NAME}: agent-workflow mcp serve --host claude - ${status}\n`;
 }
 
 /** La captura real más líneas sintéticas, para las marcas que la captura no trae. */
@@ -248,7 +248,7 @@ function targetHost(id: HarnessId): DoctorTargetHost {
     status: "ready",
     current: false,
     runtime: { state: "present", version: null },
-    workline_installed: true,
+    agent_workflow_installed: true,
     degradations: [],
     mcp_host: spec.mcpHostId,
   };
@@ -288,7 +288,7 @@ function writeClaudeLegacyConfig(servers: Record<string, unknown>): void {
 }
 
 /**
- * Conexiones en el registro de Workline, con su DSN visible salvo pedido.
+ * Conexiones en el registro de agent-workflow, con su DSN visible salvo pedido.
  *
  * Es lo único que despierta al productor de hallazgos de conexión propia: sin
  * registro, `readMcpConnections` devuelve [] y `driftReports` corta antes de
@@ -368,10 +368,10 @@ function coverageAt(output: DoctorProviderOutput, host: string): DoctorCoverage 
 describe("proveedor de MCPs — entradas ajenas en la configuración del host", () => {
   beforeEach(() => {
     // La corrida imita a la máquina de la captura: qtc-cert y qtc-prod están
-    // registradas —son de Workline— y el resto del archivo es de otra gente.
+    // registradas —son de agent-workflow— y el resto del archivo es de otra gente.
     registerConnections(OWN_CONNECTIONS);
     writeClaudeHubConfig({
-      [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR,
+      [AGENT_WORKFLOW_MCP_ENTRY_NAME]: AGENT_WORKFLOW_DESCRIPTOR,
       [FOREIGN_HEALTHY]: { command: "npx", args: ["-y", "@upstash/context7-mcp"], env: {} },
       [FOREIGN_BROKEN_BINARY]: { command: ghostBinary, args: ["serve"], env: {} },
       [FOREIGN_WITH_CREDENTIAL]: {
@@ -383,7 +383,7 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
   });
 
   async function runOverEntries(): Promise<DoctorProviderOutput> {
-    const native = nativeRunner({ claude: claudeListWithUnconnectedWorkline() });
+    const native = nativeRunner({ claude: claudeListWithUnconnectedAgentWorkflow() });
     return createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
@@ -413,8 +413,8 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
     const ours = output.findings
       .filter((finding) => finding.ownership === "ours")
       .map((finding) => finding.id);
-    expect(ours).toContain(entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
-    expect(ours).toContain(nativeId(CLAUDE_HOST, WORKLINE_MCP_ENTRY_NAME));
+    expect(ours).toContain(entryId(CLAUDE_HOST, "hub", AGENT_WORKFLOW_MCP_ENTRY_NAME));
+    expect(ours).toContain(nativeId(CLAUDE_HOST, AGENT_WORKFLOW_MCP_ENTRY_NAME));
     for (const connection of OWN_CONNECTIONS) {
       expect(ours).toContain(connectionId("hub", connection.name));
       expect(ours).toContain(connectionId("global", connection.name));
@@ -463,18 +463,18 @@ describe("proveedor de MCPs — entradas ajenas en la configuración del host", 
   });
 });
 
-describe("proveedor de MCPs — el descriptor de elicitation que Workline escribe", () => {
+describe("proveedor de MCPs — el descriptor de elicitation que agent-workflow escribe", () => {
   it("el descriptor propio no queda declarado ajeno por estar fuera del registro de conexiones", async () => {
     // No es una conexión de base registrada, así que el registro no lo conoce:
     // llamarlo ajeno le diría a la persona que su propia instalación es de otro.
     // La forma escrita es la CONGELADA, no la que produce el generador.
-    writeClaudeHubConfig({ [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR });
+    writeClaudeHubConfig({ [AGENT_WORKFLOW_MCP_ENTRY_NAME]: AGENT_WORKFLOW_DESCRIPTOR });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", AGENT_WORKFLOW_MCP_ENTRY_NAME));
 
     expect(finding.ownership).toBe("ours");
     expect(finding.state).toBe("healthy");
@@ -482,15 +482,15 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
 
   it("un descriptor propio en la ubicación histórica sigue siendo PROPIO, no ajeno", async () => {
     // El defecto que costó la release del quick 157: cada instalación que mueve
-    // o reversiona el descriptor volvía 'foreign' lo que Workline misma escribió,
+    // o reversiona el descriptor volvía 'foreign' lo que agent-workflow misma escribió,
     // y un hallazgo ajeno no propone jamás la reinstalación que lo arregla.
-    writeClaudeLegacyConfig({ [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR });
+    writeClaudeLegacyConfig({ [AGENT_WORKFLOW_MCP_ENTRY_NAME]: AGENT_WORKFLOW_DESCRIPTOR });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", AGENT_WORKFLOW_MCP_ENTRY_NAME));
 
     expect(finding.ownership).toBe("ours");
     expect(finding.state).toBe("warning");
@@ -503,18 +503,18 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
     expect(finding.proposal?.op).toBe("mcp.migrate");
   });
 
-  it("una entrada llamada 'agent-workflow' que Workline no escribió queda ajena y se preserva", async () => {
+  it("una entrada llamada 'agent-workflow' que agent-workflow no escribió queda ajena y se preserva", async () => {
     // Mismo nombre, otra forma: es de otra persona y reemplazarla le borraría
     // su configuración, así que no puede salir 'ours' ni proponer install.
     writeClaudeHubConfig({
-      [WORKLINE_MCP_ENTRY_NAME]: { command: "npx", args: ["-y", "otro-servidor"], env: {} },
+      [AGENT_WORKFLOW_MCP_ENTRY_NAME]: { command: "npx", args: ["-y", "otro-servidor"], env: {} },
     });
     const native = nativeRunner({ claude: "" });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
-    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", WORKLINE_MCP_ENTRY_NAME));
+    const finding = findingAt(output, entryId(CLAUDE_HOST, "hub", AGENT_WORKFLOW_MCP_ENTRY_NAME));
 
     expect(finding.ownership).toBe("foreign");
     expect(finding.state).toBe("warning");
@@ -523,7 +523,7 @@ describe("proveedor de MCPs — el descriptor de elicitation que Workline escrib
   });
 });
 
-describe("proveedor de MCPs — las conexiones que Workline sí registró", () => {
+describe("proveedor de MCPs — las conexiones que agent-workflow sí registró", () => {
   const [CERT] = OWN_CONNECTIONS;
 
   async function runWithConnections(): Promise<DoctorProviderOutput> {
@@ -584,7 +584,7 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
 
   it("una conexión registrada cuya entrada tiene otra forma es AJENA y no se propone reescribirla", async () => {
     // El nombre está registrado, pero lo que hay en el archivo no lo escribió
-    // Workline: pisarlo borraría la configuración de otra persona.
+    // agent-workflow: pisarlo borraría la configuración de otra persona.
     registerConnections([CERT]);
     writeClaudeHubConfig({
       [CERT.name]: { command: "npx", args: ["-y", "otro-servidor-de-base"], env: {} },
@@ -622,14 +622,14 @@ describe("proveedor de MCPs — las conexiones que Workline sí registró", () =
 
 describe("proveedor de MCPs — el veredicto del propio host sobre sus servidores", () => {
   it("lo que el host no conecta bloquea si es nuestro y sólo advierte si es ajeno", async () => {
-    writeClaudeHubConfig({ [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR });
-    const native = nativeRunner({ claude: claudeListWithUnconnectedWorkline() });
+    writeClaudeHubConfig({ [AGENT_WORKFLOW_MCP_ENTRY_NAME]: AGENT_WORKFLOW_DESCRIPTOR });
+    const native = nativeRunner({ claude: claudeListWithUnconnectedAgentWorkflow() });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
     );
 
-    const ourServer = findingAt(output, nativeId(CLAUDE_HOST, WORKLINE_MCP_ENTRY_NAME));
+    const ourServer = findingAt(output, nativeId(CLAUDE_HOST, AGENT_WORKFLOW_MCP_ENTRY_NAME));
     const foreignServer = findingAt(output, nativeId(CLAUDE_HOST, FOREIGN_UNCONNECTED));
 
     // Misma salud reportada por el host para los dos: lo único que cambia entre
@@ -651,13 +651,13 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     // El filo de la asimetría: lo que decide 'blocking' es la PROPIEDAD, no la
     // mera existencia de una entrada homónima. Si bastara con que el nombre
     // esté en el archivo, el MCP roto de otra persona saldría como una promesa
-    // incumplida de Workline —con su guía de 'volvé a registrarla'— y el
+    // incumplida de agent-workflow —con su guía de 'volvé a registrarla'— y el
     // veredicto de la corrida terminaría en exit_code 1 por algo que no es suyo.
     writeClaudeHubConfig({
-      [WORKLINE_MCP_ENTRY_NAME]: WORKLINE_DESCRIPTOR,
+      [AGENT_WORKFLOW_MCP_ENTRY_NAME]: AGENT_WORKFLOW_DESCRIPTOR,
       [FOREIGN_UNCONNECTED]: { command: "npx", args: ["-y", "figma-mcp"], env: {} },
     });
-    const native = nativeRunner({ claude: claudeListWithUnconnectedWorkline() });
+    const native = nativeRunner({ claude: claudeListWithUnconnectedAgentWorkflow() });
 
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
@@ -674,7 +674,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     expect(server.remediation.guidance.join(" | ")).not.toContain("aw mcp doctor");
 
     // Y el propio, con la misma salud y en la misma corrida, sí bloquea.
-    expect(findingAt(output, nativeId(CLAUDE_HOST, WORKLINE_MCP_ENTRY_NAME)).state).toBe(
+    expect(findingAt(output, nativeId(CLAUDE_HOST, AGENT_WORKFLOW_MCP_ENTRY_NAME)).state).toBe(
       "blocking",
     );
   });
@@ -684,7 +684,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     // dejó de nombrar al host con el id del motor de drift (`claude`) en vez del
     // de catálogo (`claude-code`), `nativeFindings` buscaba al dueño por id de
     // catálogo y JAMÁS encontraba una conexión registrada. Resultado: un MCP de
-    // base de datos que Workline configuró y el host no puede levantar volvía
+    // base de datos que agent-workflow configuró y el host no puede levantar volvía
     // como advertencia AJENA —con guía para hablar con quien lo instaló— en vez
     // del bloqueo que la spec promete. La asimetría se demostraba sólo por el
     // descriptor de elicitation, que es propio por un caso especial del nombre.
@@ -729,7 +729,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     expect(disabled.state).toBe("healthy");
     expect(disabled.remediation.kind).toBe("none");
 
-    // `"auth_status": "not_logged_in"` sobre un servidor que Workline no escribió.
+    // `"auth_status": "not_logged_in"` sobre un servidor que agent-workflow no escribió.
     const needsAuth = findingAt(output, nativeId(CODEX_HOST, "figma"));
     expect(needsAuth.state).toBe("warning");
     expect(needsAuth.ownership).toBe("foreign");
@@ -810,7 +810,7 @@ describe("proveedor de MCPs — el veredicto del propio host sobre sus servidore
     expect(findingAt(output, entryId(CLAUDE_HOST, "hub", FOREIGN_HEALTHY)).state).toBe("healthy");
   });
 
-  it("un host con Workline cuyo binario no está deja cobertura skipped con razón y sin exit 1", async () => {
+  it("un host con agent-workflow cuyo binario no está deja cobertura skipped con razón y sin exit 1", async () => {
     writeClaudeHubConfig({
       [FOREIGN_BROKEN_BINARY]: { command: ghostBinary, args: [], env: {} },
     });
@@ -874,7 +874,7 @@ describe("proveedor de MCPs — entradas remotas, que no tienen binario ni lo ne
   /**
    * El defecto más caro del lote: `malformed` lo fijaba el lector cuando faltaba
    * `command`, porque hasta ahora sólo se leían las entradas stdio PROPIAS de
-   * Workline. Aplicado al barrido de TODAS las entradas del host, cada servidor
+   * agent-workflow. Aplicado al barrido de TODAS las entradas del host, cada servidor
    * remoto legítimo —el caso normal: la captura real de `claude mcp list` de
    * este mismo lote trae tres MCP HTTP conectados— salía con la advertencia «la
    * entrada no tiene la forma de un servidor MCP decodificable» y un impacto
@@ -1136,7 +1136,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
       ...targetHost(id),
       status: "residual-config",
       runtime: { state: "missing", version: null },
-      workline_installed: false,
+      agent_workflow_installed: false,
     };
   }
 
@@ -1157,7 +1157,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     expect(doctorVerdict(output.findings, output.coverage).exit_code).toBe(0);
   });
 
-  it("un host ready con Workline pero sin binario queda skipped y no vuelve roja la corrida", async () => {
+  it("un host ready con agent-workflow pero sin binario queda skipped y no vuelve roja la corrida", async () => {
     const native = nativeRunner({ claude: { errorCode: "ENOENT" } });
     const output = await createMcpsProvider({ native: { run: native.run } }).run(
       inputFor([targetHost(CLAUDE_HOST)]),
@@ -1186,7 +1186,7 @@ describe("proveedor de MCPs — qué puede volver roja una corrida y qué no", (
     // Sin conexiones registradas y con `.mcp.json` roto a mano, la corrida
     // respondía `checked` con cero entradas miradas y veredicto 0: la cobertura
     // que dice «comprobada» sin haber mirado. El host, con ese archivo, no
-    // levanta NINGÚN MCP —ni el descriptor de Workline, que tampoco se enumera—.
+    // levanta NINGÚN MCP —ni el descriptor de agent-workflow, que tampoco se enumera—.
     writeFileSync(join(hub, ".mcp.json"), '{ "mcpServers": { "ajeno": { "command": "npx" }, ');
     const native = nativeRunner({ claude: "", codex: "[]" });
 

@@ -5,7 +5,7 @@
  * away (`checkNativeMcpHosts`), because there it only needed a yes/no about one
  * entry. A doctor needs the opposite: the host's own verdict per server, ours
  * and other people's alike, because an MCP that fails to connect is a problem
- * the person has whether or not Workline wrote it.
+ * the person has whether or not agent-workflow wrote it.
  *
  * Both parsers fail CLOSED. Codex publishes JSON and Claude publishes prose with
  * no contract at all, so a line whose mark is not recognized becomes

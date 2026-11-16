@@ -7,7 +7,7 @@ import {
   buildMcpEntry,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
-import type { WorklineMaterialization } from "./hub-materialization-service.js";
+import type { AgentWorkflowMaterialization } from "./hub-materialization-service.js";
 import { classifyMcpEntry } from "./mcp-entry-classification.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
 import { removeMcpEntry } from "./mcp-host-writer.js";
@@ -41,7 +41,7 @@ export interface McpRemoveResult {
   /** Successful descriptor removals that still require the host to reload. */
   reload_required?: McpRemovalReloadRequirement[];
   /** First-write receipt when the CLI materialized an implicit hub for removal. */
-  materialization?: WorklineMaterialization;
+  materialization?: AgentWorkflowMaterialization;
 }
 
 export interface McpRemovalReloadRequirement {
@@ -115,7 +115,7 @@ function removeEntry(
 
 /**
  * Retiring a published descriptor is safe only after its full stored shape was
- * classified as Workline-owned. The writer repeats the exact comparison when
+ * classified as agent-workflow-owned. The writer repeats the exact comparison when
  * it writes, so an external change between this read and the mutation remains
  * a conflict instead of becoming an overwrite.
  */

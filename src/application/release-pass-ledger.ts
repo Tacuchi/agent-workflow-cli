@@ -15,6 +15,11 @@
 
 import { join } from "node:path";
 import {
+  type AgentWorkflowNodeId,
+  formatNodeId,
+  isAgentWorkflowKind,
+} from "../domain/agent-workflow-node.js";
+import {
   type PassStanding,
   type ReleasePass,
   ReleasePassError,
@@ -26,7 +31,6 @@ import {
   passStandingOf,
   sqlApplicationStandingOf,
 } from "../domain/release-pass.js";
-import { type WorklineNodeId, formatNodeId, isWorklineKind } from "../domain/workline-node.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { PathsService } from "./paths-service.js";
 
@@ -317,7 +321,7 @@ export type ProductionStanding =
 
 export function productionStandingOf(
   passes: readonly DerivedPass[],
-  plan: WorklineNodeId,
+  plan: AgentWorkflowNodeId,
 ): ProductionStanding {
   const key = formatNodeId(plan);
   const carrying = passes.filter((derived) =>
@@ -419,10 +423,10 @@ function parseSimple(value: object): ReleasePassEvent | null {
   return value as ReleasePassEvent;
 }
 
-function isNode(value: unknown): value is WorklineNodeId {
+function isNode(value: unknown): value is AgentWorkflowNodeId {
   if (typeof value !== "object" || value === null) return false;
-  const node = value as Partial<WorklineNodeId>;
-  return isWorklineKind(node.kind) && typeof node.key === "string" && node.key.length > 0;
+  const node = value as Partial<AgentWorkflowNodeId>;
+  return isAgentWorkflowKind(node.kind) && typeof node.key === "string" && node.key.length > 0;
 }
 
 /**

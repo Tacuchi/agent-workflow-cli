@@ -22,7 +22,7 @@
  * its shape.
  */
 
-import { type WorklineNodeId, formatNodeId } from "./workline-node.js";
+import { type AgentWorkflowNodeId, formatNodeId } from "./agent-workflow-node.js";
 
 /** Thrown with a `code` the CLI layer turns into `{ ok: false, error }`. */
 export class ReleasePassError extends Error {
@@ -39,7 +39,7 @@ export interface ReleasePass {
   /** What names this pass. Unique among passes; never a source's arrival fact. */
   version: string;
   /** The plans it carries, by canonical identity. */
-  plans: WorklineNodeId[];
+  plans: AgentWorkflowNodeId[];
   /** The source aliases it goes over, as `AGENTS.md > Fuentes` spells them. */
   sources: string[];
 }

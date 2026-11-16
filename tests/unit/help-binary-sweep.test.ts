@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 import { helpProblems } from "../helpers/help-check.js";
 
 /**
@@ -74,7 +74,7 @@ beforeAll(async () => {
   await mkdir(join(hub, ".workflow"), { recursive: true });
   await writeFile(
     join(hub, ".workflow", "agent-workflow.json"),
-    worklineMarkerContent("workflow"),
+    agentWorkflowMarkerContent("workflow"),
     "utf8",
   );
 });

@@ -1,8 +1,8 @@
-/** The only execution surface a Workline plan may use to close a phase. */
+/** The only execution surface a agent-workflow plan may use to close a phase. */
 export type ExecutionSurface = "checkout";
 
 /** Evidence id shared by every gate that decides whether local proof is enough. */
-export const SOURCE_BOUNDED_EVIDENCE = "workline.source-bounded";
+export const SOURCE_BOUNDED_EVIDENCE = "agent-workflow.source-bounded";
 
 /**
  * The local checkout a boundary's source-bounded evidence will be measured against.

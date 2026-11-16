@@ -41,7 +41,7 @@ export interface HubSource {
 
 export interface HubTabData {
   hubName: string;
-  /** Absolute resolved Workline root. */
+  /** Absolute resolved agent-workflow root. */
   hubPath: string;
   /**
    * True when the hub has a hub block in AGENTS.md (or a legacy CLAUDE.md).

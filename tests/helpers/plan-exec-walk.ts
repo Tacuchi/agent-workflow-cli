@@ -108,7 +108,7 @@ function resultFor(
     outcome: override.outcome ?? "completed",
     invocation: action.invocation,
     validations: action.evidence.flatMap((id) =>
-      id === "workline.source-bounded"
+      id === "agent-workflow.source-bounded"
         ? proofsFor(resolved, stopped, sources).map((proof) => ({
             id,
             passed: true,

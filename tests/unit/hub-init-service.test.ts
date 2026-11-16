@@ -129,7 +129,7 @@ describe("runWorkspaceInit", () => {
     expect(gitignore).not.toContain(".workflow/sessions/");
   });
 
-  it("runtime gitignore se agrega para una raíz Workline que pertenece a Git", async () => {
+  it("runtime gitignore se agrega para una raíz agent-workflow que pertenece a Git", async () => {
     mkdirSync(join(hub, ".git"));
     await init({ sources: [{ alias: "self", path: hub }] });
     const gitignore = readFileSync(join(hub, ".gitignore"), "utf-8");
@@ -524,7 +524,7 @@ describe("runWorkspaceInit", () => {
     }
   });
 
-  it("normaliza una fuente relativa contra la raíz Workline resuelta, no contra el cwd del invocador", async () => {
+  it("normaliza una fuente relativa contra la raíz agent-workflow resuelta, no contra el cwd del invocador", async () => {
     const source = join(hub, "repo");
     const nestedCwd = join(hub, "nested", "caller");
     mkdirSync(source, { recursive: true });

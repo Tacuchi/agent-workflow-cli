@@ -14,7 +14,7 @@ import {
 import { FLOW_DECISIONS, actionOf } from "../../src/domain/flow/authority.js";
 import { SESSION_SHAPES, bindAction } from "../../src/domain/flow/rules.js";
 import { commandIn, nextStepOf } from "../../src/domain/next-step.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 
 /**
  * Every error with a determinable next step names the exact command (plan 082,
@@ -169,7 +169,7 @@ describe("determinable errors name the exact command — through the binary", ()
     await mkdir(join(ws, "sub"), { recursive: true });
     await writeFile(
       join(ws, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
   });
 

@@ -6,7 +6,7 @@ import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
 import type { ProcessPort } from "../ports/process.js";
-import type { ResolvedNamespace, WorklineDirectory } from "../runtime/namespace-resolver.js";
+import type { AgentWorkflowDirectory, ResolvedNamespace } from "../runtime/namespace-resolver.js";
 import type { ResolvedRuntime } from "../runtime/types.js";
 
 export interface CliContext {
@@ -23,7 +23,7 @@ export interface CliContext {
   runtime: ResolvedRuntime;
   namespace: ResolvedNamespace;
   /** Bootstrap's one resolved hub coordinate; optional for lightweight legacy test contexts. */
-  directory?: WorklineDirectory;
+  directory?: AgentWorkflowDirectory;
   paths: PathsService;
   /** Resolved capability role → skill bindings (skills.toml cascade). */
   skills: ResolvedSkills;

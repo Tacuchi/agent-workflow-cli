@@ -7,7 +7,7 @@ export interface HubUntrack {
   applied: boolean;
 }
 
-/** Only Workline-owned ignored paths; user-authored ignore rules never authorize index edits. */
+/** Only agent-workflow-owned ignored paths; user-authored ignore rules never authorize index edits. */
 export async function hubUntrack(
   process: ProcessPort,
   paths: PathsService,

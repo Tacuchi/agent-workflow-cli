@@ -1,10 +1,14 @@
+import {
+  AGENT_WORKFLOW_MCP_ENTRY_NAME,
+  agentWorkflowMcpEntry,
+} from "../../domain/agent-workflow-mcp-entry.js";
 /**
  * MCPs — the drift of our own connections, every entry each host holds, and
  * what the host itself says about them.
  *
  * Three reads because there are three different questions, and answering only
  * the first is what makes today's `mcp doctor` blind to the MCP that is broken
- * on this machine without being Workline's. Ownership decides what may be
+ * on this machine without being agent-workflow's. Ownership decides what may be
  * ACTED on, never what may be reported: an entry nobody here wrote still costs
  * the person a working host when it fails, so it is diagnosed and given
  * written guidance, and never an action.
@@ -15,8 +19,7 @@ import {
   doctorFindingId,
 } from "../../domain/doctor/model.js";
 import { type McpDriftReport, type McpHost, mcpEntryNameFor } from "../../domain/mcp-entry.js";
-import { WORKLINE_MCP_ENTRY_NAME, worklineMcpEntry } from "../../domain/workline-mcp-entry.js";
-import { isWorklineRoot } from "../../runtime/workline-marker.js";
+import { isAgentWorkflowRoot } from "../../runtime/agent-workflow-marker.js";
 import { readMcpConnections } from "../mcp-connections-service.js";
 import { hasEmbeddedCredential, runMcpDoctor } from "../mcp-doctor-service.js";
 import { classifyMcpEntry } from "../mcp-entry-classification.js";
@@ -103,7 +106,7 @@ async function configuredEntries(
   const mcpHosts = hosts.map((host) => host.mcp_host as McpHost);
   const materialized =
     input.ctx.directory?.materialized ??
-    (await isWorklineRoot(input.ctx.fs, input.hubDir, input.ctx.namespace.namespace));
+    (await isAgentWorkflowRoot(input.ctx.fs, input.hubDir, input.ctx.namespace.namespace));
   // Primero gana: los dos scopes emiten un hallazgo por el mismo nombre y
   // `hub` se recorre antes, que es el orden que el cruce tenía.
   const remember = (finding: DoctorFinding, entryName: string): void => {
@@ -119,7 +122,7 @@ async function configuredEntries(
       // `runMcpDoctor` reports by MCP host id (`claude`) and the report is
       // keyed by catalog id (`claude-code`). Emitting the engine's id here
       // split one host into two rows AND — worse — made `nativeFindings`
-      // never recognize its own connection as ours, so a Workline MCP the
+      // never recognize its own connection as ours, so a agent-workflow MCP the
       // host cannot connect came back as somebody else's warning instead of
       // the blocking finding the spec promises.
       remember(ownConnectionFinding(report, catalogHostOf(hosts, report.host)), report.instance);
@@ -200,8 +203,9 @@ function ownConnectionFinding(report: McpDriftReport, host: string): DoctorFindi
     return {
       ...base,
       state: "warning",
-      summary: `${report.instance} existe en ${host} con una forma que no es la de Workline`,
-      impact: "Workline no puede tocarla: reemplazarla borraría configuración de otra persona",
+      summary: `${report.instance} existe en ${host} con una forma que no es la de agent-workflow`,
+      impact:
+        "agent-workflow no puede tocarla: reemplazarla borraría configuración de otra persona",
       ownership: "foreign",
       remediation: {
         kind: "manual",
@@ -215,7 +219,7 @@ function ownConnectionFinding(report: McpDriftReport, host: string): DoctorFindi
     ...base,
     state: "warning",
     summary: driftSummary(report, host),
-    impact: "el host no levantará este MCP como Workline lo dejó configurado",
+    impact: "el host no levantará este MCP como agent-workflow lo dejó configurado",
     ownership: "ours",
     remediation: { kind: "manual", action: null, guidance: driftGuidance(report) },
     ...(repair === null ? {} : { proposal: repair }),
@@ -375,12 +379,12 @@ async function fileEntryFindings(
     for (const name of scan.names) {
       if (ourNames.has(name)) continue;
       const snapshot = readMcpEntry(mcpHost, scopeDir, name, scope);
-      // Workline's own elicitation descriptor is not a registered DB connection,
+      // agent-workflow's own elicitation descriptor is not a registered DB connection,
       // so the connection registry does not know it — and calling it foreign
       // would tell the person their own install belongs to somebody else.
-      if (name === WORKLINE_MCP_ENTRY_NAME) {
+      if (name === AGENT_WORKFLOW_MCP_ENTRY_NAME) {
         entries.push({
-          finding: worklineEntryFinding(host.host, mcpHost, scope, snapshot),
+          finding: agentWorkflowEntryFinding(host.host, mcpHost, scope, snapshot),
           entryName: name,
         });
         continue;
@@ -408,7 +412,7 @@ async function entryProblems(
 ): Promise<string[]> {
   const problems: string[] = [];
   // `malformed` lo decide el lector, y hasta este lote sólo se le preguntaba por
-  // las entradas stdio de Workline: una entrada REMOTA legítima —`{type:"http"|
+  // las entradas stdio de agent-workflow: una entrada REMOTA legítima —`{type:"http"|
   // "sse", url}`, el caso normal y no el borde— no tiene `command` y salía
   // reportada como «no tiene la forma de un servidor MCP decodificable», con un
   // impacto («el host puede fallar al levantarla») que describe un problema que
@@ -508,8 +512,8 @@ function foreignEntryFinding(
       ? `${name} es una entrada ajena y está bien formada`
       : `${name} es una entrada ajena con problemas: ${problems.join("; ")}`,
     impact: healthy
-      ? "no es de Workline y no necesita nada"
-      : "el host puede fallar al levantarla, y Workline no puede corregirla porque no es suya",
+      ? "no es de agent-workflow y no necesita nada"
+      : "el host puede fallar al levantarla, y agent-workflow no puede corregirla porque no es suya",
     evidence: [
       `archivo: ${snapshot.target}`,
       ...(name === rawName ? [] : ["el nombre se normalizó para el informe; el archivo manda"]),
@@ -530,31 +534,31 @@ function foreignEntryFinding(
 }
 
 /**
- * The elicitation descriptor Workline writes into each host, judged by the same
- * predicate every other Workline descriptor is judged by.
+ * The elicitation descriptor agent-workflow writes into each host, judged by the same
+ * predicate every other agent-workflow descriptor is judged by.
  *
  * `classifyMcpEntry` compares the WHOLE generated shape, which is what stops a
  * release upgrade from calling the previous generation's descriptor foreign.
  */
-function worklineEntryFinding(
+function agentWorkflowEntryFinding(
   host: string,
   mcpHost: McpHost,
   scope: Scope,
   snapshot: ReturnType<typeof readMcpEntry>,
 ): DoctorFinding {
-  const expected = worklineMcpEntry(mcpHost);
+  const expected = agentWorkflowMcpEntry(mcpHost);
   const state = classifyMcpEntry(mcpHost, snapshot, expected, {
-    name: WORKLINE_MCP_ENTRY_NAME,
+    name: AGENT_WORKFLOW_MCP_ENTRY_NAME,
     dsnVar: "",
   }).state;
   const ours = state === "current" || state === "known-legacy";
   const base = {
-    id: doctorFindingId(host, CATEGORY, `${scope}:${WORKLINE_MCP_ENTRY_NAME}`),
+    id: doctorFindingId(host, CATEGORY, `${scope}:${AGENT_WORKFLOW_MCP_ENTRY_NAME}`),
     host,
     category: CATEGORY,
     resource: {
       kind: "mcp-entry" as const,
-      name: `${WORKLINE_MCP_ENTRY_NAME} (${scope})`,
+      name: `${AGENT_WORKFLOW_MCP_ENTRY_NAME} (${scope})`,
       locator: snapshot.target,
     },
     evidence: [`archivo: ${snapshot.target}`, `estado de la entrada: ${state}`],
@@ -563,7 +567,7 @@ function worklineEntryFinding(
     return {
       ...base,
       state: "healthy",
-      summary: `el descriptor de Workline está vigente en ${host}`,
+      summary: `el descriptor de agent-workflow está vigente en ${host}`,
       impact: "el host puede pedirle una elección estructurada a la persona por MCP",
       ownership: "ours",
       remediation: { kind: "none", action: null, guidance: [] },
@@ -579,7 +583,7 @@ function worklineEntryFinding(
     return {
       ...base,
       state: "warning",
-      summary: `el descriptor de Workline en ${host} quedó en una ubicación que ya no es la vigente`,
+      summary: `el descriptor de agent-workflow en ${host} quedó en una ubicación que ya no es la vigente`,
       impact: "el host puede cargar el descriptor viejo junto al vigente",
       ownership: "ours",
       remediation: {
@@ -589,7 +593,7 @@ function worklineEntryFinding(
       },
       proposal: {
         op: "mcp.migrate",
-        args: { host: mcpHost, instance: WORKLINE_MCP_ENTRY_NAME, scope },
+        args: { host: mcpHost, instance: AGENT_WORKFLOW_MCP_ENTRY_NAME, scope },
       },
     };
   }
@@ -597,8 +601,8 @@ function worklineEntryFinding(
   return {
     ...base,
     state: "warning",
-    summary: `hay una entrada '${WORKLINE_MCP_ENTRY_NAME}' en ${host} que Workline no escribió`,
-    impact: "Workline la preserva: reemplazarla borraría configuración de otra persona",
+    summary: `hay una entrada '${AGENT_WORKFLOW_MCP_ENTRY_NAME}' en ${host} que agent-workflow no escribió`,
+    impact: "agent-workflow la preserva: reemplazarla borraría configuración de otra persona",
     ownership: "foreign",
     remediation: {
       kind: "manual",
@@ -644,7 +648,7 @@ interface NativeMerge {
  * The host's own verdict, merged onto the entries already found.
  *
  * The asymmetry is deliberate and it is the spec's: OUR MCP that the host cannot
- * connect is `blocking`, because Workline promised that capability and it is not
+ * connect is `blocking`, because agent-workflow promised that capability and it is not
  * there. Somebody else's failing MCP is a `warning` with written guidance and no
  * action, because the failure is real but the resource is not ours to repair.
  */
@@ -738,8 +742,8 @@ function nativeFinding(
       ? `'${name}' necesita autenticación en ${host}`
       : `${host} no logra conectar '${name}'`,
     impact: ours
-      ? "una capacidad que Workline configuró no está disponible en este host"
-      : "el host arrastra un servidor que no levanta; Workline no lo tocó y no lo va a tocar",
+      ? "una capacidad que agent-workflow configuró no está disponible en este host"
+      : "el host arrastra un servidor que no levanta; agent-workflow no lo tocó y no lo va a tocar",
     remediation: {
       kind: "manual",
       action: null,
@@ -791,12 +795,12 @@ function coverageFor(
   // huérfano de un host desinstalado meses atrás volviera roja —exit 1, y con
   // ella el build de CI— una máquina impecable. Se distingue «no pude mirar
   // porque el host no está» de «no pude mirar y eso es un problema».
-  if (failed.failure === "absent" && host.workline_installed) {
+  if (failed.failure === "absent" && host.agent_workflow_installed) {
     return coverage(
       CATEGORY,
       host.host,
       "skipped",
-      `${failed.reason}: Workline figura instalado pero falta el binario del host`,
+      `${failed.reason}: agent-workflow figura instalado pero falta el binario del host`,
     );
   }
   if (failed.failure === "absent" && host.status === "residual-config") {

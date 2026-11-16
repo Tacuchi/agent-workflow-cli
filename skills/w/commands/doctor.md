@@ -1,5 +1,5 @@
 ---
-description: Use when the user asks if the install, MCPs, skills or auth are healthy across hosts, or to repair what Workline owns.
+description: Use when the user asks if the install, MCPs, skills or auth are healthy across hosts, or to repair what aw owns.
 argument-hint: "(none) | prepare --select <id>… | apply --approval <digest> --select <id>…"
 allowed-tools:
   [

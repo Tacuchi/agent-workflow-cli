@@ -1,5 +1,5 @@
 /**
- * El servidor propio de Workline: la pieza que convierte una frontera humana en un
+ * El servidor propio de agent-workflow: la pieza que convierte una frontera humana en un
  * selector nativo del host.
  *
  * Cómo funciona, y por qué así: el agente llama una herramienta de ESTE servidor

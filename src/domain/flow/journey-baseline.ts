@@ -7,9 +7,9 @@
  * then on each run carries the journey of the build that last aligned it.
  * `tests/unit/flow-journey-compat.test.ts` pins it to the frozen 25.6.1 fixture.
  */
-import type { WorklineFlow } from "../../application/capability/compose.js";
+import type { AgentWorkflowFlow } from "../../application/capability/compose.js";
 
-export const V11_JOURNEY_BASE: Readonly<Record<WorklineFlow, readonly string[]>> = {
+export const V11_JOURNEY_BASE: Readonly<Record<AgentWorkflowFlow, readonly string[]>> = {
   quick: [
     "chassis.docs-boundary",
     "chassis.route-evaluation",

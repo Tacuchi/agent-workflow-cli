@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildAgentWorkflowIndex } from "../../src/application/agent-workflow-index-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
@@ -20,7 +20,10 @@ const NOW = new Date(2026, 7, 24, 12, 0, 0);
 
 const paths = (): PathsService => new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");
 const index = (fs: MemFs) =>
-  buildWorklineIndex(fs, new FakeEnv("/home", "/cwd"), paths(), { now: NOW, sessions: "legacy" });
+  buildAgentWorkflowIndex(fs, new FakeEnv("/home", "/cwd"), paths(), {
+    now: NOW,
+    sessions: "legacy",
+  });
 
 const hub = (): MemFs =>
   new MemFs({ lenient: true })

@@ -28,10 +28,10 @@ export function hostLabel(id: HarnessId): string {
 
 /**
  * Dos formas de host DELIBERADAMENTE opuestas: `installed` decide a la vez el
- * estado, el runtime y la instalación de Workline.
+ * estado, el runtime y la instalación de agent-workflow.
  *
  * Con dos hosts idénticos las ramas «ausente» y «sin runtime» no se renderizan
- * nunca, así que invertir `workline_installed` en producción no cambiaría una
+ * nunca, así que invertir `agent_workflow_installed` en producción no cambiaría una
  * sola letra del texto y ninguna prueba podría notarlo.
  */
 export function hostView(
@@ -51,7 +51,7 @@ export function hostView(
     runtime: installed
       ? { state: "available", version: "1.2.3" }
       : { state: "missing", version: null },
-    workline_installed: installed,
+    agent_workflow_installed: installed,
     degradations,
   };
 }
@@ -134,7 +134,7 @@ export function blockingReport(): DoctorReport {
       finding("claude-code", "installation-hosts", "runtime", "healthy"),
       finding("claude-code", "installation-hosts", "bundle", "healthy"),
       finding("claude-code", "skills", "replica", "healthy"),
-      finding("claude-code", "mcps", "workline", "blocking"),
+      finding("claude-code", "mcps", "agent-workflow", "blocking"),
       finding("codex", "skills", "w:plan-exec", "warning"),
       finding("codex", "skills", "w:quick", "warning"),
       finding("codex", "mcps", "database", "unverified"),

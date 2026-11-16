@@ -24,7 +24,7 @@ function makeFs(
 }
 
 /**
- * The mark that makes a `.<ns>/` directory Workline's own.
+ * The mark that makes a `.<ns>/` directory agent-workflow's own.
  *
  * `sessions/` alone is a shape the host tools share — `~/.claude/sessions`,
  * `~/.codex/sessions`, `~/.kimi-code/sessions` — so it is no longer enough to be
@@ -134,7 +134,7 @@ describe("NamespaceResolver", () => {
     );
     const r = new NamespaceResolver(fs, new FakeEnv("/home/u", "/cwd"));
     await expect(r.resolveDirectory(undefined)).rejects.toMatchObject({
-      code: "WORKLINE_NAMESPACE_AMBIGUOUS",
+      code: "NAMESPACE_AMBIGUOUS",
       root: "/cwd",
       namespaces: ["other", "workflow"],
     });
@@ -185,7 +185,7 @@ describe("NamespaceResolver", () => {
     expect(result.namespace).toBe("legacy");
   });
 
-  it("uses the nearest ancestor marker as the shared Workline root", async () => {
+  it("uses the nearest ancestor marker as the shared agent-workflow root", async () => {
     const fs = makeFs(
       mark("/repo/.workflow/agent-workflow.json"),
       new Map([
@@ -264,7 +264,7 @@ describe("NamespaceResolver", () => {
     // Lo que había en $HOME de cualquier máquina: tres carpetas de herramientas
     // con su propio `sessions/`. Con `sessions/` como marcador canónico, ese
     // árbol se leía como tres workspaces a la vez y TODO comando lanzado abajo
-    // moría con WORKLINE_NAMESPACE_AMBIGUOUS antes de construir un servicio.
+    // moría con NAMESPACE_AMBIGUOUS antes de construir un servicio.
     const dirs = new Map<string, DirEntry[]>([
       [
         "/home/u",
@@ -291,7 +291,7 @@ describe("NamespaceResolver", () => {
   });
 
   it("un workspace materializado antes del marcador sigue resolviendo, sin migración", async () => {
-    // Sólo `sessions/` y los archivos de runtime que únicamente Workline pone
+    // Sólo `sessions/` y los archivos de runtime que únicamente agent-workflow pone
     // en `.<ns>/`: es el parque que ya existe, y tiene que seguir encontrándose
     // sin que nadie corra un comando de conversión.
     const dirs = new Map<string, DirEntry[]>([

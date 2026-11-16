@@ -9,7 +9,7 @@ import { runHubsSync } from "../../src/application/hubs-sync-service.js";
 import { hubsCommand } from "../../src/cli/commands/hubs.js";
 import { parseArgv } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { type FakeWorkspace, fakeHerdr } from "../helpers/fake-herdr.js";
 
@@ -31,7 +31,7 @@ function fixture(names: string[]) {
     mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
     writeFileSync(
       join(path, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
     return path;
   });
@@ -290,7 +290,7 @@ describe("aw hubs sync --herdr", () => {
       mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
       writeFileSync(
         join(path, ".workflow", "agent-workflow.json"),
-        worklineMarkerContent("workflow"),
+        agentWorkflowMarkerContent("workflow"),
       );
     }
     writeFileSync(
@@ -314,7 +314,7 @@ describe("aw hubs sync --herdr", () => {
       mkdirSync(join(path, ".workflow", "sessions"), { recursive: true });
       writeFileSync(
         join(path, ".workflow", "agent-workflow.json"),
-        worklineMarkerContent("workflow"),
+        agentWorkflowMarkerContent("workflow"),
       );
     }
     writeFileSync(

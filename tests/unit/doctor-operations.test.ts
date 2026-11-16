@@ -27,7 +27,7 @@ import {
  * catálogo promete que recomendar no es autorizar: una operación que se colara
  * con sólo clases auto-autorizables correría sin que nadie diga sí, y el informe
  * seguiría viéndose igual. El gate promete que sólo se escribe sobre recursos
- * atribuibles a Workline: un hallazgo ajeno que recibiera acción produciría un
+ * atribuibles a agent-workflow: un hallazgo ajeno que recibiera acción produciría un
  * lote perfectamente sellado que pisa el archivo de otra persona, y ninguna
  * prueba del sellado lo notaría porque el sello sella lo que le dan.
  *
@@ -425,7 +425,7 @@ describe("gate de propiedad al anotar reparaciones", () => {
 
   it("un hallazgo propio cuya evidencia menciona la credencial embebida sólo recibe guía", () => {
     // El defecto que atrapa: la propiedad y el secreto son cosas distintas. Una
-    // entrada con la forma que Workline publica pero con una credencial pegada
+    // entrada con la forma que agent-workflow publica pero con una credencial pegada
     // en `env` clasifica 'ours', y repararla automáticamente significaría
     // reescribir el archivo que guarda ese secreto —moverlo, copiarlo o
     // perderlo— en vez de pedir que la persona lo rote.
@@ -519,7 +519,7 @@ describe("gate de propiedad al anotar reparaciones", () => {
     // aserciones de guía de este archivo son sobre RECHAZADOS: ninguna cubría
     // este caso.
     const guidance = [
-      "la entrada de ese host no coincide con la forma que Workline publica",
+      "la entrada de ese host no coincide con la forma que agent-workflow publica",
       "aw mcp setup --host claude --instance cert --scope workspace",
     ];
     const result = only(

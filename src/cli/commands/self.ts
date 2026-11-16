@@ -131,13 +131,13 @@ export const selfCommand: CliCommand = {
       },
       install: {
         purpose:
-          "Alias of install-skill: install the Workline skill, commands and hooks into a host.",
+          "Alias of install-skill: install the agent-workflow skill, commands and hooks into a host.",
         flags: INSTALL_SKILL_HELP,
         output: INSTALL_SKILL_OUTPUT,
       },
       "install-skill": {
         purpose:
-          "Install the Workline skill, its commands and its hooks into one host or every host.",
+          "Install the agent-workflow skill, its commands and its hooks into one host or every host.",
         flags: INSTALL_SKILL_HELP,
         output: INSTALL_SKILL_OUTPUT,
         notes: [
@@ -145,7 +145,7 @@ export const selfCommand: CliCommand = {
         ],
       },
       "install-hooks": {
-        purpose: "Merge the Workline lifecycle hooks into one host's configuration.",
+        purpose: "Merge the agent-workflow lifecycle hooks into one host's configuration.",
         flags: {
           target: { value: "<host>", effect: "Host whose hooks configuration to update." },
           template: {
@@ -168,7 +168,9 @@ export const selfCommand: CliCommand = {
           legacy: { effect: "Also remove legacy command files." },
           "no-commands": { effect: "Keep the commands." },
           "skill-only": { effect: "Remove only the skill; keeps commands and hooks." },
-          "with-hooks": { effect: "Also remove the Workline hooks from the host configuration." },
+          "with-hooks": {
+            effect: "Also remove the agent-workflow hooks from the host configuration.",
+          },
           "dry-run": { effect: "Report what would be removed without deleting." },
         },
         output:
@@ -201,7 +203,8 @@ export const selfCommand: CliCommand = {
           "{status (removed|dry-run|noop), removed[], prefixes_used[], scanned_dirs[], summary}.",
       },
       mcp: {
-        purpose: "Register, install, diagnose or remove the Workline PostgreSQL MCP connections.",
+        purpose:
+          "Register, install, diagnose or remove the agent-workflow PostgreSQL MCP connections.",
         flags: {
           action: {
             value: "<list|use-env|create-env|doctor|remove|cancel|install-<host>>",

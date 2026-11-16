@@ -95,16 +95,16 @@ export async function runDoctor(
   // Un `--only` mal escrito se denuncia ANTES de mirar nada: es lo único que
   // explica por qué la corrida no cubrió lo que la persona creía haber pedido.
   const findings: DoctorFinding[] = selection.unknownOnly.map(unknownOnlyFinding);
-  if (!selection.states.some((state) => state.workline.installed)) {
+  if (!selection.states.some((state) => state.agent_workflow.installed)) {
     findings.push({
-      id: doctorFindingId("hub", "installation-hosts", "sin-workline"),
+      id: doctorFindingId("hub", "installation-hosts", "sin-agent-workflow"),
       host: "hub",
       category: "installation-hosts",
-      resource: { kind: "instalación", name: "Workline en hosts", locator: null },
+      resource: { kind: "instalación", name: "agent-workflow en hosts", locator: null },
       state: "blocking",
-      summary: "Workline no está instalado en ningún host",
-      impact: "ningún host de esta máquina puede iniciar los recorridos de Workline",
-      evidence: ["el catálogo no encontró ninguna instalación de Workline"],
+      summary: "agent-workflow no está instalado en ningún host",
+      impact: "ningún host de esta máquina puede iniciar los recorridos de agent-workflow",
+      evidence: ["el catálogo no encontró ninguna instalación de agent-workflow"],
       ownership: "ours",
       remediation: {
         kind: "manual",

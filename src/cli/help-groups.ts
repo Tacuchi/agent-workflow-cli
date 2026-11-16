@@ -16,7 +16,7 @@ export interface CommandGroup {
   commands: string[];
 }
 
-/** The group `aw --help` leaves out unless `--all` asks for it: commands for Workline's own development. */
+/** The group `aw --help` leaves out unless `--all` asks for it: commands for agent-workflow's own development. */
 const DEV_ONLY_GROUP = "Dev-only";
 
 const GROUPS: readonly CommandGroup[] = [
@@ -50,7 +50,7 @@ const GROUPS: readonly CommandGroup[] = [
     commands: [
       "status",
       "resume",
-      // What the other hosts of the machine learned about Workline, read-only:
+      // What the other hosts of the machine learned about agent-workflow, read-only:
       // the substrate `/w:recall` judges, as `status` is for `/w:status`.
       "host-memory",
       "persist",
@@ -346,7 +346,7 @@ export function globalHelpText(
     .map((c) => c.name);
   const hooks = all ? commands.filter((command) => command.hook === true) : [];
   const lines = [
-    "aw — Workline runtime CLI",
+    "aw — agent-workflow runtime CLI",
     "",
     "Usage:",
     "  aw [--namespace <name>] [--hub <path>] <command> [<action>] [args...]",
@@ -364,7 +364,7 @@ export function globalHelpText(
     "                       it for every invocation. Refused with an explicit --json/--format json",
     "",
     "Namespace resolution order: --namespace flag > AW_NAMESPACE env > nearest",
-    "ancestor marker (.<ns>/workline.json) > ~/.config/agent-workflow/namespace >",
+    "ancestor marker (.<ns>/agent-workflow.json) > ~/.config/agent-workflow/namespace >",
     `default '${defaultNamespace}'. --hub selects an explicit hub. Without`,
     "a marker, a directory outside a git checkout is an implicit root; inside",
     "an unclaimed checkout, specify --hub or initialize a hub.",

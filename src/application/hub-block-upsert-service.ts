@@ -140,7 +140,7 @@ export async function previewHubBlockUpsert(
   return composePayload({ ...input, verbose: true }, { results, hasError: false }, plan);
 }
 
-/** Workline writes the block to AGENTS.md only; a legacy CLAUDE.md is left for `aw hub-migrate`. */
+/** agent-workflow writes the block to AGENTS.md only; a legacy CLAUDE.md is left for `aw hub-migrate`. */
 function blockFiles(cwd: string): string[] {
   return [join(cwd, BLOCK_FILE)];
 }

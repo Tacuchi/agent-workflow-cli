@@ -13,8 +13,8 @@ import {
   mcpEntryShapeForHost,
 } from "../../src/domain/mcp-entry.js";
 
-const TEST_NODE = "/opt/workline/node";
-const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
+const TEST_NODE = "/opt/agent-workflow/node";
+const TEST_ENTRYPOINT = "/opt/agent-workflow/dist/cli/main.js";
 
 function entryCommand(scope: "hub" | "global" = "hub") {
   return scope === "global" ? TEST_NODE : "agent-workflow";
@@ -190,7 +190,7 @@ describe("readMcpEntry — Claude (global scope = ~/.claude.json)", () => {
   });
 
   // Superseded on purpose. This used to assert `foreign` for a descriptor from
-  // another release, which made every CLI upgrade turn Workline's own entries
+  // another release, which made every CLI upgrade turn agent-workflow's own entries
   // into somebody else's: install refused them and remove dropped the registry
   // entry while the descriptor stayed on disk. Authorship is the shape plus the
   // absolute launcher path, not the release that wrote it.

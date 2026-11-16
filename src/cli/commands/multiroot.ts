@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import {
-  type WorklineMaterialization,
-  ensureWorklineMaterialized,
+  type AgentWorkflowMaterialization,
+  ensureAgentWorkflowMaterialized,
 } from "../../application/hub-materialization-service.js";
 import {
   type MultirootInput,
@@ -104,7 +104,7 @@ export const detachMultirootCommand: CliCommand = {
  * The multiroot adapters write host-owned files synchronously, outside the
  * hub FileSystemPort guard. Preview their exact change first, then
  * materialize the resolved hub only when a hub-scoped operation
- * will actually write. Global scope deliberately stays outside Workline.
+ * will actually write. Global scope deliberately stays outside agent-workflow.
  */
 async function runPublicMultiroot(
   ctx: CliContext,
@@ -124,7 +124,7 @@ async function runPublicMultiroot(
   const current = resolve(ctx.paths.hubDir());
   const hubPaths =
     hub === current ? ctx.paths : new PathsService(ctx.paths.namespace, ctx.env.homeDir(), hub);
-  const materialization = await ensureWorklineMaterialized(ctx.rawFs ?? ctx.fs, hubPaths);
+  const materialization = await ensureAgentWorkflowMaterialized(ctx.rawFs ?? ctx.fs, hubPaths);
   const data = await runMultiroot(ctx.fs, ctx.env, ctx.paths, mode, input);
   if ("error" in data) return { ok: true, data, exitCode: 0 };
   return { ok: true, data: withMaterialization(data, materialization), exitCode: 0 };
@@ -132,7 +132,7 @@ async function runPublicMultiroot(
 
 function withMaterialization<T extends object>(
   data: T,
-  materialization: WorklineMaterialization,
-): T & { materialization: WorklineMaterialization } {
+  materialization: AgentWorkflowMaterialization,
+): T & { materialization: AgentWorkflowMaterialization } {
   return { ...data, materialization };
 }

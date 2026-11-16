@@ -33,7 +33,7 @@ export async function registerPersistedMcpDescriptor(
     host: input.host,
     scope: input.scope,
     connection: input.connection,
-    worklineVersion: readPackageVersion(),
+    agentWorkflowVersion: readPackageVersion(),
     descriptor: { command: input.entry.command, args: input.entry.args },
   });
 }

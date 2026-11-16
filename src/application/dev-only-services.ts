@@ -609,7 +609,7 @@ export async function runNextNumber(
   paths: PathsService,
   input: NextNumberInput,
 ): Promise<NextNumberOutput> {
-  // `paths` is the WorklineDirectory resolved once at bootstrap.  A nested
+  // `paths` is the AgentWorkflowDirectory resolved once at bootstrap.  A nested
   // invocation still numbers the hub's docs tree; it must not quietly
   // create a second docs/ under the raw process cwd.
   const cwd = paths.hubDir();

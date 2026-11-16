@@ -12,9 +12,9 @@
 // (unverified against the 2.1.284 binary, whose JS is not readable as strings).
 //
 // Pre-approved, per the orchestrator's middle path: edits under the workspace's
-// real path, the Workline MCP tools (a read-only server on an unreachable DSN,
+// real path, the agent-workflow MCP tools (a read-only server on an unreachable DSN,
 // so the PreToolUse step reaches the SQL guard hook), the exact `pwd`, and the
-// Workline invocations the scenario makes (CLAUDE_SHELL_ALLOW). Any of those
+// agent-workflow invocations the scenario makes (CLAUDE_SHELL_ALLOW). Any of those
 // carrying --hub, --root or --approval, and `doctor apply`, ASK.
 
 import { PROBE_MCP } from "../scenario.mjs";
@@ -27,7 +27,7 @@ const denials = DENIAL_CATEGORIES.flatMap((c) => [
 ]);
 
 /**
- * Pre-approved Workline calls that reach outside the workspace or approve
+ * Pre-approved agent-workflow calls that reach outside the workspace or approve
  * effects. `--root` itself is not asked: the wrappers pin it on every
  * context-plan and flow start to the bundle installed in this disposable home
  * (run 3 asked on each). A `--root` naming the real HOME, `~`, `$HOME`, a parent
@@ -80,10 +80,10 @@ export default {
   denials,
   paneArgs: [],
   limitations: [
-    "only the scenario's Workline calls are pre-approved; every other command asks you in the pane",
-    "a Workline call with --hub or --approval, `doctor apply`, or a --root naming your real HOME, ~, $HOME, a parent dir or another host's root, asks you; --root at the disposable bundle does not",
-    "a Workline call piped into another program (`aw flow … | python3 …`) asks you: claude matches every command of a pipeline, and the second one is arbitrary code the run cannot pre-approve",
-    "editing the workspace's CLAUDE.md/AGENTS.md, Workline marker, .git or host configs asks you",
+    "only the scenario's agent-workflow calls are pre-approved; every other command asks you in the pane",
+    "a agent-workflow call with --hub or --approval, `doctor apply`, or a --root naming your real HOME, ~, $HOME, a parent dir or another host's root, asks you; --root at the disposable bundle does not",
+    "a agent-workflow call piped into another program (`aw flow … | python3 …`) asks you: claude matches every command of a pipeline, and the second one is arbitrary code the run cannot pre-approve",
+    "editing the workspace's CLAUDE.md/AGENTS.md, agent-workflow marker, .git or host configs asks you",
     "nothing under your real HOME can be read",
     "the other hosts' disposable roots (copied credentials, token files) are denied to it",
     "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 is set: per https://code.claude.com/docs/en/env-vars it strips Anthropic and other recognized credentials (the token included) from claude's Bash tool, hooks and stdio MCP servers; their own children inherit the scrubbed environment; whether 2.1.284 strips CLAUDE_CODE_OAUTH_TOKEN is unverified live",

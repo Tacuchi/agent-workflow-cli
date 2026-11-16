@@ -250,7 +250,7 @@ describe("runCheckpointWrite", () => {
       new FakeGit(),
       paths,
     );
-    // The compaction goes ahead, Workline writes no session line and declares
+    // The compaction goes ahead, agent-workflow writes no session line and declares
     // degraded continuity with `primary_session: null` — the active list is
     // shown as candidates, never as an identity.
     if (!("continuity" in result)) {

@@ -196,7 +196,7 @@ describe("McpTab — user-scope install", () => {
 
   it("explica el conflicto: nombra el archivo de la entrada ajena y qué hacer con ella", async () => {
     // The user's own 'gamma' lives in Claude's historical settings file. The
-    // detail must say WHICH file and that Workline will not touch it — a bare
+    // detail must say WHICH file and that agent-workflow will not touch it — a bare
     // "conflict" leaves the person guessing whether it is even a problem.
     const conflicted = {
       nombre: "gamma",
@@ -234,7 +234,9 @@ describe("McpTab — user-scope install", () => {
     await tick();
     const frame = (lastFrame() ?? "").replace(/[│]/g, "").replace(/\s+/g, " ");
     expect(frame).toContain("Claude Code: conflict · ajena en ~/.claude/settings.json");
-    expect(frame).toContain("Acción: la entrada 'gamma' marcada ajena no la escribió Workline");
+    expect(frame).toContain(
+      "Acción: la entrada 'gamma' marcada ajena no la escribió agent-workflow",
+    );
   });
 
   it("una entrada de otra versión dice de dónde salió y que se arregla reinstalando", async () => {

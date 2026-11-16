@@ -1,6 +1,6 @@
 # CHASSIS — the loop engine
 
-The **common engine** of Workline loops: heirs read it before their deltas and only reference it.
+The **common engine** of aw loops: heirs read it before their deltas and only reference it.
 
 > **How:** `aw flow read` says where the document stands, `aw flow save` writes it against that read, and the execution verbs close batches and commit by digest. Their contracts live in `aw flow --help`, never guessed.
 

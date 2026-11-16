@@ -63,7 +63,7 @@ export async function selectDoctorHosts(
     if (only.size > 0 && !only.has(state.host)) continue;
     if (
       !PARTICIPATING.has(state.status) &&
-      !state.workline.installed &&
+      !state.agent_workflow.installed &&
       !only.has(state.host) &&
       state.host !== options.currentHost
     ) {
@@ -84,7 +84,7 @@ function viewOf(state: HostStateReport, currentHost: HarnessId | null): DoctorTa
     status: state.status,
     current: state.host === currentHost,
     runtime: { state: state.runtime.state, version: state.runtime.version },
-    workline_installed: state.workline.installed,
+    agent_workflow_installed: state.agent_workflow.installed,
     degradations: degradationsOf(state),
     mcp_host: spec?.mcpHostId ?? null,
   };

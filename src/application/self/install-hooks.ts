@@ -106,8 +106,8 @@ export async function selfInstallHooks(
 
   const target = targetArg as InstallTarget;
 
-  // No remaining Workline tool guard maps to OpenCode's plugin bridge. An old
-  // generated module is removed only when its bytes prove Workline ownership.
+  // No remaining agent-workflow tool guard maps to OpenCode's plugin bridge. An old
+  // generated module is removed only when its bytes prove agent-workflow ownership.
   if (target === "opencode") return retireOpencodePlugin(ctx, target, dryRun);
   // Codex's plugin route produces an artifact only the person can install.
   if (target === "codex") {
@@ -126,7 +126,7 @@ export async function selfInstallHooks(
         events_installed: [],
         events_already_present: [],
         backup_path: null,
-        warning: `Workline does not manage hooks on '${target}'. Managed hosts: ${[...HOOKS_MANAGED_TARGETS].join(", ")}. The rest use file-based or no-hook mechanisms.`,
+        warning: `agent-workflow does not manage hooks on '${target}'. Managed hosts: ${[...HOOKS_MANAGED_TARGETS].join(", ")}. The rest use file-based or no-hook mechanisms.`,
       },
       exitCode: 0,
     };
@@ -402,7 +402,7 @@ function blockedResult(
   const detail = audit.defects
     .map(
       (d) =>
-        `entry #${d.index}${d.event === null ? "" : ` (${d.event})`} ${d.ours ? "installed by Workline" : "already in your config"} — ${d.reason}`,
+        `entry #${d.index}${d.event === null ? "" : ` (${d.event})`} ${d.ours ? "installed by agent-workflow" : "already in your config"} — ${d.reason}`,
     )
     .join("; ");
   return blocked(
@@ -792,9 +792,9 @@ function reconcileClaudeHooks(existingHooks: Record<string, unknown>, template: 
 function retiredOpencodeWarning(owned: boolean, dryRun: boolean, existing: string | null): string {
   return owned
     ? dryRun
-      ? "No compatible Workline tool guard remains in OpenCode. An install would retire the generated module and its own config entry."
-      : "No compatible Workline tool guard remains in OpenCode. The generated module and its config entry were retired."
+      ? "No compatible agent-workflow tool guard remains in OpenCode. An install would retire the generated module and its own config entry."
+      : "No compatible agent-workflow tool guard remains in OpenCode. The generated module and its config entry were retired."
     : existing === null
       ? "The SQL MCP matcher cannot be bridged to OpenCode tools; no plugin is installed."
-      : "A foreign plugin at that path is preserved; no Workline hook is installed.";
+      : "A foreign plugin at that path is preserved; no agent-workflow hook is installed.";
 }

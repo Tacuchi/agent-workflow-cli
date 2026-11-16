@@ -1,6 +1,6 @@
 // Crush: a PreToolUse hook on `^bash$` in the crush.json `aw` writes, which
 // DENIES the AC-04 commands and pre-approves nothing; `permissions.allowed_tools`
-// lists only the Workline MCP tools. Hook contract read from the crush v0.96.1
+// lists only the agent-workflow MCP tools. Hook contract read from the crush v0.96.1
 // binary's embedded docs: `{"matcher", "command", "timeout"}`, the command in
 // $CRUSH_TOOL_INPUT_COMMAND, `exit 2` blocks the call, and a deny from any hook
 // wins. The hook sees one string, so no command can be proven confined: every

@@ -21,8 +21,8 @@ import {
   mcpEntryShapeForHost,
 } from "../../src/domain/mcp-entry.js";
 
-const TEST_NODE = "/opt/workline/node";
-const TEST_ENTRYPOINT = "/opt/workline/dist/cli/main.js";
+const TEST_NODE = "/opt/agent-workflow/node";
+const TEST_ENTRYPOINT = "/opt/agent-workflow/dist/cli/main.js";
 
 function entryCommand(scope: "hub" | "global" = "hub") {
   return scope === "global" ? TEST_NODE : "agent-workflow";
@@ -264,7 +264,7 @@ describe("writeMcpEntry — Claude (.mcp.json, project scope)", () => {
     expect(existsSync(join(scopeDir, ".mcp.json"))).toBe(false);
   });
 
-  it("sólo reemplaza una forma legacy Workline exacta con replaceLegacy explícito", () => {
+  it("sólo reemplaza una forma legacy agent-workflow exacta con replaceLegacy explícito", () => {
     const mcpJsonPath = join(scopeDir, ".mcp.json");
     const current = alphaEntry("claude");
     const legacy = knownLegacyMcpEntries("alpha", "ALPHA_DATABASE_URL")[0];

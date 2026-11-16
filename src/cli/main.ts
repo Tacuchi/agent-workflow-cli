@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { hasWorklineMarker } from "../runtime/workline-marker.js";
+import { hasAgentWorkflowMarker } from "../runtime/agent-workflow-marker.js";
 import { firstCommandToken, hookTarget } from "./argv-scan.js";
 const argv = process.argv.slice(2);
 // Help reads no hub, so it is served wherever it is asked for.
@@ -24,7 +24,7 @@ async function scopedHubVisible(): Promise<boolean> {
   const { homedir } = await import("node:os");
   // $HOME is never a hub, though the user-level ~/.workflow carries a marker.
   if (process.cwd() === homedir()) return false;
-  if (await hasWorklineMarker(process.cwd())) return true;
+  if (await hasAgentWorkflowMarker(process.cwd())) return true;
   // A source without its own marker can still belong to a registered hub.
   // Consult the user-level index without creating hub runtime or invoking git.
   const { declaringHubs } = await import("../application/hub-registry.js");

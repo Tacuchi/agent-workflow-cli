@@ -254,7 +254,7 @@ function findingOf(id: string, spec: BrokenSpec): DoctorFinding {
     resource: { kind: "mcp-entry", name: spec.name, locator: `~/.config/${HOST}/${spec.name}` },
     state: spec.state ?? "warning",
     summary: `${spec.name} no está donde debería`,
-    impact: `sin ${spec.name} ese host no puede usar Workline`,
+    impact: `sin ${spec.name} ese host no puede usar agent-workflow`,
     evidence: [`leído de ~/.config/${HOST}/${spec.name}`],
     ownership: spec.ownership ?? "ours",
     remediation: { kind: "manual", action: null, guidance: [] },

@@ -14,7 +14,7 @@
  * can run is worse than a boundary that says why it could not be built.
  */
 
-import type { WorklineFlow } from "../../application/capability/compose.js";
+import type { AgentWorkflowFlow } from "../../application/capability/compose.js";
 import {
   DOCS_BOUNDARY,
   type DelegatedAction,
@@ -212,7 +212,10 @@ const DOCS_PATH = /(?:^|[\s"'=(,])(docs\/[A-Za-z0-9._-]+)/g;
  * either, and refusing is the direction that costs a registry edit instead of an
  * unauthorized write.
  */
-export function docsBoundaryBreach(action: DelegatedAction, flow: WorklineFlow): string | null {
+export function docsBoundaryBreach(
+  action: DelegatedAction,
+  flow: AgentWorkflowFlow,
+): string | null {
   const allowed = DOCS_BOUNDARY[flow];
   const parts = [...action.invocation.args, action.invocation.target];
   for (const part of parts) {

@@ -3,28 +3,28 @@ import type { FlowRunScope } from "../domain/flow/run-state.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
-import { readHubBlock } from "./parsers/hub-block.js";
-import type { PathsService } from "./paths-service.js";
 import {
+  type AgentWorkflowIndex,
   type IndexedPlan,
   type IndexedSpec,
   type PipelineAction,
   type PipelineItem,
   type PipelineItemDetail,
   type SessionUnit,
-  type WorklineIndex,
-  buildWorklineIndex,
+  buildAgentWorkflowIndex,
   pipelineTie,
   planIsPending,
   planPresentation,
   specDetail,
-} from "./workline-index-service.js";
+} from "./agent-workflow-index-service.js";
+import { readHubBlock } from "./parsers/hub-block.js";
+import type { PathsService } from "./paths-service.js";
 import type { WorktreeListOutput } from "./worktree-service.js";
 
 /**
  * `resume` — what to pick up, and the exact command that continues it.
  *
- * It decides from the same Workline index `status` projects, so the two can
+ * It decides from the same agent-workflow index `status` projects, so the two can
  * never disagree about what is pending. Two hard rules:
  *
  * - **It never executes the route it proposes.** The command comes back as a
@@ -128,7 +128,7 @@ export async function runResume(
   paths: PathsService,
   input: ResumeInput = {},
 ): Promise<ResumeOutcome> {
-  const index = await buildWorklineIndex(fs, env, paths, {
+  const index = await buildAgentWorkflowIndex(fs, env, paths, {
     ...(input.now !== undefined ? { now: input.now } : {}),
     ...(input.git !== undefined ? { git: input.git } : {}),
   });
@@ -163,7 +163,7 @@ export async function runResume(
  * genuine tie, so it comes back as candidates, the same answer the pipeline
  * gives for any other tie.
  */
-function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
+function resumeTarget(index: AgentWorkflowIndex, target: string): ResumeOutcome {
   const specs = index.specs.filter(
     (s) => s.status !== "superseded" && (s.file === target || s.number === target),
   );
@@ -224,7 +224,7 @@ function resumeTarget(index: WorklineIndex, target: string): ResumeOutcome {
  * tie-break are untouched: what a tie still changes is whether one item can be
  * called the recommendation at all.
  */
-export function resumePipeline(index: WorklineIndex): ResumeOutcome {
+export function resumePipeline(index: AgentWorkflowIndex): ResumeOutcome {
   const [head] = index.pipeline;
   if (head === undefined) {
     return { status: "idle", action: "no hay trabajo pendiente: el pipeline está vacío" };
@@ -273,7 +273,7 @@ function pipelineProposal(item: PipelineItem): ResumeProposal {
 
 // ── proposals ────────────────────────────────────────────────────────────────
 
-function specProposal(spec: IndexedSpec, index: WorklineIndex): ResumeProposal {
+function specProposal(spec: IndexedSpec, index: AgentWorkflowIndex): ResumeProposal {
   const refine = spec.status !== "ready-for-plan";
   return {
     kind: refine ? "spec-unrefined" : "spec-unplanned",
@@ -325,7 +325,7 @@ function told(
 async function attachUncommitted(
   fs: FileSystemPort,
   paths: PathsService,
-  index: WorklineIndex,
+  index: AgentWorkflowIndex,
   outcome: ResumeOutcome,
   git: GitPort | undefined,
 ): Promise<ResumeOutcome> {

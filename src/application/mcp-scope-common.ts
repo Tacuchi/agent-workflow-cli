@@ -5,7 +5,7 @@ import type { EnvPort } from "../ports/env.js";
 import { McpWriterError } from "./mcp-host-writer.js";
 
 /**
- * A hub write must be rooted in the Workline directory resolved by the
+ * A hub write must be rooted in the agent-workflow directory resolved by the
  * CLI. Keeping that relationship in the type prevents direct service callers
  * from silently falling back to their process cwd (which may be a source
  * subdirectory rather than the hub root).

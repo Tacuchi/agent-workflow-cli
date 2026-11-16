@@ -1,4 +1,4 @@
-// [Workline] tab data — hardcoded to avoid I/O during render.
+// [agent-workflow] tab data — hardcoded to avoid I/O during render.
 //
 // SCOPE: this describes THE BUNDLE, not any host. Which of these commands a
 // given host exposes (native wrappers vs synthesized `w-<command>` skills) and
@@ -49,14 +49,14 @@ export interface WorkflowContent {
 }
 
 export const WORKFLOW_CONTENT: WorkflowContent = {
-  // Single line: [Workline] renders it with truncate — the doctrinal detail
+  // Single line: [agent-workflow] renders it with truncate — the doctrinal detail
   // lives in the `w` bundle, not in the TUI.
   overview:
     "3 flows (SPEC · PLAN · QUICK) drive convergent loops — each a persistent goal that runs until its Success criteria are green (verification-first). Pipelines: aw set-pipeline.",
 
   // The model's 3 FLOWS + optional runtime materialization + export-* family.
   phases: [
-    { id: "hub-init", title: "Materializar Workline" },
+    { id: "hub-init", title: "Materializar agent-workflow" },
     { id: "spec", title: "SPEC — the what" },
     { id: "plan", title: "PLAN — the how" },
     { id: "quick", title: "QUICK — the shortcut" },

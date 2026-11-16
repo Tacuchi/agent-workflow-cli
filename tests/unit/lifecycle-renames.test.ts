@@ -11,8 +11,8 @@ import {
 } from "../../src/application/self/install-hooks.js";
 import type { ParsedArgs } from "../../src/cli/parser.js";
 import type { CliContext } from "../../src/cli/types.js";
+import { agentWorkflowMarkerContent } from "../../src/runtime/agent-workflow-marker.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
-import { worklineMarkerContent } from "../../src/runtime/workline-marker.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { FakeProcess } from "../helpers/fake-process.js";
 import { NoScanFs } from "../helpers/real-fs.js";
@@ -76,7 +76,10 @@ beforeAll(async () => {
   await mkdir(home, { recursive: true });
   await mkdir(bare, { recursive: true });
   await mkdir(join(hub, ".workflow", "sessions", "001-prueba-quick"), { recursive: true });
-  await writeFile(join(hub, ".workflow", "agent-workflow.json"), worklineMarkerContent("workflow"));
+  await writeFile(
+    join(hub, ".workflow", "agent-workflow.json"),
+    agentWorkflowMarkerContent("workflow"),
+  );
   await writeFile(
     join(hub, ".workflow", "sessions", "001-prueba-quick", "SESSION.md"),
     "# SESSION — prueba\n\n## Objective\nprobar\n\n## Type\nquick\n",
@@ -128,7 +131,7 @@ describe("aw checkpoint-write sigue saliendo con 0 como el PreCompact de un host
     await mkdir(join(old, ".workflow", "sessions"), { recursive: true });
     await writeFile(
       join(old, ".workflow", "agent-workflow.json"),
-      worklineMarkerContent("workflow"),
+      agentWorkflowMarkerContent("workflow"),
     );
     await writeFile(
       join(old, "CLAUDE.md"),

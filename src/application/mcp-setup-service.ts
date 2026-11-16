@@ -8,7 +8,7 @@ import {
   ownReleaseVariantMcpEntry,
 } from "../domain/mcp-entry.js";
 import type { EnvPort } from "../ports/env.js";
-import type { WorklineMaterialization } from "./hub-materialization-service.js";
+import type { AgentWorkflowMaterialization } from "./hub-materialization-service.js";
 import { type McpEntryClassification, classifyMcpEntry } from "./mcp-entry-classification.js";
 import { readMcpEntry } from "./mcp-host-reader.js";
 import { writeMcpEntry } from "./mcp-host-writer.js";
@@ -62,7 +62,7 @@ export interface McpSetupResult {
     code?: "HOST_BINARY_MISSING" | "HOST_NATIVE_CHECK_FAILED" | "HOST_ENTRY_NOT_VISIBLE";
   }>;
   /** First-write receipt when the CLI materialized an implicit hub for setup. */
-  materialization?: WorklineMaterialization;
+  materialization?: AgentWorkflowMaterialization;
 }
 
 interface SetupBuckets {

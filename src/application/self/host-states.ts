@@ -9,8 +9,8 @@
 //   1. config present   — the host's config dir exists on disk
 //   2. runtime available — its binary can actually be invoked (NOT env markers:
 //                          several hosts export none to their subprocesses)
-//   3. Workline installed — our bundle is in that host's skills root
-//   4. capabilities      — which Workline mechanisms this host can really use
+//   3. agent-workflow installed — our bundle is in that host's skills root
+//   4. capabilities      — which agent-workflow mechanisms this host can really use
 //
 // Shared destinations (`~/.agents/skills`) are reported apart: they have no
 // runtime and must never inflate a host count (spec 010, criterion 3).
@@ -93,9 +93,9 @@ export interface HostCapability {
 }
 
 export type HostStatus =
-  /** Runtime available (or, for a CLI-less host, config present) AND Workline installed. */
+  /** Runtime available (or, for a CLI-less host, config present) AND agent-workflow installed. */
   | "ready"
-  /** The host is here; Workline is not installed on it yet. */
+  /** The host is here; agent-workflow is not installed on it yet. */
   | "installable"
   /** Config dir left behind with no runtime to use it. */
   | "residual-config"
@@ -112,7 +112,7 @@ export interface HostStateReport {
   verified: HarnessVerification | null;
   config: { present: boolean; path: string | null; reason?: string };
   runtime: RuntimeProbe;
-  workline: { installed: boolean; path: string };
+  agent_workflow: { installed: boolean; path: string };
   capabilities: HostCapability[];
   /**
    * La vía MCP en este host, con disponibilidad y acreditación del descriptor por separado.
@@ -234,7 +234,7 @@ export async function probeRuntime(spec: HarnessSpec, ctx: CliContext): Promise<
 }
 
 /**
- * Which Workline mechanisms this host can really use. Every row is DERIVED from
+ * Which agent-workflow mechanisms this host can really use. Every row is DERIVED from
  * the catalog and the installer's own maps, so no surface can announce a
  * capability the installer does not implement (spec 010, criterion 6).
  */
@@ -295,7 +295,7 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
 }
 
 /**
- * `native` only when Workline arms the hooks AND every template event travels
+ * `native` only when agent-workflow arms the hooks AND every template event travels
  * whole: kimi installs all five yet loses the SessionStart matcher, and crush and
  * gemini carry only PreToolUse — "installed" alone would hide both.
  */
@@ -319,7 +319,7 @@ function hooksCapability(spec: HarnessSpec): HostCapability {
 }
 
 /**
- * Why Workline does not arm this host's hooks, and what it does instead.
+ * Why agent-workflow does not arm this host's hooks, and what it does instead.
  *
  * Codex is the one host with a second route: a plugin bundle whose hooks skip its
  * per-hook trust review. The bundle is generated, never installed — codex takes
@@ -344,7 +344,7 @@ function compactionCapability(spec: HarnessSpec): HostCapability {
     return {
       id: "compaction",
       status: "degraded",
-      detail: `Workline does not arm its compaction; ${fallback}`,
+      detail: `agent-workflow does not arm its compaction; ${fallback}`,
     };
   }
   return {
@@ -356,12 +356,12 @@ function compactionCapability(spec: HarnessSpec): HostCapability {
 
 function notManagedHere(spec: HarnessSpec): string {
   if (spec.id === "codex") {
-    return "Workline generates its plugin bundle instead ('aw self install-hooks --target codex'), which is NOT armed: installing a codex plugin goes through a marketplace and is yours to run";
+    return "agent-workflow generates its plugin bundle instead ('aw self install-hooks --target codex'), which is NOT armed: installing a codex plugin goes through a marketplace and is yours to run";
   }
   if (spec.id === "opencode") {
-    return "No Workline hook can be bridged to its tools: the SQL MCP matcher has no equivalent. 'aw self install-hooks --target opencode' retires a previous generated plugin only when its ownership is proven";
+    return "No agent-workflow hook can be bridged to its tools: the SQL MCP matcher has no equivalent. 'aw self install-hooks --target opencode' retires a previous generated plugin only when its ownership is proven";
   }
-  return "Workline does not install them here — the CLI commands stay callable";
+  return "agent-workflow does not install them here — the CLI commands stay callable";
 }
 
 /**
@@ -401,7 +401,7 @@ function deriveAdvice(
     return `Run 'agent-workflow self install-skill --target ${spec.installTarget}' to install the bundle.`;
   }
   if (status === "residual-config") {
-    return `Config dir ${configPath ?? "(unknown)"} exists but no ${spec.label} runtime answers. Reinstall the host, or run 'agent-workflow self uninstall --target ${spec.installTarget}' to clear what Workline left there.`;
+    return `Config dir ${configPath ?? "(unknown)"} exists but no ${spec.label} runtime answers. Reinstall the host, or run 'agent-workflow self uninstall --target ${spec.installTarget}' to clear what agent-workflow left there.`;
   }
   return null;
 }
@@ -413,10 +413,10 @@ export async function reportHostState(
 ): Promise<HostStateReport> {
   const home = ctx.env.homeDir();
   const config = resolveHostConfigDir(spec, home);
-  const worklinePath = join(home, ...TARGET_ROOTS[spec.installTarget], SKILL_DIR_NAME);
+  const agentWorkflowPath = join(home, ...TARGET_ROOTS[spec.installTarget], SKILL_DIR_NAME);
   const [configPresent, installed, runtime] = await Promise.all([
     config.path === null ? Promise.resolve(false) : ctx.fs.exists(config.path),
-    ctx.fs.exists(worklinePath),
+    ctx.fs.exists(agentWorkflowPath),
     probeRuntime(spec, ctx),
   ]);
   const status = deriveStatus(configPresent, runtime, installed);
@@ -435,7 +435,7 @@ export async function reportHostState(
       ...(config.reason ? { reason: config.reason } : {}),
     },
     runtime,
-    workline: { installed, path: worklinePath },
+    agent_workflow: { installed, path: agentWorkflowPath },
     capabilities: capabilitiesFor(spec),
     status,
     advice: deriveAdvice(status, spec, config.path),
@@ -479,7 +479,7 @@ export interface HookTemplateLossReport {
 }
 
 /**
- * Per-host "are OUR hooks in place" probes. Only hosts whose hooks Workline
+ * Per-host "are OUR hooks in place" probes. Only hosts whose hooks agent-workflow
  * MANAGES appear here — `hooksArmedProbeCoverage()` proves the two sets match,
  * so a host can never be declared managed while nothing can tell whether its
  * hooks are actually armed.
@@ -555,7 +555,7 @@ async function claudeHooksArmed(ctx: CliContext, path: string): Promise<boolean>
   }
 }
 
-/** Targets whose hooks Workline manages but that have no armed-probe. Must be empty. */
+/** Targets whose hooks agent-workflow manages but that have no armed-probe. Must be empty. */
 export function hooksArmedProbeCoverage(): InstallTarget[] {
   return HARNESSES.filter((h) => h.hooks?.managed === true)
     .map((h) => h.installTarget)
@@ -614,7 +614,7 @@ async function templateLosses(
   return { read: true, byTarget };
 }
 
-/** Hook state for every host whose hooks Workline manages. */
+/** Hook state for every host whose hooks agent-workflow manages. */
 export async function reportHooksArmed(ctx: CliContext): Promise<HooksArmedReport[]> {
   const home = ctx.env.homeDir();
   const managed = HARNESSES.filter((h) => h.hooks?.managed === true);
@@ -689,7 +689,7 @@ const HOOK_CONFIGS: Partial<Record<InstallTarget, (home: string) => HookConfig>>
   }),
 };
 
-/** The file a host's hooks live in, or `null` for a host whose hooks Workline does not write. */
+/** The file a host's hooks live in, or `null` for a host whose hooks agent-workflow does not write. */
 export function hookConfigPath(target: InstallTarget, home: string): string | null {
   return HOOK_CONFIGS[target]?.(home).path ?? null;
 }
@@ -718,7 +718,7 @@ function ourCommands(value: unknown, found: string[] = []): string[] {
   return found;
 }
 
-/** The commands our installed hooks run, per host whose hooks Workline writes. */
+/** The commands our installed hooks run, per host whose hooks agent-workflow writes. */
 export async function reportInstalledHookCommands(
   ctx: CliContext,
 ): Promise<InstalledHookCommands[]> {

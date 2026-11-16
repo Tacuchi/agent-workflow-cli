@@ -141,7 +141,7 @@ describe("aw doctor bloquea un hook que apunta a un comando retirado", () => {
 });
 
 describe("sólo cuenta lo que vive bajo la clave de hooks de cada host", () => {
-  it("la entrada MCP de Workline en crush.json y un hook ajeno de agy no son hooks retirados", async () => {
+  it("la entrada MCP de agent-workflow en crush.json y un hook ajeno de agy no son hooks retirados", async () => {
     const { reportInstalledHookCommands } = await import(
       "../../src/application/self/host-states.js"
     );

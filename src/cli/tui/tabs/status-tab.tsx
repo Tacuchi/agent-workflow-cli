@@ -35,7 +35,7 @@ export interface StatusTabProps {
 interface StatusData {
   doctor: SelfDoctorReport | null;
   mcp: SelfMcpConnectionView[];
-  /** One row per host whose hooks Workline manages — never a global boolean. */
+  /** One row per host whose hooks agent-workflow manages — never a global boolean. */
   hooks: HooksArmedReport[];
   loading: boolean;
 }
@@ -110,7 +110,7 @@ export function StatusTab({
       (c) => TILE_IDS[(TILE_IDS.indexOf(c) + dir + TILE_IDS.length) % TILE_IDS.length] ?? "cli",
     );
   function activateTile() {
-    // Host administration lives in [Workline].
+    // Host administration lives in [agent-workflow].
     if (tileCursor === "hosts") onActivateTab?.("workflow");
     if (tileCursor === "mcp") onActivateTab?.("mcp");
     if (tileCursor === "logs") setLogsMode(true);
@@ -151,7 +151,7 @@ export function StatusTab({
   const pct = supportedHosts > 0 ? Math.round((installedHosts / supportedHosts) * 100) : 0;
 
   // Hooks are not universal and the tile no longer pretends they are: it names
-  // the hosts whose hooks Workline manages, and how many of them are armed.
+  // the hosts whose hooks agent-workflow manages, and how many of them are armed.
   const hooksArmedCount = data.hooks.filter((h) => h.armed).length;
   const hooksSub =
     data.hooks.length === 0

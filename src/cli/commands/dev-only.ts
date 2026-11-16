@@ -103,7 +103,7 @@ export const nextNumberCommand: CliCommand = {
     },
     output: "{published_path, directory, exists, current_max, next, files[]}.",
     notes: [
-      "Without --publish it is a pure query. The folder is the only record of what is taken: no ledger and no reservation. --publish needs a Workline hub (.workflow/workline.json) and the final content on stdin; zero bytes are refused.",
+      "Without --publish it is a pure query. The folder is the only record of what is taken: no ledger and no reservation. --publish needs a agent-workflow hub (.workflow/agent-workflow.json) and the final content on stdin; zero bytes are refused.",
     ],
   },
   async execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult> {
@@ -130,8 +130,8 @@ export const nextNumberCommand: CliCommand = {
       return { ok: true, data: { published_path: null, ...base }, exitCode: 0 };
     }
     if (!(await ctx.fs.exists(ctx.paths.cwdMarkerFile()))) {
-      return fail("HUB_ABSENT", "--publish necesita un hub Workline; no se creó ninguno", {
-        action: "invocá el comando desde un hub con .workflow/workline.json",
+      return fail("HUB_ABSENT", "--publish necesita un hub agent-workflow; no se creó ninguno", {
+        action: "invocá el comando desde un hub con .workflow/agent-workflow.json",
       });
     }
     const content = await readRequiredStdin();

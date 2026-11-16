@@ -1,5 +1,5 @@
 /**
- * The one durable Workline trace a retirement leaves: an append-only row.
+ * The one durable agent-workflow trace a retirement leaves: an append-only row.
  *
  * It is a SECOND table in `HISTORY.md`, under its own heading, and never the
  * session table. The session table is an upsert keyed by session — exactly the
@@ -13,8 +13,8 @@
  * row IS the answer to "did the commit point pass".
  */
 
+import { formatNodeId } from "../../domain/agent-workflow-node.js";
 import type { RetirementProposal } from "../../domain/retirement/proposal.js";
-import { formatNodeId } from "../../domain/workline-node.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
 import { localDateIso } from "../dates.js";
 import { ensureHistoryFile } from "../history-table.js";

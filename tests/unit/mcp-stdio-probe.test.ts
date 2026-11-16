@@ -10,8 +10,8 @@ import {
 
 const DESCRIPTOR = {
   command: "/usr/local/bin/node",
-  args: ["/opt/workline/dist/cli/main.js", "mcp", "serve-db", "--instance", "qtc-cert"],
-  env: { WORKLINE_MARKER: "persisted" },
+  args: ["/opt/agent-workflow/dist/cli/main.js", "mcp", "serve-db", "--instance", "qtc-cert"],
+  env: { AGENT_WORKFLOW_MARKER: "persisted" },
 };
 
 const EXPECTED_TOOLS: readonly McpStdioProbeExpectedTool[] = [
@@ -149,7 +149,7 @@ describe("runMcpStdioProbe", () => {
         stdio: ["pipe", "pipe", "pipe"],
         env: {
           BASE_MARKER: "inherited",
-          WORKLINE_MARKER: "persisted",
+          AGENT_WORKFLOW_MARKER: "persisted",
           AW_MCP_PROBE: "1",
         },
       },

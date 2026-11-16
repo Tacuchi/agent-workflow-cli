@@ -1,5 +1,5 @@
 ---
-description: "Use to materialize Workline runtime early, or configure explicit hub sources. Flows work without a prior init. Backed by `aw hub-init`."
+description: "Use to materialize aw runtime early, or configure explicit hub sources. Flows work without a prior init. Backed by `aw hub-init`."
 argument-hint: --source alias:path[:branch] [--nombre <name>] [--main-branch <branch>] [--dry-run]
 allowed-tools:
   [
@@ -10,7 +10,7 @@ allowed-tools:
 
 # hub-init — materialize or configure
 
-Workline already has an implicit hub at the resolved root: the nearest ancestor with `.<namespace>/workline.json`, or exactly the invoked directory when none exists. It never guesses a Git root.
+aw already has an implicit hub at the resolved root: the nearest ancestor with `.<namespace>/agent-workflow.json`, or exactly the invoked directory when none exists. It never guesses a Git root.
 
 `aw hub-init [--source alias:path[:branch]] [flags above] --format human`
 
@@ -18,7 +18,7 @@ Workline already has an implicit hub at the resolved root: the nearest ancestor 
 
 ## Modes
 
-Without sources, it only materializes the minimal runtime under the lock: the CLI-owned `.gitignore` block when the root belongs to Git, then `.<namespace>/workline.json` as the final marker. It does not create `docs/`, `skills.toml`, a hub block, launch files or a Git repository.
+Without sources, it only materializes the minimal runtime under the lock: the CLI-owned `.gitignore` block when the root belongs to Git, then `.<namespace>/agent-workflow.json` as the final marker. It does not create `docs/`, `skills.toml`, a hub block, launch files or a Git repository.
 
 With `--source`, it configures/reconciles the metadata, branches and multiroot visibility. `hub` is the reserved implicit source pointing at the root and cannot be configured as an alias. A hub `skills.toml` is created only when there is a real capability override.
 

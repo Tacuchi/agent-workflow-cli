@@ -66,7 +66,7 @@ When the requirement affects a UI, use available host help or ask the person for
 
 Research remains inline (chassis § *Research*) and the DB rule applies inside research. The spec's prose can use ambient writing help from any origin without making that help a requirement.
 
-> **Ambient conventions (not roles):** host help for code/testing/writing or tooling may come from any origin; Workline neither binds nor depends on it. Full doctrine: [../../roles/README.md](../../roles/README.md).
+> **Ambient conventions (not roles):** host help for code/testing/writing or tooling may come from any origin; aw neither binds nor depends on it. Full doctrine: [../../roles/README.md](../../roles/README.md).
 
 ## Current-behavior baseline (brownfield first)
 

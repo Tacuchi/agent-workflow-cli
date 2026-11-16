@@ -86,7 +86,7 @@ export const DENIAL_IDS = DENIAL_CATEGORIES.map((c) => c.id);
  * hook sees one string, and claude/opencode/agy splitting of chained commands is
  * unverified. So no profile pre-approves a shell command — every command asks
  * the person in the pane, except under codex's OS sandbox and the exact
- * Workline invocations claude may carry (below) — and the explicit AC-04
+ * agent-workflow invocations claude may carry (below) — and the explicit AC-04
  * denials stay as defense in depth.
  */
 const SHELL_PREAPPROVAL = /^(Bash|bash|command)(\(|:|$)|^\*$/;
@@ -94,13 +94,13 @@ const SHELL_PREAPPROVAL = /^(Bash|bash|command)(\(|:|$)|^\*$/;
 /**
  * The orchestrator's middle path (AC-03/AC-04, narrowed by decision): Claude
  * Code documents that its prefix rules know shell operators — `Bash(x:*)` does
- * not allow `x && y` — so ONLY the claude profile pre-approves the Workline
+ * not allow `x && y` — so ONLY the claude profile pre-approves the agent-workflow
  * invocations the scenario makes (the 28.0.0 quick journey, /w:doctor,
  * /w:recall, /w:resume and the checkpoint pair), under both CLI names. Anything
  * acting on another workspace, globally or with an approval digest goes to its
  * `ask` list instead (see claude-code.mjs).
  */
-export const WORKLINE_INVOCATIONS = [
+export const AGENT_WORKFLOW_INVOCATIONS = [
   ["flow", "start"],
   ["flow", "advance"],
   ["flow", "submit"],
@@ -119,7 +119,7 @@ export const WORKLINE_INVOCATIONS = [
 export const CLAUDE_SHELL_ALLOW = [
   "Bash(pwd)",
   ...["aw", "agent-workflow"].flatMap((cli) =>
-    WORKLINE_INVOCATIONS.map((words) => `Bash(${cli} ${words.join(" ")}:*)`),
+    AGENT_WORKFLOW_INVOCATIONS.map((words) => `Bash(${cli} ${words.join(" ")}:*)`),
   ),
 ];
 

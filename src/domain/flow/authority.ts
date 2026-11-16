@@ -2,7 +2,7 @@
  * Who decides what, for every public journey — as data.
  *
  * The registry below is the answer to one question asked of every decision and
- * transition Workline makes: is the correct result derivable from validated
+ * transition agent-workflow makes: is the correct result derivable from validated
  * inputs, persisted state and explicit rules (`cli`), does it need
  * interpretation, research, synthesis or authorship (`agent`), or is it a
  * preference or an authorization nobody may infer (`human`)?
@@ -23,7 +23,10 @@
  * compile error instead of a silent return to a document.
  */
 
-import { WORKLINE_FLOWS, type WorklineFlow } from "../../application/capability/compose.js";
+import {
+  AGENT_WORKFLOW_FLOWS,
+  type AgentWorkflowFlow,
+} from "../../application/capability/compose.js";
 import type { EffectClass } from "../capability/effects.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
@@ -427,7 +430,7 @@ export interface DelegatedInvocation {
 export const RUN_PLACEHOLDERS = ["{session}", "{code}", "{slug}", "{plan}"] as const;
 
 /**
- * The Workline operations this CLI materializes inside its own process.
+ * The agent-workflow operations this CLI materializes inside its own process.
  *
  * A CLOSED union, and closed is the whole point of it. An action executed
  * internally is one nobody read as a command line first, so what may run that way
@@ -725,7 +728,7 @@ export function alternativesOf(decision: FlowDecision): readonly FlowChoice[] | 
 /**
  * Where a transversal row sits inside a flow's journey.
  *
- * The chassis is not a `WorklineFlow`, so nothing walks `chassis` on its own: a
+ * The chassis is not a `AgentWorkflowFlow`, so nothing walks `chassis` on its own: a
  * run walks ONE flow, and a transversal step is only crossed if it is composed
  * into that flow's journey at a declared position. `prefix` runs before the
  * flow's own first step and `suffix` after its last — which is exactly the two
@@ -3726,7 +3729,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
     command: "hub-compact",
     reason:
-      "capacidad transversal sin WorklineFlow ni sesión: inventory y prepare leen; apply exige el digest exacto, revalida bajo bloqueo y conserva originales recuperables; restore tiene su propia propuesta aprobada",
+      "capacidad transversal sin AgentWorkflowFlow ni sesión: inventory y prepare leen; apply exige el digest exacto, revalida bajo bloqueo y conserva originales recuperables; restore tiene su propia propuesta aprobada",
   },
   {
     command: "hub-commit",
@@ -3751,7 +3754,7 @@ export const COMMAND_EXCLUSIONS: readonly CommandExclusion[] = [
   {
     command: "discard",
     reason:
-      "comando transversal de retiro: no abre WorklineFlow ni sesión a propósito, porque puede terminar borrando la sesión que lo dirigiera. Su autoridad es su propio contrato: `prepare` read-only y `apply` con el digest exacto, recomputado bajo el lock del hub",
+      "comando transversal de retiro: no abre AgentWorkflowFlow ni sesión a propósito, porque puede terminar borrando la sesión que lo dirigiera. Su autoridad es su propio contrato: `prepare` read-only y `apply` con el digest exacto, recomputado bajo el lock del hub",
   },
   {
     command: "reset",
@@ -3896,7 +3899,7 @@ export function decisionsOfScope(scope: DecisionScope): readonly FlowDecision[] 
  * HERE. Two of them composing independently would put the same step at two
  * positions, and a cursor is only meaningful against one list.
  */
-export function journeyOfFlow(flow: WorklineFlow): readonly FlowDecision[] {
+export function journeyOfFlow(flow: AgentWorkflowFlow): readonly FlowDecision[] {
   const transversal = decisionsOfScope(CHASSIS_SCOPE);
   const at = (placement: RunPlacement): readonly FlowDecision[] =>
     transversal.filter((decision) => decision.placement === placement);
@@ -3941,7 +3944,7 @@ export interface ExpandedJourney {
 
 /** The journey state shape {@link journeyForState} reads. */
 export interface JourneyState {
-  flow: WorklineFlow;
+  flow: AgentWorkflowFlow;
   batches?: readonly { published_plan_digest?: string }[];
   batch_loop?: { pending: boolean; iteration: number | null };
   applied?: readonly string[];
@@ -4208,7 +4211,7 @@ function reopen(
  * exhaustive over the five flows instead of falling back to a default.
  *
  */
-export const DOCS_BOUNDARY: Readonly<Record<WorklineFlow, readonly string[]>> = {
+export const DOCS_BOUNDARY: Readonly<Record<AgentWorkflowFlow, readonly string[]>> = {
   quick: [],
   "spec-refine": [SPEC_DOCS_DIR],
   "plan-new": [PLAN_DOCS_DIR],
@@ -4217,8 +4220,10 @@ export const DOCS_BOUNDARY: Readonly<Record<WorklineFlow, readonly string[]>> = 
 };
 
 /** The flow a scope names, or null for the chassis and for command scopes. */
-export function flowOfScope(scope: DecisionScope): WorklineFlow | null {
-  return (WORKLINE_FLOWS as readonly string[]).includes(scope) ? (scope as WorklineFlow) : null;
+export function flowOfScope(scope: DecisionScope): AgentWorkflowFlow | null {
+  return (AGENT_WORKFLOW_FLOWS as readonly string[]).includes(scope)
+    ? (scope as AgentWorkflowFlow)
+    : null;
 }
 
 /** The command a scope names, or null when the scope is a flow or the chassis. */
@@ -4234,7 +4239,7 @@ export function commandOfScope(scope: DecisionScope): string | null {
  * disagree the state is unusable: the whole initiative exists to remove exactly
  * that kind of double authority.
  */
-export function trancheOfFlow(flow: WorklineFlow): FlowTranche {
+export function trancheOfFlow(flow: AgentWorkflowFlow): FlowTranche {
   if (flow === "quick") return "quick";
   return flow === "spec-refine" ? "spec" : "plan";
 }

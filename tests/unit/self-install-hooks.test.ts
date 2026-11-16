@@ -6,6 +6,7 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { opencodeGlobalMcpFile } from "../../src/application/mcp-host-paths.js";
 import { PathsService } from "../../src/application/paths-service.js";
+import { MANAGED_BLOCK_BEGIN } from "../../src/application/self/hooks-toml.js";
 import {
   resolveBundledHookTemplate,
   selfInstallHooks,
@@ -105,7 +106,7 @@ describe("selfInstallHooks", () => {
     if (!result.ok) expect(result.error.code).toBe("INVALID_TARGET");
   });
 
-  // A target Workline does NOT manage resolves to the explanatory "unsupported"
+  // A target agent-workflow does NOT manage resolves to the explanatory "unsupported"
   // result (warning + null config_path), not a generic INVALID_TARGET — the
   // daily-status documents them as valid hosts. Only warp and oz are left: they
   // have no hook system at all. crush and gemini got config installers, codex a
@@ -567,7 +568,7 @@ describe("selfInstallHooks — kimi", () => {
     // Simula la re-serialización del propio host: parse + stringify.
     const reserialized = stringifyToml(parseToml(await readFile(configPath, "utf8")) as never);
     await writeFile(configPath, `${reserialized}\n`, "utf8");
-    expect(await readFile(configPath, "utf8")).not.toContain("agent-workflow (Workline)");
+    expect(await readFile(configPath, "utf8")).not.toContain(MANAGED_BLOCK_BEGIN);
 
     // Reinstalar NO duplica.
     const again = await install();

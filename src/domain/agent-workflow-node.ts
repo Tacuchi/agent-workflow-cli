@@ -6,7 +6,7 @@ import {
 } from "./docs-canon.js";
 
 /**
- * The identity of a Workline node, said the same way by everybody who points at
+ * The identity of a agent-workflow node, said the same way by everybody who points at
  * one.
  *
  * Provenance is a graph over four kinds of thing — a spec, a plan, a quick and a
@@ -22,12 +22,12 @@ import {
  * and a stale path is a warning while a wrong id is a defect.
  */
 
-export const WORKLINE_KINDS = ["spec", "plan", "quick", "session"] as const;
+export const AGENT_WORKFLOW_KINDS = ["spec", "plan", "quick", "session"] as const;
 
-export type WorklineKind = (typeof WORKLINE_KINDS)[number];
+export type AgentWorkflowKind = (typeof AGENT_WORKFLOW_KINDS)[number];
 
-export interface WorklineNodeId {
-  kind: WorklineKind;
+export interface AgentWorkflowNodeId {
+  kind: AgentWorkflowKind;
   /**
    * `025` for a spec, `024` for a plan, the session folder for a session or a
    * quick — whatever identifies that kind uniquely inside the hub.
@@ -35,14 +35,14 @@ export interface WorklineNodeId {
   key: string;
 }
 
-const KIND_SET: ReadonlySet<string> = new Set(WORKLINE_KINDS);
+const KIND_SET: ReadonlySet<string> = new Set(AGENT_WORKFLOW_KINDS);
 
-export function isWorklineKind(value: unknown): value is WorklineKind {
+export function isAgentWorkflowKind(value: unknown): value is AgentWorkflowKind {
   return typeof value === "string" && KIND_SET.has(value);
 }
 
 /** `plan:024` — the one spelling of a node, in output and in a seal alike. */
-export function formatNodeId(id: WorklineNodeId): string {
+export function formatNodeId(id: AgentWorkflowNodeId): string {
   return `${id.kind}:${id.key}`;
 }
 
@@ -58,7 +58,7 @@ export function formatNodeId(id: WorklineNodeId): string {
 export function nodeFromDocPath(
   path: string,
   canon: Pick<CoreDocsCanon, "spec" | "plan"> = DEFAULT_CORE_DOCS_CANON,
-): WorklineNodeId | null {
+): AgentWorkflowNodeId | null {
   const normalized = path.split("\\").join("/");
   const kind = coreDocumentKindForPath(normalized, canon);
   if (kind === null) return null;
@@ -80,9 +80,9 @@ export function nodeFromDocPath(
  * created, while a parent cannot know who will descend from it later. Reversing
  * the reading is a traversal; reversing the record would be a guess.
  */
-export interface WorklineEdge {
-  from: WorklineNodeId;
-  to: WorklineNodeId;
+export interface AgentWorkflowEdge {
+  from: AgentWorkflowNodeId;
+  to: AgentWorkflowNodeId;
   /** How the edge was established — what makes it evidence rather than a hint. */
   evidence: EdgeEvidence;
 }

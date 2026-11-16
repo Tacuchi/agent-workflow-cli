@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
+import { buildAgentWorkflowIndex } from "../../src/application/agent-workflow-index-service.js";
 import {
   noteIndexArtifact,
   noteIndexPath,
@@ -22,7 +23,6 @@ import {
 } from "../../src/application/decision-note-service.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { buildWorklineIndex } from "../../src/application/workline-index-service.js";
 import {
   type DecisionNote,
   NOTE_SCHEMA,
@@ -238,7 +238,8 @@ describe("sobre un plan fixture con una fase validada", () => {
       "",
     ].join("\n");
 
-  const board = () => buildWorklineIndex(fs, env, paths, { now: new Date("2026-08-16T12:00:00Z") });
+  const board = () =>
+    buildAgentWorkflowIndex(fs, env, paths, { now: new Date("2026-08-16T12:00:00Z") });
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "reconc-board-"));

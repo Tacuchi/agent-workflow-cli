@@ -1,5 +1,5 @@
 /**
- * The numeric identity used by Workline sessions and documents.
+ * The numeric identity used by agent-workflow sessions and documents.
  *
  * A correlative is a filename-safe decimal string with a minimum display width
  * of three digits. The width is a presentation floor, not a ceiling: `1000`
@@ -22,7 +22,7 @@ const CORRELATIVE_INPUT_RE = /^\d+$/;
 /** The matching source is exported for callers that need to compose a regex. */
 export const CORRELATIVE_SOURCE = "\\d{3,}";
 
-/** Whether a value is a complete Workline correlative. */
+/** Whether a value is a complete agent-workflow correlative. */
 export function isCorrelative(value: unknown): value is string {
   return typeof value === "string" && CORRELATIVE_RE.test(value);
 }
@@ -53,7 +53,7 @@ export function normalizeCorrelativeInput(value: string): string | null {
   return CORRELATIVE_INPUT_RE.test(trimmed) ? formatCorrelative(BigInt(trimmed)) : null;
 }
 
-/** Render a non-negative integer with Workline's minimum display width. */
+/** Render a non-negative integer with agent-workflow's minimum display width. */
 export function formatCorrelative(value: bigint | number): string {
   const parsed = typeof value === "bigint" ? value : BigInt(value);
   if (parsed < 0n) throw new Error("un correlativo no puede ser negativo");
