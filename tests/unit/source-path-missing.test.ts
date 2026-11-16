@@ -13,7 +13,6 @@ import { runResume } from "../../src/application/resume-service.js";
 import { runSources } from "../../src/application/sources-service.js";
 import { runStatusCommand } from "../../src/application/status-service.js";
 import { runVisibilityDoctor } from "../../src/application/visibility-doctor-service.js";
-import { runWorktree } from "../../src/application/worktree-service.js";
 import { resumeCommand } from "../../src/cli/commands/resume.js";
 import { setWorkingBranchCommand } from "../../src/cli/commands/set-branch.js";
 import { statusCommand } from "../../src/cli/commands/status.js";
@@ -66,7 +65,7 @@ it("sources informa el alias ausente sin consultar git en el cwd", async () => {
   expect(result.sources[0]?.error).toContain("aw add-source remoto:<ruta>");
 });
 
-it("sources y worktree list consultan la ruta local de una celda (local)", async () => {
+it("sources consulta la ruta local de una celda (local)", async () => {
   const root = await mkdtemp(join(tmpdir(), "aw-local-hub-"));
   const repo = await mkdtemp(join(tmpdir(), "aw-local-repo-"));
   roots.push(root, repo);
@@ -107,10 +106,8 @@ it("sources y worktree list consultan la ruta local de una celda (local)", async
   } as GitPort;
   const sources = await runSources(fs, env, git, paths, { verbose: true });
   expect(sources.sources[0]?.path).toBe(repo);
-  const listed = await runWorktree({ fs, env, git, paths }, { action: "list" });
-  if ("error" in listed) throw new Error(listed.error);
-  expect(listed.unreadable).toEqual([]);
-  expect(calls).toEqual([repo, repo, repo, repo, repo]);
+  expect(calls.length).toBeGreaterThan(0);
+  expect(new Set(calls)).toEqual(new Set([repo]));
 });
 
 it("set-working-branch no inicia git ni guarda una rama si falta la ruta", async () => {

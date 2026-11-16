@@ -13,16 +13,14 @@
  *   previous state exactly as it was rather than a half-applied one.
  */
 
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { CapabilityFailure } from "../../domain/capability/protocol.js";
 import { journeyOfFlow } from "../../domain/flow/authority.js";
 import {
-  FLOW_RUN_STATE_CONTINUABLE,
   FLOW_RUN_STATE_FILE,
   type FlowRunRead,
   type FlowRunState,
   alignToJourney,
-  attemptCounterKeyForIteration,
   legacyRunNeedsAdoption,
   parseRunState,
   restartInvocation,
@@ -251,63 +249,6 @@ function counterDigest(session: string, counters: AttemptCounters): string {
 }
 
 /**
- * Raise the counter to what this state knows, and hand the state back reconciled.
- *
- * Monotone by construction on both halves: the attempts seen can only go up —
- * `Math.max` against what the file already said — and the grants a recovery
- * recorded come from the state, which only ever adds to them. A state written
- * from a restored ledger therefore raises nothing and gets the live floor back.
- */
-async function raiseCounters(
-  fs: FileSystemPort,
-  location: FlowRunLocation,
-  state: FlowRunState,
-): Promise<{ ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure }> {
-  const current = await readCounters(fs, location);
-  if (!current.ok) return current;
-
-  const spent = new Map<string, number>();
-  for (const attempt of state.attempts) {
-    if (attempt.approval === true) continue;
-    const key = attemptCounterKeyForIteration(attempt.transition, attempt);
-    spent.set(key, (spent.get(key) ?? 0) + 1);
-  }
-  const attempts = { ...current.value.attempts };
-  for (const [transition, count] of spent) {
-    attempts[transition] = Math.max(attempts[transition] ?? 0, count);
-  }
-  const granted = { ...current.value.granted };
-  for (const [transition, forgiven] of Object.entries(state.attempt_grants ?? {})) {
-    granted[transition] = Math.max(granted[transition] ?? 0, forgiven);
-  }
-
-  const next: AttemptCounters = { attempts, granted };
-  if (changed(current.value, next)) await writeCounters(fs, location, next);
-  return { ok: true, state: withAttemptCounters(state, { floor: attempts, grants: granted }) };
-}
-
-async function writeCounters(
-  fs: FileSystemPort,
-  location: FlowRunLocation,
-  counters: AttemptCounters,
-): Promise<void> {
-  await fs.mkdirp(dirname(location.countersPath));
-  await fs.writeText(
-    location.countersPath,
-    `${JSON.stringify(
-      {
-        version: COUNTER_VERSION,
-        session: location.session,
-        ...counters,
-        digest: counterDigest(location.session, counters),
-      },
-      null,
-      2,
-    )}\n`,
-  );
-}
-
-/**
  * Start the counter over for a run that is being created.
  *
  * The file goes rather than being zeroed, so an adopted run is byte-identical to
@@ -322,42 +263,12 @@ async function resetCounters(
   return { ok: true, state: withAttemptCounters(state, { floor: {}, grants: {} }) };
 }
 
-function changed(before: AttemptCounters, after: AttemptCounters): boolean {
-  return (
-    JSON.stringify(before.attempts) !== JSON.stringify(after.attempts) ||
-    JSON.stringify(before.granted) !== JSON.stringify(after.granted)
-  );
-}
-
 function readCounterMap(value: unknown): Record<string, number> | null {
   if (value === undefined) return {};
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const entries = Object.entries(value as Record<string, unknown>);
   if (!entries.every(([, count]) => Number.isInteger(count) && (count as number) >= 0)) return null;
   return Object.fromEntries(entries) as Record<string, number>;
-}
-
-/**
- * What a mutation returns, and what {@link applyUnderLock} returns in turn.
- *
- * `persist: false` is how a BUSINESS rejection comes back: it produced a real
- * answer for the caller — the recalculated boundary — and it must not touch the
- * file. Without it, "a rejected answer writes nothing" would rest on the mutation
- * remembering to hand back the identical object, which is not a guarantee.
- */
-export type FlowRunMutation<T> =
-  | { ok: true; state: FlowRunState; value: T; persist?: boolean }
-  | { ok: false; failure: CapabilityFailure };
-
-export interface ApplyOptions extends LockOptions {
-  /**
-   * The digest the caller reasoned over. When it no longer matches the state
-   * read under the lock, nothing is applied — the world moved between the
-   * directive and this answer.
-   */
-  expectDigest?: string;
-  /** Allow a missing state: the mutation receives `null` and creates the run. */
-  allowAbsent?: boolean;
 }
 
 /** The run's own lock, or the refusal that names who holds it. */
@@ -472,84 +383,5 @@ export async function restartUnderLock(
     return { ok: true, state: fresh.state, archive };
   } finally {
     await taken.lock.release();
-  }
-}
-
-/**
- * Run one mutation under the run's lock and persist its result.
- *
- * The mutation receives the state as it is INSIDE the lock — never the copy the
- * caller had — which is what makes this a compare-and-swap instead of a hopeful
- * overwrite.
- */
-export async function applyUnderLock<T>(
-  fs: FileSystemPort,
-  location: FlowRunLocation,
-  mutate: (current: FlowRunState | null) => Promise<FlowRunMutation<T>> | FlowRunMutation<T>,
-  options: ApplyOptions = {},
-): Promise<FlowRunMutation<T>> {
-  const { expectDigest, allowAbsent, ...lockOptions } = options;
-  const taken = await takeRunLock(fs, location, lockOptions);
-  if (!taken.ok) return taken;
-  const lock = taken.lock;
-
-  try {
-    const current = await readRun(fs, location);
-    if (!current.ok) {
-      const absent = current.failure.code === "FLOW_RUN_ABSENT";
-      if (!absent || allowAbsent !== true) return { ok: false, failure: current.failure };
-    }
-    const state = current.ok ? current.state : null;
-    if (state !== null && legacyRunNeedsAdoption(state)) {
-      return {
-        ok: false,
-        failure: {
-          code: "FLOW_RUN_LEGACY_ADOPTION_REQUIRED",
-          message: `la corrida v${state.version} se puede leer, pero no continuar: este CLI continúa desde la v${FLOW_RUN_STATE_CONTINUABLE.at(-1)}`,
-          action: `corré '${restartInvocation(state.session)}': archiva el registro dentro de la sesión y re-adopta el flow '${state.flow}' — continuar su cursor inventaría límites de lote que la corrida nunca declaró`,
-        },
-      };
-    }
-    if (expectDigest !== undefined && state?.digest !== expectDigest) {
-      return {
-        ok: false,
-        failure: {
-          code: "FLOW_RUN_STALE",
-          message: "el estado de la corrida cambió después de emitirse la directiva",
-          action: "volvé a correr 'aw flow advance' y respondé sobre la frontera recalculada",
-        },
-      };
-    }
-
-    const result = await mutate(state);
-    if (!result.ok) return result;
-    if (result.persist === false) return result;
-    // The counter first, the state second, and the order is the contract. If the
-    // process dies between them the counter is AHEAD of the ledger, which costs
-    // an attempt nobody spent; the other order would leave it BEHIND, which is an
-    // attempt somebody spent and can spend again. Only one of those two errors is
-    // safe to make.
-    //
-    // An ADOPTION is the one case that starts the counter over, and it is not a
-    // loophole in the monotonicity: a state that was absent means this run is
-    // being created now, and the only way to get there deliberately is to throw
-    // the previous run away whole — every applied transition with it. What the
-    // counter defends against is keeping the position and losing the attempts;
-    // paying for a reset with the entire run is not that trade. Keeping the old
-    // count would be worse than useless: re-adopting after a corrupt state — the
-    // repair this CLI prints — would come back pre-exhausted at its first gate.
-    const raised =
-      state === null
-        ? await resetCounters(fs, location, result.state)
-        : await raiseCounters(fs, location, result.state);
-    if (!raised.ok) return raised;
-    // One write, after the next state is complete and sealed: nothing partial
-    // can be observed because nothing partial is ever written.
-    await fs.writeText(location.statePath, serializeRunState(raised.state));
-    // The reconciled state is what the caller gets back, because the digest it
-    // holds is the one the next compare-and-swap will be judged against.
-    return { ...result, state: raised.state };
-  } finally {
-    await lock.release();
   }
 }

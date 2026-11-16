@@ -72,7 +72,25 @@ import {
   readReleasePasses,
 } from "./release-pass-ledger.js";
 import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
-import type { OrphanUnit, WorktreeListOutput } from "./worktree-service.js";
+
+/** A unit that outlived the session that took it, as `status` and `resume` publish it. */
+export interface OrphanUnit {
+  alias: string;
+  session: string;
+  path: string;
+  branch: string | null;
+  /** Why it is reported: its session is closed or gone, or its directory vanished. */
+  reason: "session_closed" | "session_absent" | "directory_missing";
+  /** The command that actually recovers it. */
+  release: string;
+}
+
+/** A source whose worktrees could not be read; its units are NOT in the lists. */
+export interface UnreadableSource {
+  alias: string;
+  error: string;
+  code?: "SOURCE_PATH_MISSING";
+}
 
 /**
  * The one reading of the hub's agent-workflow documents.
@@ -496,7 +514,7 @@ export interface AgentWorkflowIndex {
    */
   orphan_units: OrphanUnit[];
   /** Sources not inspectable here: a partial worktree inventory is never an empty one. */
-  unreadable_sources?: WorktreeListOutput["unreadable"];
+  unreadable_sources?: UnreadableSource[];
   isolation_error?: string;
   /**
    * Retirements left IN FLIGHT — neither applied nor undone.
@@ -705,13 +723,13 @@ async function readSourceReachability(
 ): Promise<{
   bySession: Map<string, SessionUnit[]>;
   orphans: OrphanUnit[];
-  unreadable: WorktreeListOutput["unreadable"];
+  unreadable: UnreadableSource[];
   error?: string;
 }> {
   const empty = { bySession: new Map<string, SessionUnit[]>(), orphans: [] as OrphanUnit[] };
   if (git === undefined) return { ...empty, unreadable: [] };
   const block = await readHubBlock(fs, paths.hubDir(), paths.blockMarkers());
-  const unreadable: WorktreeListOutput["unreadable"] = [];
+  const unreadable: UnreadableSource[] = [];
   for (const source of block?.fuentes ?? []) {
     try {
       await requireSourcePath(fs, source);

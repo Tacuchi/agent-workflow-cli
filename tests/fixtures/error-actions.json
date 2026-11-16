@@ -152,30 +152,6 @@
       "reason": "alias, ruta y rama de una fuente nueva son de la persona"
     },
     {
-      "file": "src/application/worktree-service.ts",
-      "text": "aw add-source ${unreadable[0].alias}:<ruta>",
-      "class": "not-determinable",
-      "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
-    },
-    {
-      "file": "src/application/worktree-service.ts",
-      "text": "aw add-source <alias>",
-      "class": "not-determinable",
-      "reason": "alias, ruta y rama de una fuente nueva son de la persona"
-    },
-    {
-      "file": "src/application/worktree-service.ts",
-      "text": "aw set-working-branch ${alias} <rama>",
-      "class": "not-determinable",
-      "reason": "el nombre de la rama de trabajo lo elige la persona"
-    },
-    {
-      "file": "src/application/worktree-service.ts",
-      "text": "aw set-working-branch ${source.alias} <rama>",
-      "class": "not-determinable",
-      "reason": "el nombre de la rama de trabajo lo elige la persona"
-    },
-    {
       "file": "src/application/parsers/hub-block.ts",
       "text": "aw add-source ${alias}:<ruta>",
       "class": "not-determinable",

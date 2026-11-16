@@ -1,14 +1,10 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AGENT_WORKFLOW_FLOWS } from "../../src/application/capability/compose.js";
 import { journeyForRun } from "../../src/application/flow/run-journey.js";
-import {
-  applyUnderLock,
-  locateRun,
-  readRun,
-} from "../../src/application/flow/run-state-service.js";
+import { locateRun, readRun } from "../../src/application/flow/run-state-service.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { expandJourney, journeyOfFlow } from "../../src/domain/flow/authority.js";
 import { V11_JOURNEY_BASE } from "../../src/domain/flow/journey-baseline.js";
@@ -17,7 +13,6 @@ import {
   type FlowRunReentry,
   type FlowRunState,
   checkAgainstJourney,
-  parseRunState,
   serializeRunState,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -41,31 +36,10 @@ const retired = new Set([
   "plan-exec.design-precondition",
 ]);
 
-function expectPersistedPrefix(
-  before: FlowRunState,
-  disk: FlowRunState,
-  ids: readonly string[],
-): void {
-  const expected = before.applied.filter((id) => !retired.has(id));
-  const consent = "plan-exec.unchanged-phase-consent";
-  const scope = expected.indexOf("plan-exec.source-scope");
-  if (!ids.includes(consent) && scope >= 0) {
-    expected.splice(scope, 0, consent);
-    expect(disk.skipped).toContain(consent);
-  }
-  expect(disk.applied).toEqual(expected);
-}
-
 function expectContinuedBoundary(before: FlowRunState, after: FlowRunState): void {
   // An obsolete UI gate cannot ask again; every other boundary stays put.
   if (before.boundary !== null && retired.has(before.boundary)) {
     expect(after.boundary).not.toBe(before.boundary);
-    expect(after.boundary).toBe(journeyForRun(after)[after.applied.length]?.id ?? null);
-  } else expect(after.boundary).toBe(before.boundary);
-}
-
-function expectWrittenBoundary(before: FlowRunState, after: FlowRunState): void {
-  if (before.boundary !== null && retired.has(before.boundary)) {
     expect(after.boundary).toBe(journeyForRun(after)[after.applied.length]?.id ?? null);
   } else expect(after.boundary).toBe(before.boundary);
 }
@@ -159,35 +133,6 @@ describe("una corrida detenida en cualquier posición sigue con el build instala
           const inserted = after.applied.filter((id) => !before.applied.includes(id));
           expect(inserted.every((id) => after.skipped.includes(id))).toBe(true);
         }
-      });
-
-      it(`${fixture.cli_version} · ${flow}: la siguiente escritura la persiste en la versión vigente`, async () => {
-        // Continuing means the next write persists the upgraded run at the
-        // position it had, standing on the installed journey.
-        const ids = fixture.journeys[flow];
-        const location = locateRun(paths, SESSION);
-        const stopped = Math.floor(ids.length / 2);
-        const before = stateWrittenAt(
-          fixture.run_state_version,
-          flow,
-          SESSION,
-          ids.slice(0, stopped),
-          ids[stopped] ?? null,
-          fixture.run_state_version >= 12 ? { journey_base: ids } : {},
-        );
-        await writeFile(location.statePath, serializeRunState(before), "utf8");
-        const written = await applyUnderLock(fs, location, (state) =>
-          state === null
-            ? { ok: false as const, failure: { code: "X", message: "sin corrida", action: "-" } }
-            : { ok: true as const, state, value: null },
-        );
-        if (!written.ok) throw new Error(`${flow}: ${written.failure.code}`);
-        const disk = parseRunState(await readFile(location.statePath, "utf8"));
-        if (!disk.ok) throw new Error(`${flow}: ${disk.failure.code}`);
-        expect(disk.state.version).toBe(FLOW_RUN_STATE_VERSION);
-        expectPersistedPrefix(before, disk.state, ids);
-        expectWrittenBoundary(before, disk.state);
-        expect(disk.state.journey_base).toEqual(journeyOfFlow(flow).map((decision) => decision.id));
       });
     }
   }

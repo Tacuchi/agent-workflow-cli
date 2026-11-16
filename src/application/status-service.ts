@@ -10,9 +10,11 @@ import {
   type IndexedPlan,
   type IndexedReservation,
   type IndexedSpec,
+  type OrphanUnit,
   type PendingRetirement,
   type PipelineItem,
   type SessionUnit,
+  type UnreadableSource,
   buildAgentWorkflowIndex,
 } from "./agent-workflow-index-service.js";
 import { type FlowRunProjection, projectRun } from "./flow/run-projection.js";
@@ -20,7 +22,6 @@ import { readHistoryRows } from "./history-table.js";
 import type { PathsService } from "./paths-service.js";
 import { type TerminalEvent, readEvents } from "./retirement/history-events.js";
 import { sessionNumericCode } from "./session-resolver.js";
-import type { OrphanUnit, WorktreeListOutput } from "./worktree-service.js";
 
 /**
  * `status` projected out of the agent-workflow index.
@@ -112,7 +113,7 @@ export interface StatusOutput {
   loose_sessions: string[];
   /** Units that outlived their session: pending cleanup, never cleaned on their own. */
   orphan_units: OrphanUnit[];
-  unreadable_sources?: WorktreeListOutput["unreadable"];
+  unreadable_sources?: UnreadableSource[];
   isolation_error?: string;
   /** Invalid `[docs]` config: no documentary path was guessed. */
   docs_canon_error?: string;

@@ -73,12 +73,10 @@ it("JSON inválido sale como error por host, sin pisar el contenido", async () =
   expect(readFileSync(join(root, ".claude", "settings.local.json"), "utf8")).toBe("{malformed");
 });
 
-it("visibility doctor reconoce la unidad registrada de otro flujo aun con sesión cerrada", async () => {
+it("visibility doctor reconoce la unidad registrada de otro flujo", async () => {
   const f = worktreeFixture();
   dispose.push(f.dispose);
-  const unit = await f.run("ensure");
-  if (!("path" in unit)) throw new Error("no unit");
-  f.close();
+  const unit = await f.ensure();
   const report = await runVisibilityDoctor(f.deps.fs, f.deps.env, f.deps.paths, {});
   for (const host of report.reports.filter((entry) => entry.host !== "warp")) {
     expect(host.registered_paths).toContain(unit.path);
@@ -90,8 +88,7 @@ it("visibility doctor reconoce la unidad registrada de otro flujo aun con sesió
 it("reparar un sobrante conserva fuente y unidad viva en ambos hosts", async () => {
   const f = worktreeFixture();
   dispose.push(f.dispose);
-  const unit = await f.run("ensure");
-  if (!("path" in unit)) throw new Error("no unit");
+  const unit = await f.ensure();
   const intrusa = join(f.root, "intrusa");
   mkdirSync(intrusa);
   attachClaude([f.repo, intrusa], f.hub);

@@ -1963,19 +1963,6 @@ export function withPlanExecBatchStageForTransition(
 }
 
 /**
- * Seal whether the just-published batch opens another iteration.
- *
- * The final document bytes, not an agent assertion, decide this field.  Keeping
- * it in the same state publication as the `closed` trace makes a crash recover
- * to one exact cursor shape.
- */
-export function withPlanExecBatchLoop(state: FlowRunState, loop: PlanExecBatchLoop): FlowRunState {
-  const current = state.batch_loop;
-  if (current?.pending === loop.pending && current?.iteration === loop.iteration) return state;
-  return sealRunState({ ...withoutSeal(state), batch_loop: loop });
-}
-
-/**
  * The iteration identity for a transition in the repeatable PLAN-exec segment.
  *
  * Prefix/tail rows deliberately return `null`: they run once per flow and keep
@@ -2012,52 +1999,6 @@ export const PLAN_EXEC_BATCH_LOOP_TRANSITIONS = new Set<string>([
   "plan-exec.batch-commit",
   "plan-exec.batch-close",
 ]);
-
-/** Seal the plan bytes the batch publication actually produced. */
-export function withPlanExecBatchPublication(
-  state: FlowRunState,
-  batchId: string,
-  publishedPlanDigest: string,
-): FlowRunState {
-  const batches = state.batches ?? [];
-  const index = batches.findIndex((batch) => batch.id === batchId);
-  if (index < 0) return state;
-  const current = batches[index];
-  if (current === undefined) return state;
-  const next = [...batches];
-  const publication =
-    current.publication === undefined
-      ? {}
-      : {
-          publication: {
-            ...current.publication,
-            after_plan_digest: publishedPlanDigest,
-            status: "applied" as const,
-          },
-        };
-  next[index] = {
-    ...current,
-    published_plan_digest: publishedPlanDigest,
-    ...publication,
-  };
-  return sealRunState({ ...withoutSeal(state), batches: next });
-}
-
-/** Seal the exact before/after pair before the plan document is touched. */
-export function withPlanExecBatchPublicationPrepared(
-  state: FlowRunState,
-  batchId: string,
-  publication: Omit<PlanExecBatchPublication, "status">,
-): FlowRunState {
-  const batches = state.batches ?? [];
-  const index = batches.findIndex((batch) => batch.id === batchId);
-  if (index < 0) return state;
-  const current = batches[index];
-  if (current === undefined) return state;
-  const next = [...batches];
-  next[index] = { ...current, publication: { ...publication, status: "prepared" } };
-  return sealRunState({ ...withoutSeal(state), batches: next });
-}
 
 /** Persist a selected handoff; the advancement engine then refuses to continue this run. */
 export function withHandoff(state: FlowRunState, handoff: FlowHandoff | null): FlowRunState {

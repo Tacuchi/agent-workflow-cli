@@ -1,12 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
+import { attachClaude } from "../../src/application/multiroot/claude.js";
+import { attachCodex } from "../../src/application/multiroot/codex.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { type WorktreeDeps, runWorktree } from "../../src/application/worktree-service.js";
+import { ensureUnit, planUnit } from "../../src/application/plan-run/units.js";
+import { hubKey, unitsRoot } from "../../src/domain/isolation-unit.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "./fake-env.js";
 
@@ -15,7 +18,7 @@ export function git(repo: string, ...args: string[]): string {
 }
 
 export function worktreeFixture() {
-  const root = mkdtempSync(join(tmpdir(), "aw-unit-lifecycle-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "aw-unit-lifecycle-")));
   const home = join(root, "home");
   const hub = join(root, "ws");
   const repo = join(root, "repo");
@@ -41,29 +44,36 @@ Prueba.
   - acme: main
 <!-- WORKFLOW-HUB-END -->`;
   writeFileSync(join(hub, "CLAUDE.md"), block);
-  const session = join(hub, ".workflow", "sessions", "101-test-plan-exec");
-  mkdirSync(session, { recursive: true });
-  writeFileSync(
-    join(session, "SESSION.md"),
-    "# SESSION — 101-test-plan-exec\n\n## Objective\nPrueba\n",
-  );
-  const deps: WorktreeDeps = {
+  const deps = {
     fs: new NodeFileSystem(),
     env: new FakeEnv(home, hub),
     git: new GitCliAdapter(new NodeProcess()),
     paths: new PathsService(normalizeNamespace("workflow"), home, hub),
   };
-  const run = (action: "ensure" | "release" | "integrate" | "reclaim") =>
-    runWorktree(deps, { action, alias: "acme", sessionCode: "101" });
+  /** Takes a plan unit of `acme` the way `aw flow unit` does, and registers it in both hosts. */
+  const ensure = async () => {
+    const root = await deps.fs
+      .realPath(unitsRoot(deps.paths.userRoot()))
+      .catch(() => unitsRoot(deps.paths.userRoot()));
+    const unit = planUnit({
+      worktreesRoot: root,
+      hubKey: hubKey(hub),
+      alias: "acme",
+      plan: "101",
+      batch: "B1",
+    });
+    const ensured = await ensureUnit(deps.fs, deps.git, repo, unit, "main");
+    attachClaude([repo, ensured.unit.path], hub);
+    attachCodex([repo, ensured.unit.path], hub);
+    return ensured.unit;
+  };
   return {
     root,
     home,
     hub,
     repo,
-    session,
     deps,
-    run,
-    close: () => writeFileSync(join(session, ".closed"), ""),
+    ensure,
     dispose: () => rmSync(root, { recursive: true, force: true }),
   };
 }

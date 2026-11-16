@@ -52,9 +52,6 @@ describe("DOC-01 — doctrina y binario integrados", () => {
     const batches = await readRel("modules/PLAN-EXECUTION-BATCHES.md");
     expect(batches).toContain("implement every phase first");
     expect(batches).toContain("one commit per changed Git source");
-    expect(await readSrc("plan-exec-batch-service.ts")).toContain(
-      "preparePlanExecBatchPublication",
-    );
   });
 
   it("FLOW-13: Refinar vuelve a redacción sin escribir", async () => {
@@ -93,7 +90,6 @@ it("la doctrina nombra el cambio de rama del documento y la copia desde quick", 
   const specNew = await readRel("commands/spec-new.md");
   const codePolicy = await readRel("loops/CODE-POLICIES.md");
   expect(codePolicy).toContain("aw check-branch");
-  expect(await readSrc("worktree-service.ts")).toContain("isAncestor");
   expect(specNew).toContain(
     "aw doc-branch set --doc spec:<NNN> --source <alias> --from quick:<NNN>",
   );

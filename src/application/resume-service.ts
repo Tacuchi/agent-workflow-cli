@@ -11,6 +11,7 @@ import {
   type PipelineItem,
   type PipelineItemDetail,
   type SessionUnit,
+  type UnreadableSource,
   buildAgentWorkflowIndex,
   pipelineTie,
   planIsPending,
@@ -19,7 +20,6 @@ import {
 } from "./agent-workflow-index-service.js";
 import { readHubBlock } from "./parsers/hub-block.js";
 import type { PathsService } from "./paths-service.js";
-import type { WorktreeListOutput } from "./worktree-service.js";
 
 /**
  * `resume` — what to pick up, and the exact command that continues it.
@@ -115,7 +115,7 @@ export type ResumeOutcome = (
   | { status: "idle"; action: string }
   | { status: "invalid_target"; target: string; action: string }
 ) & {
-  unreadable_sources?: WorktreeListOutput["unreadable"];
+  unreadable_sources?: UnreadableSource[];
   isolation_error?: string;
   ready_to_close?: Array<{ session: string; command: string }>;
   paused_sessions?: string[];

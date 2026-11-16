@@ -13,10 +13,7 @@
  * row IS the answer to "did the commit point pass".
  */
 
-import { formatNodeId } from "../../domain/agent-workflow-node.js";
-import type { RetirementProposal } from "../../domain/retirement/proposal.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { localDateIso } from "../dates.js";
 import { ensureHistoryFile } from "../history-table.js";
 import type { PathsService } from "../paths-service.js";
 
@@ -37,32 +34,6 @@ export interface TerminalEvent {
   command: string;
   target: string;
   result: string;
-}
-
-/**
- * The row a successful retirement adds, derived from the sealed proposal.
- *
- * Every cell comes from the object that was authorized: the command, the target,
- * what disappeared or was restored, and what happened in git. A row assembled from
- * a later reading of the hub could describe something the person never
- * approved.
- */
-export function eventOf(proposal: RetirementProposal, now: Date = new Date()): TerminalEvent {
-  const git =
-    proposal.publication === null
-      ? "sin efectos git"
-      : `${proposal.reverts.length} revert(s) en ${proposal.publication.ref} → árbol ${proposal.publication.expected_tree.slice(0, 12)}${
-          proposal.reverts.some((r) => r.published)
-            ? " · publicación remota pendiente y externa"
-            : ""
-        }`;
-  return {
-    operation: key(proposal.digest),
-    date: localDateIso(now),
-    command: proposal.event.command,
-    target: formatNodeId(proposal.target),
-    result: `${proposal.event.summary} · ${git}`,
-  };
 }
 
 /**
