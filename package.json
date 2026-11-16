@@ -59,7 +59,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@inkjs/ui": "^2.0.0",
     "@inquirer/prompts": "^7.10.1",
     "ink": "^5.2.1",
     "pg": "^8.23.0",

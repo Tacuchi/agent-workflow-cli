@@ -69,6 +69,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `aw hub-block --init --default-main-branch <rama> --default-dev-branch <rama> --default-qa-branch <rama>` declara las ramas por defecto del hub (roles `principal`, `desarrollo` y `qa`). Un rol no indicado conserva su valor, `aw git-flow` usa los declarados y `--main-branch` no cambia.
 
+### Removed
+
+- Limpieza interna, sin retiro de superficie pública: ningún comando, subcomando, flag ni salida JSON sale, y `aw status` y `aw resume` siguen publicando `orphan_units` y `unreadable_sources`.
+- Salen los restos internos de la era de sesiones y del motor de flujos anterior: módulos inalcanzables desde el arranque del CLI, exports sin llamador vivo y la lógica que solo ellos usaban, con las pruebas que solo los ejercitaban. Se conservan la migración de hubs, la detección de hooks y residuos retirados, los puentes de nombres retirados y las guardas de contratos vigentes.
+- README y la skill `w` dejan de anunciar los tres exports documentales ya retirados en 31.0.0: diagramas, manuales y reportes se escriben directo en `docs/diagrams`, `docs/manuals` y `docs/reports`, y `/w:persist` guarda el trabajo ya producido. `/w:export-scripts` sigue.
+- Sale la dependencia `@inkjs/ui`, sin consumidores tras la TUI de una sola pantalla; las demás dependencias no cambian.
+
 ### Migration
 
 - Las lecturas reconocen el contrato anterior y avisan por stderr sin escribir. La primera escritura migra el marcador, el encabezado y las notas; conserva namespace y modelo, resella los digests y avisa una vez. Repetir la migración no cambia nada.

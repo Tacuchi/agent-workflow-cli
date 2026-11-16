@@ -34,7 +34,7 @@ One concept: the **hub** — the folder with `.<namespace>/` and the hub block i
 USER invokes
   LAYER 1 · COMMANDS (the only thing the user invokes)
     FLOWS:   spec-new · spec-refine · plan-new · plan-refine · plan-exec · quick
-    EXPORTS: export-scripts · export-manuals · export-diagrams · export-reports
+    EXPORTS: export-scripts
         │ starts / delegates
         ▼
   LAYER 2 · LOOPS (the AI runs them, gap-driven; engine: loops/CHASSIS.md)
@@ -134,7 +134,7 @@ With no flow command, recommend the **cheapest route that still covers the risk*
 - `/w:plan-refine` — starts `plan-refine-loop` to turn the plan, in place, into an executable sequence of functional states (auxiliary, **not mandatory**); it is also the return path when execution hits a structural deviation.
 - `/w:plan-exec` — executes planned states in live-inferred isolated/continuous batches; continuous units compile as they go and validate and commit only at batch close.
 - `/w:quick` — starts `quick-loop` (shortcut, no `docs/`; escalates live to SPEC when the objective exceeds a quick).
-- `/w:export-scripts` · `/w:export-manuals` · `/w:export-diagrams` · `/w:export-reports` — promote artifacts to `docs/`.
+- `/w:export-scripts` — consolidates `docs/scripts/` SQL; diagrams, manuals and reports go straight to `docs/`; `/w:persist` saves work already done.
 
 ### Transversal skills (no flow) — `/w:status` · `/w:doctor` · `/w:persist` · `/w:resume` · `/w:recall`
 
