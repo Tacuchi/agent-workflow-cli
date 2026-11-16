@@ -1044,11 +1044,9 @@ describe("Doctrine guards — G18 · normalization round (three axes · shape-fi
     expect(exec).toContain("Position distinguishes title from phase states");
   });
 
-  it("doctrine and runtime agree on the plan-level vocabulary", async () => {
-    const { PLAN_DECLARED_STATES } = await import("../../src/application/parsers/plan-status.js");
-    expect(PLAN_DECLARED_STATES).toEqual(["open", "done"]);
+  it("the doctrine names the plan-level vocabulary", async () => {
     const contract = await phaseContract();
-    for (const state of PLAN_DECLARED_STATES) {
+    for (const state of ["open", "done"]) {
       expect(contract, state).toContain(`\`${state}\``);
     }
   });

@@ -18,13 +18,6 @@ export type CoreDocsCanon = Readonly<Record<CoreDocsCategory, string>>;
 
 export type CoreDocumentKind = "spec" | "plan";
 
-export function coreDocumentDirectory(
-  canon: Pick<CoreDocsCanon, CoreDocumentKind>,
-  kind: CoreDocumentKind,
-): string {
-  return canon[kind];
-}
-
 /** A safe, already-relative core document path belongs to spec or plan. */
 export function coreDocumentKindForPath(
   path: string,

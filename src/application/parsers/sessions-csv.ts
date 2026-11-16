@@ -12,34 +12,6 @@ export class SessionsCsvError extends Error {
   }
 }
 
-export function parseSessionsCsv(input: string): string[] {
-  const trimmed = input.trim();
-  if (trimmed.length === 0) {
-    throw new SessionsCsvError("INVALID_INPUT", "--sessions vacío");
-  }
-  const tokens = trimmed
-    .split(",")
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
-  if (tokens.length === 0) {
-    throw new SessionsCsvError("INVALID_INPUT", "--sessions vacío");
-  }
-  const normalized: string[] = [];
-  for (const t of tokens) {
-    if (!isCorrelative(t)) {
-      throw new SessionsCsvError(
-        "INVALID_INPUT",
-        `--sessions: token inválido '${t}' (esperado: correlativo de al menos 3 dígitos)`,
-      );
-    }
-    if (normalized.some((existing) => sameCorrelative(existing, t))) {
-      throw new SessionsCsvError("INVALID_INPUT", `--sessions: código duplicado '${t}'`);
-    }
-    normalized.push(t);
-  }
-  return normalized;
-}
-
 export async function validateSessionsExist(
   fs: FileSystemPort,
   sessionsDir: string,

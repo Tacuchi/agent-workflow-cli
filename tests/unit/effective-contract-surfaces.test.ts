@@ -15,10 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import {
-  buildAgentWorkflowIndex,
-  specConsumers,
-} from "../../src/application/agent-workflow-index-service.js";
+import { buildAgentWorkflowIndex } from "../../src/application/agent-workflow-index-service.js";
 import {
   noteIndexArtifact,
   noteIndexPath,
@@ -238,60 +235,6 @@ describe("F7 — el contrato efectivo llega a las superficies", () => {
 
       expect(next).not.toContain("repararlo a mano");
       expect(next).not.toContain("contadores");
-    });
-  });
-
-  describe("T7.3 — cada consumidor se lee alineado, pendiente o histórico", () => {
-    it("alineado: sellado sobre el baseline vigente y sin nada que deber", async () => {
-      seed(SPEC_DIGEST);
-      const [consumer] = specConsumers("033", (await board()).plans);
-
-      expect(consumer?.standing).toBe("aligned");
-      expect(consumer?.alignment.status).toBe("aligned");
-    });
-
-    it("con reconciliación pendiente: ningún consumidor abierto se presenta como alineado", async () => {
-      seed(SPEC_DIGEST);
-      publishNote(["revalidar F1"]);
-      const [consumer] = specConsumers("033", (await board()).plans);
-
-      expect(consumer?.standing).toBe("pending-reconciliation");
-      expect(consumer?.plan_state).toBe("open");
-    });
-
-    it("histórico: un plan cerrado es historia, y la historia no se reconcilia hacia adelante", async () => {
-      writeFileSync(join(root, SPEC_FILE), SPEC_TEXT);
-      writeFileSync(
-        join(root, PLAN_FILE),
-        [
-          "# 032 — plan cerrado",
-          "",
-          "> Derived from: docs/specs/033-spec-x.md",
-          `> Baseline: ${SPEC_FILE}@${SPEC_DIGEST}`,
-          "> Estado: done",
-          "> Cierre: cerrado",
-          "",
-          "## Tasks",
-          "",
-          "### F1 — la única fase",
-          "> Estado: validada",
-          "",
-          "**Trabajo:**",
-          "- [x] T1.1 — hecho",
-          "",
-        ].join("\n"),
-      );
-      const [consumer] = specConsumers("033", (await board()).plans);
-
-      expect(consumer?.standing).toBe("historical");
-    });
-
-    it("sin sello es `unproven`: no se afirma alineado ni se lo trata como derivado", async () => {
-      seed(null);
-      const [consumer] = specConsumers("033", (await board()).plans);
-
-      expect(consumer?.standing).toBe("unproven");
-      expect(consumer?.standing).not.toBe("aligned");
     });
   });
 

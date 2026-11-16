@@ -54,8 +54,6 @@ export const CORE_DOC_CATEGORIES = ["research", "spec", "plan"] as const;
  */
 const FIXED_CATEGORIES: ReadonlySet<string> = new Set([...CORE_DOC_CATEGORIES, "decision"]);
 
-export type CoreDocsCategory = (typeof CORE_DOC_CATEGORIES)[number];
-
 export { DEFAULT_CORE_DOCS_CANON } from "../domain/docs-canon.js";
 export type { CoreDocsCanon } from "../domain/docs-canon.js";
 

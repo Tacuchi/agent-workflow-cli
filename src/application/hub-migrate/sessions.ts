@@ -16,17 +16,6 @@ export function sessionModelResidue(paths: PathsService): string[] {
   return [`${ns}/sessions`, `${ns}/HISTORY.md`, `${ns}/claims.jsonl`, `${ns}/compactions`];
 }
 
-/** `true` while the hub still holds any record of the session model. */
-export async function hubNeedsSessionMigration(
-  fs: FileSystemPort,
-  paths: PathsService,
-): Promise<boolean> {
-  for (const rel of sessionModelResidue(paths).slice(0, 3)) {
-    if (await fs.exists(join(paths.hubDir(), rel))) return true;
-  }
-  return false;
-}
-
 export type PlanMappingKind = "unchanged" | "deduced" | "needs-answer";
 
 export interface PlanMapping {

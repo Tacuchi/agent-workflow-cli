@@ -5,17 +5,27 @@ import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   CHASSIS_SCOPE,
   COMMAND_EXCLUSIONS,
+  COMMAND_SCOPE_PREFIX,
+  type DecisionScope,
   FLOW_AUTHORITIES,
   FLOW_DECISIONS,
   FLOW_TRANCHES,
   RUN_PLACEHOLDERS,
   TRANSITION_OWNERSHIPS,
   actionOf,
-  commandOfScope,
   decisionsOfScope,
-  flowOfScope,
   trancheOfFlow,
 } from "../../src/domain/flow/authority.js";
+
+/** The command a `cmd:` scope names, or `null` for a flow or the chassis. */
+function commandOfScope(scope: DecisionScope): string | null {
+  return scope.startsWith(COMMAND_SCOPE_PREFIX) ? scope.slice(COMMAND_SCOPE_PREFIX.length) : null;
+}
+
+/** The flow a scope names, or `null` for a command or the chassis. */
+function flowOfScope(scope: DecisionScope): string | null {
+  return (AGENT_WORKFLOW_FLOWS as readonly string[]).includes(scope) ? scope : null;
+}
 
 /** Where QUICK's own rules live — the exact boundary of the migrated tranche. */
 const QUICK_LOOP = "loops/quick-loop/LOOP.md";

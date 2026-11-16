@@ -16,7 +16,6 @@ import { describe, expect, it } from "vitest";
 import {
   type PipelineItem,
   buildAgentWorkflowIndex,
-  specConsumers,
 } from "../../src/application/agent-workflow-index-service.js";
 import { functionalSpecDigest } from "../../src/application/parsers/spec-functional.js";
 import {
@@ -372,31 +371,5 @@ describe("`Derived from` y `Derivado de` son la misma etiqueta de linaje", () =>
       `> Nota: derivado de ${SPEC_PATH}`,
     );
     expect(parseDerivedFromPath(prose)).toBeNull();
-  });
-});
-
-describe("consumidores de un baseline", () => {
-  it("enumera todo plan derivado de la spec y dice cómo está cada sello", async () => {
-    const fs = hub(plan(SEALED));
-    fs.file("/cwd/docs/plans/031-plan-viejo.md", plan(null));
-    const board = await index(fs);
-
-    const consumers = specConsumers("033", board.plans);
-    expect(consumers.map((c) => [c.number, c.alignment.status])).toEqual([
-      ["031", "unsealed"],
-      ["032", "aligned"],
-    ]);
-  });
-
-  it("un plan cuya provenencia no se puede probar no se cuenta como consumidor", async () => {
-    const fs = hub(plan(SEALED));
-    fs.file("/cwd/docs/plans/030-plan-huerfano.md", "# Plan 030\n\n## Origin\n\nsin spec.\n");
-    const board = await index(fs);
-    expect(specConsumers("033", board.plans).map((c) => c.number)).toEqual(["032"]);
-  });
-
-  it("una spec sin consumidores devuelve la lista vacía, no todo el tablero", async () => {
-    const board = await index(hub(plan(SEALED)));
-    expect(specConsumers("099", board.plans)).toEqual([]);
   });
 });

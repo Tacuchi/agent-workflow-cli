@@ -12,7 +12,7 @@ import { GitCliAdapter } from "../../src/adapters/git-cli.js";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
 import { parseBatchEvidence } from "../../src/application/parsers/batch-evidence.js";
-import { ensureUnit, planUnit, unitsOfPlan } from "../../src/application/plan-run/units.js";
+import { ensureUnit, planUnit } from "../../src/application/plan-run/units.js";
 import { type DocFlowHub, dataOf, docFlowHub } from "../helpers/doc-flow-hub.js";
 
 const PLAN = "docs/plans/012-plan-cupones.md";
@@ -238,9 +238,6 @@ describe("plan-exec sin sesión: cierre de lote, commit por digest y estados del
     expect(first.created).toBe(true);
     const again = await ensureUnit(new NodeFileSystem(), git, app, unit, "main");
     expect(again.created).toBe(false);
-    expect(await unitsOfPlan(git, app, "hub-1234", "012")).toEqual([
-      expect.objectContaining({ branch: "aw/hub-1234/plan-012-b1", batch: "B1" }),
-    ]);
     appGit("worktree", "remove", "--force", unit.path);
   });
 });

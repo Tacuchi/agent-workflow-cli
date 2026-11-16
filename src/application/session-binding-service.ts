@@ -115,27 +115,6 @@ export async function bindContextToSession(
   return { ok: true, changed: true };
 }
 
-/**
- * Drop every association pointing at `folder` (session closed). Other
- * conversations keep theirs — a closed session never redirects to another line.
- */
-export async function invalidateBindingsTo(
-  fs: FileSystemPort,
-  paths: PathsService,
-  folder: string,
-): Promise<{ ok: true; removed: number } | { ok: false; reason: string }> {
-  const read = await readBindingRegistry(fs, paths);
-  if (!read.ok) return { ok: false, reason: read.reason };
-  const kept: Record<string, string> = {};
-  let removed = 0;
-  for (const [key, value] of Object.entries(read.registry.bindings)) {
-    if (value === folder) removed += 1;
-    else kept[key] = value;
-  }
-  if (removed > 0) await writeBindingRegistry(fs, paths, kept);
-  return { ok: true, removed };
-}
-
 /** Rename only associations owned by the moved session; no stale folder remains. */
 export async function renameBindingsTo(
   fs: FileSystemPort,
@@ -154,30 +133,6 @@ export async function renameBindingsTo(
   }
   if (changed > 0) await writeBindingRegistry(fs, paths, bindings);
   return changed;
-}
-
-/** Undo only this conversation's tentative reopen binding, if it still points there. */
-export async function restoreBindingTo(
-  fs: FileSystemPort,
-  paths: PathsService,
-  contextId: string,
-  expected: string,
-  previous: string | null,
-): Promise<void> {
-  const read = await readBindingRegistry(fs, paths);
-  if (!read.ok) throw new Error(read.reason);
-  const key = hashContextId(contextId);
-  if (read.registry.bindings[key] !== expected) return;
-  const bindings = { ...read.registry.bindings };
-  if (previous === null) {
-    const remaining = Object.fromEntries(
-      Object.entries(bindings).filter(([entry]) => entry !== key),
-    );
-    await writeBindingRegistry(fs, paths, remaining);
-  } else {
-    bindings[key] = previous;
-    await writeBindingRegistry(fs, paths, bindings);
-  }
 }
 
 function emptyRegistry(): BindingRegistry {

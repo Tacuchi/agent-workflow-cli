@@ -1,62 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   SessionsCsvError,
-  parseSessionsCsv,
   validateSessionsExist,
 } from "../../src/application/parsers/sessions-csv.js";
 import { MemFs as FakeFs } from "../helpers/mem-fs.js";
-
-describe("parseSessionsCsv", () => {
-  it("requires the three-digit minimum", () => {
-    expect(() => parseSessionsCsv("55")).toThrow(/al menos 3 dígitos/);
-  });
-
-  it("returns multiple codes preserving order", () => {
-    expect(parseSessionsCsv("055,057,061")).toEqual(["055", "057", "061"]);
-  });
-
-  it("accepts correlatives beyond 999 without truncating them", () => {
-    expect(parseSessionsCsv("999,1000,1001")).toEqual(["999", "1000", "1001"]);
-  });
-
-  it("trims whitespace around tokens", () => {
-    expect(parseSessionsCsv("  055 , 057 ")).toEqual(["055", "057"]);
-  });
-
-  it("throws INVALID_INPUT on empty input", () => {
-    expect(() => parseSessionsCsv("")).toThrow(SessionsCsvError);
-    expect(() => parseSessionsCsv("   ")).toThrow(/--sessions vacío/);
-  });
-
-  it("throws INVALID_INPUT on non-numeric token", () => {
-    try {
-      parseSessionsCsv("055,abc");
-      throw new Error("should have thrown");
-    } catch (e) {
-      expect(e).toBeInstanceOf(SessionsCsvError);
-      expect((e as SessionsCsvError).code).toBe("INVALID_INPUT");
-      expect((e as SessionsCsvError).message).toContain("abc");
-    }
-  });
-
-  it("accepts a wider valid token", () => {
-    expect(parseSessionsCsv("0055")).toEqual(["0055"]);
-  });
-
-  it("throws INVALID_INPUT on numeric duplicates", () => {
-    try {
-      parseSessionsCsv("055,0055");
-      throw new Error("should have thrown");
-    } catch (e) {
-      expect((e as SessionsCsvError).code).toBe("INVALID_INPUT");
-      expect((e as SessionsCsvError).message).toContain("0055");
-    }
-  });
-
-  it("ignores empty tokens between commas", () => {
-    expect(parseSessionsCsv("055,,057")).toEqual(["055", "057"]);
-  });
-});
 
 describe("validateSessionsExist", () => {
   const DIR = "/cwd/.workflow/sessions";

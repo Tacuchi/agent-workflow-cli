@@ -1,67 +1,5 @@
 import type { Readable } from "node:stream";
 import { text } from "node:stream/consumers";
-import { parseHookPayload } from "../application/hook-common.js";
-import type { EnvPort } from "../ports/env.js";
-
-/**
- * Neutral conversation-identity boundary.
- *
- * The core never interprets the id's format — it only needs an opaque, stable
- * value per host conversation. Two sources feed it: the agreed env var, and the
- * `session_id` every host already puts on a lifecycle hook's JSON stdin. Which
- * host injects what, and how, belongs to the multi-host surface work (spec 010).
- */
-export const CONTEXT_ID_ENV = "AW_CONTEXT_ID";
-
-/**
- * Host-exported conversation ids, consulted only when the agreed var is absent.
- *
- * Claude Code exports its conversation UUID to every tool subshell and to its
- * hook processes, and passes the same value as the hook payload's `session_id`
- * — one conversation, one id, whichever surface reads it. Without this
- * fallback, the `aw` calls an agent runs (session-create, a `--code` fix)
- * carried no identity at all: no conversation ever got bound, so a pausable
- * PreCompact held every compaction of a hub with two active sessions,
- * and retrying could never recover.
- */
-const HOST_CONTEXT_ID_ENVS = ["CLAUDE_CODE_SESSION_ID"] as const;
-
-export type ContextIdResolution =
-  | { ok: true; contextId?: string }
-  | { ok: false; code: "CONTEXT_ID_CONFLICT"; message: string };
-
-/** The conversation id from the environment alone (non-hook invocations). */
-export function readContextId(env: EnvPort): string | undefined {
-  const agreed = nonEmpty(env.get(CONTEXT_ID_ENV));
-  if (agreed !== undefined) return agreed;
-  for (const name of HOST_CONTEXT_ID_ENVS) {
-    const fromHost = nonEmpty(env.get(name));
-    if (fromHost !== undefined) return fromHost;
-  }
-  return undefined;
-}
-
-/**
- * The single conversation identity for a lifecycle surface, from the env var
- * and/or the hook payload's `session_id`.
- *
- * Two signals that name DIFFERENT conversations is not something to arbitrate:
- * picking either one could checkpoint or restore the wrong line, so it fails
- * before any session is resolved.
- */
-export function resolveContextId(env: EnvPort, stdin?: string): ContextIdResolution {
-  const fromEnv = readContextId(env);
-  const fromStdin = stdin !== undefined ? sessionIdFromPayload(stdin) : undefined;
-  if (fromEnv !== undefined && fromStdin !== undefined && fromEnv !== fromStdin) {
-    return {
-      ok: false,
-      code: "CONTEXT_ID_CONFLICT",
-      message: `${CONTEXT_ID_ENV} y el session_id de stdin identifican conversaciones distintas; resolvé cuál corresponde antes de reintentar`,
-    };
-  }
-  const contextId = fromEnv ?? fromStdin;
-  return contextId !== undefined ? { ok: true, contextId } : { ok: true };
-}
 
 /**
  * How long to wait for a hook payload's first byte before concluding there is
@@ -146,16 +84,4 @@ function waitForFirstByte(stdin: Readable, windowMs: number): Promise<boolean> {
     stdin.once("end", onDone);
     stdin.once("error", onDone);
   });
-}
-
-function sessionIdFromPayload(stdin: string): string | undefined {
-  const payload = parseHookPayload(stdin);
-  if (payload === null) return undefined;
-  const raw = payload.session_id;
-  return typeof raw === "string" ? nonEmpty(raw) : undefined;
-}
-
-function nonEmpty(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed !== undefined && trimmed.length > 0 ? trimmed : undefined;
 }

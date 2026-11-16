@@ -42,13 +42,12 @@ import { COMMAND_EXCLUSIONS, journeyOfFlow } from "../../src/domain/flow/authori
 import {
   FLOW_RUN_STATE_FILE,
   applyTransition,
-  newRunState,
   serializeRunState,
-  withScope,
 } from "../../src/domain/flow/run-state.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
+import { newRunState, withScope } from "../helpers/run-state-fixture.js";
 
 const HANDOFF_ITEM = "Producto y QA validan el flujo nuevo antes de la release";
 const COMPENSATION = "revalidar F2 contra el contrato nuevo";

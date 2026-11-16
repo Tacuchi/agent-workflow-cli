@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   FLOW_DECISIONS,
   type FlowDecision,
-  alternativesOf,
-  approvalGrantOf,
   custodyOf,
   effectsOf,
-  journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
 import {
   CUSTODY_COVERABLE_CLASSES,
@@ -96,33 +93,5 @@ describe("custodia de la corrida: la contabilidad propia no pide preflight", () 
     };
     const verdict = authorizeTransition(rowOf("chassis.finalize"), [], subject);
     expect(verdict.missing).toEqual(["mutate_overwrite"]);
-  });
-});
-
-describe("la aprobación humana del commit ES el grant de su ejecución", () => {
-  it("la fila de autorización enlaza la ejecución con su label afirmativo", () => {
-    const link = approvalGrantOf(rowOf("plan-exec.commit-authorization"));
-    expect(link).toEqual({
-      approve: "Aprobar los commits del batch",
-      transition: "plan-exec.commit-execution",
-    });
-  });
-
-  it("el label que otorga existe entre las alternativas y la transición en la jornada", () => {
-    for (const row of FLOW_DECISIONS) {
-      const link = approvalGrantOf(row);
-      if (link === null) continue;
-      const labels = (alternativesOf(row) ?? []).map((choice) => choice.label);
-      expect(labels, row.id).toContain(link.approve);
-      // El grant se computa sobre el sello de la transición enlazada: una que la
-      // jornada no camina sería un grant sobre nada, escondido hasta producción.
-      const flow = row.scope === "plan-exec" ? "plan-exec" : null;
-      expect(flow, `${row.id}: extendé este test al scope '${row.scope}'`).not.toBeNull();
-      const journey = journeyOfFlow("plan-exec");
-      expect(
-        journey.some((candidate) => candidate.id === link.transition),
-        row.id,
-      ).toBe(true);
-    }
   });
 });

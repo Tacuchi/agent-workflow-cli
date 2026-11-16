@@ -5,11 +5,7 @@ import {
   buildSemanticRequest,
 } from "../../src/application/semantic-operation/protocol.js";
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
-import {
-  CAPABILITY_OUTCOMES,
-  type CapabilityReceipt,
-  type CapabilityRequest,
-} from "../../src/domain/capability/protocol.js";
+import { CAPABILITY_OUTCOMES } from "../../src/domain/capability/protocol.js";
 import type { DecisionPreview } from "../../src/domain/decision-preview.js";
 import type { DelegatedAction, FlowChoice } from "../../src/domain/flow/authority.js";
 import {
@@ -21,11 +17,8 @@ import {
   type FlowBoundary,
   type FlowStep,
   buildFlowDirective,
-  renderDirectiveHuman,
 } from "../../src/domain/flow/directive.js";
-import { ROUTE_ACCEPT_LABEL, ROUTE_ADJUST_LABEL } from "../../src/domain/flow/route.js";
 import { sealProposal } from "../../src/domain/proposal.js";
-import { SOURCE_BOUNDED_EVIDENCE } from "../../src/domain/source-boundary.js";
 
 /**
  * The directive: every combination that would let a run lie is refused, and no
@@ -175,87 +168,6 @@ describe("directiva de frontera — la forma válida", () => {
     expect(built.ok).toBe(true);
   });
 
-  it("la proyección humana se deriva de los mismos campos", () => {
-    const built = buildFlowDirective({
-      ...BASE,
-      boundary: boundary(),
-      outcome: "needs_input",
-      request: request(),
-    });
-    if (!built.ok) throw new Error("esperaba una directiva");
-    const human = renderDirectiveHuman(built.directive);
-    expect(human).toContain("reconocer cada señal de tamaño en el objetivo recibido");
-    expect(human).not.toContain("quick.entry-gate-signal");
-    expect(human).not.toContain("quick.session-create");
-    expect(human).toContain(built.directive.next_action);
-    expect(human).toContain(built.directive.state_digest);
-    expect(renderDirectiveHuman(built.directive, true)).toContain("quick.entry-gate-signal");
-  });
-
-  it("explica la propuesta de solución antes de ofrecer sus opciones", () => {
-    const built = buildFlowDirective({
-      ...BASE,
-      boundary: boundary({
-        kind: "human",
-        transition: "chassis.route-evaluation",
-        authority: "human",
-        title: "revisar la propuesta de solución",
-      }),
-      outcome: "needs_input",
-      choices: [
-        choice(ROUTE_ACCEPT_LABEL, "continúa con este enfoque", true, { kind: "continue" }),
-        choice(ROUTE_ADJUST_LABEL, "vuelve a preparar la propuesta", false, {
-          kind: "continue",
-        }),
-      ],
-      route: {
-        proposal: {
-          summary: {
-            finding: "la entrada duplicada existe sólo en la configuración del host",
-            diagnosis: "el registro administrado y el archivo del host no coinciden",
-            solution: "retirar el registro administrado sin tocar la entrada ajena",
-          },
-          basis: {
-            intention: "retirar una conexión MCP",
-            checkout: "repositorio limpio",
-            conventions: "preservar configuración ajena",
-            adopted_decisions: "no reinstalar todavía",
-          },
-          controls: [
-            {
-              transition: "quick.review-findings",
-              title: "releer el cambio con las convenciones del checkout",
-              disposition: "apply",
-              recommendation: "apply",
-              alternatives: {
-                apply: "relee el cambio",
-                omit: "continúa sin esa revisión",
-                substitute: "usa una revisión equivalente",
-              },
-              consequence: "el cambio se revisa antes del cierre",
-              risk: "puede aparecer un hallazgo adicional",
-              reason: "el cambio toca una frontera de configuración",
-              substitution: null,
-            },
-          ],
-        },
-        decisions: [],
-        assurance: "verified",
-      },
-      nextAction: "elegí una alternativa sobre la propuesta explicada",
-    });
-    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
-    const human = renderDirectiveHuman(built.directive);
-    expect(human).toContain("propuesta de solución:");
-    expect(human).toContain("hallazgo: la entrada duplicada");
-    expect(human).toContain("diagnóstico: el registro administrado");
-    expect(human).toContain("solución: retirar el registro administrado");
-    expect(human).toContain("· Realizar: releer el cambio");
-    expect(human).not.toContain("quick.review-findings");
-    expect(human.indexOf("hallazgo:")).toBeLessThan(human.indexOf(ROUTE_ACCEPT_LABEL));
-    expect(renderDirectiveHuman(built.directive, true)).toContain("quick.review-findings");
-  });
-
   it("muestra el preview durable de decisión antes de la elección humana", () => {
     const built = buildFlowDirective({
       ...BASE,
@@ -294,79 +206,6 @@ describe("directiva de frontera — la forma válida", () => {
     expect(built.directive.decision_preview?.proposal.digest).toBe(
       decisionPreview().proposal.digest,
     );
-    const human = renderDirectiveHuman(built.directive);
-    expect(human).toContain("vista previa de decisión");
-    expect(human).toContain("revalidar F4");
-    expect(human).toContain("sello del preview");
-  });
-
-  it("un preview sellado ANTES de que existieran las clases se sigue mostrando", () => {
-    const built = buildFlowDirective({
-      ...BASE,
-      flow: "plan-exec",
-      boundary: boundary({
-        kind: "human",
-        transition: "plan-exec.deviation-gate",
-        authority: "human",
-        title: "elegir la salida de la desviación",
-      }),
-      outcome: "needs_input",
-      choices: [
-        choice("Registrar la decisión y seguir", "autoriza la vista previa", true, {
-          kind: "register-decision",
-        }),
-        choice("Refinar el plan", "entrega el paquete a plan-refine", false, {
-          kind: "handoff",
-          destination: "plan-refine",
-        }),
-      ],
-      // La forma legada: strings sueltos, como los persistió una corrida vieja.
-      decisionPreview: {
-        ...decisionPreview(),
-        obligations: ["revalidar F4"] as unknown as DecisionPreview["obligations"],
-      },
-      nextAction: "elegí sobre la vista previa que el CLI ya preparó",
-    });
-    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
-
-    // Se lee con la clase segura, no se rompe ni imprime un hueco.
-    expect(renderDirectiveHuman(built.directive)).toContain("revalidar F4 [compensación]");
-  });
-
-  it("la sección de obligaciones distingue compensación de traspaso", () => {
-    const built = buildFlowDirective({
-      ...BASE,
-      flow: "plan-exec",
-      boundary: boundary({
-        kind: "human",
-        transition: "plan-exec.deviation-gate",
-        authority: "human",
-        title: "elegir la salida de la desviación",
-      }),
-      outcome: "needs_input",
-      choices: [
-        choice("Registrar la decisión y seguir", "autoriza la vista previa", true, {
-          kind: "register-decision",
-        }),
-        choice("Refinar el plan", "entrega el paquete a plan-refine", false, {
-          kind: "handoff",
-          destination: "plan-refine",
-        }),
-      ],
-      decisionPreview: {
-        ...decisionPreview(),
-        obligations: [
-          { text: "revalidar F4", kind: "compensation", declared: true },
-          { text: "Producto y QA validan el flujo", kind: "handoff", declared: true },
-        ],
-      },
-      nextAction: "elegí sobre la vista previa que el CLI ya preparó",
-    });
-    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
-
-    const human = renderDirectiveHuman(built.directive);
-    expect(human).toContain("revalidar F4 [compensación]");
-    expect(human).toContain("Producto y QA validan el flujo [traspaso]");
   });
 
   it("una frontera de ejecución lleva la invocación y su evidencia, y la proyecta", () => {
@@ -381,48 +220,6 @@ describe("directiva de frontera — la forma válida", () => {
     expect(built.directive.action?.evidence).toEqual(["sesion-creada"]);
     expect(built.directive.request).toBeNull();
     expect(built.directive.choices).toEqual([]);
-    const human = renderDirectiveHuman(built.directive);
-    // The person sees what will run, what has to come back, and what to do if it
-    // comes back half-done — the three things a confirmation would hide.
-    expect(human).toContain("aw session-create --type quick");
-    expect(human).toContain(".workflow/sessions");
-    expect(human).toContain("sesion-creada");
-    expect(human).toContain("volvé a sembrar");
-  });
-
-  it("publica la raíz observada cuando la evidencia exige un CheckoutProof", () => {
-    const built = buildFlowDirective({
-      ...BASE,
-      boundary: boundary({ kind: "execution", authority: "cli" }),
-      outcome: "needs_input",
-      action: delegated({
-        evidence: ["sesion-creada", SOURCE_BOUNDED_EVIDENCE],
-        checkouts: [{ source: "hub", root: "/hosts/este/proyectos/hub" }],
-      }),
-      nextAction: "corré la invocación y devolvé su resultado",
-    });
-    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
-    const human = renderDirectiveHuman(built.directive);
-    // El dato que quien prueba NO podía deducir: contra qué directorio se compara.
-    expect(human).toContain("hub → /hosts/este/proyectos/hub");
-    expect(human).toContain("observación local de esta corrida");
-    // Lo transferible es la regla, no la ruta, y el lector va a ella por nombre.
-    expect(human).toContain("aw flow --help");
-    expect(human).toContain("aw flow prove");
-  });
-
-  it("no inventa una raíz cuando nadie la observó", () => {
-    const built = buildFlowDirective({
-      ...BASE,
-      boundary: boundary({ kind: "execution", authority: "cli" }),
-      outcome: "needs_input",
-      action: delegated({ evidence: ["sesion-creada", SOURCE_BOUNDED_EVIDENCE] }),
-      nextAction: "corré la invocación y devolvé su resultado",
-    });
-    if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
-    const human = renderDirectiveHuman(built.directive);
-    expect(human).toContain("evidencia exigida");
-    expect(human).not.toContain("checkout que validará");
   });
 
   it("los motivos de frontera son el vocabulario cerrado de la spec", () => {
@@ -494,9 +291,6 @@ describe("directiva de frontera — la forma válida", () => {
     });
     if (!built.ok) throw new Error(`esperaba una directiva: ${built.failure.code}`);
     expect(built.directive.boundary.document).toBe("loops/quick-loop/LOOP.md");
-    const human = renderDirectiveHuman(built.directive);
-    expect(human).not.toContain("fallback declarado");
-    expect(human).not.toContain("regla vigente");
   });
 });
 
@@ -796,9 +590,9 @@ describe("directiva de frontera — cada combinación mentirosa se rechaza", () 
 });
 
 describe("sin tercer protocolo paralelo (AC-COMP-01)", () => {
-  /** A receipt written out in full: adding a field to the contract breaks here. */
+  /** The fields a capability receipt delivered, written out in full. */
   const receiptKeys = (): string[] => {
-    const receipt: CapabilityReceipt = {
+    const receipt = {
       protocol_version: 1,
       invocation_id: "00000000-0000-0000-0000-000000000000",
       attempt: 1,
@@ -822,9 +616,9 @@ describe("sin tercer protocolo paralelo (AC-COMP-01)", () => {
     return Object.keys(receipt);
   };
 
-  /** The capability envelope, likewise written out in full. */
+  /** The fields of the capability envelope, likewise written out in full. */
   const requestKeys = (): string[] => {
-    const envelope: CapabilityRequest = {
+    const envelope = {
       protocol_version: 1,
       invocation_id: "00000000-0000-0000-0000-000000000000",
       attempt: 1,

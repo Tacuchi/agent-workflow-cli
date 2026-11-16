@@ -34,11 +34,6 @@ import {
   type BaselineInput,
   composeEffectiveContract,
 } from "../../src/domain/effective-contract.js";
-import {
-  consumeContinuation,
-  newRunState,
-  withContinuation,
-} from "../../src/domain/flow/run-state.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { obligationExit, reconciliationOf } from "../../src/domain/reconciliation.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -159,46 +154,6 @@ describe("reconciliationOf — el trabajo compensatorio conserva su causa", () =
     const r = reconcile([owing, settled]);
     expect(r.pending).toEqual([]);
     expect(r.closable).toBe(true);
-  });
-});
-
-describe("continuidad acotada: mueve la posición en el PLAN, nunca el cursor", () => {
-  it("apunta a la primera obligación y no toca applied, skipped ni boundary", () => {
-    const before = newRunState("plan-exec", "131-x");
-    const after = withContinuation(before, reconcile([note()]));
-
-    expect(after.continuation).toEqual({ resume_point: "F2/T2.3", by: "DEC-001" });
-    // Lo que NO se movió: el recorrido sigue siendo una pasada lineal.
-    expect(after.applied).toEqual(before.applied);
-    expect(after.skipped).toEqual(before.skipped);
-    expect(after.boundary).toBe(before.boundary);
-    expect(after.attempts).toEqual(before.attempts);
-  });
-
-  it("una reconciliación sin nada pendiente limpia la continuidad sola", () => {
-    const owing = withContinuation(newRunState("plan-exec", "131-x"), reconcile([note()]));
-    expect(owing.continuation).not.toBeNull();
-
-    const settled = withContinuation(owing, reconcile([note({ obligations: [] })]));
-    expect(settled.continuation).toBeNull();
-  });
-
-  it("re-apuntar a la MISMA obligación no re-sella el estado", () => {
-    const first = withContinuation(newRunState("plan-exec", "131-x"), reconcile([note()]));
-    const again = withContinuation(first, reconcile([note()]));
-
-    expect(again).toBe(first);
-  });
-
-  it("consumir la continuidad la borra sin tocar el cursor", () => {
-    const owing = withContinuation(newRunState("plan-exec", "131-x"), reconcile([note()]));
-    const consumed = consumeContinuation(owing);
-
-    expect(consumed.continuation).toBeNull();
-    expect(consumed.applied).toEqual(owing.applied);
-    expect(consumed.digest).not.toBe(owing.digest);
-    // Consumir dos veces no hace nada la segunda.
-    expect(consumeContinuation(consumed)).toBe(consumed);
   });
 });
 

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  type HostExecutionCapability,
-  decideResources,
-  validateResourceUsage,
-} from "../../src/domain/resource-policy.js";
+import { type HostExecutionCapability, decideResources } from "../../src/domain/resource-policy.js";
 
 const capable: HostExecutionCapability = {
   subagents: "parallel",
@@ -61,25 +57,5 @@ describe("política de recursos determinista", () => {
         "inline",
       );
     }
-  });
-
-  it("acepta sólo telemetría real y dentro del presupuesto", () => {
-    const plan = decideResources({ boundary: "semantic", host: capable });
-    expect(
-      validateResourceUsage(plan, {
-        model_workers: 1,
-        subagents: 0,
-        external_processes: 0,
-        tokens: { status: "unavailable" },
-      }),
-    ).toBeNull();
-    expect(
-      validateResourceUsage(plan, {
-        model_workers: 1,
-        subagents: 0,
-        external_processes: 0,
-        tokens: { status: "reported", total: -1 },
-      }),
-    ).toContain("tokens");
   });
 });

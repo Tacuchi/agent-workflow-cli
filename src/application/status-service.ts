@@ -1,5 +1,4 @@
 import { sameCorrelative } from "../domain/correlative.js";
-import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -13,6 +12,7 @@ import {
   type OrphanUnit,
   type PendingRetirement,
   type PipelineItem,
+  type SessionPhase,
   type SessionUnit,
   type UnreadableSource,
   buildAgentWorkflowIndex,

@@ -1,19 +1,10 @@
-import { resolve } from "node:path";
 import { isPlanHandoffHeading } from "../domain/plan-handoff.js";
-import { checkSafeRelativePath } from "../domain/safe-path.js";
-import type {
-  CheckoutProof,
-  ExecutionSurface,
-  RemoteContextSnapshot,
-} from "../domain/source-boundary.js";
+import type { ExecutionSurface } from "../domain/source-boundary.js";
 import { scanMarkdown } from "./markdown.js";
-import { semanticDigest } from "./semantic-operation/protocol.js";
 
 export {
   SOURCE_BOUNDED_EVIDENCE,
-  type CheckoutProof,
   type ExecutionSurface,
-  type RemoteContextSnapshot,
 } from "../domain/source-boundary.js";
 
 export const CHECKOUT_EXECUTION_SURFACE: ExecutionSurface = "checkout";
@@ -141,12 +132,6 @@ const PHASE_VALIDATION_LINE =
   /^\s*(?:[-*]\s*)?(?:\*\*)?\s*(?:validaci[oó]n(?: de fase)?|phase validation)(?:\*\*)?\s*:/i;
 const PHASE_EXIT_LINE =
   /^\s*(?:[-*]\s*)?(?:\*\*)?\s*(?:condici[oó]n de salida|exit condition|cierre|closure)(?:\*\*)?\s*:/i;
-// A URI or host:port is an execution surface by grammar, independently of its
-// name. This intentionally catches a new host/connection without having to add
-// it to a blacklist. It judges what a CheckoutProof runs, so it stays strict:
-// the clause reading below relaxes only the early warning, never this gate.
-const REMOTE_LOCATOR =
-  /(?:\b[A-Za-z][A-Za-z0-9+.-]{0,31}:\/\/[^\s<>()]+|\b[A-Za-z0-9][A-Za-z0-9.-]*:\d{2,5}(?:\/[^\s<>()]*)?)/;
 // The same two shapes, split so a closing clause can tell a file citation, a
 // time or an image tag from a host. The URI tail stops where REMOTE_LOCATOR's
 // does, so `<https://…>` is judged by its authority and not by the autolink.
@@ -604,155 +589,6 @@ export function sourceAliasesOfPlan(text: string): string[] {
   return out;
 }
 
-/** A stable digest of the checkout state a proof was obtained from. */
-export function checkoutDigest(input: {
-  source: string;
-  head: string | null;
-  dirty: boolean;
-  changed_files: readonly string[];
-  /** Content-sensitive fingerprint of tracked and untracked working-tree state. */
-  worktree_fingerprint: string;
-}): string {
-  return semanticDigest({
-    source: input.source,
-    head: input.head,
-    dirty: input.dirty,
-    changed_files: [...input.changed_files].sort(),
-    worktree_fingerprint: input.worktree_fingerprint,
-  });
-}
-
-export interface CheckoutState {
-  source: string;
-  digest: string;
-  /**
-   * `false` when two consecutive computations of the digest disagreed. Absent
-   * when it was measured once, which is all a pure caller can do.
-   */
-  reproducible?: boolean;
-  /**
-   * Absolute local root the digest was computed over, when the caller observed it.
-   *
-   * Optional on purpose: a pure caller holding only alias and digest keeps working,
-   * and its rejection names the alias alone exactly as it did before. The execution
-   * route always resolves a root, so the message it produces is the complete one.
-   */
-  root?: string;
-}
-
-/** The sources a proof may name, so a rejected one says what it should have been. */
-function eligibleSources(states: readonly CheckoutState[]): string {
-  const names = states.map((state) => state.source);
-  return names.length > 0 ? names.join(", ") : "ninguna";
-}
-
-/**
- * A digest that does not survive its own recomputation is not evidence that the
- * checkout moved, and saying so sends the reader to look for a change that may
- * not exist.
- *
- * Both branches name the DIRECTORY they measured, not just the alias. On a nested
- * hub the alias alone was actively misleading: it asserted the tree had moved when
- * the tree was intact and only the measured directory differed, so the reader went
- * hunting for a change that was not there. Each branch also carries its own
- * corrective action, because "recapture" and "stabilize" are not the same advice
- * and one of them is useless for the other cause.
- */
-function staleMessage(current: CheckoutState): string {
-  const at = current.root === undefined ? "" : ` (${current.root})`;
-  if (current.reproducible !== false) {
-    return [
-      `el checkout de '${current.source}'${at} cambió desde que se capturó la prueba:`,
-      "recapturala contra esa misma raíz y no escribas en ella entre la captura y el submit",
-    ].join(" ");
-  }
-  return [
-    `el digest de '${current.source}'${at} no coincide y NO es estable entre dos cómputos`,
-    "consecutivos: o el árbol cambia mientras se valida, o la huella no es reproducible;",
-    "estabilizá esa raíz antes de reintentar, porque recapturar no alcanza si persiste",
-  ].join(" ");
-}
-
-/**
- * Validates a proof against freshly observed checkout state.
- *
- * A caller supplies only checkouts it has already resolved and acquired. This
- * keeps path/worktree discovery outside the policy while keeping all proof shape,
- * source and freshness rules in one module.
- */
-export function validateCheckoutProof(
-  proof: CheckoutProof | undefined,
-  states: readonly CheckoutState[] | null,
-): SourceBoundaryFailure | null {
-  if (proof === undefined) {
-    return {
-      code: "CHECKOUT_PROOF_MISSING",
-      message: "la evidencia source-bounded debe incluir su CheckoutProof local",
-    };
-  }
-  const basic = proofFailure(proof);
-  if (basic !== null) return basic;
-  // A pure/parser caller can enforce the proof's shape before it has acquired a
-  // checkout. The execution route always supplies the live states and therefore
-  // also enforces ownership and freshness.
-  if (states === null) return null;
-  const current = states.find((state) => state.source === proof.source);
-  if (current === undefined) {
-    return {
-      code: "CHECKOUT_PROOF_INVALID",
-      message:
-        `la prueba declara la fuente '${proof.source}', que no pertenece al ` +
-        `checkout adquirido (elegibles: ${eligibleSources(states)})`,
-    };
-  }
-  if (
-    proof.root !== undefined &&
-    current.root !== undefined &&
-    resolve(proof.root) !== resolve(current.root)
-  ) {
-    return {
-      code: "CHECKOUT_PROOF_ROOT_MISMATCH",
-      message: `la prueba se midió sobre ${proof.root} y el checkout es ${current.root}`,
-    };
-  }
-  if (current.digest !== proof.checkout_digest) {
-    return {
-      code: "CHECKOUT_PROOF_STALE",
-      message: staleMessage(current),
-    };
-  }
-  return null;
-}
-
-/** Structural validation for an explicitly captured research-only remote read. */
-export function validateRemoteContextSnapshot(value: unknown): RemoteContextSnapshot | null {
-  if (!isRecord(value) || value.kind !== "remote-read" || value.readonly !== true) return null;
-  if (
-    typeof value.connection !== "string" ||
-    typeof value.query_artifact !== "string" ||
-    typeof value.captured_at !== "string" ||
-    typeof value.result_digest !== "string"
-  ) {
-    return null;
-  }
-  if (
-    value.connection.trim().length === 0 ||
-    value.query_artifact.trim().length === 0 ||
-    value.captured_at.trim().length === 0 ||
-    value.result_digest.trim().length === 0
-  ) {
-    return null;
-  }
-  return {
-    kind: "remote-read",
-    connection: value.connection,
-    readonly: true,
-    query_artifact: value.query_artifact,
-    captured_at: value.captured_at,
-    result_digest: value.result_digest,
-  };
-}
-
 /**
  * The 0-based lines where a plan declares sources — a phase's `> Fuentes:` and
  * its task lines — found with the same walk {@link parsePlanSourceBoundary}
@@ -877,94 +713,6 @@ function unknownSources(
       line,
     },
   ];
-}
-
-function proofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
-  if (proof.source.trim().length === 0 || proof.checkout_digest.trim().length === 0) {
-    return {
-      code: "CHECKOUT_PROOF_SHAPE_INVALID",
-      message: "la prueba debe declarar source y checkout_digest no vacíos",
-    };
-  }
-  const cwd = proof.relative_cwd === "." ? { ok: true } : checkSafeRelativePath(proof.relative_cwd);
-  if (!cwd.ok) {
-    return {
-      code: "CHECKOUT_PROOF_INVALID",
-      message: `relative_cwd '${proof.relative_cwd}' no es una ruta segura dentro del checkout`,
-    };
-  }
-  return proof.kind === "command" ? commandProofFailure(proof) : inspectionProofFailure(proof);
-}
-
-function commandProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
-  if (!("program" in proof.invocation)) {
-    return {
-      code: "CHECKOUT_PROOF_SHAPE_INVALID",
-      message: "una prueba command debe declarar una invocación command",
-    };
-  }
-  if (
-    proof.invocation.program.trim().length === 0 ||
-    !Array.isArray(proof.invocation.args) ||
-    !proof.invocation.args.every((arg) => typeof arg === "string")
-  ) {
-    return {
-      code: "CHECKOUT_PROOF_SHAPE_INVALID",
-      message: "una prueba command debe declarar program y args de texto",
-    };
-  }
-  const remote = remoteLocatorIn([proof.invocation.program, ...proof.invocation.args]);
-  if (remote === null) return null;
-  return {
-    code: "CHECKOUT_PROOF_INVALID",
-    message: `una prueba command no puede invocar la superficie externa '${remote}'`,
-  };
-}
-
-function inspectionProofFailure(proof: CheckoutProof): SourceBoundaryFailure | null {
-  if (!("artifact" in proof.invocation)) {
-    return {
-      code: "CHECKOUT_PROOF_SHAPE_INVALID",
-      message: "una prueba inspection debe declarar una invocación inspection",
-    };
-  }
-  if (
-    typeof proof.invocation.artifact !== "string" ||
-    proof.invocation.artifact.trim().length === 0
-  ) {
-    return {
-      code: "CHECKOUT_PROOF_SHAPE_INVALID",
-      message: "una prueba inspection debe declarar su artifact",
-    };
-  }
-  const artifact = checkSafeRelativePath(proof.invocation.artifact);
-  if (!artifact.ok) {
-    return {
-      code: "CHECKOUT_PROOF_INVALID",
-      message: `artifact '${proof.invocation.artifact}' no es una ruta segura dentro del checkout`,
-    };
-  }
-  const remote = remoteLocatorIn([artifact.path]);
-  if (remote !== null) {
-    return {
-      code: "CHECKOUT_PROOF_INVALID",
-      message: `una prueba inspection no puede señalar la superficie externa '${remote}'`,
-    };
-  }
-  return null;
-}
-
-/** A command receipt remains local only when none of its fields locates a remote surface. */
-function remoteLocatorIn(values: readonly string[]): string | null {
-  for (const value of values) {
-    const locator = REMOTE_LOCATOR.exec(value)?.[0];
-    if (locator !== undefined) return locator;
-  }
-  return null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function appendValidationOverride(

@@ -14,19 +14,9 @@
  */
 
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { ensureHistoryFile } from "../history-table.js";
 import type { PathsService } from "../paths-service.js";
 
 const HEADING = "## Retiros";
-
-const TABLE_HEADER =
-  "| Operación | Fecha | Comando | Objetivo | Resultado |\n" +
-  "|-----------|-------|---------|----------|-----------|";
-
-/** Short enough to read, long enough to identify: the digest's first 12 chars. */
-function key(digest: string): string {
-  return digest.slice(0, 12);
-}
 
 export interface TerminalEvent {
   operation: string;
@@ -88,71 +78,4 @@ function rowOf(line: string): TerminalEvent | null {
   ];
   if (operation === "Operación" || /^[-:]+$/.test(operation)) return null;
   return { operation, date, command, target, result };
-}
-
-/** Whether this operation's row is already there — the idempotence check. */
-export async function hasEvent(
-  fs: FileSystemPort,
-  paths: PathsService,
-  digest: string,
-): Promise<boolean> {
-  const path = paths.cwdHistoryFile();
-  if (!(await fs.exists(path))) return false;
-  try {
-    return (await fs.readText(path)).includes(`| ${key(digest)} |`);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Append the row, once.
- *
- * Idempotent by the digest, and append-only by construction: it inserts at the end
- * of its own table and rewrites nothing above it, so no previous row — of either
- * table — can be lost by a retirement.
- */
-export async function appendEvent(
-  fs: FileSystemPort,
-  paths: PathsService,
-  event: TerminalEvent,
-): Promise<{ appended: boolean }> {
-  const path = paths.cwdHistoryFile();
-  await ensureHistoryFile(fs, path);
-  const text = await fs.readText(path);
-  if (text.includes(`| ${event.operation} |`)) return { appended: false };
-
-  const row = `| ${event.operation} | ${event.date} | ${event.command} | ${event.target} | ${event.result} |`;
-  if (!text.includes(HEADING)) {
-    const base = text.endsWith("\n") ? text : `${text}\n`;
-    await fs.writeText(path, `${base}\n${HEADING}\n\n${TABLE_HEADER}\n${row}\n`);
-    return { appended: true };
-  }
-
-  // The table already exists: the row goes at the END of it, and everything else
-  // in the file is copied through untouched.
-  const lines = text.split("\n");
-  const last = lastRowIndex(lines);
-  if (last === -1) {
-    const base = text.endsWith("\n") ? text : `${text}\n`;
-    await fs.writeText(path, `${base}${TABLE_HEADER}\n${row}\n`);
-    return { appended: true };
-  }
-  lines.splice(last + 1, 0, row);
-  await fs.writeText(path, lines.join("\n"));
-  return { appended: true };
-}
-
-/** Index of the last row of the retirements table; `-1` when it has none yet. */
-function lastRowIndex(lines: readonly string[]): number {
-  let last = -1;
-  let inTable = false;
-  for (let i = 0; i < lines.length; i++) {
-    const line = (lines[i] ?? "").trim();
-    if (line === HEADING) inTable = true;
-    else if (!inTable) continue;
-    else if (line.startsWith("|")) last = i;
-    else if (line.startsWith("#")) break;
-  }
-  return last;
 }

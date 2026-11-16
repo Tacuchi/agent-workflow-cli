@@ -9,15 +9,7 @@
  */
 
 import { join } from "node:path";
-import type { AgentWorkflowNodeId } from "../domain/agent-workflow-node.js";
-import {
-  ABSENT_BASELINE,
-  CUSTODY_FILE,
-  type CustodyArtifact,
-  type SessionCustody,
-  preservedBaseline,
-  sealCustody,
-} from "../domain/session/custody.js";
+import { CUSTODY_FILE, type SessionCustody } from "../domain/session/custody.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 
 export function custodyPath(sessionPath: string): string {
@@ -58,55 +50,6 @@ export async function writeCustody(
   custody: SessionCustody,
 ): Promise<void> {
   await fs.writeText(custodyPath(sessionPath), `${JSON.stringify(custody, null, 2)}\n`);
-}
-
-/**
- * The custody a session is born with.
- *
- * It is sealed inside the same locked operation that mints the number and
- * creates the folder, because those three facts are one fact: a session that
- * exists is a session that can start mutating, and a baseline taken after the
- * first mutation describes a state that is already gone.
- */
-export interface BirthInput {
-  subject: AgentWorkflowNodeId;
-  subjectPath: string;
-  parents: readonly AgentWorkflowNodeId[];
-  artifacts: readonly CustodyArtifact[];
-  created: string;
-}
-
-export function birthCustody(input: BirthInput): SessionCustody {
-  return sealCustody({
-    subject: input.subject,
-    subjectPath: input.subjectPath,
-    parents: input.parents,
-    created: input.created,
-    artifacts: input.artifacts,
-  });
-}
-
-/**
- * The baseline of one declared input, read from disk BEFORE the run touches it.
- *
- * A path that is not there yet is recorded as an explicit absence rather than
- * skipped: `reset` has to be able to delete a file back out of existence, and it
- * can only do that if somebody wrote down that it did not exist.
- */
-export async function baselineOf(
-  fs: FileSystemPort,
-  hubRoot: string,
-  relativePath: string,
-): Promise<CustodyArtifact> {
-  const absolute = join(hubRoot, relativePath);
-  if (!(await fs.exists(absolute))) {
-    return { path: relativePath, role: "input", before: ABSENT_BASELINE };
-  }
-  return {
-    path: relativePath,
-    role: "input",
-    before: preservedBaseline(await fs.readText(absolute)),
-  };
 }
 
 function isCustodyShape(value: unknown): value is SessionCustody {

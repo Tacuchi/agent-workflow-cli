@@ -10,13 +10,12 @@ import {
 } from "../../src/domain/flow/route.js";
 import {
   applyTransition,
-  newRunState,
   parseRunState,
   serializeRunState,
   withBoundary,
   withRouteDecisions,
-  withRouteProposal,
 } from "../../src/domain/flow/run-state.js";
+import { newRunState, withRouteProposal } from "../helpers/run-state-fixture.js";
 
 const routeGate: FlowDecision = {
   id: "fixture.route",

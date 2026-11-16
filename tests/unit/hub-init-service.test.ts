@@ -17,7 +17,6 @@ import { NodeProcess } from "../../src/adapters/node-process.js";
 import {
   DOCS_FOLDERS,
   type HubInitInput,
-  pruneReleasedLock,
   runHubInit,
 } from "../../src/application/hub-init-service.js";
 import { hubsFile, readHubs } from "../../src/application/hub-registry.js";
@@ -697,29 +696,6 @@ describe("runWorkspaceInit", () => {
     // Nothing was actually deleted.
     expect(existsSync(join(hub, "docs", "manuals", ".gitkeep"))).toBe(true);
     expect(existsSync(join(hub, "docs", "logs"))).toBe(true);
-  });
-
-  it("pruneReleasedLock directo: vivo intocable · liberado y expirado removibles (guard real)", async () => {
-    const lockPath = join(hub, ".workflow", ".lock");
-    mkdirSync(join(hub, ".workflow"), { recursive: true });
-    const wsPaths = new PathsService(normalizeNamespace("workflow"), hub, hub);
-
-    // Live (real pid + current ISO ts) → never touched.
-    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
-    expect(await pruneReleasedLock(fs, wsPaths)).toEqual([]);
-    expect(existsSync(lockPath)).toBe(true);
-
-    // Expired (old ts) → removable.
-    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: "2020-01-01T00:00:00.000Z" }));
-    expect(await pruneReleasedLock(fs, wsPaths)).toEqual([lockPath]);
-    expect(existsSync(lockPath)).toBe(false);
-
-    // Released marker (empty) → removable; with apply=false it only detects.
-    writeFileSync(lockPath, "");
-    expect(await pruneReleasedLock(fs, wsPaths, false)).toEqual([lockPath]);
-    expect(existsSync(lockPath)).toBe(true);
-    expect(await pruneReleasedLock(fs, wsPaths)).toEqual([lockPath]);
-    expect(existsSync(lockPath)).toBe(false);
   });
 });
 

@@ -12,9 +12,7 @@ import {
   parseSpecCriteria,
 } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
-import { preparePlanExecDecision } from "../../src/application/plan-exec-decision-service.js";
 import { NOTE_SCHEMA } from "../../src/domain/decision-note.js";
-import { newRunState, withDecisionDate } from "../../src/domain/flow/run-state.js";
 import { alignSpecBaseline, specBaselineDigest } from "../../src/domain/lineage.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
@@ -513,120 +511,11 @@ describe("alineación dual — la migración no invalida un solo plan sellado", 
 });
 
 describe("paridad — el digest que el tablero reporta ES el que una nota pinea", () => {
-  it("completa sólo schema y date, avisa de campos desconocidos y conserva la fecha del reintento", async () => {
-    const fs = memHub(planDoc(FUNCTIONAL_SEAL));
-    const draft = {
-      decision: "AC-03 se satisface con el rótulo",
-      reason: "la cosecha direcciona el rótulo",
-      supersedes_assertions: ["S040/AC-03"],
-      supersedes_note: null,
-      scope: "functional",
-      consumers: [PLAN_PATH],
-      evidence_preserved: [],
-      evidence_invalidated: [],
-      obligations: [],
-      resume_point: "F1/T1.1",
-    };
-    const question = {
-      assertions: ["S040/AC-03"],
-      behaviors: [
-        { key: "componer", summary: "se registra la nota y la ejecución sigue" },
-        { key: "refinar", summary: "se vuelve a spec-refine" },
-      ],
-    };
-    const run = withDecisionDate(newRunState("plan-exec", "151-valvula-plan-exec"), "2026-09-26");
-    const later = withDecisionDate(run, run.decision_date ?? "2026-09-27");
-    const prepare = (value: unknown, date: string) =>
-      preparePlanExecDecision(fs, {
-        root: "/cwd",
-        session: run.session,
-        plan: PLAN_PATH,
-        value,
-        date,
-      });
-    const first = await prepare(
-      { question, draft: { ...draft, campo_ajeno: "se descarta", toString: "tampoco es campo" } },
-      run.decision_date as string,
-    );
-    const retry = await prepare({ question, draft }, later.decision_date as string);
-    if (!first.ok || first.kind !== "prepared" || !retry.ok || retry.kind !== "prepared")
-      throw new Error(`la nota no se preparó: ${JSON.stringify(first)} ${JSON.stringify(retry)}`);
-    expect(first.prepared.note.schema).toBe(NOTE_SCHEMA);
-    expect(first.prepared.note.date).toBe("2026-09-26");
-    expect(first.prepared.note.digest).toBe(retry.prepared.note.digest);
-    expect(first.warnings).toEqual([
-      expect.stringContaining("campo_ajeno"),
-      expect.stringContaining("toString"),
-    ]);
-    const complete = await prepare(
-      { question, draft: { ...draft, schema: NOTE_SCHEMA, date: "2026-09-26" } },
-      later.decision_date as string,
-    );
-    if (!complete.ok || complete.kind !== "prepared")
-      throw new Error("la nota completa no se preparó");
-    expect(complete.prepared.note.digest).toBe(first.prepared.note.digest);
-
-    const missing = await prepare(
-      {
-        question,
-        draft: {
-          ...draft,
-          decision: undefined,
-          reason: undefined,
-        },
-      },
-      later.decision_date as string,
-    );
-    if (missing.ok) throw new Error("faltan decisiones del autor");
-    expect(missing.failure.violations?.map((item) => item.field)).toEqual(
-      expect.arrayContaining([
-        "decisions.decision.draft.decision",
-        "decisions.decision.draft.reason",
-      ]),
-    );
-  });
-  /** Lo que `plan-exec-decision-service` pinearía en la nota, sin escribir nada. */
-  const pinned = async (fs: MemFs): Promise<string> => {
-    const prepared = await preparePlanExecDecision(fs, {
-      root: "/cwd",
-      session: "151-valvula-plan-exec",
-      plan: PLAN_PATH,
-      value: {
-        question: {
-          assertions: ["S040/AC-03"],
-          behaviors: [
-            { key: "componer", summary: "se registra la nota y la ejecución sigue" },
-            { key: "refinar", summary: "se vuelve a spec-refine" },
-          ],
-        },
-        draft: {
-          schema: "agent-workflow.decision-note/v1",
-          decision: "AC-03 se satisface con el rótulo",
-          reason: "la cosecha ya direcciona el rótulo",
-          supersedes_assertions: ["S040/AC-03"],
-          supersedes_note: null,
-          scope: "functional",
-          consumers: [PLAN_PATH],
-          evidence_preserved: [],
-          evidence_invalidated: [],
-          obligations: [],
-          resume_point: "F1/T1.1",
-          date: "2026-09-01",
-        },
-      },
-    });
-    if (!prepared.ok || prepared.kind !== "prepared") {
-      throw new Error(`esperaba una decisión preparada, vino ${JSON.stringify(prepared)}`);
-    }
-    return prepared.baseline.digest;
-  };
-
   it("con un sello FUNCIONAL, tablero y nota pinean el mismo digest", async () => {
     const fs = memHub(planDoc(FUNCTIONAL_SEAL));
     const board = await memIndex(fs);
     const reported = board.plans[0]?.baseline;
     expect(reported).toMatchObject({ status: "aligned" });
-    expect(await pinned(fs)).toBe((reported as { digest: string }).digest);
   });
 
   it("con un sello LEGADO byte-exacto también, y ahí está el silencio que se cierra", async () => {
@@ -637,7 +526,6 @@ describe("paridad — el digest que el tablero reporta ES el que una nota pinea"
     const board = await memIndex(fs);
     const reported = board.plans[0]?.baseline;
     expect(reported).toMatchObject({ status: "aligned" });
-    expect(await pinned(fs)).toBe((reported as { digest: string }).digest);
     expect((reported as { digest: string }).digest).not.toBe(specBaselineDigest(SPEC));
   });
 });
@@ -681,48 +569,6 @@ describe("migración del lado NOTA — la dualidad también cubre lo ya publicad
     expect(plan?.reconciliation?.closable).toBe(false);
     expect(plan?.reconciliation?.pending[0]?.text).toContain("CONTRACT_BASELINE_ABSENT");
     expect(plan?.plan_state).toBe("inconsistent");
-  });
-
-  it("y el servicio que prepara una decisión lee la cadena igual que el tablero", async () => {
-    // La paridad, del otro lado: si `preparePlanExecDecision` no aceptara la
-    // nota vieja, el gate de la desviación no podría preparar NINGUNA decisión
-    // nueva en ese workspace — el mismo silencio, un paso antes.
-    const planText = planDoc(LEGACY_SEAL);
-    const fs = memHub(planText);
-    fs.file(NOTE_PATH, noteChain(planText, specBaselineDigest(SPEC), "S040/AC-01"));
-
-    const prepared = await preparePlanExecDecision(fs, {
-      root: "/cwd",
-      session: "151-valvula-plan-exec",
-      plan: PLAN_PATH,
-      value: {
-        question: {
-          assertions: ["S040/AC-03"],
-          behaviors: [
-            { key: "componer", summary: "se registra la nota y la ejecución sigue" },
-            { key: "refinar", summary: "se vuelve a spec-refine" },
-          ],
-        },
-        draft: {
-          schema: "agent-workflow.decision-note/v1",
-          decision: "AC-03 se satisface con el rótulo",
-          reason: "la cosecha ya direcciona el rótulo",
-          supersedes_assertions: ["S040/AC-03"],
-          supersedes_note: null,
-          scope: "functional",
-          consumers: [PLAN_PATH],
-          evidence_preserved: [],
-          evidence_invalidated: [],
-          obligations: [],
-          resume_point: "F1/T1.1",
-          date: "2026-09-01",
-        },
-      },
-    });
-
-    expect(prepared.ok).toBe(true);
-    if (!prepared.ok) return;
-    expect(prepared.kind).toBe("prepared");
   });
 });
 

@@ -1,4 +1,3 @@
-import type { CheckoutProof } from "../source-boundary.js";
 import type { EffectClass } from "./effects.js";
 
 /** Shared flow result and attempt shapes, retained for existing sealed runs. */
@@ -23,29 +22,6 @@ export const CAPABILITY_OUTCOMES = [
   "cancelled",
 ] as const;
 export type CapabilityOutcome = (typeof CAPABILITY_OUTCOMES)[number];
-
-export interface DurableReference {
-  id: string;
-  revision: number | null;
-  digest: string;
-  locator: string;
-}
-
-export const COMPLETENESS_VALUES = ["complete", "partial"] as const;
-export type Completeness = (typeof COMPLETENESS_VALUES)[number];
-
-export interface OperationOutput {
-  value: unknown | null;
-  reference: DurableReference | null;
-  completeness: Completeness | null;
-}
-
-export interface ValidationOutcome {
-  id: string;
-  passed: boolean;
-  detail: string | null;
-  proof?: CheckoutProof;
-}
 
 export interface EffectLedger {
   planned: EffectClass[];

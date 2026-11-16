@@ -57,32 +57,11 @@ export type PlanLintResult =
   | { ok: true; report: PlanLintReport }
   | { ok: false; failure: { code: string; message: string; action: string } };
 
-export const PLAN_LINT_COMMAND = "aw plan lint <plan>";
-
 const LOCATOR_CODES: Record<PlanLocatorReason, string> = {
   invalid: "PLAN_LINT_TARGET_INVALID",
   absent: "PLAN_LINT_PLAN_ABSENT",
   ambiguous: "PLAN_LINT_TARGET_AMBIGUOUS",
 };
-
-/**
- * What to do about a plan grammar failure, said at the moment it was found.
- *
- * Structure goes to the refinement that owns it; a clause that names no
- * observable check is a phrase to fix where it is being written, and at a save
- * proposal nothing is even saved yet. Every answer names the lint, which lists
- * the whole grammar at once instead of one refusal per attempt.
- */
-export function planBoundaryAction(
-  code: PlanGrammarCode,
-  moment: "proposal" | "execution-entry",
-): string {
-  const then =
-    moment === "proposal"
-      ? "corregilo en los bytes y volvé a proponer la vista previa"
-      : "corregilo con /w:plan-refine antes de volver a entrar a ejecución";
-  return `${actionFor(code, moment, then)} · '${PLAN_LINT_COMMAND}' lista todas las violaciones de una vez`;
-}
 
 /** The same rule said about a plan on disk: there is no preview to re-propose yet. */
 function lintRule(code: PlanLintCode, moment: PlanLintMoment): string {

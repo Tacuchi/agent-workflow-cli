@@ -40,8 +40,6 @@ export function createInstallationProvider(distRoot = installedDistRoot()): Doct
   };
 }
 
-export const installationProvider: DoctorProvider = createInstallationProvider();
-
 function hostFinding(
   host: DoctorProviderInput["hosts"][number],
   advice: string | null,

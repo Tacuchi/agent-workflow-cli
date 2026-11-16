@@ -19,7 +19,6 @@ import {
 } from "./hub-materialization-service.js";
 import { registerHub } from "./hub-registry.js";
 import { type HubUntrack, hubUntrack } from "./hub-untrack-service.js";
-import { DEFAULT_LOCK_TTL_MS, isExpired, parseLock } from "./lock-service.js";
 import { type MultirootError, type MultirootResult, runMultiroot } from "./multiroot-service.js";
 import { normalizePath } from "./multiroot/paths.js";
 import { readHubBlock, resolveHubSourcePath } from "./parsers/hub-block.js";
@@ -299,28 +298,6 @@ async function buildDryRunResult(
       ? { skipped: true, reason: "dry_run" }
       : { skipped: true, reason: "no_external_sources" },
   };
-}
-
-/**
- * Remove a historical released/expired `.workflow/.lock` leftover. Current
- * release() unlinks the lock it owns; an empty file is only a legacy marker.
- * A live lock (non-empty, not expired) is never touched. Exported for direct
- * unit tests of the live-lock guard.
- */
-export async function pruneReleasedLock(
-  fs: FileSystemPort,
-  wsPaths: PathsService,
-  apply = true,
-): Promise<string[]> {
-  const lockFile = wsPaths.cwdLockFile();
-  if (!(await fs.exists(lockFile))) return [];
-  const raw = await fs.readText(lockFile);
-  const lock = parseLock(raw);
-  const removable =
-    raw.trim().length === 0 || (lock !== null && isExpired(lock, Date.now(), DEFAULT_LOCK_TTL_MS));
-  if (!removable) return [];
-  if (apply) await fs.remove(lockFile);
-  return [lockFile];
 }
 
 interface VisibilityOutcome {

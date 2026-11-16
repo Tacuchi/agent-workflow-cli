@@ -18,7 +18,6 @@ import {
   obligationExit,
   reconciliationOf,
 } from "../domain/reconciliation.js";
-import type { SessionPhase } from "../domain/session/narrative.js";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import type { GitPort } from "../ports/git.js";
@@ -72,6 +71,9 @@ import {
   readReleasePasses,
 } from "./release-pass-ledger.js";
 import { sourceAliasesOfPlan } from "./source-boundary-policy.js";
+
+/** How far along a session is — derived from its folder, never declared. */
+export type SessionPhase = "abierta" | "reanudada" | "cerrada" | "pausada" | "abandonada";
 
 /** A unit that outlived the session that took it, as `status` and `resume` publish it. */
 export interface OrphanUnit {
@@ -269,38 +271,6 @@ export interface IndexedPlan {
   pass_sources?: string[];
   date: string;
   relative: string;
-}
-
-/**
- * Where a consumer of a baseline stands, once its notes are applied.
- *
- * Four values, and the fourth is the one that keeps the other three honest. An
- * open plan is `aligned` only when it can be PROVEN aligned: sealed, on the
- * current baseline, and owing nothing. A plan whose seal is absent, malformed or
- * divergent cannot be shown as aligned and has no compensation either — calling
- * it one or the other would answer a question its documents never answered.
- */
-export type ConsumerStanding =
-  /** Sealed on the current baseline and owing nothing. */
-  | "aligned"
-  /** Open, with compensatory work a decision left owing. */
-  | "pending-reconciliation"
-  /** Closed: its contract is history, and history is not reconciled forward. */
-  | "historical"
-  /** No sealed baseline, or one that no longer matches. Says so, claims nothing. */
-  | "unproven";
-
-/** A plan that consumes a given spec, with how its seal stands against it. */
-export interface SpecConsumer {
-  /** Hub-relative path of the plan. */
-  file: string;
-  number: string;
-  slug: string;
-  /** `open` / `done` / `inconsistent` — whether this consumer is still live. */
-  plan_state: PlanState;
-  alignment: BaselineAlignment;
-  /** The reading AC-09 asks for, derived from the two fields above plus the chain. */
-  standing: ConsumerStanding;
 }
 
 export interface IndexedSession {
@@ -1712,54 +1682,6 @@ async function readPlans(
     }
   }
   return sortByNumber(out);
-}
-
-/**
- * Every plan known to consume a spec, and how each one's seal stands against
- * the spec's current content.
- *
- * Membership is the plan's RESOLVED relation, not its seal: derivation is what
- * makes a plan a consumer, and a plan that names the spec without sealing it is
- * still one — its `unsealed` alignment is precisely the answer that says it
- * cannot be judged further. A plan whose provenance is `unknown` or `ambiguous`
- * is deliberately absent: attaching it here would be the guess `parseSpecRelation`
- * exists to refuse.
- */
-export function specConsumers(specNumber: string, plans: readonly IndexedPlan[]): SpecConsumer[] {
-  const out: SpecConsumer[] = [];
-  for (const plan of plans) {
-    if (plan.spec.status !== "resolved" || plan.spec.number !== specNumber) continue;
-    out.push({
-      file: plan.file,
-      number: plan.number,
-      slug: plan.slug,
-      plan_state: plan.plan_state,
-      alignment: plan.baseline,
-      standing: standingOf(plan),
-    });
-  }
-  return out;
-}
-
-/**
- * Read one consumer's standing, in the order that keeps each answer truthful.
- *
- * Closed first: a `done` plan's contract is history, and asking whether history
- * owes compensation is asking the wrong question — the reconciliation gate is
- * exactly what stops a plan from reaching `done` while it owes anything, so a
- * plan that got there owes nothing by construction.
- *
- * Then the seal, and only then the chain: without a provable alignment there is
- * no contract to owe against, so `unproven` outranks both of the readings that
- * would otherwise be guesses.
- */
-function standingOf(plan: IndexedPlan): ConsumerStanding {
-  if (plan.plan_state === "done") return "historical";
-  if (plan.baseline.status !== "aligned") return "unproven";
-  if (plan.reconciliation === null || !plan.reconciliation.closable) {
-    return "pending-reconciliation";
-  }
-  return "aligned";
 }
 
 function resolveSpecRelation(

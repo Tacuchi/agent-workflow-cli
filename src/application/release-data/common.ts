@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import {
-  correlativeValue,
   leadingCorrelativeInput,
   normalizeCorrelativeInput,
   prefixedCorrelativeInput,
@@ -17,17 +16,6 @@ export function sessionCorrelative(code: string | null | undefined): string | nu
     prefixedCorrelativeInput(value, "session") ??
     leadingCorrelativeInput(value)
   );
-}
-
-/**
- * Compatibility projection for older release callers. New range comparisons
- * use `sessionCorrelative` and the domain comparator so `999 → 1000` stays in
- * numeric order.
- */
-export function sessionCodeInt(code: string | null | undefined): number | null {
-  const correlative = sessionCorrelative(code);
-  const value = correlative === null ? null : correlativeValue(correlative);
-  return value === null ? null : Number(value);
 }
 
 export async function collectFilesByExt(

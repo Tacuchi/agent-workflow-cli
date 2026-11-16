@@ -24,12 +24,10 @@ import {
   legacyRunNeedsAdoption,
   parseRunState,
   restartInvocation,
-  serializeRunState,
   upgradeContinuable,
   withAttemptCounters,
 } from "../../domain/flow/run-state.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import { LockBusyError, type LockOptions, acquireLock } from "../lock-service.js";
 import type { PathsService } from "../paths-service.js";
 import { semanticDigest } from "../semantic-operation/protocol.js";
 import { adoptionCommand } from "./flow-descriptor.js";
@@ -248,140 +246,10 @@ function counterDigest(session: string, counters: AttemptCounters): string {
   return semanticDigest({ version: COUNTER_VERSION, session, ...counters });
 }
 
-/**
- * Start the counter over for a run that is being created.
- *
- * The file goes rather than being zeroed, so an adopted run is byte-identical to
- * one that never had a counter: the next attempt seeds it again from the ledger.
- */
-async function resetCounters(
-  fs: FileSystemPort,
-  location: FlowRunLocation,
-  state: FlowRunState,
-): Promise<{ ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure }> {
-  await fs.remove(location.countersPath);
-  return { ok: true, state: withAttemptCounters(state, { floor: {}, grants: {} }) };
-}
-
 function readCounterMap(value: unknown): Record<string, number> | null {
   if (value === undefined) return {};
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const entries = Object.entries(value as Record<string, unknown>);
   if (!entries.every(([, count]) => Number.isInteger(count) && (count as number) >= 0)) return null;
   return Object.fromEntries(entries) as Record<string, number>;
-}
-
-/** The run's own lock, or the refusal that names who holds it. */
-async function takeRunLock(
-  fs: FileSystemPort,
-  location: FlowRunLocation,
-  options: LockOptions,
-): Promise<
-  | { ok: true; lock: Awaited<ReturnType<typeof acquireLock>> }
-  | { ok: false; failure: CapabilityFailure }
-> {
-  await fs.mkdirp(location.dir);
-  try {
-    return { ok: true, lock: await acquireLock(location.lockPath, fs, options) };
-  } catch (err) {
-    if (!(err instanceof LockBusyError)) throw err;
-    return {
-      ok: false,
-      failure: {
-        code: "FLOW_RUN_LOCKED",
-        message: `otra invocación tiene la corrida tomada (pid ${err.holder.pid} desde ${err.holder.ts})`,
-        action:
-          "esperá a que termine y volvé a correr 'aw flow advance': no se pisan transiciones aplicadas",
-      },
-    };
-  }
-}
-
-/** The archived registry of a restarted run: where it went and what it held. */
-export interface RunArchive {
-  /** Session-relative file name of the archive. */
-  path: string;
-  /** The registry bytes exactly as they were, or null when there was none. */
-  state: string | null;
-  /** The attempt counter exactly as it was, or null when there was none. */
-  counters: string | null;
-}
-
-const ARCHIVE_SCHEMA = "agent-workflow.flow-run-archive/v1";
-
-/**
- * Archive the run's registry and its counter, and seat a new run — one lock.
- *
- * The archive is a dated, sealed file inside the session folder, so what the old
- * run answered survives and the trace can name it. `seed` sees the old bytes and
- * the archive's name before anything is written: a seed that refuses (no flow to
- * adopt) leaves the run exactly as it was. The counter is not archived into the
- * new run's floor: a restart pays for its fresh attempts with the whole run, the
- * same trade an adoption makes.
- */
-export async function restartUnderLock(
-  fs: FileSystemPort,
-  location: FlowRunLocation,
-  causeOf: () => Promise<string>,
-  seed: (
-    cause: string,
-    archived: RunArchive,
-  ) => { ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure },
-  options: LockOptions & { at?: Date } = {},
-): Promise<
-  { ok: true; state: FlowRunState; archive: RunArchive } | { ok: false; failure: CapabilityFailure }
-> {
-  const { at: now = new Date(), ...lockOptions } = options;
-  const taken = await takeRunLock(fs, location, lockOptions);
-  if (!taken.ok) return taken;
-  try {
-    const readIfThere = async (path: string) =>
-      (await fs.exists(path)) ? await fs.readText(path) : null;
-    const state = await readIfThere(location.statePath);
-    const counters = await readIfThere(location.countersPath);
-    if (state === null && counters === null) {
-      return {
-        ok: false,
-        failure: {
-          code: "FLOW_RUN_ABSENT",
-          message: `la sesión '${location.session}' no tiene una corrida que reiniciar`,
-          action: `arrancala con '${adoptionCommand(location.session)}': no hay nada que archivar`,
-        },
-      };
-    }
-    // Read under the same lock that archives, so the cause recorded is the state
-    // that was really replaced, not one another invocation moved past.
-    const cause = await causeOf();
-    const seal = semanticDigest({ state, counters });
-    const stamp = now.toISOString().replace(/[-:.]/g, "");
-    const archive: RunArchive = {
-      path: `${FLOW_RUN_STATE_FILE}.archived-${stamp}-${seal.slice(0, 12)}.json`,
-      state,
-      counters,
-    };
-    const seeded = seed(cause, archive);
-    if (!seeded.ok) return seeded;
-    await fs.writeText(
-      join(location.dir, archive.path),
-      `${JSON.stringify(
-        {
-          schema: ARCHIVE_SCHEMA,
-          session: location.session,
-          archived_at: now.toISOString(),
-          cause,
-          state,
-          counters,
-          seal,
-        },
-        null,
-        2,
-      )}\n`,
-    );
-    const fresh = await resetCounters(fs, location, seeded.state);
-    if (!fresh.ok) return fresh;
-    await fs.writeText(location.statePath, serializeRunState(fresh.state));
-    return { ok: true, state: fresh.state, archive };
-  } finally {
-    await taken.lock.release();
-  }
 }

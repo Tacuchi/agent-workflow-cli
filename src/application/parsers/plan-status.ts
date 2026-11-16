@@ -18,13 +18,6 @@ export type LegacyPlanState = (typeof LEGACY_PLAN_STATES)[number];
 /** Machine value of the plan-level `> Estado:` line, under the document title. */
 export type PlanDeclaredState = PlanStateValue | LegacyPlanState;
 
-/**
- * What the flows still SEAL while the session model is being retired: the
- * doctrine names exactly these, and F3/F4 of plan 092 move the writers to
- * {@link PLAN_STATES}. Reading accepts both vocabularies.
- */
-export const PLAN_DECLARED_STATES = ["open", "done"] as const;
-
 const READABLE_STATES: readonly string[] = [...PLAN_STATES, ...LEGACY_PLAN_STATES];
 
 /** Why a declaration belongs to a hub that still has to be migrated. */

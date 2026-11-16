@@ -18,9 +18,7 @@ import {
 
 export type { ReleaseSession } from "./release-data/sessions.js";
 export type { GraduatedBundle, StandaloneSql } from "./release-data/bundles.js";
-export type { SessionArtifactsResult } from "./release-data/artifacts.js";
 export { listSessionsForRelease } from "./release-data/sessions.js";
-export { readSessionArtifacts } from "./release-data/artifacts.js";
 export { listGraduatedBundles, listStandaloneSql } from "./release-data/bundles.js";
 
 export interface ReleaseDataInput {

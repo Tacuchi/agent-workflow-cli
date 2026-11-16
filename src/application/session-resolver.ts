@@ -16,7 +16,6 @@ import { maxHistoryCorrelative, readHistoryRows } from "./history-table.js";
 import { withCwdLock } from "./lock-service.js";
 import { firstNonEmptyLine, parseMdSectionBilingual, parseMdValueBilingual } from "./markdown.js";
 import type { PathsService } from "./paths-service.js";
-import { relpath } from "./paths.js";
 import { findArtifact } from "./session-artifacts.js";
 import { bindContextToSession, lookupBinding } from "./session-binding-service.js";
 import { readCustody } from "./session-custody-service.js";
@@ -88,16 +87,6 @@ export async function buildSessionEntry(
     ...(requirement.branch ? { branch: requirement.branch } : {}),
   };
   return entry;
-}
-
-export function serializeSessionEntry(
-  entry: SessionEntry,
-  cwd: string,
-  options: { verbose?: boolean } = {},
-): SessionEntry {
-  const verbose = options.verbose === true;
-  const path = verbose ? entry.path : relpath(entry.path, cwd);
-  return { ...entry, path };
 }
 
 export async function listSessionFolders(
@@ -205,29 +194,6 @@ export type SessionResolveRequest =
        */
       bind?: boolean;
     });
-
-/**
- * The request a READ makes: a closed session is legitimate to inspect, and
- * looking never claims the line.
- *
- * `bind` is off because binding is a write, and this shape is what read surfaces
- * ask with. It used to be on, and that turned glancing at another session into
- * re-pointing the conversation at it: the SessionEnd hook that followed, carrying
- * no `--code`, then wrote its checkpoint over the wrong line. Whoever wants the
- * association asks for it explicitly.
- */
-export function sessionReadRequest(input: {
-  code?: string;
-  contextId?: string;
-}): SessionResolveRequest {
-  return {
-    intent: "read",
-    ...(input.code !== undefined ? { code: input.code } : {}),
-    ...(input.contextId !== undefined ? { contextId: input.contextId } : {}),
-    allowClosed: true,
-    bind: false,
-  };
-}
 
 /**
  * Numeric identity of a session folder: `044` for `044-<slug>`, `007` for the

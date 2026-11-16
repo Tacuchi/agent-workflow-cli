@@ -74,7 +74,6 @@ import {
 } from "../../domain/flow/rules.js";
 import {
   type AttemptAccounting,
-  type FlowRunAttempt,
   type FlowRunEvent,
   type FlowRunState,
   MAX_BOUNDARY_ATTEMPTS,
@@ -885,48 +884,6 @@ function executionFailure(
     .filter((event) => event.transition === transition && sameIteration(event, iteration))
     .at(-1);
   return last !== undefined && last.kind === "failed" ? last : null;
-}
-
-/**
- * The attempt a delegated action spends when it RUNS and comes back failed.
- *
- * The hole this closes was measured: five consecutive `aw flow advance` against a
- * blocked internal execution returned the identical error and left the ledger
- * with ZERO rows for that boundary. No attempt was ever recorded, so the cap
- * never applied, so the boundary never degraded — and with no recovery either,
- * the run was stuck for good.
- *
- * It is charged by whoever ran the operation, at the moment its verdict refuses,
- * and NOT on the way into an advance. Charging on the way in cost the person who
- * fixed the cause their real third try — the run degraded the boundary on the
- * advance that would have re-run the now-working action — and it charged the very
- * pause the CLI recommends, since coming back with `aw flow advance` is what the
- * directive tells you to do. A try is a try: the action ran and did not work.
- */
-export function failedExecutionAttempt(
-  state: FlowRunState,
-  decision: FlowDecision,
-  failure: { code: string; message: string },
-): FlowRunAttempt {
-  const seal = boundarySeal(state, decision);
-  const rowIteration = iterationOf(state, decision.id);
-  const prior = state.attempts.filter((past) => past.invocation_id === seal);
-  const attempt = prior.length + 1;
-  return {
-    invocation_id: seal,
-    attempt,
-    // The failure itself plus the ordinal: two retries of the same broken action
-    // are two attempts, and a digest that repeated would make the second one look
-    // like a resend of the first.
-    request_digest: semanticDigest({
-      execution_failure: { transition: decision.id, code: failure.code, message: failure.message },
-      attempt,
-    }),
-    parent_request_digest:
-      prior.find((past) => past.attempt === attempt - 1)?.request_digest ?? null,
-    transition: decision.id,
-    ...rowIteration,
-  };
 }
 
 /** The `docs/` folders a flow may write, said the way a person reads it. */

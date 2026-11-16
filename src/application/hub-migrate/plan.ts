@@ -16,24 +16,12 @@
  */
 
 import { join } from "node:path";
-import {
-  correlativeValue,
-  nextCorrelative,
-  normalizeCorrelative,
-  sameCorrelative,
-} from "../../domain/correlative.js";
+import { normalizeCorrelative } from "../../domain/correlative.js";
 import type { SessionState } from "../../domain/types.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import type { GitPort } from "../../ports/git.js";
-import { locateRun, readRun } from "../flow/run-state-service.js";
-import {
-  type HistoryRow,
-  maxHistoryCorrelativeFromText,
-  readHistoryRows,
-} from "../history-table.js";
+import { type HistoryRow, readHistoryRows } from "../history-table.js";
 import { readHubLocalConfig } from "../hub-local-config.js";
 import type { HubBlockMarkers } from "../parsers/hub-block.js";
-import { readHubBlock } from "../parsers/hub-block.js";
 import { BLOCK_FILE, LEGACY_BLOCK_FILE } from "../parsers/hub-block.js";
 import type { PathsService } from "../paths-service.js";
 import { resolveHubRootFrom } from "../paths-service.js";
@@ -128,47 +116,6 @@ export interface RenumberMove {
   from: string;
   to: string;
   reason: "legacy" | "registro-remoto" | "carpetas";
-}
-
-/** Preview only: current-model local folders give way to legacy or remote identities. */
-export async function planRenumber(
-  fs: FileSystemPort,
-  paths: PathsService,
-  git?: GitPort,
-): Promise<{ moves: RenumberMove[]; blocked: string[] }> {
-  if (await fs.exists(join(paths.cwdRoot(), "renumber-pending.json"))) {
-    const { recoverRenumberJournal } = await import("./apply.js");
-    await recoverRenumberJournal(fs, paths);
-  }
-  const folders = await listSessionFolders(fs, paths.cwdSessionsDir());
-  let next = await nextSessionCorrelative(fs, paths);
-  const moves: RenumberMove[] = [];
-  const blocked: string[] = [];
-  const block = git ? await readHubBlock(fs, paths.hubDir(), paths.blockMarkers()) : null;
-  const remoteText = await remoteHistoryText(paths, git);
-  const remoteRows = remoteText ? readHistoryRows(remoteText) : [];
-  const remoteMax = remoteText ? maxHistoryCorrelativeFromText(remoteText) : null;
-  const remoteValue = remoteMax === null ? null : correlativeValue(remoteMax);
-  const nextValue = correlativeValue(next);
-  if (remoteMax !== null && remoteValue !== null && nextValue !== null && remoteValue >= nextValue)
-    next = nextCorrelative(remoteMax);
-  for (const folder of folders) {
-    const sharing = await sessionsSharingNumber(fs, paths, folder.name);
-    const reason = renumberReason(folder, folders, sharing, remoteRows);
-    if (reason === null) continue;
-    const refusal = await renumberRefusal(fs, paths, git, block, folder);
-    if (refusal !== null) {
-      blocked.push(refusal);
-      continue;
-    }
-    moves.push({
-      from: folder.name,
-      to: `${next}-${folder.name.replace(/^(?:session)?\d+-/, "")}`,
-      reason,
-    });
-    next = nextCorrelative(next);
-  }
-  return { moves, blocked };
 }
 
 /** How many writes the plan holds. Zero means the hub is already current. */
@@ -463,105 +410,4 @@ function recordedState(cell: string): SessionState | null {
   if (value === "closed") return "closed";
   if (value === "active") return "active";
   return null;
-}
-
-async function remoteHistoryText(
-  paths: PathsService,
-  git: GitPort | undefined,
-): Promise<string | null | undefined> {
-  const hub = paths.hubDir();
-  const branch = git && (await git.isGitRepo(hub)) ? await git.currentBranch(hub) : undefined;
-  const upstream = branch ? await git?.upstreamBranch(hub, branch) : null;
-  const prefix = upstream ? await git?.repoPrefix(hub) : null;
-  const remoteText =
-    upstream && prefix !== null && prefix !== undefined
-      ? await git?.readAtRef?.(hub, upstream, `${prefix}.${paths.namespace}/HISTORY.md`)
-      : null;
-  return remoteText;
-}
-
-function renumberReason(
-  folder: { name: string },
-  folders: { name: string }[],
-  sharing: Awaited<ReturnType<typeof sessionsSharingNumber>>,
-  remoteRows: HistoryRow[],
-): RenumberMove["reason"] | null {
-  const legacyFolder = folder.name.startsWith("session");
-  const folderNumber = sessionNumericCode(folder.name);
-  const remoteConflict =
-    folderNumber !== null &&
-    remoteRows.some((row) => {
-      const rowNumber = sessionNumericCode(row.key);
-      return (
-        rowNumber !== null && sameCorrelative(folderNumber, rowNumber) && row.key !== folder.name
-      );
-    });
-  if (legacyFolder) {
-    if (!legacyNeedsRenumber(folder, folders, sharing, remoteConflict)) return null;
-  }
-  if (sharing.length < 2 && !remoteConflict) return null;
-  const legacy = sharing.some((item) => item.folder.startsWith("session"));
-  const remote =
-    remoteConflict ||
-    sharing.some(
-      (item) => item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
-    );
-  const localPeers = sharing.filter((item) => folders.some((local) => local.name === item.folder));
-  if (!legacyFolder && !legacy && !remote && folder.name !== localPeers.at(-1)?.folder) return null;
-  return legacy ? "legacy" : remote ? "registro-remoto" : "carpetas";
-}
-
-async function renumberRefusal(
-  fs: FileSystemPort,
-  paths: PathsService,
-  git: GitPort | undefined,
-  block: Awaited<ReturnType<typeof readHubBlock>>,
-  folder: { name: string; path: string },
-): Promise<string | null> {
-  let occupied = false;
-  for (const source of block?.fuentes ?? []) {
-    if (source.path === null) continue;
-    const trees = await git?.worktreeList(source.path);
-    if (
-      trees?.some(
-        (tree) => tree.branch === `aw/${folder.name}` || tree.path.endsWith(`/${folder.name}`),
-      )
-    )
-      occupied = true;
-  }
-  if (occupied) {
-    return `${folder.name}: integrá o liberá sus unidades de aislamiento antes de renumerar`;
-  }
-  if (await fs.exists(join(folder.path, ".flow-run.json.lock"))) {
-    return `${folder.name}: la corrida tiene el candado ocupado; reintentá al terminar`;
-  }
-  const run = await readRun(fs, locateRun(paths, folder.name));
-  if (!run.ok && run.failure.code !== "FLOW_RUN_ABSENT") {
-    return `${folder.name}: corrida ilegible (${run.failure.code}); reparala antes de renumerar`;
-  }
-  if (run.ok && (run.state.proposal !== null || run.state.pending_action?.attempted === true)) {
-    return `${folder.name}: publicá o cancelá su propuesta pendiente antes de renumerar`;
-  }
-  return null;
-}
-
-function legacyNeedsRenumber(
-  folder: { name: string },
-  folders: { name: string }[],
-  sharing: Awaited<ReturnType<typeof sessionsSharingNumber>>,
-  remoteConflict: boolean,
-): boolean {
-  const legacyPeers = sharing.filter((item) => item.folder.startsWith("session"));
-  const orphanRow = sharing.some(
-    (item) => item.folder !== folder.name && !folders.some((local) => local.name === item.folder),
-  );
-  if (legacyPeers.length < 2 && !orphanRow && !remoteConflict) return false;
-  if (
-    legacyPeers.length >= 2 &&
-    !orphanRow &&
-    !remoteConflict &&
-    folder.name !== legacyPeers.at(-1)?.folder
-  )
-    return false;
-  return true;
 }

@@ -74,24 +74,3 @@ export async function correlativesOf(
   }
   return { exists: true, files: files.sort(), highest };
 }
-
-/**
- * Publishes `<NNN>-<name>` in any numbered folder by exclusive creation, with
- * the correlative replacing `NNN` in its title; a taken number moves to the next.
- */
-export async function publishInFolder(
-  fs: FileSystemPort,
-  dir: string,
-  name: string,
-  content: string,
-): Promise<{ number: string; path: string }> {
-  await fs.mkdirp(dir);
-  let next = (await correlativesOf(fs, dir)).highest + 1;
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1, next += 1) {
-    const number = String(next).padStart(3, "0");
-    const path = join(dir, `${number}-${name}`);
-    const titled = stampDocumentTitle(content, number);
-    if ((await fs.publishTextExclusive(path, titled)).created) return { number, path };
-  }
-  throw new Error(`no se pudo publicar en ${dir}: correlativos ocupados`);
-}

@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import type { AgentWorkflowFlow } from "../../src/application/capability/compose.js";
 import { semanticDigest } from "../../src/application/semantic-operation/protocol.js";
 import type { FlowDecision } from "../../src/domain/flow/authority.js";
-import { type FlowRunState, newRunState } from "../../src/domain/flow/run-state.js";
+import type { FlowRunState } from "../../src/domain/flow/run-state.js";
+import { newRunState } from "./run-state-fixture.js";
 
 /**
  * The journeys each released CLI walked, frozen per release under

@@ -9,7 +9,6 @@
  */
 
 export const MAX_SUBAGENTS = 3;
-export const MAX_MODEL_WORKERS = 4;
 
 export type ResourceBoundary =
   | "deterministic"
@@ -45,14 +44,6 @@ export interface ResourcePlan {
   max_subagents: number;
   max_external_processes: number;
   reason: string;
-}
-
-export interface ResourceUsage {
-  model_workers: number;
-  subagents: number;
-  external_processes: number;
-  /** Hosts report a real count or leave it unavailable; bytes are never guessed. */
-  tokens: { status: "reported"; total: number } | { status: "unavailable" };
 }
 
 export interface ResourceDecisionInput {
@@ -119,29 +110,6 @@ export function decideResources(input: ResourceDecisionInput): ResourcePlan {
     max_external_processes: 0,
     reason: "la frontera semántica no alcanza el umbral seguro de paralelismo",
   };
-}
-
-/** Rejects a receipt that claims more work than the directive authorized. */
-export function validateResourceUsage(plan: ResourcePlan, usage: ResourceUsage): string | null {
-  if (!Number.isInteger(usage.model_workers) || usage.model_workers < 0)
-    return "model_workers inválido";
-  if (!Number.isInteger(usage.subagents) || usage.subagents < 0) return "subagents inválido";
-  if (!Number.isInteger(usage.external_processes) || usage.external_processes < 0) {
-    return "external_processes inválido";
-  }
-  if (usage.model_workers > plan.model_workers)
-    return "supera los trabajadores de modelo autorizados";
-  if (usage.subagents > plan.max_subagents) return "supera los subagentes autorizados";
-  if (usage.external_processes > plan.max_external_processes) {
-    return "supera los procesos externos autorizados";
-  }
-  if (
-    usage.tokens.status === "reported" &&
-    (!Number.isFinite(usage.tokens.total) || usage.tokens.total < 0)
-  ) {
-    return "tokens reportados inválidos";
-  }
-  return null;
 }
 
 function independentlyParallel(partitions: readonly ResourcePartition[]): boolean {

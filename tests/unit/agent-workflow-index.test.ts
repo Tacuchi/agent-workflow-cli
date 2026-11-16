@@ -5,12 +5,7 @@ import { functionalSpecDigest } from "../../src/application/parsers/spec-functio
 import { parseSpecRelation } from "../../src/application/parsers/spec-relation.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { type DecisionNote, NOTE_SCHEMA } from "../../src/domain/decision-note.js";
-import {
-  FLOW_RUN_STATE_FILE,
-  newRunState,
-  serializeRunState,
-  withScope,
-} from "../../src/domain/flow/run-state.js";
+import { FLOW_RUN_STATE_FILE, serializeRunState } from "../../src/domain/flow/run-state.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
@@ -20,6 +15,7 @@ import {
   OWING_TEXT,
   seedExecutedPlanOwingCompensation,
 } from "../helpers/plan-obligation-fixtures.js";
+import { newRunState, withScope } from "../helpers/run-state-fixture.js";
 
 const fakeEnv = new FakeEnv("/home", "/cwd");
 const NOW = new Date(2026, 6, 29, 12, 0, 0);

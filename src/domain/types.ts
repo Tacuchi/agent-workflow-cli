@@ -1,10 +1,3 @@
-/**
- * Session type — sessions are internal/ephemeral process state created by loops
- * (Layer 2), never by the user.
- * `control` is a synonym of the canonical `refine` (the loop-owner session).
- */
-export type SessionType = "research" | "refine" | "exec" | "quick";
-
 export type SessionState = "active" | "closed" | "paused" | "abandoned";
 
 export type ExitCode = 0 | 1 | 2;

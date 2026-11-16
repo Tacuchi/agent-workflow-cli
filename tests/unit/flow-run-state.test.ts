@@ -25,28 +25,22 @@ import {
   attemptsAt,
   checkAgainstJourney,
   degradeTransition,
-  grantAttempts,
   legacyRunNeedsAdoption,
-  newRunState,
   parseRunState,
   positionDigest,
   reconcileAttemptsAt,
   serializeRunState,
   skipTransition,
   upgradeContinuable,
-  withActionAttempted,
-  withAttempt,
   withAttemptCounters,
   withBoundary,
   withEvent,
-  withObservation,
   withPendingAction,
-  withPlanExecBatch,
-  withPlanExecEntry,
 } from "../../src/domain/flow/run-state.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { decisionsOf, loadJourneyFixtures, v11StateAt } from "../helpers/journey-fixtures.js";
 import { NodeFileSystem } from "../helpers/real-fs.js";
+import { grantAttempts, newRunState, withAttempt } from "../helpers/run-state-fixture.js";
 
 /**
  * The run state over a real workspace: it survives a round trip, it refuses
@@ -96,60 +90,11 @@ describe("estado de corrida — ida y vuelta", () => {
     expect(attemptAccountingAt(divergent, "fixture.observe").unanswerable).not.toBeNull();
     expect(reconcileAttemptsAt(divergent, "fixture.observe").ambiguous?.scope).toBe("accounting");
   });
-  it("el registro admite sólo validación explícita y conserva la partición y fases del crédito", () => {
-    const batch: PlanExecBatch = {
-      id: "batch-1",
-      kind: "validation-only",
-      iteration: 1,
-      mode: "continuous",
-      phases: [1, 2],
-      tasks: [],
-      plan_digest: "plan",
-      stage: "inferred",
-      validation_only: true,
-      partition: {
-        declared: [{ id: "B1", mode: "continuous", phases: [1, 2, 3] }],
-        effective: { mode: "continuous", phases: [1, 2] },
-        reason: "sólo validación",
-      },
-      credit: { source: "proof" },
-      credit_phases: [1, 2],
-    };
-    const read = (value: PlanExecBatch) =>
-      parseRunState(
-        serializeRunState(withPlanExecBatch(newRunState("plan-exec", "001-exec"), value)),
-      );
-    const result = read(batch);
-    expect(result.ok && result.state.batches?.[0]).toEqual(batch);
-    expect(read({ ...batch, validation_only: false }).ok).toBe(false);
-    expect(read({ ...batch, tasks: ["T1.1"] }).ok).toBe(false);
-    expect(read({ ...batch, credit_phases: [1] }).ok).toBe(false);
-    expect(
-      read({
-        ...batch,
-        partition: {
-          declared: null,
-          effective: { mode: "isolated", phases: [1] },
-          reason: "incoherente",
-        },
-      }).ok,
-    ).toBe(false);
-  });
 
-  it("preserva la observación de entrada sin inventarla para corridas anteriores", () => {
+  it("no inventa la observación de entrada para corridas anteriores", () => {
     const legacy = newRunState("plan-exec", "001-plan-plan-exec");
     const unknown = parseRunState(serializeRunState(legacy));
     expect(unknown.ok && unknown.state.plan_exec_entry).toBeUndefined();
-    const entry = { plan: "docs/plans/001-plan-prueba.md", phases_without_open_tasks: [2, 4] };
-    const saved = parseRunState(serializeRunState(withPlanExecEntry(legacy, entry)));
-    expect(saved.ok && saved.state.plan_exec_entry).toEqual(entry);
-    for (const phases of [[0], [-1], [1.5], ["2"], [2, 2]]) {
-      const malformed = withPlanExecEntry(legacy, {
-        ...entry,
-        phases_without_open_tasks: phases as number[],
-      });
-      expect(parseRunState(serializeRunState(malformed)).ok).toBe(false);
-    }
   });
 
   it("una ronda completa de sellado, serialización y parseo devuelve el mismo estado", () => {
@@ -411,7 +356,7 @@ describe("estado de corrida — fail-closed", () => {
     }
   });
 
-  it("la acción pendiente se pone y se limpia, y la observación no se duplica", () => {
+  it("la acción pendiente se pone y se limpia", () => {
     const pending = { transition: "fixture.a", digest: "sello" };
     const waiting = withPendingAction(newRunState("quick", SESSION), pending);
     // Emitida, todavía no empezada: la marca nace en falso y sólo la escribe el
@@ -420,33 +365,6 @@ describe("estado de corrida — fail-closed", () => {
     // Clearing matters as much: a run that moved on would otherwise tell whoever
     // resumes it to run something the engine no longer expects.
     expect(withPendingAction(waiting, null).pending_action).toBeNull();
-
-    // Re-emitir la MISMA acción no puede olvidar que ya se empezó: cada advance
-    // recalcula la frontera, y una marca reseteada al pasar por acá haría ver
-    // intacta una corrida que no lo está.
-    const begun = withActionAttempted(waiting);
-    expect(begun.pending_action?.attempted).toBe(true);
-    expect(withPendingAction(begun, pending).pending_action?.attempted).toBe(true);
-    // Otra acción es otra cosa: la marca no viaja de una a la siguiente.
-    expect(
-      withPendingAction(begun, { transition: "fixture.b", digest: "sello" }).pending_action
-        ?.attempted,
-    ).toBe(false);
-
-    // Las observaciones se ACUMULAN. Reemplazar la anterior de la misma
-    // transición perdía hallazgos en silencio: un segundo reconocimiento pisaba
-    // al primero, así que una corrida sólo podía recordar el último.
-    const once = withObservation(waiting, { transition: "fixture.a", signals: ["s1"] });
-    const twice = withObservation(once, { transition: "fixture.a", signals: ["s1", "s2"] });
-    expect(twice.observations).toEqual([
-      { transition: "fixture.a", signals: ["s1"] },
-      { transition: "fixture.a", signals: ["s1", "s2"] },
-    ]);
-    // Pero un repetido EXACTO no se apila: contestar dos veces lo mismo es una
-    // observación enviada dos veces, y acumularla convertiría la traza en un
-    // contador de intentos, que es para lo que está el historial de intentos.
-    expect(withObservation(twice, { transition: "fixture.a", signals: ["s2", "s1"] })).toBe(twice);
-    expect(parseRunState(serializeRunState(twice)).ok).toBe(true);
   });
 
   it("un JSON inválido o vacío no avanza", () => {

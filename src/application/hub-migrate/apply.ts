@@ -13,20 +13,16 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, relative } from "node:path";
 import { leadingCorrelative } from "../../domain/correlative.js";
 import { sealRunState, serializeRunState } from "../../domain/flow/run-state.js";
-import { FOLDER_RESERVATION_MARKER, reservationOwnerOf } from "../../domain/reservation.js";
+import { reservationOwnerOf } from "../../domain/reservation.js";
 import { sealCustody } from "../../domain/session/custody.js";
 import type { FileSystemPort } from "../../ports/file-system.js";
-import type { GitPort } from "../../ports/git.js";
 import {
   type ClaimIdentity,
   type ClaimTransfer,
   appendClaimEvent,
-  openClaimsOf,
   openOwnerOfSlot,
   readClaimEvents,
-  readClaimEventsRaw,
 } from "../claims-ledger.js";
-import { scanSlots } from "../claims-recovery.js";
 import { docBranchLedgerPath } from "../doc-branch-ledger.js";
 import { locateRun, readRun } from "../flow/run-state-service.js";
 import { readHistoryRows, upsertRow } from "../history-table.js";
@@ -44,7 +40,6 @@ import {
   type MigrationConflict,
   type RenumberMove,
   planHubMigration,
-  planRenumber,
   sentinelPath,
 } from "./plan.js";
 
@@ -106,7 +101,6 @@ interface RenumberJournal extends RenumberJournalBody {
 }
 
 type RecoveryGuard = { lock: LockHandle; from: string; to: string; bytes: string };
-type RenumberGuard = { lock: LockHandle; original: string; moved: string; bytes: string };
 
 function renumberJournalPath(paths: PathsService): string {
   return join(paths.cwdRoot(), "renumber-pending.json");
@@ -152,48 +146,6 @@ export async function recoverRenumberJournal(
   const result = await withCwdLock(fs, paths, recover, { waitMs: 2000 });
   if (typeof result === "object" && "error" in result) throw new Error(result.error);
   return result;
-}
-
-/** Apply only the previewed local identity moves under the shared hub lock. */
-export async function applyRenumber(
-  fs: FileSystemPort,
-  paths: PathsService,
-  git?: GitPort,
-): Promise<{ moved: RenumberMove[]; blocked: string[] } | { error: string }> {
-  return withCwdLock(fs, paths, async () => {
-    await recoverRenumberJournal(fs, paths, true);
-    const plan = await planRenumber(fs, paths, git);
-    if (plan.blocked.length > 0) return { moved: [], blocked: plan.blocked };
-    const guards: RenumberGuard[] = [];
-    try {
-      await acquireRenumberGuards(fs, paths, plan.moves, guards);
-      const transfers = await collectRenumberTransfers(fs, paths, plan.moves);
-      const before = await snapshotRenumberFiles(fs, paths, plan.moves, transfers);
-      const journalBody: RenumberJournalBody = {
-        version: 1,
-        moves: plan.moves,
-        files: [...before],
-        transfers,
-      };
-      const journal: RenumberJournal = { ...journalBody, digest: semanticDigest(journalBody) };
-      await fs.writeText(renumberJournalPath(paths), `${JSON.stringify(journal)}\n`);
-      const completed: RenumberMove[] = [];
-      try {
-        await applyClaimTransfers(fs, paths, transfers);
-        for (const move of plan.moves) {
-          await moveSessionIdentityLocked(fs, paths, move);
-          completed.push(move);
-        }
-        await fs.remove(renumberJournalPath(paths));
-      } catch (error) {
-        await rollbackRenumber(fs, paths, transfers, completed, before);
-        throw error;
-      }
-      return { moved: plan.moves, blocked: [] };
-    } finally {
-      await releaseRenumberGuards(fs, guards);
-    }
-  });
 }
 
 async function moveSessionIdentityLocked(
@@ -612,256 +564,6 @@ async function releaseRecoveryGuards(fs: FileSystemPort, guards: RecoveryGuard[]
         await fs.remove(lockPath);
     }
     await guard.lock.release();
-  }
-}
-
-async function acquireRenumberGuards(
-  fs: FileSystemPort,
-  paths: PathsService,
-  moves: RenumberMove[],
-  guards: RenumberGuard[],
-): Promise<void> {
-  // Hold EVERY affected run lock until the entire set succeeds or rolls
-  // back. Releasing after one move lets that run advance before a later
-  // failure restores its older bytes.
-  for (const move of moves) {
-    const original = join(paths.cwdSessionsDir(), move.from, ".flow-run.json.lock");
-    const lock = await acquireLock(original, fs);
-    guards.push({
-      lock,
-      original,
-      moved: join(paths.cwdSessionsDir(), move.to, ".flow-run.json.lock"),
-      bytes: await fs.readText(original),
-    });
-  }
-}
-
-async function collectRenumberTransfers(
-  fs: FileSystemPort,
-  paths: PathsService,
-  moves: RenumberMove[],
-): Promise<RenumberTransfer[]> {
-  const claims = await readClaimEvents(fs, paths, { lockHeld: true });
-  if (claims.unreadable > 0)
-    throw new Error("claims.jsonl ilegible: no se renumeran reservas sin verificar su propietario");
-  const scanned = await scanSlots(fs, paths, true);
-  if (scanned.error) throw new Error(scanned.error);
-  const transfers: RenumberTransfer[] = [];
-  for (const move of moves) {
-    const owned = await ownedClaimsForMove(fs, paths, move, claims.events, scanned.slots);
-    for (const claim of owned.values()) {
-      const claimed = join(
-        paths.hubDir(),
-        "docs",
-        claim.category,
-        `${claim.correlative}-${claim.name}`,
-      );
-      const marker = (await fs.exists(join(claimed, FOLDER_RESERVATION_MARKER)))
-        ? join(claimed, FOLDER_RESERVATION_MARKER)
-        : claimed;
-      if (!(await fs.exists(marker))) continue;
-      const before = await fs.readText(marker);
-      if (reservationOwnerOf(before) !== move.from) continue;
-      transfers.push({
-        path: marker,
-        before,
-        from: move.from,
-        to: move.to,
-        claim,
-        transfer: {
-          id: randomUUID(),
-          marker: relative(paths.hubDir(), marker),
-          number: claim.correlative,
-          from: move.from,
-          to: move.to,
-        },
-      });
-    }
-  }
-  return transfers;
-}
-
-async function snapshotRenumberFiles(
-  fs: FileSystemPort,
-  paths: PathsService,
-  moves: RenumberMove[],
-  transfers: RenumberTransfer[],
-): Promise<Map<string, string | null>> {
-  const shared = [
-    paths.cwdHistoryFile(),
-    join(dirname(paths.cwdHistoryFile()), "HISTORY.legacy.md"),
-    paths.cwdSessionBindingsFile(),
-    docBranchLedgerPath(paths),
-  ];
-  const files = [
-    ...shared,
-    ...moves.flatMap((move) => [
-      join(paths.cwdSessionsDir(), move.from, ".custody.json"),
-      join(paths.cwdSessionsDir(), move.from, ".flow-run.json"),
-      paths.cwdFlowAttemptsFile(move.from),
-    ]),
-    ...transfers.map((transfer) => transfer.path),
-  ];
-  const before = new Map<string, string | null>();
-  for (const path of files)
-    before.set(path, (await fs.exists(path)) ? await fs.readText(path) : null);
-  return before;
-}
-
-async function applyClaimTransfers(
-  fs: FileSystemPort,
-  paths: PathsService,
-  transfers: RenumberTransfer[],
-): Promise<void> {
-  for (const transfer of transfers) {
-    await appendClaimEvent(fs, paths, {
-      at: new Date().toISOString(),
-      event: "transfer-intent",
-      claim: transfer.claim,
-      transfer: transfer.transfer,
-    });
-    const rewritten = transfer.before.replace(
-      /<!--\s*aw:reserva\s+\S+\s*-->/,
-      `<!-- aw:reserva ${transfer.to} -->`,
-    );
-    if (reservationOwnerOf(rewritten) !== transfer.to) {
-      throw new Error(`no se pudo transferir la reserva ${transfer.path} a ${transfer.to}`);
-    }
-    await fs.writeText(transfer.path, rewritten);
-    await appendClaimEvent(fs, paths, {
-      at: new Date().toISOString(),
-      event: "transfer-confirmed",
-      claim: transfer.claim,
-      transfer: transfer.transfer,
-    });
-  }
-}
-
-async function rollbackRenumber(
-  fs: FileSystemPort,
-  paths: PathsService,
-  transfers: RenumberTransfer[],
-  completed: RenumberMove[],
-  before: Map<string, string | null>,
-): Promise<void> {
-  const reversals = await beginTransferReversals(fs, paths, transfers);
-  for (const move of completed.reverse()) {
-    await fs.rename(join(paths.cwdSessionsDir(), move.to), join(paths.cwdSessionsDir(), move.from));
-    const newAttempts = paths.cwdFlowAttemptsFile(move.to);
-    if (await fs.exists(newAttempts))
-      await fs.rename(newAttempts, paths.cwdFlowAttemptsFile(move.from));
-  }
-  for (const [path, text] of before) {
-    if (text === null) {
-      if (await fs.exists(path)) await fs.remove(path);
-    } else {
-      await fs.writeText(path, text);
-    }
-  }
-  await settleTransferReversals(fs, paths, transfers, reversals);
-  await fs.remove(renumberJournalPath(paths));
-}
-
-async function releaseRenumberGuards(fs: FileSystemPort, guards: RenumberGuard[]): Promise<void> {
-  for (const guard of guards.reverse()) {
-    if ((await fs.exists(guard.moved)) && (await fs.readText(guard.moved)) === guard.bytes)
-      await fs.remove(guard.moved);
-    await guard.lock.release();
-  }
-}
-
-async function ownedClaimsForMove(
-  fs: FileSystemPort,
-  paths: PathsService,
-  move: RenumberMove,
-  events: Awaited<ReturnType<typeof readClaimEvents>>["events"],
-  slots: Awaited<ReturnType<typeof scanSlots>>["slots"],
-): Promise<Map<string, ClaimIdentity>> {
-  const owned = new Map<string, ClaimIdentity>();
-  for (const claim of openClaimsOf(events, move.from)) {
-    owned.set(`${claim.category}/${claim.correlative}-${claim.name}`, claim);
-  }
-  for (const slot of slots) {
-    if (slot.kind !== "reservation" || !slot.intact || slot.owner !== move.from) continue;
-    const key = `${slot.category}/${slot.correlative}-${slot.name}`;
-    if (owned.has(key)) continue;
-    const claim = {
-      category: slot.category,
-      correlative: slot.correlative,
-      name: slot.name,
-      owner: move.from,
-    };
-    // next-number may have left its valid marker before its claimed
-    // append. Repair that birth gap before writing the transfer intent.
-    await appendClaimEvent(fs, paths, {
-      at: new Date().toISOString(),
-      event: "claimed",
-      claim,
-      cause: "marcador intacto sin fila claimed al renumerar",
-    });
-    owned.set(key, claim);
-  }
-  return owned;
-}
-
-async function beginTransferReversals(
-  fs: FileSystemPort,
-  paths: PathsService,
-  transfers: RenumberTransfer[],
-): Promise<Map<string, { transfer: ClaimTransfer; claim: ClaimIdentity }>> {
-  const recordedBefore = await readClaimEventsRaw(fs, paths);
-  const reversals = new Map<string, { transfer: ClaimTransfer; claim: ClaimIdentity }>();
-  for (const transfer of transfers) {
-    if (
-      !recordedBefore.events.some(
-        (item) => item.transfer?.id === transfer.transfer.id && item.event === "transfer-confirmed",
-      )
-    )
-      continue;
-    const reverse: ClaimTransfer = {
-      ...transfer.transfer,
-      id: randomUUID(),
-      from: transfer.to,
-      to: transfer.from,
-    };
-    const claim = { ...transfer.claim, owner: transfer.to };
-    await appendClaimEvent(fs, paths, {
-      at: new Date().toISOString(),
-      event: "transfer-intent",
-      claim,
-      transfer: reverse,
-    });
-    reversals.set(transfer.transfer.id, { transfer: reverse, claim });
-  }
-  return reversals;
-}
-
-async function settleTransferReversals(
-  fs: FileSystemPort,
-  paths: PathsService,
-  transfers: RenumberTransfer[],
-  reversals: Map<string, { transfer: ClaimTransfer; claim: ClaimIdentity }>,
-): Promise<void> {
-  const recorded = await readClaimEventsRaw(fs, paths);
-  for (const transfer of transfers) {
-    const matching = recorded.events.filter((item) => item.transfer?.id === transfer.transfer.id);
-    if (matching.some((item) => item.event === "transfer-confirmed")) {
-      const reversal = reversals.get(transfer.transfer.id);
-      if (!reversal) throw new Error(`falta intención de reversión para ${transfer.transfer.id}`);
-      await appendClaimEvent(fs, paths, {
-        at: new Date().toISOString(),
-        event: "transfer-confirmed",
-        claim: reversal.claim,
-        transfer: reversal.transfer,
-      });
-    } else if (matching.some((item) => item.event === "transfer-intent")) {
-      await appendClaimEvent(fs, paths, {
-        at: new Date().toISOString(),
-        event: "transfer-cancelled",
-        claim: transfer.claim,
-        transfer: transfer.transfer,
-      });
-    }
   }
 }
 

@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { runNextNumber } from "../../src/application/dev-only-services.js";
-import { publishInFolder } from "../../src/application/doc-flow/numbering.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { nextNumberCommand } from "../../src/cli/commands/dev-only.js";
 import { readRequiredStdin } from "../../src/cli/context-id.js";
@@ -90,20 +89,6 @@ describe("runNextNumber --publish", () => {
       expect(readdirSync(join(hub, "docs/plans"))).toHaveLength(1);
     },
   );
-
-  it("la publicación en carpeta ajusta solo el primer H1 numerado, incluso sin subtítulo", async () => {
-    const content = "# Informe 008\r\n\r\nReferencia 008.\r\n\r\n# Plan 009 — otro\r\n";
-    const result = await publishInFolder(fs, join(hub, "docs/research"), "research-x.md", content);
-    expect(readFileSync(result.path, "utf8")).toBe(
-      "# Informe 001\r\n\r\nReferencia 008.\r\n\r\n# Plan 009 — otro\r\n",
-    );
-  });
-
-  it("la publicación en carpeta conserva un H1 que solo menciona otro documento", async () => {
-    const content = "# Referencias a Spec 008\n\n# Plan 009\n";
-    const result = await publishInFolder(fs, join(hub, "docs/research"), "research-x.md", content);
-    expect(readFileSync(result.path, "utf8")).toBe(content);
-  });
 
   it("asigna el correlativo y escribe los bytes finales en un solo acto", async () => {
     const out = await runNextNumber(fs, env, paths, {

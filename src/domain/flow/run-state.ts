@@ -32,13 +32,11 @@ import type { CapabilityFailure, EffectLedger } from "../capability/protocol.js"
 import { type DecisionNote, normalizeObligations, validateDecisionNote } from "../decision-note.js";
 import type { DecisionPreview } from "../decision-preview.js";
 import type { LocalProposal } from "../proposal.js";
-import type { PlanReconciliation } from "../reconciliation.js";
 import {
   type FlowChoiceOutcome,
   type FlowDecision,
   type JourneyReentry,
   expandJourney,
-  journeyOfFlow,
 } from "./authority.js";
 import type { EffectGrant } from "./authorization.js";
 import { type BatchReview, isBatchReview } from "./batch-review.js";
@@ -1486,35 +1484,6 @@ export function sealRunState(state: Omit<FlowRunState, "digest">): FlowRunState 
   return { ...state, digest: semanticDigest(state) };
 }
 
-export function newRunState(flow: AgentWorkflowFlow, session: string): FlowRunState {
-  return sealRunState({
-    version: FLOW_RUN_STATE_VERSION,
-    flow,
-    session,
-    scope: null,
-    journey_base: journeyOfFlow(flow).map((decision) => decision.id),
-    applied: [],
-    skipped: [],
-    boundary: null,
-    pending_action: null,
-    observations: [],
-    events: [],
-    authorizations: [],
-    proposal: null,
-    effects: { planned: [], approved: [], applied: [] },
-    attempts: [],
-    batches: [],
-    batch_trace: [],
-    batch_loop: { pending: true, iteration: 1 },
-    handoff: null,
-    selected_choice: null,
-    decision_preparation: null,
-    route_proposal: null,
-    route_decisions: null,
-    assurance: "verified",
-  });
-}
-
 /**
  * Apply one transition, re-sealing the result.
  *
@@ -1620,42 +1589,9 @@ export function normalizeAttemptChain(state: FlowRunState): FlowRunState {
   return sealRunState({ ...withoutSeal(state), attempts });
 }
 
-export function grantAttempts(
-  state: FlowRunState,
-  transition: string,
-  attempts: number,
-): FlowRunState {
-  const granted = { ...(state.attempt_grants ?? {}) };
-  const key = attemptCounterKey(state, transition);
-  granted[key] = (granted[key] ?? 0) + attempts;
-  return sealRunState({ ...withoutSeal(state), attempt_grants: granted });
-}
-
 /** Whether this exhausted boundary already spent the one re-run the CLI gives it. */
 export function exhaustedRerunSpent(state: FlowRunState, transition: string): boolean {
   return (state.exhausted_reruns ?? []).includes(attemptCounterKey(state, transition));
-}
-
-/** Record that the CLI's one re-run of this exhausted boundary came back refused. */
-export function withExhaustedRerunSpent(state: FlowRunState, transition: string): FlowRunState {
-  if (exhaustedRerunSpent(state, transition)) return state;
-  return sealRunState({
-    ...withoutSeal(state),
-    exhausted_reruns: [...(state.exhausted_reruns ?? []), attemptCounterKey(state, transition)],
-  });
-}
-
-/**
- * Forget a spent re-run: `aw flow recover` gives the boundary a fresh budget,
- * and a later exhaustion is a new episode that is owed its own re-run.
- */
-export function withoutExhaustedRerun(state: FlowRunState, transition: string): FlowRunState {
-  if (!exhaustedRerunSpent(state, transition)) return state;
-  const key = attemptCounterKey(state, transition);
-  return sealRunState({
-    ...withoutSeal(state),
-    exhausted_reruns: (state.exhausted_reruns ?? []).filter((spent) => spent !== key),
-  });
 }
 
 /**
@@ -1669,19 +1605,6 @@ export function restartInvocation(session: string): string {
 /** The action of every refusal over a registry this CLI cannot use as it is. */
 function unusableRemedy(session: string): string {
   return `corré '${restartInvocation(session)}': archiva el registro dentro de la sesión, re-adopta su flow y lo deja en la traza — o restaurá una copia íntegra del archivo`;
-}
-
-/** Keep the sealed preview the person is choosing over; no cursor moves here. */
-export function withRouteProposal(
-  state: FlowRunState,
-  proposal: RouteProposal | null,
-): FlowRunState {
-  return sealRunState({
-    ...withoutSeal(state),
-    route_proposal: proposal,
-    route_decisions: null,
-    assurance: "verified",
-  });
 }
 
 /** Persist the accepted route and derive its assurance without claiming missing proof passed. */
@@ -1727,50 +1650,6 @@ export function withReentry(state: FlowRunState, reentry: FlowRunReentry): FlowR
   });
 }
 
-/**
- * Take back the last reentry, for the close that recorded its intention and then
- * could not happen. The field goes back to absent when it empties, so the run
- * serializes the bytes it had before the intention.
- */
-export function withoutLastReentry(state: FlowRunState): FlowRunState {
-  const { reentries: _all, ...rest } = withoutSeal(state);
-  const kept = (state.reentries ?? []).slice(0, -1);
-  return sealRunState(kept.length === 0 ? rest : { ...rest, reentries: kept });
-}
-
-/** Seal the base of one batch; a batch that already has one keeps it. */
-export function withPlanExecBatchBase(
-  state: FlowRunState,
-  batchId: string,
-  base: Record<string, string | null>,
-): FlowRunState {
-  const batches = state.batches ?? [];
-  const target = batches.find((batch) => batch.id === batchId);
-  // A re-run of the acquisition on the same batch must not move its base: the
-  // batch would then be compared against its own half-done work.
-  if (target === undefined || target.base !== undefined) return state;
-  return sealRunState({
-    ...withoutSeal(state),
-    batches: batches.map((batch) => (batch.id === batchId ? { ...batch, base } : batch)),
-  });
-}
-
-/** Record the proofs that credited one batch. */
-export function withPlanExecBatchCredit(
-  state: FlowRunState,
-  batchId: string,
-  credit: Record<string, string>,
-): FlowRunState {
-  const batches = state.batches ?? [];
-  if (!batches.some((batch) => batch.id === batchId)) return state;
-  return sealRunState({
-    ...withoutSeal(state),
-    batches: batches.map((batch) =>
-      batch.id === batchId ? { ...batch, credit, credit_phases: [...batch.phases] } : batch,
-    ),
-  });
-}
-
 export function withPlanExecBatchUpdate(
   state: FlowRunState,
   id: string,
@@ -1780,40 +1659,6 @@ export function withPlanExecBatchUpdate(
     ...withoutSeal(state),
     batches: (state.batches ?? []).map((batch) => (batch.id === id ? update(batch) : batch)),
   });
-}
-
-/** Re-seal the SAME unpublished batch; old validation/review cannot credit a new base. */
-export function withReinferredPlanExecBatch(
-  state: FlowRunState,
-  batchId: string,
-  planDigest: string,
-  anchor: string | null,
-): FlowRunState {
-  const replaced = withPlanExecBatchUpdate(state, batchId, (batch) => {
-    const {
-      credit: _credit,
-      credit_phases: _phases,
-      review: _review,
-      commit_proposal: _proposal,
-      ...rest
-    } = batch;
-    return { ...rest, plan_digest: planDigest, stage: "inferred" };
-  });
-  const traced = withPlanExecBatchStage(
-    replaced,
-    batchId,
-    "inferred",
-    "plan-exec.batch-inference",
-    "entered",
-  );
-  if (anchor === null) return traced;
-  const reentered = withReentry(traced, {
-    kind: "reinfer",
-    transition: anchor,
-    occurrence: state.applied.filter((id) => id === anchor).length + 1,
-    from: "plan-exec.validation-execution",
-  });
-  return withPendingAction(withBoundary(reentered, "plan-exec.validation-execution"), null);
 }
 
 /** Old runs that closed even one batch without a commit result stay on the old tail. */
@@ -1831,16 +1676,6 @@ export function legacyPlanExecCommits(state: FlowRunState): boolean {
   );
 }
 
-/** Record only the current iteration's review, never borrowing one from a prior batch. */
-export function withPlanExecBatchReview(state: FlowRunState, review: BatchReview): FlowRunState {
-  return sealRunState({
-    ...withoutSeal(state),
-    batches: (state.batches ?? []).map((batch) =>
-      batch.iteration === state.batch_loop?.iteration ? { ...batch, review } : batch,
-    ),
-  });
-}
-
 /** A legacy close may have passed the old untyped review. Insert a fresh, answerable copy. */
 export function withPendingBatchReview(state: FlowRunState): FlowRunState {
   const review = "plan-exec.review-findings";
@@ -1856,28 +1691,6 @@ export function withPendingBatchReview(state: FlowRunState): FlowRunState {
     }),
     review,
   );
-}
-
-/** Record one inferred or declared batch, refusing duplicate ids at the caller's boundary. */
-export function withPlanExecBatch(state: FlowRunState, batch: PlanExecBatch): FlowRunState {
-  const batches = state.batches ?? [];
-  if (batches.some((current) => current.id === batch.id)) return state;
-  const trace = state.batch_trace ?? [];
-  return sealRunState({
-    ...withoutSeal(state),
-    batches: [...batches, batch],
-    batch_trace: [
-      ...trace,
-      {
-        sequence: trace.length + 1,
-        batch_id: batch.id,
-        iteration: batch.iteration,
-        stage: "inferred",
-        transition: "plan-exec.batch-inference",
-        kind: "entered",
-      },
-    ],
-  });
 }
 
 /** Advance one batch phase and append the evidence row in the same sealed state. */
@@ -2005,16 +1818,6 @@ export function withHandoff(state: FlowRunState, handoff: FlowHandoff | null): F
   return sealRunState({ ...withoutSeal(state), handoff });
 }
 
-export function withPlanExecEntry(state: FlowRunState, entry: PlanExecEntry): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), plan_exec_entry: entry });
-}
-
-export function withDecisionDate(state: FlowRunState, date: string): FlowRunState {
-  return state.decision_date === date
-    ? state
-    : sealRunState({ ...withoutSeal(state), decision_date: date });
-}
-
 /** Both the human exit and the structural rule deliver the same recoverable destination. */
 export function planRefineHandoff(
   state: FlowRunState,
@@ -2041,149 +1844,6 @@ export function planRefineHandoff(
     package: packageBody,
     package_digest: semanticDigest(packageBody),
   };
-}
-
-/** Persist the gate's executable consequence before the run leaves that boundary. */
-export function withSelectedChoice(
-  state: FlowRunState,
-  selected: FlowChoiceSelection | null,
-): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), selected_choice: selected });
-}
-
-/** Persist or clear the exact decision view offered at the human gate. */
-export function withDecisionPreparation(
-  state: FlowRunState,
-  preparation: FlowDecisionPreparation | null,
-): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), decision_preparation: preparation });
-}
-
-/**
- * Persist the declared fix preview, so the boundary that approves it can show it.
- *
- * The mirror of {@link withDecisionPreparation}, with one difference that is the
- * whole point of the field being optional: this is only ever called with a
- * preview. A run that declared none keeps the key ABSENT — writing `null` would
- * add a field to the sealed record and move the digest of every run that never
- * used it.
- */
-export function withFixPreview(state: FlowRunState, preview: FlowFixPreview): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), fix_preview: preview });
-}
-
-export function withQuickCheckouts(
-  state: FlowRunState,
-  checkouts: Record<string, string> | null,
-): FlowRunState {
-  if (checkouts === null && state.quick_checkouts === undefined) return state;
-  return state.flow === "quick"
-    ? sealRunState({ ...withoutSeal(state), quick_checkouts: checkouts })
-    : state;
-}
-
-/** Remove a mistaken signal only before any of its consumers has used it. */
-export function retractSignal(
-  state: FlowRunState,
-  journey: readonly FlowDecision[],
-  signal: string,
-): { ok: true; state: FlowRunState } | { ok: false; failure: CapabilityFailure } {
-  const producers = journey.filter((row) => row.signals?.includes(signal)).map((row) => row.id);
-  const consumers = journey.filter((row) => {
-    const rule = row.condition?.threshold;
-    return (
-      rule !== undefined &&
-      producers.includes(rule.observed) &&
-      (rule.of === undefined || rule.of.includes(signal))
-    );
-  });
-  if (producers.length === 0 || consumers.length === 0) {
-    return {
-      ok: false,
-      failure: {
-        code: "FLOW_RETRACT_SIGNAL_UNKNOWN",
-        message: `la señal '${signal}' no tiene un consumidor retirable en este recorrido`,
-        action: "usá una señal declarada por el recorrido y consumida por una condición pendiente",
-      },
-    };
-  }
-  const removed = state.observations.filter(
-    (item) =>
-      item.signals.includes(signal) && sameIteration(item, iterationOf(state, item.transition)),
-  );
-  if (removed.length === 0) return { ok: true, state };
-  const consumed = consumers.find((row) =>
-    removed.some((observation) => signalWasConsumed(state, row, observation)),
-  );
-  if (consumed !== undefined) {
-    return {
-      ok: false,
-      failure: {
-        code: "FLOW_RETRACT_ALREADY_CONSUMED",
-        message: `'${consumed.id}' ya aplicó o dejó una ejecución sin resolver; no se retira '${signal}'`,
-        action: "conservá la señal: retirar no revierte decisiones ni efectos ya ejercidos",
-      },
-    };
-  }
-  const updated = sealRunState({
-    ...withoutSeal(state),
-    observations: state.observations.map((item) =>
-      removed.includes(item)
-        ? { ...item, signals: item.signals.filter((value) => value !== signal) }
-        : item,
-    ),
-  });
-  return {
-    ok: true,
-    state: withEvent(updated, {
-      kind: "retracted",
-      transition: state.boundary ?? producers[0] ?? "",
-      ...iterationOf(state, state.boundary ?? producers[0] ?? ""),
-      operation: "flow.retract",
-      signal,
-      observations: removed,
-    }),
-  };
-}
-
-function signalWasConsumed(
-  state: FlowRunState,
-  consumer: FlowDecision,
-  observation: FlowObservation,
-): boolean {
-  if (consumer.condition?.threshold.observed !== observation.transition) return false;
-  // Only a consumer after THIS producer occurrence can have consumed its signal.
-  const producer = state.applied.lastIndexOf(observation.transition);
-  const consumed = state.applied.slice(producer + 1).includes(consumer.id);
-  return consumed || recoveryBlockedAt(state, consumer.id, observation) !== null;
-}
-
-/**
- * Record what the closure owes — written once, when the batch loop ends.
- *
- * Re-recording the same snapshot returns the state untouched, so a resumed run
- * that walks over the row again neither re-seals nor loses what it found.
- */
-export function withSettlement(state: FlowRunState, settlement: FlowSettlement): FlowRunState {
-  const current = state.settlement;
-  if (current !== undefined && current !== null && sameSettlement(current, settlement)) {
-    return state;
-  }
-  return sealRunState({ ...withoutSeal(state), settlement });
-}
-
-function sameSettlement(a: FlowSettlement, b: FlowSettlement): boolean {
-  return canonicalJson(a) === canonicalJson(b);
-}
-
-/** Record what the run declared about each compensation. */
-export function withSettlementDeclarations(
-  state: FlowRunState,
-  declared: FlowSettlementDeclaration[],
-): FlowRunState {
-  const settlement = state.settlement;
-  if (settlement === undefined || settlement === null) return state;
-  return sealRunState({ ...withoutSeal(state), settlement: { ...settlement, declared } });
 }
 
 /** Whether the closure has a live compensation to settle before it may seal. */
@@ -2257,174 +1917,9 @@ export function withPendingAction(
   });
 }
 
-/**
- * Mark the pending action as begun, in its own write, BEFORE anything happens.
- *
- * Separate from {@link withPendingAction} on purpose: emitting a boundary and
- * starting to materialize it are two moments, and collapsing them would record
- * the intent at a time when nothing has yet been risked — which is precisely when
- * the mark is worthless. Recording it afterwards is worse: the crash it exists to
- * survive happens in between.
- */
-export function withActionAttempted(state: FlowRunState): FlowRunState {
-  const pending = state.pending_action;
-  if (pending === null || pending.attempted) return state;
-  return sealRunState({
-    ...withoutSeal(state),
-    pending_action: { ...pending, attempted: true },
-  });
-}
-
 /** Append one material event to the run's trace, re-sealing the result. */
 export function withEvent(state: FlowRunState, event: FlowRunEvent): FlowRunState {
   return sealRunState({ ...withoutSeal(state), events: [...state.events, event] });
-}
-
-/**
- * Whether appending this failure would only restate the one already there.
- *
- * The same failure, still standing, is ONE fact: re-running a broken action or
- * re-sending the same refused result reaches the identical verdict, and
- * appending it every time would turn the trace into a retry counter — which is
- * what the attempt history is for. Both producers of a failure event ask here,
- * so the internal driver and an external result cannot disagree about it.
- */
-export function restatesLastEvent(state: FlowRunState, event: FlowRunEvent): boolean {
-  const last = state.events.at(-1);
-  if (last === undefined || last.kind !== "failed" || event.kind !== "failed") return false;
-  return (
-    last.transition === event.transition &&
-    sameIteration(last, event) &&
-    last.code === event.code &&
-    last.message === event.message
-  );
-}
-
-/**
- * Keep a validated observation for the rule that consumes it later.
- *
- * Observations ACCUMULATE. They used to replace the previous one for the same
- * transition, and that silently lost findings: a run that recognises a second
- * divergence overwrote the first, so a gate meant to carry every declaration
- * forward could only ever remember the last one. Thresholds are unaffected —
- * `thresholdFired` already unions the signals of every observation of a
- * transition and counts them DISTINCT — so accumulating changes what is
- * remembered without changing what fires.
- *
- * An exact repeat is not appended: re-answering a boundary with the same signals
- * is one observation sent twice, and letting it pile up would turn the trace
- * into a retry counter, which is what the attempt history is for.
- */
-export function withObservation(state: FlowRunState, observation: FlowObservation): FlowRunState {
-  const repeated = state.observations.some(
-    (past) =>
-      past.transition === observation.transition &&
-      sameIteration(past, observation) &&
-      sameSignals(past.signals, observation.signals),
-  );
-  if (repeated) return state;
-  return sealRunState({
-    ...withoutSeal(state),
-    observations: [...state.observations, observation],
-  });
-}
-
-/**
- * Record the first thing a decision of this run still owes — or clear it.
- *
- * It takes the whole reconciliation and not a bare point on purpose. The rule is
- * "the FIRST new or pending obligation reached", and that is a fact about the
- * entire effective contract: a second note's own declaration would move the
- * record FORWARD, past work an earlier decision is still owed. By reading the
- * projection, settling everything clears the continuation on its own and there
- * is no separate "we are done" call anybody can forget to make.
- */
-export function withContinuation(
-  state: FlowRunState,
-  reconciliation: PlanReconciliation,
-): FlowRunState {
-  const first = reconciliation.pending[0];
-  if (first === undefined) return consumeContinuation(state);
-  const held = state.continuation ?? null;
-  // El punto que la nota DECLARÓ, que es lo que esta contabilidad guarda: la
-  // continuación es un registro de la corrida sobre lo que ella misma decidió,
-  // no un lugar al que se manda a nadie. Dónde se retoma de verdad lo deriva el
-  // tablero del plan como está hoy, y ese es el que las superficies nombran.
-  if (held !== null && held.by === first.by && held.resume_point === first.declared_point) {
-    return state;
-  }
-  return sealRunState({
-    ...withoutSeal(state),
-    continuation: { resume_point: first.declared_point, by: first.by },
-  });
-}
-
-/** Record that the run reached the point it was sent back to. */
-export function consumeContinuation(state: FlowRunState): FlowRunState {
-  if ((state.continuation ?? null) === null) return state;
-  return sealRunState({ ...withoutSeal(state), continuation: null });
-}
-
-function sameSignals(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false;
-  const left = [...a].sort();
-  const right = [...b].sort();
-  return left.every((signal, index) => signal === right[index]);
-}
-
-/** Record one attempt in the persisted history, re-sealing the result. */
-export function withAttempt(state: FlowRunState, attempt: FlowRunAttempt): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), attempts: [...state.attempts, attempt] });
-}
-
-/**
- * Grant the run an authorization the person just gave, over its exact seal.
- *
- * The classes land in the ledger's `approved` moment too — the same split the
- * capability contract already makes between the request's authorizations and the
- * receipt's approved effects. What changed is the first half: the run no longer
- * holds a bare class, it holds a grant that names what it was given over, so a
- * later transition with a different seal is not covered by it.
- *
- * Re-granting the same seal REPLACES rather than accumulates: an approval given
- * twice over the identical proposal is one approval, and a list that grew each
- * time would make "how wide is this grant" depend on how many times somebody
- * retried.
- */
-export function withApproval(state: FlowRunState, grant: EffectGrant): FlowRunState {
-  return sealRunState({
-    ...withoutSeal(state),
-    authorizations: [...state.authorizations.filter((held) => held.digest !== grant.digest), grant],
-    effects: {
-      planned: union(state.effects.planned, grant.classes),
-      approved: union(state.effects.approved, grant.classes),
-      applied: [...state.effects.applied],
-    },
-  });
-}
-
-/**
- * Fix what this run isolates, once.
- *
- * REPLACES rather than merges, and the boundary that produces it is answered
- * once per run: a scope that grew by accumulation would let a later answer widen
- * what the units — and every branch and commit reading built on them — cover,
- * which is the silent scope expansion the whole isolation model exists to stop.
- */
-export function withScope(state: FlowRunState, scope: FlowRunScope): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), scope });
-}
-
-/**
- * Seat the exact local change awaiting its decision, or clear it.
- *
- * Cleared after it is published — and that is not housekeeping: a proposal left
- * standing after its bytes landed would be a preview of a change that is already
- * on disk, and the next boundary that asks "is there something to approve?" would
- * answer yes about the past.
- */
-export function withProposal(state: FlowRunState, proposal: LocalProposal | null): FlowRunState {
-  return sealRunState({ ...withoutSeal(state), proposal });
 }
 
 function union(current: readonly EffectClass[], added: readonly EffectClass[]): EffectClass[] {
@@ -2805,39 +2300,6 @@ function isInheritedBaseArray(value: unknown): value is PlanExecInheritedBase[] 
         entry.base !== undefined,
     )
   );
-}
-
-/**
- * The bases a reseated run inherits from the archived registry, read tolerantly:
- * the archive may be the very state that could not be continued, so anything
- * that is not a well-formed batch base is left behind rather than trusted.
- */
-export function inheritedBasesFrom(archived: string | null): PlanExecInheritedBase[] {
-  if (archived === null) return [];
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(archived);
-  } catch {
-    return [];
-  }
-  if (!isRecord(parsed) || !Array.isArray(parsed.batches)) return [];
-  const inherited = parsed.batches.flatMap((batch): PlanExecInheritedBase[] => {
-    if (!isRecord(batch) || batch.base === undefined) return [];
-    const candidate = { phases: batch.phases, base: batch.base };
-    return isInheritedBaseArray([candidate]) ? [candidate as PlanExecInheritedBase] : [];
-  });
-  const earlier = isInheritedBaseArray(parsed.inherited_bases)
-    ? (parsed.inherited_bases ?? [])
-    : [];
-  return [...earlier, ...inherited];
-}
-
-export function withInheritedBases(
-  state: FlowRunState,
-  inherited: readonly PlanExecInheritedBase[],
-): FlowRunState {
-  if (inherited.length === 0) return state;
-  return sealRunState({ ...withoutSeal(state), inherited_bases: [...inherited] });
 }
 
 /** Fields added by v10 that have no truthful default on a persisted run. */

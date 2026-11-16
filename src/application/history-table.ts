@@ -278,16 +278,6 @@ export function maxHistoryCorrelativeFromText(text: string): string | null {
   return maxCorrelative(correlatives);
 }
 
-/**
- * Compatibility projection for callers that still display `current_max` as a
- * JSON number. New counters use {@link maxHistoryCorrelative} and never depend
- * on this lossy projection.
- */
-export async function maxHistoryNumber(fs: FileSystemPort, historyFile: string): Promise<number> {
-  const maximum = await maxHistoryCorrelative(fs, historyFile);
-  return maximum === null ? 0 : Number.parseInt(maximum, 10);
-}
-
 /** One row of the durable record, as the table holds it. */
 export interface HistoryRow {
   /** The row key: `047-algo-quick`, `session047-algo`, or a bare `047`. */

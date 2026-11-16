@@ -86,20 +86,3 @@ export async function ensureUnit<T extends IsolationUnit>(
   await git.worktreeAdd(repo, unit.path, unit.branch, base);
   return { created: true, base, unit };
 }
-
-/** The units git knows for one plan, read back from the branch names alone. */
-export async function unitsOfPlan(
-  git: GitPort,
-  repo: string,
-  hubKey: string,
-  plan: string,
-): Promise<{ branch: string; path: string; batch: string }[]> {
-  const prefix = `aw/${hubKey}/plan-${plan}-`;
-  const out: { branch: string; path: string; batch: string }[] = [];
-  for (const tree of await git.worktreeList(repo)) {
-    const branch = (tree.branch ?? "").replace(/^refs\/heads\//, "");
-    if (!branch.startsWith(prefix)) continue;
-    out.push({ branch, path: tree.path, batch: branch.slice(prefix.length).toUpperCase() });
-  }
-  return out;
-}

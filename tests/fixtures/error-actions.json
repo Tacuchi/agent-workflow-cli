@@ -68,18 +68,6 @@
       "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
     },
     {
-      "file": "src/application/checkpoint-service.ts",
-      "text": "aw checkpoint-write --code <NNN>",
-      "class": "not-determinable",
-      "reason": "hay varias sesiones candidatas y elegir es de la persona"
-    },
-    {
-      "file": "src/application/checkpoint-write-service.ts",
-      "text": "aw checkpoint-write --code <NNN>",
-      "class": "not-determinable",
-      "reason": "hay varias sesiones candidatas y elegir es de la persona"
-    },
-    {
       "file": "src/application/git-flow-service.ts",
       "text": "aw set-working-branch ${source.alias} <rama>",
       "class": "not-determinable",
@@ -96,12 +84,6 @@
       "text": "aw add-source ${t.alias}:<ruta>",
       "class": "not-determinable",
       "reason": "la ruta local de la fuente es de la persona; el alias ya va interpolado"
-    },
-    {
-      "file": "src/application/plan-lint-service.ts",
-      "text": "aw plan lint <plan>",
-      "class": "usage",
-      "reason": "forma de uso: el valor es la entrada de quien invoca, no una acción del error"
     },
     {
       "file": "src/application/hub-block-upsert-service.ts",

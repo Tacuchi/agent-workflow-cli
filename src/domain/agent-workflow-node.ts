@@ -71,36 +71,3 @@ export function nodeFromDocPath(
   if (match?.[1] === undefined) return null;
   return { kind, key: match[1] };
 }
-
-/**
- * A typed edge: `from` exists BECAUSE of `to`.
- *
- * The direction is fixed as child→parent because that is the direction evidence
- * runs in: a session records what it was derived from at the moment it is
- * created, while a parent cannot know who will descend from it later. Reversing
- * the reading is a traversal; reversing the record would be a guess.
- */
-export interface AgentWorkflowEdge {
-  from: AgentWorkflowNodeId;
-  to: AgentWorkflowNodeId;
-  /** How the edge was established — what makes it evidence rather than a hint. */
-  evidence: EdgeEvidence;
-}
-
-/**
- * Why an edge is believed.
- *
- * `custody` and `derived-from` are provable: one was sealed by the CLI when the
- * node was born, the other is the plan's own machine-readable `Derived from`
- * line. `origin-prose` is the legacy reading of a free-text `## Origin`, and it
- * is kept SEPARATE precisely so a retirement can refuse to act on it — an edge
- * nobody can prove is the one case where deleting is not recoverable.
- */
-export const EDGE_EVIDENCE = ["custody", "derived-from", "origin-prose"] as const;
-
-export type EdgeEvidence = (typeof EDGE_EVIDENCE)[number];
-
-/** Whether an edge is strong enough for a destructive closure to include it. */
-export function isProvable(evidence: EdgeEvidence): boolean {
-  return evidence === "custody" || evidence === "derived-from";
-}

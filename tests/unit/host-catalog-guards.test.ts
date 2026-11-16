@@ -13,7 +13,6 @@ import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { hostMemoryReaderHosts } from "../../src/application/host-memory/report.js";
 import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
 import { hooksTemplateToToml } from "../../src/application/self/hooks-toml.js";
 import {
@@ -223,11 +222,6 @@ describe("reglas de estado de hooks, compactación y memoria del host", () => {
       if (compaction?.status === "native") continue;
       expect(compaction?.detail, spec.id).toContain("document + aw resume");
     }
-  });
-
-  it("la memoria declarada es exactamente la de los hosts con lector en aw host-memory", () => {
-    const declared = HARNESSES.filter((h) => h.hostMemory.state !== "unsupported").map((h) => h.id);
-    expect(declared.sort()).toEqual([...hostMemoryReaderHosts()].sort());
   });
 });
 

@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   ARTIFACT_FILENAMES,
   type ArtifactKind,
-  canonicalArtifactFilename,
-  canonicalArtifactPath,
   findArtifact,
   listExistingArtifacts,
 } from "../../src/application/session-artifacts.js";
@@ -39,7 +37,6 @@ describe("ARTIFACT_FILENAMES (new model)", () => {
 
   it("session writes SESSION.md (replaces the legacy objective kind)", () => {
     expect(ARTIFACT_FILENAMES.session).toEqual(["SESSION.md"]);
-    expect(canonicalArtifactFilename("session")).toBe("SESSION.md");
   });
 
   it("keeps objective only as a legacy read fallback (EN + ES)", () => {
@@ -48,7 +45,6 @@ describe("ARTIFACT_FILENAMES (new model)", () => {
 
   it("decisions canonical is DECISION.md with DECISIONS/DECISIONES legacy fallbacks", () => {
     expect(ARTIFACT_FILENAMES.decisions).toEqual(["DECISION.md", "DECISIONS.md", "DECISIONES.md"]);
-    expect(canonicalArtifactFilename("decisions")).toBe("DECISION.md");
   });
 
   it("carries the new-model research / quick kinds", () => {
@@ -62,20 +58,6 @@ describe("ARTIFACT_FILENAMES (new model)", () => {
     expect(ARTIFACT_FILENAMES.backlog).toEqual(["BACKLOG.md"]);
     expect(ARTIFACT_FILENAMES.scripts_sql).toEqual(["SCRIPTS.sql"]);
     expect(ARTIFACT_FILENAMES.conclusions).toEqual(["CONCLUSIONS.md", "CONCLUSIONES.md"]);
-  });
-});
-
-describe("canonicalArtifactFilename / canonicalArtifactPath", () => {
-  it("returns the EN UPPERCASE filename for new writes", () => {
-    expect(canonicalArtifactFilename("session")).toBe("SESSION.md");
-    expect(canonicalArtifactFilename("decisions")).toBe("DECISION.md");
-    expect(canonicalArtifactFilename("tasks")).toBe("TASKS.md");
-    expect(canonicalArtifactFilename("analysis_file")).toBe("ANALYSIS-FILE.md");
-  });
-
-  it("joins folder with canonical filename", () => {
-    expect(canonicalArtifactPath(FOLDER, "session")).toBe(`${FOLDER}/SESSION.md`);
-    expect(canonicalArtifactPath(FOLDER, "decisions")).toBe(`${FOLDER}/DECISION.md`);
   });
 });
 

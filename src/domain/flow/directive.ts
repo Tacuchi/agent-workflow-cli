@@ -34,7 +34,6 @@ import type {
   Degradation,
   EffectLedger,
 } from "../capability/protocol.js";
-import { normalizeObligations } from "../decision-note.js";
 import type { DecisionPreview } from "../decision-preview.js";
 import type { PreviewEntry, ProposalScope } from "../proposal.js";
 import {
@@ -47,7 +46,7 @@ import {
   trancheOfFlow,
 } from "./authority.js";
 import type { AssuranceStatus, RouteDecision, RouteProposal } from "./route.js";
-import { type AttemptAccounting, type FlowFixPreview, MAX_BOUNDARY_ATTEMPTS } from "./run-state.js";
+import type { AttemptAccounting, FlowFixPreview } from "./run-state.js";
 
 export const FLOW_DIRECTIVE_VERSION = 2;
 
@@ -92,11 +91,6 @@ export type FlowBoundaryKind = (typeof FLOW_BOUNDARY_KINDS)[number];
  */
 export const PAUSE_LABEL = "Compactar";
 export const STOP_LABEL = "Cerrar";
-
-/** Whether a chosen label is the flow control rather than an answer. */
-export function isFlowControl(label: string | null): boolean {
-  return label === PAUSE_LABEL || label === STOP_LABEL;
-}
 
 // The alternatives of a boundary are DATA OF THE DECISION — a migrated tranche
 // declares its own — so the type lives with the registry and is re-exported here,
@@ -689,9 +683,7 @@ function checkEffectLedger(directive: FlowDirective): CapabilityFailure | null {
   // what the BOUNDARY IN FORCE is covered for, so a directive standing on a later
   // step legitimately says nothing about the grant given for an earlier proposal —
   // and comparing the accumulated ledger against it would refuse every honest
-  // directive. The invariant did not disappear: `withApproval` writes the grant and
-  // the `approved` moment from the same object, so they cannot diverge at the only
-  // place either of them is produced.
+  // directive.
   return null;
 }
 
@@ -756,212 +748,3 @@ const DIRECTIVE_CHECKS: readonly DirectiveCheck[] = [
   checkEffectLedger,
   checkApplied,
 ];
-
-/**
- * The human projection — DERIVED, never authored beside the data.
- *
- * Every line reads a field of the directive it was given, the same rule
- * `renderReceiptHuman` follows, so the prose cannot contradict the structured
- * form: there is no second source for it to disagree with.
- */
-export function renderDirectiveHuman(directive: FlowDirective, detail = false): string {
-  return [
-    directiveHeading(directive),
-    ...boundaryLines(directive, detail),
-    ...askLines(directive, detail),
-    ...effectLines(directive),
-    `continuidad: ${directive.state_digest}`,
-    `siguiente: ${directive.next_action}`,
-  ].join("\n");
-}
-
-const BOUNDARY_HEADINGS: Readonly<Record<FlowBoundaryKind, string>> = {
-  semantic: "preparando el siguiente paso",
-  human: "necesita tu decisión",
-  authorization: "necesita autorización",
-  execution: "listo para ejecutar",
-  blocked: "requiere resolver un bloqueo",
-  final: "trabajo completado",
-};
-
-function directiveHeading(directive: FlowDirective): string {
-  return `${directive.flow} — ${BOUNDARY_HEADINGS[directive.boundary.kind]}`;
-}
-
-function boundaryLines(directive: FlowDirective, detail: boolean): string[] {
-  const lines: string[] = [];
-  if (directive.boundary.transition !== null) {
-    if (directive.boundary.title !== null) lines.push(`paso actual: ${directive.boundary.title}`);
-    if (detail) {
-      const owner =
-        directive.boundary.ownership === null ? "" : ` · ${directive.boundary.ownership}`;
-      lines.push(`detalle interno: ${directive.boundary.transition}${owner}`);
-    }
-  }
-  lines.push(...appliedLines(directive, detail));
-  if (directive.pending.length > 0) lines.push(`pendientes: ${directive.pending.length}`);
-  return lines;
-}
-
-function appliedLines(directive: FlowDirective, detail: boolean): string[] {
-  if (directive.applied.length === 0) return [];
-  if (!detail) {
-    const omitted = directive.applied.filter((step) => step.outcome === "skipped").length;
-    return [
-      `avance de esta invocación: ${directive.applied.length} paso(s) resuelto(s)${omitted === 0 ? "" : `, ${omitted} omitido(s) con motivo registrado`}`,
-    ];
-  }
-  const trace = directive.applied
-    .map((step) => {
-      const base = `${step.transition} (${step.authority} · ${step.ownership}`;
-      // The omission carries its cause in the same breath: a step that reads
-      // "omitida" and nothing else sends the reader to the registry to find out
-      // why the run did not stop where the doctrine says it stops.
-      return step.outcome === "skipped"
-        ? `${base} · OMITIDA: ${step.reason ?? "sin motivo declarado"})`
-        : `${base})`;
-    })
-    .join(", ");
-  return [`pasos de esta invocación: ${trace}`];
-}
-
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: one renderer keeps every visible boundary field in one ordered projection.
-function askLines(directive: FlowDirective, detail: boolean): string[] {
-  const lines: string[] = [];
-  if (directive.request !== null) {
-    lines.push(`contrato de respuesta: ${directive.request.contract}`);
-    lines.push(`read_set visible: ${directive.request.read_set.join(", ") || "ninguno"}`);
-  }
-  if (directive.route.proposal !== null) {
-    const proposal = directive.route.proposal;
-    lines.push("propuesta de solución:");
-    if (proposal.summary !== undefined) {
-      lines.push(`hallazgo: ${proposal.summary.finding}`);
-      lines.push(`diagnóstico: ${proposal.summary.diagnosis}`);
-      lines.push(`solución: ${proposal.summary.solution}`);
-    } else {
-      // A v11 proposal already in flight predates the explicit summary. Keep it
-      // readable without pretending its technical basis was a diagnosis.
-      lines.push(`objetivo: ${proposal.basis.intention}`);
-      lines.push(`contexto verificado: ${proposal.basis.checkout}`);
-      lines.push(`convenciones relevantes: ${proposal.basis.conventions}`);
-      lines.push(`decisiones previas: ${proposal.basis.adopted_decisions}`);
-    }
-    for (const control of proposal.controls) {
-      const substitute =
-        control.substitution === null
-          ? ""
-          : ` Sustitución: ${control.substitution.validation}. Riesgo aceptado: ${control.substitution.risk}.`;
-      const id = detail ? ` [${control.transition}]` : "";
-      const recommendation =
-        control.disposition === control.recommendation
-          ? ""
-          : ` Recomendación base: ${routeDispositionLabel(control.recommendation)}.`;
-      lines.push(
-        `· ${routeDispositionLabel(control.disposition)}: ${control.title}${id}. Motivo: ${control.reason}. Resultado: ${control.consequence}. Riesgo: ${control.risk}.${recommendation}${substitute}`,
-      );
-    }
-  }
-  if (directive.action !== null) {
-    const call = directive.action.invocation;
-    lines.push(`ejecutar: ${[call.program, ...call.args].join(" ")}`);
-    lines.push(`en: ${call.target}${call.input === null ? "" : " (con input por stdin)"}`);
-    lines.push(`evidencia exigida: ${directive.action.evidence.join(", ")}`);
-    for (const requirement of directive.action.requirements ?? []) {
-      lines.push(`validación final: ${requirement}`);
-    }
-    // The root the validator will measure, said out loud. Publishing it is the
-    // whole point: the prover cannot deduce which directory the digest covers, and
-    // the alias alone sent readers hunting for a change in an intact tree.
-    const checkouts = directive.action.checkouts ?? [];
-    if (checkouts.length > 0) {
-      const observed = checkouts
-        .map((checkout) => `${checkout.source} → ${checkout.root}`)
-        .join(" · ");
-      lines.push(`checkout que validará (observación local de esta corrida): ${observed}`);
-      lines.push(
-        "esa raíz es de este host; la regla portátil que la eligió está en 'aw flow --help', y 'aw flow prove' captura y prevalida la prueba contra ella",
-      );
-    }
-    lines.push(`si vuelve fallida o parcial: ${directive.action.recovery}`);
-  }
-  const preview = directive.decision_preview;
-  if (preview !== null) {
-    lines.push(`vista previa de decisión: ${preview.baseline.path} @ ${preview.baseline.digest}`);
-    lines.push(
-      `cambios efectivos: ${preview.effective_change.map((change) => change.assertion).join(", ") || "ninguno"}`,
-    );
-    lines.push(`consumidores: ${preview.consumers.join(", ") || "ninguno"}`);
-    lines.push(
-      `impacto: ${preview.impact.scope} · ${preview.impact.assertions} assertion(es) · ${preview.impact.consumers} consumidor(es)`,
-    );
-    lines.push(
-      `evidencia: conserva ${preview.evidence.preserved.join(", ") || "ninguna"}; invalida ${preview.evidence.invalidated.join(", ") || "ninguna"}`,
-    );
-    // Normalized here because a preview persisted before classes existed holds
-    // bare strings, and the reading that gives them their class is the domain's,
-    // not a second one invented at the edge that prints.
-    const obligations = normalizeObligations(preview.obligations) ?? preview.obligations;
-    lines.push(
-      `obligaciones: ${
-        obligations
-          .map(
-            (obligation) =>
-              `${obligation.text} [${obligation.kind === "handoff" ? "traspaso" : "compensación"}]`,
-          )
-          .join(", ") || "ninguna"
-      }`,
-    );
-    lines.push(`reanudación: ${preview.resume_point}`);
-    lines.push(
-      `efectos de decisión: ${preview.effects.classes.join(", ") || "ninguno"} · ${preview.effects.entries.map((entry) => entry.path).join(", ")}`,
-    );
-    lines.push(`sello del preview: ${preview.proposal.digest}`);
-  }
-  for (const choice of directive.choices) {
-    lines.push(
-      `${choice.recommended ? "· (recomendada) " : "· "}${choice.label} — ${choice.consequence}`,
-    );
-  }
-  return lines;
-}
-
-const ROUTE_DISPOSITION_LABELS = {
-  apply: "Realizar",
-  omit: "Omitir",
-  substitute: "Sustituir",
-} as const;
-
-function routeDispositionLabel(disposition: keyof typeof ROUTE_DISPOSITION_LABELS): string {
-  return ROUTE_DISPOSITION_LABELS[disposition];
-}
-
-function effectLines(directive: FlowDirective): string[] {
-  const lines: string[] = [];
-  lines.push(`estado de evidencia: ${ASSURANCE_LABELS[directive.route.assurance]}`);
-  if (directive.authorizations.length > 0) {
-    lines.push(`efectos permitidos: ${directive.authorizations.join(", ")}`);
-  }
-  if (directive.effects.applied.length > 0) {
-    lines.push(`efectos aplicados: ${directive.effects.applied.join(", ")}`);
-  }
-  for (const degradation of directive.degradations) {
-    lines.push(`degradación (${degradation.cause}): ${degradation.loss}`);
-  }
-  if (directive.error !== null) {
-    lines.push(`error ${directive.error.code}: ${directive.error.message}`);
-  }
-  if (directive.attempt_accounting !== null) {
-    const count = directive.attempt_accounting;
-    lines.push(
-      `intentos: ${count.spent} de ${MAX_BOUNDARY_ATTEMPTS} gastados · ${count.available} disponibles`,
-    );
-  }
-  return lines;
-}
-
-const ASSURANCE_LABELS: Readonly<Record<AssuranceStatus, string>> = {
-  verified: "verificada",
-  partially_verified: "verificación parcial",
-  unverified_accepted: "no verificada, aceptada explícitamente",
-};

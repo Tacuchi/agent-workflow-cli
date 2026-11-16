@@ -1,4 +1,3 @@
-import type { SessionResolutionError } from "../application/session-resolver.js";
 import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
 import type { CliError, CommandResult } from "../domain/types.js";
 import { toAscii } from "./ascii.js";
@@ -31,23 +30,8 @@ export function fail<T = never>(
 }
 
 /**
- * Canonical envelope for a failed session resolution: the stable `code`, the
- * human message, and — in `data` — the relevant candidates plus one valid next
- * action. Every session-scoped command reports the failure this way, so the
- * shape never depends on which command hit it.
- */
-export function failSessionResolution(error: SessionResolutionError): CommandResult {
-  return fail(error.code, error.message, {
-    candidates: error.candidates,
-    action: error.action,
-    ...(error.choose === undefined ? {} : { choose: error.choose }),
-  });
-}
-
-/**
  * Canonical failure of a hybrid operation: the stable code, the message, and
- * the next valid action in `data` — the same shape `failSessionResolution`
- * established, so every command's errors read the same way.
+ * the next valid action in `data`, so every command's errors read the same way.
  *
  * The single cast lives here on purpose. On the failure path `data` carries the
  * next action, never the command's success payload, and `renderHumanError`
@@ -76,7 +60,7 @@ export function renderRaw(payload: unknown): string {
  * next valid action when the command supplied one.
  *
  * It reads `action` out of the SAME `data` the JSON envelope carries (the shape
- * `failSessionResolution` already produces), so the two projections cannot
+ * `failSemantic` produces), so the two projections cannot
  * disagree about what to do next. The exit code is decided elsewhere and is
  * untouched by which projection printed.
  */

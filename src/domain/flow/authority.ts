@@ -23,10 +23,7 @@
  * compile error instead of a silent return to a document.
  */
 
-import {
-  AGENT_WORKFLOW_FLOWS,
-  type AgentWorkflowFlow,
-} from "../../application/capability/compose.js";
+import type { AgentWorkflowFlow } from "../../application/capability/compose.js";
 import type { EffectClass } from "../capability/effects.js";
 import { DEFAULT_CORE_DOCS_CANON } from "../docs-canon.js";
 import { type CheckoutIdentity, SOURCE_BOUNDED_EVIDENCE } from "../source-boundary.js";
@@ -351,26 +348,9 @@ export function publishApprovalOf(decision: FlowDecision): string | null {
   return decision.publishes?.approve ?? null;
 }
 
-/** The redraft alternative of a confirmation row and where it re-enters, or `null`. */
-export function reentryOf(decision: FlowDecision): { label: string; from: string } | null {
-  return decision.reenters ?? null;
-}
-
-/** Whether this row's answer is what fixes the run's plan and its sources. */
-export function scopesSources(decision: FlowDecision): boolean {
-  return decision.scopes_sources === true;
-}
-
 /** Whose books this row's effects write: the run's own, or nobody's to assume. */
 export function custodyOf(decision: FlowDecision): "run" | null {
   return decision.custody ?? null;
-}
-
-/** The effect grant a human row's approve label carries, or `null`. */
-export function approvalGrantOf(
-  decision: FlowDecision,
-): { approve: string; transition: string } | null {
-  return decision.authorizes ?? null;
 }
 
 /** A decision computes a verdict; writing is the exception that declares itself. */
@@ -477,78 +457,6 @@ export const SETTLEMENT_READINGS = [
       "se conserva como compensación y el plan no cierra: el recorrido queda en esta frontera",
   },
 ] as const;
-
-export type SettlementReading = (typeof SETTLEMENT_READINGS)[number]["outcome"];
-
-export const INTERNAL_ACTION_OPERATIONS = [
-  /** Project the hub board — what `aw status --json` returns. */
-  "workspace.board",
-  /** Read, and where the command seeds them, a session's own artifacts. */
-  "session.artifacts",
-  /** Close the session and upsert its HISTORY row. */
-  "session.close",
-  /** Obtain the run's isolation unit on every source its scope declares. */
-  "worktree.ensure",
-  /** Write the run's approved proposal, all of it or none of it. */
-  "proposal.publish",
-  /** Seal the next plan-execution batch before any of its work is credited. */
-  "plan-exec.batch-infer",
-  "plan-exec.batch-commit",
-  /** Close one sealed plan-execution batch through the document/state CAS. */
-  "plan-exec.batch-close",
-  /** Seal a fully evidenced PLAN-exec document as done. */
-  "plan-exec.plan-done",
-  /** Publish the successor note that settles what the closure just discharged. */
-  "plan-exec.settlement-publish",
-  /** Derive the answer of a boundary the CLI answers itself; see {@link CliAnswer}. */
-  "cli-answer",
-] as const;
-
-export type InternalActionOperation = (typeof INTERNAL_ACTION_OPERATIONS)[number];
-
-/**
- * The effect classes each internal operation can really apply.
- *
- * Read by the guard, not by the runtime: at runtime the executor reports what it
- * ACTUALLY applied and the same `executionVerdict` that judges an external result
- * refuses anything short of the row's declared effects. This table is what makes
- * the mismatch a failing test instead of a run that discovers it — a row declaring
- * `mutate_overwrite` while its operation only reads can never be satisfied, and
- * finding that out at the boundary is finding it out too late.
- */
-export const INTERNAL_OPERATION_EFFECTS: Readonly<
-  Record<InternalActionOperation, readonly EffectClass[]>
-> = {
-  "workspace.board": ["read_only"],
-  "session.artifacts": ["read_only", "local_additive"],
-  "session.close": ["read_only", "local_additive", "mutate_overwrite"],
-  // A unit is a new working tree on a new branch, inside the run's own namespace:
-  // it replaces nothing and it destroys nothing. That the CLI reaches git to make
-  // it is not what the class measures — `hub.board` already reads git the
-  // same way and is `read_only`.
-  "worktree.ensure": ["local_additive", "mutate_overwrite"],
-  // Creating and replacing, both real — and which of the two happens is decided
-  // by the proposal, not by the row: what the row declares here is the ceiling.
-  "proposal.publish": ["local_additive", "mutate_overwrite"],
-  // Inference writes only the run's sealed ledger. It changes no project
-  // artifact and therefore has no capability-world effect to authorize.
-  "plan-exec.batch-infer": [],
-  "plan-exec.batch-commit": ["execute", "local_additive"],
-  // Batch progress always rewrites the current plan document, but only from the
-  // exact before/after pair persisted in its v10 batch state.
-  "plan-exec.batch-close": ["mutate_overwrite"],
-  // The final seal is a deterministic rewrite, guarded by the completed batch,
-  // final validation, commit and integration evidence already in the run.
-  "plan-exec.plan-done": ["mutate_overwrite"],
-  // Only overwriting, and that is not a narrowing of convenience: a settlement
-  // supersedes a note, so the chain it joins NECESSARILY exists. Declaring the
-  // creation class as well would make the verdict demand an effect this
-  // operation can never exercise, and every publication would refuse itself.
-  "plan-exec.settlement-publish": ["mutate_overwrite"],
-  // It only derives an answer; the effects of that answer are the row's own and
-  // are credited, as always, by the submit that judges it.
-  "cli-answer": [],
-};
 
 /**
  * Who materializes a delegated action: this CLI, or whoever called it.
@@ -764,16 +672,6 @@ export type RunPlacement = (typeof RUN_PLACEMENTS)[number];
 export type Realization =
   | { kind: "engine"; module: string; symbol: string }
   | { kind: "transitions"; ids: readonly string[] };
-
-/** How this row is observable when no run walks it, or `null` when one does. */
-export function realizationOf(decision: FlowDecision): Realization | null {
-  return decision.realized_by ?? null;
-}
-
-/** Where this row sits in a flow's journey, or `null` when it is the flow's own. */
-export function placementOf(decision: FlowDecision): RunPlacement | null {
-  return decision.placement ?? null;
-}
 
 /**
  * A public command with no journey decision of its own, and why.
@@ -4098,12 +3996,6 @@ export function occurrenceIndex(
   return -1;
 }
 
-/** Which walk of its id the row at `index` is, counting from 1. */
-export function occurrenceAt(rows: readonly FlowDecision[], index: number): number {
-  const id = rows[index]?.id;
-  return rows.slice(0, index + 1).filter((row) => row.id === id).length;
-}
-
 function insertRedraft(
   journey: ExpandedJourney,
   base: readonly FlowDecision[],
@@ -4218,18 +4110,6 @@ export const DOCS_BOUNDARY: Readonly<Record<AgentWorkflowFlow, readonly string[]
   "plan-refine": [PLAN_DOCS_DIR],
   "plan-exec": [PLAN_DOCS_DIR],
 };
-
-/** The flow a scope names, or null for the chassis and for command scopes. */
-export function flowOfScope(scope: DecisionScope): AgentWorkflowFlow | null {
-  return (AGENT_WORKFLOW_FLOWS as readonly string[]).includes(scope)
-    ? (scope as AgentWorkflowFlow)
-    : null;
-}
-
-/** The command a scope names, or null when the scope is a flow or the chassis. */
-export function commandOfScope(scope: DecisionScope): string | null {
-  return scope.startsWith(COMMAND_SCOPE_PREFIX) ? scope.slice(COMMAND_SCOPE_PREFIX.length) : null;
-}
 
 /**
  * The migration tranche a flow belongs to — DERIVED, never stored next to the

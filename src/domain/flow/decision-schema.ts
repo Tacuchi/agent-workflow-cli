@@ -20,35 +20,6 @@ export const SETTLEMENT_DECISION = {
     "{note: string, index: number, outcome: settled|handoff|pending, evidence?: string}[]",
 } as const;
 
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function sourceList(value: unknown): value is unknown[] {
-  return Array.isArray(value);
-}
-
-export function routeShape(value: unknown): value is {
-  summary: Record<string, unknown>;
-  basis: Record<string, unknown>;
-  controls: unknown[];
-} {
-  return (
-    record(value) && record(value.summary) && record(value.basis) && Array.isArray(value.controls)
-  );
-}
-
-export function noteDraftShape(value: unknown): value is {
-  question: unknown;
-  draft: Record<string, unknown>;
-} {
-  return record(value) && record(value.draft);
-}
-
-export function settlementList(value: unknown): value is unknown[] {
-  return Array.isArray(value);
-}
-
 export function decisionFieldsFor(transition: string | null): Record<string, string> {
   switch (transition) {
     case "plan-exec.source-scope":

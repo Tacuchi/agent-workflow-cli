@@ -52,7 +52,7 @@ export const CUSTODY_FILE = ".custody.json";
 export interface CustodyBaseline {
   /** `false` = the path did not exist; a restore DELETES it back to absence. */
   existed: boolean;
-  /** Digest of the previous bytes, always via {@link baselineDigest}. */
+  /** Digest of the previous bytes. */
   digest: string | null;
   bytes: number | null;
   /** The previous text when it is preserved here; `null` when git owns it. */
@@ -158,27 +158,6 @@ export interface SessionCustody {
   effects: CustodyEffect[];
   /** The seal over everything above. */
   digest: string;
-}
-
-/** The one way to digest a baseline's bytes, shared with the proposal's bases. */
-export const baselineDigest = baseDigest;
-
-/** A baseline for a path that was not there. Explicit, never an absent field. */
-export const ABSENT_BASELINE: CustodyBaseline = {
-  existed: false,
-  digest: null,
-  bytes: null,
-  content: null,
-};
-
-/** A baseline that preserves the previous text, for what only we can restore. */
-export function preservedBaseline(content: string): CustodyBaseline {
-  return {
-    existed: true,
-    digest: baselineDigest(content),
-    bytes: Buffer.byteLength(content, "utf8"),
-    content,
-  };
 }
 
 export interface SealCustodyInput {
@@ -311,24 +290,4 @@ export function custodyCompleteness(custody: SessionCustody): CustodyCompletenes
 function stripDigest(custody: SessionCustody): Omit<SessionCustody, "digest"> {
   const { digest: _digest, ...body } = custody;
   return body;
-}
-
-/**
- * Every commit this session can prove is its own, per source.
- *
- * Two independent readings, and both are receipts rather than heuristics: the
- * commits a typed commit reported making, and — for a session with its own unit
- * — the range its branch advanced over its recorded baseline. The second is what
- * covers commits the agent made with plain git inside its unit: the branch is
- * the session's by convention and the baseline is sealed, so the range is
- * exclusive by construction and needs nobody's commit message.
- */
-export function attributableCommits(custody: SessionCustody, alias: string): string[] {
-  const seen = new Set<string>();
-  for (const effect of custody.effects) {
-    if (effect.kind !== "commit" && effect.kind !== "unit_integrated") continue;
-    if (effect.alias !== alias || effect.after === null) continue;
-    seen.add(effect.after);
-  }
-  return [...seen];
 }

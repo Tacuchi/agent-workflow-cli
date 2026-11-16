@@ -3,34 +3,19 @@
  *
  * The generic decision primitives deliberately know nothing about a flow. This
  * bridge gives them the one thing they must never accept from a human payload:
- * the live spec/plan lineage and its current digests. It also asks
- * `resolveDecision` before preparing a note, so a fact or an already-effective
- * note does not become a fresh preference merely because the gate was reached.
+ * the live spec/plan lineage and its current digests.
  */
 
 import { basename, join } from "node:path";
 import type { CapabilityFailure } from "../domain/capability/protocol.js";
-import { type DecisionQuestion, resolveDecision } from "../domain/decision-choice.js";
-import {
-  type DecisionNote,
-  NOTE_AUTHOR_FIELDS,
-  NOTE_SCHEMA,
-  type ObligationKind,
-} from "../domain/decision-note.js";
+import type { DecisionNote, ObligationKind } from "../domain/decision-note.js";
 import { type BaselineInput, composeEffectiveContract } from "../domain/effective-contract.js";
-import { noteDraftShape } from "../domain/flow/decision-schema.js";
-import type { FlowDecisionPreparation } from "../domain/flow/run-state.js";
 import { legacySpecBaselineDigest, specBaselineDigest } from "../domain/lineage.js";
-import { baseDigest } from "../domain/proposal.js";
 import { type PlanReconciliation, reconciliationOf } from "../domain/reconciliation.js";
 import { type ObligationSettlement, deriveSettlementNote } from "../domain/settlement.js";
 import type { FileSystemPort } from "../ports/file-system.js";
 import { noteIndexPath, readNoteIndex } from "./decision-note-service.js";
-import {
-  type PreparedDecision,
-  commitDecision,
-  prepareDecision,
-} from "./decision-registration-service.js";
+import { commitDecision, prepareDecision } from "./decision-registration-service.js";
 import { DEFAULT_DOCS_CANON } from "./docs-canon-service.js";
 import { functionalSpecDigest } from "./parsers/spec-functional.js";
 import {
@@ -39,304 +24,6 @@ import {
   parseSpecRelation,
 } from "./parsers/spec-relation.js";
 import type { PathsService } from "./paths-service.js";
-
-/** The only human-supplied portion of the durable decision gate. */
-export interface PlanExecDecisionAnswer {
-  question: DecisionQuestion;
-  /** The author's fields; schema, date, id, digest and lineage are derived here. */
-  draft: Omit<DecisionNote, "id" | "digest" | "lineage">;
-}
-
-export type PlanExecDecisionPreparation =
-  | { ok: true; kind: "settled"; decision: string; warnings?: string[] }
-  | {
-      ok: true;
-      kind: "reused";
-      note: string;
-      decision: string;
-      resume_point: string;
-      warnings?: string[];
-    }
-  | {
-      ok: true;
-      kind: "prepared";
-      prepared: PreparedDecision;
-      baseline: BaselineInput;
-      indexPath: string;
-      warnings?: string[];
-    }
-  | { ok: false; failure: CapabilityFailure };
-
-export type PlanExecDecisionCommit =
-  | { ok: true; kind: "settled" | "reused"; note?: string; resume_point?: string }
-  /**
-   * A standalone plan's decision: registered, and durable NOWHERE here.
-   *
-   * There is no `docs/decisions/` index for a plan without a spec — the chain is
-   * keyed by the spec's number and slug — so writing one would mint a note under
-   * a lineage nobody declared. What comes back is the record itself, for the run's
-   * trace and for the session's `DECISION.md`.
-   */
-  | { ok: true; kind: "standalone"; decision: string; resume_point: string }
-  | {
-      ok: true;
-      kind: "committed";
-      note: DecisionNote;
-      resume_point: string;
-      written: string[];
-      already_applied: boolean;
-      reconciliation: PlanReconciliation;
-    }
-  | { ok: false; failure: CapabilityFailure };
-
-export interface PreparePlanExecDecisionInput {
-  root: string;
-  session: string;
-  /** Fixed plan scope of the active plan-exec run. */
-  plan: string;
-  /** `decisions.decision` from the selected gate answer. */
-  value: unknown;
-  /** Date already fixed in this run; direct callers may omit it. */
-  date?: string;
-}
-
-/**
- * Resolve fact/preference/reuse and, only for a real preference, build the
- * complete preview that `commitDecision` later publishes verbatim.
- */
-export async function preparePlanExecDecision(
-  fs: FileSystemPort,
-  input: PreparePlanExecDecisionInput,
-): Promise<PlanExecDecisionPreparation> {
-  const answer = parseAnswer(input.value, input.date ?? new Date().toISOString().slice(0, 10));
-  if (!answer.ok) return answer;
-  const read = await readLineage(fs, input);
-  if (!read.ok) return read;
-  const lineage = read.value;
-
-  const chain = await readNoteIndex(fs, input.root, lineage.indexPath, {
-    path: lineage.baseline.path,
-    number: lineage.baseline.number,
-  });
-  if (!chain.ok) return noteFailure(chain.failures[0]);
-  const composed = composeEffectiveContract(lineage.baseline, chain.read.index.notes);
-  if (composed.status === "blocked") return noteFailure(composed.failures[0]);
-
-  const resolution = resolveDecision(
-    answer.value.question,
-    composed.contract,
-    chain.read.index.notes,
-  );
-  switch (resolution.kind) {
-    case "settled":
-      return {
-        ok: true,
-        kind: "settled",
-        decision: resolution.behavior.summary,
-        warnings: answer.warnings,
-      };
-    case "reused": {
-      const note = chain.read.index.notes.find((entry) => entry.id === resolution.note);
-      return {
-        ok: true,
-        kind: "reused",
-        note: resolution.note,
-        decision: resolution.decision,
-        resume_point: note?.resume_point ?? "",
-        warnings: answer.warnings,
-      };
-    }
-    case "unresolvable":
-      return {
-        ok: false,
-        failure: {
-          code: "FLOW_DECISION_UNRESOLVABLE",
-          message: resolution.why,
-          action: resolution.action,
-        },
-      };
-    case "ask": {
-      const prepared = await prepareDecision(fs, {
-        root: input.root,
-        operation: "plan-exec.decision-registration",
-        indexPath: lineage.indexPath,
-        baseline: lineage.baseline,
-        draft: {
-          ...answer.value.draft,
-          lineage: {
-            spec: {
-              path: lineage.baseline.path,
-              number: lineage.baseline.number,
-              digest: lineage.baseline.digest,
-            },
-            plan: {
-              path: input.plan,
-              number: lineage.planNumber,
-              digest: `sha256:${baseDigest(lineage.planText)}`,
-            },
-            execution: { session: input.session, phase: phaseOf(answer.value.draft.resume_point) },
-          },
-        },
-      });
-      if (prepared.status === "prepared") {
-        return {
-          ok: true,
-          kind: "prepared",
-          prepared: prepared.prepared,
-          baseline: lineage.baseline,
-          indexPath: lineage.indexPath,
-          warnings: answer.warnings,
-        };
-      }
-      if (prepared.status === "already") {
-        return {
-          ok: true,
-          kind: "reused",
-          note: prepared.note.id,
-          decision: prepared.note.decision,
-          resume_point: prepared.resume_point,
-          warnings: answer.warnings,
-        };
-      }
-      return noteFailures(prepared.failures);
-    }
-  }
-}
-
-/** Commit precisely the preview the selected gate already prepared; never re-preview. */
-export async function commitPlanExecDecision(
-  fs: FileSystemPort,
-  paths: PathsService,
-  root: string,
-  prepared: PlanExecDecisionPreparation,
-  planText: string | undefined,
-): Promise<PlanExecDecisionCommit> {
-  if (!prepared.ok) return prepared;
-  if (prepared.kind === "settled") return { ok: true, kind: "settled" };
-  if (prepared.kind === "reused") {
-    return { ok: true, kind: "reused", note: prepared.note, resume_point: prepared.resume_point };
-  }
-  const committed = await commitDecision(fs, paths, root, prepared.prepared);
-  if (!committed.ok) return { ok: false, failure: committed.failure };
-  const chain = await readNoteIndex(fs, root, prepared.indexPath, {
-    path: prepared.baseline.path,
-    number: prepared.baseline.number,
-  });
-  if (!chain.ok) return noteFailure(chain.failures[0]);
-  const composed = composeEffectiveContract(
-    await withLegacyDigest(fs, root, prepared.baseline),
-    chain.read.index.notes,
-  );
-  if (composed.status === "blocked") return noteFailure(composed.failures[0]);
-  return {
-    ok: true,
-    kind: "committed",
-    note: committed.result.note,
-    resume_point: committed.result.resume_point,
-    written: committed.result.written,
-    already_applied: committed.result.already_applied,
-    reconciliation: reconciliationOf(composed.contract, chain.read.index.notes, planText),
-  };
-}
-
-/**
- * Commit the preparation the run persisted before its human gate.
- *
- * There is deliberately no call to `preparePlanExecDecision` here: the stored
- * proposal is the exact full view the choice authorized. Re-preparing after the
- * choice would turn a moved baseline into an invisible different preview.
- */
-export async function commitStoredPlanExecDecision(
-  fs: FileSystemPort,
-  paths: PathsService,
-  root: string,
-  preparation: FlowDecisionPreparation,
-  /** The plan THIS RUN fixed as its scope — the same one the board reads. */
-  plan: string | undefined,
-): Promise<PlanExecDecisionCommit> {
-  // Nothing durable to commit, and nothing to re-read: the standalone record IS
-  // what the gate showed. It returns before `commitDecision` on purpose — a note
-  // written here would be a decision about a contract that does not exist.
-  if (preparation.kind === "standalone") {
-    return {
-      ok: true,
-      kind: "standalone",
-      decision: preparation.decision,
-      resume_point: preparation.resume_point,
-    };
-  }
-  if (preparation.kind === "settled") return { ok: true, kind: "settled" };
-  if (preparation.kind === "reused") {
-    return {
-      ok: true,
-      kind: "reused",
-      note: preparation.note,
-      resume_point: preparation.resume_point,
-    };
-  }
-  // The plan is read again here, and only to classify legacy obligations: an
-  // undeclared one reads as a handoff exactly when this plan enumerates that
-  // work. It is read at the path the RUN declared, which is the path the board
-  // reads too — the note's pinned path may have moved since, and two paths would
-  // be two classifications of one obligation. Failing to read it degrades to the
-  // safe reading, never to a guess.
-  let planText: string | undefined;
-  try {
-    planText = plan === undefined ? undefined : await fs.readText(join(root, plan));
-  } catch {
-    planText = undefined;
-  }
-  return commitPlanExecDecision(
-    fs,
-    paths,
-    root,
-    {
-      ok: true,
-      kind: "prepared",
-      prepared: {
-        note: preparation.note,
-        preview: preparation.preview,
-        indexPath: preparation.index_path,
-      },
-      baseline: preparation.baseline,
-      indexPath: preparation.index_path,
-    },
-    planText,
-  );
-}
-
-/**
- * The baseline with the spec's exact-bytes digest alongside its functional one.
- *
- * Needed because the baseline a run PERSISTED before its human gate carries only
- * the functional digest (that is the durable shape, and widening it would change
- * a format for a value that is a pure function of the spec as it reads now). Re-
- * deriving it here is not a re-preview: `digest` and `criteria` are used exactly
- * as they were authorized, and only the tolerance for a note pinned before the
- * functional payload existed is restored — without it, `commitDecision` would
- * WRITE the note and only then refuse to compose the chain it just joined.
- *
- * An unreadable spec degrades to the baseline as given: the composition below
- * then refuses on its own terms, which is the same answer, one step later.
- */
-async function withLegacyDigest(
-  fs: FileSystemPort,
-  root: string,
-  baseline: BaselineInput,
-): Promise<BaselineInput> {
-  if (baseline.legacy_digest !== undefined && baseline.legacy_eol_digest !== undefined)
-    return baseline;
-  try {
-    const specText = await fs.readText(join(root, baseline.path));
-    return {
-      ...baseline,
-      legacy_digest: specBaselineDigest(specText),
-      legacy_eol_digest: legacySpecBaselineDigest(specText),
-    };
-  } catch {
-    return baseline;
-  }
-}
 
 interface DecisionLineage {
   baseline: BaselineInput;
@@ -427,115 +114,12 @@ export async function readLineage(
   };
 }
 
-function parseAnswer(
-  value: unknown,
-  date: string,
-):
-  | { ok: true; value: PlanExecDecisionAnswer; warnings: string[] }
-  | { ok: false; failure: CapabilityFailure } {
-  if (!noteDraftShape(value) || !isQuestion(value.question)) {
-    return fail(
-      "FLOW_DECISION_INPUT_INVALID",
-      `decisions.decision espera {question: {assertions: string[], behaviors: object[]}, draft: object}; recibió ${!isRecord(value) ? typeof value : !isQuestion(value.question) ? `question: ${typeof value.question}` : `draft: ${typeof value.draft}`}`,
-      "devolvé la pregunta que queda abierta y todos los campos de la nota; el CLI deriva id, digests y lineage",
-    );
-  }
-  const accepted = new Set([
-    ...Object.keys(NOTE_AUTHOR_FIELDS),
-    "schema",
-    "date",
-    "id",
-    "digest",
-    "lineage",
-  ]);
-  const unknown = Object.keys(value.draft).filter((key) => !accepted.has(key));
-  const rawDraft = Object.fromEntries(
-    Object.entries(value.draft).filter(([key]) => Object.hasOwn(NOTE_AUTHOR_FIELDS, key)),
-  );
-  return {
-    ok: true,
-    warnings: unknown.map(
-      (field) => `se descartó decisions.decision.draft.${field}: campo desconocido`,
-    ),
-    value: {
-      question: value.question,
-      draft: {
-        ...rawDraft,
-        schema: NOTE_SCHEMA,
-        date: value.draft.date === undefined ? date : value.draft.date,
-      } as Omit<DecisionNote, "id" | "digest" | "lineage">,
-    },
-  };
-}
-
-function noteFailures(failures: readonly { code: string; message: string; action: string }[]): {
-  ok: false;
-  failure: CapabilityFailure;
-} {
-  const first = failures[0];
-  if (first === undefined) return noteFailure(undefined);
-  return {
-    ok: false,
-    failure: {
-      ...first,
-      violations: failures.map((failure) => {
-        const field = /'([a-z_]+)'/.exec(failure.message)?.[1] ?? "draft";
-        return {
-          code: failure.code,
-          field: `decisions.decision.draft.${field}`,
-          expected:
-            NOTE_AUTHOR_FIELDS[field as keyof typeof NOTE_AUTHOR_FIELDS] ?? "campo del autor",
-          received: "ausente o inválido",
-          message: failure.message,
-        };
-      }),
-    },
-  };
-}
-
-function isQuestion(value: unknown): value is DecisionQuestion {
-  if (!isRecord(value) || !isStringList(value.assertions) || !Array.isArray(value.behaviors))
-    return false;
-  if (value.assertions.length === 0 || new Set(value.assertions).size !== value.assertions.length)
-    return false;
-  const keys = new Set<string>();
-  return value.behaviors.every((behavior) => {
-    if (
-      !isRecord(behavior) ||
-      typeof behavior.key !== "string" ||
-      typeof behavior.summary !== "string"
-    ) {
-      return false;
-    }
-    if (
-      behavior.key.trim().length === 0 ||
-      behavior.summary.trim().length === 0 ||
-      keys.has(behavior.key)
-    ) {
-      return false;
-    }
-    keys.add(behavior.key);
-    return true;
-  });
-}
-
-function isStringList(value: unknown): value is string[] {
-  return (
-    Array.isArray(value) &&
-    value.every((entry) => typeof entry === "string" && entry.trim().length > 0)
-  );
-}
-
 function specSlug(path: string, number: string): string | null {
   const prefix = `${number}-spec-`;
   const file = basename(path);
   if (!file.startsWith(prefix) || !file.endsWith(".md")) return null;
   const slug = file.slice(prefix.length, -".md".length);
   return slug.length > 0 ? slug : null;
-}
-
-function phaseOf(resumePoint: string): string {
-  return /^F\d+/.exec(resumePoint)?.[0] ?? "F?";
 }
 
 function noteFailure(failure: { code: string; message: string; action: string } | undefined): {
@@ -557,10 +141,6 @@ function fail(
   action: string,
 ): { ok: false; failure: CapabilityFailure } {
   return { ok: false, failure: { code, message, action } };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

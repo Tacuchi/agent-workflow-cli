@@ -325,52 +325,6 @@ export function claimOfDocsPath(path: string, owner: string): ClaimIdentity | nu
 }
 
 /**
- * Which claims of this owner a publication just completed.
- *
- * The whole decision of "did this write finish a reservation of mine?" lives
- * here rather than at the publication site, and getting it wrong is durable in
- * both directions:
- *
- * - **Under-crediting** leaves a claim open about a correlative that is holding a
- *   published document, which invites a later recovery to release live bytes.
- *   That is why `already_applied` is handled here: the re-entry that finds the
- *   document already on disk reports `written: []`, and crediting only `written`
- *   left the claim open FOREVER — every retry answers the same way, so nothing
- *   could ever correct it. When the apply says already-applied, every destination
- *   holds exactly the proposed bytes, so the destinations are the candidates.
- * - **Over-crediting** writes a permanent "spent forever" fence on a correlative
- *   the session never reserved. So a candidate only counts when it closes one of
- *   THIS owner's open claims, read from the ledger — not from the shape of
- *   whatever proposal happened to carry the write. Every flow's publication goes
- *   through this same path, not only the one whose single artifact is its own slot.
- *
- * Both directions had a surviving mutant when this logic sat inlined at the call
- * site, which is the other reason it is here: it is testable in isolation.
- */
-export function completedClaimsIn(
-  events: readonly ClaimEvent[],
-  owner: string,
-  publication: {
-    written: readonly string[];
-    already_applied: boolean;
-    destinations: readonly string[];
-  },
-): ClaimIdentity[] {
-  const candidates = publication.already_applied ? publication.destinations : publication.written;
-  if (candidates.length === 0) return [];
-  const open = new Set(openClaimsOf(events, owner).map((claim) => claimKey(claim)));
-  if (open.size === 0) return [];
-  const completed: ClaimIdentity[] = [];
-  for (const path of candidates) {
-    const claim = claimOfDocsPath(path, owner);
-    if (claim === null || !open.has(claimKey(claim))) continue;
-    if (!completed.some((existing) => claimKey(existing) === claimKey(claim)))
-      completed.push(claim);
-  }
-  return completed;
-}
-
-/**
  * Every claim this ledger has ever revoked.
  *
  * Membership is permanent by construction: one `revoked` record fences the claim
@@ -390,50 +344,6 @@ function revokedKeys(events: readonly ClaimEvent[]): Set<string> {
 /** Whether this exact claim is fenced. */
 export function isRevoked(events: readonly ClaimEvent[], claim: ClaimIdentity): boolean {
   return revokedKeys(events).has(claimKey(claim));
-}
-
-/**
- * The destinations of a publication that a revocation forbids.
- *
- * Checked at the publication point rather than at the release: once a recovery
- * has freed a correlative, the slot no longer exists on disk, so a late sealed
- * proposal would read its destination as a plain creation and land a document on
- * a number that may already belong to somebody else. The fence is the only thing
- * standing between "the reservation was recovered" and "two documents share a
- * correlative".
- */
-export function revokedAmong(
-  events: readonly ClaimEvent[],
-  owner: string,
-  destinations: readonly string[],
-): ClaimIdentity[] {
-  const revoked = revokedKeys(events);
-  if (revoked.size === 0) return [];
-  const blocked: ClaimIdentity[] = [];
-  for (const path of destinations) {
-    const claim = claimOfDocsPath(path, owner);
-    if (claim === null || !revoked.has(claimKey(claim))) continue;
-    blocked.push(claim);
-  }
-  return blocked;
-}
-
-/**
- * Destinations that look like a numbered document of this owner's category space.
- *
- * Used only to scope the fail-closed: a ledger with unreadable lines cannot prove
- * the ABSENCE of a revocation, so a publication that could be completing a
- * reservation must refuse rather than guess. A write that is not a numbered
- * document in a category cannot be a reservation, so it is never held up by a
- * ledger it does not depend on.
- */
-export function claimShapedAmong(owner: string, destinations: readonly string[]): ClaimIdentity[] {
-  const shaped: ClaimIdentity[] = [];
-  for (const path of destinations) {
-    const claim = claimOfDocsPath(path, owner);
-    if (claim !== null) shaped.push(claim);
-  }
-  return shaped;
 }
 
 /** A slot's identity without its owner: what a file on disk can be matched by. */

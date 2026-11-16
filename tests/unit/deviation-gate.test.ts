@@ -20,12 +20,8 @@ import {
   actionOf,
   journeyOfFlow,
 } from "../../src/domain/flow/authority.js";
-import {
-  type FlowRunState,
-  applyTransition,
-  newRunState,
-  withObservation,
-} from "../../src/domain/flow/run-state.js";
+import { type FlowRunState, applyTransition } from "../../src/domain/flow/run-state.js";
+import { newRunState, withObservation } from "../helpers/run-state-fixture.js";
 
 const SESSION = "131-desviacion-plan-exec";
 const EXEC = journeyOfFlow("plan-exec");
@@ -127,22 +123,7 @@ describe("F4 — la elegibilidad es cierre, no tamaño", () => {
 });
 
 describe("F4 — dos divergencias en una misma corrida sobreviven las dos", () => {
-  it("la segunda no borra a la primera", () => {
-    const first = withObservation(newRunState("plan-exec", SESSION), {
-      transition: "plan-exec.deviation-recognition",
-      signals: ["plan.deviation-composable"],
-    });
-    const second = withObservation(first, {
-      transition: "plan-exec.deviation-recognition",
-      signals: ["plan.deviation-structural"],
-    });
-    expect(second.observations).toEqual([
-      { transition: "plan-exec.deviation-recognition", signals: ["plan.deviation-composable"] },
-      { transition: "plan-exec.deviation-recognition", signals: ["plan.deviation-structural"] },
-    ]);
-  });
-
-  it("y el gate sigue disparando con las dos declaradas", () => {
+  it("el gate sigue disparando con las dos declaradas", () => {
     let state = upTo("plan-exec.deviation-eligibility");
     state = withObservation(state, {
       transition: "plan-exec.deviation-recognition",
