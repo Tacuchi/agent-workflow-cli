@@ -1,0 +1,255 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Context: agent-workflow-cli",
+    "locale": "en",
+    "output": "docs/architecture/context.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/Tacuchi/agent-workflow-cli.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "496c77c9cf7fe88df5c6596b75a32e0341decf35"
+    }
+  },
+  "components": [
+    {
+      "id": "person",
+      "type": "external",
+      "label": "You",
+      "sublabel": "terminal and TUI",
+      "pos": [
+        40,
+        60
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/cli/tui/run.tsx",
+          "line": 40,
+          "end_line": 55
+        }
+      ],
+      "icon": "person"
+    },
+    {
+      "id": "agent",
+      "type": "external",
+      "label": "Coding agent",
+      "sublabel": "8 supported hosts",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        130,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/domain/harnesses.ts",
+          "line": 368,
+          "end_line": 396
+        }
+      ]
+    },
+    {
+      "id": "aw",
+      "type": "backend",
+      "label": "agent-workflow-cli",
+      "sublabel": "aw \u00b7 agent-workflow",
+      "pos": [
+        330,
+        30
+      ],
+      "size": [
+        260,
+        260
+      ],
+      "sources": [
+        {
+          "path": "package.json",
+          "line": 2,
+          "end_line": 3
+        },
+        {
+          "path": "package.json",
+          "line": 6,
+          "end_line": 9
+        }
+      ]
+    },
+    {
+      "id": "npm",
+      "type": "external",
+      "label": "npm registry",
+      "sublabel": "package updates",
+      "pos": [
+        750,
+        40
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/application/self/update-self.ts",
+          "line": 156,
+          "end_line": 160
+        }
+      ]
+    },
+    {
+      "id": "pg",
+      "type": "external",
+      "label": "PostgreSQL",
+      "sublabel": "read-only queries",
+      "pos": [
+        750,
+        200
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/adapters/postgres-readonly-tools.ts",
+          "line": 163,
+          "end_line": 174
+        }
+      ]
+    },
+    {
+      "id": "remote",
+      "type": "cloud",
+      "label": "Git remote",
+      "sublabel": "per-source branches",
+      "pos": [
+        330,
+        400
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/application/git-flow-service.ts",
+          "line": 380,
+          "end_line": 386
+        }
+      ]
+    },
+    {
+      "id": "herdr",
+      "type": "external",
+      "label": "Herdr",
+      "sublabel": "terminal workspaces",
+      "pos": [
+        490,
+        400
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "sources": [
+        {
+          "path": "src/adapters/herdr-cli.ts",
+          "line": 38,
+          "end_line": 38
+        }
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "person-aw",
+      "from": "person",
+      "to": "aw",
+      "label": "commands and TUI",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "agent-aw",
+      "from": "agent",
+      "to": "aw",
+      "label": "skill, hooks, MCP",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "aw-npm",
+      "from": "aw",
+      "to": "npm",
+      "label": "self update",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "aw-pg",
+      "from": "aw",
+      "to": "pg",
+      "label": "READ ONLY",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "aw-remote",
+      "from": "aw",
+      "to": "remote",
+      "label": "git-flow push",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "aw-herdr",
+      "from": "aw",
+      "to": "herdr",
+      "label": "hubs sync --herdr",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "When each connection happens",
+      "items": [
+        "npm: TUI update check and aw self update",
+        "PostgreSQL: only through aw tool or aw mcp serve-db",
+        "Git remote: only when git-flow promotes a branch",
+        "Herdr: only with hubs sync --herdr"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "What it is not",
+      "items": [
+        "Not an agent: the coding agent does the work",
+        "No telemetry: logs stay on the machine",
+        "It never runs DML or DDL against a database"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Review",
+      "items": [
+        "Version 32.0.0, commit 496c77c",
+        "Reviewed on 2026-11-18"
+      ]
+    }
+  ]
+}
