@@ -41,6 +41,17 @@ Your steps, from a plain terminal outside Herdr and outside any agent host:
 
 Re-verify when a release touches a host, and repeat the host run then — as a suggestion, never a gate: no test depends on the latest run. A host marked **pre-1.0** (Kimi Code, Crush, Oz) can change its surface between its own releases faster than we re-check — Kimi Code ships roughly twice a week — so the table states the version a run actually proved and the date it proved it. It is a claim about that version, not a promise about the next one.
 
+## Where `self install` writes the skill
+
+| Target | Skill folder |
+|---|---|
+| `claude` | `~/.claude/skills/w/` |
+| `codex` | `~/.codex/skills/w/` |
+| `warp` | `~/.warp/skills/w/` |
+| `oz`, `agents` | `~/.agents/skills/w/` |
+| `gemini` | `~/.gemini/config/skills/w/` |
+| `opencode`, `crush`, `kimi` | `~/.opencode/skills/w/`, `~/.config/crush/skills/w/`, `~/.kimi-code/skills/w/` |
+
 ## Retiring a host
 
 Removing a host's key from `InstallTarget` makes TypeScript demand you delete its `TARGET_ROOTS` entry too — and the moment that path is gone, nothing can clean what previous releases installed there. The pattern, modeled on the `crush` root migration:
