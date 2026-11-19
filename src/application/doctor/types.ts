@@ -1,5 +1,4 @@
 import type { CliContext } from "../../cli/types.js";
-import type { EffectClass } from "../../domain/capability/effects.js";
 import type {
   DoctorCategory,
   DoctorCoverage,
@@ -10,19 +9,16 @@ import type {
  * What a provider receives and what it owes back.
  *
  * A provider NEVER re-diagnoses: it calls the application function that already
- * knows how to look — `selfDoctor`, `reportAllHostStates`, `runMcpDoctor`,
- * `runHostDoctor`, `runVisibilityDoctor`, `capabilityReadiness` — and translates
- * its vocabulary into the common model. Keeping that rule in the contract is the
- * point: a second implementation of "is this MCP ours" is how two surfaces of
- * one CLI end up disagreeing about the same file.
+ * knows how to look — `selfDoctor`, `reportAllHostStates`, `runHostDoctor`,
+ * `runVisibilityDoctor`, `capabilityReadiness` — and translates its vocabulary
+ * into the common model. Keeping that rule in the contract is the point: a
+ * second implementation of the same check is how two surfaces of one CLI end
+ * up disagreeing about the same file.
  */
 import type { HarnessId } from "../../domain/harnesses.js";
 import type { HostStateReport } from "../self/host-states.js";
 
-export interface DoctorTargetHost extends DoctorHostView {
-  /** Whether this host takes MCP through a config file this CLI can read. */
-  mcp_host: string | null;
-}
+export type DoctorTargetHost = DoctorHostView;
 
 export interface DoctorProviderInput {
   ctx: CliContext;
@@ -39,17 +35,6 @@ export interface DoctorProviderInput {
   /** The host the run was invoked from — highlighted, never a filter. */
   currentHost: HarnessId | null;
   hubDir: string;
-  /** The native MCP inspection was declined: coverage says `skipped`, not `checked`. */
-  skipNative: boolean;
-  /**
-   * The effect classes this run authorized for VERIFYING, when it asked to verify.
-   *
-   * `undefined` means nobody asked: the cheap read runs and nothing else. An
-   * empty array means verification was asked for with no extra authorization —
-   * the provider then verifies as far as it can locally and SAYS what it could
-   * not do, which is the difference between a degraded check and a silent one.
-   */
-  verifyAuthorization?: readonly EffectClass[];
 }
 
 export interface DoctorProviderOutput {

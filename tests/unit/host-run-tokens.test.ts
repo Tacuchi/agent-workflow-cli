@@ -114,8 +114,10 @@ describe("host-run tokens", () => {
         expect(p.secret, id).toBeNull();
       }
     }
-    // `aw mcp setup` (claude mcp list) runs with the plan env: no token.
-    const setup = plan("claude-code").steps.find((s: { args?: string[] }) => s.args?.[0] === "mcp");
+    // The `aw` setup steps run with the plan env: no token.
+    const setup = plan("claude-code").steps.find(
+      (s: { args?: string[] }) => s.args?.[0] === "self",
+    );
     expect(setup.kind).toBe("aw");
     expect(
       withoutTokens(
@@ -265,7 +267,7 @@ describe("host-run tokens", () => {
   });
 
   it("an extract carrying the token is refused and the matrix never holds it", () => {
-    const mcp = STEPS.filter((st) => st.surface === "mcp");
+    const commands = STEPS.filter((st) => st.surface === "commands");
     const { matrix, extracts } = evidenceOf(
       {
         runId: "r1",
@@ -273,7 +275,7 @@ describe("host-run tokens", () => {
         cli: { version: "28.0.0", revision: "abc" },
         digest: "d",
         catalog: catalogStates(HARNESSES, capabilitiesFor),
-        steps: mcp,
+        steps: commands,
         labels: Object.fromEntries(HARNESSES.map((h) => [h.id, h.label])),
         realHome: "/Users/someone",
         username: "someone",
@@ -283,13 +285,15 @@ describe("host-run tokens", () => {
         {
           id: "claude-code",
           root: "/tmp/r",
-          evidence: { mcp: { toolsListed: true, serverReached: true } },
-          screensBySurface: { mcp: `execute_sql search_objects ${FAKE}` },
+          evidence: { commands: { ran: true, via: "commands-dir" } },
+          screensBySurface: { commands: `Veredicto: salida 0 ${FAKE}` },
         },
       ],
     );
     expect(extracts).toEqual([]);
-    expect(matrix.hosts["claude-code"].cells.mcp.extract_refused).toEqual(["contains a token"]);
+    expect(matrix.hosts["claude-code"].cells.commands.extract_refused).toEqual([
+      "contains a token",
+    ]);
     expect(JSON.stringify(matrix)).not.toContain(distinctivePart(FAKE));
   });
 

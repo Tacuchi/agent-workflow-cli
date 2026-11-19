@@ -152,7 +152,6 @@ describe("selfDetectHosts — cuatro estados observables por host", () => {
         "compaction",
         "hooks",
         "host-memory",
-        "mcp",
         "skills",
         "structured-choice",
         "subagent-dispatch",

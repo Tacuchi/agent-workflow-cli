@@ -72,10 +72,10 @@ export interface HarnessRuntime {
  *
  * The per-host contract below is a statement ABOUT this set: "carried" and
  * "omitted" only mean something against a fixed list. A guard pins it to the
- * template's own keys, so a sixth event added to the bundle cannot leave every
+ * template's own keys, so an event added to the bundle cannot leave every
  * host silently under-declared.
  */
-export const TEMPLATE_HOOK_EVENTS = ["SessionStart", "PreToolUse"] as const;
+export const TEMPLATE_HOOK_EVENTS = ["SessionStart"] as const;
 
 export type TemplateHookEvent = (typeof TEMPLATE_HOOK_EVENTS)[number];
 
@@ -141,8 +141,7 @@ export function hookMechanism(hooks: HarnessHooks): string {
  * Which template events travel to this host and which do not, in one line.
  *
  * Printed next to the hook state because a reader who is only told "supports
- * hooks" assumes parity — and on crush and gemini what travels is the
- * enforcement, never the resumability.
+ * hooks" assumes parity — and on crush and gemini no template event travels.
  */
 export function hookCoverage(hooks: HarnessHooks): string {
   const carried: string[] = [];
@@ -244,35 +243,6 @@ const NO_CURATED_MEMORY: HarnessHostMemory = {
     "the host keeps no curated memory of its own; AGENTS.md and the hub docs are the fallback",
 };
 
-/**
- * La vía MCP: un servidor propio que rinde el selector NATIVO del host pidiéndole
- * la elección por `elicitation`, para los turnos donde la herramienta del host no
- * figura entre las ofrecidas.
- *
- * Es una union discriminada y no un booleano con campos sueltos, y ésa es la
- * garantía: declarar la vía disponible SIN evidencia fechada no compila. `AC-10`
- * exige que ningún host afirme la capacidad sin haberla observado, y un guard que
- * lo revise después es una regla que alguien puede olvidar — el tipo no.
- *
- */
-export type HarnessMcpElicitation =
-  | {
-      available: true;
-      /** Qué lo sostiene, con su fecha. Sin esto no hay forma de escribir `true`. */
-      evidence: string;
-    }
-  | {
-      available: false;
-      /** Por qué no se declara. Nadie la observó todavía, y eso se dice. */
-      reason: string;
-    };
-
-/** Lo que se declara mientras nadie haya observado la vía en ese host. */
-export const MCP_ELICITATION_UNOBSERVED: HarnessMcpElicitation = {
-  available: false,
-  reason: "nadie observó la capacidad de elicitation en este host todavía",
-};
-
 export interface HarnessStructuredChoice {
   state: StructuredChoiceState;
   /** The host's native tool, when it has one at all — even one it does not reach. */
@@ -296,8 +266,6 @@ export interface HarnessStructuredChoice {
   fallbackReason: string;
   /** What the claim rests on — doc, installed runtime or a real run — with its date. */
   evidence: string;
-  /** La vía MCP para los turnos donde `tool` no está ofrecida. */
-  mcpElicitation: HarnessMcpElicitation;
 }
 
 /** The mention form every host that auto-discovers skills by description shares. */
@@ -378,7 +346,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       artifact: { kind: "config-merge", path: "~/.claude/settings.json", entry: "hooks{}" },
       events: {
         SessionStart: { state: "carried", native: "SessionStart" },
-        PreToolUse: { state: "carried", native: "PreToolUse" },
       },
       verified: "Jul-2026, against the installed claude runtime (matrix base)",
     },
@@ -406,7 +373,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "the call fails, or the asker is a subagent (the tool belongs to the main agent only)",
       evidence:
         "official docs 2026-08-02; the binding in daily use, and the regression plan 016 preserves",
-      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "Task" },
     hostMemory: {
@@ -440,7 +406,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "each hook needs an interactive trust review in codex, recorded as trusted_hash in [hooks.state]",
       events: {
         SessionStart: { state: "carried", native: "SessionStart" },
-        PreToolUse: { state: "carried", native: "PreToolUse" },
       },
       verified: "2026-08-05, against codex-cli 0.146.0 (HookEventsToml enum + real runs)",
     },
@@ -478,12 +443,7 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason:
         "the turn does not list it (Default mode leaves it out, `codex exec` never supports it, and enabling the `default_mode_request_user_input` opt-in does NOT add it — probed 2026-08-22; only a TUI mode switch such as `/plan` or `/pair` does, which is the person's move to offer and never the agent's to make)",
       evidence:
-        "probe 2026-08-22 on codex-cli 0.149.0, read from the shipped binary: the full `RequestUserInputOverlay` TUI exists (selection + free-form answer + an `Other: ` write-in row); availability is per turn (embedded prompt: 'Use the `request_user_input` tool only when it is listed in the available tools for this turn', plus 'Never write a multiple choice question as a textual assistant message'), gated by the literals 'not supported in exec mode', 'requires an interactive stdin terminal' and 'can only be used by the root thread'; three real turns through `codex debug app-server send-message-v2` had the model answer that the tool is unavailable in this mode — including one with `--enable default_mode_request_user_input` (which `codex features list` does report as true), where it added that Plan mode has to be turned on, and one forcing `-c collaboration_mode=plan`, so the opt-in alone does not add it; `ModeKind` is `plan|default|code|custom|execute|pair_programming`, switched by TUI slash commands, and the probe channel has no TTY, which the tool requires. Its MCP client announces `capabilities.elicitation {form, url}` (handshake captured 2026-08-22), so an MCP server can render a native form even in Default mode. Supersedes the 0.146.0 router refusal of 2026-08-04",
-      mcpElicitation: {
-        available: true,
-        evidence:
-          "probe 2026-08-22 on codex-cli 0.149.0 through its interactive UI: its MCP client announces `capabilities.elicitation {form, url}` in the handshake, and a GENERIC `elicitation/create` — protocol only, no host-internal field — rendered a native selector with title, description, numbered navigable options, confirm and cancel, returning `{action:'accept',content:{...}}` under the schema key. A second request carrying the host's own `_meta` behaved identically, so the path does not depend on it. Under `--yolo` both requests came back `{action:'decline'}` immediately and with nothing shown",
-      },
+        "probe 2026-08-22 on codex-cli 0.149.0, read from the shipped binary: the full `RequestUserInputOverlay` TUI exists (selection + free-form answer + an `Other: ` write-in row); availability is per turn (embedded prompt: 'Use the `request_user_input` tool only when it is listed in the available tools for this turn', plus 'Never write a multiple choice question as a textual assistant message'), gated by the literals 'not supported in exec mode', 'requires an interactive stdin terminal' and 'can only be used by the root thread'; three real turns through `codex debug app-server send-message-v2` had the model answer that the tool is unavailable in this mode — including one with `--enable default_mode_request_user_input` (which `codex features list` does report as true), where it added that Plan mode has to be turned on, and one forcing `-c collaboration_mode=plan`, so the opt-in alone does not add it; `ModeKind` is `plan|default|code|custom|execute|pair_programming`, switched by TUI slash commands, and the probe channel has no TTY, which the tool requires. Supersedes the 0.146.0 router refusal of 2026-08-04",
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
     hostMemory: {
@@ -526,7 +486,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "its launcher is a 122-byte Bash shim inside Warp.app, with no tool surface of its own to reach",
       evidence:
         "probe 2026-08-04 on oz v0.2026.07.29.09.05: the shim carries no question-tool name at all. Re-verified 2026-08-22 on oz v0.2026.08.19: still a 122-byte Bash shim with no tool surface of its own",
-      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
     hostMemory: NO_CURATED_MEMORY,
@@ -571,7 +530,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       customAnswer: false,
       fallbackReason: "no structured-choice surface is documented for it",
       evidence: "official docs 2026-08-02; it ships no CLI, so there is nothing local to probe",
-      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
     hostMemory: NO_CURATED_MEMORY,
@@ -610,7 +568,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         'handlers are type: "command" only and run synchronously, blocking the loop; the host documents its customization root as the workspace\'s .agents/, so whether a user-global one is read was NOT verified',
       events: {
         SessionStart: { state: "omitted", reason: "agy declares no session-start event" },
-        PreToolUse: { state: "carried", native: "PreToolUse" },
       },
       verified:
         "2026-08-18, against agy 1.0.16 (its bundled `hooks.json` doc + the CORTEX_STEP_TYPE tool names in the binary): `BeforeTool` does not appear in the binary",
@@ -652,7 +609,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason: "the call fails or the host disables the tool (`AskQuestionToolConfig`)",
       evidence:
         "probe 2026-08-04 on agy 1.0.16 (Antigravity, the successor that reuses ~/.gemini): its shipped proto declares `AskQuestionEntry` with `options`, `is_multi_select` and `write_in_response`, and `AskQuestionOption` with `id` + `text` only; no per-call ceiling is declared anywhere. The run itself is unverified — `agy --print` returned nothing within 150s",
-      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
     hostMemory: NO_CURATED_MEMORY,
@@ -677,10 +633,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       },
       events: {
         SessionStart: { state: "omitted", reason: "the plugin API fires no session-start event" },
-        PreToolUse: {
-          state: "omitted",
-          reason: "the SQL MCP matcher has no OpenCode tool counterpart; no Git guard is installed",
-        },
       },
       verified:
         "2026-08-18, against opencode 1.18.15 (its embedded plugin doc: the `Plugin` signature, its hook surface and its plugin dirs)",
@@ -709,7 +661,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "a non-interactive run (`opencode run`) starts with the `question` permission set to `deny`, or the call fails",
       evidence:
         'probe 2026-08-04 on opencode 1.18.5: `QuestionOption` carries its own `label` and `description`, `custom` defaults to true, and no count ceiling is declared; the exported session of a real `run` showed `question` denied. Re-verified 2026-08-22 on opencode 1.18.15: `QuestionOption` and the non-interactive `{"permission":"question","action":"deny"}` default read from the installed binary',
-      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "agents" },
     hostMemory: NO_CURATED_MEMORY,
@@ -739,7 +690,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "matching hooks run in parallel, deduplicated by command; a project crush.json takes precedence over the global one",
       events: {
         SessionStart: { state: "omitted", reason: "crush supports only PreToolUse" },
-        PreToolUse: { state: "carried", native: "PreToolUse" },
       },
       verified:
         '2026-08-18, against crush v0.89.0 (its embedded skill doc + the `config.HookConfig` JSON schema in the binary): "Only PreToolUse is currently supported"',
@@ -785,7 +735,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
       fallbackReason: "the call fails, or an option's consequence does not fit that cap",
       evidence:
         "probe 2026-08-04 on crush v0.87.0: ceilings 5×5, a description required on every question (<300 chars) and on every choice (<100 chars), and an automatic fill-in option, all read from the installed binary; the run itself could not be verified (expired auth). Re-verified 2026-08-22 on crush v0.90.0: same ceilings and caps, and the tool now details four question types (yes_no/single_choice/multi_choice/free_text) with a tabbed multi-question form",
-      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "none", max_subagents: 0, mechanism: null },
     hostMemory: NO_CURATED_MEMORY,
@@ -830,7 +779,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
           native: "SessionStart",
           loss: "its matcher is not carried, so the hook fires on every session start",
         },
-        PreToolUse: { state: "carried", native: "PreToolUse" },
       },
       verified: "2026-07-29, against kimi 0.29.2 (shipped binary + live probes)",
     },
@@ -865,7 +813,6 @@ export const HARNESSES: readonly HarnessSpec[] = [
         "the call fails, or the permission mode is `auto` or the run is non-interactive (this host's own system rule forbids the call there)",
       evidence:
         "probe 2026-08-04 on kimi 0.31.1: the tool is in the default agent's list and its schema is 1-4 questions × 2-4 options with `label` + `description`; in `--prompt` it refused the call ('auto mode is active') and degraded to labeled markdown on its own, options and consequences intact. Re-verified 2026-08-22 on kimi 0.36.1: the tool and its auto rule ('Do NOT call AskUserQuestion while auto mode is active') read verbatim from the shipped binary",
-      mcpElicitation: MCP_ELICITATION_UNOBSERVED,
     },
     execution: { subagents: "parallel", max_subagents: 3, mechanism: "SubagentStart" },
     hostMemory: NO_CURATED_MEMORY,
@@ -904,14 +851,6 @@ export const SHARED_SKILL_DESTINATIONS: readonly SharedSkillDestination[] = [
 
 /** One install target per host, in catalog order. THE host set. */
 export const HOST_INSTALL_TARGETS: readonly InstallTarget[] = HARNESSES.map((h) => h.installTarget);
-
-/**
- * Hosts that write an MCP config FILE. Oz is out on purpose: it takes servers
- * through a `--mcp` launch flag, so there is nothing to write for it.
- */
-export const MCP_FILE_HOSTS: readonly McpHost[] = HARNESSES.filter((h) => h.mcpHostId !== null).map(
-  (h) => h.mcpHostId as McpHost,
-);
 
 /** Install targets that are shared destinations, not hosts. */
 export const SHARED_INSTALL_TARGETS: readonly InstallTarget[] = SHARED_SKILL_DESTINATIONS.map(

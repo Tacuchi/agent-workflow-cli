@@ -83,7 +83,7 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
   name: "doctor",
   flags: {
     // `doctor`: `aw --doctor` dispatches here with the alias flag still set.
-    known: ["doctor", "host", "only", "skip-native", "verify-connection"],
+    known: ["doctor", "host", "only"],
     repeatable: ["only"],
     actions: {
       prepare: { known: ["select"], repeatable: ["select"] },
@@ -100,13 +100,9 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
         effect: "Host the run is invoked from; it is highlighted, never filtered.",
       },
       only: { value: "<host>", effect: "Diagnose only this host." },
-      "skip-native": { effect: "Skip each host's own MCP connection verdict." },
-      "verify-connection": {
-        effect: "Authorize a read-only network check of the credentials against their service.",
-      },
     },
     output:
-      "Default (schema_version 3): {schema_version, cli_version, verdict {exit_code, reason}, summary, scope, hosts[] {host, label, status, version, degradations_count?}, hosts_absent[]?, findings[]? (not healthy, with a supported or manual remediation; no evidence) {id, host, category, state, summary, remediation}, collapsed? {count, by_state} (not healthy, remediation none), coverage[]? (rows that are not checked)}; empty collections left out. --detail (schema_version 2): {schema_version, cli_version, scope {hub_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, agent_workflow_installed, degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
+      "Default (schema_version 3): {schema_version, cli_version, verdict {exit_code, reason}, summary, scope, hosts[] {host, label, status, version, degradations_count?}, hosts_absent[]?, findings[]? (not healthy, with a supported or manual remediation; no evidence) {id, host, category, state, summary, remediation}, collapsed? {count, by_state} (not healthy, remediation none), coverage[]? (rows that are not checked)}; empty collections left out. --detail (schema_version 2): {schema_version, cli_version, scope {hub_dir, current_host, only[]}, hosts[] {host, target, label, status, current, runtime {state, version}, agent_workflow_installed, degradations[] {surface (commands|structured-choice|hooks|host-memory|compaction), status (degraded|unsupported), detail}}, hosts_absent[], coverage[] {category, host, state (checked|not-applicable|skipped|unavailable), reason}, findings[] {id (<host>/<category>/<resource>), host, category, resource {kind, name, locator}, state (healthy|warning|blocking|unverified), summary, impact, evidence[], ownership (ours|foreign|ambiguous|n/a), remediation {kind (supported|manual|none), action, guidance[]}}, summary {healthy, warning, blocking, unverified, actionable}, verdict {exit_code, reason}}.",
     exit_codes: {
       "1": "The verdict is not healthy: a blocking finding or an unavailable coverage. ok is still true and data is the full report.",
     },
@@ -152,18 +148,6 @@ export const doctorCommand: CliCommand<DoctorCommandData> = {
     const options = {
       host: flagValue(args, "host") ?? null,
       only: onlyHosts(args),
-      skipNative: args.flags.has("--skip-native"),
-      // El flag ES la autorización de red, y no hay ceremonia extra a propósito:
-      // nombra exactamente el efecto, lo tipeó la persona, y lo único que habilita
-      // es un `SELECT 1` de sólo lectura.
-      //
-      // Sin el flag se pide verificar IGUAL, con la lista de clases vacía. No es
-      // lo mismo que no pedir nada: pedir con las manos vacías es lo que hace que
-      // cada proveedor degrade su verificación profunda y lo DIGA en su evidencia,
-      // en vez de que el informe afirme una salud que nadie comprobó. Sin esto la
-      // rama que lo declara era inalcanzable desde acá, y una credencial presente
-      // contra un servicio caído salía «resuelta» sin una línea que lo matizara.
-      verify: args.flags.has("--verify-connection") ? (["network_external"] as const) : [],
     };
     if (args.rest[0] === "prepare") return await runPrepare(args, ctx, options);
     if (args.rest[0] === "apply") return await runApply(args, ctx, options);

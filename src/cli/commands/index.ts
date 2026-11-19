@@ -19,7 +19,6 @@ import { doctorCommand } from "./doctor.js";
 import { exportScriptsCommand } from "./export.js";
 import { flowCommand } from "./flow.js";
 import { gitFlowCommand } from "./git-flow.js";
-import { hookCommand } from "./hook.js";
 import { hostDoctorCommand } from "./host-doctor.js";
 import { hostMemoryCommand } from "./host-memory.js";
 import { hubBlockUpsertCommand } from "./hub-block.js";
@@ -28,7 +27,6 @@ import { hubInitCommand } from "./hub-init.js";
 import { hubMigrateCommand } from "./hub-migrate.js";
 import { hubMoveCommand } from "./hub-move.js";
 import { hubsCommand } from "./hubs.js";
-import { mcpCommand } from "./mcp.js";
 import { mergeStateCommand } from "./merge-state.js";
 import { attachMultirootCommand, detachMultirootCommand } from "./multiroot.js";
 import { persistCommand } from "./persist.js";
@@ -51,7 +49,6 @@ import { skillsCommand } from "./skills.js";
 import { sourcesCommand } from "./sources.js";
 import { stackCommand } from "./stack.js";
 import { statusCommand } from "./status.js";
-import { toolCommand } from "./tool.js";
 import { visibilityCommand } from "./visibility.js";
 
 export const ALL_COMMANDS: readonly CliCommand[] = [
@@ -80,9 +77,6 @@ export const ALL_COMMANDS: readonly CliCommand[] = [
   gitFlowCommand,
   mergeStateCommand,
   checkBranchCommand,
-  hookCommand,
-  mcpCommand,
-  toolCommand,
   visibilityCommand,
   harnessCommand,
   profilesCommand,

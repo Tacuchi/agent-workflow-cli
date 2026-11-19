@@ -299,61 +299,6 @@ export interface FlowExpectations {
 }
 
 /**
- * The directive's closed key set.
- *
- * Exported so a guard can assert, at runtime, that no field parallel to one the
- * semantic protocol or the capability receipt already delivers ever appears
- * here. A type would not survive compilation to be checked.
- */
-export const FLOW_DIRECTIVE_KEYS = [
-  "version",
-  "flow",
-  "tranche",
-  "session",
-  "boundary",
-  "outcome",
-  "state_digest",
-  "applied",
-  "pending",
-  "request",
-  "action",
-  "choices",
-  "proposal",
-  "decision_preview",
-  "fix_preview",
-  "route",
-  "effects",
-  "expects",
-  "authorizations",
-  "degradations",
-  "error",
-  "attempt_accounting",
-  "next_action",
-  "cli_answers",
-] as const;
-
-/** Keys of {@link FLOW_DIRECTIVE_KEYS} a directive carries only when they say something. */
-export const FLOW_DIRECTIVE_OPTIONAL_KEYS: readonly (typeof FLOW_DIRECTIVE_KEYS)[number][] = [
-  "cli_answers",
-];
-
-/**
- * Keys the directive shares with the receipt ON PURPOSE, each because it is the
- * SAME concept with the SAME type — reuse, not a parallel field. The guard reads
- * this list, so adding a name here is an explicit decision, never a slip.
- */
-export const FLOW_DIRECTIVE_REUSED_KEYS: Readonly<Record<string, string>> = {
-  outcome: "el vocabulario de outcome del receipt de capacidad, sin ampliarlo",
-  effects: "el EffectLedger del receipt en sus tres momentos",
-  degradations: "la Degradation del receipt, con su causa declarada",
-  error: "el CapabilityFailure del receipt: código, mensaje y acción",
-  next_action: "la próxima acción válida del receipt, que nunca queda vacía",
-  version: "el versionado del protocolo semántico, con el mismo nombre",
-  authorizations:
-    "las clases de efecto autorizadas del request de capacidad, con el mismo nombre y tipo",
-};
-
-/**
  * The sealed local change a boundary is deciding.
  *
  * `digest` is what makes an identical retry free: the same proposal produces the

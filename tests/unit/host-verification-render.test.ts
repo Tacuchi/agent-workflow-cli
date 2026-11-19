@@ -13,7 +13,6 @@ import {
   mergedRunBlocks,
 } from "../../scripts/host-run/compare.mjs";
 import {
-  ledgerRunDrift,
   mergeRun,
   mergeSmoke,
   parseLedgerSource,
@@ -27,6 +26,13 @@ const sample = (id: string) =>
   JSON.parse(readFileSync(join(RUNS_DIR, "samples", id, "matrix.json"), "utf8"));
 const order = HARNESSES.map((h) => h.id);
 
+/** The run block of every host that has one: what the matrices must reproduce. */
+function runBlocksOf(ledger: Partial<Record<string, { run?: unknown }>>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(ledger).flatMap(([host, entry]) => (entry?.run ? [[host, entry.run]] : [])),
+  );
+}
+
 describe("verification ledger renderer", () => {
   it("renders the committed file byte for byte", () => {
     const rendered = renderLedger(Object.entries(HOST_VERIFICATIONS));
@@ -39,7 +45,7 @@ describe("verification ledger renderer", () => {
     const withRun = renderLedger(
       mergeRun(HOST_VERIFICATIONS, mergedRunBlocks([sample("2026-09-01T10-00-00Z")]), order),
     );
-    expect(parseLedgerSource(withRun).codex?.run?.cells.mcp).toBe("works");
+    expect(parseLedgerSource(withRun).codex?.run?.id).toBe("2026-09-01T10-00-00Z");
     expect(() =>
       parseLedgerSource(text.replace('depth: "install" }', 'depth: "install", x: 1 }')),
     ).toThrow(/does not render back/);
@@ -77,7 +83,7 @@ describe("verification ledger renderer", () => {
       version: HOST_VERIFICATIONS.codex?.version,
       depth: "install",
     });
-    expect(merged.codex.run?.cells.mcp).toBe("works");
+    expect(merged.codex.run?.cells["structured-choice"]).toBe("degraded-declared");
     expect(merged.warp.run).toBeUndefined();
     expect(Object.keys(merged)).toEqual(order.filter((id) => id in merged));
   });
@@ -85,18 +91,11 @@ describe("verification ledger renderer", () => {
   it("a ledger that diverges from its matrix is caught", () => {
     const blocks = mergedRunBlocks([sample("2026-09-01T10-00-00Z")]);
     const ledger = Object.fromEntries(mergeRun(HOST_VERIFICATIONS, blocks, order));
-    expect(ledgerRunDrift(ledger, blocks)).toEqual([]);
+    expect(runBlocksOf(ledger)).toEqual(blocks);
     const drifted = structuredClone(ledger);
-    if (drifted.codex?.run) drifted.codex.run.cells.mcp = "broken";
-    expect(ledgerRunDrift(drifted, blocks)).toEqual([
-      {
-        host: "codex",
-        field: "cells",
-        ledger: drifted.codex?.run?.cells,
-        matrix: blocks.codex.cells,
-      },
-    ]);
-    expect(ledgerRunDrift(HOST_VERIFICATIONS, blocks).map((d) => d.host)).toContain("codex");
+    if (drifted.codex?.run) drifted.codex.run.cells.commands = "broken";
+    expect(runBlocksOf(drifted)).not.toEqual(blocks);
+    expect(runBlocksOf(HOST_VERIFICATIONS).codex).not.toEqual(blocks.codex);
   });
 
   it("the smoke keeps the run block of a host it could not verify this time", () => {
@@ -116,7 +115,7 @@ describe("verification ledger renderer", () => {
     "the committed ledger is identical to the latest real matrix",
     () => {
       const blocks = mergedRunBlocks(listRunIds().map((id) => loadMatrix(id)));
-      expect(ledgerRunDrift(HOST_VERIFICATIONS, blocks)).toEqual([]);
+      expect(runBlocksOf(HOST_VERIFICATIONS)).toEqual(blocks);
     },
   );
 });

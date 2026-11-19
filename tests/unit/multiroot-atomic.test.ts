@@ -3,13 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
-import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
 import { runMultiroot } from "../../src/application/multiroot-service.js";
 import { attachClaude } from "../../src/application/multiroot/claude.js";
 import { attachCodex } from "../../src/application/multiroot/codex.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { runVisibilityDoctor } from "../../src/application/visibility-doctor-service.js";
-import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { worktreeFixture } from "../helpers/worktree-fixture.js";
@@ -36,20 +34,16 @@ it("dos altas simultáneas de Claude conservan ambas rutas, sin respaldos ni loc
   ).toEqual([]);
 });
 
-it("MCP y multiroot comparten el candado Codex y conservan ambas secciones", async () => {
+it("dos altas simultáneas de Codex comparten el candado y conservan ambas rutas", async () => {
   const root = mkdtempSync(join(tmpdir(), "aw-atomic-codex-"));
   dispose.push(() => rmSync(root, { recursive: true, force: true }));
   await Promise.all([
     Promise.resolve().then(() => attachCodex(["/tmp/alpha"], root)),
-    Promise.resolve().then(() =>
-      writeMcpEntry("codex", buildMcpEntry("alpha", "ALPHA_DATABASE_URL", { host: "codex" }), {
-        scopeDir: root,
-      }),
-    ),
+    Promise.resolve().then(() => attachCodex(["/tmp/beta"], root)),
   ]);
   const content = readFileSync(join(root, ".codex", "config.toml"), "utf8");
   expect(content).toContain("/tmp/alpha");
-  expect(content).toContain("[mcp_servers.alpha]");
+  expect(content).toContain("/tmp/beta");
   expect(
     readdirSync(join(root, ".codex")).filter(
       (name) => name.includes(".bak.") || name.endsWith(".agent-workflow.lock"),

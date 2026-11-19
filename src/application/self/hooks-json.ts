@@ -52,8 +52,6 @@ const TOOL_MATCHERS: Readonly<Record<string, { crush: string; agy: string }>> = 
     crush: "^(edit|write|multiedit)$",
     agy: "^(file_change|edit_notebook)$",
   },
-  // crush names MCP tools `mcp_<server>_<tool>`; agy's SQL step is `cloud_sql_execute_sql`.
-  "mcp__.*__execute_sql": { crush: "^mcp_.*_execute_sql$", agy: "^.*execute_sql$" },
   Bash: { crush: "^bash$", agy: "^run_command$" },
 };
 

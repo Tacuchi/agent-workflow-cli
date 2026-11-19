@@ -17,14 +17,8 @@ const HEADER = `// VERIFICATION LEDGER — written by \`npm run smoke:hosts\` an
 
 import type { HarnessId } from "./harnesses.js";
 
-/** The six surfaces a host run observes, in the doctor's order. */
-export type RunSurface =
-  | "commands"
-  | "structured-choice"
-  | "hooks"
-  | "mcp"
-  | "host-memory"
-  | "compaction";
+/** The four surfaces a host run observes, in the doctor's order. */
+export type RunSurface = "commands" | "structured-choice" | "host-memory" | "compaction";
 
 /** A cell as the last host run left it (plan 085, catalog → cell). */
 export type RunCellState =
@@ -159,38 +153,6 @@ export function mergeRun(current, blocks, order) {
       const { run: _old, ...rest } = base;
       return [id, blocks[id] ? { ...rest, run: blocks[id] } : base];
     });
-}
-
-/**
- * Where the ledger's run blocks disagree with the blocks the matrices yield:
- * `[{host, field, ledger, matrix}]`, empty when they agree.
- */
-export function ledgerRunDrift(ledger, blocks) {
-  const drift = [];
-  const hosts = new Set([
-    ...Object.keys(blocks),
-    ...Object.keys(ledger).filter((h) => ledger[h]?.run),
-  ]);
-  for (const host of hosts) {
-    const a = ledger[host]?.run ?? null;
-    const b = blocks[host] ?? null;
-    for (const field of [
-      "id",
-      "at",
-      "version",
-      "cli",
-      "cells",
-      "model_provider",
-      "agy_keychain",
-      "crush_provider",
-      "crush_model",
-    ]) {
-      if (JSON.stringify(a?.[field] ?? null) !== JSON.stringify(b?.[field] ?? null)) {
-        drift.push({ host, field, ledger: a?.[field] ?? null, matrix: b?.[field] ?? null });
-      }
-    }
-  }
-  return drift;
 }
 
 /**

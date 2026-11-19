@@ -1,13 +1,12 @@
 // Crush: a PreToolUse hook on `^bash$` in the crush.json `aw` writes, which
 // DENIES the AC-04 commands and pre-approves nothing; `permissions.allowed_tools`
-// lists only the agent-workflow MCP tools. Hook contract read from the crush v0.96.1
+// is empty. Hook contract read from the crush v0.96.1
 // binary's embedded docs: `{"matcher", "command", "timeout"}`, the command in
 // $CRUSH_TOOL_INPUT_COMMAND, `exit 2` blocks the call, and a deny from any hook
 // wins. The hook sees one string, so no command can be proven confined: every
 // bash call, read and edit (view/edit/write/multiedit are not scoped) asks the
-// person. The MCP tool name form `mcp_<server>_<tool>` is unverified.
+// person.
 
-import { PROBE_MCP } from "../scenario.mjs";
 import { DENIAL_CATEGORIES } from "./denials.mjs";
 
 export const GUARD_PATH = ".host-run/deny-guard.mjs";
@@ -55,7 +54,7 @@ function guardList(files, name) {
   return line ? JSON.parse(line.slice(`const ${name} = `.length, -1)) : [];
 }
 
-const allowedTools = [`mcp_${PROBE_MCP.name}_execute_sql`, `mcp_${PROBE_MCP.name}_search_objects`];
+const allowedTools = [];
 
 /** The variable each provider's key comes from (crush's catalog: `"api_key": "$VAR"`). */
 const KEY_VARS = { gemini: "GEMINI_API_KEY", openai: "OPENAI_API_KEY" };

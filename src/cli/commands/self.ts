@@ -4,7 +4,6 @@ import { selfDetectHosts } from "../../application/self/detect-hosts.js";
 import { selfDoctor } from "../../application/self/doctor-self.js";
 import { selfInstallHooks } from "../../application/self/install-hooks.js";
 import { selfInstallSkill } from "../../application/self/install-skill.js";
-import { selfMcpConfig } from "../../application/self/mcp-config.js";
 import { selfNamespace, selfNamespacePin } from "../../application/self/namespace-info.js";
 import { selfUninstallSkill } from "../../application/self/uninstall-skill.js";
 import { selfUninstall } from "../../application/self/uninstall.js";
@@ -26,7 +25,6 @@ const SELF_SUBCOMMANDS = [
   "uninstall",
   "uninstall-skill",
   "clean-legacy",
-  "mcp",
   "bootstrap",
 ] as const;
 
@@ -75,16 +73,12 @@ export const selfCommand: CliCommand = {
       },
       "uninstall-skill": { known: ["target", "legacy", "dry-run"] },
       "clean-legacy": { known: ["target", "dry-run"] },
-      mcp: {
-        known: ["action", "name", "instance", "var", "dsn-var", "dry-run"],
-        repeatable: ["var"],
-      },
       bootstrap: { known: ["dry-run"] },
     },
   },
   help: {
     purpose:
-      "Manage the agent-workflow CLI itself: namespace, installation per host, hooks, MCP and updates.",
+      "Manage the agent-workflow CLI itself: namespace, installation per host, hooks and updates.",
     notes: [
       "Without an action, `aw self` returns {subcommands[], help_hint}. install is an alias of install-skill.",
     ],
@@ -202,34 +196,6 @@ export const selfCommand: CliCommand = {
         output:
           "{status (removed|dry-run|noop), removed[], prefixes_used[], scanned_dirs[], summary}.",
       },
-      mcp: {
-        purpose:
-          "Register, install, diagnose or remove the agent-workflow PostgreSQL MCP connections.",
-        flags: {
-          action: {
-            value: "<list|use-env|create-env|doctor|remove|cancel|install-<host>>",
-            effect:
-              "Operation to run; also accepted as the second positional. Without it an interactive menu asks.",
-          },
-          name: {
-            value: "<name>",
-            effect: "Connection name (kebab-case slug); asked for when absent.",
-          },
-          instance: { value: "<name>", effect: "Alias of --name." },
-          var: { value: "<VAR>", effect: "Alias of --dsn-var." },
-          "dsn-var": {
-            value: "<VAR>",
-            effect:
-              "Environment variable (UPPER_SNAKE_CASE) holding the connection DSN; asked for when absent.",
-          },
-          "dry-run": { effect: "Report the setup or removal without writing." },
-        },
-        output:
-          "{action, connection, installed?, connections[]?, table?, registry? {path, changed}, registry_error?, setup?, remove?, preserved_foreign[]?, doctor?, env_help?, summary}.",
-        exit_codes: {
-          "2": "The local MCP registry is invalid and needs repair, or a global install was refused without force.",
-        },
-      },
       bootstrap: {
         purpose:
           "Run doctor, remove legacy leftovers and install the skill in one pass, then list the next steps.",
@@ -263,8 +229,6 @@ export const selfCommand: CliCommand = {
         return selfUninstallSkill(args, ctx);
       case "clean-legacy":
         return selfCleanLegacy(args, ctx);
-      case "mcp":
-        return selfMcpConfig(args, ctx);
       case "bootstrap":
         return selfBootstrap(args, ctx);
       case undefined:
@@ -273,8 +237,7 @@ export const selfCommand: CliCommand = {
           ok: true,
           data: {
             subcommands: [...SELF_SUBCOMMANDS],
-            help_hint:
-              "uso: aw self <subcommand>. Ej: 'aw self mcp' (configurar MCP database), 'aw self bootstrap' o 'aw self doctor'.",
+            help_hint: "uso: aw self <subcommand>. Ej: 'aw self bootstrap' o 'aw self doctor'.",
           },
           exitCode: 0,
         };

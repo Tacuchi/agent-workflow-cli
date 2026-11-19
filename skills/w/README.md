@@ -17,7 +17,7 @@ It implements the **stages + loops + artifacts** model. The design source lives 
 | [`exports/`](exports/) | 1 | The `export-*` family — the only artifact→`docs/` path |
 | [`roles/`](roles/) | cross-cutting | Overview binding; external techniques are host-native |
 | [`harness/`](harness/HARNESS.md) | cross-cutting | Capability→mechanism binding per harness |
-| [`hooks/`](hooks/) | — | Host hook template (sql-mutation-guard, checkpoint, …) |
+| [`hooks/`](hooks/) | — | Host hook template (`SessionStart` namespace pin) |
 | [`SKILL.md`](SKILL.md) | overview | The `w` orientation skill (guide to the full model) |
 
 ## Hub

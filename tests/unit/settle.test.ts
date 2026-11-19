@@ -38,7 +38,7 @@ import {
   NOTE_SCHEMA,
   normalizeObligations,
 } from "../../src/domain/decision-note.js";
-import { COMMAND_EXCLUSIONS, journeyOfFlow } from "../../src/domain/flow/authority.js";
+import { journeyOfFlow } from "../../src/domain/flow/authority.js";
 import {
   FLOW_RUN_STATE_FILE,
   applyTransition,
@@ -46,6 +46,7 @@ import {
 } from "../../src/domain/flow/run-state.js";
 import { baseDigest } from "../../src/domain/proposal.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { COMMAND_EXCLUSIONS } from "../helpers/command-exclusions.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { newRunState, withScope } from "../helpers/run-state-fixture.js";
 

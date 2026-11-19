@@ -3,7 +3,6 @@ import {
   type ExportCategory,
   type ExportPrepared,
   type ExportSelection,
-  SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS,
   applyExport,
   conflictingScopeFlags,
   prepareExport,
@@ -16,6 +15,7 @@ import { commandHelpText } from "../../src/cli/help-groups.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 import { MemFs } from "../helpers/mem-fs.js";
+import { SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS } from "../helpers/scripts-contract-anchors.js";
 
 const env = new FakeEnv("/home", "/cwd");
 const paths = (): PathsService => new PathsService(normalizeNamespace("workflow"), "/home", "/cwd");

@@ -9,7 +9,6 @@ import { appendClaimEvent } from "./claims-ledger.js";
 import { localDateIso } from "./dates.js";
 import { runNextNumber } from "./dev-only-services.js";
 import { resolveDocsCanon } from "./docs-canon-service.js";
-import { type CatalogLookup, checkExportCatalog } from "./export-catalog-check.js";
 import { appendPublications, publicationRows } from "./history-publications.js";
 import { publishedCorrelatives } from "./history-publications.js";
 import { withCwdLock } from "./lock-service.js";
@@ -77,18 +76,10 @@ interface ResolvedPolicy extends Omit<CategoryPolicy, "overwritable"> {
 
 /**
  * The generated contract for `export-scripts`, also mirrored by its direct
- * command guide. Keep its semantic anchors exported so a small parity guard
- * catches doctrine that drifts away from what the CLI actually sends.
+ * command guide; a parity test checks its semantic anchors on both surfaces.
  */
 export const SCRIPTS_FINAL_STATE_CONTRACT =
   "Un dossier con README.md y rollback/00-global/00-ROLLBACK.sql obligatorios. Forwards NN-<nombre>.sql en 01-ddl-tablas/, 02-ddl-funciones/, 03-migracion/, 04-inserts/ o 05-grants/, numerados desde 01 dentro de cada carpeta; por cada forward, rollback/<categoría>/NN-<nombre>.rollback.sql. Ningún .sql en la raíz ni directamente en rollback/. El CLI NUNCA ejecuta SQL. El bundle publica el ESTADO FINAL NETO de la secuencia, no una réplica por sesión: lo que nace y muere dentro de la secuencia se omite; lo migrado va directo a su forma final; lo que el contexto declara retirado se omite aunque ningún script lo elimine. 00-ROLLBACK.sql invierte ese ESTADO FINAL en orden seguro para las dependencias, no el reverso literal de los forwards. Reconciliá contra el código además de las sesiones y la base. Excluí identidades concretas y semillas de prueba; conservá sólo objetos compartidos y necesarios para el estado final. Un bundle previo que entra al origen es MATERIAL A RECONCILIAR, no historia intocable: dos bundles que se contradicen publican el estado final neto resultante, nunca su suma cronológica.";
-
-export const SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS = [
-  "ESTADO FINAL NETO",
-  "orden seguro para las dependencias",
-  "objetos compartidos y necesarios para el estado final",
-  "MATERIAL A RECONCILIAR",
-] as const;
 
 const POLICIES: Record<ExportCategory, CategoryPolicy> = {
   diagrams: {
@@ -150,7 +141,6 @@ const FORWARD_RE = /^(\d{2})-(?!.*\.rollback\.sql$)[^/]+\.sql$/;
  */
 export interface ExportScope {
   code?: string;
-  catalog?: string;
   reservationOwner?: string;
   reservationMaterialDigest?: string;
   sessions?: string[];
@@ -261,7 +251,6 @@ export interface ExportPreview {
   overwrites: string | null;
   replacements?: string[];
   mode?: "complement" | "flat" | "regenerate";
-  unverified?: string[];
 }
 
 export interface ExportValidation {
@@ -285,7 +274,6 @@ export async function prepareExport(
   // Injected so the midnight boundary is testable: a preparation that outlives
   // the day used to rename its own destination on the next stage.
   now: () => Date = () => new Date(),
-  catalog?: CatalogLookup,
 ): Promise<SemanticParse<ExportPrepared>> {
   const canon = await resolveDocsCanon(fs, paths, EXPORT_CATEGORIES);
   if (!canon.ok) {
@@ -327,8 +315,6 @@ export async function prepareExport(
       },
     };
   }
-  const catalogFailure = await checkSelectedCatalog(selection, catalog);
-  if (catalogFailure !== null) return catalogFailure;
   const scriptsMaterial = category === "scripts" ? await sqlMaterial(fs, paths, material) : null;
   const reservationOwner = await exportReservationOwner(
     fs,
@@ -549,7 +535,6 @@ async function exportReservationOwner(
         from: selection.from,
         exclude: selection.exclude,
         environment: selection.environment,
-        catalog: selection.catalog,
         date,
       },
     })}`,
@@ -717,7 +702,7 @@ function checkComposableSelection(
   // Belonging comes FIRST: telling a category that does not compose its origin
   // which bases exist would send it to fix a value that was never going to be
   // read, and it would be rejected again on the next invocation.
-  const named = (["from", "exclude", "environment", "code", "catalog"] as const).filter(
+  const named = (["from", "exclude", "environment", "code"] as const).filter(
     (key) => selection[key] !== undefined,
   );
   if (category !== "scripts" && named.length > 0) {
@@ -1013,7 +998,6 @@ export function readExportScope(raw: string): SemanticParse<ExportScope | null> 
 function scopeShapeError(scope: Record<string, unknown>): string | null {
   const allowed = [
     "code",
-    "catalog",
     "reservationOwner",
     "reservationMaterialDigest",
     "sessions",
@@ -1088,7 +1072,6 @@ export function conflictingScopeFlags(echoed: ExportScope, flags: ExportSelectio
     ["--from", "from"],
     ["--environment", "environment"],
     ["--code", "code"],
-    ["--catalog", "catalog"],
   ] as const) {
     if (flags[key] !== undefined && flags[key] !== echoed[key]) conflicts.push(flag);
   }
@@ -1155,46 +1138,6 @@ export function validateExport(
         ...(manual === null ? {} : { mode: manual.mode, replacements }),
       },
       approval_digest: approvalDigest({ ...parsed.value, artifacts }),
-    },
-  };
-}
-
-/** When requested, the target catalog is consulted again over the proposed forwards. */
-export async function validateExportWithCatalog(
-  raw: string,
-  prepared: ExportPrepared,
-  catalog?: CatalogLookup,
-): Promise<SemanticParse<ExportValidation>> {
-  const validated = validateExport(raw, prepared);
-  if (!validated.ok || prepared.scope.catalog === undefined) return validated;
-  if (catalog === undefined)
-    return {
-      ok: false,
-      failure: {
-        code: "EXPORT_CATALOG_UNAVAILABLE",
-        message: `no hay catálogo disponible para '${prepared.scope.catalog}'`,
-        action: "revisá la conexión y repetí validate",
-      },
-    };
-  const parsed = parseSemanticResponse(raw, prepared.request);
-  if (!parsed.ok) return parsed;
-  const assembled = assembleExportArtifacts(parsed.value, prepared);
-  if (!assembled.ok) return assembled;
-  const checked = await checkExportCatalog(
-    assembled.value,
-    prepared.unit,
-    prepared.scope.catalog,
-    catalog,
-  );
-  if (!checked.ok) return checked;
-  return {
-    ok: true,
-    value: {
-      ...validated.value,
-      preview: {
-        ...validated.value.preview,
-        unverified: checked.value.unverified,
-      },
     },
   };
 }
@@ -1419,9 +1362,8 @@ export async function applyExport(
   _env: EnvPort,
   paths: PathsService,
   input: ExportApplyInput,
-  catalog?: CatalogLookup,
 ): Promise<SemanticParse<ExportApplied>> {
-  const validated = await validateExportWithCatalog(input.raw, input.prepared, catalog);
+  const validated = validateExport(input.raw, input.prepared);
   if (!validated.ok) return validated;
   if (validated.value.approval_digest !== input.approval) {
     return {
@@ -1570,38 +1512,9 @@ function reject(message: string): SemanticFailure {
   };
 }
 
-async function checkSelectedCatalog(
-  selection: ExportSelection,
-  catalog: CatalogLookup | undefined,
-): Promise<SemanticParse<never> | null> {
-  if (selection.catalog !== undefined) {
-    if (catalog === undefined)
-      return {
-        ok: false,
-        failure: {
-          code: "EXPORT_CATALOG_UNAVAILABLE",
-          message: `--catalog ${selection.catalog} no tiene catálogo de sólo lectura disponible`,
-          action: "revisá la conexión y repetí prepare",
-        },
-      };
-    const read = await catalog.lookupColumns(selection.catalog, ["public"]);
-    if (!read.ok)
-      return {
-        ok: false,
-        failure: {
-          code: "EXPORT_CATALOG_UNAVAILABLE",
-          message: `no se pudo consultar '${selection.catalog}' (${read.code}): ${read.message}`,
-          action: "revisá la conexión de sólo lectura y repetí prepare",
-        },
-      };
-  }
-  return null;
-}
-
 function scopeFromRecord(scope: Record<string, unknown>): ExportScope {
   return {
     ...(scope.code !== undefined ? { code: scope.code as string } : {}),
-    ...(scope.catalog !== undefined ? { catalog: scope.catalog as string } : {}),
     ...(scope.reservationOwner !== undefined
       ? { reservationOwner: scope.reservationOwner as string }
       : {}),
@@ -1758,7 +1671,6 @@ function buildExportScope(
 ): ExportScope {
   return {
     ...(selection.code !== undefined ? { code: selection.code } : {}),
-    ...(selection.catalog !== undefined ? { catalog: selection.catalog } : {}),
     ...(owner === null
       ? {}
       : { reservationOwner: owner, reservationMaterialDigest: materialDigest }),
@@ -1792,7 +1704,6 @@ function scopeTextFieldError(scope: Record<string, unknown>): string | null {
     "source",
     "environment",
     "code",
-    "catalog",
     "reservationOwner",
     "reservationMaterialDigest",
   ] as const) {

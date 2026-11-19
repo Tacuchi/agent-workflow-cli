@@ -7,13 +7,6 @@ import type { GitFlowSourceResult } from "../git-flow-service.js";
  * (see `redactSecrets`), so this stays a faithful reconstruction.
  */
 export function formatCommandInvocation(parsed: ParsedArgs): string {
-  if (parsed.command === "tool")
-    return "tool request --connection=<redacted> --input-json=<redacted>";
-  // MCP descriptors and probes may receive arbitrary flags before validation.
-  // Do not let an accidental libpq DSN, SQL, JSON payload, or host diagnostic
-  // become telemetry just because it was attached to an otherwise valid mcp
-  // command. The operation name is sufficient for an operational audit trail.
-  if (parsed.command === "mcp") return "mcp request --arguments=<redacted>";
   const parts: string[] = [];
   if (parsed.command) parts.push(parsed.command);
   parts.push(...parsed.rest);
@@ -34,7 +27,6 @@ export function formatCommandOutcome(command: string, exitCode: number): string 
 
 /** `<command> → error: <message>` for a thrown dispatch. */
 export function formatCommandError(command: string, err: unknown): string {
-  if (command === "tool" || command === "mcp") return `${command} → error: solicitud MCP/DB falló`;
   const message = err instanceof Error ? err.message : String(err);
   return `${command} → error: ${message}`;
 }

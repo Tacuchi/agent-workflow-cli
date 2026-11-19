@@ -32,13 +32,6 @@ export function resolveWarpGlobalMcpPath(
 }
 
 /**
- * Returns the project-scoped .warp/.mcp.json path.
- */
-export function resolveWarpProjectMcpPath(scopeDir: string): string {
-  return join(scopeDir, ".warp", ".mcp.json");
-}
-
-/**
  * Hub path attachment for Warp. Warp Terminal does not have an "additionalDirectories"
  * concept — the terminal already has OS-level access to all paths. This is intentionally a
  * no-op that makes the multiroot result complete.

@@ -118,9 +118,8 @@ export function writeStdout(text: string): void {
   process.stdout.write(text);
 }
 
-// `writeStderr` is reserved for relaying child-process stderr output (e.g.,
-// `aw hook` running plugin scripts) and for the host-facing notice of a held
-// compaction (a blocking PreCompact shows a person stderr, never stdout). Do
+// `writeStderr` is reserved for relaying child-process stderr output and for
+// the host-facing notice of a held compaction (a blocking PreCompact shows a person stderr, never stdout). Do
 // NOT use it for CLI-formatted errors: those go through `emitError`, which
 // writes a JSON envelope to stdout (post session012, Propuesta 002 G3).
 //

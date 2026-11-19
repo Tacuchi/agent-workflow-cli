@@ -23,7 +23,7 @@ export const pluginDoctorCommand: CliCommand = {
       "exports-file": { value: "<file>", effect: "Exports manifest to check the skills against." },
     },
     output:
-      "{status (ok|warn|error), plugin, plugin_root, plugin_version, compat_range, skills_count, readme_count_expected, readme_count_match, manifests, hooks, mcp, skills[], exported_skills[], findings[]}.",
+      "{status (ok|warn|error), plugin, plugin_root, plugin_version, compat_range, skills_count, readme_count_expected, readme_count_match, manifests, hooks, skills[], exported_skills[], findings[]}.",
     exit_codes: {
       "1": "At least one finding is an error; ok is still true and data is the full report.",
     },
@@ -42,13 +42,7 @@ export const pluginDoctorCommand: CliCommand = {
     const exportsFile = args.values.get("exports-file");
     if (exportsFile !== undefined) input.exportsFile = exportsFile;
 
-    const { data, hasError } = await runPluginDoctor(
-      ctx.fs,
-      ctx.env,
-      ctx.paths,
-      ctx.runtime,
-      input,
-    );
+    const { data, hasError } = await runPluginDoctor(ctx.fs, ctx.env, ctx.paths, input);
     return { ok: true, data, exitCode: hasError ? 1 : 0 };
   },
 };

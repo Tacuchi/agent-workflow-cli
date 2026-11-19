@@ -73,12 +73,6 @@ export interface HumanRenderContext {
 export interface CliCommand<O = unknown> {
   name: string;
   help: CommandHelp;
-  /**
-   * The host runs it as a hook. `aw --help` lists hook targets apart from the
-   * commands an agent calls; `mode: "warn"` alone does not say it, since stdio
-   * servers warn too.
-   */
-  hook?: true;
   /** Every flag the command reads, checked once by the dispatcher before `execute`. */
   flags: CommandFlags;
   execute(args: ParsedArgs, ctx: CliContext): Promise<CommandResult<O>>;

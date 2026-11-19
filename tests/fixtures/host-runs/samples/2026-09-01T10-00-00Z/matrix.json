@@ -46,36 +46,6 @@
           "effort": null,
           "extract": "extracts/claude-code/structured-choice.json"
         },
-        "hooks": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "2.1.284",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/claude-code/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "2.1.284",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/claude-code/mcp.json"
-        },
         "host-memory": {
           "expected": "native",
           "observed": "works",
@@ -145,36 +115,6 @@
           "effort": null,
           "extract": "extracts/codex/structured-choice.json"
         },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "degraded",
-          "state": "degraded-declared",
-          "declared_by_doctor": true,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "0.157.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/codex/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "0.157.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/codex/mcp.json"
-        },
         "host-memory": {
           "expected": "degraded",
           "observed": "degraded",
@@ -219,14 +159,6 @@
           "expected": "unsupported",
           "state": "not-covered"
         },
-        "hooks": {
-          "expected": "unsupported",
-          "state": "not-covered"
-        },
-        "mcp": {
-          "expected": "degraded",
-          "state": "not-covered"
-        },
         "host-memory": {
           "expected": "unsupported",
           "state": "not-covered"
@@ -247,14 +179,6 @@
         },
         "structured-choice": {
           "expected": "unsupported",
-          "state": "not-covered"
-        },
-        "hooks": {
-          "expected": "unsupported",
-          "state": "not-covered"
-        },
-        "mcp": {
-          "expected": "native",
           "state": "not-covered"
         },
         "host-memory": {
@@ -304,36 +228,6 @@
           "model": null,
           "effort": null,
           "extract": "extracts/gemini/structured-choice.json"
-        },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "degraded",
-          "state": "degraded-declared",
-          "declared_by_doctor": true,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "1.2.11",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/gemini/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "1.2.11",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/gemini/mcp.json"
         },
         "host-memory": {
           "expected": "unsupported",
@@ -404,36 +298,6 @@
           "effort": null,
           "extract": "extracts/opencode/structured-choice.json"
         },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "degraded",
-          "state": "degraded-declared",
-          "declared_by_doctor": true,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "1.18.30",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/opencode/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "1.18.30",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/opencode/mcp.json"
-        },
         "host-memory": {
           "expected": "unsupported",
           "observed": "degraded",
@@ -503,36 +367,6 @@
           "effort": null,
           "extract": "extracts/crush/structured-choice.json"
         },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "degraded",
-          "state": "degraded-declared",
-          "declared_by_doctor": true,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "0.96.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/crush/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "0.96.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/crush/mcp.json"
-        },
         "host-memory": {
           "expected": "unsupported",
           "observed": "degraded",
@@ -601,36 +435,6 @@
           "model": null,
           "effort": null,
           "extract": "extracts/kimi/structured-choice.json"
-        },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "degraded",
-          "state": "degraded-declared",
-          "declared_by_doctor": true,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "0.39.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/kimi/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-01T10-00-00Z",
-          "date": "2026-09-01",
-          "host_version": "0.39.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "0000000",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/kimi/mcp.json"
         },
         "host-memory": {
           "expected": "unsupported",

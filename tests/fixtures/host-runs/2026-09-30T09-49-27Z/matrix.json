@@ -50,38 +50,6 @@
           "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
           "extract": "extracts/claude-code/structured-choice.json"
         },
-        "hooks": {
-          "expected": "native",
-          "observed": "not-reached",
-          "state": "not-reached",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "2.1.285",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": null,
-          "effort": null,
-          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
-          "extract": "extracts/claude-code/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "not-reached",
-          "state": "not-reached",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "2.1.285",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": null,
-          "effort": null,
-          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
-          "extract": "extracts/claude-code/mcp.json"
-        },
         "host-memory": {
           "expected": "native",
           "observed": "not-reached",
@@ -156,37 +124,6 @@
           "not_reached_reason": "the step was never sent",
           "extract": "extracts/codex/structured-choice.json"
         },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "fails",
-          "state": "degraded-declared",
-          "declared_by_doctor": true,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "0.157.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": null,
-          "effort": null,
-          "declared_source": "relay",
-          "extract": "extracts/codex/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "works",
-          "state": "works",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "0.157.1",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": null,
-          "effort": null,
-          "extract": "extracts/codex/mcp.json"
-        },
         "host-memory": {
           "expected": "degraded",
           "observed": "fails",
@@ -233,14 +170,6 @@
           "expected": "unsupported",
           "state": "not-covered"
         },
-        "hooks": {
-          "expected": "unsupported",
-          "state": "not-covered"
-        },
-        "mcp": {
-          "expected": "degraded",
-          "state": "not-covered"
-        },
         "host-memory": {
           "expected": "unsupported",
           "state": "not-covered"
@@ -261,14 +190,6 @@
         },
         "structured-choice": {
           "expected": "unsupported",
-          "state": "not-covered"
-        },
-        "hooks": {
-          "expected": "unsupported",
-          "state": "not-covered"
-        },
-        "mcp": {
-          "expected": "native",
           "state": "not-covered"
         },
         "host-memory": {
@@ -321,37 +242,6 @@
           "effort": null,
           "not_reached_reason": "the step was never sent",
           "extract_refused": ["contains the user name", "contains an email address"]
-        },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "fails",
-          "state": "degraded-undeclared",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "1.2.13",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": null,
-          "effort": null,
-          "declared_source": "cli",
-          "extract": "extracts/gemini/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "fails",
-          "state": "broken",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "1.2.13",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": null,
-          "effort": null,
-          "extract_refused": ["contains an email address"]
         },
         "host-memory": {
           "expected": "unsupported",
@@ -425,39 +315,6 @@
           "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
           "extract": "extracts/opencode/structured-choice.json"
         },
-        "hooks": {
-          "expected": "degraded",
-          "observed": "not-reached",
-          "state": "not-reached",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "1.18.30",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": "openai/gpt-6-astra",
-          "effort": null,
-          "declared_source": "cli",
-          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
-          "extract": "extracts/opencode/hooks.json"
-        },
-        "mcp": {
-          "expected": "native",
-          "observed": "not-reached",
-          "state": "not-reached",
-          "declared_by_doctor": false,
-          "mode": "interactive",
-          "run_id": "2026-09-30T09-49-27Z",
-          "date": "2026-09-30",
-          "host_version": "1.18.30",
-          "cli_version": "28.0.0",
-          "cli_revision": "7ef6aae",
-          "model": "openai/gpt-6-astra",
-          "effort": null,
-          "not_reached_reason": "a send to this pane failed midway; check it and continue by hand",
-          "extract": "extracts/opencode/mcp.json"
-        },
         "host-memory": {
           "expected": "unsupported",
           "observed": "not-reached",
@@ -506,14 +363,6 @@
           "expected": "native",
           "state": "not-covered"
         },
-        "hooks": {
-          "expected": "degraded",
-          "state": "not-covered"
-        },
-        "mcp": {
-          "expected": "native",
-          "state": "not-covered"
-        },
         "host-memory": {
           "expected": "unsupported",
           "state": "not-covered"
@@ -533,14 +382,6 @@
           "state": "not-covered"
         },
         "structured-choice": {
-          "expected": "native",
-          "state": "not-covered"
-        },
-        "hooks": {
-          "expected": "degraded",
-          "state": "not-covered"
-        },
-        "mcp": {
           "expected": "native",
           "state": "not-covered"
         },

@@ -74,12 +74,6 @@
       "reason": "el nombre de la rama de trabajo lo elige la persona"
     },
     {
-      "file": "src/application/mcp-connections-service.ts",
-      "text": "aw self mcp use-env --name <nombre>",
-      "class": "not-determinable",
-      "reason": "el nombre de la variable de entorno es de la persona"
-    },
-    {
       "file": "src/application/merge-state-service.ts",
       "text": "aw add-source ${t.alias}:<ruta>",
       "class": "not-determinable",

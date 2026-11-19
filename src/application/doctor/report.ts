@@ -1,5 +1,4 @@
 import type { CliContext } from "../../cli/types.js";
-import type { EffectClass } from "../../domain/capability/effects.js";
 /**
  * The aggregate: run every provider, consolidate, redact, and let the verdict
  * fall out of what was found.
@@ -27,10 +26,8 @@ import { annotateRepairs } from "./actions.js";
 import { DOCTOR_HOST_ORDER, type DoctorHostSelection, selectDoctorHosts } from "./hosts.js";
 import { hubBlockProvider } from "./provider-hub-block.js";
 import { createInstallationProvider } from "./provider-installation.js";
-import { type McpsProviderDeps, createMcpsProvider } from "./provider-mcps.js";
 import { pluginsHooksProvider } from "./provider-plugins-hooks.js";
 import { skillsProvider } from "./provider-skills.js";
-import { toolsAuthProvider } from "./provider-tools-auth.js";
 import { visibilityProvider } from "./provider-visibility.js";
 import { type DoctorProvider, type DoctorProviderInput, coverage } from "./types.js";
 
@@ -39,33 +36,17 @@ export interface DoctorRunOptions {
   host?: string | null;
   /** Restricts the run to these hosts. This one DOES filter. */
   only?: readonly string[];
-  skipNative?: boolean;
-  /**
-   * Ask the providers to VERIFY, with the effect classes this run authorized.
-   *
-   * Absent = only the cheap read. `[]` = verify locally. `["network_external"]`
-   * = the person typed `--verify-connection`, which names exactly that effect
-   * and is the explicit authorization to leave the machine; without it a
-   * verification that would hit the network degrades and declares it.
-   */
-  verify?: readonly EffectClass[];
 }
 
 export interface DoctorRunDeps {
   providers?: readonly DoctorProvider[];
-  mcps?: McpsProviderDeps;
   distRoot?: string;
 }
 
-export function defaultDoctorProviders(
-  deps: McpsProviderDeps = {},
-  distRoot?: string,
-): DoctorProvider[] {
+export function defaultDoctorProviders(distRoot?: string): DoctorProvider[] {
   return [
     createInstallationProvider(distRoot),
-    createMcpsProvider(deps),
     skillsProvider,
-    toolsAuthProvider,
     pluginsHooksProvider,
     visibilityProvider,
     hubBlockProvider,
@@ -88,8 +69,6 @@ export async function runDoctor(
     hostStates: selection.states,
     currentHost,
     hubDir,
-    skipNative: options.skipNative === true,
-    ...(options.verify === undefined ? {} : { verifyAuthorization: options.verify }),
   };
 
   // Un `--only` mal escrito se denuncia ANTES de mirar nada: es lo único que
@@ -114,7 +93,7 @@ export async function runDoctor(
     });
   }
   const coverages: DoctorCoverage[] = [];
-  for (const provider of deps.providers ?? defaultDoctorProviders(deps.mcps, deps.distRoot)) {
+  for (const provider of deps.providers ?? defaultDoctorProviders(deps.distRoot)) {
     await collectProviderReport(provider, input, selection, findings, coverages);
   }
 
@@ -129,7 +108,7 @@ export async function runDoctor(
     schema_version: DOCTOR_SCHEMA_VERSION,
     cli_version: readPackageVersion(),
     scope: { hub_dir: hubDir, current_host: currentHost, only },
-    hosts: selection.hosts.map(({ mcp_host: _mcpHost, ...view }) => view),
+    hosts: [...selection.hosts],
     hosts_absent: selection.absent,
     coverage: orderedCoverage,
     findings: orderedFindings,

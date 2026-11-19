@@ -1,13 +1,13 @@
 # Runtime details
 
-Detail behind [ARCHITECTURE.md](../ARCHITECTURE.md): two more quality goals, how a command finds its hub, the SQL guard step by step, two files on disk and how two kinds of file are written. All values are defaults.
+Detail behind [ARCHITECTURE.md](../ARCHITECTURE.md): two more quality goals, how a command finds its hub, two files on disk and how two kinds of file are written. All values are defaults.
 
 ## More quality goals
 
 | Goal | Scenario |
 |---|---|
 | Help works anywhere | `--help` reads no hub, so it answers in any folder. |
-| A host's lifecycle hooks never break a session outside a hub | `pre-compact`, `post-compact` and `session-end` stay silent when no hub is visible from the working folder. |
+| A host's session-start hook never breaks a session outside a hub | `self namespace --pin` stays silent when no hub is visible from the working folder. |
 
 ## Commands registry
 
@@ -22,14 +22,6 @@ The namespace and the hub root are resolved in this order; the first that answer
 3. The closest `.<namespace>/agent-workflow.json` marker at or above the working folder. `$HOME` is never taken; two marked namespaces at one level are an error.
 4. The pinned namespace in `~/.config/agent-workflow/namespace`.
 5. The default, `workflow`.
-
-## The SQL guard, step by step
-
-What happens before an agent runs SQL:
-
-1. The host's `PreToolUse` hook matches a tool named `mcp__*__execute_sql`.
-2. It runs `agent-workflow hook sql-mutation-guard`, which reads the hook payload on stdin.
-3. A plain read passes with exit 0; anything else, including SQL it cannot delimit, exits 2 and the host blocks the call.
 
 ## Two more files on disk
 

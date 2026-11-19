@@ -101,7 +101,7 @@ const LEGACY_USER_COMMANDS_RELPATH_BY_TARGET: Record<InstallTarget, string | nul
 /**
  * Per-host hook removers, mirroring `HOOK_INSTALLERS` on the install side. The
  * MAP is the set: there is no second list of "targets we can clean" to fall out
- * of step with the branches — `hookRemoverCoverage()` reads this very object.
+ * of step with the branches — a test uninstalls every managed host.
  */
 const HOOK_REMOVERS: Partial<
   Record<
@@ -119,11 +119,6 @@ const HOOK_REMOVERS: Partial<
   crush: removeCrushHooks,
   gemini: removeAgyHooks,
 };
-
-/** Hooks-managed targets with no remover wired — they would strand hooks. Must be empty. */
-export function hookRemoverCoverage(): InstallTarget[] {
-  return [...HOOKS_MANAGED_TARGETS].filter((t) => HOOK_REMOVERS[t] === undefined);
-}
 
 interface UninstallFlags {
   dryRun: boolean;
@@ -352,7 +347,7 @@ async function removeHooks(
   if (!HOOKS_MANAGED_TARGETS.has(target)) return null;
   const remover = HOOK_REMOVERS[target];
   if (remover === undefined) {
-    // Guarded by hookRemoverCoverage(); reported rather than silently skipped.
+    // Guarded by a test over every managed host; reported rather than silently skipped.
     return {
       target,
       kind: "hooks",

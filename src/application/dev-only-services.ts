@@ -118,8 +118,8 @@ export function runHarness(
   // There used to be a filesystem fallback here: `~/.codex/` present → answer
   // "codex". It conflated two different facts — "Codex is INSTALLED on this
   // machine" and "we are RUNNING INSIDE Codex" — and the second is the only one
-  // this function is asked about. The consequence was concrete: `aw mcp setup`
-  // with no `--host`, run from any unrecognized host, resolved to codex and
+  // this function is asked about. The consequence was concrete: a command that
+  // writes a host config, run from any unrecognized host, resolved to codex and
   // would have written that host's config.toml, purely because the directory
   // existed. Which hosts are installed is `aw self detect-hosts`' question, and
   // it answers it from binaries and config dirs, as separate states.

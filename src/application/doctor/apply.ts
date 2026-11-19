@@ -413,11 +413,8 @@ async function run(
  * prohíbe. Y una recomprobación que no corrió o que falló queda `unverified`,
  * jamás `resolved`.
  *
- * Corre con el ALCANCE de la corrida —los mismos `--host`, `--only` y
- * `--skip-native` que la persona pidió— y no con opciones inventadas acá. No es
- * cosmético: `--skip-native` existe porque inspeccionar los MCP nativos LANZA los
- * servidores del host, y una recomprobación que lo descartara volvería a hacer,
- * una vez por acción aplicada, exactamente la sonda que la persona declinó.
+ * Corre con el ALCANCE de la corrida —los mismos `--host` y `--only` que la
+ * persona pidió— y no con opciones inventadas acá.
  *
  * Y pide VERIFICAR, no sólo releer: eso es lo que hace que «quedó resuelto»
  * dependa de la observación del proveedor y no del código de salida del programa.
@@ -440,10 +437,9 @@ async function recheckOf(
   if (deps.recheck === false) {
     return { recheck: "unverified", recheck_detail: "la recomprobación quedó desactivada" };
   }
-  const verify = [...(input.verify ?? [])];
   let report: DoctorReport;
   try {
-    report = await runDoctor(ctx, { ...input, verify }, deps);
+    report = await runDoctor(ctx, input, deps);
   } catch (error) {
     return {
       recheck: "unverified",

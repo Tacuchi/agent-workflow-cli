@@ -36,14 +36,14 @@ In plan mode do **not** call `prepare` (it reserves a folder): describe the orig
 
 **`agent-workflow` CLI (alias `aw`)** — never read hardcoded paths:
 
-- `aw release-pass list` — `--environment` reads linked/applied bundles. `--catalog <connection>` optionally inspects the target catalog through aw's read-only PostgreSQL connection; unreachable or missing objects block publication. Without it, no database connection opens.
+- `aw release-pass list` — `--environment` reads linked/applied bundles. aw opens no database connection.
 - `aw next-number docs/scripts` — deterministic numbering; it also creates `docs/scripts` when missing, which is what makes destination resolution a CLI guarantee. In plan mode, `--dry-run`.
 
 **Args** (no lifecycle *structured-choice*; harness capability — see [`../../harness/HARNESS.md`](../../harness/HARNESS.md)):
 
 ```
 /w:export-scripts [--from hub|bundles] [--exclude <nombre>]… [--environment <ambiente>]
-                  [--source <alias>] [--catalog <conexión>]
+                  [--source <alias>]
 ```
 
 | Flag | Behavior |
@@ -52,7 +52,6 @@ In plan mode do **not** call `prepare` (it reserves a folder): describe the orig
 | `--exclude <nombre>` | Subtracts one piece by the name the inventory prints. **Repeatable** |
 | `--environment <ambiente>` | Subtracts bundles the book records as applied there; no record is reported as such |
 | `--source <alias>` | Limits to one source (multi-source hub) |
-| `--catalog <connection>` | Optional read-only target catalog check, repeated on validate and apply |
 
 No args: the loose SQL and the published bundles. The three composition flags are this export's alone.
 

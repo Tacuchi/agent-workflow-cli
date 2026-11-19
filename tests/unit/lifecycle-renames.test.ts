@@ -105,26 +105,6 @@ describe("los nombres retirados responden RENAMED y no ejecutan nada", () => {
   }
 });
 
-describe("aw hook <evento>", () => {
-  it.each(["pre-compact", "post-compact", "session-end"])(
-    "%s fuera de un hub sale 0 en silencio",
-    async (event) => {
-      const before = await tree(root);
-      const { code, stdout, stderr } = await aw(bare, ["hook", event], "{}");
-      expect(code).toBe(0);
-      expect(stdout).toBe("");
-      expect(stderr).toBe("");
-      expect(await tree(root)).toEqual(before);
-    },
-  );
-
-  it("un subcomando desconocido sigue rechazado", async () => {
-    const { code, stdout } = await aw(bare, ["hook", "resume-summary"]);
-    expect(code).toBe(1);
-    expect(JSON.parse(stdout).error.message).toContain("unknown subcommand 'resume-summary'");
-  });
-});
-
 describe("aw checkpoint-write sigue saliendo con 0 como el PreCompact de un host sin reinstalar", () => {
   it("en un hub con marcadores anteriores a 29.0.0 avisa por stderr y sale con 0", async () => {
     const old = join(root, "old-hub");
@@ -202,6 +182,7 @@ describe("reinstalar deja los hooks de cada host sólo con los nombres nuevos", 
     for (const retired of ["session-end", "pre-compact", "post-compact"]) {
       expect(after, target).not.toContain(`agent-workflow hook ${retired}`);
     }
-    expect(after).toContain("agent-workflow hook sql-mutation-guard");
+    expect(after).not.toContain("agent-workflow hook");
+    expect(after).toContain("agent-workflow self namespace --pin workflow");
   });
 });

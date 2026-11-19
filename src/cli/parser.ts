@@ -92,11 +92,6 @@ const BOOLEAN_FLAGS: ReadonlySet<string> = new Set([
   // reporting an unknown command. A following `--json` was never at risk:
   // `consumeOptionFlag` already refuses a dash-prefixed token as a value.
   "doctor",
-  "skip-native",
-  // `--verify-connection` autoriza salir de la máquina para verificar una
-  // credencial, y no lleva valor. Sin declararlo, `aw doctor --verify-connection
-  // prepare` se comería `prepare` como su valor y correría el informe.
-  "verify-connection",
   "verbose",
   "dry-run",
   // `aw hubs sync` destinations, presence-only.
@@ -280,7 +275,7 @@ function consumeOptionFlag(state: ParseState, token: string): boolean {
     state.index += 1;
     return true;
   }
-  // `tool call --input-json -` is an explicit stdin marker, not another flag.
+  // `--input-json -` is an explicit stdin marker, not another flag.
   // Keep this exception narrow: accepting arbitrary dash-prefixed values would
   // make a missing flag value silently consume the next option.
   const acceptsStdinMarker = name === "input-json" && next === "-";

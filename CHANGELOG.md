@@ -12,6 +12,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `### Migration` sigue como notas libres.
 - Las versiones hasta la 25.6.1 sólo traen la sección donde se registró una ruptura conocida, y ahí no pretende ser completa.
 
+## [33.0.0] — 2026-11-18
+
+**Sale la superficie de base de datos: el guard SQL, `aw mcp`, `aw tool`, `aw self mcp`, los servidores MCP propios y las dependencias de la base. Cambio incompatible: reinstalar los hooks después de actualizar.**
+
+> **Advertencia.** Hasta reinstalar los hooks, un host que siga llamando a `agent-workflow hook sql-mutation-guard` recibe la respuesta de un comando desconocido (exit 1). En Claude Code sobre Windows sin Git Bash eso bloquea cada `execute_sql` de cualquier MCP hasta que el paso 2 de la migración quite la entrada.
+
+### Contrato
+
+- **Deja de valer:** `aw hook` y su destino `sql-mutation-guard`, con el `PreToolUse` sobre `mcp__*__execute_sql` de la plantilla de hooks. **Lo reemplaza:** nada: la plantilla trae sólo `SessionStart`, y cualquier invocación de `hook` responde como un comando desconocido, con exit 1. **Qué hacer:** reinstalar los hooks (paso 2 de la migración).
+- **Deja de valer:** `aw mcp` con todos sus subcomandos (`serve`, `serve-db`, `dbhub`, `setup`, `remove`, `migrate`, `doctor`, `list`), `aw tool` y `aw self mcp`. **Lo reemplaza:** nada: responden como un comando o una acción desconocidos. Cada host consulta bases con sus propios servidores MCP. **Qué hacer:** borrar los descriptores que lanzan esos comandos (paso 3).
+- **Deja de valer:** `aw export-scripts --catalog <conexión>`. **Lo reemplaza:** nada: el bundle se compone igual y la opción se rechaza como desconocida. **Qué hacer:** quitar `--catalog` de las invocaciones.
+- **Deja de valer:** las categorías `mcps` y `tools-auth` de `aw doctor`, sus reparaciones (`mcp.setup`, `mcp.remove`, `mcp.migrate`, `auth.flow`) y los flags `--skip-native` y `--verify-connection`. **Lo reemplaza:** el doctor con `installation-hosts`, `skills`, `plugins-hooks` y `hub-visibility`. **Qué hacer:** quitar esos flags de las invocaciones; el informe ya no los nombra.
+- **Deja de valer:** la superficie `mcp` en las degradaciones de `aw doctor` y en las capacidades de `aw self detect-hosts`, y el campo `mcp_via` de cada host. **Lo reemplaza:** nada. **Qué hacer:** dejar de leer esa superficie y ese campo.
+- **Deja de valer:** structured-choice por la herramienta `structured_choice` del servidor MCP de agent-workflow. **Lo reemplaza:** la herramienta nativa del host cuando el turno la ofrece y, si no, markdown etiquetado. **Qué hacer:** reinstalar el bundle (`aw self install-skill --target <host>`) para que los wrappers lleven el sello nuevo.
+- **Deja de valer:** las claves `mcpGuards` y `expectedMcpServers` de la configuración de runtime, las variables `AW_SQL_GUARD` y `AW_SQL_GUARD_ALLOW`, y el campo `mcp` de `aw plugin-doctor`. **Lo reemplaza:** nada: las claves que queden se ignoran sin error. **Qué hacer:** nada; borrarlas es opcional (paso 5).
+
+### Removed
+
+- El guard SQL, el ejecutor de sólo lectura, el registro de conexiones, los recibos MCP, las sondas, el lexer SQL y los servidores MCP de herramientas de base y de elicitation, con el código que sólo ellos usaban.
+- Las dependencias `pg` y `pg-cursor`, y sus tipos.
+- Las superficies `mcp` y `hooks` de la corrida multihost del mantenedor: observa `commands`, `structured-choice`, `host-memory` y `compaction`, y la evidencia histórica pierde esas celdas.
+- Funciones, constantes y exports que sólo usaban las pruebas; las pruebas de cobertura verifican lo mismo desde la fuente viva.
+- La guía de la base de datos de `docs/`; el registro de decisión 0005 reemplaza al 0002.
+
+### Migration
+
+1. Actualizar el CLI en cada máquina: `aw self update`.
+2. Hooks, después de actualizar:
+   - correr `aw self install-hooks --target <host>` en cada host con hooks (`claude`, `crush`, `kimi`), o `aw self install --target all --confirm-all`; eso quita el `PreToolUse` anterior de `~/.claude/settings.json`, `~/.config/crush/crush.json` y `~/.kimi-code/config.toml`, y conserva los hooks propios de la persona;
+   - en agy, borrar a mano la clave `agent-workflow` de `~/.agents/hooks.json`;
+   - en Codex, si se armó a mano, borrar la entrada de `~/.codex/hooks.json`.
+3. Descriptores MCP: borrar de la configuración de cada host las entradas que lanzan `agent-workflow mcp serve`, `mcp serve-db` o `mcp dbhub`. Las rutas son las del catálogo de hosts:
+   - Claude Code: `~/.claude.json` y `.mcp.json`;
+   - Codex: `~/.codex/config.toml` y `.codex/config.toml`;
+   - agy: `~/.gemini/config/mcp_config.json` y `.gemini/settings.json`;
+   - OpenCode: `~/.config/opencode/opencode.json` y `opencode.json`;
+   - crush: `~/.config/crush/crush.json` (en Windows, `%LOCALAPPDATA%/crush/crush.json`) y `crush.json`;
+   - kimi: `~/.kimi-code/mcp.json` y `.kimi-code/mcp.json`;
+   - Warp: `~/.warp/.mcp.json` en macOS (`~/.config/warp-terminal/.mcp.json` en Linux, `%LOCALAPPDATA%/warp/Warp/config/.mcp.json` en Windows) y `.warp/.mcp.json`.
+4. Archivos de conexiones: ningún comando vuelve a leer `~/.<namespace>/dev/dsn.env`, que contiene credenciales, ni `mcp-connections.json` ni `mcp-host-receipts.json` en la misma carpeta. Se borran a mano si nada más usa ese DSN.
+5. Restos de runtime: las claves `mcpGuards` y `expectedMcpServers` de `~/.<namespace>/agent-workflow/runtime.json`, y las variables `AW_SQL_GUARD` y `AW_SQL_GUARD_ALLOW`, ya no tienen efecto.
+6. Structured-choice en Codex usa la herramienta nativa cuando el turno la ofrece, o markdown etiquetado.
+
 ## [32.0.0] — 2026-11-16
 
 **El sistema vuelve a llamarse agent-workflow. Cambio incompatible: actualizar todas las máquinas antes de operar un hub migrado.**

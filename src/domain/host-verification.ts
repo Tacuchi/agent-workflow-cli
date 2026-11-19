@@ -10,14 +10,8 @@
 
 import type { HarnessId } from "./harnesses.js";
 
-/** The six surfaces a host run observes, in the doctor's order. */
-export type RunSurface =
-  | "commands"
-  | "structured-choice"
-  | "hooks"
-  | "mcp"
-  | "host-memory"
-  | "compaction";
+/** The four surfaces a host run observes, in the doctor's order. */
+export type RunSurface = "commands" | "structured-choice" | "host-memory" | "compaction";
 
 /** A cell as the last host run left it (plan 085, catalog → cell). */
 export type RunCellState =
@@ -77,8 +71,6 @@ export const HOST_VERIFICATIONS: Partial<Record<HarnessId, HarnessVerification>>
       cells: {
         commands: "works",
         "structured-choice": "not-reached",
-        hooks: "not-reached",
-        mcp: "not-reached",
         "host-memory": "not-reached",
         compaction: "not-reached",
       },
@@ -96,8 +88,6 @@ export const HOST_VERIFICATIONS: Partial<Record<HarnessId, HarnessVerification>>
       cells: {
         commands: "degraded-declared",
         "structured-choice": "not-reached",
-        hooks: "degraded-declared",
-        mcp: "works",
         "host-memory": "degraded-declared",
         compaction: "degraded-declared",
       },
@@ -117,8 +107,6 @@ export const HOST_VERIFICATIONS: Partial<Record<HarnessId, HarnessVerification>>
       cells: {
         commands: "broken",
         "structured-choice": "not-reached",
-        hooks: "degraded-undeclared",
-        mcp: "broken",
         "host-memory": "degraded-undeclared",
         compaction: "degraded-undeclared",
       },
@@ -138,8 +126,6 @@ export const HOST_VERIFICATIONS: Partial<Record<HarnessId, HarnessVerification>>
       cells: {
         commands: "broken",
         "structured-choice": "not-reached",
-        hooks: "not-reached",
-        mcp: "not-reached",
         "host-memory": "not-reached",
         compaction: "not-reached",
       },

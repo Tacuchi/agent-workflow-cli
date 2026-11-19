@@ -218,8 +218,8 @@ async function generateCodexPlugin(
 }
 
 /**
- * Per-host hook installers. A host in `HOOKS_MANAGED_TARGETS` MUST have one —
- * `hookInstallerCoverage()` proves it, so "managed" can never mean "declared
+ * Per-host hook installers. A host in `HOOKS_MANAGED_TARGETS` MUST have one — a
+ * test installs every managed host, so "managed" can never mean "declared
  * managed and quietly doing nothing".
  */
 const HOOK_INSTALLERS: Partial<
@@ -238,11 +238,6 @@ const HOOK_INSTALLERS: Partial<
   crush: installCrushHooks,
   gemini: installAgyHooks,
 };
-
-/** Managed targets with no installer wired. Must be empty. */
-export function hookInstallerCoverage(): InstallTarget[] {
-  return [...HOOKS_MANAGED_TARGETS].filter((t) => HOOK_INSTALLERS[t] === undefined);
-}
 
 function installHooksFor(
   target: InstallTarget,
@@ -795,6 +790,6 @@ function retiredOpencodeWarning(owned: boolean, dryRun: boolean, existing: strin
       ? "No compatible agent-workflow tool guard remains in OpenCode. An install would retire the generated module and its own config entry."
       : "No compatible agent-workflow tool guard remains in OpenCode. The generated module and its config entry were retired."
     : existing === null
-      ? "The SQL MCP matcher cannot be bridged to OpenCode tools; no plugin is installed."
+      ? "No template event can be bridged to OpenCode; no plugin is installed."
       : "A foreign plugin at that path is preserved; no agent-workflow hook is installed.";
 }

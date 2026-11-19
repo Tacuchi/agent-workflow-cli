@@ -17,9 +17,7 @@ import { PathsService } from "../application/paths-service.js";
 import { preparationMismatch, recordPreparation } from "../application/preparation-receipts.js";
 import { retiredNameState } from "../application/retired-name-migration.js";
 import { resolveSkills } from "../application/skills-resolver-service.js";
-import { encodeToolResponse, toolFailure } from "../domain/database-tools.js";
 import { redactSensitiveText, redactSensitiveValue } from "../domain/redaction.js";
-import type { ResolvedSkills } from "../domain/skills.js";
 import type { CommandResult, ExitCode } from "../domain/types.js";
 import { isAgentWorkflowRoot } from "../runtime/agent-workflow-marker.js";
 import { RuntimeConfigService } from "../runtime/config-service.js";
@@ -36,12 +34,8 @@ import {
   AgentWorkflowDirectoryError,
   DEFAULT_NAMESPACE,
   NamespaceResolver,
-  namespaceConfigFile,
 } from "../runtime/namespace-resolver.js";
-import { normalizeNamespace } from "../runtime/namespace.js";
-import { DEFAULT_RUNTIME_CONFIG } from "../runtime/types.js";
 import { readPackageVersion } from "../runtime/version.js";
-import { firstCommandToken, hookTarget } from "./argv-scan.js";
 import { ALL_COMMANDS } from "./commands/index.js";
 import { gateFlags } from "./commands/unknown-flags.js";
 import { planDispatch, resolveGlobalAlias } from "./dispatch-plan.js";
@@ -76,8 +70,7 @@ async function run(argv: string[]): Promise<ExitCode> {
   if (typeof prepared === "number") return prepared;
   const initialized = await initializeCliContext(prepared.parsed, fs, env, proc, git);
   if (initialized === null) {
-    if (isSqlMutationGuard(prepared.parsed)) return sqlGuardFailedClosed();
-    return isHookCommand(prepared.parsed) ? 0 : transportExitCode(prepared.parsed);
+    return isHookCommand(prepared.parsed) ? 0 : 1;
   }
 
   const retired = await retiredNameState(fs, initialized.ctx.paths);
@@ -112,18 +105,13 @@ interface PreparedInvocation {
 
 function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
   const parsed = parseCli(argv);
-  if (parsed === null) return rawTransportExitCode(argv);
+  if (parsed === null) return 1;
   const retired = renamedInvocation(parsed);
   if (retired !== null) {
     emitError(retired);
-    return isSqlMutationGuard(parsed) ? sqlGuardFailedClosed() : 1;
+    return 1;
   }
   const hasHelp = parsed.flags.has("--help") || parsed.flags.has("-h");
-  // `--help` never starts a stdio server: it is answered like any other help.
-  if (isMcpStdioInvocation(parsed) && parsed.flags.has("--version") && !hasHelp) {
-    process.stderr.write("aw mcp: --version no es válido para un servidor stdio\n");
-    return 2;
-  }
   // Global ONLY when nothing else was asked. With a command present `--version`
   // belongs to that command — `release-pass` names one on every verb — and
   // answering with the CLI's own version would silently swallow the invocation.
@@ -137,37 +125,10 @@ function prepareInvocation(argv: string[]): PreparedInvocation | ExitCode {
     useAsciiStderr(output.mode.ascii);
     return { parsed, isTTY, hasHelp, output: output.mode };
   }
-  return outputModeFailure(parsed, output.message);
+  return outputModeFailure(output.message);
 }
 
-function rawTransportExitCode(argv: readonly string[]): ExitCode {
-  if (looksLikeSqlGuardInvocation(argv)) return sqlGuardFailedClosed();
-  return looksLikeMcpStdioInvocation(argv) || looksLikeToolInvocation(argv) ? 2 : 1;
-}
-
-// The host blocks a tool call only on exit 2: a guard that cannot evaluate
-// fails closed, or any crash would let the mutation through.
-function sqlGuardFailedClosed(): ExitCode {
-  process.stderr.write(
-    "agent-workflow: la guarda SQL no pudo evaluar la llamada y la bloquea; revisá la configuración de runtime\n",
-  );
-  return 2;
-}
-
-function looksLikeSqlGuardInvocation(argv: readonly string[]): boolean {
-  return hookTarget(argv) === "sql-mutation-guard";
-}
-
-function outputModeFailure(parsed: ParsedArgs, message: string): ExitCode {
-  if (isSqlMutationGuard(parsed)) return sqlGuardFailedClosed();
-  if (parsed.command === "tool") {
-    emitToolEarlyFailure("INVALID_INPUT", message);
-    return 2;
-  }
-  if (isMcpStdioInvocation(parsed)) {
-    process.stderr.write("aw mcp: argumentos de salida inválidos para un servidor stdio\n");
-    return 2;
-  }
+function outputModeFailure(message: string): ExitCode {
   emitError(formatArgvError(message));
   return 1;
 }
@@ -199,13 +160,8 @@ async function initializeCliContext(
   const namespace = { namespace: directory.namespace, source: directory.namespaceSource };
   const paths = new PathsService(namespace.namespace, env.homeDir(), directory.root);
   const hubFs = new MaterializingHubFileSystem(fs, paths);
-  const standaloneTransport = parsed.command === "tool" || isMcpStdioInvocation(parsed);
-  const runtime = standaloneTransport
-    ? defaultStandaloneRuntime()
-    : await new RuntimeConfigService(fs, env, paths).resolveRuntime();
-  const skills = standaloneTransport
-    ? ({} as ResolvedSkills)
-    : (await resolveSkills(fs, paths)).skills;
+  const runtime = await new RuntimeConfigService(fs, env, paths).resolveRuntime();
+  const skills = (await resolveSkills(fs, paths)).skills;
   return {
     hubFs,
     ctx: {
@@ -229,30 +185,10 @@ async function initializeCliContext(
   };
 }
 
-function defaultStandaloneRuntime() {
-  return {
-    packageName: DEFAULT_RUNTIME_CONFIG.packageName,
-    binName: DEFAULT_RUNTIME_CONFIG.binName,
-    source: "default" as const,
-  };
-}
-
-function transportExitCode(parsed: ParsedArgs): ExitCode {
-  return parsed.command === "tool" || isMcpStdioInvocation(parsed) ? 2 : 1;
-}
-
 function parseCli(argv: string[]): ParsedArgs | null {
   try {
     return parseArgv(argv);
   } catch (err) {
-    if (looksLikeMcpStdioInvocation(argv)) {
-      process.stderr.write("aw mcp: argumentos del servidor stdio no son válidos\n");
-      return null;
-    }
-    if (looksLikeToolInvocation(argv)) {
-      emitToolEarlyFailure("INVALID_INPUT", "Los argumentos de tool no son válidos.");
-      return null;
-    }
     emitError(formatArgvError((err as Error).message));
     return null;
   }
@@ -280,42 +216,11 @@ async function resolveAgentWorkflowDirectory(
 
 /**
  * What still answers in a hub whose block wears pre-29 markers: the migration
- * itself, what does not operate on a hub (doctor, help, the machine-scoped
- * commands and the stdio transports), and the SQL guard.
+ * itself, and what does not operate on a hub (doctor, help, the
+ * machine-scoped commands).
  */
 function exemptFromHubMigration(parsed: ParsedArgs): boolean {
-  return parsed.command === "hub-migrate" || runsWithoutHub(parsed) || isSqlMutationGuard(parsed);
-}
-
-// The guard reads only the user's runtime config, so no hub is needed. A hook
-// exits 0 on a resolution error: refusing the guard on one ($HOME, an invalid
-// --hub, a source no hub declares or two hubs declare, an unmigrated hub, two
-// namespaces marked in one folder) would let every mutation through.
-function isSqlMutationGuard(parsed: ParsedArgs): boolean {
-  return parsed.command === "hook" && parsed.rest[0] === "sql-mutation-guard";
-}
-
-async function resolveNamespaceDirectory(
-  resolver: NamespaceResolver,
-  parsed: ParsedArgs,
-  fs: NodeFileSystem,
-  env: NodeEnv,
-): Promise<AgentWorkflowDirectory> {
-  try {
-    return await resolver.resolveDirectory(parsed.values.get("namespace"));
-  } catch (error) {
-    if (!(error instanceof AgentWorkflowDirectoryError) || !isSqlMutationGuard(parsed)) throw error;
-    // Two namespaces marked here name no single user config: read the one a
-    // folder without a marker would, the pinned namespace or else the default.
-    const pin = namespaceConfigFile(env.homeDir());
-    const pinned = (await fs.exists(pin)) ? await fs.readText(pin) : null;
-    return {
-      root: env.cwd(),
-      namespace: normalizeNamespace(pinned ?? DEFAULT_NAMESPACE),
-      namespaceSource: pinned === null ? "default" : "config",
-      materialized: false,
-    };
-  }
+  return parsed.command === "hub-migrate" || runsWithoutHub(parsed);
 }
 
 async function resolveCliDirectory(
@@ -324,7 +229,7 @@ async function resolveCliDirectory(
   fs: NodeFileSystem,
   env: NodeEnv,
 ): Promise<AgentWorkflowDirectory | null> {
-  const directory = await resolveNamespaceDirectory(resolver, parsed, fs, env);
+  const directory = await resolver.resolveDirectory(parsed.values.get("namespace"));
   if (parsed.command === "hub-init") return directory;
   try {
     return await resolveHubDirectory(
@@ -337,7 +242,6 @@ async function resolveCliDirectory(
   } catch (error) {
     if (!(error instanceof HubResolutionError)) throw error;
     const withoutHub = { ...directory, root: env.cwd(), materialized: false };
-    if (isSqlMutationGuard(parsed)) return withoutHub;
     if (isHookCommand(parsed)) {
       writeStderr(error.message);
       return null;
@@ -347,23 +251,16 @@ async function resolveCliDirectory(
   }
 }
 
-// A host runs these on its own events, $HOME included: a non-zero exit would
-// hold that event back, so without a hub they only report on stderr.
 // `checkpoint-write` is no hook target since 29.0.0, but hosts not yet
-// reinstalled still run it on PreCompact, so it keeps the same exit.
-const HOOK_COMMANDS: ReadonlySet<string> = new Set([
-  ...ALL_COMMANDS.filter((command) => command.hook === true).map((command) => command.name),
-  "checkpoint-write",
-]);
-
+// reinstalled still run it on PreCompact, $HOME included: a non-zero exit would
+// hold that event back, so without a hub it only reports on stderr.
 function isHookCommand(parsed: ParsedArgs): boolean {
-  return parsed.command !== undefined && HOOK_COMMANDS.has(parsed.command);
+  return parsed.command === "checkpoint-write";
 }
 
 // Their scope is the user's machine (installation, host configs), not a
 // hub, so any cwd works — $HOME included.
 const MACHINE_SCOPED_COMMANDS: ReadonlySet<string> = new Set([
-  "tool",
   "self",
   "context-budget",
   "doctor",
@@ -374,32 +271,8 @@ function runsWithoutHub(parsed: ParsedArgs): boolean {
   return (
     parsed.command === undefined ||
     MACHINE_SCOPED_COMMANDS.has(parsed.command) ||
-    (parsed.command === "mcp" && parsed.flags.has("--global")) ||
-    isMcpStdioInvocation(parsed) ||
     parsed.flags.has("--help") ||
     parsed.flags.has("-h")
-  );
-}
-
-function emitToolEarlyFailure(code: string, message: string): void {
-  writeStdout(encodeToolResponse(toolFailure(code, message)));
-}
-
-function looksLikeToolInvocation(argv: readonly string[]): boolean {
-  return !looksLikeMcpStdioInvocation(argv) && firstCommandToken(argv) === "tool";
-}
-
-function looksLikeMcpStdioInvocation(argv: readonly string[]): boolean {
-  const index = argv.indexOf("mcp");
-  if (index < 0) return false;
-  const subcommand = argv[index + 1];
-  return subcommand === "serve" || subcommand === "serve-db" || subcommand === "dbhub";
-}
-
-function isMcpStdioInvocation(parsed: ParsedArgs): boolean {
-  return (
-    parsed.command === "mcp" &&
-    (parsed.rest[0] === "serve" || parsed.rest[0] === "serve-db" || parsed.rest[0] === "dbhub")
   );
 }
 
@@ -497,22 +370,16 @@ async function executeCommand(
     return result.exitCode;
   } catch (err) {
     await ctx.logger?.error(formatCommandError(command.name, err));
-    return commandCrashExit(err, parsed, command, output, hubFs);
+    return commandCrashExit(err, command, output, hubFs);
   }
 }
 
 function commandCrashExit(
   err: unknown,
-  parsed: ParsedArgs,
   command: CliCommand,
   output: OutputMode,
   hubFs: MaterializingHubFileSystem,
 ): ExitCode {
-  if (isSqlMutationGuard(parsed)) return sqlGuardFailedClosed();
-  if (isMcpStdioInvocation(parsed)) {
-    process.stderr.write("aw mcp: el servidor stdio no pudo iniciar\n");
-    return 1;
-  }
   const message = redactSensitiveText(err instanceof Error ? err.message : String(err));
   // A hub refused mid-command (a materializing write, a guarded path) keeps its
   // own code, as when resolution refuses it before the command runs.
@@ -713,7 +580,7 @@ function printCommandHelp(
   writeStdout(forPerson(`${commandHelpText(command, action)}\n`, mode));
 }
 
-// Do not force-exit after writing JSON: a piped 4 MiB tool response may still
+// Do not force-exit after writing JSON: a large response may still
 // be draining under stdout backpressure. `exitCode` preserves the contract
 // while allowing Node to flush stdio naturally.
 void run(process.argv.slice(2))
@@ -721,21 +588,6 @@ void run(process.argv.slice(2))
     process.exitCode = code;
   })
   .catch(() => {
-    const argv = process.argv.slice(2);
-    if (looksLikeSqlGuardInvocation(argv)) {
-      process.exitCode = sqlGuardFailedClosed();
-      return;
-    }
-    if (looksLikeMcpStdioInvocation(argv)) {
-      process.stderr.write("aw mcp: el servidor stdio no pudo iniciar\n");
-      process.exitCode = 2;
-      return;
-    }
-    if (looksLikeToolInvocation(argv)) {
-      emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
-      process.exitCode = 1;
-      return;
-    }
     process.stderr.write("agent-workflow: fallo fatal no recuperable\n");
     process.exitCode = 1;
   });
@@ -756,25 +608,7 @@ function directoryFailure(err: unknown, parsed: ParsedArgs): null {
     );
     return null;
   }
-  if (!(err instanceof AgentWorkflowDirectoryError)) {
-    if (parsed.command === "tool") {
-      emitToolEarlyFailure("TOOL_RUNTIME_FAILED", "La tool no pudo preparar su entorno.");
-      return null;
-    }
-    if (isMcpStdioInvocation(parsed)) {
-      process.stderr.write("aw mcp: no se pudo preparar el servidor stdio\n");
-      return null;
-    }
-    throw err;
-  }
-  if (parsed.command === "tool") {
-    emitToolEarlyFailure("NAMESPACE_AMBIGUOUS", "No se pudo resolver el namespace de la tool.");
-    return null;
-  }
-  if (isMcpStdioInvocation(parsed)) {
-    process.stderr.write("aw mcp: no se pudo resolver el namespace del servidor stdio\n");
-    return null;
-  }
+  if (!(err instanceof AgentWorkflowDirectoryError)) throw err;
   emitError({
     code: err.code,
     message: err.message,

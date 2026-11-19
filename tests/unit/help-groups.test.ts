@@ -64,8 +64,7 @@ describe("renderGroupedCommandLines", () => {
 
 describe("guard: every registered command has a real group (no 'Other')", () => {
   it("groups all commands from the canonical registry with none left in Other", () => {
-    const agentFacing = ALL_COMMANDS.filter((c) => c.hook !== true);
-    const groups = groupCommands(agentFacing.map((c) => c.name));
+    const groups = groupCommands(ALL_COMMANDS.map((c) => c.name));
     const other = groups.find((g) => g.name === "Other");
     expect(other, `these commands fell into Other: ${other?.commands.join(", ")}`).toBeUndefined();
   });
@@ -161,7 +160,7 @@ describe("ayuda derivada de la declaración que rechaza flags desconocidos", () 
   });
 });
 
-describe("aw --help — contract once, one command per intent, hook targets apart", () => {
+describe("aw --help — contract once, one command per intent, dev-only apart", () => {
   const help = globalHelpText(ALL_COMMANDS, "workflow");
 
   it("declares the common contract exactly once", () => {
@@ -213,26 +212,13 @@ describe("aw --help — contract once, one command per intent, hook targets apar
     expect(help.indexOf("By intent:")).toBeLessThan(help.indexOf("Commands:"));
   });
 
-  it("the only hook target is `hook`, listed apart and only with --all", () => {
-    expect(ALL_COMMANDS.filter((c) => c.hook === true).map((c) => c.name)).toEqual(["hook"]);
-    const full = globalHelpText(ALL_COMMANDS, "workflow", { all: true });
-    const section = full.slice(full.indexOf("Hook targets"), full.indexOf("Aliases:"));
-    const listed = [...section.matchAll(/^ {2}([\w-]+) {2,}/gm)].map((m) => m[1]);
-    expect(listed).toEqual(["hook"]);
-    const commandsSection = full.slice(full.indexOf("Commands:"), full.indexOf("Hook targets"));
-    expect(commandsSection).not.toMatch(/^ {2}hook /m);
-  });
-
-  it("without --all it names no hook target and no dev-only command, and says how to see them", () => {
+  it("without --all it names no dev-only command, and says how to see them", () => {
     const commandsSection = help.slice(help.indexOf("Commands:"), help.indexOf("Aliases:"));
-    expect(help).not.toContain("Hook targets");
     expect(help).not.toContain("Dev-only:");
-    for (const name of ["hook", "harness", "profiles", "logs"]) {
+    for (const name of ["harness", "profiles", "logs"]) {
       expect(commandsSection, name).not.toMatch(new RegExp(`^ {2}${name} `, "m"));
     }
-    expect(help).toContain(
-      "aw --help --all also lists the hook targets and the dev-only commands.",
-    );
+    expect(help).toContain("aw --help --all also lists the dev-only commands.");
     const full = globalHelpText(ALL_COMMANDS, "workflow", { all: true });
     expect(full).toContain("Dev-only:");
     for (const name of ["harness", "profiles", "logs"]) {

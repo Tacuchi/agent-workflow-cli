@@ -2,10 +2,8 @@ import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 import { MaterializingHubFileSystem } from "../../src/application/hub-materialization-service.js";
-import { McpHostReceiptService } from "../../src/application/mcp-host-receipt-service.js";
-import { NodeMcpHostReceiptStore } from "../../src/application/mcp-host-receipt-store.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { migrateRetiredNames } from "../../src/application/retired-name-migration.js";
 import { computeNoteDigest, validateDecisionNote } from "../../src/domain/decision-note.js";
@@ -17,35 +15,6 @@ const oldMarker = "/hub/.workflow/workline.json";
 const newMarker = "/hub/.workflow/agent-workflow.json";
 const block =
   "<!-- WORKFLOW-HUB-START -->\n## Hub\n\nEjemplo\n\n## Workline\n\n- Estado: `aw status`.\n<!-- WORKFLOW-HUB-END -->\n";
-
-it("reads retired MCP receipts without writing and rewrites their key once on update", async () => {
-  const base = await mkdtemp(join(tmpdir(), "aw-receipt-migration-"));
-  const file = join(base, "receipts.json");
-  const identity = { host: "codex" as const, scope: "global" as const, connection: "example" };
-  const receipt = {
-    schema_version: 1,
-    ...identity,
-    workline_version: "31.1.1",
-    descriptor_digest: `sha256:${"1".repeat(64)}`,
-    registered_at: "2026-11-16T00:00:00.000Z",
-    reload_required: true,
-  };
-  const original = JSON.stringify({ schema_version: 1, receipts: [receipt] });
-  await writeFile(file, original);
-  const service = new McpHostReceiptService(new NodeMcpHostReceiptStore(file));
-  expect((await service.list())[0]?.agent_workflow_version).toBe("31.1.1");
-  expect(await readFile(file, "utf8")).toBe(original);
-  const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-  try {
-    await service.recordLaunchProbe({ ...identity, outcome: "passed", phase: "spawn" });
-    expect(await readFile(file, "utf8")).not.toContain("workline_version");
-    expect(stderr).toHaveBeenCalledTimes(1);
-    await service.recordLaunchProbe({ ...identity, outcome: "passed", phase: "spawn" });
-    expect(stderr).toHaveBeenCalledTimes(1);
-  } finally {
-    stderr.mockRestore();
-  }
-});
 
 it("migrates on the actual first hub write and preserves namespace, model and valid note seals", async () => {
   const fs = new MemFs()

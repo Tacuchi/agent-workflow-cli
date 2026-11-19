@@ -11,19 +11,11 @@ import { HOSTS } from "./hosts.mjs";
 /** The flow controls every structured choice carries (CHASSIS: `flow` slot). */
 export const FLOW_CONTROLS = ["Compactar", "Cerrar"];
 
-/** The agent-workflow MCP the run registers in each disposable home, and the only one an extract may name. */
-export const PROBE_MCP = { name: "host-run-probe", dsnVar: "HOST_RUN_PROBE_DSN" };
-
-/** Port 9 (discard) on loopback: nothing answers, so no query ever reaches a database. */
-export const PROBE_DSN = "postgresql://127.0.0.1:9/host_run_probe?connect_timeout=2";
-
 export const QUICK_OBJECTIVE =
   "Rediseñar la arquitectura completa del CLI en varias fuentes, con varios entregables y una migración de datos";
 
 /** The trivial sub-task the size gate is trimmed to, fixed so no answer needs free text. */
 export const QUICK_SUBTASK = "crear NOTES.md en la raíz del workspace con la línea 'host-run'";
-
-const MUTATING_PROBE = "DELETE FROM host_run_probe WHERE id = 1";
 
 /**
  * A boundary the step can reach: the labels it literally shows and the one the
@@ -97,37 +89,6 @@ export const STEPS = [
       },
     ],
     evidence: ["which boundary was answered", "native selector or labeled markdown", "mode"],
-  },
-  {
-    surface: "mcp",
-    command: null,
-    goal: "the host lists the tools of the agent-workflow MCP registered in its home; nothing is queried",
-    prompt: () =>
-      `List the tools the MCP server '${PROBE_MCP.name}' exposes, by name. Do not call any of them.`,
-    boundaries: [],
-    stop: "the tool list is on screen",
-    evidence: ["execute_sql and search_objects named", "load receipt under <home>/.workflow/dev/"],
-  },
-  {
-    surface: "hooks",
-    command: null,
-    goal: "SessionStart and the PreToolUse SQL guard leave their lines in the home's log",
-    prompt: () =>
-      `Call the execute_sql tool of the MCP server '${PROBE_MCP.name}' once with exactly this statement: ${MUTATING_PROBE}. Report the result and do not retry.`,
-    // A permission prompt for the MCP call is the person's, never the run's.
-    boundaries: [],
-    stop: "the call returns (refused by the guard or by the unreachable server)",
-    // The `hook sql-mutation-guard` line tells the guard's refusal apart from the
-    // server's own; Pre/PostCompact lines are read after the compaction step.
-    evidence: [
-      "log: self namespace (SessionStart)",
-      "log: hook sql-mutation-guard (PreToolUse)",
-      "log: hook pre-compact / hook post-compact (Pre/PostCompact)",
-      "shim log: which binary ran each hook",
-    ],
-    judgedAfter: "compaction",
-    // Pre/PostCompact only fire in the compaction step.
-    requires: ["compaction"],
   },
   {
     surface: "host-memory",
@@ -207,7 +168,6 @@ export function buildScenario(hostIds, steps = STEPS) {
   return {
     objective: QUICK_OBJECTIVE,
     subtask: QUICK_SUBTASK,
-    probe_mcp: PROBE_MCP.name,
     flow_controls: FLOW_CONTROLS,
     steps: steps.map((step) => ({
       surface: step.surface,

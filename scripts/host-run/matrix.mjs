@@ -99,19 +99,6 @@ const JUDGES = {
   commands: (e) => (e.ran ? (e.via === "commands-dir" ? "works" : "degraded") : "fails"),
   "structured-choice": (e) =>
     e.answered === "native" ? "works" : e.answered === "markdown" ? "degraded" : "fails",
-  hooks: (e) => {
-    const seen = ["SessionStart", "PreToolUse", "PreCompact", "PostCompact"].filter(
-      (event) => e.lines?.[event],
-    ).length;
-    return seen === 4 ? "works" : seen > 0 ? "degraded" : "fails";
-  },
-  // The host listed the tools and its server was reached while the pane ran.
-  mcp: (e) =>
-    e.toolsListed && e.serverReached
-      ? "works"
-      : e.toolsListed || e.serverReached
-        ? "degraded"
-        : "fails",
   "host-memory": (e) => (e.ran ? (e.destination ? "works" : "degraded") : "fails"),
   compaction: (e) =>
     e.preCompact && e.postCompact ? "works" : e.checkpoint ? "degraded" : "fails",

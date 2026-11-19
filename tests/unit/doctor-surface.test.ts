@@ -30,7 +30,7 @@ import {
  * doblado — porque lo que se fija son las cuatro decisiones de superficie que un
  * refactor puede deshacer sin romper ningún proveedor:
  *
- *  1. `--doctor` y `--skip-native` son booleanos EN EL PARSER. Sin eso,
+ *  1. `--doctor` es booleano EN EL PARSER. Sin eso,
  *     `consumeOptionFlag` toma como VALOR el token siguiente que no empieza con
  *     guion: `aw --doctor extra` se comía `extra` —el comando que la persona
  *     escribió— y corría el diagnóstico en vez de denunciar un comando
@@ -91,13 +91,6 @@ describe("aw doctor · el parser no se come el token que sigue al alias", () => 
     // el error que corresponde—: lo que no puede pasar es que desaparezca y que
     // `aw --doctor extra` termine diagnosticando como si no hubiera comando.
     expect(parsed.command).toBe("extra");
-  });
-
-  it("`aw doctor --skip-native claude-code` no se traga el posicional", () => {
-    const parsed = parseArgv(["doctor", "--skip-native", "claude-code"]);
-    expect(parsed.flags.has("--skip-native")).toBe(true);
-    expect(parsed.rest).toEqual(["claude-code"]);
-    expect(parsed.values.has("skip-native")).toBe(false);
   });
 
   it("los flags CON valor del comando siguen tomando el suyo", () => {
@@ -212,18 +205,13 @@ describe("aw doctor · el veredicto viaja en el código de salida, no en ok", ()
   it("traslada al informe lo que se pidió en la línea de comandos", async () => {
     runDoctorMock.run.mockResolvedValue(healthyReport());
     await doctorCommand.execute(
-      parseArgv(["doctor", "--host", "codex", "--only", "claude-code", "--skip-native"]),
+      parseArgv(["doctor", "--host", "codex", "--only", "claude-code"]),
       emptyCtx,
     );
     expect(runDoctorMock.run).toHaveBeenCalledTimes(1);
     expect(runDoctorMock.run.mock.calls[0]?.[1]).toEqual({
       host: "codex",
       only: ["claude-code"],
-      skipNative: true,
-      // La autorización de verificación viaja siempre, vacía cuando nadie pidió
-      // `--verify-connection`: pedir con las manos vacías es lo que hace que la
-      // verificación profunda se degrade DICIÉNDOLO.
-      verify: [],
     });
   });
 
@@ -267,9 +255,9 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
         ]),
         hostView("oz", true, true, [
           {
-            surface: "mcp",
+            surface: "commands",
             status: "degraded",
-            detail: "no MCP config file: this host takes servers\nthrough a launch flag",
+            detail: "no native commands dir: each command\nis a synthesized skill",
           },
           { surface: "compaction", status: "unsupported", detail: "CHECKPOINT + resume" },
         ]),
@@ -281,7 +269,7 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
       `  ${hostLabel("warp")} · ready · runtime available 1.2.3 · agent-workflow instalado`,
       "    hooks unsupported — this host has no hook system",
       `→ ${hostLabel("oz")} · ready · runtime available 1.2.3 · agent-workflow instalado`,
-      "    mcp degraded — no MCP config file: this host takes servers through a launch flag",
+      "    commands degraded — no native commands dir: each command is a synthesized skill",
       "    compaction unsupported — CHECKPOINT + resume",
     ]);
   });
@@ -289,7 +277,7 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
   it("aw doctor --help declara las degradaciones y el esquema 2", async () => {
     const help = doctorCommand.help;
     expect(help?.output).toContain(
-      "degradations[] {surface (commands|structured-choice|hooks|mcp|host-memory|compaction), status (degraded|unsupported), detail}",
+      "degradations[] {surface (commands|structured-choice|hooks|host-memory|compaction), status (degraded|unsupported), detail}",
     );
     expect(help?.notes?.join("\n")).toContain("schema_version 2");
     expect(help?.notes?.join("\n")).toMatch(/adds no finding and does not change the verdict/);
@@ -308,20 +296,16 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
       "  installation-hosts",
       "    claude-code: comprobada",
       "    codex: comprobada",
-      "  mcps",
-      "    claude-code: comprobada",
-      "    codex: omitida — se pidió --skip-native",
       "  skills",
       "    claude-code: comprobada",
       "    codex: no aplica — el host no descubre skills",
-      // Las tres categorías que este informe no trae se DECLARAN vacías en vez
-      // de desaparecer: el defecto real era que un `--only` que no casaba con
-      // ningún host dejaba instalación, MCPs y visibilidad sin una sola fila y
-      // el texto se leía como si esas tres hubieran pasado la revisión.
-      "  tools-auth",
-      "    (sin cobertura declarada en esta corrida)",
       "  plugins-hooks",
-      "    (sin cobertura declarada en esta corrida)",
+      "    claude-code: comprobada",
+      "    codex: omitida — el host no arma hooks",
+      // La categoría que este informe no trae se DECLARA vacía en vez de
+      // desaparecer: el defecto real era que un `--only` que no casaba con
+      // ningún host dejaba categorías sin una sola fila y el texto se leía
+      // como si hubieran pasado la revisión.
       "  hub-visibility",
       "    (sin cobertura declarada en esta corrida)",
     ]);
@@ -340,14 +324,14 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
     expect(renderedIds).toEqual([
       "claude-code/installation-hosts/bundle",
       "claude-code/installation-hosts/runtime",
-      "claude-code/mcps/agent-workflow",
       "claude-code/skills/replica",
+      "claude-code/plugins-hooks/hooks",
       "codex/installation-hosts/hooks",
       "codex/installation-hosts/runtime",
-      "codex/mcps/database",
-      "codex/mcps/elicitation",
       "codex/skills/w:plan-exec",
       "codex/skills/w:quick",
+      "codex/plugins-hooks/plugin",
+      "codex/plugins-hooks/settings",
     ]);
     expect(report.findings.map((item) => item.id)).toEqual(renderedIds);
   });
@@ -372,7 +356,7 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
       "Resumen: 3 sano · 2 advertencia · 1 bloqueo · 4 no verificado · 10 accionable",
     );
     expect(text).toContain(
-      "Veredicto: salida 1 — hay 1 hallazgo(s) bloqueante(s): claude-code/mcps/agent-workflow",
+      "Veredicto: salida 1 — hay 1 hallazgo(s) bloqueante(s): claude-code/plugins-hooks/hooks",
     );
   });
 
@@ -391,10 +375,10 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
   it("una remediación manual sin guía no se lee igual que «ninguna acción segura» (AC-03)", () => {
     const report = reportOf(
       [
-        finding("claude-code", "mcps", "manual-sin-guia", "warning", {
+        finding("claude-code", "plugins-hooks", "manual-sin-guia", "warning", {
           remediation: { kind: "manual", action: null, guidance: [] },
         }),
-        finding("claude-code", "mcps", "sin-accion-segura", "warning", {
+        finding("claude-code", "plugins-hooks", "sin-accion-segura", "warning", {
           ownership: "foreign",
           remediation: { kind: "none", action: null, guidance: [] },
         }),
@@ -414,14 +398,14 @@ describe("aw doctor · el texto y el JSON hablan del mismo informe (AC-14)", () 
     // Los dos bloques COMPLETOS: sin el renglón de propiedad y remediación, los
     // dos hallazgos salen letra por letra iguales salvo por su nombre, y la
     // prueba no podría distinguir «hay algo que hacer» de «no hay nada seguro».
-    expect(blockOf("claude-code/mcps/manual-sin-guia")).toEqual([
-      "  ! claude-code/mcps/manual-sin-guia — manual-sin-guia quedó en estado warning",
+    expect(blockOf("claude-code/plugins-hooks/manual-sin-guia")).toEqual([
+      "  ! claude-code/plugins-hooks/manual-sin-guia — manual-sin-guia quedó en estado warning",
       "      impacto: lo que cuesta: manual-sin-guia",
       "      evidencia: leído de ~/.config/claude-code/manual-sin-guia",
       "      propiedad: de agent-workflow · remediación: manual",
     ]);
-    expect(blockOf("claude-code/mcps/sin-accion-segura")).toEqual([
-      "  ! claude-code/mcps/sin-accion-segura — sin-accion-segura quedó en estado warning",
+    expect(blockOf("claude-code/plugins-hooks/sin-accion-segura")).toEqual([
+      "  ! claude-code/plugins-hooks/sin-accion-segura — sin-accion-segura quedó en estado warning",
       "      impacto: lo que cuesta: sin-accion-segura",
       "      evidencia: leído de ~/.config/claude-code/sin-accion-segura",
       "      propiedad: ajena · remediación: sin acción segura",
@@ -457,17 +441,17 @@ describe("aw doctor · la proyección humana no puede ser forjada desde un archi
    */
   it("un nombre con saltos de línea no agrega renglones de hallazgo al texto", () => {
     const forjado =
-      "inocente\n  ✔ claude-code/mcps/workspace:qtc-cert — la conexión está sana\n      impacto: ninguno";
+      "inocente\n  ✔ claude-code/plugins-hooks/workspace:qtc-cert — la conexión está sana\n      impacto: ninguno";
     const report = reportOf(
       [
         {
-          id: doctorFindingId("claude-code", "mcps", `workspace:${forjado}`),
+          id: doctorFindingId("claude-code", "plugins-hooks", `workspace:${forjado}`),
           host: "claude-code",
-          category: "mcps",
-          resource: { kind: "mcp-entry", name: forjado, locator: "~/.mcp.json" },
+          category: "plugins-hooks",
+          resource: { kind: "host-config", name: forjado, locator: "~/.claude/settings.json" },
           state: "warning",
           summary: `${forjado} es una entrada ajena con problemas`,
-          impact: "lo que cuesta:\n  ✘ codex/mcps/native:x — cae",
+          impact: "lo que cuesta:\n  ✘ codex/plugins-hooks/native:x — cae",
           evidence: ["archivo:\n  ! warp/skills/y — falta"],
           ownership: "foreign",
           remediation: { kind: "manual", action: null, guidance: ["revisá\n  ✔ falso — sano"] },
@@ -483,7 +467,7 @@ describe("aw doctor · la proyección humana no puede ser forjada desde un archi
     // Y ninguna de las líneas forjadas aparece como renglón propio.
     expect(text).not.toContain("la conexión está sana\n");
     expect(
-      text.split("\n").filter((line) => line.trim() === "✘ codex/mcps/native:x — cae"),
+      text.split("\n").filter((line) => line.trim() === "✘ codex/plugins-hooks/native:x — cae"),
     ).toEqual([]);
     // El nombre sigue ahí, legible y en una sola línea.
     expect(text).toContain("inocente");

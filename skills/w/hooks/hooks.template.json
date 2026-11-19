@@ -11,18 +11,6 @@
           }
         ]
       }
-    ],
-    "PreToolUse": [
-      {
-        "matcher": "mcp__.*__execute_sql",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "agent-workflow hook sql-mutation-guard",
-            "timeout": 10
-          }
-        ]
-      }
     ]
   }
 }

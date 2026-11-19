@@ -257,14 +257,7 @@ describe("Structured-choice — opciones funcionales y bindings multi-host", () 
 
 describe("Tabla de estado por superficie — HARNESS.md ↔ catálogo", () => {
   const HARNESS_PATH = resolve(__dirname, "..", "..", "skills", "w", "harness", "HARNESS.md");
-  const SURFACES = [
-    "commands",
-    "structured-choice",
-    "hooks",
-    "mcp",
-    "host-memory",
-    "compaction",
-  ] as const;
+  const SURFACES = ["commands", "structured-choice", "hooks", "host-memory", "compaction"] as const;
   const COLUMN_BY_HOST = {
     "claude-code": "Claude Code",
     codex: "Codex",
@@ -321,7 +314,7 @@ describe("Tabla de estado por superficie — HARNESS.md ↔ catálogo", () => {
         compared += 1;
       }
     }
-    expect(compared).toBe(48);
+    expect(compared).toBe(40);
   });
 
   it("la prosa ya no contradice al catálogo en compactación ni en el plugin retirado", async () => {

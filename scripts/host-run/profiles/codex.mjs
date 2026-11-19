@@ -1,6 +1,6 @@
 // Codex: `prefix_rule(pattern=[...], decision="forbidden")` in
 // $CODEX_HOME/rules/default.rules, plus a user-level permission profile in
-// $CODEX_HOME/config.toml (the file `aw self install` and `aw mcp setup` leave).
+// $CODEX_HOME/config.toml (the file `aw self install` leaves).
 //
 // Read from the codex-cli 0.157.1 binary: `default.rules`, `prefix_rule(pattern=`,
 // the decisions `prompt|forbidden|allow`; `PermissionProfileToml {description,

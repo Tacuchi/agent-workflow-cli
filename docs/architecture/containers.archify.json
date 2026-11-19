@@ -10,33 +10,19 @@
       "url": "https://github.com/Tacuchi/agent-workflow-cli.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "496c77c9cf7fe88df5c6596b75a32e0341decf35"
+      "revision": "506c827ee1ab3558ead4eded4ff4916503c12c9b"
     }
   },
   "boundaries": [
     {
       "kind": "region",
       "label": "One machine",
-      "wraps": [
-        "hooks",
-        "mcp",
-        "cli",
-        "core",
-        "hub",
-        "user",
-        "hostcfg",
-        "git"
-      ]
+      "wraps": ["hooks", "cli", "core", "hub", "user", "hostcfg", "git"]
     },
     {
       "kind": "security-group",
       "label": "Node.js process: aw",
-      "wraps": [
-        "hooks",
-        "mcp",
-        "cli",
-        "core"
-      ]
+      "wraps": ["hooks", "cli", "core"]
     }
   ],
   "components": [
@@ -45,19 +31,13 @@
       "type": "external",
       "label": "Coding agent",
       "sublabel": "8 hosts",
-      "pos": [
-        40,
-        268
-      ],
-      "size": [
-        130,
-        60
-      ],
+      "pos": [40, 268],
+      "size": [130, 60],
       "sources": [
         {
           "path": "src/domain/harnesses.ts",
-          "line": 368,
-          "end_line": 396
+          "line": 336,
+          "end_line": 364
         }
       ]
     },
@@ -66,14 +46,8 @@
       "type": "external",
       "label": "You",
       "sublabel": "terminal",
-      "pos": [
-        40,
-        408
-      ],
-      "size": [
-        130,
-        60
-      ],
+      "pos": [40, 408],
+      "size": [130, 60],
       "sources": [
         {
           "path": "src/cli/tui/run.tsx",
@@ -87,41 +61,14 @@
       "id": "hooks",
       "type": "backend",
       "label": "Host hooks",
-      "sublabel": "SQL guard \u00b7 pin",
-      "pos": [
-        250,
-        128
-      ],
-      "size": [
-        150,
-        60
-      ],
+      "sublabel": "namespace pin",
+      "pos": [250, 128],
+      "size": [150, 60],
       "sources": [
         {
           "path": "skills/w/hooks/hooks.template.json",
           "line": 1,
-          "end_line": 28
-        }
-      ]
-    },
-    {
-      "id": "mcp",
-      "type": "backend",
-      "label": "MCP stdio servers",
-      "sublabel": "serve-db \u00b7 elicitation",
-      "pos": [
-        250,
-        268
-      ],
-      "size": [
-        150,
-        60
-      ],
-      "sources": [
-        {
-          "path": "src/cli/commands/mcp.ts",
-          "line": 144,
-          "end_line": 181
+          "end_line": 15
         }
       ]
     },
@@ -129,20 +76,14 @@
       "id": "cli",
       "type": "backend",
       "label": "CLI and TUI",
-      "sublabel": "commands \u00b7 Ink screen",
-      "pos": [
-        250,
-        408
-      ],
-      "size": [
-        150,
-        60
-      ],
+      "sublabel": "commands · Ink screen",
+      "pos": [250, 408],
+      "size": [150, 60],
       "sources": [
         {
           "path": "src/cli/full-cli.ts",
-          "line": 175,
-          "end_line": 230
+          "line": 136,
+          "end_line": 220
         }
       ]
     },
@@ -151,14 +92,8 @@
       "type": "backend",
       "label": "Application services",
       "sublabel": "logic behind every command",
-      "pos": [
-        490,
-        48
-      ],
-      "size": [
-        160,
-        560
-      ],
+      "pos": [490, 48],
+      "size": [160, 560],
       "sources": [
         {
           "path": "src/cli/types.ts",
@@ -167,8 +102,8 @@
         },
         {
           "path": "src/cli/commands/index.ts",
-          "line": 57,
-          "end_line": 124
+          "line": 54,
+          "end_line": 118
         }
       ]
     },
@@ -176,15 +111,9 @@
       "id": "hub",
       "type": "database",
       "label": "Hub folder",
-      "sublabel": ".workflow/ \u00b7 docs/",
-      "pos": [
-        730,
-        48
-      ],
-      "size": [
-        150,
-        60
-      ],
+      "sublabel": ".workflow/ · docs/",
+      "pos": [730, 48],
+      "size": [150, 60],
       "sources": [
         {
           "path": "src/runtime/agent-workflow-marker.ts",
@@ -198,19 +127,13 @@
       "type": "database",
       "label": "User folder",
       "sublabel": "~/.workflow/",
-      "pos": [
-        730,
-        208
-      ],
-      "size": [
-        150,
-        60
-      ],
+      "pos": [730, 208],
+      "size": [150, 60],
       "sources": [
         {
           "path": "src/application/paths-service.ts",
           "line": 33,
-          "end_line": 48
+          "end_line": 47
         }
       ]
     },
@@ -218,15 +141,9 @@
       "id": "hostcfg",
       "type": "database",
       "label": "Host config dirs",
-      "sublabel": "w skill \u00b7 hooks",
-      "pos": [
-        730,
-        368
-      ],
-      "size": [
-        150,
-        60
-      ],
+      "sublabel": "w skill · hooks",
+      "pos": [730, 368],
+      "size": [150, 60],
       "sources": [
         {
           "path": "src/application/self/install-targets.ts",
@@ -240,14 +157,8 @@
       "type": "database",
       "label": "Git sources",
       "sublabel": "declared branches",
-      "pos": [
-        730,
-        548
-      ],
-      "size": [
-        150,
-        60
-      ],
+      "pos": [730, 548],
+      "size": [150, 60],
       "sources": [
         {
           "path": "src/ports/git.ts",
@@ -261,14 +172,8 @@
       "type": "external",
       "label": "npm registry",
       "sublabel": "self update",
-      "pos": [
-        1000,
-        128
-      ],
-      "size": [
-        140,
-        60
-      ],
+      "pos": [1000, 128],
+      "size": [140, 60],
       "sources": [
         {
           "path": "src/application/self/update-self.ts",
@@ -278,39 +183,12 @@
       ]
     },
     {
-      "id": "pg",
-      "type": "external",
-      "label": "PostgreSQL",
-      "sublabel": "READ ONLY",
-      "pos": [
-        1000,
-        288
-      ],
-      "size": [
-        140,
-        60
-      ],
-      "sources": [
-        {
-          "path": "src/adapters/postgres-readonly-tools.ts",
-          "line": 163,
-          "end_line": 174
-        }
-      ]
-    },
-    {
       "id": "herdr",
       "type": "external",
       "label": "Herdr",
       "sublabel": "hubs sync",
-      "pos": [
-        1000,
-        448
-      ],
-      "size": [
-        140,
-        60
-      ],
+      "pos": [1000, 448],
+      "size": [140, 60],
       "sources": [
         {
           "path": "src/adapters/herdr-cli.ts",
@@ -324,14 +202,8 @@
       "type": "cloud",
       "label": "Git remote",
       "sublabel": "promotion",
-      "pos": [
-        1000,
-        548
-      ],
-      "size": [
-        140,
-        60
-      ],
+      "pos": [1000, 548],
+      "size": [140, 60],
       "sources": [
         {
           "path": "src/application/git-flow-service.ts",
@@ -347,13 +219,6 @@
       "from": "agent",
       "to": "hooks",
       "label": "hook events"
-    },
-    {
-      "id": "agent-mcp",
-      "from": "agent",
-      "to": "mcp",
-      "label": "stdio",
-      "variant": "emphasis"
     },
     {
       "id": "agent-cli",
@@ -372,13 +237,6 @@
     {
       "id": "hooks-core",
       "from": "hooks",
-      "to": "core",
-      "fromSide": "right",
-      "toSide": "left"
-    },
-    {
-      "id": "mcp-core",
-      "from": "mcp",
       "to": "core",
       "fromSide": "right",
       "toSide": "left"
@@ -432,15 +290,6 @@
       "toSide": "left"
     },
     {
-      "id": "core-pg",
-      "from": "core",
-      "to": "pg",
-      "label": "one query",
-      "variant": "security",
-      "fromSide": "right",
-      "toSide": "left"
-    },
-    {
       "id": "core-herdr",
       "from": "core",
       "to": "herdr",
@@ -464,7 +313,7 @@
       "dot": "amber",
       "title": "Rules that hold",
       "items": [
-        "The SQL guard fails closed: exit 2 blocks the call",
+        "No hook blocks a tool: only SessionStart is installed",
         "A push to a PROD branch needs the person's consent",
         "Install and uninstall remove only files agent-workflow owns",
         "$HOME is never a hub"
@@ -483,18 +332,12 @@
     {
       "dot": "emerald",
       "title": "What it is not",
-      "items": [
-        "No background service: each call is one process",
-        "MCP servers live only while the host runs them"
-      ]
+      "items": ["No background service: each call is one process"]
     },
     {
       "dot": "slate",
       "title": "Review",
-      "items": [
-        "Version 32.0.0, commit 496c77c",
-        "Reviewed on 2026-11-18"
-      ]
+      "items": ["Version 33.0.0", "Reviewed on 2026-11-18"]
     }
   ]
 }

@@ -27,7 +27,6 @@ import { basename, dirname, join, resolve, sep } from "node:path";
 import { redactSecrets } from "./extract.mjs";
 import { HOSTS, tokenSpec } from "./hosts.mjs";
 import { mergeJson, mergeToml } from "./profiles/index.mjs";
-import { PROBE_DSN, PROBE_MCP } from "./scenario.mjs";
 
 /** Every disposable root starts with this, so a later start can recognize it. */
 export const ROOT_PREFIX = "aw-host-run-";
@@ -42,7 +41,7 @@ export function rootTemplate(tmpRoot, runId, hostId) {
 
 /**
  * The environment a pane and every setup command run with, built from nothing
- * (`env -i`). `OPENCODE_CONFIG`, `CLAUDE_CONFIG_DIR` and `AW_MCP_PROBE` are
+ * (`env -i`). `OPENCODE_CONFIG` and `CLAUDE_CONFIG_DIR` are
  * deliberately absent: inheriting any of them points the host at the person's
  * real config.
  */
@@ -53,8 +52,8 @@ export function cleanEnv({ root, hostDir = null }) {
   // globally installed `aw`. A host whose binary lives in a dir of its own
   // (kimi ships `fd` next to it) gets that dir too; shared dirs like
   // ~/.local/bin are left out, since they also hold `herdr`.
-  // <root>/hostbin holds only a link to the host's own binary: `aw mcp setup`
-  // verifies each descriptor with it, and the host may call itself.
+  // <root>/hostbin holds only a link to the host's own binary: the host may
+  // call itself.
   const dirs = [join(root, "bin"), join(root, "hostbin"), ...(hostDir ? [hostDir] : [])];
   return {
     HOME: home,
@@ -192,8 +191,8 @@ export function planIsolation({
   const home = join(root, "home");
   const workspace = join(root, "workspace");
   // The root runs its OWN copy of the checkout's CLI, so the read-sets `aw` hands
-  // the host (the packaged bundle next to dist/) and every hook and MCP command
-  // path lie inside the root, never under the real HOME the profiles deny.
+  // the host (the packaged bundle next to dist/) and every hook command path
+  // lie inside the root, never under the real HOME the profiles deny.
   const cliDir = join(root, "cli");
   const cliMain = join(cliDir, "dist", "cli", "main.js");
   const rootNode = join(root, "bin", "node");
@@ -205,7 +204,7 @@ export function planIsolation({
   const aw = (...args) => ({ kind: "aw", args, cwd: workspace });
   // A host whose token travels in a variable gets it ONLY through a wrapper that
   // reads <root>/secrets/<host>.env: the visible pane command names the wrapper,
-  // never the value. Everything else (setup steps, `mcp list`) runs without it.
+  // never the value. Everything else (the setup steps) runs without it.
   const secret = spec
     ? {
         host: hostId,
@@ -235,10 +234,6 @@ export function planIsolation({
       })),
       { path: join(root, "bin", "aw-guard.mjs"), source: guardSource({ root, cliMain }) },
     ],
-    dsnFile: {
-      path: join(home, ".workflow", "dev", "dsn.env"),
-      source: `${PROBE_MCP.dsnVar}=${PROBE_DSN}\n`,
-    },
     steps: [
       {
         kind: "copy-cli",
@@ -256,17 +251,6 @@ export function planIsolation({
       // which claude grants without asking for the invoking turn. In this home
       // only, the grant is removed; the checkout's skills/ are never touched.
       { kind: "strip-grants", dir: home },
-      aw("self", "mcp", "use-env", "--name", PROBE_MCP.name, "--dsn-var", PROBE_MCP.dsnVar),
-      aw(
-        "mcp",
-        "setup",
-        "--host",
-        host.mcpHost,
-        "--instance",
-        PROBE_MCP.name,
-        "--global",
-        "--force",
-      ),
       {
         kind: "profile",
         files: profile.files({
@@ -491,8 +475,6 @@ export async function prepareHost(plan, deps) {
   }
   // The pane's launcher: only its path is typed into the pane.
   fs.writeFile(plan.pane.launcher.path, plan.pane.launcher.source, 0o700);
-  fs.mkdir(join(plan.home, ".workflow", "dev"));
-  fs.writeFile(plan.dsnFile.path, plan.dsnFile.source, 0o600);
   for (const step of plan.steps) {
     // Every `aw` step runs the root's own copy with the root's node.
     const outcome = await STEP_RUNNERS[step.kind](step, {
@@ -1173,8 +1155,8 @@ export function nodeFs() {
     },
     realpath: (p) => realpathSync(p),
     remove: (p) => rmSync(p, { force: true }),
-    // A hard link keeps node's own path inside the root (process.execPath, which
-    // `aw mcp setup` writes into the descriptor); a copy when volumes differ.
+    // A hard link keeps node's own path inside the root (process.execPath); a
+    // copy when volumes differ.
     linkOrCopy: (from, to) => {
       ensureParent(to);
       try {

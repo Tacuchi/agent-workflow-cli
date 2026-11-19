@@ -664,40 +664,39 @@ describe("host-run live — nothing is typed without a fresh, clean read", () =>
 
 describe("host-run live — evidence", () => {
   it("an extract that fails the privacy filter is refused on its cell; the matrix stands", () => {
-    const mcpStep = STEPS.filter((st) => st.surface === "mcp");
+    const commandsStep = STEPS.filter((st) => st.surface === "commands");
     const ctx = {
       runId: "r9",
       date: "2026-09-29",
       cli: { version: "28.0.0", revision: "abc1234" },
       digest: "d",
       catalog: catalogStates(HARNESSES, capabilitiesFor),
-      steps: mcpStep,
+      steps: commandsStep,
       labels: Object.fromEntries(HARNESSES.map((h) => [h.id, h.label])),
       realHome: "/Users/someone",
       username: "someone",
-      foreignMcp: ["qtc-prod"],
     };
     const host = (id: string, screen: string) => ({
       id,
       root: `/tmp/aw-host-run-r9-${id}-X`,
-      evidence: { mcp: { toolsListed: true, serverReached: true } },
-      screensBySurface: { mcp: screen },
+      evidence: { commands: { ran: true, via: "commands-dir" } },
+      screensBySurface: { commands: screen },
     });
     const { matrix, extracts } = evidenceOf(ctx, [
-      host("codex", "tools: execute_sql, search_objects (ask person@example.com)"),
-      host("gemini", "tools: execute_sql, search_objects; also qtc-prod"),
-      host("opencode", "tools: execute_sql, search_objects"),
+      host("codex", "Veredicto: salida 0 (ask person@example.com)"),
+      host("gemini", "Veredicto: salida 0; called mcp__qtc-prod__execute_sql"),
+      host("opencode", "Veredicto: salida 0"),
     ]);
-    expect(matrix.hosts.codex.cells.mcp.extract_refused).toContain("contains an email address");
-    expect(matrix.hosts.codex.cells.mcp).not.toHaveProperty("extract");
-    expect(matrix.hosts.gemini.cells.mcp.extract_refused).toContain(
-      "names an MCP outside the scenario",
+    expect(matrix.hosts.codex.cells.commands.extract_refused).toContain(
+      "contains an email address",
     );
+    expect(matrix.hosts.codex.cells.commands).not.toHaveProperty("extract");
+    expect(matrix.hosts.gemini.cells.commands.extract_refused).toContain("names an MCP server");
     // Only the category reaches matrix.json, never the foreign name.
     expect(JSON.stringify(matrix)).not.toContain("qtc-prod");
-    expect(extracts.map((e) => e.path)).toEqual(["extracts/opencode/mcp.json"]);
-    expect(matrix.hosts.opencode.cells.mcp.state).toBe("works");
-    expect(matrix.hosts.kimi.cells.mcp.state).toBe("not-covered");
+    expect(extracts.map((e) => e.path)).toEqual(["extracts/opencode/commands.json"]);
+    expect(matrix.hosts.opencode.cells.commands.state).toBe("works");
+    expect(matrix.hosts.kimi.cells.commands.state).toBe("not-covered");
   });
 });
 

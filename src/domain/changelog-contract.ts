@@ -4,8 +4,6 @@
  */
 
 export const CONTRACT_SECTION_HEADING = "### Contrato";
-/** The last version cut before the convention: every later one must declare its section. */
-export const CONTRACT_CONVENTION_AFTER = "25.6.1";
 export const CONTRACT_NONE_LINE = "Ninguno.";
 export const CONTRACT_LABELS = {
   stops: "**Deja de valer:**",
@@ -110,29 +108,6 @@ export function contractsBetween(
     ? inRange
     : [...inRange, { version: target, contract: { kind: "undeclared" } as const }];
   return { kind: "range", entries: sortAscending(withTarget) };
-}
-
-/**
- * Why the changelog cannot ship `version`: its entry, when the version is newer
- * than the last one cut before the convention, has no readable contract
- * section; and any section present, in any entry, breaks the form.
- */
-export function contractGuardProblems(text: string, version: string): string[] {
-  const entries = parseChangelogContracts(text);
-  const problems = entries.flatMap((entry) =>
-    entry.contract.kind === "malformed" ? [`${entry.version}: ${entry.contract.problem}`] : [],
-  );
-  const current = parseVersion(version);
-  const floor = parseVersion(CONTRACT_CONVENTION_AFTER);
-  if (current === null || floor === null) return [...problems, `versión ilegible: ${version}`];
-  if (compareVersions(current, floor) <= 0) return problems;
-
-  const entry = entries.find((candidate) => candidate.version === version);
-  if (entry === undefined) return [...problems, `${version}: el changelog no tiene su entrada`];
-  if (entry.contract.kind === "undeclared") {
-    return [...problems, `${version}: la entrada no declara ${CONTRACT_SECTION_HEADING}`];
-  }
-  return problems;
 }
 
 function sortAscending(entries: readonly ChangelogEntry[]): ChangelogEntry[] {

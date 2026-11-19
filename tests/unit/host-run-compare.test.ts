@@ -3,7 +3,8 @@
 // Only sample matrices are used: no suite test depends on the latest real run.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -23,21 +24,34 @@ const sample = (id: string) => JSON.parse(readFileSync(join(SAMPLES, id, "matrix
 const BASE = "2026-09-01T10-00-00Z";
 const WORSE = "2026-09-15T10-00-00Z";
 const PARTIAL = "2026-09-16T10-00-00Z";
+const SUBSET = "2026-09-17T10-00-00Z";
+
+/** A cell of `matrix` turned broken: the run observed it failing. */
+function breakCell(matrix: ReturnType<typeof sample>, host: string, surface: string) {
+  const cell = matrix.hosts[host].cells[surface];
+  matrix.hosts[host].cells[surface] = { ...cell, observed: "fails", state: "broken" };
+  return matrix;
+}
+
+/** WORSE with claude-code's compaction broken: the regression the samples compare. */
+const worse = () => breakCell(sample(WORSE), "claude-code", "compaction");
+/** SUBSET, which repeats codex only, with codex's commands broken. */
+const subset = () => breakCell(sample(SUBSET), "codex", "commands");
 
 describe("host-run compare", () => {
   it("marks exactly the cells that got worse (works → broken)", () => {
-    expect(regressions(sample(BASE), sample(WORSE))).toEqual([
-      { host: "claude-code", surface: "hooks", from: "works", to: "broken" },
+    expect(regressions(sample(BASE), worse())).toEqual([
+      { host: "claude-code", surface: "compaction", from: "works", to: "broken" },
     ]);
   });
 
   it("an improvement or an unchanged cell is not a regression", () => {
-    expect(regressions(sample(WORSE), sample(BASE))).toEqual([]);
+    expect(regressions(worse(), sample(BASE))).toEqual([]);
     expect(regressions(sample(BASE), sample(BASE))).toEqual([]);
   });
 
   it("a partial run's unrepeated cells say nothing", () => {
-    expect(regressions(sample(WORSE), sample(PARTIAL))).toEqual([]);
+    expect(regressions(worse(), sample(PARTIAL))).toEqual([]);
   });
 
   it("a clean run is closed", () => {
@@ -45,32 +59,32 @@ describe("host-run compare", () => {
   });
 
   it("a broken cell keeps the matrix open, with the run it came from", () => {
-    expect(closureFailures([sample(BASE), sample(WORSE)])).toEqual([
-      "claude-code/hooks: broken (run 2026-09-15T10-00-00Z)",
+    expect(closureFailures([sample(BASE), worse()])).toEqual([
+      "claude-code/compaction: broken (run 2026-09-15T10-00-00Z)",
     ]);
   });
 
   it("the last observation of each cell wins: a partial repeat closes the broken cell", () => {
-    expect(closureFailures([sample(WORSE), sample(PARTIAL)])).toEqual([]);
-    const cells = lastObservations([sample(WORSE), sample(PARTIAL)]);
-    expect(cells["claude-code"].hooks.run_id).toBe(PARTIAL);
-    expect(cells.codex.mcp.run_id).toBe(WORSE);
+    expect(closureFailures([worse(), sample(PARTIAL)])).toEqual([]);
+    const cells = lastObservations([worse(), sample(PARTIAL)]);
+    expect(cells["claude-code"].compaction.run_id).toBe(PARTIAL);
+    expect(cells.codex.commands.run_id).toBe(WORSE);
   });
 
   it("structured-choice observed only non-interactively does not close", () => {
-    const worse = sample(WORSE);
-    worse.hosts.opencode.cells["structured-choice"].mode = "non-interactive";
-    expect(closureFailures([worse])).toContain(
+    const run = sample(WORSE);
+    run.hosts.opencode.cells["structured-choice"].mode = "non-interactive";
+    expect(closureFailures([run])).toContain(
       "opencode/structured-choice: only observed non-interactively (run 2026-09-15T10-00-00Z)",
     );
     // An earlier interactive observation is kept over a later non-interactive one.
-    expect(lastObservations([sample(BASE), worse]).opencode["structured-choice"].mode).toBe(
+    expect(lastObservations([sample(BASE), run]).opencode["structured-choice"].mode).toBe(
       "interactive",
     );
   });
 
   it("a host the catalog no longer covers (kimi) says nothing about closure, even from older runs", () => {
-    // The WORSE sample still has kimi covered and only observed non-interactively.
+    // The WORSE sample still has kimi covered.
     expect(sample(WORSE).hosts.kimi.covered).toBe(true);
     expect(closureFailures([sample(WORSE)]).some((f) => f.startsWith("kimi/"))).toBe(false);
     expect(lastObservations([sample(BASE), sample(WORSE)])).not.toHaveProperty("kimi");
@@ -79,54 +93,53 @@ describe("host-run compare", () => {
 
   it("not-reached, catalog-outdated and an undeclared degradation do not close", () => {
     const m = sample(BASE);
-    m.hosts.codex.cells.mcp.state = "not-reached";
+    m.hosts.codex.cells.commands.state = "not-reached";
     m.hosts.opencode.cells.commands.state = "catalog-outdated";
-    m.hosts.opencode.cells.hooks.declared_by_doctor = false;
+    m.hosts.opencode.cells["host-memory"].declared_by_doctor = false;
     const failures = closureFailures([m]);
-    expect(failures).toContain(`codex/mcp: not-reached (run ${BASE})`);
+    expect(failures).toContain(`codex/commands: not-reached (run ${BASE})`);
     expect(failures).toContain(`opencode/commands: catalog-outdated (run ${BASE})`);
     expect(failures).toContain(
-      `opencode/hooks: degradation not declared by /w:doctor (run ${BASE})`,
+      `opencode/host-memory: degradation not declared by /w:doctor (run ${BASE})`,
     );
   });
 
   it("the merged ledger view takes the latest run id and the last state per cell", () => {
-    const blocks = mergedRunBlocks([sample(WORSE), sample(PARTIAL)]);
+    const blocks = mergedRunBlocks([worse(), sample(PARTIAL)]);
     expect(blocks["claude-code"].id).toBe(PARTIAL);
-    expect(blocks["claude-code"].cells.hooks).toBe("works");
+    expect(blocks["claude-code"].cells.compaction).toBe("works");
   });
 
   it("a host left out of a later run keeps its earlier observations", () => {
-    const SUBSET = "2026-09-17T10-00-00Z";
-    const cells = lastObservations([sample(BASE), sample(SUBSET)]);
-    expect(cells.opencode.mcp.run_id).toBe(BASE);
-    expect(cells.codex.mcp.run_id).toBe(SUBSET);
-    expect(regressions(sample(BASE), sample(SUBSET))).toEqual([
-      { host: "codex", surface: "mcp", from: "works", to: "broken" },
+    const cells = lastObservations([sample(BASE), subset()]);
+    expect(cells.opencode.commands.run_id).toBe(BASE);
+    expect(cells.codex.commands.run_id).toBe(SUBSET);
+    expect(regressions(sample(BASE), subset())).toEqual([
+      { host: "codex", surface: "commands", from: "degraded-declared", to: "broken" },
     ]);
-    const blocks = mergedRunBlocks([sample(BASE), sample(SUBSET)]);
+    const blocks = mergedRunBlocks([sample(BASE), subset()]);
     expect(blocks.opencode.id).toBe(BASE);
     expect(blocks.codex.id).toBe(SUBSET);
-    expect(blocks.opencode.cells.mcp).toBe("works");
+    expect(blocks.opencode.cells.commands).toBe("works");
   });
 
   it("closing is judged against the CURRENT catalog, and a catalog change is reported", () => {
     const catalog = catalogStates(HARNESSES, capabilitiesFor);
     expect(closure([sample(BASE)], catalog)).toEqual({ failures: [], drift: [] });
-    // F4 raised codex/hooks to native, and the run saw it degraded: now broken.
+    // Raise codex/host-memory to native while the run saw it degraded: now broken.
     const raised = structuredClone(catalog);
-    raised.codex.hooks = "native";
+    raised.codex["host-memory"] = "native";
     const r = closure([sample(BASE)], raised);
-    expect(r.failures).toContain(`codex/hooks: broken (run ${BASE})`);
-    expect(r.drift).toContain(`codex/hooks: catalog degraded → native since run ${BASE}`);
+    expect(r.failures).toContain(`codex/host-memory: broken (run ${BASE})`);
+    expect(r.drift).toContain(`codex/host-memory: catalog degraded → native since run ${BASE}`);
     // A cell observed working whole under a degraded catalog closes once the catalog is raised.
     const m = sample(BASE);
-    m.hosts.codex.cells.hooks = {
-      ...m.hosts.codex.cells.hooks,
+    m.hosts.codex.cells["host-memory"] = {
+      ...m.hosts.codex.cells["host-memory"],
       observed: "works",
       state: "catalog-outdated",
     };
-    expect(closureFailures([m])).toContain(`codex/hooks: catalog-outdated (run ${BASE})`);
+    expect(closureFailures([m])).toContain(`codex/host-memory: catalog-outdated (run ${BASE})`);
     expect(closureFailures([m], raised)).toEqual([]);
   });
 
@@ -135,19 +148,26 @@ describe("host-run compare", () => {
     () => {
       const cmd = join(__dirname, "..", "..", "scripts", "host-run", "compare.mjs");
       const at = (id: string) => join(SAMPLES, id, "matrix.json");
-      const reg = spawnSync(process.execPath, [cmd, at(BASE), at(WORSE)], { encoding: "utf8" });
-      expect(reg.status).toBe(1);
-      expect(reg.stdout).toContain("claude-code/hooks: works → broken");
-      const ok = spawnSync(process.execPath, [cmd, at(WORSE), at(BASE)], { encoding: "utf8" });
-      expect(ok.status).toBe(0);
-      const closed = spawnSync(process.execPath, [cmd, "--assert-closed", at(BASE)], {
-        encoding: "utf8",
-      });
-      expect(closed.status).toBe(0);
-      const open = spawnSync(process.execPath, [cmd, "--assert-closed", at(BASE), at(WORSE)], {
-        encoding: "utf8",
-      });
-      expect(open.status).toBe(1);
+      const dir = mkdtempSync(join(tmpdir(), "aw-host-run-compare-"));
+      try {
+        const worseFile = join(dir, "matrix.json");
+        writeFileSync(worseFile, JSON.stringify(worse()));
+        const reg = spawnSync(process.execPath, [cmd, at(BASE), worseFile], { encoding: "utf8" });
+        expect(reg.status).toBe(1);
+        expect(reg.stdout).toContain("claude-code/compaction: works → broken");
+        const ok = spawnSync(process.execPath, [cmd, worseFile, at(BASE)], { encoding: "utf8" });
+        expect(ok.status).toBe(0);
+        const closed = spawnSync(process.execPath, [cmd, "--assert-closed", at(BASE)], {
+          encoding: "utf8",
+        });
+        expect(closed.status).toBe(0);
+        const open = spawnSync(process.execPath, [cmd, "--assert-closed", at(BASE), worseFile], {
+          encoding: "utf8",
+        });
+        expect(open.status).toBe(1);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
     },
   );
 });

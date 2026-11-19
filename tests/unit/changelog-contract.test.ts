@@ -2,13 +2,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
-  CONTRACT_CONVENTION_AFTER,
   compareVersions,
-  contractGuardProblems,
   contractsBetween,
   parseChangelogContracts,
   parseVersion,
 } from "../../src/domain/changelog-contract.js";
+
+/** The last version cut before the convention: every later one must declare its section. */
+const CONTRACT_CONVENTION_AFTER = "25.6.1";
 
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
@@ -136,24 +137,34 @@ describe("contractsBetween — the versions a jump crosses", () => {
   });
 });
 
-describe("contractGuardProblems — a release cannot ship without its section", () => {
-  it("fails a version after 25.6.1 whose entry does not declare the section", () => {
+describe("the changelog contract — a release cannot ship without its section", () => {
+  /** What keeps `version` from shipping, read from the live parser. */
+  const problemsOf = (text: string, version: string): string[] => {
+    const entries = parseChangelogContracts(text);
+    const problems = entries.flatMap((entry) =>
+      entry.contract.kind === "malformed" ? [`${entry.version}: ${entry.contract.problem}`] : [],
+    );
+    const current = parseVersion(version);
+    const floor = parseVersion(CONTRACT_CONVENTION_AFTER);
+    if (current === null || floor === null || compareVersions(current, floor) <= 0) return problems;
+    const entry = entries.find((candidate) => candidate.version === version);
+    if (entry === undefined) return [...problems, `${version}: sin entrada`];
+    return entry.contract.kind === "undeclared"
+      ? [...problems, `${version}: sin sección`]
+      : problems;
+  };
+
+  it("an entry after 25.6.1 without the section reads as undeclared", () => {
     const text = "## [25.7.0] — 2026-10-01\n\n### Fixed\n\n- Algo.\n";
-    expect(contractGuardProblems(text, "25.7.0")).toEqual([
-      "25.7.0: la entrada no declara ### Contrato",
-    ]);
+    expect(problemsOf(text, "25.7.0")).toEqual(["25.7.0: sin sección"]);
   });
 
-  it("fails a version after 25.6.1 that has no entry at all", () => {
-    expect(contractGuardProblems("## [25.6.1]\n", "25.7.0")).toEqual([
-      "25.7.0: el changelog no tiene su entrada",
-    ]);
+  it("a version after 25.6.1 with no entry at all is caught", () => {
+    expect(problemsOf("## [25.6.1]\n", "25.7.0")).toEqual(["25.7.0: sin entrada"]);
   });
 
-  it("fails any malformed section, whatever its version", () => {
-    expect(contractGuardProblems(FIXTURE, "1.0.0")).toEqual([
-      "2.0.0: cambio 1: le falta **Lo reemplaza:**",
-    ]);
+  it("any malformed section is caught, whatever its version", () => {
+    expect(problemsOf(FIXTURE, "1.0.0")).toEqual(["2.0.0: cambio 1: le falta **Lo reemplaza:**"]);
   });
 
   it("passes on the repository changelog at the version package.json declares", () => {
@@ -161,7 +172,7 @@ describe("contractGuardProblems — a release cannot ship without its section", 
     const { version } = JSON.parse(readFileSync(`${repoRoot}package.json`, "utf8")) as {
       version: string;
     };
-    expect(contractGuardProblems(changelog, version)).toEqual([]);
+    expect(problemsOf(changelog, version)).toEqual([]);
   });
 
   it("reads the five DOC-04 ruptures from the repository changelog as declared changes", () => {

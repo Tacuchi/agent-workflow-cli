@@ -14,15 +14,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NodeFileSystem } from "../../src/adapters/node-file-system.js";
 import { NodeProcess } from "../../src/adapters/node-process.js";
-import {
-  DOCS_FOLDERS,
-  type HubInitInput,
-  runHubInit,
-} from "../../src/application/hub-init-service.js";
+import { type HubInitInput, runHubInit } from "../../src/application/hub-init-service.js";
 import { hubsFile, readHubs } from "../../src/application/hub-registry.js";
 import { PathsService } from "../../src/application/paths-service.js";
 import { hubInitCommand } from "../../src/cli/commands/hub-init.js";
 import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { cliDocsFolders } from "../helpers/docs-folders.js";
 import { FakeEnv } from "../helpers/fake-env.js";
 
 describe("runWorkspaceInit", () => {
@@ -101,7 +98,7 @@ describe("runWorkspaceInit", () => {
     expect(existsSync(join(hub, ".workflow", "agent-workflow.json"))).toBe(true);
     expect(existsSync(join(hub, ".workflow", "sessions"))).toBe(false);
     // docs/* is NOT scaffolded: each category is born on demand via `aw next-number docs/<cat>`.
-    for (const f of DOCS_FOLDERS) {
+    for (const f of cliDocsFolders()) {
       expect(existsSync(join(hub, "docs", f))).toBe(false);
     }
     expect(existsSync(join(hub, "docs", "tools"))).toBe(false);

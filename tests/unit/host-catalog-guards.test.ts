@@ -12,32 +12,64 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { extname, join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { writeMcpEntry } from "../../src/application/mcp-host-writer.js";
+import { describe, expect, it } from "vitest";
+import { PathsService } from "../../src/application/paths-service.js";
 import { hooksTemplateToToml } from "../../src/application/self/hooks-toml.js";
+import { capabilitiesFor, reportHooksArmed } from "../../src/application/self/host-states.js";
 import {
-  capabilitiesFor,
-  hooksArmedProbeCoverage,
-} from "../../src/application/self/host-states.js";
-import { hookInstallerCoverage } from "../../src/application/self/install-hooks.js";
+  resolveBundledHookTemplate,
+  selfInstallHooks,
+} from "../../src/application/self/install-hooks.js";
 import {
   HOOKS_MANAGED_TARGETS,
   INSTALL_TARGETS,
   TARGET_ROOTS,
 } from "../../src/application/self/install-targets.js";
-import { hookRemoverCoverage } from "../../src/application/self/uninstall.js";
+import { selfUninstall } from "../../src/application/self/uninstall.js";
+import type { ParsedArgs } from "../../src/cli/parser.js";
+import type { CliContext } from "../../src/cli/types.js";
 import {
   HARNESSES,
   HOST_INSTALL_TARGETS,
   type HookEventSupport,
-  MCP_FILE_HOSTS,
   SHARED_INSTALL_TARGETS,
   TEMPLATE_HOOK_EVENTS,
   harnessForMcpHost,
   hookCoverage,
   hookMechanism,
 } from "../../src/domain/harnesses.js";
-import { buildMcpEntry } from "../../src/domain/mcp-entry.js";
+import { normalizeNamespace } from "../../src/runtime/namespace.js";
+import { FakeEnv } from "../helpers/fake-env.js";
+import { FakeProcess } from "../helpers/fake-process.js";
+import { NoScanFs } from "../helpers/real-fs.js";
+
+/** A CLI context over a disposable HOME, for the hook installers, removers and probes. */
+function hostCtx(home: string): CliContext {
+  const ns = normalizeNamespace("agent-workflow");
+  return {
+    fs: new NoScanFs(),
+    env: new FakeEnv(home),
+    process: new FakeProcess({ run: () => ({ code: 0, stdout: "", stderr: "" }) }),
+    git: {} as never,
+    namespace: { namespace: ns, source: "default" },
+    runtime: {
+      packageName: "@tacuchi/agent-workflow-cli",
+      binName: "agent-workflow",
+      source: "default",
+    },
+    paths: new PathsService(ns, home, home),
+  } as CliContext;
+}
+
+function argsOf(rest: string[], values: Record<string, string>, flags: string[] = []): ParsedArgs {
+  return {
+    rest,
+    plugin: {},
+    flags: new Set(flags),
+    values: new Map(Object.entries(values)),
+    valuesMulti: new Map(),
+  };
+}
 
 describe("catálogo único de hosts", () => {
   it("la plantilla y el catálogo ya no publican el aviso Git de UserPromptSubmit", () => {
@@ -67,17 +99,51 @@ describe("cobertura de hooks: declarar 'gestionado' obliga a implementarlo", () 
     expect([...HOOKS_MANAGED_TARGETS].sort()).toEqual(["claude", "crush", "gemini", "kimi"]);
   });
 
-  it("todo host con hooks gestionados tiene instalador", () => {
+  it("todo host con hooks gestionados tiene instalador", async () => {
     expect(HOOKS_MANAGED_TARGETS.size).toBeGreaterThan(0);
-    expect(hookInstallerCoverage()).toEqual([]);
+    const template = await resolveBundledHookTemplate();
+    if (template === null) throw new Error("la plantilla del bundle no se resolvió");
+    const home = mkdtempSync(join(tmpdir(), "aw-hook-installers-"));
+    try {
+      for (const target of HOOKS_MANAGED_TARGETS) {
+        const result = await selfInstallHooks(
+          argsOf(["install-hooks"], { target, template }, ["--dry-run"]),
+          hostCtx(home),
+        );
+        expect(result.error?.code, target).not.toBe("HOOKS_INSTALLER_MISSING");
+        expect(result.ok, target).toBe(true);
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
-  it("todo host con hooks gestionados tiene removedor (si no, quedarían huérfanos)", () => {
-    expect(hookRemoverCoverage()).toEqual([]);
+  it("todo host con hooks gestionados tiene removedor (si no, quedarían huérfanos)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "aw-hook-removers-"));
+    try {
+      for (const target of HOOKS_MANAGED_TARGETS) {
+        const result = await selfUninstall(
+          argsOf(["uninstall"], { target }, ["--with-hooks", "--dry-run"]),
+          hostCtx(home),
+        );
+        expect(JSON.stringify(result), target).not.toContain("no remover wired");
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
-  it("todo host con hooks gestionados tiene sonda de 'armados' (si no, la TUI mentiría)", () => {
-    expect(hooksArmedProbeCoverage()).toEqual([]);
+  it("todo host con hooks gestionados tiene sonda de 'armados' (si no, la TUI mentiría)", async () => {
+    const home = mkdtempSync(join(tmpdir(), "aw-hook-probes-"));
+    try {
+      const reports = await reportHooksArmed(hostCtx(home));
+      expect(reports.map((report) => report.target).sort()).toEqual(
+        [...HOOKS_MANAGED_TARGETS].sort(),
+      );
+      for (const report of reports) expect(report.path, report.target).not.toBe("(no probe)");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   it("el conjunto gestionado deriva del dominio, no de una copia", () => {
@@ -145,10 +211,10 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
       path: "~/.config/crush/crush.json",
       entry: "hooks{} (HookConfig: command · matcher · timeout)",
     });
-    expect(crush?.events.PreToolUse.state).toBe("carried");
+    expect(crush?.events.SessionStart.state).toBe("omitted");
 
     const gemini = HARNESSES.find((h) => h.id === "gemini")?.hooks;
-    expect(gemini?.events.PreToolUse.state).toBe("carried");
+    expect(gemini?.events.SessionStart.state).toBe("omitted");
     // `BeforeTool` no existe en el binario: ni el mecanismo que se imprime ni
     // ningún evento pueden volver a nombrarlo. La nota de verificación SÍ lo
     // nombra, y para eso está: dice qué se buscó y no se encontró.
@@ -158,10 +224,7 @@ describe("contrato de hooks por host: qué evento viaja y cuál no", () => {
     const opencode = HARNESSES.find((h) => h.id === "opencode")?.hooks;
     expect(opencode?.artifact.kind).toBe("plugin-module");
     expect(opencode?.artifact.path).toBe(".opencode/plugin/");
-    expect(opencode?.events.PreToolUse).toMatchObject({
-      state: "omitted",
-      reason: expect.stringContaining("SQL MCP matcher"),
-    });
+    expect(opencode?.events.SessionStart.state).toBe("omitted");
   });
 
   it("el SessionStart degradado de kimi es exactamente la pérdida que reporta su conversión a TOML", async () => {
@@ -225,49 +288,11 @@ describe("reglas de estado de hooks, compactación y memoria del host", () => {
   });
 });
 
-describe("escritor MCP: un archivo distinto por host", () => {
-  const TEST_NODE = "/opt/agent-workflow/node";
-  const TEST_ENTRYPOINT = "/opt/agent-workflow/dist/cli/main.js";
-  let scopeDir: string;
-  beforeAll(() => {
-    scopeDir = mkdtempSync(join(tmpdir(), "mcp-writer-guard-"));
-  });
-  afterAll(() => {
-    rmSync(scopeDir, { recursive: true, force: true });
-  });
-
-  // REGRESIÓN: la cadena de ifs terminaba en un `return …crush…`, así que un
-  // host nuevo sin rama escribía en crush.json sin error alguno. Con dos hosts
-  // apuntando al mismo archivo este test falla.
-  it("ningún host escribe en el archivo de otro (global)", () => {
-    const targets = MCP_FILE_HOSTS.map((host) => {
-      const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", {
-        nodePath: TEST_NODE,
-        entrypoint: TEST_ENTRYPOINT,
-        host,
-        scope: "global",
-      });
-      return writeMcpEntry(host, entry, { scopeDir, kind: "global" }, { dryRun: true }).target;
-    });
-    expect(new Set(targets).size, `targets: ${targets.join(", ")}`).toBe(MCP_FILE_HOSTS.length);
-  });
-
-  it("ningún host escribe en el archivo de otro (workspace)", () => {
-    const targets = MCP_FILE_HOSTS.map((host) => {
-      const entry = buildMcpEntry("guard", "GUARD_DATABASE_URL", {
-        nodePath: TEST_NODE,
-        entrypoint: TEST_ENTRYPOINT,
-        host,
-        scope: "workspace",
-      });
-      return writeMcpEntry(host, entry, { scopeDir, kind: "workspace" }, { dryRun: true }).target;
-    });
-    expect(new Set(targets).size, `targets: ${targets.join(", ")}`).toBe(MCP_FILE_HOSTS.length);
-  });
-
-  it("todo McpHost tiene su spec en el catálogo", () => {
-    for (const host of MCP_FILE_HOSTS) {
-      expect(harnessForMcpHost(host), host).not.toBeNull();
+describe("catálogo de hosts y su clave de configuración MCP", () => {
+  it("cada clave MCP del catálogo resuelve a su propio host", () => {
+    for (const spec of HARNESSES) {
+      if (spec.mcpHostId === null) continue;
+      expect(harnessForMcpHost(spec.mcpHostId)?.id, spec.id).toBe(spec.id);
     }
   });
 });

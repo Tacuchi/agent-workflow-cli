@@ -63,7 +63,6 @@ describe("selfCommand — without subcommand (H-07)", () => {
         "uninstall",
         "uninstall-skill",
         "clean-legacy",
-        "mcp",
         "bootstrap",
       ]);
       expect(data.help_hint).toContain("aw self");

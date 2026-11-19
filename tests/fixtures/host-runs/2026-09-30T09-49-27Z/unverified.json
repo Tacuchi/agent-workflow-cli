@@ -13,24 +13,6 @@
     },
     {
       "host": "claude-code",
-      "surface": "hooks",
-      "observed": "not-reached",
-      "state": "not-verified-by-run",
-      "reason": "El envío al panel falló a mitad; la herramienta retuvo el host y no alcanzó este paso.",
-      "follow_up": "BACKLOG.md de la sesión 280-corrida-multihost-herdr-plan-exec",
-      "matrix_state": "not-reached"
-    },
-    {
-      "host": "claude-code",
-      "surface": "mcp",
-      "observed": "not-reached",
-      "state": "not-verified-by-run",
-      "reason": "El envío al panel falló a mitad; la herramienta retuvo el host y no alcanzó este paso.",
-      "follow_up": "BACKLOG.md de la sesión 280-corrida-multihost-herdr-plan-exec",
-      "matrix_state": "not-reached"
-    },
-    {
-      "host": "claude-code",
       "surface": "host-memory",
       "observed": "not-reached",
       "state": "not-verified-by-run",
@@ -76,24 +58,6 @@
     },
     {
       "host": "gemini",
-      "surface": "hooks",
-      "observed": "fails",
-      "state": "not-verified-by-run",
-      "reason": "sólo lo declara el doctor del CLI, sin relevo de /w:doctor dentro del host",
-      "follow_up": "BACKLOG.md de la sesión 280-corrida-multihost-herdr-plan-exec",
-      "matrix_state": "degraded-undeclared"
-    },
-    {
-      "host": "gemini",
-      "surface": "mcp",
-      "observed": "fails",
-      "state": "not-verified-by-run",
-      "reason": "La herramienta registró un fallo; su causa no fue diagnosticada por el límite de costo acordado (spec 062, sesión 284). El extracto fue rechazado por el filtro de privacidad.",
-      "follow_up": "BACKLOG.md de la sesión 280-corrida-multihost-herdr-plan-exec",
-      "matrix_state": "broken"
-    },
-    {
-      "host": "gemini",
       "surface": "host-memory",
       "observed": "fails",
       "state": "not-verified-by-run",
@@ -122,24 +86,6 @@
     {
       "host": "opencode",
       "surface": "structured-choice",
-      "observed": "not-reached",
-      "state": "not-verified-by-run",
-      "reason": "El envío al panel falló a mitad; la herramienta retuvo el host y no alcanzó este paso.",
-      "follow_up": "BACKLOG.md de la sesión 280-corrida-multihost-herdr-plan-exec",
-      "matrix_state": "not-reached"
-    },
-    {
-      "host": "opencode",
-      "surface": "hooks",
-      "observed": "not-reached",
-      "state": "not-verified-by-run",
-      "reason": "El envío al panel falló a mitad; la herramienta retuvo el host y no alcanzó este paso.",
-      "follow_up": "BACKLOG.md de la sesión 280-corrida-multihost-herdr-plan-exec",
-      "matrix_state": "not-reached"
-    },
-    {
-      "host": "opencode",
-      "surface": "mcp",
       "observed": "not-reached",
       "state": "not-verified-by-run",
       "reason": "El envío al panel falló a mitad; la herramienta retuvo el host y no alcanzó este paso.",

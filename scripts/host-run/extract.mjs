@@ -3,8 +3,6 @@
 // person's machine. Every extract passes `privacyViolations` before it is
 // written; one that does not is never written.
 
-import { PROBE_MCP } from "./scenario.mjs";
-
 export const FRAGMENT_MAX_LINES = 20;
 export const FRAGMENT_MAX_CHARS = 1200;
 
@@ -42,28 +40,9 @@ export function hookLines(logText) {
   const has = (re) => re.test(logText ?? "");
   return {
     SessionStart: has(/ INFO self namespace\b/),
-    PreToolUse: has(/ INFO hook sql-mutation-guard\b/),
     PreCompact: has(/ INFO hook pre-compact\b/),
     PostCompact: has(/ INFO hook post-compact\b/),
   };
-}
-
-const HOOK_COMMANDS = [
-  ["self namespace", "SessionStart"],
-  ["hook sql-mutation-guard", "PreToolUse"],
-  ["hook pre-compact", "PreCompact"],
-  ["hook post-compact", "PostCompact"],
-];
-
-/** Which binary ran each hook, from the shims' own log: basenames only. */
-export function hookBinaries(shimLog) {
-  const out = {};
-  for (const line of String(shimLog ?? "").split("\n")) {
-    const [bin, ...args] = line.trim().split(/\s+/);
-    const event = HOOK_COMMANDS.find(([cmd]) => args.join(" ").startsWith(cmd))?.[1];
-    if (bin && event) out[event] = bin.split("/").pop();
-  }
-  return out;
 }
 
 /** Whether the shims saw the host run this CLI command (`doctor`, `host-memory`, …). */
@@ -116,10 +95,6 @@ function allowlistedEvidence(surface, e) {
       return { ran: e.ran === true };
     case "structured-choice":
       return { answered: e.answered ?? null, boundaries: [...(e.boundaries ?? [])] };
-    case "hooks":
-      return { lines: { ...e.lines }, binaries: { ...e.binaries } };
-    case "mcp":
-      return { tools_listed: e.toolsListed === true, receipt: e.receipt === true };
     case "compaction":
       return {
         pre_compact: e.preCompact === true,
@@ -139,13 +114,9 @@ const MCP_NAME =
 
 /**
  * Why an extract may not be written: the real HOME, the user name, an email
- * address, or an MCP server other than the scenario's — by tool-name form, or
- * literally when the caller knows the person's own server names (`foreignMcp`).
+ * address, or an MCP server name in tool-name form.
  */
-export function privacyViolations(
-  extract,
-  { realHome, username, allowedMcp = [PROBE_MCP.name], foreignMcp = [], secrets = [] },
-) {
+export function privacyViolations(extract, { realHome, username, secrets = [] }) {
   const text = JSON.stringify(extract);
   const found = [];
   if (containsSecret(text, secrets)) found.push("contains a token");
@@ -154,15 +125,7 @@ export function privacyViolations(
     found.push("contains the user name");
   }
   if (EMAIL.test(text)) found.push("contains an email address");
-  for (const m of text.matchAll(MCP_NAME)) {
-    const name = m[1] ?? m[2];
-    if (!allowedMcp.includes(name)) found.push(`names an MCP outside the scenario: ${name}`);
-  }
-  for (const name of foreignMcp) {
-    if (!allowedMcp.includes(name) && text.includes(name)) {
-      found.push(`names an MCP outside the scenario: ${name}`);
-    }
-  }
+  for (const m of text.matchAll(MCP_NAME)) found.push(`names an MCP server: ${m[1] ?? m[2]}`);
   return found;
 }
 

@@ -158,9 +158,9 @@ describe("host-run permission profiles", () => {
     expect(problems).toContain("kimi: does not allow executing");
   });
 
-  it("claude scopes edits to the workspace and allows the agent-workflow MCP execute_sql", () => {
+  it("claude scopes edits to the workspace and pre-approves no MCP tool", () => {
     const allow = PROFILES["claude-code"].effective(ctx).allow;
-    expect(allow).toContain("mcp__host-run-probe__execute_sql");
+    expect(allow.some((rule: string) => rule.startsWith("mcp__"))).toBe(false);
     expect(allow).toContain("Edit(//tmp/w/**)");
     expect(allow).not.toContain("Edit");
   });
@@ -368,7 +368,6 @@ describe("host-run isolation", () => {
       const p = plan(host);
       const targets = [
         ...p.shims.map((s) => s.path),
-        p.dsnFile.path,
         ...p.steps.flatMap((s) =>
           s.kind === "profile"
             ? s.files.map((f) => join(p.home, f.path))
@@ -385,14 +384,13 @@ describe("host-run isolation", () => {
     }
   });
 
-  it("registers the MCP through use-env then a global forced setup, with an unreachable DSN", () => {
+  it("registers no MCP server and writes no connection file", () => {
     const p = plan("kimi");
     const aw = p.steps
       .filter((s) => s.kind === "aw")
       .map((s) => (s as { args: string[] }).args.join(" "));
-    expect(aw).toContain("self mcp use-env --name host-run-probe --dsn-var HOST_RUN_PROBE_DSN");
-    expect(aw).toContain("mcp setup --host kimi --instance host-run-probe --global --force");
-    expect(p.dsnFile.source).toMatch(/^HOST_RUN_PROBE_DSN=postgresql:\/\/127\.0\.0\.1:9\//);
+    expect(aw.some((args) => /\bmcp\b/.test(args))).toBe(false);
+    expect(p).not.toHaveProperty("dsnFile");
   });
 
   it("the shims log which binary ran, then exec the root's copy of the checkout CLI", () => {
@@ -1086,7 +1084,7 @@ describe("host-run — seventh review", () => {
       const root = realpathSync(mkdtempSync(join(tmpdir(), "host-run-selfcontained-")));
       dirs.push(root);
       const deps = checkoutDeps();
-      expect(deps).toContain("node_modules/pg");
+      expect(deps).toContain("node_modules/smol-toml");
       const plan = planIsolation({
         hostId: "codex",
         root,

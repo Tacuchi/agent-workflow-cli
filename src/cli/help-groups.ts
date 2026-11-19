@@ -8,8 +8,7 @@ import type { CliCommand, FlagHelp, HelpContract } from "./registry.js";
 // Adding a new command? Decide which family it belongs to and append it to the
 // matching group below. Any registered command NOT listed here falls into the
 // catch-all "Other" section — the `help-groups` guard test fails if that happens,
-// so every command must have a real home. Hook targets are not listed here:
-// they carry `hook: true` and `aw --help` groups them apart.
+// so every command must have a real home.
 
 export interface CommandGroup {
   name: string;
@@ -195,14 +194,14 @@ const COMMON_CONTRACT = [
   "           next step when the CLI knows one.",
   "  Exit 0   success.",
   "  Exit 1   error; in JSON the error envelope is on stdout.",
-  "  Exit 2   a condition the command declares in its own help (a merge conflict, a blocked",
-  "           hook call, a stdio transport failure).",
+  "  Exit 2   a condition the command declares in its own help (a merge conflict, a stdio",
+  "           transport failure).",
   "  Format   --format human|json: human by default in a terminal, JSON in a pipe; --json is",
   "           --format json. A command without a human projection prints JSON in every mode.",
 ];
 
 /** What a help renderer reads of a command: its name, contracts and projections. */
-export type HelpSubject = Pick<CliCommand, "name" | "help" | "flags" | "hook"> &
+export type HelpSubject = Pick<CliCommand, "name" | "help" | "flags"> &
   Partial<Pick<CliCommand, "renderHuman" | "renderRawJson">>;
 
 interface HelpScope {
@@ -287,9 +286,6 @@ function outputLines(command: HelpSubject, contract: HelpContract): string[] {
   for (const [code, meaning] of Object.entries(contract.exit_codes ?? {})) {
     lines.push(`Exit ${code}: ${meaning}`);
   }
-  if (command.hook === true) {
-    lines.push("Hook target: the host runs it; an unknown flag is reported on stderr and ignored.");
-  }
   return lines;
 }
 
@@ -322,7 +318,7 @@ export function commandHelpText(command: HelpSubject, action?: string): string {
 }
 
 /** What the global help reads of a command. */
-export type GlobalHelpEntry = { name: string; help: { purpose: string }; hook?: true };
+export type GlobalHelpEntry = { name: string; help: { purpose: string } };
 
 function aligned(rows: readonly [string, string][]): string[] {
   const width = Math.max(0, ...rows.map(([left]) => left.length));
@@ -342,9 +338,8 @@ export function globalHelpText(
   const purposes = new Map(commands.map((command) => [command.name, command.help.purpose]));
   const devOnly = new Set(GROUPS.find((group) => group.name === DEV_ONLY_GROUP)?.commands ?? []);
   const agentFacing = commands
-    .filter((command) => command.hook !== true && (all || !devOnly.has(command.name)))
+    .filter((command) => all || !devOnly.has(command.name))
     .map((c) => c.name);
-  const hooks = all ? commands.filter((command) => command.hook === true) : [];
   const lines = [
     "aw — agent-workflow runtime CLI",
     "",
@@ -372,14 +367,7 @@ export function globalHelpText(
     "Commands:",
     "",
     ...renderGroupedCommandLines(agentFacing, purposes),
-    ...(hooks.length === 0
-      ? []
-      : [
-          "",
-          "Hook targets (the host runs them; an agent does not call them):",
-          ...aligned(hooks.map((command) => [command.name, command.help.purpose])),
-        ]),
-    ...(all ? [] : ["", "aw --help --all also lists the hook targets and the dev-only commands."]),
+    ...(all ? [] : ["", "aw --help --all also lists the dev-only commands."]),
     "",
     "Aliases:",
     "  agent-workflow      long name of `aw`",

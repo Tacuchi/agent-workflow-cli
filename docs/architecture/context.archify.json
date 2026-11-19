@@ -10,7 +10,7 @@
       "url": "https://github.com/Tacuchi/agent-workflow-cli.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "496c77c9cf7fe88df5c6596b75a32e0341decf35"
+      "revision": "506c827ee1ab3558ead4eded4ff4916503c12c9b"
     }
   },
   "components": [
@@ -19,14 +19,8 @@
       "type": "external",
       "label": "You",
       "sublabel": "terminal and TUI",
-      "pos": [
-        40,
-        60
-      ],
-      "size": [
-        130,
-        60
-      ],
+      "pos": [40, 60],
+      "size": [130, 60],
       "sources": [
         {
           "path": "src/cli/tui/run.tsx",
@@ -41,19 +35,13 @@
       "type": "external",
       "label": "Coding agent",
       "sublabel": "8 supported hosts",
-      "pos": [
-        40,
-        200
-      ],
-      "size": [
-        130,
-        60
-      ],
+      "pos": [40, 200],
+      "size": [130, 60],
       "sources": [
         {
           "path": "src/domain/harnesses.ts",
-          "line": 368,
-          "end_line": 396
+          "line": 336,
+          "end_line": 364
         }
       ]
     },
@@ -61,15 +49,9 @@
       "id": "aw",
       "type": "backend",
       "label": "agent-workflow-cli",
-      "sublabel": "aw \u00b7 agent-workflow",
-      "pos": [
-        330,
-        30
-      ],
-      "size": [
-        260,
-        260
-      ],
+      "sublabel": "aw · agent-workflow",
+      "pos": [330, 30],
+      "size": [260, 260],
       "sources": [
         {
           "path": "package.json",
@@ -88,14 +70,8 @@
       "type": "external",
       "label": "npm registry",
       "sublabel": "package updates",
-      "pos": [
-        750,
-        40
-      ],
-      "size": [
-        140,
-        60
-      ],
+      "pos": [750, 40],
+      "size": [140, 60],
       "sources": [
         {
           "path": "src/application/self/update-self.ts",
@@ -105,39 +81,12 @@
       ]
     },
     {
-      "id": "pg",
-      "type": "external",
-      "label": "PostgreSQL",
-      "sublabel": "read-only queries",
-      "pos": [
-        750,
-        200
-      ],
-      "size": [
-        140,
-        60
-      ],
-      "sources": [
-        {
-          "path": "src/adapters/postgres-readonly-tools.ts",
-          "line": 163,
-          "end_line": 174
-        }
-      ]
-    },
-    {
       "id": "remote",
       "type": "cloud",
       "label": "Git remote",
       "sublabel": "per-source branches",
-      "pos": [
-        330,
-        400
-      ],
-      "size": [
-        140,
-        60
-      ],
+      "pos": [330, 400],
+      "size": [140, 60],
       "sources": [
         {
           "path": "src/application/git-flow-service.ts",
@@ -151,14 +100,8 @@
       "type": "external",
       "label": "Herdr",
       "sublabel": "terminal workspaces",
-      "pos": [
-        490,
-        400
-      ],
-      "size": [
-        140,
-        60
-      ],
+      "pos": [490, 400],
+      "size": [140, 60],
       "sources": [
         {
           "path": "src/adapters/herdr-cli.ts",
@@ -181,7 +124,7 @@
       "id": "agent-aw",
       "from": "agent",
       "to": "aw",
-      "label": "skill, hooks, MCP",
+      "label": "skill, hook",
       "variant": "emphasis",
       "fromSide": "right",
       "toSide": "left"
@@ -192,15 +135,6 @@
       "to": "npm",
       "label": "self update",
       "variant": "dashed",
-      "fromSide": "right",
-      "toSide": "left"
-    },
-    {
-      "id": "aw-pg",
-      "from": "aw",
-      "to": "pg",
-      "label": "READ ONLY",
-      "variant": "security",
       "fromSide": "right",
       "toSide": "left"
     },
@@ -229,7 +163,6 @@
       "title": "When each connection happens",
       "items": [
         "npm: TUI update check and aw self update",
-        "PostgreSQL: only through aw tool or aw mcp serve-db",
         "Git remote: only when git-flow promotes a branch",
         "Herdr: only with hubs sync --herdr"
       ]
@@ -240,16 +173,13 @@
       "items": [
         "Not an agent: the coding agent does the work",
         "No telemetry: logs stay on the machine",
-        "It never runs DML or DDL against a database"
+        "It never runs SQL: no database connection"
       ]
     },
     {
       "dot": "slate",
       "title": "Review",
-      "items": [
-        "Version 32.0.0, commit 496c77c",
-        "Reviewed on 2026-11-18"
-      ]
+      "items": ["Version 33.0.0", "Reviewed on 2026-11-18"]
     }
   ]
 }

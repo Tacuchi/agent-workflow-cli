@@ -50,23 +50,11 @@ vi.mock("../../src/application/self/install-hooks.js", () => ({
 vi.mock("../../src/application/self/clean-legacy.js", () => ({
   selfCleanLegacy: spy("selfCleanLegacy"),
 }));
-vi.mock("../../src/application/mcp-setup-service.js", () => ({
-  runMcpSetup: spy("runMcpSetup", { applied: [{}], conflicts: [], errors: [] }),
-}));
-vi.mock("../../src/application/mcp-remove-service.js", () => ({
-  runMcpRemove: spy("runMcpRemove", { applied: [{}], conflicts: [], errors: [] }),
-}));
-vi.mock("../../src/application/mcp-migration-service.js", () => ({
-  runMcpMigration: spy("runMcpMigration", { items: [{ action: "install" }] }),
-}));
 vi.mock("../../src/application/multiroot-service.js", () => ({
   runMultiroot: spy("runMultiroot", {}),
 }));
 vi.mock("../../src/application/doctor/provider-hub-block.js", () => ({
   applyRetiredSectionRemoval: spy("applyRetiredSectionRemoval", true),
-}));
-vi.mock("../../src/application/mcp-connections-service.js", () => ({
-  readMcpConnections: () => [{ name: "cert", dsnVar: "DB_CERT_DSN", provider: "postgres" }],
 }));
 
 const { runDoctorRepair } = await import("../../src/application/doctor/repair-runner.js");
@@ -83,19 +71,11 @@ const ctx = {
       end: "<!-- WORKFLOW-HUB-END -->",
     }),
   },
-  // El delegado de `auth.flow` no es un módulo que se pueda doblar con
-  // `vi.mock`: es el método del puerto de procesos que hereda la terminal. Se
-  // dobla acá y se registra con el mismo espía, así que la fila de la tabla se
-  // comprueba igual que las otras diez.
-  process: {
-    hasTty: () => true,
-    runInteractive: spy("runInteractive", { code: 0 }),
-  },
 } as unknown as CliContext;
 
-function actionFor(op: string, args: Record<string, string> = {}, argv?: readonly string[]) {
+function actionFor(op: string, args: Record<string, string> = {}) {
   return {
-    finding_id: `claude-code/mcps/${op}`,
+    finding_id: `claude-code/skills/${op}`,
     host: "claude-code",
     resource: "recurso",
     op,
@@ -106,7 +86,6 @@ function actionFor(op: string, args: Record<string, string> = {}, argv?: readonl
     verb: "—",
     summary: "—",
     locator: args.file ? `/ws/${args.file}` : (args.path ?? null),
-    ...(argv === undefined ? {} : { argv }),
   };
 }
 
@@ -125,34 +104,11 @@ const WIRING: ReadonlyArray<{
   /** When the correct wiring is more than one call, in order. */
   delegates?: readonly string[];
   args?: Record<string, string>;
-  /** Sólo las operaciones que corren un programa lo llevan, y va sellado. */
-  argv?: readonly string[];
 }> = [
   { op: "self.install-skill", delegate: "selfInstallSkill", args: { target: "user" } },
   { op: "self.uninstall", delegate: "selfUninstall", args: { target: "user" } },
   { op: "self.install-hooks", delegate: "selfInstallHooks", args: { target: "claude" } },
   { op: "self.clean-legacy", delegate: "selfCleanLegacy", args: { target: "claude" } },
-  {
-    op: "mcp.setup",
-    delegate: "runMcpSetup",
-    args: { host: "claude", instance: "cert", scope: "hub" },
-  },
-  {
-    op: "mcp.remove",
-    delegate: "runMcpRemove",
-    args: { host: "claude", instance: "cert", scope: "hub" },
-  },
-  {
-    op: "mcp.migrate",
-    delegate: "runMcpMigration",
-    args: { host: "claude", instance: "cert", scope: "hub" },
-  },
-  {
-    op: "auth.flow",
-    delegate: "runInteractive",
-    args: { provider: "doble", subject: "fixture:uno" },
-    argv: ["login-de-prueba", "--sujeto", "uno"],
-  },
   {
     op: "multiroot.attach",
     delegate: "runMultiroot",
@@ -177,10 +133,10 @@ describe("el cableado entre una operación y la función que escribe", () => {
     overrides.clear();
   });
 
-  for (const { op, delegate, delegates, args, argv } of WIRING) {
+  for (const { op, delegate, delegates, args } of WIRING) {
     const expected = delegates ?? [delegate];
     it(`'${op}' llama a ${expected.join(" + ")} y a NADIE más`, async () => {
-      const outcome = await runDoctorRepair(actionFor(op, args, argv), ctx);
+      const outcome = await runDoctorRepair(actionFor(op, args), ctx);
 
       // Exactamente los delegados que corresponden, en orden. `toEqual` sobre
       // la lista entera —y no un `toContain`— porque el daño de este defecto
@@ -258,68 +214,5 @@ describe("el cableado entre una operación y la función que escribe", () => {
 
     expect(outcome.status).toBe("blocked");
     expect(outcome.status).not.toBe("failed");
-  });
-
-  it("una entrada MCP ajena homónima bloquea en vez de pisarse", async () => {
-    // El servicio de MCP no lanza: preserva la entrada ajena y la devuelve en
-    // `conflicts`. Eso NO es un fallo del doctor —la protección funcionó— pero
-    // el recurso no quedó reparado, así que la acción no puede decir «aplicada».
-    overrides.set("runMcpSetup", { applied: [], conflicts: [{}], errors: [] });
-
-    const outcome = await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "hub" }),
-      ctx,
-    );
-
-    expect(outcome.status).toBe("blocked");
-    expect(outcome.detail).toContain("ajena");
-  });
-
-  it("el scope global viaja con su autorización explícita, y el de workspace no la lleva", async () => {
-    // `runMcpSetup` se NIEGA a escribir una configuración global sin su
-    // autorización explícita, y con razón: tocarla afecta todos los proyectos de
-    // la máquina. El adaptador la pasa porque la persona ya aprobó el digest de
-    // ESTE lote — y lo que no puede pasar es que el scope se pierda en el camino
-    // y una escritura global se cuele como de workspace, o al revés, que una de
-    // workspace lleve una autorización que nadie dio para ella.
-    await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "global" }),
-      ctx,
-    );
-    const globalCall = invocations.find((call) => call.name === "runMcpSetup");
-    expect(globalCall?.args[1]).toMatchObject({
-      scope: "global",
-      globalApproval: "explicit-self-action",
-      hosts: ["claude"],
-    });
-
-    invocations.length = 0;
-    await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "hub" }),
-      ctx,
-    );
-    const hubCall = invocations.find((call) => call.name === "runMcpSetup");
-    expect(hubCall?.args[1]).toMatchObject({ scope: "hub", hub: "/ws" });
-    expect(hubCall?.args[1]).not.toHaveProperty("globalApproval");
-  });
-
-  it("la conexión que la operación recibe es la que su instancia nombra, no cualquiera", async () => {
-    // `mcpInput` filtra el registro por el nombre de la instancia. Sin ese
-    // filtro, reparar `cert` pasaría TODAS las conexiones registradas y el
-    // servicio escribiría entradas que nadie aprobó en la vista previa.
-    await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "cert", scope: "hub" }),
-      ctx,
-    );
-    const call = invocations.find((entry) => entry.name === "runMcpSetup");
-    expect(call?.args[1]).toMatchObject({ connections: [{ name: "cert" }] });
-
-    invocations.length = 0;
-    await runDoctorRepair(
-      actionFor("mcp.setup", { host: "claude", instance: "no-registrada", scope: "hub" }),
-      ctx,
-    );
-    const missing = invocations.find((entry) => entry.name === "runMcpSetup");
-    expect(missing?.args[1]).toMatchObject({ connections: [] });
   });
 });

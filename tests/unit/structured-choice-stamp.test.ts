@@ -272,60 +272,20 @@ describe("la superficie instalada lleva el binding de su host (y el bundle canó
   });
 });
 
-describe("la vía MCP en el estampado y en el catálogo", () => {
-  it("un host que la tiene la ordena DESPUÉS de su herramienta y ANTES del markdown", () => {
-    const stamp = renderStructuredChoiceStamp(specOf("codex"));
+describe("structured-choice sin vía MCP", () => {
+  it("ningún host ofrece structured-choice por un servidor MCP de agent-workflow", () => {
+    for (const spec of HARNESSES) {
+      const stamp = renderStructuredChoiceStamp(spec);
+      expect(stamp, spec.id).not.toContain("structured_choice");
+      expect(stamp, spec.id).not.toMatch(/MCP server/i);
+    }
+  });
 
-    // El orden es el de riqueza: donde el host ofrece la suya manda la suya, y la
-    // vía MCP entra a recuperar lo que hoy degrada, nunca a sustituirla.
+  it("codex usa su herramienta nativa cuando el turno la lista, y si no, markdown etiquetado", () => {
+    const stamp = renderStructuredChoiceStamp(specOf("codex"));
     const propia = stamp.indexOf("request_user_input");
-    const via = stamp.indexOf("structured_choice");
     const markdown = stamp.indexOf("labeled markdown");
     expect(propia).toBeGreaterThan(-1);
-    expect(via).toBeGreaterThan(propia);
-    expect(markdown).toBeGreaterThan(via);
-  });
-
-  it("dice qué hacer con cada no-respuesta sin atribuirla al host o a una persona", () => {
-    const stamp = renderStructuredChoiceStamp(specOf("codex"));
-
-    expect(stamp).toContain("A decline, cancellation or empty answer leaves the boundary pending");
-    expect(stamp).toContain("state only what the protocol returned");
-    expect(stamp).not.toContain("--yolo");
-    expect(stamp).not.toContain("default approval policy");
-    expect(stamp).toContain("never record a choice nobody made");
-    // Y la aprobación de primera vez se explica como parte de la presentación.
-    expect(stamp).toContain("approve that tool");
-    expect(stamp).toContain("persisting the approval");
-  });
-
-  it("un host SIN la vía no la menciona: nada se ofrece por inferencia", () => {
-    for (const id of ["claude-code", "kimi", "warp"] as const) {
-      const stamp = renderStructuredChoiceStamp(specOf(id));
-      expect(stamp).not.toContain("structured_choice");
-      expect(stamp).not.toContain("agent-workflow` MCP server");
-    }
-  });
-
-  it("declarar la vía disponible sin evidencia fechada es imposible por FORMA", () => {
-    for (const spec of HARNESSES) {
-      const via = spec.structuredChoice.mcpElicitation;
-      if (!via.available) {
-        expect(via.reason.length).toBeGreaterThan(0);
-        continue;
-      }
-      // AC-10: ninguna afirmación de disponibilidad sin evidencia fechada del
-      // runtime. El tipo es una union discriminada, así que esto no es un guard
-      // que alguien pueda olvidar: sin `evidence` no compila.
-      expect(via.evidence).toMatch(/20\d\d-\d\d-\d\d/);
-    }
-  });
-
-  it("hoy la declara EXACTAMENTE un host, y es el que se observó", () => {
-    const conVia = HARNESSES.filter((h) => h.structuredChoice.mcpElicitation.available);
-
-    // La lista se amplía por observación y nunca por inferencia: si mañana crece,
-    // esta prueba obliga a que quien la amplíe haya mirado el runtime.
-    expect(conVia.map((h) => h.id)).toEqual(["codex"]);
+    expect(markdown).toBeGreaterThan(propia);
   });
 });

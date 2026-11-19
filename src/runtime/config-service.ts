@@ -62,10 +62,6 @@ export class RuntimeConfigService {
       configPath: path,
     };
     if (parsed.displayName !== undefined) resolved.displayName = parsed.displayName;
-    if (parsed.mcpGuards !== undefined) resolved.mcpGuards = parsed.mcpGuards;
-    if (parsed.expectedMcpServers !== undefined) {
-      resolved.expectedMcpServers = parsed.expectedMcpServers;
-    }
     if (parsed.slashCommands !== undefined) resolved.slashCommands = parsed.slashCommands;
     return resolved;
   }
@@ -95,33 +91,9 @@ function parseConfig(raw: string, path: string): AgentWorkflowRuntimeConfig {
   if (typeof json.displayName === "string" && json.displayName.length > 0) {
     config.displayName = json.displayName;
   }
-  const mcpGuards = parseMcpGuards(json.mcpGuards);
-  if (mcpGuards) config.mcpGuards = mcpGuards;
-  const expectedMcpServers = parseExpectedMcpServers(json.expectedMcpServers);
-  if (expectedMcpServers) config.expectedMcpServers = expectedMcpServers;
   const slashCommands = parseSlashCommands(json.slashCommands);
   if (slashCommands) config.slashCommands = slashCommands;
   return config;
-}
-
-function parseMcpGuards(value: unknown): AgentWorkflowRuntimeConfig["mcpGuards"] | undefined {
-  if (!isRecord(value)) return undefined;
-  const sql = value.sqlMutation;
-  if (
-    isRecord(sql) &&
-    typeof sql.toolPattern === "string" &&
-    typeof sql.serverPattern === "string"
-  ) {
-    return {
-      sqlMutation: { toolPattern: sql.toolPattern, serverPattern: sql.serverPattern },
-    };
-  }
-  return undefined;
-}
-
-function parseExpectedMcpServers(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  return value.filter((s): s is string => typeof s === "string");
 }
 
 function parseSlashCommands(value: unknown): SlashCommandHints | undefined {

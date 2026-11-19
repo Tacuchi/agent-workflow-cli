@@ -23,16 +23,6 @@ describe("log-events", () => {
     expect(formatCommandInvocation(parsed({ command: "status" }))).toBe("status");
   });
 
-  it("redacts every MCP invocation from the operational log", () => {
-    const p = parsed({
-      command: "mcp",
-      rest: ["add"],
-      flags: new Set(["dry-run"]),
-      values: new Map([["name", "db"]]),
-    });
-    expect(formatCommandInvocation(p)).toBe("mcp request --arguments=<redacted>");
-  });
-
   it("outcome carries the command and exit code", () => {
     expect(formatCommandOutcome("status", 0)).toBe("status → exit 0");
     expect(formatCommandOutcome("git-flow", 1)).toBe("git-flow → exit 1");

@@ -1,33 +1,26 @@
-// Plugin doctor — plugin health check (manifest, hooks, MCP, skills).
+// Plugin doctor — plugin health check (manifest, hooks, skills).
 //
-// Phase 3 agnostic CLI: the expected MCP servers are read from
-// `runtime.expectedMcpServers` (empty = no expectations).
-//
-// Internal structure: `runPluginDoctor` orchestrates 6 self-contained helpers
-// (skills/manifests/hooks/mcp/exported-skills), each returning `{...result, findings}`.
+// Internal structure: `runPluginDoctor` orchestrates self-contained helpers
+// (skills/manifests/hooks/exported-skills), each returning `{...result, findings}`.
 import { basename, join, resolve } from "node:path";
 import type { EnvPort } from "../ports/env.js";
 import type { FileSystemPort } from "../ports/file-system.js";
-import type { ResolvedRuntime } from "../runtime/types.js";
 import type { PathsService } from "./paths-service.js";
 import type {
   DoctorFinding,
   ExportedSkillRecord,
   HooksInfoValue,
-  McpServerInfo,
   SkillFrontmatterInfo,
 } from "./plugin-doctor/common.js";
 import { validateExportedSkills } from "./plugin-doctor/exported-skills.js";
 import { parseHooks } from "./plugin-doctor/hooks.js";
 import { parseManifests } from "./plugin-doctor/manifests.js";
-import { validateMcp } from "./plugin-doctor/mcp.js";
 import { checkReadmeSync, checkSkillsFrontmatter } from "./plugin-doctor/skills.js";
 
 export type {
   DoctorFinding,
   ExportedSkillRecord,
   HooksInfoValue,
-  McpServerInfo,
   SkillFrontmatterInfo,
 } from "./plugin-doctor/common.js";
 
@@ -51,7 +44,6 @@ export interface DoctorOutput {
   readme_count_match: boolean | null;
   manifests: Record<string, string | null>;
   hooks: Record<string, HooksInfoValue>;
-  mcp: Record<string, McpServerInfo>;
   skills: SkillFrontmatterInfo[];
   exported_skills: ExportedSkillRecord[];
   findings: DoctorFinding[];
@@ -61,7 +53,6 @@ export async function runPluginDoctor(
   fs: FileSystemPort,
   env: EnvPort,
   paths: PathsService,
-  runtime: ResolvedRuntime,
   input: PluginDoctorInput,
 ): Promise<{ data: DoctorOutput; hasError: boolean }> {
   const cwd = env.cwd();
@@ -80,7 +71,6 @@ export async function runPluginDoctor(
   const fallbackName = basename(pluginRoot) || `${paths.namespace}-${flow}`;
   const pluginName = input.pluginName ?? manifestsResult.manifestPluginName ?? fallbackName;
   const hooksResult = await parseHooks(pluginRoot, fs);
-  const mcpResult = await validateMcp(pluginRoot, runtime, env, fs);
   const exportedResult = await validateExportedSkills(
     skillsDir,
     pluginRoot,
@@ -95,7 +85,6 @@ export async function runPluginDoctor(
     ...readmeResult.findings,
     ...manifestsResult.findings,
     ...hooksResult.findings,
-    ...mcpResult.findings,
     ...exportedResult.findings,
   ];
   const hasError = findings.some((f) => f.level === "error");
@@ -114,7 +103,6 @@ export async function runPluginDoctor(
       readme_count_match: readmeResult.readmeCountMatch,
       manifests: manifestsResult.manifestsInfo,
       hooks: hooksResult.hooksInfo,
-      mcp: mcpResult.mcpInfo,
       skills: skillsResult.skillsInfo,
       exported_skills: exportedResult.exportedInfo,
       findings,

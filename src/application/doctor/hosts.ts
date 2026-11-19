@@ -32,9 +32,9 @@ export interface DoctorHostSelection {
    *
    * Se devuelven en vez de descartarse porque un filtro escrito mal filtra a
    * cero y el informe saldría sano sin haber mirado el host que se pidió.
-   * `claude` es la trampa natural: es el id que el resto de los comandos toma
-   * (`aw mcp setup --host claude`), pero el catálogo de hosts lo llama
-   * `claude-code`.
+   * `claude` es la trampa natural: es el destino que el resto de los comandos
+   * toma (`aw self install-skill --target claude`), pero el catálogo de hosts lo
+   * llama `claude-code`.
    */
   unknownOnly: string[];
 }
@@ -76,7 +76,6 @@ export async function selectDoctorHosts(
 }
 
 function viewOf(state: HostStateReport, currentHost: HarnessId | null): DoctorTargetHost {
-  const spec = HARNESSES.find((candidate) => candidate.id === state.host);
   return {
     host: state.host,
     target: state.target,
@@ -86,7 +85,6 @@ function viewOf(state: HostStateReport, currentHost: HarnessId | null): DoctorTa
     runtime: { state: state.runtime.state, version: state.runtime.version },
     agent_workflow_installed: state.agent_workflow.installed,
     degradations: degradationsOf(state),
-    mcp_host: spec?.mcpHostId ?? null,
   };
 }
 

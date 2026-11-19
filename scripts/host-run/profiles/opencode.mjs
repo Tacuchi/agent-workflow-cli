@@ -1,5 +1,5 @@
 // OpenCode: `permission` in $XDG_CONFIG_HOME/opencode/opencode.json, the file
-// `aw mcp setup` writes (src/application/mcp-host-paths.ts). `bash` patterns are
+// the host reads (src/application/mcp-host-paths.ts). `bash` patterns are
 // globs over the command and the LAST matching rule wins, so the catch-all goes
 // first (opencode.ai/docs/permissions; unverified against 1.18.30).
 //

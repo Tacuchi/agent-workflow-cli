@@ -622,18 +622,6 @@ async function askLine(q) {
   }
 }
 
-/** Names of the person's own agent-workflow MCP connections, so no extract can carry one. */
-function foreignMcpNames() {
-  const r = sh(node, [CLI_MAIN, "self", "mcp", "--action", "list"]);
-  try {
-    return (JSON.parse(r.stdout)?.data?.connections ?? JSON.parse(r.stdout)?.connections ?? [])
-      .map((c) => c.name ?? c.connection)
-      .filter((n) => typeof n === "string");
-  } catch {
-    return [];
-  }
-}
-
 async function openWithToken(herdr, plan, tokens, cleanup) {
   // The close hook is registered the moment the workspace exists: a Ctrl-C
   // during the launch or the token pick-up wait still closes it.
@@ -863,7 +851,6 @@ async function startLive() {
   const privacy = {
     realHome,
     username: userInfo().username,
-    foreignMcp: foreignMcpNames(),
     secrets: Object.values(tokens),
   };
   // Whatever ends the run — a stop before the panes, a pane that cannot be

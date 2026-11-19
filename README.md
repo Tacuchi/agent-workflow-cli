@@ -120,14 +120,12 @@ Everything else is a command:
 
 | Capability | Command |
 |---|---|
-| Host coverage, hooks, database connection test | `aw doctor` |
+| Host coverage, skills, hooks and hub visibility | `aw doctor` |
 | Install, reinstall or uninstall the bundle in hosts; clean leftovers | `aw self install-skill --target <host\|all>`, `aw self uninstall`, `aw self clean-legacy` |
-| MCP connections | `aw self mcp --action list\|use-env\|create-env\|install-<host>\|remove` |
 | Create the hub and declare sources | `aw hub-init --source …`, `aw add-source` |
 | Remove a source | `aw remove-source` |
 | Hub default branches | `aw hub-block --init --default-main-branch <b> --default-dev-branch <b> --default-qa-branch <b>` |
 | Namespace | `aw self namespace --pin` |
-| PostgreSQL MCP tools | `aw tool list`, `aw tool call` (below) |
 
 ### Namespace resolution
 
@@ -145,13 +143,9 @@ The most used commands, each with what it does, are in [docs/commands.md](docs/c
 
 Run `agent-workflow --help` (or `aw --help`) for the full list, or `agent-workflow <command> --help` for per-command flags.
 
-### PostgreSQL MCP y fallback local
-
-`aw tool` and `aw mcp serve-db` expose two read-only PostgreSQL tools, `execute_sql` and `search_objects`. Their limits, the role they need and the related `aw mcp` actions are in [docs/postgresql-mcp.md](docs/postgresql-mcp.md).
-
 ## How it works
 
-`aw` runs as one process per call. It resolves the hub from the working folder, runs one registered command and prints its result as JSON or as text for a person. The coding agent reaches it through the installed `w` skill, the host's hooks and the MCP stdio servers. It talks to the npm registry, PostgreSQL, each source's git remote and Herdr only when a command asks for them.
+`aw` runs as one process per call. It resolves the hub from the working folder, runs one registered command and prints its result as JSON or as text for a person. The coding agent reaches it through the installed `w` skill and the host's `SessionStart` hook. It talks to the npm registry, each source's git remote and Herdr only when a command asks for them. It opens no database connection.
 
 ![Context diagram of agent-workflow-cli](docs/architecture/context.svg)
 

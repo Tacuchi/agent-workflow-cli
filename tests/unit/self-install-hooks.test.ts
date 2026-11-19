@@ -238,6 +238,12 @@ describe("selfInstallHooks", () => {
         },
         mixed,
         foreign,
+        {
+          matcher: "mcp__.*__execute_sql",
+          hooks: [
+            { type: "command", command: "agent-workflow hook sql-mutation-guard", timeout: 10 },
+          ],
+        },
       ],
     };
     await mkdir(join(home, ".claude"), { recursive: true });
@@ -250,12 +256,6 @@ describe("selfInstallHooks", () => {
     expect(config.hooks.PreToolUse).toEqual([
       { matcher: "Bash", hooks: [{ type: "prompt", prompt: "regla propia" }] },
       foreign,
-      {
-        matcher: "mcp__.*__execute_sql",
-        hooks: [
-          { type: "command", command: "agent-workflow hook sql-mutation-guard", timeout: 10 },
-        ],
-      },
     ]);
     expect(config.permissions).toEqual({ allow: ["Read"] });
     expect((await selfInstallHooks(args, buildCtx(home))).data?.status).toBe("noop");
@@ -384,12 +384,12 @@ describe("selfInstallHooks", () => {
   // mergeados en settings.json tal cual, sin transformación y sin pérdidas. Los
   // demás tests de claude usan una plantilla de 3 eventos; este cierra la
   // distancia entre "el merge funciona" y "el merge funciona con lo que enviamos".
-  it("claude: la plantilla REAL del bundle mergea sus 2 eventos sin guardas Git", async () => {
+  it("claude: la plantilla REAL del bundle mergea sólo SessionStart, sin guardas", async () => {
     const bundled = await resolveBundledHookTemplate();
     expect(bundled, "la plantilla del bundle tiene que resolverse").not.toBeNull();
     const template = JSON.parse(await readFile(bundled as string, "utf8"));
     const events = Object.keys(template.hooks);
-    expect(events).toEqual(["SessionStart", "PreToolUse"]);
+    expect(events).toEqual(["SessionStart"]);
 
     const result = await selfInstallHooks(
       buildArgs({ target: "claude", template: bundled as string }),
@@ -404,9 +404,10 @@ describe("selfInstallHooks", () => {
     const written = JSON.parse(await readFile(join(home, ".claude", "settings.json"), "utf8")) as {
       hooks: Record<string, unknown>;
     };
-    // Byte a byte lo que la plantilla declara: sólo SQL en PreToolUse.
+    // Byte a byte lo que la plantilla declara, sin servidores MCP ni PreToolUse.
     expect(written.hooks).toEqual(template.hooks);
-    expect((written.hooks.PreToolUse as unknown[]).length).toBe(1);
+    expect(written.hooks.PreToolUse).toBeUndefined();
+    expect(JSON.stringify(written)).not.toContain("mcpServers");
     expect(JSON.stringify(written.hooks)).not.toMatch(/branch-check|git-commit-advisor|turn-start/);
     expect(written.hooks.PostCompact).toBeUndefined();
   });
@@ -428,7 +429,7 @@ describe("selfInstallHooks", () => {
         /hook branch-check|hook git-commit-advisor|hook turn-start/,
       );
       if (target === "opencode") expect(result.data?.status).toBe("unsupported");
-      else expect(contents.join("\n"), target).toContain("sql-mutation-guard");
+      expect(contents.join("\n"), target).not.toMatch(/sql-mutation-guard|PreToolUse|mcpServers/);
     },
   );
 
@@ -713,4 +714,115 @@ describe("selfInstallHooks — kimi", () => {
     expect(warning).toContain("declared degradation");
     expect(warning).toContain("SessionStart");
   });
+});
+
+describe("selfInstallHooks — reinstalar sobre el PreToolUse de la versión anterior", () => {
+  const GUARD = "agent-workflow hook sql-mutation-guard";
+  const PREVIOUS_TEMPLATE = {
+    hooks: {
+      SessionStart: [
+        {
+          matcher: "startup|resume|clear",
+          hooks: [
+            {
+              type: "command",
+              command: "agent-workflow self namespace --pin workflow",
+              timeout: 5,
+            },
+          ],
+        },
+      ],
+      PreToolUse: [
+        {
+          matcher: "mcp__.*__execute_sql",
+          hooks: [{ type: "command", command: GUARD, timeout: 10 }],
+        },
+      ],
+    },
+  };
+  let workdir: string;
+  let home: string;
+  let previous: string;
+
+  beforeEach(async () => {
+    workdir = await mkdtemp(join(tmpdir(), "aw-hooks-previous-"));
+    home = join(workdir, "home");
+    previous = join(workdir, "previous.template.json");
+    await mkdir(home, { recursive: true });
+    await writeFile(previous, JSON.stringify(PREVIOUS_TEMPLATE), "utf8");
+  });
+
+  afterEach(async () => {
+    await rm(workdir, { recursive: true, force: true });
+  });
+
+  /**
+   * Each host's file, how a person's own PreToolUse hook is written in it and,
+   * where the installer no longer translates the guard's matcher, the entry the
+   * previous version wrote there.
+   */
+  const HOSTS: Record<
+    string,
+    { file: string; addForeign(text: string): string; previous?: unknown }
+  > = {
+    claude: {
+      file: ".claude/settings.json",
+      addForeign: (text) => {
+        const data = JSON.parse(text);
+        data.hooks.PreToolUse.push({
+          matcher: "Bash",
+          hooks: [{ type: "command", command: "my-own-hook" }],
+        });
+        return JSON.stringify(data);
+      },
+    },
+    crush: {
+      file: ".config/crush/crush.json",
+      previous: {
+        hooks: {
+          PreToolUse: [{ matcher: "^mcp_.*_execute_sql$", command: GUARD, timeout: 10 }],
+        },
+      },
+      addForeign: (text) => {
+        const data = JSON.parse(text);
+        data.hooks.PreToolUse.push({ matcher: "^bash$", command: "my-own-hook" });
+        return JSON.stringify(data);
+      },
+    },
+    kimi: {
+      file: ".kimi-code/config.toml",
+      addForeign: (text) =>
+        `${text}\n[[hooks]]\nevent = "PreToolUse"\nmatcher = "Bash"\ncommand = "my-own-hook"\n`,
+    },
+  };
+
+  it.each(Object.keys(HOSTS))(
+    "%s: quita la guarda propia y conserva el hook ajeno",
+    async (target) => {
+      const host = HOSTS[target];
+      if (host === undefined) throw new Error(target);
+      const path = join(home, host.file);
+      await mkdir(dirname(path), { recursive: true });
+      if (host.previous === undefined) {
+        const first = await selfInstallHooks(
+          buildArgs({ target, template: previous }),
+          buildCtx(home),
+        );
+        expect(first.ok, target).toBe(true);
+      } else {
+        await writeFile(path, JSON.stringify(host.previous), "utf8");
+      }
+      expect(await readFile(path, "utf8"), target).toContain(GUARD);
+      await writeFile(path, host.addForeign(await readFile(path, "utf8")), "utf8");
+
+      const again = await selfInstallHooks(
+        buildArgs({ target, template: BUNDLED_TEMPLATE }),
+        buildCtx(home),
+      );
+      expect(again.ok, target).toBe(true);
+      const after = await readFile(path, "utf8");
+      expect(after, target).not.toContain(GUARD);
+      expect(after, target).toContain("my-own-hook");
+    },
+  );
 });

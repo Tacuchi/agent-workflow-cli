@@ -9,7 +9,6 @@ import { describe, expect, it } from "vitest";
 import { RUNS_DIR, listRunIds, loadMatrix } from "../../scripts/host-run/compare.mjs";
 import {
   buildExtract,
-  hookBinaries,
   hookLines,
   normalize,
   privacyViolations,
@@ -66,7 +65,7 @@ describe("host-run matrix", () => {
     ).toBe("not-reached");
   });
 
-  it("builds 8 × 6 with warp and oz not covered, and a missing observation not-reached", () => {
+  it("builds 8 × 4 with warp and oz not covered, and a missing observation not-reached", () => {
     const m = buildMatrix({
       runId: "r1",
       date: "2026-09-29",
@@ -96,15 +95,17 @@ describe("host-run matrix", () => {
           version: "0.157.1",
           model: "gpt-x",
           effort: "high",
-          cells: { mcp: { observed: "works", mode: "interactive", declared_by_doctor: false } },
+          cells: {
+            "host-memory": { observed: "works", mode: "interactive", declared_by_doctor: false },
+          },
         },
         gemini: { version: "1.2.11", agy_without_profile: true, cells: {} },
       },
     });
-    expect(m.hosts.codex.cells.mcp).toMatchObject({
-      expected: "native",
+    expect(m.hosts.codex.cells["host-memory"]).toMatchObject({
+      expected: "degraded",
       observed: "works",
-      state: "works",
+      state: "catalog-outdated",
       run_id: "r2",
       date: "2026-09-29",
       host_version: "0.157.1",
@@ -120,8 +121,8 @@ describe("host-run matrix", () => {
 
   it("a matrix whose state does not follow from its observation is invalid", () => {
     const m = sample("2026-09-01T10-00-00Z");
-    m.hosts["claude-code"].cells.hooks.state = "works";
-    m.hosts["claude-code"].cells.hooks.observed = "fails";
+    m.hosts["claude-code"].cells.commands.state = "works";
+    m.hosts["claude-code"].cells.commands.observed = "fails";
     expect(validateMatrix(m).join("\n")).toMatch(/does not follow/);
     const n = sample("2026-09-01T10-00-00Z");
     n.hosts.codex.covered = false;
@@ -137,7 +138,7 @@ describe("host-run matrix", () => {
     ]) {
       expect(validateMatrix(sample(id)), id).toEqual([]);
     }
-    expect(sample("2026-09-16T10-00-00Z").hosts.codex.cells.mcp.state).toBe("not-run");
+    expect(sample("2026-09-16T10-00-00Z").hosts.codex.cells.commands.state).toBe("not-run");
   });
 
   it("with a host subset, the covered hosts left out are not-run, never not-reached", () => {
@@ -151,7 +152,7 @@ describe("host-run matrix", () => {
       hostRuns: {},
     });
     expect(m.partial).toBe(true);
-    expect(m.hosts.codex.cells.mcp.state).toBe("not-reached");
+    expect(m.hosts.codex.cells.commands.state).toBe("not-reached");
     for (const s of SURFACES) expect(m.hosts.opencode.cells[s].state).toBe("not-run");
     expect(m.hosts.opencode.launched).toBe(false);
     // kimi, excluded by the person, is not covered with its reason — never not-run.
@@ -167,7 +168,7 @@ describe("host-run matrix", () => {
     "    hooks degraded — not armed",
     "    host-memory degraded — behind [features] memories",
     "  Kimi Code · ready · runtime available 0.39.1 · agent-workflow instalado",
-    "    mcp degraded — imaginary",
+    "    structured-choice degraded — imaginary",
     "",
     "Cobertura",
     "    compaction degraded — not a host line",
@@ -176,8 +177,8 @@ describe("host-run matrix", () => {
   it("reads the doctor's degradation lines only under the host's own header", () => {
     expect(declaredByDoctor(doctorRelay, "hooks", "Codex")).toBe(true);
     expect(declaredByDoctor(doctorRelay, "host-memory", "Codex")).toBe(true);
-    expect(declaredByDoctor(doctorRelay, "mcp", "Codex")).toBe(false);
-    expect(declaredByDoctor(doctorRelay, "mcp", "Kimi Code")).toBe(true);
+    expect(declaredByDoctor(doctorRelay, "structured-choice", "Codex")).toBe(false);
+    expect(declaredByDoctor(doctorRelay, "structured-choice", "Kimi Code")).toBe(true);
     expect(declaredByDoctor(doctorRelay, "hooks", "Kimi Code")).toBe(false);
     expect(declaredByDoctor(doctorRelay, "compaction", "Codex")).toBe(false);
   });
@@ -200,12 +201,9 @@ describe("host-run matrix", () => {
     expect(judgeSurface("commands", { ran: false, via: "commands-dir" })).toBe("fails");
     expect(judgeSurface("structured-choice", { answered: "markdown" })).toBe("degraded");
     expect(judgeSurface("structured-choice", { reached: false })).toBe("not-reached");
-    const all = { SessionStart: true, PreToolUse: true, PreCompact: true, PostCompact: true };
-    expect(judgeSurface("hooks", { lines: all })).toBe("works");
-    expect(judgeSurface("hooks", { lines: { PreToolUse: true } })).toBe("degraded");
-    expect(judgeSurface("mcp", { toolsListed: true, serverReached: true })).toBe("works");
-    // The setup receipt is not evidence any more: only the listing and the server reached.
-    expect(judgeSurface("mcp", { toolsListed: true, receipt: true })).toBe("degraded");
+    for (const retired of ["hooks", "mcp"]) {
+      expect(() => judgeSurface(retired, {})).toThrow(/unknown surface/);
+    }
     expect(judgeSurface("compaction", { checkpoint: true })).toBe("degraded");
     expect(judgeSurface("host-memory", { ran: false })).toBe("fails");
     expect(judgeSurface("host-memory", undefined)).toBe("not-reached");
@@ -223,7 +221,7 @@ describe("host-run matrix", () => {
         codex: {
           version: "0.157.1",
           cells: {
-            mcp: {
+            commands: {
               observed: "works",
               mode: "interactive",
               extract_refused: ["contains the real HOME"],
@@ -232,12 +230,12 @@ describe("host-run matrix", () => {
         },
       },
     });
-    expect(m.hosts.codex.cells.mcp.extract_refused).toEqual(["contains the real HOME"]);
-    expect(m.hosts.codex.cells.mcp).not.toHaveProperty("extract");
+    expect(m.hosts.codex.cells.commands.extract_refused).toEqual(["contains the real HOME"]);
+    expect(m.hosts.codex.cells.commands).not.toHaveProperty("extract");
   });
 
   it.skipIf(listRunIds().length === 0)(
-    "every real run under tests/fixtures/host-runs is a valid 8 × 6 matrix",
+    "every real run under tests/fixtures/host-runs is a valid 8 × 4 matrix",
     () => {
       for (const id of listRunIds()) expect(validateMatrix(loadMatrix(id)), id).toEqual([]);
     },
@@ -261,10 +259,10 @@ describe("host-run extracts", () => {
     const screen = `${Array.from({ length: 50 }, (_, i) => `line ${i}`).join("\n")}\n\u001b[1mdone\u001b[0m in ${root}/workspace`;
     const e = buildExtract({
       host: "codex",
-      surface: "mcp",
+      surface: "commands",
       cell,
       screen,
-      evidence: { toolsListed: true, receipt: true, secret: "x" },
+      evidence: { ran: true, secret: "x" },
       paths,
     });
     expect(Object.keys(e).sort()).toEqual(
@@ -281,7 +279,7 @@ describe("host-run extracts", () => {
         "surface",
       ].sort(),
     );
-    expect(e.evidence).toEqual({ tools_listed: true, receipt: true });
+    expect(e.evidence).toEqual({ ran: true });
     expect(e.fragment.split("\n").length).toBeLessThanOrEqual(20);
     expect(e.fragment).toContain("done in <workspace>");
     expect(e.fragment).not.toContain("\u001b");
@@ -310,24 +308,16 @@ describe("host-run extracts", () => {
     expect(e).not.toHaveProperty("fragment");
   });
 
-  it("reads hook events and the binary that ran them from the home's logs", () => {
+  it("reads hook events from the home's logs", () => {
     const log =
-      "2026-09-29T10:00:00Z INFO self namespace --pin=workflow\n2026-09-29T10:01:00Z INFO hook sql-mutation-guard\n";
-    expect(hookLines(log)).toEqual({
-      SessionStart: true,
-      PreToolUse: true,
-      PreCompact: false,
-      PostCompact: false,
-    });
-    expect(hookBinaries(`${root}/bin/agent-workflow hook sql-mutation-guard\n`)).toEqual({
-      PreToolUse: "agent-workflow",
-    });
+      "2026-09-29T10:00:00Z INFO self namespace --pin=workflow\n2026-09-29T10:01:00Z INFO hook pre-compact\n";
+    expect(hookLines(log)).toEqual({ SessionStart: true, PreCompact: true, PostCompact: false });
   });
 
-  it("refuses an extract with the real HOME, the user, an address or a foreign MCP", () => {
+  it("refuses an extract with the real HOME, the user, an address or an MCP server name", () => {
     const base = buildExtract({
       host: "codex",
-      surface: "mcp",
+      surface: "commands",
       cell,
       screen: "ok",
       evidence: {},
@@ -339,24 +329,13 @@ describe("host-run extracts", () => {
     expect(leak(`read ${realHome}/.codex/auth.json`)).toContain("contains the real HOME");
     expect(leak("hello someone")).toContain("contains the user name");
     expect(leak("contact person@example.com")).toContain("contains an email address");
-    expect(leak("called mcp__qtc-prod__execute_sql")).toContain(
-      "names an MCP outside the scenario: qtc-prod",
-    );
-    expect(leak("called mcp__host-run-probe__execute_sql")).toEqual([]);
-    expect(leak("called mcp_host-run-probe_execute_sql")).toEqual([]);
+    expect(leak("called mcp__qtc-prod__execute_sql")).toContain("names an MCP server: qtc-prod");
+    expect(leak("called mcp_qtc-prod_execute_sql")).toContain("names an MCP server: qtc-prod");
     expect(leak("used mcp__claude_ai_Claude_Docs__batch")).toContain(
-      "names an MCP outside the scenario: claude_ai_Claude_Docs",
+      "names an MCP server: claude_ai_Claude_Docs",
     );
-    expect(leak("used mcp__qtc_cert__execute_sql")).toContain(
-      "names an MCP outside the scenario: qtc_cert",
-    );
+    expect(leak("used mcp__qtc_cert__execute_sql")).toContain("names an MCP server: qtc_cert");
     expect(leak("running claude-code@2.1.284 and host-run@invalid")).toEqual([]);
-    expect(
-      privacyViolations(
-        { ...base, fragment: "server qtc-cert is up" },
-        { ...opts, foreignMcp: ["qtc-cert"] },
-      ),
-    ).toContain("names an MCP outside the scenario: qtc-cert");
   });
 
   it("normalization names the disposable paths and the real HOME", () => {

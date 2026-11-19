@@ -1,6 +1,3 @@
-import { PostgresReadonlyTools } from "../../adapters/postgres-readonly-tools.js";
-import { DatabaseToolCatalog } from "../../application/database-tool-catalog.js";
-import type { CatalogLookup } from "../../application/export-catalog-check.js";
 import {
   type EnvironmentFilter,
   type ExportApplied,
@@ -14,7 +11,7 @@ import {
   conflictingScopeFlags,
   prepareExport,
   readExportScope,
-  validateExportWithCatalog,
+  validateExport,
 } from "../../application/export-service.js";
 import type { SemanticFailure } from "../../application/semantic-operation/protocol.js";
 import type { CommandResult } from "../../domain/types.js";
@@ -81,7 +78,7 @@ const SCRIPTS_ENVELOPE_NOTE =
 function exportFlags(category: ExportCategory): CommandFlags {
   const scope = ["source", "date"];
   return {
-    known: category === "scripts" ? [...scope, "from", "exclude", "environment", "catalog"] : scope,
+    known: category === "scripts" ? [...scope, "from", "exclude", "environment"] : scope,
     repeatable: category === "scripts" ? ["exclude"] : [],
     actions: {
       apply: {
@@ -121,10 +118,6 @@ function exportHelp(category: ExportCategory): CommandHelp {
               effect:
                 "Destination environment: bundles the release book records as applied there drop out.",
             },
-            catalog: {
-              value: "<connection>",
-              effect: "Check tables and columns read-only against this database connection.",
-            },
           }
         : {}),
     },
@@ -142,7 +135,7 @@ function exportHelp(category: ExportCategory): CommandHelp {
         purpose:
           "Check the answer envelope from stdin and return its preview and approval digest; writes nothing.",
         output:
-          '{stage: "validate", preview {category, destination, files[] ({path, bytes}), overwrites, replacements?, mode?, unverified?}, approval_digest}.',
+          '{stage: "validate", preview {category, destination, files[] ({path, bytes}), overwrites, replacements?, mode?}, approval_digest}.',
         notes: envelope,
       },
       apply: {
@@ -197,27 +190,18 @@ function exportCommand(category: ExportCategory): CliCommand<ExportData> {
       const raw = stage === "prepare" ? "" : await readRequiredStdin();
       const scope = resolveStageScope(stage, raw, args);
       if (!scope.ok) return failSemantic(scope.failure);
-      const catalog = exportCatalog(category, scope.selection, ctx);
 
       // Each stage rebuilds the request from the hub: stateless, and the
       // corpus digest is what detects a session that moved meanwhile.
-      const prepared = await prepareExport(
-        ctx.fs,
-        ctx.env,
-        ctx.paths,
-        category,
-        scope.selection,
-        undefined,
-        catalog,
-      );
+      const prepared = await prepareExport(ctx.fs, ctx.env, ctx.paths, category, scope.selection);
       if (!prepared.ok) return failSemantic(prepared.failure);
 
       if (stage === "prepare") {
         return { ok: true, data: { stage: "prepare", prepared: prepared.value }, exitCode: 0 };
       }
       return stage === "validate"
-        ? await runValidate(raw, prepared.value, catalog)
-        : await runApply(args, ctx, raw, prepared.value, catalog);
+        ? runValidate(raw, prepared.value)
+        : await runApply(args, ctx, raw, prepared.value);
     },
 
     renderHuman(result: CommandResult<ExportData>, context: HumanRenderContext): string {
@@ -341,7 +325,6 @@ function describeScope(scope: ExportScope): string {
     ...(scope.since === undefined ? [] : [`--since ${scope.since}`]),
     ...(scope.source === undefined ? [] : [`--source ${scope.source}`]),
     ...(scope.code === undefined ? [] : [`--code ${scope.code}`]),
-    ...(scope.catalog === undefined ? [] : [`--catalog ${scope.catalog}`]),
     ...(scope.from === undefined ? [] : [`--from ${scope.from}`]),
     ...(scope.exclude ?? []).map((name) => `--exclude ${name}`),
     ...(scope.environment === undefined ? [] : [`--environment ${scope.environment}`]),
@@ -350,12 +333,8 @@ function describeScope(scope: ExportScope): string {
   return parts.join(" ");
 }
 
-async function runValidate(
-  raw: string,
-  prepared: ExportPrepared,
-  catalog?: CatalogLookup,
-): Promise<CommandResult<ExportData>> {
-  const result = await validateExportWithCatalog(raw, prepared, catalog);
+function runValidate(raw: string, prepared: ExportPrepared): CommandResult<ExportData> {
+  const result = validateExport(raw, prepared);
   if (!result.ok) return failSemantic(result.failure);
   return { ok: true, data: { stage: "validate", ...result.value }, exitCode: 0 };
 }
@@ -365,7 +344,6 @@ async function runApply(
   ctx: CliContext,
   raw: string,
   prepared: ExportPrepared,
-  catalog?: CatalogLookup,
 ): Promise<CommandResult<ExportData>> {
   const approval = args.values.get("approval");
   if (approval === undefined) {
@@ -375,19 +353,13 @@ async function runApply(
       ...usageAction(prepared.category, "apply"),
     });
   }
-  const result = await applyExport(
-    ctx.fs,
-    ctx.env,
-    ctx.paths,
-    {
-      raw,
-      prepared,
-      approval,
-      // Replacing the category's overwritable file is never implicit.
-      allowOverwrite: args.flags.has("--overwrite"),
-    },
-    catalog,
-  );
+  const result = await applyExport(ctx.fs, ctx.env, ctx.paths, {
+    raw,
+    prepared,
+    approval,
+    // Replacing the category's overwritable file is never implicit.
+    allowOverwrite: args.flags.has("--overwrite"),
+  });
   if (!result.ok) return failSemantic(result.failure);
   // The bundle travels in the hub's commit, proposed and approved by digest.
   const paths = result.value.written.map((path) => `--path ${path}`).join(" ");
@@ -413,34 +385,16 @@ function selection(args: ParsedArgs): ExportSelection {
     .map((name) => name.trim())
     .filter((name) => name.length > 0);
   const environment = args.values.get("environment");
-  const catalog = args.values.get("catalog");
   return {
     ...(source !== undefined ? { source } : {}),
     ...(date !== undefined ? { date } : {}),
     ...(from !== undefined ? { from: from as ExportBase } : {}),
     ...(exclude.length > 0 ? { exclude } : {}),
     ...(environment !== undefined ? { environment } : {}),
-    ...(catalog !== undefined ? { catalog } : {}),
   };
 }
 
 export const exportScriptsCommand = exportCommand("scripts");
-
-function exportCatalog(
-  category: ExportCategory,
-  selection: ExportSelection,
-  ctx: CliContext,
-): CatalogLookup | undefined {
-  const catalog: CatalogLookup | undefined =
-    category === "scripts" && selection.catalog !== undefined
-      ? new DatabaseToolCatalog({
-          paths: ctx.paths,
-          env: ctx.env,
-          postgres: new PostgresReadonlyTools(),
-        })
-      : undefined;
-  return catalog;
-}
 
 function renderValidatedExport(
   category: ExportCategory,
@@ -455,7 +409,6 @@ function renderValidatedExport(
     (data.preview.overwrites === null ? [] : [data.preview.overwrites])) {
     lines.push(`  REEMPLAZA  ${path} — exige --overwrite`);
   }
-  for (const item of data.preview.unverified ?? []) lines.push(`  Sin verificar ${item}`);
   lines.push(`  Aprobación aw export-${category} apply --approval ${data.approval_digest}`, "");
   return lines.join("\n");
 }

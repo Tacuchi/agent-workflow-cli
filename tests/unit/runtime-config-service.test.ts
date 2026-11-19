@@ -94,7 +94,7 @@ describe("RuntimeConfigService.resolveRuntime", () => {
     );
   });
 
-  it("loads extended schema with displayName, mcpGuards, expectedMcpServers, slashCommands", async () => {
+  it("loads displayName and slashCommands, ignoring keys left by earlier versions", async () => {
     const fullConfig = {
       packageName: "@tacuchi/agent-workflow-cli",
       binName: "agent-workflow",
@@ -115,8 +115,9 @@ describe("RuntimeConfigService.resolveRuntime", () => {
     const resolved = await service.resolveRuntime();
 
     expect(resolved.displayName).toBe("Acme Workflow");
-    expect(resolved.mcpGuards?.sqlMutation?.toolPattern).toContain("(alpha|beta)");
-    expect(resolved.expectedMcpServers).toEqual(["alpha", "beta"]);
+    // Keys left by an earlier version are ignored without error.
+    expect(resolved).not.toHaveProperty("mcpGuards");
+    expect(resolved).not.toHaveProperty("expectedMcpServers");
     expect(resolved.slashCommands).toEqual({ migrate: "/acme-core:migrate" });
   });
 
@@ -133,8 +134,6 @@ describe("RuntimeConfigService.resolveRuntime", () => {
     const service = new RuntimeConfigService(fs, env, paths);
     const resolved = await service.resolveRuntime();
 
-    expect(resolved.mcpGuards).toBeUndefined();
-    expect(resolved.expectedMcpServers).toBeUndefined();
     expect(resolved.slashCommands).toBeUndefined();
   });
 });

@@ -151,16 +151,6 @@ describe("skills/w/commands/doctor.md · los techos del presupuesto", () => {
     expect(raw).toContain("take the listing, not the count");
   });
 
-  it("avisa que la pasada por defecto conecta los MCP del host", () => {
-    // Lo que el documento se callaba: sin `--skip-native`, la categoría de MCPs
-    // le pregunta a Claude y a Codex por sus servidores, y Claude los CONECTA
-    // para reportar su salud. Una persona que corre el paso 1 por primera vez
-    // levanta todos los servidores de dos hosts sin saberlo.
-    expect(raw).toContain("--skip-native");
-    expect(raw).toContain("which connects them");
-    expect(raw).toContain("`omitida`");
-  });
-
   it("su argument-hint nombra los dos subverbos que el propio documento tipea", () => {
     // El defecto que atrapa: decía «(none)» sobre un comando que despacha por
     // posicional y cuyos pasos 4 y 5 usan esos posicionales.
@@ -226,12 +216,11 @@ describe("el binding no rompe las invocaciones que el documento enseña", () => 
     // siguiente, `aw doctor --host codex prepare` correría el informe en vez de
     // preparar — y la persona estaría siguiendo al pie de la letra un documento
     // que le enseña un comando que hace otra cosa. Se comprueba con el parser
-    // real sobre las tres invocaciones que el documento nombra.
+    // real sobre las invocaciones que el documento nombra.
     const cases: Array<[string[], string[]]> = [
       [["doctor", "--host", "claude-code"], []],
       [["doctor", "--host", "claude-code", "prepare", "--select", "x"], ["prepare"]],
       [["doctor", "--host", "codex", "apply", "--approval", "abc", "--select", "x"], ["apply"]],
-      [["doctor", "--host", "oz", "--verify-connection", "prepare"], ["prepare"]],
     ];
 
     for (const [argv, rest] of cases) {

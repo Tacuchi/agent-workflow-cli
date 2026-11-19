@@ -20,7 +20,6 @@ import {
 import {
   buildExtract,
   containsSecret,
-  hookBinaries,
   hookLines,
   privacyViolations,
   shimRan,
@@ -167,17 +166,6 @@ const COLLECTORS = {
     reached: reachedBoundaries.length > 0,
     answered: answeredHow(answered),
     boundaries: reachedBoundaries,
-  }),
-  // The host listed the tools, and its own server was reached while the pane ran
-  // (the CLI logs `mcp request` whenever the host launches or calls it). The
-  // setup receipt is not evidence: preparation writes it before any pane opens.
-  mcp: (_h, { screen, logSincePane }) => ({
-    toolsListed: screen.includes("execute_sql") && screen.includes("search_objects"),
-    serverReached: / INFO mcp request\b/.test(logSincePane) || /READ_ONLY_POLICY/.test(screen),
-  }),
-  hooks: (h, { logSincePane }) => ({
-    lines: hookLines(logSincePane),
-    binaries: hookBinaries(shimLog(h.home)),
   }),
   "host-memory": (h, { screen }) => ({
     ran: recallRelayed(screen, shimLog(h.home)),
@@ -661,10 +649,6 @@ function unreachedWhy(h, surface) {
 }
 
 function hostRunOf(ctx, h) {
-  // Hooks are judged after compaction, when Pre/PostCompact had their chance.
-  if (h.evidence.hooks && h.evidence.hooks.reached !== false) {
-    h.evidence.hooks = collectEvidence("hooks", h);
-  }
   const cells = {};
   const relay = (h.relays ?? []).join("\n");
   const cliDoctor = ctx.cliDoctorText?.(h) ?? "";
@@ -734,7 +718,6 @@ export function evidenceOf(ctx, hosts, { launched = null, stopped = null } = {})
       const problems = privacyViolations(extract, {
         realHome: ctx.realHome,
         username: ctx.username,
-        foreignMcp: ctx.foreignMcp ?? [],
         secrets: ctx.secrets ?? [],
       });
       if (problems.length > 0) {

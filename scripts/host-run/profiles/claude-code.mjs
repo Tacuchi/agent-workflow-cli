@@ -12,12 +12,9 @@
 // (unverified against the 2.1.284 binary, whose JS is not readable as strings).
 //
 // Pre-approved, per the orchestrator's middle path: edits under the workspace's
-// real path, the agent-workflow MCP tools (a read-only server on an unreachable DSN,
-// so the PreToolUse step reaches the SQL guard hook), the exact `pwd`, and the
-// agent-workflow invocations the scenario makes (CLAUDE_SHELL_ALLOW). Any of those
+// real path, the exact `pwd`, and the agent-workflow invocations the scenario makes (CLAUDE_SHELL_ALLOW). Any of those
 // carrying --hub, --root or --approval, and `doctor apply`, ASK.
 
-import { PROBE_MCP } from "../scenario.mjs";
 import { CLAUDE_SHELL_ALLOW, DENIAL_CATEGORIES } from "./denials.mjs";
 import { STEERING_FILES } from "./steering.mjs";
 
@@ -63,12 +60,7 @@ const readDenials = ({ realHome, root, siblingRoots = [] }) => [
 ];
 
 /** `workspace` must be a real path (macOS: /private/var, not /var); run.mjs resolves it. */
-const allowFor = (workspace) => [
-  `Edit(/${workspace}/**)`,
-  ...CLAUDE_SHELL_ALLOW,
-  `mcp__${PROBE_MCP.name}__execute_sql`,
-  `mcp__${PROBE_MCP.name}__search_objects`,
-];
+const allowFor = (workspace) => [`Edit(/${workspace}/**)`, ...CLAUDE_SHELL_ALLOW];
 
 const permissionsOf = (files) =>
   files.find((f) => f.path === ".claude/settings.json")?.value?.permissions ?? {};
@@ -100,8 +92,7 @@ export default {
         },
       },
     },
-    // First-run state in the disposable home's ~/.claude.json, merged with what
-    // `aw mcp setup` registers there. Keys from the 2.1.285 binary: the
+    // First-run state in the disposable home's ~/.claude.json. Keys from the 2.1.285 binary: the
     // onboarding (theme picker) is skipped once `hasCompletedOnboarding` is
     // true; the trust dialog once `projects[<dir>].hasTrustDialogAccepted` is
     // («… or set projects[<dir>].hasTrustDialogAccepted: true in <file>»). The

@@ -2,18 +2,11 @@
 // launch, how its command wrappers are invoked, where its credentials live and
 // how to ask it whether it is logged in.
 //
-// Host ids, install targets and MCP host ids are the catalog's (`HARNESSES` in
+// Host ids and install targets are the catalog's (`HARNESSES` in
 // src/domain/harnesses.ts); a guard test fails if this table drifts from it.
 
-/** The six surfaces the matrix records, in the doctor's order. */
-export const SURFACES = [
-  "commands",
-  "structured-choice",
-  "hooks",
-  "mcp",
-  "host-memory",
-  "compaction",
-];
+/** The four surfaces the matrix records, in the doctor's order. */
+export const SURFACES = ["commands", "structured-choice", "host-memory", "compaction"];
 
 /** Every catalog host, covered or not, in catalog order. */
 export const ALL_HOSTS = [
@@ -74,7 +67,6 @@ export const HOSTS = {
     childEnv: { CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1" },
     bin: "claude",
     installTarget: "claude",
-    mcpHost: "claude",
     herdrKind: "claude",
     command: (cmd) => `/w:${cmd}`,
     compact: "/compact",
@@ -92,7 +84,6 @@ export const HOSTS = {
     commandsVia: "skill",
     bin: "codex",
     installTarget: "codex",
-    mcpHost: "codex",
     herdrKind: "codex",
     command: (cmd) => `$w-${cmd}`,
     // A bare `$w-doctor` leaves codex's skill completion open and Enter picks the
@@ -120,7 +111,6 @@ export const HOSTS = {
     signInInPane: true,
     bin: "agy",
     installTarget: "gemini",
-    mcpHost: "gemini",
     herdrKind: "agy",
     // agy reads no commands dir: the synthesized w-<cmd> skill is named in the prompt.
     command: (cmd) => `Use the w-${cmd} skill.`,
@@ -146,7 +136,6 @@ export const HOSTS = {
     commandsVia: "commands-dir",
     bin: "opencode",
     installTarget: "opencode",
-    mcpHost: "opencode",
     herdrKind: "opencode",
     command: (cmd) => `/w/${cmd}`,
     compact: "/compact",
@@ -183,7 +172,6 @@ export const HOSTS = {
     commandsVia: "commands-dir",
     bin: "crush",
     installTarget: "crush",
-    mcpHost: "crush",
     // Herdr 0.9.0 has no crush kind: its state is read from the screen only.
     herdrKind: null,
     command: (cmd) => `user:w:${cmd}`,
@@ -236,7 +224,6 @@ export const HOSTS = {
     commandsVia: "skill",
     bin: "kimi",
     installTarget: "kimi",
-    mcpHost: "kimi",
     herdrKind: "kimi",
     ownBinDir: true,
     command: (cmd) => `/skill:w-${cmd}`,

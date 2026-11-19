@@ -80,6 +80,6 @@ describe("la superficie de 31.0.0 ya no expone sesiones", () => {
     const template = JSON.parse(
       readFileSync(resolve("skills/w/hooks/hooks.template.json"), "utf8"),
     );
-    expect(Object.keys(template.hooks ?? template).sort()).toEqual(["PreToolUse", "SessionStart"]);
+    expect(Object.keys(template.hooks ?? template).sort()).toEqual(["SessionStart"]);
   });
 });

@@ -304,7 +304,7 @@ describe("SourceBoundaryPolicy — la cláusula se juzga por lo que nombra", () 
       "`src/flow/answer.ts:74` y `docker/Makefile:120`",
       "`pom.xml:277` y `Producto.java:24`",
       "a las 10:30",
-      "la imagen `node:20` y `postgres:16`",
+      "la imagen `node:20` y `redis:7`",
       "el formato `esquema://host[:puerto]` y `scheme://<host>/x`",
     ];
     const remote = [

@@ -1,6 +1,6 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type DoctorPrepareListing,
@@ -80,7 +80,7 @@ const doctorReport = vi.hoisted(() => ({
   /**
    * Lo que el agregador RECIBIÓ, corrida por corrida.
    *
-   * Es la única forma de ver `--host`, `--only` y `--skip-native`: los tres
+   * Es la única forma de ver `--host` y `--only`: los dos
    * viajan hacia adentro y no dejan rastro en el lote sellado, así que dejar de
    * pasarlos no cambia ni una línea de la vista previa.
    */
@@ -115,15 +115,14 @@ const APPLY_PREFIX = "aw doctor apply --approval ";
 const DIGEST_SHAPE = /^[0-9a-f]{64}$/;
 
 /** Los verbos del catálogo, escritos a mano: son el comando que la persona podría tipear. */
-const VERB_MCP_SETUP = "aw mcp setup --host claude --instance familia --scope global";
+const VERB_ATTACH = "aw attach-multiroot --from-sources";
 const VERB_SKILLS_REINSTALL = "aw self install-skill --target claude";
 const VERB_INSTALL_SKILL = "aw self install-skill --target claude-code";
 const VERB_INSTALL_HOOKS = "aw self install-hooks --target claude-code";
 
-const ID_MCP_PROPIO = doctorFindingId("claude-code", "mcps", "familia");
+const ID_MCP_PROPIO = doctorFindingId("claude-code", "skills", "familia");
 const ID_SKILL_REPLICA = doctorFindingId("claude-code", "skills", "w:plan-exec");
-const ID_MCP_AJENO = doctorFindingId("claude-code", "mcps", "ajeno-roto");
-const ID_DSN = doctorFindingId("claude-code", "tools-auth", "DB_FAMILIA_DSN");
+const ID_MCP_AJENO = doctorFindingId("claude-code", "skills", "ajeno-roto");
 
 /**
  * FileSystemPort que DELEGA lectura y sólo REGISTRA mutación.
@@ -242,7 +241,7 @@ function hint(
     id: doctorFindingId(host, category, name),
     host,
     category,
-    resource: { kind: "mcp-entry", name, locator: `~/.config/${host}/${name}` },
+    resource: { kind: "host-config", name, locator: `~/.config/${host}/${name}` },
     state: "warning",
     summary: `${name} no está donde debería`,
     impact: `sin ${name} ese host no puede usar agent-workflow`,
@@ -276,16 +275,16 @@ function provider(category: DoctorCategory, findings: DoctorFinding[]): DoctorPr
  */
 function exitConditionProviders(): DoctorProvider[] {
   return [
-    provider("mcps", [
-      hint("claude-code", "mcps", "familia", {
-        op: "mcp.setup",
-        args: { host: "claude", instance: "familia", scope: "global" },
+    provider("skills", [
+      hint("claude-code", "skills", "familia", {
+        op: "multiroot.attach",
+        args: { host: "claude", scope: "global" },
       }),
       hint(
         "claude-code",
-        "mcps",
+        "skills",
         "ajeno-roto",
-        { op: "mcp.remove", args: { host: "claude", instance: "ajeno-roto", scope: "global" } },
+        { op: "self.uninstall", args: { target: "claude" } },
         { ownership: "foreign" },
       ),
     ]),
@@ -437,7 +436,7 @@ describe("prepareDoctorBatch", () => {
       ID_SKILL_REPLICA,
     ]);
     expect(listing.actionable.map((action) => action.verb)).toEqual([
-      VERB_MCP_SETUP,
+      VERB_ATTACH,
       VERB_SKILLS_REINSTALL,
     ]);
     // El informe entero viaja con el listado: es lo que la persona lee para
@@ -486,20 +485,20 @@ describe("prepareDoctorBatch", () => {
       ID_SKILL_REPLICA,
     ]);
     expect(proposal.batch.actions.map((action) => action.op)).toEqual([
-      "mcp.setup",
+      "multiroot.attach",
       "self.install-skill",
     ]);
     /*
      * Los `args` de cada acción, contra literales.
      *
      * Son lo ÚNICO que le dice a `apply` sobre qué recurso actuar: sin
-     * `host`/`instance`/`scope` la entrada MCP se registraría en el host
-     * equivocado —o en ninguno—, y sin `name` la reinstalación no sabría qué
+     * `host`/`scope` las rutas se registrarían en el host equivocado —o en
+     * ninguno—, y sin `name` la reinstalación no sabría qué
      * skill materializar. Un lote que sellara `args: {}` describiría una
      * reparación sin recurso, y su digest se aprobaría igual.
      */
     expect(proposal.batch.actions.map((action) => action.args)).toEqual([
-      { host: "claude", instance: "familia", scope: "global" },
+      { host: "claude", scope: "global" },
       { target: "claude" },
     ]);
     // Los efectos del lote son la unión ordenada, y es lo que la aprobación cubre.
@@ -601,10 +600,10 @@ describe("prepareDoctorBatch", () => {
         { select: [ID_MCP_PROPIO] },
         {
           providers: [
-            provider("mcps", [
-              hint("claude-code", "mcps", "familia", {
-                op: "mcp.remove",
-                args: { host: "claude", instance: "familia", scope: "global" },
+            provider("skills", [
+              hint("claude-code", "skills", "familia", {
+                op: "self.uninstall",
+                args: { target: "claude" },
               }),
             ]),
           ],
@@ -612,13 +611,14 @@ describe("prepareDoctorBatch", () => {
       ),
     );
     expect(otherOp.batch.actions[0]?.finding_id).toBe(base.batch.actions[0]?.finding_id);
-    expect(otherOp.batch.actions[0]?.op).toBe("mcp.remove");
+    expect(otherOp.batch.actions[0]?.op).toBe("self.uninstall");
     expect(otherOp.digest).not.toBe(base.digest);
 
     // 3) Otro `read_set`: se toca uno de los archivos que el lote LEE para
     // decidir. Nada del lote cambió; el estado sobre el que se armó, sí.
-    const touched = join(home, ".mcp.json");
+    const touched = join(home, ".claude", "settings.local.json");
     expect(base.read_set.map((entry) => entry.id)).toContain(touched);
+    mkdirSync(dirname(touched), { recursive: true });
     writeFileSync(touched, '{"mcpServers":{}}\n', "utf-8");
 
     const afterTouch = sealed(
@@ -655,9 +655,11 @@ describe("prepareDoctorBatch", () => {
 
     // Los verbos y los efectos salen del catálogo (escritos a mano acá), no del
     // objeto que `prepare` devolvió.
-    expect(preview).toContain(`comando equivalente: ${VERB_MCP_SETUP}`);
+    expect(preview).toContain(`comando equivalente: ${VERB_ATTACH}`);
     expect(preview).toContain(`comando equivalente: ${VERB_SKILLS_REINSTALL}`);
-    expect(preview).toContain(`${doctorOperation("mcp.setup")?.summary} — familia (claude-code)`);
+    expect(preview).toContain(
+      `${doctorOperation("multiroot.attach")?.summary} — familia (claude-code)`,
+    );
     expect(preview).toContain(
       `${doctorOperation("self.install-skill")?.summary} — w:plan-exec (claude-code)`,
     );
@@ -666,7 +668,7 @@ describe("prepareDoctorBatch", () => {
 
     // Las dos acciones aparecen en el ORDEN del lote, numeradas.
     expect(proposal.preview[0]).toBe("2 acción(es), en este orden:");
-    expect(preview.indexOf(VERB_MCP_SETUP)).toBeLessThan(preview.indexOf(VERB_SKILLS_REINSTALL));
+    expect(preview.indexOf(VERB_ATTACH)).toBeLessThan(preview.indexOf(VERB_SKILLS_REINSTALL));
 
     // Y termina en el sello: es lo que la persona aprueba.
     expect(proposal.preview.at(-1)).toBe(`digest: ${proposal.digest}`);
@@ -750,11 +752,10 @@ describe("prepareDoctorBatch", () => {
      */
     expect(first.read_set.map((entry) => entry.id)).toEqual([
       join(home, ".claude", "settings.json"),
-      join(home, ".workflow", "dev", "mcp-connections.json"),
     ]);
     expect(previewText).toContain("efectos del lote: local_additive, mutate_overwrite");
     expect(previewText).toContain("lo que tu aprobación habilita: mutate_overwrite");
-    expect(previewText).toContain("estado leído para decidir: 2 archivo(s)");
+    expect(previewText).toContain("estado leído para decidir: 1 archivo(s)");
 
     const again = sealed(
       await prepareDoctorBatch(
@@ -822,20 +823,20 @@ describe("prepareDoctorBatch", () => {
    * defensa tiene que existir igual.
    */
   it("un ciclo entre las acciones seleccionadas se rechaza con SELECTION_CYCLE y sin sellar", async () => {
-    const uno = doctorFindingId("claude-code", "mcps", "uno");
-    const dos = doctorFindingId("claude-code", "mcps", "dos");
+    const uno = doctorFindingId("claude-code", "skills", "uno");
+    const dos = doctorFindingId("claude-code", "skills", "dos");
     doctorReport.override = async () =>
       reportOf([
-        supported("claude-code", "mcps", "uno", {
-          op: "mcp.setup",
-          args: { host: "claude", instance: "uno", scope: "global" },
+        supported("claude-code", "skills", "uno", {
+          op: "multiroot.attach",
+          args: { host: "claude", scope: "global" },
           effects: ["mutate_overwrite"],
           depends_on: [dos],
           expected: "healthy",
         }),
-        supported("claude-code", "mcps", "dos", {
-          op: "mcp.setup",
-          args: { host: "claude", instance: "dos", scope: "global" },
+        supported("claude-code", "skills", "dos", {
+          op: "multiroot.attach",
+          args: { host: "claude", scope: "global" },
           effects: ["mutate_overwrite"],
           depends_on: [uno],
           expected: "healthy",
@@ -861,7 +862,7 @@ describe("prepareDoctorBatch", () => {
    * forma completamente distinta que un id mal tipeado.
    */
   it("un id que el informe no tiene se rechaza con SELECTION_UNKNOWN y ese id en candidates", async () => {
-    const fantasma = doctorFindingId("claude-code", "mcps", "no-existe");
+    const fantasma = doctorFindingId("claude-code", "skills", "no-existe");
     const outcome = await prepareDoctorBatch(
       makeCtx(new RecordingFs(hostStateFs(home)), home),
       { select: [ID_MCP_PROPIO, fantasma] },
@@ -900,25 +901,6 @@ describe("prepareDoctorBatch", () => {
     expect(foreign.code).toBe("SELECTION_NOT_ACTIONABLE");
     expect(foreign.candidates).toEqual([ID_MCP_AJENO]);
     expect(foreign.message).toContain(ID_MCP_AJENO);
-
-    const manualProviders = [
-      provider("tools-auth", [
-        hint("claude-code", "tools-auth", "DB_FAMILIA_DSN", {
-          op: "mcp.setup",
-          args: { host: "claude", instance: "familia", scope: "global" },
-        }),
-      ]),
-    ];
-    const listing = listed(await prepareDoctorBatch(ctx, {}, { providers: manualProviders }));
-    // Ni siquiera se lista: el gate lo dejó con guía manual.
-    expect(listing.actionable).toEqual([]);
-
-    const manual = rejected(
-      await prepareDoctorBatch(ctx, { select: [ID_DSN] }, { providers: manualProviders }),
-    );
-    expect(manual.code).toBe("SELECTION_NOT_ACTIONABLE");
-    expect(manual.candidates).toEqual([ID_DSN]);
-    expect(JSON.stringify(manual)).not.toMatch(/[0-9a-f]{64}/);
   });
 
   /**
@@ -955,16 +937,16 @@ describe("prepareDoctorBatch", () => {
   /**
    * El `read_set` es el compare-and-swap, y un archivo AUSENTE es parte de él.
    *
-   * «No estaba» es un estado del que la decisión también depende: si la entrada
-   * MCP aparece entre la vista previa y la aprobación, el lote se armó sobre otra
+   * «No estaba» es un estado del que la decisión también depende: si el archivo
+   * aparece entre la vista previa y la aprobación, el lote se armó sobre otra
    * realidad y `apply` tiene que poder verlo. Un `read_set` que salteara lo
    * ausente daría exactamente el falso «nada cambió» sobre el caso más probable —
    * porque lo que casi siempre falta es lo que la reparación va a crear.
    */
   it("el read_set lleva los archivos leídos con su digest, y lo ausente entra como absent", async () => {
     const ctx = makeCtx(new RecordingFs(hostStateFs(home)), home);
-    const connections = join(home, ".workflow", "dev", "mcp-connections.json");
-    const entry = join(home, ".mcp.json");
+    const other = join(home, ".codex", "config.toml");
+    const entry = join(home, ".claude", "settings.local.json");
 
     const missing = sealed(
       await prepareDoctorBatch(
@@ -974,18 +956,16 @@ describe("prepareDoctorBatch", () => {
       ),
     );
 
-    // El registro de conexiones entra SIEMPRE —es lo que decide qué conexiones
-    // existen— y con él los archivos de host que la operación va a tocar.
+    // Entran los archivos de host que la operación va a tocar.
     const ids = missing.read_set.map((item) => item.id);
-    expect(ids).toContain(connections);
     expect(ids).toContain(entry);
-    expect(ids).toContain(join(home, ".claude.json"));
-    expect(ids).toContain(join(home, ".codex", "config.toml"));
+    expect(ids).toContain(other);
     // Ordenado y sin repetidos: es lo que hace comparable un `read_set` con otro.
     expect(ids).toEqual([...new Set(ids)].sort());
     // Nada de esto existe todavía, y todo entra igual.
     for (const item of missing.read_set) expect(item.digest).toBe("absent");
 
+    mkdirSync(dirname(entry), { recursive: true });
     writeFileSync(entry, '{"mcpServers":{}}\n', "utf-8");
     const present = sealed(
       await prepareDoctorBatch(
@@ -1002,7 +982,7 @@ describe("prepareDoctorBatch", () => {
 
     expect(digestOf(present.read_set, entry)).toMatch(DIGEST_SHAPE);
     // El resto del conjunto no se movió: el digest es del archivo, no de la corrida.
-    expect(digestOf(present.read_set, connections)).toBe("absent");
+    expect(digestOf(present.read_set, other)).toBe("absent");
 
     // Y el digest sigue al CONTENIDO: dos lecturas del mismo archivo dan lo mismo,
     // otro contenido da otra cosa.
@@ -1042,26 +1022,26 @@ describe("prepareDoctorBatch", () => {
   describe("prepareDoctorBatch · la unión de efectos mira TODAS las acciones", () => {
     it("una clase que sólo aporta la segunda acción igual llega al lote y a la vista previa", async () => {
       const ctx = makeCtx(new RecordingFs(hostStateFs(home)), home);
-      // `self.install-hooks` sólo reescribe (`mutate_overwrite`); `mcp.remove`
+      // `self.install-hooks` sólo reescribe (`mutate_overwrite`); `self.uninstall`
       // sólo borra (`destructive`). Ninguna trae las dos.
       const hooks = hint("claude-code", "plugins-hooks", "aaa-hooks", {
         op: "self.install-hooks",
         args: { target: "claude-code" },
       });
-      const sobrante = hint("claude-code", "mcps", "zzz-sobrante", {
-        op: "mcp.remove",
-        args: { host: "claude", instance: "sobrante", scope: "workspace" },
+      const sobrante = hint("claude-code", "skills", "zzz-sobrante", {
+        op: "self.uninstall",
+        args: { target: "claude" },
       });
-      const providers = [provider("plugins-hooks", [hooks]), provider("mcps", [sobrante])];
+      const providers = [provider("plugins-hooks", [hooks]), provider("skills", [sobrante])];
       const idHooks = doctorFindingId("claude-code", "plugins-hooks", "aaa-hooks");
-      const idSobrante = doctorFindingId("claude-code", "mcps", "zzz-sobrante");
+      const idSobrante = doctorFindingId("claude-code", "skills", "zzz-sobrante");
 
       const proposal = sealed(
         await prepareDoctorBatch(ctx, { select: [idHooks, idSobrante] }, { providers }),
       );
 
       // La primera acción del lote trae UNA clase —el orden es por categoría, y
-      // `mcps` va antes que `plugins-hooks`—: sin recorrer el resto, la unión
+      // `skills` va antes que `plugins-hooks`—: sin recorrer el resto, la unión
       // saldría incompleta. Acá el que borra ES el primero, así que la prueba
       // también vale al revés: la clase que se perdería es la del segundo.
       expect(proposal.batch.actions[0]?.effects).toEqual(["destructive"]);
@@ -1090,15 +1070,15 @@ describe("prepareDoctorBatch", () => {
 describe("aw doctor prepare · la superficie y su proyección humana", () => {
   let home: string;
 
-  const A = doctorFindingId("claude-code", "mcps", "familia");
+  const A = doctorFindingId("claude-code", "skills", "familia");
   const B = doctorFindingId("claude-code", "skills", "w:plan-exec");
-  const MANUAL = doctorFindingId("claude-code", "mcps", "ajeno-roto");
+  const MANUAL = doctorFindingId("claude-code", "skills", "ajeno-roto");
 
   function fixtureReport(): DoctorReport {
     return reportOf([
-      supported("claude-code", "mcps", "familia", {
-        op: "mcp.setup",
-        args: { host: "claude", instance: "familia", scope: "global" },
+      supported("claude-code", "skills", "familia", {
+        op: "multiroot.attach",
+        args: { host: "claude", scope: "global" },
         effects: ["mutate_overwrite"],
         depends_on: [],
         expected: "healthy",
@@ -1110,7 +1090,7 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
         depends_on: [],
         expected: "healthy",
       }),
-      hint("claude-code", "mcps", "ajeno-roto", undefined, { ownership: "foreign" }),
+      hint("claude-code", "skills", "ajeno-roto", undefined, { ownership: "foreign" }),
     ]);
   }
 
@@ -1143,7 +1123,7 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
 
     const text = render(result);
     for (const id of [A, B]) expect(text).toContain(id);
-    expect(text).toContain(VERB_MCP_SETUP);
+    expect(text).toContain(VERB_ATTACH);
     expect(text).toContain(VERB_SKILLS_REINSTALL);
     /*
      * La línea de efectos de CADA accionable, pegada a su verbo.
@@ -1153,9 +1133,7 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
      * Sin ella el listado enumera reparaciones sin declarar ni una consecuencia,
      * y no rompe ninguna otra aserción de la proyección.
      */
-    expect(text).toContain(
-      `comando equivalente: ${VERB_MCP_SETUP}\n     efectos: mutate_overwrite`,
-    );
+    expect(text).toContain(`comando equivalente: ${VERB_ATTACH}\n     efectos: mutate_overwrite`);
     expect(text).toContain(
       `comando equivalente: ${VERB_SKILLS_REINSTALL}\n     efectos: mutate_overwrite`,
     );
@@ -1164,15 +1142,14 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
   });
 
   /**
-   * `--host`, `--only` y `--skip-native` ATRAVIESAN el subverbo.
+   * `--host` y `--only` ATRAVIESAN el subverbo.
    *
-   * Los tres viajan sólo hacia adentro: no aparecen en el listado, ni en el lote,
+   * Los dos viajan sólo hacia adentro: no aparecen en el listado, ni en el lote,
    * ni en la vista previa. Dejar de pasarlos haría que `prepare` diagnosticara
-   * todos los hosts —y spawneara la inspección nativa que la persona
-   * declinó— mientras la salida se ve idéntica. Lo único que puede verlo es lo
+   * todos los hosts mientras la salida se ve idéntica. Lo único que puede verlo es lo
    * que el agregador recibió.
    */
-  it("pasa --host, --only y --skip-native al agregador", async () => {
+  it("pasa --host y --only al agregador", async () => {
     const ctx = makeCtx(new RecordingFs(hostStateFs(home)), home);
 
     await doctorCommand.execute(
@@ -1185,7 +1162,6 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
         "claude-code",
         "--only",
         "codex",
-        "--skip-native",
         "--select",
         A,
       ]),
@@ -1196,12 +1172,7 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
     expect(doctorReport.calls[0]?.[1]).toEqual({
       host: "codex",
       only: ["claude-code", "codex"],
-      skipNative: true,
       select: [A],
-      // Sin `--verify-connection` la autorización de verificación viaja VACÍA, no
-      // ausente: es lo que hace que cada proveedor degrade su verificación
-      // profunda y lo declare en vez de callarla.
-      verify: [],
     });
   });
 
@@ -1256,7 +1227,7 @@ describe("aw doctor prepare · la superficie y su proyección humana", () => {
 
   it("un rechazo sale con ok:false, su código y sin datos", async () => {
     const ctx = makeCtx(new RecordingFs(hostStateFs(home)), home);
-    const fantasma = doctorFindingId("claude-code", "mcps", "no-existe");
+    const fantasma = doctorFindingId("claude-code", "skills", "no-existe");
 
     const unknown = await doctorCommand.execute(
       parseArgv(["doctor", "prepare", "--select", fantasma]),

@@ -108,49 +108,6 @@ const CATALOG: readonly CatalogRow[] = [
     verb: "aw self clean-legacy --target gemini",
   },
   {
-    op: "mcp.setup",
-    module: "../../src/application/mcp-setup-service.js",
-    delegates: "runMcpSetup",
-    effects: ["mutate_overwrite"],
-    expected: "healthy",
-    args: { host: "claude", instance: "cert", scope: "workspace" },
-    verb: "aw mcp setup --host claude --instance cert --scope workspace",
-  },
-  {
-    op: "mcp.remove",
-    module: "../../src/application/mcp-remove-service.js",
-    delegates: "runMcpRemove",
-    effects: ["destructive"],
-    expected: "healthy",
-    args: { host: "codex", instance: "prod", scope: "user" },
-    verb: "aw mcp remove --host codex --instance prod --scope user",
-  },
-  {
-    op: "mcp.migrate",
-    module: "../../src/application/mcp-migration-service.js",
-    delegates: "runMcpMigration",
-    // Mueve Y retira la vieja: las dos clases, en ese orden.
-    effects: ["mutate_overwrite", "destructive"],
-    expected: "healthy",
-    args: { host: "claude", instance: "agent-workflow", scope: "user" },
-    verb: "aw mcp migrate --host claude --instance agent-workflow --scope user",
-  },
-  {
-    op: "auth.flow",
-    module: "../../src/application/doctor/auth-flow.js",
-    delegates: "runDoctorAuthFlow",
-    // `execute` y nada más de este lado. Lo que el flujo además necesite lo
-    // declara el flujo, y el anotador lo SUMA antes de sellar: acá se congela lo
-    // que la operación pide por sí misma, que es correr un programa.
-    effects: ["execute"],
-    expected: "healthy",
-    args: { provider: "dsn", subject: "env:qtc-cert" },
-    // Los dos nombres van parentizados a propósito: el id del único proveedor
-    // real es `dsn`, y sin los paréntesis el redactor se lleva la palabra que
-    // sigue («por dsn *** env:qtc-cert»).
-    verb: "el flujo declarado por el proveedor (dsn) para el sujeto (env:qtc-cert)",
-  },
-  {
     op: "multiroot.attach",
     module: "../../src/application/multiroot-service.js",
     delegates: "runMultiroot",
@@ -185,9 +142,6 @@ const CATALOG: readonly CatalogRow[] = [
 /** Los módulos que la tabla nombra, sin repetir: uno por import. */
 const DELEGATE_MODULES: readonly string[] = [...new Set(CATALOG.map((row) => row.module))];
 
-/** La línea que el proveedor de MCPs escribe al oler un secreto pegado en `env`. */
-const EMBEDDED_CREDENTIAL_EVIDENCE = "la entrada contiene algo con forma de credencial embebida";
-
 /**
  * Un hallazgo con todo puesto para ser accionable, y un solo campo movido por
  * prueba.
@@ -198,17 +152,17 @@ const EMBEDDED_CREDENTIAL_EVIDENCE = "la entrada contiene algo con forma de cred
  */
 function finding(overrides: Partial<DoctorFinding> = {}): DoctorFinding {
   return {
-    id: doctorFindingId("claude-code", "mcps", "qtc-cert"),
+    id: doctorFindingId("claude-code", "hub-visibility", "rutas"),
     host: "claude-code",
-    category: "mcps",
-    resource: { kind: "mcp-entry", name: "qtc-cert", locator: "~/.claude.json" },
+    category: "hub-visibility",
+    resource: { kind: "host-config", name: "rutas", locator: "~/.claude/settings.local.json" },
     state: "blocking",
-    summary: "la conexión registrada no tiene entrada en el archivo del host",
-    impact: "el agente de ese host no puede consultar esa base",
-    evidence: ["la entrada no aparece en el archivo del host"],
+    summary: "el host no ve las rutas del hub",
+    impact: "el agente de ese host no puede leer las fuentes del hub",
+    evidence: ["las rutas no aparecen en el archivo del host"],
     ownership: "ours",
     remediation: { kind: "manual", action: null, guidance: [] },
-    proposal: { op: "mcp.setup", args: { host: "claude", instance: "cert", scope: "workspace" } },
+    proposal: { op: "self.install-skill", args: { target: "claude" } },
     ...overrides,
   };
 }
@@ -335,10 +289,10 @@ describe("catálogo de operaciones de reparación", () => {
   it("`verb()` compone el comando exacto de cada operación con argumentos reales", () => {
     // El defecto que atrapa: el verbo es el texto que la persona copia a su
     // terminal para hacerlo con su propia autorización, y también la guía que
-    // recibe un recurso ajeno. Un verbo al que le falte `--host/--instance/--scope`
-    // sigue siendo no vacío y sigue sin decir `undefined` —«aw mcp remove» a
-    // secas pasa cualquier prueba de forma— y le borra a la persona una entrada
-    // que no era la que quería. Por eso los diez van contra un literal.
+    // recibe un recurso ajeno. Un verbo al que le falte `--target` sigue siendo
+    // no vacío y sigue sin decir `undefined` —«aw self uninstall» a secas pasa
+    // cualquier prueba de forma— y le borra a la persona lo que no quería. Por
+    // eso todos van contra un literal.
     for (const row of CATALOG) {
       const spec = doctorOperation(row.op);
       expect(spec?.verb(row.args), `${row.op} compone otro verbo`).toBe(row.verb);
@@ -423,46 +377,6 @@ describe("gate de propiedad al anotar reparaciones", () => {
     expect(result.remediation.action).toBeNull();
   });
 
-  it("un hallazgo propio cuya evidencia menciona la credencial embebida sólo recibe guía", () => {
-    // El defecto que atrapa: la propiedad y el secreto son cosas distintas. Una
-    // entrada con la forma que agent-workflow publica pero con una credencial pegada
-    // en `env` clasifica 'ours', y repararla automáticamente significaría
-    // reescribir el archivo que guarda ese secreto —moverlo, copiarlo o
-    // perderlo— en vez de pedir que la persona lo rote.
-    const result = only(
-      annotateRepairs([
-        finding({
-          ownership: "ours",
-          evidence: ["la entrada coincide con una forma publicada", EMBEDDED_CREDENTIAL_EVIDENCE],
-        }),
-      ]),
-    );
-    expect(result.ownership).toBe("ours");
-    expect(result.remediation.kind).toBe("manual");
-    expect(result.remediation.action).toBeNull();
-  });
-
-  it("la categoría 'tools-auth' nunca recibe acción, ni siendo propia ni con sugerencia", () => {
-    // El defecto que atrapa: automatizarla obligaría al CLI a ESCRIBIR el valor
-    // de la variable DSN en algún lado, y con eso la custodia del secreto pasa a
-    // ser suya. Es la única categoría excluida por decisión y no por omisión, y
-    // una exclusión por decisión es la primera que alguien «arregla» al ver un
-    // hallazgo propio sin acción.
-    const result = only(
-      annotateRepairs([
-        finding({
-          id: doctorFindingId("claude-code", "tools-auth", "DB_QTC_CERT_DSN"),
-          category: "tools-auth",
-          ownership: "ours",
-          resource: { kind: "connection", name: "qtc-cert", locator: "DB_QTC_CERT_DSN" },
-          proposal: { op: "mcp.setup", args: { host: "claude", instance: "cert" } },
-        }),
-      ]),
-    );
-    expect(result.remediation.kind).toBe("manual");
-    expect(result.remediation.action).toBeNull();
-  });
-
   it("un hallazgo sano no recibe acción aunque traiga sugerencia", () => {
     // El defecto que atrapa: `healthy` se EMITE, así que la corrida está llena
     // de hallazgos sanos. Accionarlos convierte un lote de dos reparaciones en
@@ -484,25 +398,22 @@ describe("gate de propiedad al anotar reparaciones", () => {
     it(`un hallazgo propio '${state}' recibe la acción con las clases de efecto DEL CATÁLOGO`, () => {
       // El defecto que atrapa: el anotador podría declarar las clases de efecto
       // por su cuenta —o dejarlas vacías— y entonces la aprobación mostraría un
-      // efecto más chico que el que la operación realmente hace. `mcp.migrate`
-      // mueve y BORRA: las dos clases congeladas acá vienen del contrato, no de
-      // la salida del anotador.
+      // efecto más chico que el que la operación realmente hace. Instalar el
+      // bundle crea Y reescribe: las dos clases congeladas acá vienen del
+      // contrato, no de la salida del anotador.
       const result = only(
         annotateRepairs([
           finding({
             state,
-            proposal: {
-              op: "mcp.migrate",
-              args: { host: "claude", instance: "cert", scope: "workspace" },
-            },
+            proposal: { op: "self.install-skill", args: { target: "claude" } },
           }),
         ]),
       );
       expect(result.remediation.kind).toBe("supported");
       expect(result.remediation.action).toEqual({
-        op: "mcp.migrate",
-        args: { host: "claude", instance: "cert", scope: "workspace" },
-        effects: ["mutate_overwrite", "destructive"],
+        op: "self.install-skill",
+        args: { target: "claude" },
+        effects: ["local_additive", "mutate_overwrite"],
         depends_on: [],
         expected: "healthy",
       });
@@ -519,8 +430,8 @@ describe("gate de propiedad al anotar reparaciones", () => {
     // aserciones de guía de este archivo son sobre RECHAZADOS: ninguna cubría
     // este caso.
     const guidance = [
-      "la entrada de ese host no coincide con la forma que agent-workflow publica",
-      "aw mcp setup --host claude --instance cert --scope workspace",
+      "el bundle de ese host no coincide con la versión instalada",
+      "aw self install-skill --target claude",
     ];
     const result = only(
       annotateRepairs([
@@ -698,9 +609,9 @@ describe("gate de propiedad al anotar reparaciones", () => {
     // leyera el equivocado ejecutaría lo que el gate rechazó.
     const annotated = annotateRepairs([
       finding(),
-      finding({ id: "claude-code/mcps/ajeno", ownership: "foreign" }),
-      finding({ id: "claude-code/mcps/sano", state: "healthy" }),
-      finding({ id: "claude-code/mcps/sin-sugerencia", proposal: undefined }),
+      finding({ id: "claude-code/hub-visibility/ajeno", ownership: "foreign" }),
+      finding({ id: "claude-code/hub-visibility/sano", state: "healthy" }),
+      finding({ id: "claude-code/hub-visibility/sin-sugerencia", proposal: undefined }),
     ]);
     expect(annotated).toHaveLength(4);
     for (const entry of annotated) {
@@ -749,28 +660,27 @@ describe("gate de propiedad al anotar reparaciones", () => {
     // autorización sobre su propio recurso.
     // El esperado es un LITERAL. Escribirlo como `[spec.verb(args)]` calculaba
     // el esperado con la misma función que se está juzgando: un verbo mutilado
-    // —`aw mcp remove` sin host ni instancia— habría pasado a la guía y a esta
+    // —`aw self uninstall` sin destino— habría pasado a la guía y a esta
     // aserción a la vez.
-    const args = { host: "claude", instance: "cert", scope: "user" };
+    const args = { target: "claude" };
     const result = only(
-      annotateRepairs([finding({ ownership: "foreign", proposal: { op: "mcp.remove", args } })]),
+      annotateRepairs([
+        finding({ ownership: "foreign", proposal: { op: "self.uninstall", args } }),
+      ]),
     );
     expect(result.remediation.action).toBeNull();
-    expect(result.remediation.guidance).toEqual([
-      "aw mcp remove --host claude --instance cert --scope user",
-    ]);
+    expect(result.remediation.guidance).toEqual(["aw self uninstall --target claude"]);
   });
 
   it("la guía que el proveedor ya escribió no se pisa", () => {
     // El defecto que atrapa: el proveedor conoce el detalle («rotá esa
-    // credencial») y el catálogo sólo conoce el comando. Reemplazar la guía por
-    // el verbo perdería la única instrucción que importa en el caso del secreto.
-    const guidance = ["retirá el valor de `env` y rotá esa credencial"];
+    // ruta») y el catálogo sólo conoce el comando. Reemplazar la guía por
+    // el verbo perdería la única instrucción que importa.
+    const guidance = ["revisá a mano las rutas que agregaste a ese host"];
     const result = only(
       annotateRepairs([
         finding({
           ownership: "foreign",
-          evidence: [EMBEDDED_CREDENTIAL_EVIDENCE],
           remediation: { kind: "manual", action: null, guidance },
         }),
       ]),
@@ -783,9 +693,9 @@ describe("gate de propiedad al anotar reparaciones", () => {
     // anotar. Un anotador que filtrara los no accionables borraría del informe
     // exactamente los hallazgos ajenos que el doctor existe para mostrar.
     const input = [
-      finding({ id: "claude-code/mcps/a" }),
-      finding({ id: "claude-code/mcps/b", ownership: "foreign" }),
-      finding({ id: "codex/mcps/c", host: "codex", state: "healthy" }),
+      finding({ id: "claude-code/hub-visibility/a" }),
+      finding({ id: "claude-code/hub-visibility/b", ownership: "foreign" }),
+      finding({ id: "codex/hub-visibility/c", host: "codex", state: "healthy" }),
     ];
     const annotated = annotateRepairs(input);
     expect(annotated.map((entry) => entry.id)).toEqual(input.map((entry) => entry.id));
@@ -796,13 +706,13 @@ describe("gate de propiedad al anotar reparaciones", () => {
     // referencia deja que cualquier consumidor del lote —el ejecutor, el
     // renderizador— mute el catálogo del proceso entero. La siguiente corrida
     // aprobaría clases de efecto distintas de las declaradas.
-    const hint: DoctorRepairHint = { op: "mcp.setup", args: { host: "claude" } };
-    const spec = doctorOperation("mcp.setup") as DoctorOperationSpec;
+    const hint: DoctorRepairHint = { op: "self.install-skill", args: { target: "claude" } };
+    const spec = doctorOperation("self.install-skill") as DoctorOperationSpec;
     const result = only(annotateRepairs([finding({ proposal: hint })]));
     const action = result.remediation.action;
     expect(action?.effects).not.toBe(spec.effects);
     expect(action?.args).not.toBe(hint.args);
     (action?.effects as EffectClass[]).push("read_only");
-    expect([...spec.effects]).toEqual(["mutate_overwrite"]);
+    expect([...spec.effects]).toEqual(["local_additive", "mutate_overwrite"]);
   });
 });

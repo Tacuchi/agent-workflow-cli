@@ -1,16 +1,16 @@
 # Architecture of agent-workflow-cli
 
-Reviewed on 2026-11-18 against version 32.0.0 (commit `496c77c`).
+Reviewed on 2026-11-18 against version 33.0.0.
 
 The overview: what the CLI installs and where, how a command runs, what it reads and writes, and which rules never break. It leaves out each command, each loop of the `w` skill and the content of the documents a flow writes. All values are defaults; nothing here was measured on a particular machine.
 
 In short:
 
 - A command-line tool, `aw`, and the `w` skill bundle that run specs, plans and quick tasks for coding agents.
-- A person uses it in a terminal; coding agents in eight hosts use it through `/w:*` commands, hooks and MCP servers.
-- It talks only to the npm registry, PostgreSQL connections you declare and each source's git remote.
+- A person uses it in a terminal; coding agents in eight hosts use it through `/w:*` commands and a session-start hook.
+- It talks only to the npm registry and each source's git remote; it opens no database connection.
 - Data lives in files: the hub's `.workflow/` and `docs/`, and the user folder `~/.workflow/`.
-- No SQL mutation passes the guard, and the guard fails closed.
+- It never runs SQL: database changes ship as script files a person applies.
 
 ## 1. Purpose and quality goals
 
@@ -19,12 +19,12 @@ agent-workflow-cli is the runtime of agent-workflow, a system of stages, loops a
 What it is not:
 
 - It is not an agent. The coding agent does the work; the CLI resolves state, checks rules and writes files.
-- It is not a background service. Each call is one process; only the MCP stdio servers live as long as the host keeps them.
-- It never runs DML or DDL against a database. Database access is one read per call, inside a `READ ONLY` transaction.
+- It is not a background service. Each call is one process.
+- It is not a database client. It never runs DML or DDL and opens no database connection.
 
 | Goal | Scenario |
 |---|---|
-| A broken guard never lets a mutation through | If the SQL guard cannot load or evaluate a call, it exits 2, which is the code a host treats as "block". |
+| No installed hook blocks an agent's tool | The only hook the template installs is `SessionStart`. A hook an earlier version installed answers like an unknown command, exit 1, never the exit 2 a host treats as "block". |
 | Publishing to production is deliberate | A git flow that pushes to a source's PROD branch stops at a preview until the person consents to exactly those sources. With `--all` it refuses. |
 | Install and uninstall stay inside what they own | A folder or a legacy root is removed only when its bytes prove that agent-workflow wrote it; other copies are kept and reported. |
 
@@ -38,10 +38,9 @@ Two more goals, for help and for lifecycle hooks, are in [docs/runtime.md](docs/
 
 | External interface | Direction | When it happens |
 |---|---|---|
-| Coding agent (Claude Code, Codex, Warp, Oz, Gemini/Antigravity, OpenCode, Crush, Kimi Code) | Local | In every session: the host reads the installed skill, runs the hooks and launches the MCP stdio servers. |
+| Coding agent (Claude Code, Codex, Warp, Oz, Gemini/Antigravity, OpenCode, Crush, Kimi Code) | Local | In every session: the host reads the installed skill and runs the session-start hook. |
 | You, in a terminal | Local | When you run `aw` commands or open the TUI with `aw` and no arguments inside a hub. |
 | npm registry | Outbound | When the TUI opens (one `npm view` for the latest version) and when you run `aw self update`. |
-| PostgreSQL | Outbound | Only through `aw tool call` or `aw mcp serve-db`, against a connection you declared. |
 | Git remote of each source | Outbound | When `git-flow` syncs or promotes a branch: `git fetch` and `git push` to `origin`. |
 | Herdr | Local | Only with `aw hubs sync --herdr`. |
 
@@ -53,20 +52,18 @@ Two more goals, for help and for lifecycle hooks, are in [docs/runtime.md](docs/
 
 | Block | Responsibility | Code |
 |---|---|---|
-| Entry point | Serves help, hooks and the SQL guard before loading the full CLI. | `src/cli/main.ts` |
+| Entry point | Keeps the session-start hook silent outside a hub before loading the full CLI. | `src/cli/main.ts` |
 | CLI, TUI and commands | Parses arguments, resolves the hub, dispatches to one registered command per subcommand and renders the result; the Ink screen opens with no arguments. | `src/cli/`, `src/cli/tui/`, `src/cli/commands/` |
-| Application services | The logic behind each command: hub, sources, flows, plans, install, doctor, MCP, release passes. | `src/application/` |
-| Domain, ports and adapters | Pure types and rules, such as the SQL lexer and redaction, plus interfaces for files, environment, git, processes, archives and PostgreSQL with their Node.js implementations. | `src/domain/`, `src/ports/`, `src/adapters/` |
+| Application services | The logic behind each command: hub, sources, flows, plans, install, doctor, release passes. | `src/application/` |
+| Domain, ports and adapters | Pure types and rules, such as redaction, plus interfaces for files, environment, git, processes and archives with their Node.js implementations. | `src/domain/`, `src/ports/`, `src/adapters/` |
 | Runtime | Namespace and hub resolution, the hub marker and the runtime configuration. | `src/runtime/` |
-| MCP stdio servers | `aw mcp serve` (elicitation) and `aw mcp serve-db` (read-only PostgreSQL tools) speak JSON-RPC on stdout. | `src/application/elicitation-stdio.ts`, `src/application/database-mcp-stdio.ts` |
 | `w` skill bundle | Markdown and JSON that the hosts read: commands, loops, roles, exports and the hook template. Not compiled. | `skills/w/` |
 
 Command registration: [docs/runtime.md](docs/runtime.md#commands-registry).
 
 Rules that never break:
 
-- The SQL guard fails closed: when it cannot load, parse or evaluate a call, it exits 2.
-- The guard passes only a closed list of reads (`SELECT`, `VALUES`, `TABLE`, `SHOW`). `AW_SQL_GUARD=off` or a server listed in `AW_SQL_GUARD_ALLOW` turns it off for that call; there is no other exception.
+- No command runs SQL or opens a database connection; migrations are files in `docs/scripts/`.
 - A push to a source's PROD branch needs the person's consent for exactly those sources, checked in the service, so no caller skips it.
 - Install and uninstall delete only what agent-workflow owns; a legacy root is cleaned only with ownership proof.
 - The installer never arms Codex hooks: each one needs Codex's own interactive review.
@@ -77,15 +74,13 @@ Rules that never break:
 
 A command, from the terminal or from an agent:
 
-1. `main.ts` reads the arguments. `--help` and the lifecycle hooks are answered without loading the full CLI when no hub is visible.
+1. `main.ts` reads the arguments. The session-start hook stays silent without loading the full CLI when no hub is visible.
 2. The full CLI parses the arguments and resolves the output mode.
 3. It resolves the namespace and the hub root, in the order of [docs/runtime.md](docs/runtime.md#how-a-command-finds-its-hub).
 4. A hub that still carries a pre-29 block or the retired session model stops with a migration error that names `aw hub-migrate`.
 5. It builds the `CliContext`: the adapters, the runtime configuration, the resolved skills and the logger.
 6. It dispatches to the registered command, which returns a result with an exit code.
 7. The result is printed as JSON or for a person, and one line goes to the daily log. The hub is recorded in the user-level registry.
-
-A second walkthrough, the SQL guard, is in [docs/runtime.md](docs/runtime.md#the-sql-guard-step-by-step).
 
 ## 5. Deployment view
 
@@ -95,8 +90,7 @@ Installed per user with `npm install -g @tacuchi/agent-workflow-cli`.
 |---|---|---|---|
 | Binaries | `agent-workflow` and `aw` | After the global install | `aw self update` |
 | Hub folder | `.workflow/` at the hub root, marked by `.workflow/agent-workflow.json` | Inside a hub | `--namespace`, `AW_NAMESPACE` or `aw self namespace --pin` |
-| User folder | `~/.workflow/`: `hubs.json`, `skills.toml`, `dev/`, `logs/` | Always | The namespace names the folder |
-| Database connections | `~/.workflow/dev/mcp-connections.json` and `dev/dsn.env` | After you declare a connection | `aw self mcp` |
+| User folder | `~/.workflow/`: `hubs.json`, `skills.toml`, `logs/` | Always | The namespace names the folder |
 | `w` skill | A `w/` folder in each host's skills folder | After `self install --target <host>` | `--from`, `--skill-only`, `aw self uninstall` |
 | Claude Code hooks | Merged into `~/.claude/settings.json` | After `self install --target claude` | `--no-hooks` |
 | Output | JSON, or text for a person in a terminal | Every command | `AW_ASCII` for ASCII-only output |
@@ -111,18 +105,17 @@ Requirements: Node.js 18 or newer, `git`, and `npm` for updates. `herdr` only fo
 
 | Question | Answer |
 |---|---|
-| What leaves the machine, and where does it go? | The package name, to the npm registry, to check or install a version; SQL you or an agent send to a declared PostgreSQL connection; commits `git-flow` pushes to each source's `origin`. |
+| What leaves the machine, and where does it go? | The package name, to the npm registry, to check or install a version; commits `git-flow` pushes to each source's `origin`. |
 | What never leaves it? | The hub, its `docs/`, the logs and the registry of hubs. The code has no telemetry: the context receipt states `local-only`. |
-| When does it happen? | Version check when the TUI opens; installs with `aw self update`; SQL with `aw tool call` or `aw mcp serve-db`; pushes with `git-flow`. |
+| When does it happen? | Version check when the TUI opens; installs with `aw self update`; pushes with `git-flow`. |
 | Where is it stored, and for how long? | Hub state in the hub's `.workflow/` and `docs/`, versioned where you commit it; user state in `~/.workflow/`; daily logs until `aw logs --clear`. |
-| How can you see exactly what was sent? | `git-flow --dry-run` shows the plan before it runs; `aw logs` shows the daily log; a PostgreSQL tool returns its canonical JSON. |
-| How is it turned off? | Do not open the TUI and do not run `self update`; declare no database connection; do not run `git-flow`. |
+| How can you see exactly what was sent? | `git-flow --dry-run` shows the plan before it runs; `aw logs` shows the daily log. |
+| How is it turned off? | Do not open the TUI and do not run `self update`; do not run `git-flow`. |
 
 ### Local security
 
 - Values that look like secrets are redacted before a log line is written.
-- The connections registry is written to a temporary file with `0600` permissions and renamed into place.
-- PostgreSQL tools open one connection per call, run `BEGIN READ ONLY` and end with `ROLLBACK`. The timeout, the size limits and the warning for an unsafe role are in [docs/postgresql-mcp.md](docs/postgresql-mcp.md).
+- Host configuration files are written to a temporary file with `0600` permissions and renamed into place, under a lock.
 
 ### Persistence
 
@@ -131,14 +124,15 @@ Requirements: Node.js 18 or newer, `git`, and `npm` for updates. `herdr` only fo
 
 ## 7. Decisions
 
-Decision records live in [`docs/decisions/`](docs/decisions/). These four come from comments the code already carried:
+Decision records live in [`docs/decisions/`](docs/decisions/). The first four come from comments the code already carried:
 
 | Decision | Record |
 |---|---|
 | The installer never arms Codex hooks | [0001](docs/decisions/0001-never-arm-codex-hooks-from-the-installer.md) |
-| The SQL guard fails closed | [0002](docs/decisions/0002-the-sql-guard-fails-closed.md) |
+| The SQL guard fails closed (superseded by 0005) | [0002](docs/decisions/0002-the-sql-guard-fails-closed.md) |
 | PROD consent is enforced in the git-flow service | [0003](docs/decisions/0003-enforce-prod-consent-in-the-git-flow-service.md) |
 | The Gemini skill root is `~/.gemini/config/skills` | [0004](docs/decisions/0004-install-gemini-skills-under-gemini-config.md) |
+| The SQL guard and the database surface are retired | [0005](docs/decisions/0005-retire-the-sql-guard-and-the-database-surface.md) |
 
 Not recorded yet:
 
@@ -149,15 +143,15 @@ Not recorded yet:
 
 ## Appendix: evidence
 
-Line numbers refer to commit `496c77c`. Every row cites code or configuration; the text above does not link to the code on purpose.
+Line numbers refer to the 33.0.0 tree. Every row cites code or configuration; the text above does not link to the code on purpose.
 
 | Section | Evidence |
 |---|---|
-| 1. Goals | `package.json:4-9`, `src/cli/main.ts:54-66`, `src/application/git-flow-service.ts:188-200`, `src/application/self/install-skill.ts:171`, `src/application/self/install-targets.ts:24` |
-| 2. Context | `src/domain/harnesses.ts:368-396`, `src/application/self/update-self.ts:156-160`, `src/adapters/postgres-readonly-tools.ts:163-174`, `src/application/git-flow-service.ts:380-386`, `src/adapters/herdr-cli.ts:38` |
-| 3. Blocks | `src/cli/main.ts:44-69`, `src/cli/full-cli.ts:175-230`, `src/cli/commands/index.ts:57-124`, `src/cli/tui/run.tsx:40-55`, `src/cli/commands/mcp.ts:144-181` |
-| 3. Rules | `src/cli/full-cli.ts:148-155`, `src/cli/commands/hook.ts:21-24`, `src/application/git-flow-service.ts:188-200`, `src/domain/harnesses.ts:424-431`, `src/cli/render.ts:20-30` |
-| 4. Runtime | `src/cli/main.ts:5-21`, `src/runtime/namespace-resolver.ts:133-145`, `src/cli/full-cli.ts:261-279`, `src/cli/full-cli.ts:183-230`, `src/cli/full-cli.ts:70-104` |
-| 5. Deployment | `package.json:44-46`, `src/runtime/agent-workflow-marker.ts:21`, `src/application/paths-service.ts:33-48`, `src/application/self/install-targets.ts:12-22`, `src/application/self/install-hooks.ts:413-420` |
-| 6. Privacy | `src/cli/tui/app.tsx:425-431`, `src/application/context/plan-service.ts:177`, `src/application/logging/logger.ts:48`, `src/application/mcp-connections-service.ts:236-244`, `src/adapters/postgres-readonly-tools.ts:163-186`. A search for telemetry and analytics in `src/` found only the `local-only` receipt |
-| 7. Decisions | `src/domain/harnesses.ts:424-431`, `src/cli/full-cli.ts:148-149`, `src/application/git-flow-service.ts:188-191`, `src/application/self/install-targets.ts:31`, `src/application/session-binding-service.ts:17` |
+| 1. Goals | `package.json:4-9`, `skills/w/hooks/hooks.template.json:1-15`, `src/application/git-flow-service.ts:188-200`, `src/application/self/install-skill.ts:171`, `src/application/self/install-targets.ts:24` |
+| 2. Context | `src/domain/harnesses.ts:336-364`, `src/application/self/update-self.ts:156-160`, `src/application/git-flow-service.ts:380-386`, `src/adapters/herdr-cli.ts:38` |
+| 3. Blocks | `src/cli/main.ts:5-37`, `src/cli/full-cli.ts:136-220`, `src/cli/commands/index.ts:54-118`, `src/cli/tui/run.tsx:40-55` |
+| 3. Rules | `skills/w/hooks/hooks.template.json:1-15`, `src/application/git-flow-service.ts:188-200`, `src/domain/harnesses.ts:392-399`, `src/cli/render.ts:20-30` |
+| 4. Runtime | `src/cli/main.ts:5-37`, `src/runtime/namespace-resolver.ts:133-145`, `src/cli/full-cli.ts:226-261`, `src/cli/full-cli.ts:144-220`, `src/cli/full-cli.ts:64-98` |
+| 5. Deployment | `package.json:44-46`, `src/runtime/agent-workflow-marker.ts:21`, `src/application/paths-service.ts:33-47`, `src/application/self/install-targets.ts:12-22`, `src/application/self/install-hooks.ts:408-415` |
+| 6. Privacy | `src/cli/tui/app.tsx:425-431`, `src/application/context/plan-service.ts:177`, `src/application/logging/logger.ts:48`, `src/application/mcp-host-writer.ts:19-45`. A search for telemetry and analytics in `src/` found only the `local-only` receipt |
+| 7. Decisions | `src/domain/harnesses.ts:392-399`, `skills/w/hooks/hooks.template.json:1-15`, `src/application/git-flow-service.ts:188-191`, `src/application/self/install-targets.ts:31`, `src/application/session-binding-service.ts:17` |

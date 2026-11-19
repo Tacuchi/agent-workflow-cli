@@ -7,8 +7,6 @@ describe("PathsService", () => {
 
   it("resolves user-level dirs for namespace 'workflow'", () => {
     expect(wfPaths.userRoot()).toBe("/home/u/.workflow");
-    expect(wfPaths.userDevDir()).toBe("/home/u/.workflow/dev");
-    expect(wfPaths.userDsnFile()).toBe("/home/u/.workflow/dev/dsn.env");
     expect(wfPaths.userLogsDir()).toBe("/home/u/.workflow/logs");
     expect(wfPaths.userLibConfigDir()).toBe("/home/u/.workflow/lib/config");
     expect(wfPaths.userRuntimeJson()).toBe("/home/u/.workflow/agent-workflow/runtime.json");

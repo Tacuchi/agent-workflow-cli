@@ -4,7 +4,6 @@ import { AGENT_WORKFLOW_FLOWS } from "../../src/application/capability/compose.j
 import { ALL_COMMANDS } from "../../src/cli/commands/index.js";
 import {
   CHASSIS_SCOPE,
-  COMMAND_EXCLUSIONS,
   COMMAND_SCOPE_PREFIX,
   type DecisionScope,
   FLOW_AUTHORITIES,
@@ -16,6 +15,7 @@ import {
   decisionsOfScope,
   trancheOfFlow,
 } from "../../src/domain/flow/authority.js";
+import { COMMAND_EXCLUSIONS } from "../helpers/command-exclusions.js";
 
 /** The command a `cmd:` scope names, or `null` for a flow or the chassis. */
 function commandOfScope(scope: DecisionScope): string | null {

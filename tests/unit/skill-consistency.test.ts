@@ -1,11 +1,11 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DOCS_FOLDERS } from "../../src/application/hub-init-service.js";
 import { DESCRIPTION_MAX } from "../../src/application/plugin-doctor/skills.js";
 import { SKILL_DIR_NAME, splitCommandDoc } from "../../src/application/self/install-skill.js";
 import { decisionsOfScope } from "../../src/domain/flow/authority.js";
 import { parseSkillFrontmatter } from "../../src/domain/skill-frontmatter.js";
+import { cliDocsFolders } from "../helpers/docs-folders.js";
 
 // Consistency guards for the `w` skill bundle. These catch CROSS-SKILL drift —
 // where two skills that compose each other disagree on a shared contract — which
@@ -590,7 +590,7 @@ describe("docs/ taxonomy — code and doctrine name the same categories", () => 
     const header = lines.findIndex((line) => line.includes("docs/ ZONE"));
     expect(header, "SKILL.md ya no describe la zona docs/").toBeGreaterThanOrEqual(0);
     const zone = lines.slice(header, header + 3).join("\n");
-    const missing = DOCS_FOLDERS.filter((folder) => !zone.includes(folder));
+    const missing = cliDocsFolders().filter((folder) => !zone.includes(folder));
     expect(missing, "categorías que la CLI crea y la doctrina no menciona").toEqual([]);
   });
 });

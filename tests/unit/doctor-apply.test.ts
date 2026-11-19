@@ -141,7 +141,7 @@ const DETAIL_RECHECK_OFF = "la recomprobación quedó desactivada";
  * El detalle de un hallazgo que desapareció, y por qué ya no es una frase exacta.
  *
  * La ausencia de un hallazgo prueba algo SÓLO si alguien miró, así que el detalle
- * nombra ahora la cobertura que lo hace concluyente —«(mcps en claude-code)»— y
+ * nombra ahora la cobertura que lo hace concluyente —«(skills en claude-code)»— y
  * el host varía por prueba. Lo congelado es la afirmación; el paréntesis es la
  * evidencia que la sostiene.
  */
@@ -176,9 +176,9 @@ function makeCtx(home: string): CliContext {
   } as unknown as CliContext;
 }
 
-/** El archivo que el `read_set` de CUALQUIER lote lee: el registro de conexiones. */
+/** Un archivo que el `read_set` de un lote de visibilidad global lee. */
 function connectionsFile(home: string): string {
-  return join(home, ".workflow", "dev", "mcp-connections.json");
+  return join(home, ".claude", "settings.local.json");
 }
 
 interface BrokenSpec {
@@ -251,7 +251,7 @@ function findingOf(id: string, spec: BrokenSpec): DoctorFinding {
     id,
     host: HOST,
     category: spec.category,
-    resource: { kind: "mcp-entry", name: spec.name, locator: `~/.config/${HOST}/${spec.name}` },
+    resource: { kind: "host-config", name: spec.name, locator: `~/.config/${HOST}/${spec.name}` },
     state: spec.state ?? "warning",
     summary: `${spec.name} no está donde debería`,
     impact: `sin ${spec.name} ese host no puede usar agent-workflow`,
@@ -396,9 +396,9 @@ describe("applyDoctorBatch · fallo parcial honesto", () => {
   it("A falla → C queda skipped nombrando a A, B sigue aplicada y el lote es partial con exit 1", async () => {
     const machine = new Machine();
     const b = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "familia",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "familia", scope: "global" },
     });
     const c = machine.break({
@@ -481,13 +481,13 @@ describe("applyDoctorBatch · fallo parcial honesto", () => {
   it("con A → C → D, un fallo en A omite a C y también a D, y la independiente sigue", async () => {
     const a = doctorFindingId(HOST, "plugins-hooks", "a-bundle");
     const c = doctorFindingId(HOST, "plugins-hooks", "b-hooks");
-    const d = doctorFindingId(HOST, "mcps", "c-conexion");
-    const suelta = doctorFindingId(HOST, "mcps", "z-independiente");
+    const d = doctorFindingId(HOST, "skills", "c-conexion");
+    const suelta = doctorFindingId(HOST, "skills", "z-independiente");
     doctorReport.override = async () =>
       reportOf(
         [
-          supported("mcps", "z-independiente", {
-            op: "mcp.setup",
+          supported("skills", "z-independiente", {
+            op: "multiroot.attach",
             args: { host: "claude", instance: "z-independiente", scope: "global" },
             effects: ["mutate_overwrite"],
             depends_on: [],
@@ -507,15 +507,15 @@ describe("applyDoctorBatch · fallo parcial honesto", () => {
             depends_on: [a],
             expected: "healthy",
           }),
-          supported("mcps", "c-conexion", {
-            op: "mcp.setup",
+          supported("skills", "c-conexion", {
+            op: "multiroot.attach",
             args: { host: "claude", instance: "c-conexion", scope: "global" },
             effects: ["mutate_overwrite"],
             depends_on: [c],
             expected: "healthy",
           }),
         ],
-        [coverage("mcps", HOST, "checked"), coverage("plugins-hooks", HOST, "checked")],
+        [coverage("skills", HOST, "checked"), coverage("plugins-hooks", HOST, "checked")],
       );
     const double = executorDouble({ [a]: { kind: "failed", detail: "el bundle no se instaló" } });
     const ctx = makeCtx(home);
@@ -546,9 +546,9 @@ describe("applyDoctorBatch · fallo parcial honesto", () => {
   it("un ejecutor que lanza deja la acción failed con su mensaje y el lote sigue en pie", async () => {
     const machine = new Machine();
     const a = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "estalla",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "estalla", scope: "global" },
     });
     const b = machine.break({
@@ -638,15 +638,15 @@ describe("applyDoctorBatch · fallo parcial honesto", () => {
   it("cuando ninguna acción aplica el lote es failed con exit 1", async () => {
     const machine = new Machine();
     const a = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "uno",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "uno", scope: "global" },
     });
     const b = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "dos",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "dos", scope: "global" },
     });
     const double = executorDouble(
@@ -684,9 +684,9 @@ describe("applyDoctorBatch · nada corre sin la aprobación de su digest exacto"
   function twoBroken(machine: Machine): [string, string] {
     return [
       machine.break({
-        category: "mcps",
+        category: "skills",
         name: "familia",
-        op: "mcp.setup",
+        op: "multiroot.attach",
         args: { host: "claude", instance: "familia", scope: "global" },
       }),
       machine.break({
@@ -891,21 +891,21 @@ describe("applyDoctorBatch · la recomprobación es el mismo proveedor releyendo
   it("lo que el informe ya no reporta queda resolved; lo que sigue en warning queda pending y lo blocking blocked", async () => {
     const machine = new Machine();
     const arreglado = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "arreglado",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "arreglado", scope: "global" },
     });
     const terco = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "terco",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "terco", scope: "global" },
     });
     const trabado = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "trabado",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "trabado", scope: "global" },
       state: "blocking",
     });
@@ -936,7 +936,7 @@ describe("applyDoctorBatch · la recomprobación es el mismo proveedor releyendo
     expect(actionOf(result, arreglado).recheck).toBe("resolved");
     expect(actionOf(result, arreglado).recheck_detail).toContain(DETAIL_GONE);
     // Y nombra la cobertura que hace concluyente la ausencia.
-    expect(actionOf(result, arreglado).recheck_detail).toContain("mcps en");
+    expect(actionOf(result, arreglado).recheck_detail).toContain("skills en");
     expect(actionOf(result, terco).recheck).toBe("pending");
     expect(actionOf(result, terco).recheck_detail).toBe("el informe lo reporta warning");
     expect(actionOf(result, trabado).recheck).toBe("blocked");
@@ -959,9 +959,9 @@ describe("applyDoctorBatch · la recomprobación es el mismo proveedor releyendo
   it("con la recomprobación desactivada toda acción aplicada queda unverified y jamás resolved", async () => {
     const machine = new Machine();
     const a = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "familia",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "familia", scope: "global" },
     });
     const b = machine.break({
@@ -1004,9 +1004,9 @@ describe("applyDoctorBatch · la recomprobación es el mismo proveedor releyendo
 describe("applyDoctorBatch · el mismo digest dos veces", () => {
   function brokenMcp(machine: Machine): string {
     return machine.break({
-      category: "mcps",
+      category: "skills",
       name: "familia",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "familia", scope: "global" },
     });
   }
@@ -1092,7 +1092,7 @@ describe("applyDoctorBatch · el mismo digest dos veces", () => {
 
       // El recurso deja de reportarse, pero la categoría ya no se comprueba.
       machine.repair(a);
-      machine.cover("mcps", state);
+      machine.cover("skills", state);
 
       const outcome = await applyDoctorBatch(
         ctx,
@@ -1122,9 +1122,9 @@ describe("applyDoctorBatch · el mismo digest dos veces", () => {
     const machine = new Machine();
     const a = brokenMcp(machine);
     const ajeno = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "ajeno-roto",
-      op: "mcp.remove",
+      op: "self.uninstall",
       args: { host: "claude", instance: "ajeno-roto", scope: "global" },
       ownership: "foreign",
     });
@@ -1163,30 +1163,30 @@ describe("applyDoctorBatch · el mismo digest dos veces", () => {
  * hasta dónde llegó.
  */
 describe("aw doctor apply · la superficie y su proyección humana", () => {
-  const arreglado = doctorFindingId(HOST, "mcps", "arreglado");
-  const terco = doctorFindingId(HOST, "mcps", "terco");
+  const arreglado = doctorFindingId(HOST, "skills", "arreglado");
+  const terco = doctorFindingId(HOST, "skills", "terco");
 
   /** El informe de fixture, con lo que el doble ya reparó descontado. */
   const repaired = new Set<string>();
 
   function fixture(): DoctorReport {
     const findings = [
-      supported("mcps", "arreglado", {
-        op: "mcp.setup",
+      supported("skills", "arreglado", {
+        op: "multiroot.attach",
         args: { host: "claude", instance: "arreglado", scope: "global" },
         effects: ["mutate_overwrite"],
         depends_on: [],
         expected: "healthy",
       }),
-      supported("mcps", "terco", {
-        op: "mcp.setup",
+      supported("skills", "terco", {
+        op: "multiroot.attach",
         args: { host: "claude", instance: "terco", scope: "global" },
         effects: ["mutate_overwrite"],
         depends_on: [],
         expected: "healthy",
       }),
     ].filter((finding) => !repaired.has(finding.id));
-    return reportOf(findings, [coverage("mcps", HOST, "checked")]);
+    return reportOf(findings, [coverage("skills", HOST, "checked")]);
   }
 
   function render(result: Awaited<ReturnType<typeof doctorCommand.execute>>): string {
@@ -1275,9 +1275,9 @@ describe("applyDoctorBatch · una validación que no concluyó no se presenta co
     // proveedor no pudo concluir. La acción aplicó de verdad; lo que no se puede
     // afirmar es que el recurso quedó sano.
     const a = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "familia",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "familia", scope: "workspace" },
       state: "unverified",
     });
@@ -1305,9 +1305,9 @@ describe("applyDoctorBatch · una validación que no concluyó no se presenta co
     const ctx = makeCtx(home);
     const machine = new Machine();
     const a = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "familia",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "familia", scope: "workspace" },
     });
     const double = executorDouble({ [a]: { kind: "applied", repairs: true } });
@@ -1321,7 +1321,7 @@ describe("applyDoctorBatch · una validación que no concluyó no se presenta co
     let pass = 0;
     const exploding: DoctorProvider[] = [
       {
-        category: "mcps",
+        category: "skills",
         run: async () => {
           pass += 1;
           if (pass > 1) throw new Error("el proveedor de la recomprobación se cayó");
@@ -1370,9 +1370,9 @@ describe("applyDoctorBatch · already exige que se haya mirado ESE host", () => 
     const ctx = makeCtx(home);
     const machine = new Machine();
     const a = machine.break({
-      category: "mcps",
+      category: "skills",
       name: "familia",
-      op: "mcp.setup",
+      op: "multiroot.attach",
       args: { host: "claude", instance: "familia", scope: "workspace" },
     });
     const double = executorDouble({ [a]: { kind: "applied", repairs: true } });
@@ -1389,9 +1389,9 @@ describe("applyDoctorBatch · already exige que se haya mirado ESE host", () => 
     // es la de OTRO host. La del host del hallazgo no aparece.
     const otherHost: DoctorProvider[] = [
       {
-        category: "mcps",
+        category: "skills",
         run: async () => ({
-          coverage: [coverage("mcps", "codex", "checked")],
+          coverage: [coverage("skills", "codex", "checked")],
           findings: [],
         }),
       },

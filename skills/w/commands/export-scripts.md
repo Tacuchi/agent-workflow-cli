@@ -14,7 +14,7 @@ allowed-tools: ["Bash", "Read"]
 ## What it produces
 
 - Bundle: README; forwards `01-ddl-tablas/`…`05-grants/NN-<nombre>.sql`; reverses in `rollback/<categoría>/`, global in `rollback/00-global/00-ROLLBACK.sql`.
-- Nothing here executes DML/DDL: applying the bundle is a handoff to an authorized operator. Optional catalog checks are read-only.
+- Nothing here executes DML/DDL: applying the bundle is a handoff to an authorized operator.
 - Never write into `docs/` with a file tool: one pass, all or nothing.
 
 ## Net final state

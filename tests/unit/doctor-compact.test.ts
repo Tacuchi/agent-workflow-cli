@@ -28,11 +28,11 @@ function mixedReport(): DoctorReport {
   const report = reportOf(
     [
       finding("claude-code", "installation-hosts", "runtime", "healthy"),
-      finding("claude-code", "mcps", "agent-workflow", "blocking", {
+      finding("claude-code", "plugins-hooks", "hooks", "blocking", {
         remediation: {
           kind: "supported",
           action: {
-            op: "self.install-mcp",
+            op: "self.install-hooks",
             args: {},
             effects: ["mutate_overwrite"],
             depends_on: [],
@@ -42,10 +42,10 @@ function mixedReport(): DoctorReport {
         },
       }),
       finding("codex", "skills", "w:quick", "warning"),
-      finding("codex", "mcps", "database", "unverified", {
+      finding("codex", "plugins-hooks", "config", "unverified", {
         remediation: { kind: "none", action: null, guidance: [] },
       }),
-      finding("codex", "mcps", "elicitation", "warning", {
+      finding("codex", "plugins-hooks", "plugin", "warning", {
         remediation: { kind: "none", action: null, guidance: [] },
       }),
     ],
@@ -56,7 +56,7 @@ function mixedReport(): DoctorReport {
     hosts: [
       hostView("claude-code", true, true, [
         { surface: "hooks", status: "degraded", detail: "sin PreCompact" },
-        { surface: "mcp", status: "unsupported", detail: "sin MCP" },
+        { surface: "commands", status: "degraded", detail: "sin carpeta de comandos" },
       ]),
       hostView("codex", false, false),
     ],
@@ -90,8 +90,8 @@ describe("aw doctor por defecto — primero el veredicto, sólo lo que pide acci
 
   it("cada hallazgo accionable ocupa dos líneas: id — summary, y su acción o su guía", () => {
     const lines = human(mixedReport()).split("\n");
-    const blocking = lines.findIndex((line) => line.includes("claude-code/mcps/agent-workflow —"));
-    expect(lines[blocking + 1]).toBe("      automatizable · acción: self.install-mcp");
+    const blocking = lines.findIndex((line) => line.includes("claude-code/plugins-hooks/hooks —"));
+    expect(lines[blocking + 1]).toBe("      automatizable · acción: self.install-hooks");
     const manual = lines.findIndex((line) => line.includes("codex/skills/w:quick —"));
     expect(lines[manual + 1]).toBe("      manual · guía: revisá w:quick a mano");
   });
@@ -101,12 +101,12 @@ describe("aw doctor por defecto — primero el veredicto, sólo lo que pide acci
     expect(text).toContain(
       "2 hallazgo(s) sin acción segura (1 unverified · 1 warning) — detalle con --detail",
     );
-    expect(text).not.toContain("codex/mcps/database");
+    expect(text).not.toContain("codex/plugins-hooks/config");
   });
 
   it("de la cobertura sólo salen las filas que no están comprobadas", () => {
     const text = human(mixedReport());
-    expect(text).toContain("mcps · codex: omitida — se pidió --skip-native");
+    expect(text).toContain("plugins-hooks · codex: omitida — el host no arma hooks");
     expect(text).toContain("skills · codex: no aplica — el host no descubre skills");
     expect(text).not.toContain("installation-hosts · claude-code: comprobada");
   });
@@ -127,7 +127,7 @@ describe("aw doctor por defecto — primero el veredicto, sólo lo que pide acci
       { host: "codex", label: hostLabel("codex"), status: "degraded", version: null },
     ]);
     expect(body.findings.map((item: { id: string }) => item.id)).toEqual([
-      "claude-code/mcps/agent-workflow",
+      "claude-code/plugins-hooks/hooks",
       "codex/skills/w:quick",
     ]);
     expect(body.findings.every((item: object) => !("evidence" in item))).toBe(true);

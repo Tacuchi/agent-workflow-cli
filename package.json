@@ -1,6 +1,6 @@
 {
   "name": "@tacuchi/agent-workflow-cli",
-  "version": "32.0.0",
+  "version": "33.0.0",
   "description": "Runtime CLI for agent-workflow — the stages + loops + artifacts system for agent work. Bundles its own flow skills under `skills/w/` (slash commands `/w:*`: spec-new/spec-refine, plan-new/plan-exec, quick, persist, hub-init, export-*); `self install --target <host>` copies SKILL + commands + hooks into the host. Installs and diagnoses only agent-workflow skills; uses host-provided help without requiring it. Namespace auto-detected from any `.<ns>/sessions/` dir in CWD; default `workflow`.",
   "type": "module",
   "bin": {
@@ -47,8 +47,6 @@
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
     "@types/node": "^22.10.5",
-    "@types/pg": "^8.23.1",
-    "@types/pg-cursor": "^2.7.2",
     "@types/react": "^18.3.28",
     "ink-testing-library": "^4.0.0",
     "typescript": "^5.7.3",
@@ -61,8 +59,6 @@
   "dependencies": {
     "@inquirer/prompts": "^7.10.1",
     "ink": "^5.2.1",
-    "pg": "^8.23.0",
-    "pg-cursor": "^2.22.0",
     "react": "^18.3.1",
     "smol-toml": "^1.9.0"
   }

@@ -1409,10 +1409,12 @@ describe("host-run: sends are never retried midway; stopped runs never override;
       hostRuns: {
         codex: {
           version: "0.157.1",
-          cells: { mcp: { observed: "works", mode: "interactive", declared_by_doctor: false } },
+          cells: {
+            commands: { observed: "degraded", mode: "interactive", declared_by_doctor: true },
+          },
         },
       },
-      steps: ["mcp"],
+      steps: ["commands"],
     });
     const stopped = buildMatrix({
       runId: "2026-09-02T00-00-00Z",
@@ -1422,18 +1424,20 @@ describe("host-run: sends are never retried midway; stopped runs never override;
       catalog,
       hosts: ["codex"],
       hostRuns: {},
-      steps: ["mcp"],
+      steps: ["commands"],
       stopped: "herdr agent get failed",
     });
     expect(stopped.partial).toBe(true);
-    expect(stopped.hosts.codex.cells.mcp).toMatchObject({
+    expect(stopped.hosts.codex.cells.commands).toMatchObject({
       state: "not-run",
       not_reached_reason: "herdr agent get failed",
     });
     expect(validateMatrix(stopped)).toEqual([]);
     const kept = lastObservations([earlier, stopped]);
-    expect(kept.codex.mcp.run_id).toBe("2026-09-01T00-00-00Z");
-    expect(mergedRunBlocks([earlier, stopped]).codex.cells.mcp).toBe(kept.codex.mcp.state);
+    expect(kept.codex.commands.run_id).toBe("2026-09-01T00-00-00Z");
+    expect(mergedRunBlocks([earlier, stopped]).codex.cells.commands).toBe(
+      kept.codex.commands.state,
+    );
   });
 
   it("claude asking to log in is named: the token did not take", () => {

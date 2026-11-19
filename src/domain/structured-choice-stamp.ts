@@ -20,12 +20,7 @@
  * and when to fall back. The reasoning behind the rule lives in `HARNESS.md`.
  */
 
-import {
-  type HarnessMcpElicitation,
-  type HarnessSpec,
-  type InstallTarget,
-  harnessByInstallTarget,
-} from "./harnesses.js";
+import { type HarnessSpec, type InstallTarget, harnessByInstallTarget } from "./harnesses.js";
 
 /**
  * The universal floor, spelled the same way on every host — including the ones
@@ -38,25 +33,6 @@ const LABELED_MARKDOWN =
 
 const CONTENT_RULE =
   "Degrade the mechanism, never the content: no alternative is merged, truncated or dropped to fit, and any loss is declared as a degradation.";
-
-/**
- * La vía MCP, dicha para el agente que la va a usar.
- *
- * Va DESPUÉS de la herramienta del host y ANTES del markdown, porque ése es el
- * orden de riqueza: donde el host ofrece la suya manda la suya, y esta vía entra a
- * recuperar lo que hoy degrada — no a sustituir un mecanismo que funciona.
- *
- * Dice qué hacer con cada clase de no-respuesta sin inferir quién la produjo: el
- * protocolo no vuelve observable la política de arranque ni la persona que cerró
- * el selector.
- */
-function mcpClause(via: HarnessMcpElicitation): string[] {
-  if (!via.available) return [];
-  return [
-    "When it is not, present it with `structured_choice` of the `agent-workflow` MCP server, which renders this host's own selector; its first call asks you to approve that tool, so say so, and note that persisting the approval stops it interrupting every later boundary.",
-    "A decline, cancellation or empty answer leaves the boundary pending: state only what the protocol returned, present labeled markdown with every option intact, and never record a choice nobody made.",
-  ];
-}
 
 /**
  * The stamp for one host, as a markdown blockquote (no trailing newline).
@@ -96,10 +72,7 @@ export function renderStructuredChoiceStamp(spec: HarnessSpec): string {
         "It already offers a free-text answer, so do not add an `Other` option of your own.",
       );
     }
-    lines.push(...mcpClause(binding.mcpElicitation));
-    lines.push(
-      `When neither is available, fall back to ${LABELED_MARKDOWN}. (${binding.fallbackReason}.)`,
-    );
+    lines.push(`When it is not, fall back to ${LABELED_MARKDOWN}. (${binding.fallbackReason}.)`);
     // A degraded host's own prompt tends to prefer prose exactly where the tool is
     // missing (codex: "never write a multiple choice question as a textual
     // assistant message") — and prose silently drops the alternatives.
@@ -107,17 +80,8 @@ export function renderStructuredChoiceStamp(spec: HarnessSpec): string {
       "Even where this host's own guidance prefers a plain-text question, an agent-workflow boundary still presents every option.",
     );
   } else {
-    const via = mcpClause(binding.mcpElicitation);
-    if (via.length === 0) {
-      lines[0] += ` Present every human and authorization boundary as ${LABELED_MARKDOWN}.`;
-      lines.push(`This host exposes no native selection surface: ${binding.fallbackReason}.`);
-    } else {
-      // Sin herramienta propia, la vía MCP no es un respaldo: es el mecanismo.
-      lines[0] += " It offers no question tool of its own.";
-      lines.push(
-        ...via.map((line) => line.replace("When it is not, present it", "Present every boundary")),
-      );
-    }
+    lines[0] += ` Present every human and authorization boundary as ${LABELED_MARKDOWN}.`;
+    lines.push(`This host exposes no native selection surface: ${binding.fallbackReason}.`);
   }
 
   lines.push(CONTENT_RULE);

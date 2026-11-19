@@ -33,12 +33,7 @@ function runFromHome(args: string[], input = "") {
 }
 
 describe("aw desde $HOME", { timeout: 60_000 }, () => {
-  it.each([
-    ["checkpoint-write"],
-    ["hook", "pre-compact"],
-    ["hook", "post-compact"],
-    ["hook", "session-end"],
-  ])("el hook %s sale con 0, sin sobre de error", (...command) => {
+  it.each([["checkpoint-write"]])("el hook %s sale con 0, sin sobre de error", (...command) => {
     const payload = JSON.stringify({
       hook_event_name: "PreCompact",
       session_id: "probe",
@@ -50,8 +45,8 @@ describe("aw desde $HOME", { timeout: 60_000 }, () => {
   });
 
   it.each([
-    ["doctor", "--only", "kimi", "--skip-native", "--format", "json"],
-    ["mcp", "setup", "--host", "kimi", "--global", "--dry-run"],
+    ["doctor", "--only", "kimi", "--format", "json"],
+    ["self", "detect-hosts", "--format", "json"],
   ])("'%s' corre sin exigir workspace", (...args) => {
     const result = runFromHome(args);
     expect(result.stdout + result.stderr).not.toContain("HUB_INVALID");
@@ -69,7 +64,7 @@ describe("aw desde $HOME", { timeout: 60_000 }, () => {
   );
 
   it("un comando del workspace sigue rechazado", () => {
-    const result = runFromHome(["mcp", "setup", "--host", "kimi", "--dry-run"]);
+    const result = runFromHome(["status"]);
     expect(result.status).not.toBe(0);
     expect(result.stdout + result.stderr).toContain("HUB_INVALID");
   });

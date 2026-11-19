@@ -353,34 +353,6 @@ describe("host-run replay: evidence from what the host did while its pane ran", 
     return home;
   }
 
-  it("hooks: the guard's log line counts only after the pane opened; READ_ONLY_POLICY is the MCP server, not the hook", () => {
-    const preparation = "2026-09-30T00:48:50.000Z INFO mcp request --arguments=<redacted>";
-    const home = homeWithLog([preparation]);
-    const h = { id: "codex", home, workspace: "/ws", logStart: preparation.length };
-    const screen =
-      'Failed host-run-probe.execute_sql\n {"success":false,"code":"READ_ONLY_POLICY"}';
-    // codex never ran the guard (its hooks are not armed): no hook line.
-    expect(collectEvidence("hooks", h, { screens: [screen] }).lines.PreToolUse).toBe(false);
-    // Its MCP server answered: that is the mcp surface's evidence.
-    expect(collectEvidence("mcp", h, { screens: [screen] }).serverReached).toBe(true);
-    // A guard that ran logs `hook sql-mutation-guard` in the home's log.
-    writeFileSync(
-      join(home, ".workflow", "logs", "agent-workflow-2026-09-30.log"),
-      [preparation, "2026-09-30T00:57:31.000Z INFO hook sql-mutation-guard"].join("\n"),
-    );
-    expect(collectEvidence("hooks", h, { screens: [screen] }).lines.PreToolUse).toBe(true);
-  });
-
-  it("mcp: the setup's own `mcp request` (before the pane) and its receipt are not evidence", () => {
-    const preparation = "2026-09-30T00:48:50.000Z INFO mcp request --arguments=<redacted>";
-    const home = homeWithLog([preparation]);
-    const h = { id: "crush", home, workspace: "/ws", logStart: preparation.length };
-    // The tool names in a sidebar alone, with no server reached, are degraded.
-    const e = collectEvidence("mcp", h, { screens: ["● execute_sql ● search_objects"] });
-    expect(e).toEqual({ toolsListed: true, serverReached: false });
-    expect(judgeSurface("mcp", e)).toBe("degraded");
-  });
-
   it("commands: the wrapper ran the CLI's doctor during the step, even when claude folds the report", () => {
     const home = homeWithLog([]);
     writeFileSync(
@@ -408,7 +380,7 @@ describe("host-run replay: evidence from what the host did while its pane ran", 
     const relay = [
       "• Hosts",
       "  → Codex · ready · runtime available 0.157.1 · agent-workflow instalado",
-      "      hooks degraded — host supports hooks; agent-workflow generates its plugin bundle instead",
+      "      host-memory degraded — ~/.codex/memories/, live only with [features] memories",
       "  Cobertura",
     ].join("\n");
     const base = {
@@ -422,13 +394,14 @@ describe("host-run replay: evidence from what the host did while its pane ran", 
       realHome: "/Users/someone",
       username: "someone",
     };
-    const codex = host("codex", { relays: [relay], evidence: { hooks: { lines: {} } } });
-    const fromRelay = evidenceOf(base, [codex]).matrix.hosts.codex.cells.hooks;
+    const memory = { "host-memory": { ran: true, destination: false } };
+    const codex = host("codex", { relays: [relay], evidence: memory });
+    const fromRelay = evidenceOf(base, [codex]).matrix.hosts.codex.cells["host-memory"];
     expect(fromRelay).toMatchObject({ declared_by_doctor: true, declared_source: "relay" });
     // A host that folded its relay: the CLI's doctor in that home declares it.
-    const folded = host("codex", { evidence: { hooks: { lines: {} } } });
+    const folded = host("codex", { evidence: memory });
     const fromCli = evidenceOf({ ...base, cliDoctorText: () => relay }, [folded]).matrix.hosts.codex
-      .cells.hooks;
+      .cells["host-memory"];
     // AC-05: only the host's own relay declares; the CLI's doctor is support only.
     expect(fromCli).toMatchObject({
       declared_by_doctor: false,
@@ -573,12 +546,12 @@ describe("host-run review AC1–AC6", () => {
         scenarioDigest: "d",
         catalog,
         hosts: ["codex"],
-        steps: ["hooks"],
+        steps: ["host-memory"],
         hostRuns: {
           codex: {
             version: "0.157.1",
             cells: {
-              hooks: {
+              "host-memory": {
                 observed: "fails",
                 mode: "interactive",
                 declared_by_doctor: declared,
@@ -589,11 +562,13 @@ describe("host-run review AC1–AC6", () => {
         },
       });
     const cliOnly = run("cli", false);
-    expect(cliOnly.hosts.codex.cells.hooks.state).toBe("degraded-undeclared");
-    expect(closureFailures([cliOnly])).toContain("codex/hooks: degraded-undeclared (run r9)");
+    expect(cliOnly.hosts.codex.cells["host-memory"].state).toBe("degraded-undeclared");
+    expect(closureFailures([cliOnly])).toContain("codex/host-memory: degraded-undeclared (run r9)");
     const relayed = run("relay", true);
-    expect(relayed.hosts.codex.cells.hooks.state).toBe("degraded-declared");
-    expect(closureFailures([relayed]).some((f: string) => f.startsWith("codex/hooks"))).toBe(false);
+    expect(relayed.hosts.codex.cells["host-memory"].state).toBe("degraded-declared");
+    expect(closureFailures([relayed]).some((f: string) => f.startsWith("codex/host-memory"))).toBe(
+      false,
+    );
   });
 
   it("AC4: a host that finishes between two ticks is done, not «never started»", async () => {

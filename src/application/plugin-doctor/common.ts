@@ -13,7 +13,6 @@ export interface SkillFrontmatterInfo {
 }
 
 export type HooksInfoValue = string[] | "invalid-structure" | null;
-export type McpServerInfo = "missing" | { dsn_env: string | null; env_set: boolean | null };
 
 export interface ExportedSkillRecord {
   namespace: string;

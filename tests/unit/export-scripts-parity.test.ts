@@ -1,10 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import {
-  SCRIPTS_FINAL_STATE_CONTRACT,
-  SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS,
-} from "../../src/application/export-service.js";
+import { SCRIPTS_FINAL_STATE_CONTRACT } from "../../src/application/export-service.js";
+import { SCRIPTS_FINAL_STATE_CONTRACT_ANCHORS } from "../helpers/scripts-contract-anchors.js";
 
 const DIRECT_GUIDE = fileURLToPath(
   new URL("../../skills/w/commands/export-scripts.md", import.meta.url),

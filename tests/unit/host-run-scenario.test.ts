@@ -93,11 +93,10 @@ describe("host-run scenario", () => {
     expect(ALL_HOSTS).toEqual(HARNESSES.map((h) => h.id));
   });
 
-  it("maps every covered host onto its catalog install and MCP target", () => {
+  it("maps every covered host onto its catalog install target", () => {
     for (const id of COVERED_HOSTS) {
       const harness = HARNESSES.find((h) => h.id === id);
       expect(HOSTS[id].installTarget, id).toBe(harness?.installTarget);
-      expect(HOSTS[id].mcpHost, id).toBe(harness?.mcpHostId);
       expect(harness?.runtime.bins, id).toContain(HOSTS[id].bin);
     }
   });
@@ -146,10 +145,12 @@ describe("host-run scenario", () => {
   });
 
   it("--steps adds what a step depends on, and refuses an unknown surface", () => {
-    const hooks = resolveSteps(["hooks"]);
-    expect(hooks.steps.map((s) => s.surface)).toEqual(["structured-choice", "hooks", "compaction"]);
-    expect(hooks.added.sort()).toEqual(["compaction", "structured-choice"]);
-    expect(resolveSteps(["mcp"])).toMatchObject({ added: [] });
-    expect(() => resolveSteps(["nope"])).toThrow(/unknown surface nope/);
+    const compaction = resolveSteps(["compaction"]);
+    expect(compaction.steps.map((s) => s.surface)).toEqual(["structured-choice", "compaction"]);
+    expect(compaction.added).toEqual(["structured-choice"]);
+    expect(resolveSteps(["commands"])).toMatchObject({ added: [] });
+    for (const retired of ["hooks", "mcp", "nope"]) {
+      expect(() => resolveSteps([retired])).toThrow(new RegExp(`unknown surface ${retired}`));
+    }
   });
 });

@@ -46,7 +46,6 @@ import { countOurHookEntries, hooksTemplateToToml } from "./hooks-toml.js";
 import { type HooksTemplate, resolveBundledHookTemplate } from "./install-hooks.js";
 import { SKILL_DIR_NAME, USER_COMMANDS_BY_TARGET } from "./install-skill.js";
 import { COMMAND_SKILLS_HOSTS, TARGET_ROOTS } from "./install-targets.js";
-import { type McpViaState, readMcpViaState } from "./mcp-via-state.js";
 
 /** Upper bound for a single `--version` call. Probes run in parallel across hosts. */
 const RUNTIME_PROBE_TIMEOUT_MS = 2500;
@@ -84,7 +83,6 @@ export interface HostCapability {
     | "structured-choice"
     | "subagent-dispatch"
     | "hooks"
-    | "mcp"
     | "host-memory"
     | "compaction";
   status: CapabilityStatus;
@@ -114,14 +112,6 @@ export interface HostStateReport {
   runtime: RuntimeProbe;
   agent_workflow: { installed: boolean; path: string };
   capabilities: HostCapability[];
-  /**
-   * La vía MCP en este host, con disponibilidad y acreditación del descriptor por separado.
-   *
-   * Aparte de `capabilities` porque ahí cada capacidad tiene UN estado, y acá lo
-   * que la persona necesita saber cuál de esas dos condiciones falta. Una entrada
-   * histórica de elicitation no acredita que un host la haya cargado.
-   */
-  mcp_via: McpViaState;
   status: HostStatus;
   /** Proportional next action, or null when nothing is pending. */
   advice: string | null;
@@ -282,13 +272,6 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
             "no native worker dispatch; deterministic steps stay in the CLI and semantic work stays inline",
         },
     hooksCapability(spec),
-    spec.mcpHostId === null
-      ? {
-          id: "mcp",
-          status: "degraded",
-          detail: "no MCP config file: this host takes servers through a launch flag",
-        }
-      : { id: "mcp", status: "native", detail: `written to its ${spec.mcpHostId} MCP config` },
     { id: "host-memory", status: spec.hostMemory.state, detail: spec.hostMemory.detail },
     compactionCapability(spec),
   ];
@@ -296,8 +279,8 @@ export function capabilitiesFor(spec: HarnessSpec): HostCapability[] {
 
 /**
  * `native` only when agent-workflow arms the hooks AND every template event travels
- * whole: kimi installs all five yet loses the SessionStart matcher, and crush and
- * gemini carry only PreToolUse — "installed" alone would hide both.
+ * whole: kimi loses the SessionStart matcher, and crush and gemini carry no
+ * template event — "installed" alone would hide both.
  */
 function hooksCapability(spec: HarnessSpec): HostCapability {
   const hooks = spec.hooks;
@@ -359,7 +342,7 @@ function notManagedHere(spec: HarnessSpec): string {
     return "agent-workflow generates its plugin bundle instead ('aw self install-hooks --target codex'), which is NOT armed: installing a codex plugin goes through a marketplace and is yours to run";
   }
   if (spec.id === "opencode") {
-    return "No agent-workflow hook can be bridged to its tools: the SQL MCP matcher has no equivalent. 'aw self install-hooks --target opencode' retires a previous generated plugin only when its ownership is proven";
+    return "No agent-workflow hook can be bridged: its plugin API fires no session-start event. 'aw self install-hooks --target opencode' retires a previous generated plugin only when its ownership is proven";
   }
   return "agent-workflow does not install them here — the CLI commands stay callable";
 }
@@ -422,7 +405,6 @@ export async function reportHostState(
   const status = deriveStatus(configPresent, runtime, installed);
 
   return {
-    mcp_via: readMcpViaState(spec, home),
     host: spec.id,
     target: spec.installTarget,
     label: spec.label,
@@ -480,7 +462,7 @@ export interface HookTemplateLossReport {
 
 /**
  * Per-host "are OUR hooks in place" probes. Only hosts whose hooks agent-workflow
- * MANAGES appear here — `hooksArmedProbeCoverage()` proves the two sets match,
+ * MANAGES appear here — a test probes every managed host,
  * so a host can never be declared managed while nothing can tell whether its
  * hooks are actually armed.
  */
@@ -555,13 +537,6 @@ async function claudeHooksArmed(ctx: CliContext, path: string): Promise<boolean>
   }
 }
 
-/** Targets whose hooks agent-workflow manages but that have no armed-probe. Must be empty. */
-export function hooksArmedProbeCoverage(): InstallTarget[] {
-  return HARNESSES.filter((h) => h.hooks?.managed === true)
-    .map((h) => h.installTarget)
-    .filter((t) => HOOKS_ARMED_PROBES[t] === undefined);
-}
-
 /**
  * What each managed host loses when the bundled template is adapted to it.
  *
@@ -622,7 +597,7 @@ export async function reportHooksArmed(ctx: CliContext): Promise<HooksArmedRepor
     managed.map(async (spec) => {
       const probe = HOOKS_ARMED_PROBES[spec.installTarget];
       if (probe === undefined) {
-        // Guarded by hooksArmedProbeCoverage(); reported, never guessed.
+        // Guarded by a test over every managed host; reported, never guessed.
         return { target: spec.installTarget, label: spec.label, armed: false, path: "(no probe)" };
       }
       const { armed, path } = await probe(ctx, home);

@@ -27,20 +27,6 @@ import { PathsService } from "./paths-service.js";
 export { runtimeGitignoreEntries } from "./hub-materialization-service.js";
 
 /**
- * docs/ taxonomy owned by agent-workflow (one folder per category). NOT scaffolded
- * anymore: each folder is born on demand at the first numbered write
- * (`aw next-number docs/<cat>` mkdirps it). The list drives the reconcile prune.
- */
-export const DOCS_FOLDERS = [
-  "specs",
-  "plans",
-  "manuals",
-  "scripts",
-  "diagrams",
-  "reports",
-] as const;
-
-/**
  * Visibility files (machine-specific absolute roots) — gitignored when external
  * sources exist. Trailing `*` also covers the timestamped `.bak.<epoch>` backups.
  * Exported for the code↔doctrine guard test (hub-init.md documents the set).

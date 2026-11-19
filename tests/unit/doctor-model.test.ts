@@ -98,15 +98,13 @@ describe("contrato del esquema del doctor", () => {
     expect(DOCTOR_SCHEMA_VERSION).toBe(2);
   });
 
-  it("las seis categorías están en el orden exacto que exige AC-02", () => {
+  it("las categorías están en el orden exacto del contrato", () => {
     // El valor esperado es el literal del contrato, escrito a mano acá: si se
     // derivara de la constante la prueba sería una tautología y aprobaría
     // cualquier reordenamiento.
     expect([...DOCTOR_CATEGORIES]).toEqual([
       "installation-hosts",
-      "mcps",
       "skills",
-      "tools-auth",
       "plugins-hooks",
       "hub-visibility",
     ]);
@@ -123,8 +121,8 @@ describe("doctorFindingId", () => {
     expect(doctorFindingId("claude-code", "installation-hosts", "agent-workflow")).toBe(
       "claude-code/installation-hosts/agent-workflow",
     );
-    expect(doctorFindingId("workspace", "tools-auth", "dsn:alpha")).toBe(
-      "workspace/tools-auth/dsn:alpha",
+    expect(doctorFindingId("workspace", "hub-visibility", "dsn:alpha")).toBe(
+      "workspace/hub-visibility/dsn:alpha",
     );
     // Y el host va DELANTE del resto: seis proveedores emiten el mismo nombre
     // de recurso en varios hosts a la vez (`agent-workflow`, `hooks`). Si el id no lo
@@ -151,7 +149,7 @@ describe("sortDoctorFindings", () => {
     finding("gemini", "installation-hosts", "agent-workflow"),
     finding("claude-code", "installation-hosts", "agent-workflow"),
     finding("claude-code", "skills", "alfa"),
-    finding("warp", "tools-auth", "dsn-alpha"),
+    finding("warp", "hub-visibility", "dsn-alpha"),
   ];
 
   const ESPERADO = [
@@ -160,7 +158,7 @@ describe("sortDoctorFindings", () => {
     "claude-code/skills/beta",
     "claude-code/plugins-hooks/hooks",
     "warp/installation-hosts/agent-workflow",
-    "warp/tools-auth/dsn-alpha",
+    "warp/hub-visibility/dsn-alpha",
     "gemini/installation-hosts/agent-workflow",
     "gemini/skills/beta",
   ];
@@ -176,7 +174,7 @@ describe("sortDoctorFindings", () => {
   });
 
   it("el tercer criterio es el NOMBRE del recurso, no el segmento del id", () => {
-    // Caso real de `provider-tools-auth`: el id lleva el nombre de la conexión
+    // Caso de un proveedor: el id lleva el nombre de la conexión
     // (`dsn:alpha`) y el recurso que el lector VE es la variable de entorno
     // (`DB_ZETA_DSN`). Acá los dos ordenan al revés a propósito: por nombre de
     // recurso `DB_ALPHA_DSN` va primero (o sea `dsn:beta`), por id iría primero
@@ -185,10 +183,13 @@ describe("sortDoctorFindings", () => {
     // del ordenador sin que nada se entere: el informe pasaría a listar por id
     // interno y no por lo que muestra la columna del recurso.
     const conexiones = [
-      finding("workspace", "tools-auth", "dsn:alpha", { resourceName: "DB_ZETA_DSN" }),
-      finding("workspace", "tools-auth", "dsn:beta", { resourceName: "DB_ALPHA_DSN" }),
+      finding("workspace", "hub-visibility", "dsn:alpha", { resourceName: "DB_ZETA_DSN" }),
+      finding("workspace", "hub-visibility", "dsn:beta", { resourceName: "DB_ALPHA_DSN" }),
     ];
-    const porNombreDeRecurso = ["workspace/tools-auth/dsn:beta", "workspace/tools-auth/dsn:alpha"];
+    const porNombreDeRecurso = [
+      "workspace/hub-visibility/dsn:beta",
+      "workspace/hub-visibility/dsn:alpha",
+    ];
     expect(idsOf(sortDoctorFindings(conexiones, HOST_ORDER))).toEqual(porNombreDeRecurso);
     expect(idsOf(sortDoctorFindings([...conexiones].reverse(), HOST_ORDER))).toEqual(
       porNombreDeRecurso,
@@ -196,23 +197,19 @@ describe("sortDoctorFindings", () => {
   });
 
   it("las categorías NO se ordenan alfabéticamente", () => {
-    // Alfabéticamente sería installation-hosts, mcps, plugins-hooks, skills,
-    // tools-auth, hub-visibility. El contrato pone plugins-hooks
-    // ANTEÚLTIMO. Un `localeCompare` sobre la categoría —el atajo obvio— pasa
-    // la prueba de arriba a medias y muere acá.
+    // Alfabéticamente sería hub-visibility, installation-hosts, plugins-hooks,
+    // skills. El contrato pone hub-visibility ÚLTIMO y skills antes que
+    // plugins-hooks. Un `localeCompare` sobre la categoría —el atajo obvio—
+    // pasa la prueba de arriba a medias y muere acá.
     const unSoloHost = [
       finding("claude-code", "hub-visibility", "skills"),
       finding("claude-code", "plugins-hooks", "hooks"),
-      finding("claude-code", "tools-auth", "dsn-alpha"),
       finding("claude-code", "skills", "w-plan-exec"),
-      finding("claude-code", "mcps", "workspace-agent-workflow"),
       finding("claude-code", "installation-hosts", "agent-workflow"),
     ];
     expect(idsOf(sortDoctorFindings(unSoloHost, HOST_ORDER))).toEqual([
       "claude-code/installation-hosts/agent-workflow",
-      "claude-code/mcps/workspace-agent-workflow",
       "claude-code/skills/w-plan-exec",
-      "claude-code/tools-auth/dsn-alpha",
       "claude-code/plugins-hooks/hooks",
       "claude-code/hub-visibility/skills",
     ]);
@@ -242,19 +239,19 @@ describe("sortDoctorFindings", () => {
   });
 
   it("un host fuera del orden de catálogo cae al final sin romper el resto", () => {
-    // Pasa de verdad: `provider-tools-auth` y `provider-skills` emiten sobre el
+    // Pasa de verdad: `provider-skills` emite sobre el
     // pseudo-host `workspace`, y un catálogo recortado (por `--only`) puede no
     // enumerarlo. Antes que perder el hallazgo o tirar, va al final.
     const ordenParcial = ["claude-code", "warp"];
     const conDesconocido = [
-      finding("workspace", "tools-auth", "dsn-alpha"),
+      finding("workspace", "hub-visibility", "dsn-alpha"),
       finding("warp", "installation-hosts", "agent-workflow"),
       finding("claude-code", "installation-hosts", "agent-workflow"),
     ];
     expect(idsOf(sortDoctorFindings(conDesconocido, ordenParcial))).toEqual([
       "claude-code/installation-hosts/agent-workflow",
       "warp/installation-hosts/agent-workflow",
-      "workspace/tools-auth/dsn-alpha",
+      "workspace/hub-visibility/dsn-alpha",
     ]);
   });
 
@@ -278,16 +275,16 @@ describe("sortDoctorFindings", () => {
   });
 
   it("dos hallazgos que comparten nombre de recurso se desempatan por id", () => {
-    // Caso real de `provider-tools-auth`: dos conexiones distintas que declaran
+    // Caso de un proveedor: dos conexiones distintas que declaran
     // la MISMA variable de DSN comparten `resource.name` (la variable) y sólo
     // difieren en el id (`dsn:<conexión>`). No es el caso de `provider-mcps`:
     // ahí el nombre lleva el scope pegado (`agent-workflow (user)`), así que dos
     // scopes nunca empatan. Sin el desempate por id, el orden lo decidiría el
     // de llegada y el informe cambiaría entre corridas idénticas.
     const mismaVariable = (segmento: string): DoctorFinding =>
-      finding("workspace", "tools-auth", segmento, { resourceName: "DB_SHARED_DSN" });
+      finding("workspace", "hub-visibility", segmento, { resourceName: "DB_SHARED_DSN" });
     const entrada = [mismaVariable("dsn:zeta"), mismaVariable("dsn:alpha")];
-    const esperado = ["workspace/tools-auth/dsn:alpha", "workspace/tools-auth/dsn:zeta"];
+    const esperado = ["workspace/hub-visibility/dsn:alpha", "workspace/hub-visibility/dsn:zeta"];
     expect(idsOf(sortDoctorFindings(entrada, HOST_ORDER))).toEqual(esperado);
     expect(idsOf(sortDoctorFindings([...entrada].reverse(), HOST_ORDER))).toEqual(esperado);
   });
@@ -303,7 +300,7 @@ describe("sortDoctorCoverage", () => {
     const desordenada = [
       cover("warp", "skills", "skipped", "el usuario declinó la inspección nativa"),
       cover("claude-code", "skills"),
-      cover("workspace", "tools-auth"),
+      cover("workspace", "hub-visibility"),
       cover("warp", "installation-hosts"),
       cover("claude-code", "installation-hosts"),
     ];
@@ -312,7 +309,7 @@ describe("sortDoctorCoverage", () => {
       "installation-hosts/warp",
       "skills/claude-code",
       "skills/warp",
-      "tools-auth/workspace",
+      "hub-visibility/workspace",
     ]);
   });
 
@@ -320,16 +317,16 @@ describe("sortDoctorCoverage", () => {
     // Mismo criterio que los hallazgos: si las dos secciones discreparan sobre
     // qué host va primero, se leen como dos entornos distintos.
     const desordenada = [
-      cover("gemini", "mcps"),
-      cover("kimi", "mcps", "unavailable", "no se pudo leer la config"),
-      cover("claude-code", "mcps"),
-      cover("warp", "mcps"),
+      cover("gemini", "plugins-hooks"),
+      cover("kimi", "plugins-hooks", "unavailable", "no se pudo leer la config"),
+      cover("claude-code", "plugins-hooks"),
+      cover("warp", "plugins-hooks"),
     ];
     expect(slotsOf(sortDoctorCoverage(desordenada, HOST_ORDER))).toEqual([
-      "mcps/claude-code",
-      "mcps/warp",
-      "mcps/gemini",
-      "mcps/kimi",
+      "plugins-hooks/claude-code",
+      "plugins-hooks/warp",
+      "plugins-hooks/gemini",
+      "plugins-hooks/kimi",
     ]);
   });
 
@@ -343,11 +340,11 @@ describe("sortDoctorCoverage", () => {
     // dos sentidos de llegada y se exige el mismo literal.
     const ordenParcial = ["claude-code"];
     const desordenada = [
-      cover("zeta", "mcps", "unavailable", "no se pudo leer la config"),
-      cover("kimi", "mcps", "unavailable", "no se pudo leer la config"),
-      cover("claude-code", "mcps"),
+      cover("zeta", "plugins-hooks", "unavailable", "no se pudo leer la config"),
+      cover("kimi", "plugins-hooks", "unavailable", "no se pudo leer la config"),
+      cover("claude-code", "plugins-hooks"),
     ];
-    const esperado = ["mcps/claude-code", "mcps/kimi", "mcps/zeta"];
+    const esperado = ["plugins-hooks/claude-code", "plugins-hooks/kimi", "plugins-hooks/zeta"];
     expect(slotsOf(sortDoctorCoverage(desordenada, ordenParcial))).toEqual(esperado);
     expect(slotsOf(sortDoctorCoverage([...desordenada].reverse(), ordenParcial))).toEqual(esperado);
   });
@@ -362,7 +359,7 @@ describe("sortDoctorCoverage", () => {
     const original = [
       cover("warp", "skills", "skipped", "el usuario declinó la inspección nativa"),
       cover("claude-code", "skills"),
-      cover("workspace", "tools-auth"),
+      cover("workspace", "hub-visibility"),
       cover("claude-code", "installation-hosts"),
     ];
     const antes = slotsOf(original);
@@ -372,7 +369,7 @@ describe("sortDoctorCoverage", () => {
       "installation-hosts/claude-code",
       "skills/claude-code",
       "skills/warp",
-      "tools-auth/workspace",
+      "hub-visibility/workspace",
     ];
     expect(slotsOf(unaVez)).toEqual(ESPERADO);
     expect(slotsOf(sortDoctorCoverage(unaVez, HOST_ORDER))).toEqual(ESPERADO);
@@ -394,12 +391,15 @@ describe("summarizeDoctorFindings", () => {
       finding("claude-code", "installation-hosts", "agent-workflow", { state: "healthy" }),
       finding("warp", "installation-hosts", "agent-workflow", { state: "healthy" }),
       finding("gemini", "installation-hosts", "agent-workflow", { state: "healthy" }),
-      finding("claude-code", "mcps", "user:agent-workflow", {
+      finding("claude-code", "plugins-hooks", "user:agent-workflow", {
         state: "warning",
         remediation: "manual",
       }),
-      finding("workspace", "tools-auth", "dsn:alpha", { state: "warning", remediation: "manual" }),
-      finding("warp", "mcps", "workspace:agent-workflow", {
+      finding("workspace", "hub-visibility", "dsn:alpha", {
+        state: "warning",
+        remediation: "manual",
+      }),
+      finding("warp", "plugins-hooks", "workspace:agent-workflow", {
         state: "blocking",
         remediation: "supported",
       }),
@@ -442,12 +442,15 @@ describe("doctorVerdict", () => {
     const veredicto = doctorVerdict(
       [
         finding("claude-code", "installation-hosts", "agent-workflow", { state: "healthy" }),
-        finding("warp", "mcps", "user:agent-workflow", { state: "warning", remediation: "manual" }),
+        finding("warp", "plugins-hooks", "user:agent-workflow", {
+          state: "warning",
+          remediation: "manual",
+        }),
         finding("gemini", "skills", "w-plan-exec", { state: "unverified" }),
       ],
       [
         cover("claude-code", "installation-hosts"),
-        cover("warp", "mcps"),
+        cover("warp", "plugins-hooks"),
         cover("gemini", "skills"),
       ],
     );
@@ -483,15 +486,15 @@ describe("doctorVerdict", () => {
     const veredicto = doctorVerdict(
       [
         finding("claude-code", "installation-hosts", "agent-workflow", { state: "blocking" }),
-        finding("warp", "mcps", "user:agent-workflow", { state: "warning" }),
+        finding("warp", "plugins-hooks", "user:agent-workflow", { state: "warning" }),
         finding("gemini", "plugins-hooks", "hooks", { state: "blocking" }),
       ],
-      [cover("claude-code", "installation-hosts"), cover("warp", "mcps")],
+      [cover("claude-code", "installation-hosts"), cover("warp", "plugins-hooks")],
     );
     expect(veredicto.exit_code).toBe(1);
     expect(veredicto.reason).toContain("claude-code/installation-hosts/agent-workflow");
     expect(veredicto.reason).toContain("gemini/plugins-hooks/hooks");
-    expect(veredicto.reason).not.toContain("warp/mcps/user:agent-workflow");
+    expect(veredicto.reason).not.toContain("warp/plugins-hooks/user:agent-workflow");
     expect(veredicto.reason).toContain("2");
   });
 
@@ -505,11 +508,11 @@ describe("doctorVerdict", () => {
       [finding("claude-code", "installation-hosts", "agent-workflow", { state: "healthy" })],
       [
         cover("claude-code", "installation-hosts"),
-        cover("claude-code", "mcps", "unavailable", "el proveedor falló: ENOENT"),
+        cover("claude-code", "plugins-hooks", "unavailable", "el proveedor falló: ENOENT"),
       ],
     );
     expect(veredicto.exit_code).toBe(1);
-    expect(veredicto.reason).toContain("mcps");
+    expect(veredicto.reason).toContain("plugins-hooks");
   });
 
   it("la misma categoría caída en dos hosts se nombra una vez pero se cuenta dos", () => {
@@ -519,13 +522,13 @@ describe("doctorVerdict", () => {
     const veredicto = doctorVerdict(
       [],
       [
-        cover("claude-code", "mcps", "unavailable", "el proveedor falló: ENOENT"),
-        cover("warp", "mcps", "unavailable", "el proveedor falló: ENOENT"),
+        cover("claude-code", "plugins-hooks", "unavailable", "el proveedor falló: ENOENT"),
+        cover("warp", "plugins-hooks", "unavailable", "el proveedor falló: ENOENT"),
       ],
     );
     expect(veredicto.exit_code).toBe(1);
     expect(veredicto.reason).toContain("2");
-    expect(veredicto.reason.match(/mcps/g)).toHaveLength(1);
+    expect(veredicto.reason.match(/plugins-hooks/g)).toHaveLength(1);
   });
 
   it("`skipped` y `not-applicable` NO alcanzan para volver el veredicto 1", () => {
@@ -538,7 +541,7 @@ describe("doctorVerdict", () => {
       [finding("claude-code", "installation-hosts", "agent-workflow", { state: "healthy" })],
       [
         cover("claude-code", "installation-hosts"),
-        cover("claude-code", "mcps", "skipped", "la inspección nativa fue declinada"),
+        cover("claude-code", "plugins-hooks", "skipped", "la inspección nativa fue declinada"),
         cover("warp", "plugins-hooks", "not-applicable", "el host no expone hooks"),
       ],
     );
@@ -550,10 +553,10 @@ describe("doctorVerdict", () => {
     // siendo 1 (no 2, no un acumulado) y el motivo prioriza lo que sí se pudo
     // ver, que es lo accionable.
     const veredicto = doctorVerdict(
-      [finding("warp", "mcps", "user:agent-workflow", { state: "blocking" })],
+      [finding("warp", "plugins-hooks", "user:agent-workflow", { state: "blocking" })],
       [cover("claude-code", "skills", "unavailable", "el proveedor falló: EACCES")],
     );
     expect(veredicto.exit_code).toBe(1);
-    expect(veredicto.reason).toContain("warp/mcps/user:agent-workflow");
+    expect(veredicto.reason).toContain("warp/plugins-hooks/user:agent-workflow");
   });
 });
