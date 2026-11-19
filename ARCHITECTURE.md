@@ -1,6 +1,6 @@
 # Architecture of agent-workflow-cli
 
-Reviewed on 2026-11-18 against version 33.0.0.
+Reviewed on 2026-11-18 against version 33.0.0 (commit `88b01746`).
 
 The overview: what the CLI installs and where, how a command runs, what it reads and writes, and which rules never break. It leaves out each command, each loop of the `w` skill and the content of the documents a flow writes. All values are defaults; nothing here was measured on a particular machine.
 
@@ -28,7 +28,7 @@ What it is not:
 | Publishing to production is deliberate | A git flow that pushes to a source's PROD branch stops at a preview until the person consents to exactly those sources. With `--all` it refuses. |
 | Install and uninstall stay inside what they own | A folder or a legacy root is removed only when its bytes prove that agent-workflow wrote it; other copies are kept and reported. |
 
-Two more goals, for help and for lifecycle hooks, are in [docs/runtime.md](docs/runtime.md#more-quality-goals).
+Two more goals, for help and for the session-start hook, are in [docs/runtime.md](docs/runtime.md#more-quality-goals).
 
 ## 2. Context and scope
 
@@ -143,15 +143,15 @@ Not recorded yet:
 
 ## Appendix: evidence
 
-Line numbers refer to the 33.0.0 tree. Every row cites code or configuration; the text above does not link to the code on purpose.
+Line numbers refer to commit `88b01746`. Every row cites code or configuration; the text above does not link to the code on purpose.
 
 | Section | Evidence |
 |---|---|
-| 1. Goals | `package.json:4-9`, `skills/w/hooks/hooks.template.json:1-15`, `src/application/git-flow-service.ts:188-200`, `src/application/self/install-skill.ts:171`, `src/application/self/install-targets.ts:24` |
-| 2. Context | `src/domain/harnesses.ts:336-364`, `src/application/self/update-self.ts:156-160`, `src/application/git-flow-service.ts:380-386`, `src/adapters/herdr-cli.ts:38` |
-| 3. Blocks | `src/cli/main.ts:5-37`, `src/cli/full-cli.ts:136-220`, `src/cli/commands/index.ts:54-118`, `src/cli/tui/run.tsx:40-55` |
-| 3. Rules | `skills/w/hooks/hooks.template.json:1-15`, `src/application/git-flow-service.ts:188-200`, `src/domain/harnesses.ts:392-399`, `src/cli/render.ts:20-30` |
-| 4. Runtime | `src/cli/main.ts:5-37`, `src/runtime/namespace-resolver.ts:133-145`, `src/cli/full-cli.ts:226-261`, `src/cli/full-cli.ts:144-220`, `src/cli/full-cli.ts:64-98` |
+| 1. Goals | `package.json:4-9`, `skills/w/hooks/hooks.template.json:1-16`, `src/application/git-flow-service.ts:188-200`, `src/application/self/install-skill.ts:171`, `src/application/self/install-targets.ts:24` |
+| 2. Context | `src/domain/harnesses.ts:336-363`, `src/application/self/update-self.ts:156-160`, `src/application/git-flow-service.ts:380-386`, `src/adapters/herdr-cli.ts:38` |
+| 3. Blocks | `src/cli/main.ts:5-37`, `src/cli/full-cli.ts:136-186`, `src/cli/commands/index.ts:54-118`, `src/cli/tui/run.tsx:40-55` |
+| 3. Rules | `skills/w/hooks/hooks.template.json:1-16`, `src/application/git-flow-service.ts:188-200`, `src/domain/harnesses.ts:390-397`, `src/cli/render.ts:20-30` |
+| 4. Runtime | `src/cli/main.ts:5-37`, `src/runtime/namespace-resolver.ts:133-145`, `src/cli/full-cli.ts:226-252`, `src/cli/full-cli.ts:144-186`, `src/cli/full-cli.ts:64-97` |
 | 5. Deployment | `package.json:44-46`, `src/runtime/agent-workflow-marker.ts:21`, `src/application/paths-service.ts:33-47`, `src/application/self/install-targets.ts:12-22`, `src/application/self/install-hooks.ts:408-415` |
-| 6. Privacy | `src/cli/tui/app.tsx:425-431`, `src/application/context/plan-service.ts:177`, `src/application/logging/logger.ts:48`, `src/application/mcp-host-writer.ts:19-45`. A search for telemetry and analytics in `src/` found only the `local-only` receipt |
-| 7. Decisions | `src/domain/harnesses.ts:392-399`, `skills/w/hooks/hooks.template.json:1-15`, `src/application/git-flow-service.ts:188-191`, `src/application/self/install-targets.ts:31`, `src/application/session-binding-service.ts:17` |
+| 6. Privacy | `src/cli/tui/app.tsx:425-431`, `src/application/context/plan-service.ts:177`, `src/application/logging/logger.ts:48`, `src/application/mcp-host-writer.ts:12-45`. A search for telemetry and analytics in `src/` found only the `local-only` receipt |
+| 7. Decisions | `src/domain/harnesses.ts:390-397`, `skills/w/hooks/hooks.template.json:1-16`, `src/application/git-flow-service.ts:188-191`, `src/application/self/install-targets.ts:31`, `src/application/session-binding-service.ts:17` |

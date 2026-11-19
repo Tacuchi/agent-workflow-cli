@@ -10,7 +10,7 @@
       "url": "https://github.com/Tacuchi/agent-workflow-cli.git",
       "provider": "github",
       "link_mode": "web",
-      "revision": "506c827ee1ab3558ead4eded4ff4916503c12c9b"
+      "revision": "88b01746646ba7d431dece9e82625309d549afb5"
     }
   },
   "boundaries": [
@@ -37,7 +37,7 @@
         {
           "path": "src/domain/harnesses.ts",
           "line": 336,
-          "end_line": 364
+          "end_line": 363
         }
       ]
     },
@@ -68,7 +68,7 @@
         {
           "path": "skills/w/hooks/hooks.template.json",
           "line": 1,
-          "end_line": 15
+          "end_line": 16
         }
       ]
     },
@@ -83,7 +83,7 @@
         {
           "path": "src/cli/full-cli.ts",
           "line": 136,
-          "end_line": 220
+          "end_line": 186
         }
       ]
     },
