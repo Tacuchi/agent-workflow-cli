@@ -1,0 +1,32 @@
+# Publica el paquete en npm cuando se publica un release.
+# Sin token guardado: npm reconoce este workflow como publicador confiable (OIDC).
+name: publish
+
+on:
+  release:
+    types: [published]
+  # Para repetir una publicación fallida sin crear otro release.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # La publicación confiable pide Node 22.14 o superior y npm 11.5.1 o superior.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
+
+      # `prepublishOnly` corre lint, typecheck, build y las pruebas antes de empaquetar.
+      - name: Publish
+        run: npm publish
