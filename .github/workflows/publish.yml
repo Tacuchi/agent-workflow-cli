@@ -14,7 +14,8 @@ permissions:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # La suite depende de rutas y procesos de macOS; en Linux fallan 33 pruebas.
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
